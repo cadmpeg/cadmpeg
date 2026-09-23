@@ -9,6 +9,29 @@ fn support() -> SurfaceId {
     SurfaceId::mint("synthetic:test:surface#support").unwrap()
 }
 
+/// The positive serializer-revision lane at `pointer` in an admitted
+/// definition's wire refuses `0` and `-1` and admits `i64::MAX`.
+fn assert_positive_revision_lane(wire: &serde_json::Value, pointer: &str) {
+    assert!(
+        wire.pointer(pointer)
+            .is_some_and(|revision| revision.as_i64().is_some_and(|value| value > 0)),
+        "{pointer}"
+    );
+    for revision in [0_i64, -1] {
+        assert!(crate::scalar::PositiveI64::new(revision).is_none());
+        let mut invalid = wire.clone();
+        *invalid.pointer_mut(pointer).unwrap() = serde_json::json!(revision);
+        assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
+    }
+    let mut maximum = wire.clone();
+    *maximum.pointer_mut(pointer).unwrap() = serde_json::json!(i64::MAX);
+    let parsed = serde_json::from_value::<ProceduralSurfaceDefinition>(maximum).unwrap();
+    assert_eq!(
+        serde_json::to_value(parsed).unwrap().pointer(pointer),
+        Some(&serde_json::json!(i64::MAX))
+    );
+}
+
 #[test]
 fn surface_restrictions_keep_their_distinct_range_domains_and_wire_fields() {
     let ranges = [[2.0, 0.0], [1.0, 1.0]];
@@ -96,7 +119,7 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     };
 
     let form = RevisionSurfaceForm {
-        revision: 1,
+        revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
         support_bounds: [None; 4],
         reference_endpoints: [None; 2],
         second_endpoints: [None; 2],
@@ -188,7 +211,7 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     };
 
     let form = RevisionSurfaceForm {
-        revision: 1,
+        revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
         support_bounds: [None; 4],
         reference_endpoints: [None; 2],
         second_endpoints: [None; 2],
@@ -631,7 +654,7 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
     };
     let cache = |fields: Fields| {
         CacheContract::from_form(Some(LoftRevisionForm {
-            revision: 1,
+            revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
             flags: [false; 4],
             ints: [0; 2],
             cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization {
@@ -699,23 +722,9 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
         })
     };
 
-    for revision in [0, -1] {
-        let mut invalid_cache = cache(admitted);
-        invalid_cache.form_mut().unwrap().revision = revision;
-        assert!(LoftSurfacePayload::try_new(
-            sections(admitted),
-            parameters(),
-            [0; 2],
-            [0; 2],
-            0,
-            Vec::new(),
-            invalid_cache,
-        )
-        .is_err());
-    }
-
     let definition = ProceduralSurfaceDefinition::Loft(loft(admitted).unwrap());
     let wire = serde_json::to_value(&definition).unwrap();
+    assert_positive_revision_lane(&wire, "/cache/form/revision");
     let entry = &wire["sections"][0]["entries"][0];
     let member = &entry["profile"][0];
     assert_eq!(
@@ -874,7 +883,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
     let variable = |fields: Fields| {
         Box::new(VariableBlendConstruction {
             subtype: VariableBlendSurfaceSubtype::VariableBlend,
-            revision: 1,
+            revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
             sides: Box::new([side(fields), side(admitted)]),
             slice: curve(),
             slice_range: fields.slice_range,
@@ -959,6 +968,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
 
     let definition = ProceduralSurfaceDefinition::VariableBlend(variable_new(admitted).unwrap());
     let wire = serde_json::to_value(&definition).unwrap();
+    assert_positive_revision_lane(&wire, "/construction/revision");
     let first_side = &wire["construction"]["sides"][0];
     assert_eq!(
         first_side["surface"]["parameter_ranges"],
@@ -1054,7 +1064,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
         discontinuity: 5.0,
     };
     let form = |fields: Fields| RevisionSurfaceForm {
-        revision: 1,
+        revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
         support_bounds: fields.support_bounds,
         reference_endpoints: fields.reference_endpoints,
         second_endpoints: fields.second_endpoints,
@@ -1079,7 +1089,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
         trailing_flags: Vec::new(),
     };
     let offset_form = |fields: Fields| RevisionSurfaceForm::<[bool; 4]> {
-        revision: 1,
+        revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
         support_bounds: fields.support_bounds,
         reference_endpoints: fields.reference_endpoints,
         second_endpoints: fields.second_endpoints,
@@ -1214,6 +1224,7 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
 
     let definition = ProceduralSurfaceDefinition::Exact(exact(admitted).unwrap());
     let wire = serde_json::to_value(&definition).unwrap();
+    assert_positive_revision_lane(&wire, "/spline/form/revision");
     let stored = &wire["spline"]["form"];
     assert_eq!(
         stored["support_bounds"],
@@ -1359,7 +1370,7 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
         Box::new(SweepSurfaceConstruction {
             primary_kind: 0,
             cache: CacheContract::from_form(Some(SweepRevisionForm {
-                revision: 1,
+                revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 primary_flag: false,
                 profile_endpoints: fields.profile_endpoints,
                 path_endpoints: fields.path_endpoints,
@@ -1398,7 +1409,7 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
 
     let vertex_construction = |fields: Fields| {
         Box::new(VertexBlendConstruction {
-            revision: Some(1),
+            revision: Some(crate::scalar::PositiveI64::new(1).expect("positive revision")),
             boundaries: vec![
                 VertexBlendBoundary {
                     boundary_type: false,
@@ -1455,6 +1466,14 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
 
     let definition = ProceduralSurfaceDefinition::Sweep(sweep(admitted).unwrap());
     let wire = serde_json::to_value(&definition).unwrap();
+    assert_positive_revision_lane(&wire, "/native/cache/form/revision");
+    assert_positive_revision_lane(
+        &serde_json::to_value(ProceduralSurfaceDefinition::VertexBlend(
+            vertex(admitted).unwrap(),
+        ))
+        .unwrap(),
+        "/construction/revision",
+    );
     let stored = &wire["native"]["cache"]["form"];
     assert_eq!(stored["profile_endpoints"], serde_json::json!([0.0, null]));
     assert_eq!(stored["path_endpoints"], serde_json::json!([null, 1.0]));

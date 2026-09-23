@@ -3147,7 +3147,7 @@ pub enum BlendCrossSection {
 #[serde(deny_unknown_fields)]
 pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Optional U/V bound fields following the support surface.
     #[serde(default)]
     pub support_bounds: [Option<f64>; 4],
@@ -3174,19 +3174,17 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>> {
 }
 
 impl<F: Default> RevisionSurfaceForm<F> {
-    /// Whether the revision is positive and every floating scalar is finite.
-    /// A solved cache states its tolerance as a finite `FitTolerance`.
+    /// Whether every floating scalar is finite. A solved cache states its
+    /// tolerance as a finite `FitTolerance`.
     #[must_use]
     fn is_valid(&self) -> bool {
-        self.revision > 0
-            && self
-                .support_bounds
-                .iter()
-                .chain(self.reference_endpoints.iter())
-                .chain(self.second_endpoints.iter())
-                .flatten()
-                .chain(self.discontinuities.iter().flatten())
-                .all(|value| value.is_finite())
+        self.support_bounds
+            .iter()
+            .chain(self.reference_endpoints.iter())
+            .chain(self.second_endpoints.iter())
+            .flatten()
+            .chain(self.discontinuities.iter().flatten())
+            .all(|value| value.is_finite())
             && self.cache.values_are_finite()
     }
 }
@@ -3849,7 +3847,7 @@ impl LoftSectionEntry {
 #[serde(deny_unknown_fields)]
 pub struct LoftRevisionForm {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Four booleans following the parameter intervals.
     #[serde(default)]
     pub flags: [bool; 4],
@@ -3866,11 +3864,10 @@ pub struct LoftRevisionForm {
 }
 
 impl LoftRevisionForm {
-    /// Whether the revision is positive and every floating scalar is finite.
+    /// Whether every floating scalar is finite.
     #[must_use]
     fn is_valid(&self) -> bool {
-        self.revision > 0
-            && self.cache.values_are_finite()
+        self.cache.values_are_finite()
             && self
                 .discontinuities
                 .iter()
@@ -4674,9 +4671,8 @@ pub struct VariableBlendConstruction {
     /// Native surface subtype selecting the variable-blend behavior class.
     #[serde(default)]
     pub subtype: VariableBlendSurfaceSubtype,
-    /// Native serializer-revision integer following the subtype name.
-    #[serde(alias = "definition_index")]
-    pub revision: i64,
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: PositiveI64,
     /// Two ordered support-side graphs in the rolling-ball side layout.
     pub sides: Box<[RollingBallSide; 2]>,
     /// Stored slice curve.
@@ -5382,7 +5378,7 @@ pub struct VertexBlendConstruction {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_revision"
     )]
-    pub revision: Option<i64>,
+    pub revision: Option<PositiveI64>,
     /// Ordered boundary records.
     pub boundaries: Vec<VertexBlendBoundary>,
     /// Native grid-size integer.
@@ -6204,7 +6200,7 @@ pub enum SweepSurfaceLayout {
 #[serde(deny_unknown_fields)]
 pub struct SweepRevisionForm {
     /// Positive serializer-revision integer following the subtype name.
-    pub revision: i64,
+    pub revision: PositiveI64,
     /// Boolean replacing the pre-revision primary enum.
     pub primary_flag: bool,
     /// Optional parameter endpoints following the embedded profile curve.
@@ -8104,7 +8100,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_post_curve, CurveId, "post_curve");
 cadmpeg_core::named_optional_field!(deserialize_post_pcurve, PcurveGeometry, "post_pcurve");
-cadmpeg_core::named_optional_field!(deserialize_revision, i64, "revision");
+cadmpeg_core::named_optional_field!(deserialize_revision, PositiveI64, "revision");
 cadmpeg_core::named_optional_field!(
     deserialize_first_scale,
     Box<CompoundLoftScale>,

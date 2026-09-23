@@ -224,7 +224,7 @@ fn revision_exact_definition() -> ProceduralSurfaceDefinition {
             intervals: [[None, None], [None, None]],
             extension: 0,
             form: RevisionSurfaceForm {
-                revision: 1,
+                revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
                 support_bounds: [None; 4],
                 reference_endpoints: [None; 2],
                 second_endpoints: [None; 2],

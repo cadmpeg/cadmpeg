@@ -157,7 +157,7 @@ fn native_procedural_surface_definition(
                 .find(|surface| surface.id == construction.support)
                 .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
             if let Some(form) = &construction.cache.form() {
-                if form.revision != 22_506 {
+                if form.revision.get() != 22_506 {
                     return Err(CodecError::Malformed(
                         "unsupported revision-gated deformable surface revision".into(),
                     ));
@@ -183,7 +183,7 @@ fn native_procedural_surface_definition(
                 native_surface_base(bytes, "spline")?;
                 bytes.push(0x0f);
                 native_ident(bytes, "defm_spl_sur")?;
-                native_i64(bytes, form.revision);
+                native_i64(bytes, form.revision.get());
                 native_embedded_surface_with_bounds(
                     bytes,
                     &support.geometry,
@@ -426,12 +426,7 @@ fn native_procedural_surface_definition(
             bytes.push(0x0f);
             native_ident(bytes, "t_spl_sur")?;
             if let Some(form) = construction.revision_form() {
-                if form.revision <= 0 {
-                    return Err(CodecError::Malformed(
-                        "revision-gated t_spl_sur requires a positive revision".into(),
-                    ));
-                }
-                native_i64(bytes, form.revision);
+                native_i64(bytes, form.revision.get());
                 native_revision_surface_tail(bytes, "T-spline surface", form, Some(solved_cache))?;
                 for bound in &form.support_bounds {
                     native_optional_f64(bytes, *bound);
@@ -479,12 +474,7 @@ fn native_procedural_surface_definition(
                     extension,
                     form,
                 } => {
-                    if form.revision <= 0 {
-                        return Err(CodecError::Malformed(
-                            "revision-gated exact_spl_sur requires a positive revision".into(),
-                        ));
-                    }
-                    native_i64(bytes, form.revision);
+                    native_i64(bytes, form.revision.get());
                     native_revision_surface_tail(
                         bytes,
                         "exact spline surface",
@@ -600,12 +590,10 @@ fn native_procedural_surface_definition(
                     cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
                 };
                 if let Some(form) = revision_form {
-                    if form.revision <= 0
-                        || !matches!(
-                            taper,
-                            cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
-                        )
-                    {
+                    if !matches!(
+                        taper,
+                        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
+                    ) {
                         return Err(CodecError::Malformed(
                             "revision-gated taper generation requires the orthogonal subtype"
                                 .into(),
@@ -614,7 +602,7 @@ fn native_procedural_surface_definition(
                     native_surface_base(bytes, "spline")?;
                     bytes.push(0x0f);
                     native_ident(bytes, "ortho_spl_sur")?;
-                    native_i64(bytes, form.revision);
+                    native_i64(bytes, form.revision.get());
                     native_embedded_surface_with_bounds(
                         bytes,
                         &support.geometry,
@@ -843,15 +831,10 @@ fn native_procedural_surface_definition(
             let second = definition_payload.second();
             let basepoint = definition_payload.basepoint();
             if let Some(form) = definition_payload.revision_form() {
-                if form.revision <= 0 {
-                    return Err(CodecError::Malformed(
-                        "revision-gated sum_spl_sur requires a positive revision".into(),
-                    ));
-                }
                 native_surface_base(bytes, "spline")?;
                 bytes.push(0x0f);
                 native_ident(bytes, "sum_spl_sur")?;
-                native_i64(bytes, form.revision);
+                native_i64(bytes, form.revision.get());
                 for (curve, endpoints) in [
                     (first, &form.reference_endpoints),
                     (second, &form.second_endpoints),
@@ -958,15 +941,10 @@ fn native_procedural_surface_definition(
                     ));
                 }
                 if let Some(form) = revision_form {
-                    if form.revision <= 0 {
-                        return Err(CodecError::Malformed(
-                            "revision-gated rot_spl_sur requires a positive revision".into(),
-                        ));
-                    }
                     native_surface_base(bytes, "spline")?;
                     bytes.push(0x0f);
                     native_ident(bytes, "rot_spl_sur")?;
-                    native_i64(bytes, form.revision);
+                    native_i64(bytes, form.revision.get());
                     let range = match form.reference_endpoints {
                         [Some(lower), Some(upper)] => Some([lower, upper]),
                         _ => None,
@@ -1081,15 +1059,10 @@ fn native_procedural_surface_definition(
                     })?;
                 let extension_flags = match extension {
                     cadmpeg_ir::geometry::OffsetExtension::Revision { form } => {
-                        if form.revision <= 0 {
-                            return Err(CodecError::Malformed(
-                                "revision-gated off_spl_sur requires a positive revision".into(),
-                            ));
-                        }
                         native_surface_base(bytes, "spline")?;
                         bytes.push(0x0f);
                         native_ident(bytes, "off_spl_sur")?;
-                        native_i64(bytes, form.revision);
+                        native_i64(bytes, form.revision.get());
                         native_embedded_surface_with_bounds(
                             bytes,
                             &support.geometry,
@@ -2687,15 +2660,10 @@ fn encode_native_sweep_surface(
             trailing_flag,
         } = &construction.layout
         {
-            if form.revision <= 0 {
-                return Err(CodecError::Malformed(
-                    "revision-gated sweep requires a positive serializer revision".into(),
-                ));
-            }
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "sweep_sur")?;
-            native_i64(bytes, form.revision);
+            native_i64(bytes, form.revision.get());
             bytes.push(native_bool(form.primary_flag));
             native_i64(bytes, *mode);
             let profile = native_loft_curve(target, profile, Some(*profile_range))?;
@@ -2776,15 +2744,10 @@ fn encode_native_sweep_surface(
                 "revision-gated sweep generation requires the explicit formula layout".into(),
             ));
         };
-        if form.revision <= 0 {
-            return Err(CodecError::Malformed(
-                "revision-gated sweep requires a positive serializer revision".into(),
-            ));
-        }
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "sweep_sur")?;
-        native_i64(bytes, form.revision);
+        native_i64(bytes, form.revision.get());
         bytes.push(native_bool(form.primary_flag));
         native_i64(bytes, *mode);
         let profile = native_loft_curve(target, profile, Some(*profile_range))?;
@@ -3185,15 +3148,10 @@ fn encode_native_loft(
                 "revision-gated loft requires revision-native parameter ranges".into(),
             ));
         };
-        if form.revision <= 0 {
-            return Err(CodecError::Malformed(
-                "revision-gated loft requires a positive serializer revision".into(),
-            ));
-        }
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "loft_spl_sur")?;
-        native_i64(bytes, form.revision);
+        native_i64(bytes, form.revision.get());
         for section in sections {
             native_loft_section(bytes, target, section, None)?;
         }
@@ -3301,16 +3259,15 @@ fn encode_native_extrusion(
         // `intcurve` scope behind its sense flag, the directrix parameter
         // interval in the optional bool-gated encoding, the sweep direction and
         // model-space position, then the shared surface tail.
-        if form.revision <= 0 || form.flags.len() != 1 {
+        if form.flags.len() != 1 {
             return Err(CodecError::Malformed(
-                "revision-gated cyl_spl_sur requires a positive revision and one directrix sense flag"
-                    .into(),
+                "revision-gated cyl_spl_sur requires one directrix sense flag".into(),
             ));
         }
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "cyl_spl_sur")?;
-        native_i64(bytes, form.revision);
+        native_i64(bytes, form.revision.get());
         native_ident(bytes, "intcurve")?;
         bytes.push(native_bool(form.flags[0]));
         bytes.push(0x0f);
@@ -3649,12 +3606,7 @@ fn encode_native_vertex_blend(
     bytes.push(0x0f);
     native_ident(bytes, "VBL_SURF")?;
     if let Some(revision) = construction.revision {
-        if revision <= 0 {
-            return Err(CodecError::Malformed(
-                "revision-gated VBL_SURF requires a positive revision".into(),
-            ));
-        }
-        native_i64(bytes, revision);
+        native_i64(bytes, revision.get());
     }
     native_i64(
         bytes,
@@ -3899,7 +3851,7 @@ fn encode_native_variable_blend(
             }
         },
     )?;
-    native_i64(bytes, construction.revision);
+    native_i64(bytes, construction.revision.get());
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }

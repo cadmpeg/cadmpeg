@@ -272,7 +272,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     let construction = definition_payload.construction();
 
     let revision_form = construction.cache.form().expect("revision deformable form");
-    assert_eq!(revision_form.revision, 22_506);
+    assert_eq!(revision_form.revision.get(), 22_506);
     assert_eq!(
         revision_form.support_bounds,
         [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
@@ -1054,7 +1054,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         panic!("expected native revision sweep")
     };
 
-    assert_eq!(native.cache.form().unwrap().revision, 23100);
+    assert_eq!(native.cache.form().unwrap().revision.get(), 23100);
     let SweepSurfaceLayout::LawDriven {
         first_law,
         second_law,
@@ -1101,7 +1101,7 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
         panic!("expected round-tripped revision sweep")
     };
 
-    assert_eq!(native.cache.form().unwrap().revision, 23100);
+    assert_eq!(native.cache.form().unwrap().revision.get(), 23100);
     assert!(matches!(
         native.layout,
         SweepSurfaceLayout::LawDriven {
@@ -1135,7 +1135,7 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     };
 
     let form = native.cache.form().expect("revision form");
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert!(form.cache.parameterization().is_some());
     assert_eq!(
         form.cache.parameterization(),

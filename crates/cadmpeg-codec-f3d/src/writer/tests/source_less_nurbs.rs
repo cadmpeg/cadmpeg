@@ -1070,7 +1070,7 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let Some(form) = definition_payload_0.revision_form() else {
         panic!("expected a revision-gated extrusion")
     };
-    assert_eq!(form.revision, 23100);
+    assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.flags, [true]);
     assert!(form.cache.parameterization().is_none());
     assert_eq!(form.cache.parameterization(), None);

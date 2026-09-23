@@ -797,7 +797,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let construction = definition_payload.construction();
 
         assert_eq!(construction.subtype, subtype);
-        assert_eq!(construction.revision, 23100);
+        assert_eq!(construction.revision.get(), 23100);
         assert_eq!(
             construction.sides[0].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
