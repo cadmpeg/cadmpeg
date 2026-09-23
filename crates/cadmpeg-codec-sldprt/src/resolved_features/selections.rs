@@ -1632,9 +1632,12 @@ pub(super) fn mirror_pattern_component_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker)? != [0; 8]
-        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    let prefix = marker.checked_sub(8)?;
+    let marker_end = marker.checked_add(16)?;
+    let trailer_end = marker_end.checked_add(2)?;
+    if payload.get(marker..marker_end)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(prefix..marker)? != [0; 8]
+        || payload.get(marker_end..trailer_end)? != [0, 0]
     {
         return None;
     }
@@ -2853,9 +2856,13 @@ pub(super) fn component_reference_curve_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker - 4)? != [0x04, 0x02, 0, 0]
-        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    let prefix = marker.checked_sub(8)?;
+    let prefix_end = marker.checked_sub(4)?;
+    let marker_end = marker.checked_add(16)?;
+    let trailer_end = marker_end.checked_add(2)?;
+    if payload.get(marker..marker_end)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(prefix..prefix_end)? != [0x04, 0x02, 0, 0]
+        || payload.get(marker_end..trailer_end)? != [0, 0]
     {
         return None;
     }

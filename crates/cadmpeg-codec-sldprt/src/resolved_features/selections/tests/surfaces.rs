@@ -1209,6 +1209,13 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
 }
 
 #[test]
+fn mirror_pattern_path_refuses_out_of_range_markers() {
+    for marker in [0, 7, usize::MAX] {
+        assert_eq!(mirror_pattern_component_path_at(&[0; 32], marker), None);
+    }
+}
+
+#[test]
 fn mirror_pattern_path_honors_full_count_before_following_path_data() {
     let marker = 12;
     let mut payload = vec![0; marker];
