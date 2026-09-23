@@ -1084,7 +1084,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                         construction.origin[1] * 10.0,
                                         construction.origin[2] * 10.0,
                                     ))?,
-                                    cadmpeg_ir::features::FeatureDirection3::new(displacement.unit()?)?,
+                                    cadmpeg_ir::features::FeatureDirection3::from(cadmpeg_ir::units::UnitVector3::normalized(displacement)?),
                                 ))
                             })
                             .map_or_else(
@@ -2859,8 +2859,11 @@ fn project_draft(
                 selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
             {
                 let transform = neutral_plane.work_plane_transform()?;
-                let pull_direction =
-                    Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
+                let pull_direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+                    transform[0][2],
+                    transform[1][2],
+                    transform[2][2],
+                ))?;
                 return Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                     faces: project_draft_face_selection(scope, faces, face_operands, histories),
                     anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -2868,9 +2871,9 @@ fn project_draft(
                             neutral_feature_id(neutral_plane).into_string(),
                         ),
                         pull: Some(cadmpeg_ir::features::DraftPull {
-                            direction: cadmpeg_ir::features::FeatureDirection3::new(
+                            direction: cadmpeg_ir::features::FeatureDirection3::from(
                                 pull_direction,
-                            )?,
+                            ),
                             plane: Some(neutral_feature_id(neutral_plane)),
                         }),
                     },
@@ -2934,8 +2937,11 @@ fn project_draft(
                 _ => return None,
             };
             let transform = pull_plane.work_plane_transform()?;
-            let pull_direction =
-                Vector3::new(transform[0][2], transform[1][2], transform[2][2]).unit()?;
+            let pull_direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+                transform[0][2],
+                transform[1][2],
+                transform[2][2],
+            ))?;
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories),
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
@@ -2946,7 +2952,7 @@ fn project_draft(
                         histories,
                     ),
                     pull: cadmpeg_ir::features::DraftPull {
-                        direction: cadmpeg_ir::features::FeatureDirection3::new(pull_direction)?,
+                        direction: cadmpeg_ir::features::FeatureDirection3::from(pull_direction),
                         plane: Some(neutral_feature_id(pull_plane)),
                     },
                 },

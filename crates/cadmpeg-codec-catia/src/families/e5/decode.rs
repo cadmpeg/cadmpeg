@@ -629,10 +629,7 @@ fn solve_e5_plane_frame(
             continue;
         };
         let orthogonality = u_axis.dot(v_axis);
-        if ![u_axis.x, u_axis.y, u_axis.z, v_axis.x, v_axis.y, v_axis.z]
-            .into_iter()
-            .all(f64::is_finite)
-            || !residual.is_finite()
+        if !residual.is_finite()
             || !orthogonality.is_finite()
             || residual > 2e-3
             || orthogonality.abs() > EPS_E5_DECODE_COARSE_GEOMETRY
@@ -649,7 +646,7 @@ fn solve_e5_plane_frame(
         // The returned chart uses unit axes and derives v from normal x u.
         // Validate that chart, not the unrestricted least-squares fit.
         let residual = plane_frame_residual(origin, &pairs, u_axis, normal.cross(u_axis));
-        if !normal.is_finite() || !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
+        if !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
             continue;
         }
         if expected_normal.is_some_and(|expected| {
@@ -2525,9 +2522,6 @@ fn e5_boundary_curve(
             .into_iter()
             .filter_map(|axis| {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                if !ref_direction.is_finite() {
-                    return None;
-                }
                 let range = circle_parameter_range_from_surface_branch(
                     surface,
                     center,
@@ -2582,7 +2576,7 @@ fn e5_boundary_curve(
         return None;
     }
     let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-    direction.is_finite().then_some((
+    Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(endpoints[0], direction).ok()?,
         )),

@@ -1141,14 +1141,11 @@ impl PlaneFrame {
         let normal = normal.unit()?;
         let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
         normal.cross(u_axis).unit()?;
-        [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
-            .into_iter()
-            .all(f64::is_finite)
-            .then_some(Self {
-                origin,
-                normal,
-                u_axis,
-            })
+        origin.is_finite().then_some(Self {
+            origin,
+            normal,
+            u_axis,
+        })
     }
 
     fn v_axis(self) -> Vector3 {

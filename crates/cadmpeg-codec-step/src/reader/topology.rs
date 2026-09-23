@@ -30,7 +30,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3, COINCIDENCE_TOLERANCE};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -3318,21 +3318,24 @@ fn implicit_face_plane(
         if !area.is_finite() || area <= IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE * scale * scale {
             return None;
         }
-        loop_normals.push((area_normal.unit()?, area));
+        loop_normals.push((UnitVector3::normalized(area_normal)?, area));
     }
     let mut normal = loop_normals.first().map(|(normal, _)| *normal)?;
     let mut largest_area = loop_normals.first().map(|(_, area)| *area)?;
     for (candidate, area) in loop_normals.iter().skip(1).copied() {
+        let (candidate_raw, normal_raw) = (candidate.as_raw(), normal.as_raw());
         if area > largest_area
             || (area == largest_area
-                && (candidate.x, candidate.y, candidate.z) > (normal.x, normal.y, normal.z))
+                && (candidate_raw.x, candidate_raw.y, candidate_raw.z)
+                    > (normal_raw.x, normal_raw.y, normal_raw.z))
         {
             normal = candidate;
             largest_area = area;
         }
     }
     for (candidate, _) in &loop_normals {
-        if candidate.dot(normal) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE {
+        if candidate.as_raw().dot(*normal.as_raw()) < 1.0 - IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE
+        {
             return None;
         }
     }
@@ -3340,7 +3343,7 @@ fn implicit_face_plane(
         COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
     if relative_points
         .iter()
-        .map(|point| point.dot(normal).abs())
+        .map(|point| point.dot(*normal.as_raw()).abs())
         .fold(0.0, f64::max)
         > planarity_tolerance
     {
@@ -3353,16 +3356,19 @@ fn implicit_face_plane(
         Vector3::new(0.0, 1.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
     ] {
-        let projected = axis - normal.scale(axis.dot(normal));
+        let projected = axis - normal.as_raw().scale(axis.dot(*normal.as_raw()));
         let norm = projected.norm();
         if norm > u_axis_norm {
             u_axis_norm = norm;
-            u_axis = projected.unit();
+            u_axis = UnitVector3::normalized(projected);
         }
     }
     let u_axis = u_axis?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis).ok()?,
+        cadmpeg_ir::geometry::analytic::PlaneSurface::new(
+            cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            OrthonormalFrame3::from_units(normal, u_axis)?,
+        ),
     )))
 }
 

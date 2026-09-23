@@ -1192,14 +1192,13 @@ fn project_extrusion(
     let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
 
     let direction_record = resolve_direction(source, 2, index)?;
-    let mut direction = Vector3::new(
+    let mut direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         direction_record.direction[0],
         direction_record.direction[1],
         direction_record.direction[2],
-    )
-    .unit()?;
+    ))?;
     if boolean(source, 3, index)? {
-        direction = direction.scale(-1.0);
+        direction = direction.reversed();
     }
     let length = length_parameter(source, 4, index)?;
     let taper =
@@ -1241,7 +1240,7 @@ fn project_extrusion(
                     PlanarProfileRef::sketch_selection(sketch_id, selections).ok()?,
                 ),
                 direction: ExtrudeDirection::Explicit {
-                    vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     source: Some(ExtrusionDirectionSource::Custom {}),
                 },
                 start: ExtrudeStart::ProfilePlane {},
@@ -1476,12 +1475,11 @@ fn project_hole(
         return None;
     }
     let direction_record = resolve_direction(source, 16, index)?;
-    let direction = Vector3::new(
+    let direction = cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
         direction_record.direction[0],
         direction_record.direction[1],
         direction_record.direction[2],
-    )
-    .unit()?;
+    ))?;
     let placement = slot_property(source, 21, index)?;
     let PmDcFeaturePropertyKind::Placement {
         transform: placement_transform,
@@ -1522,7 +1520,7 @@ fn project_hole(
                             transform.matrix.rows()[1][3] * 10.0,
                             transform.matrix.rows()[2][3] * 10.0,
                         ))?,
-                        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     }]),
                     shape: cadmpeg_ir::features::holes::HoleShape::new(
                         cadmpeg_ir::features::holes::HoleConstruction::Form {

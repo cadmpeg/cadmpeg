@@ -14,7 +14,10 @@
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::wire::cursor::Cursor;
 
@@ -66,17 +69,15 @@ pub(crate) fn cylinder_uvr(
     let u = c.vector3()?.get();
     let v = c.vector3()?.get();
     let radius = c.f64()?;
-    let axis = u.cross(v).unit()?;
-    let ref_direction = u.unit()?;
+    let axis = UnitVector3::normalized(u.cross(v))?;
+    let ref_direction = UnitVector3::normalized(u)?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                origin.get(),
-                axis,
-                ref_direction,
-                radius.get(),
-            )
-            .ok()?,
+            cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                origin,
+                OrthonormalFrame3::from_units(axis, ref_direction)?,
+                PositiveLength::new(radius.get())?,
+            ),
         )),
         radius,
     ))
@@ -102,15 +103,13 @@ pub(crate) fn cone_ozra(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal, 
     let half_angle = std::f64::consts::FRAC_PI_2 - stored_angle.get();
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                origin.get(),
-                axis,
-                ref_direction,
-                radius.get(),
-                1.0,
-                half_angle,
-            )
-            .ok()?,
+            cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                origin,
+                OrthonormalFrame3::from_units(axis, ref_direction)?,
+                NonNegativeLength::new(radius.get())?,
+                PositiveReal::ONE,
+                Angle::new(half_angle)?,
+            ),
         )),
         radius,
         half_angle,
@@ -135,14 +134,12 @@ pub(crate) fn torus_ozrr(c: &mut Cursor) -> Option<(SurfaceGeometry, FiniteReal,
     let minor_radius = c.f64()?;
     Some((
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-            cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                center.get(),
-                axis,
-                ref_direction,
-                major_radius.get(),
-                minor_radius.get(),
-            )
-            .ok()?,
+            cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                center,
+                OrthonormalFrame3::from_units(axis, ref_direction)?,
+                PositiveLength::new(major_radius.get())?,
+                NonZeroLength::new(minor_radius.get())?,
+            ),
         )),
         major_radius,
         minor_radius,

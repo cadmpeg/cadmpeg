@@ -8,13 +8,20 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
+    SphereSurface, TorusSurface,
+};
 use cadmpeg_ir::geometry::{
     nurbs::knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
@@ -59,10 +66,16 @@ pub(super) fn norm3(v: [f64; 3]) -> f64 {
     Vector3::from(v).norm()
 }
 
-/// Return `v` normalized to unit length, or `v` unchanged if it is degenerate
-/// (validation flags a degenerate direction rather than this hiding it).
-fn unit(v: [f64; 3]) -> Vector3 {
-    Vector3::from(v).unit().unwrap_or(Vector3::from(v))
+/// The unit direction of a stored vector, absent when the vector is not
+/// finite or its length is within `f64::EPSILON` of zero.
+fn direction(v: [f64; 3]) -> Option<UnitVector3> {
+    UnitVector3::normalized(Vector3::from(v))
+}
+
+/// The frame of two stored directions, absent when either direction is
+/// degenerate or the two are not perpendicular.
+fn frame(axis: [f64; 3], reference: [f64; 3]) -> Option<OrthonormalFrame3> {
+    OrthonormalFrame3::from_units(direction(axis)?, direction(reference)?)
 }
 
 /// Whether a record name heads an analytic surface carrier.
@@ -81,26 +94,16 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
     let c = collect_carrier(rec);
     let origin = *c.positions.first()?;
     match rec.head() {
-        "plane" => {
-            let normal = *c.vectors.first()?;
-            let normal = unit(normal);
-            let u_axis = unit(*c.vectors.get(1)?);
-            Some((
-                SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                        scale_point(origin),
-                        normal,
-                        u_axis,
-                    )
-                    .ok()?,
-                ),
-                false,
-            ))
-        }
+        "plane" => Some((
+            SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+                FinitePoint3::new(scale_point(origin))?,
+                frame(*c.vectors.first()?, *c.vectors.get(1)?)?,
+            )),
+            false,
+        )),
         "cone" => {
             let ratio = *c.doubles.first().unwrap_or(&1.0);
-            let axis = *c.vectors.first()?;
-            let axis = unit(axis);
+            let axis = direction(*c.vectors.first()?)?;
             let major = *c.vectors.get(1)?;
             // Doubles are (ratio, sine, cosine, u_scale). `ratio` is the
             // minor/major radius ratio. `sine` selects cylinder vs cone. The
@@ -114,18 +117,14 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
             let cosine = *c.doubles.get(2).unwrap_or(&1.0);
             let radius = norm3(major) * LEN_TO_MM;
             (radius > f64::EPSILON).then_some(())?;
-            let ref_direction = unit(major);
+            let ref_direction = direction(major)?;
             if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
-                    SolvedSurfaceGeometry::Cylinder(
-                        cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                            scale_point(origin),
-                            axis,
-                            ref_direction,
-                            radius,
-                        )
-                        .ok()?,
-                    ),
+                    SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
+                        FinitePoint3::new(scale_point(origin))?,
+                        OrthonormalFrame3::from_units(axis, ref_direction)?,
+                        PositiveLength::new(radius)?,
+                    )),
                     cosine < 0.0,
                 ))
             } else {
@@ -134,60 +133,45 @@ pub fn decode_surface(rec: &Record) -> Option<(SolvedSurfaceGeometry, bool)> {
                 // outward normal is invariant under the flip; the inward
                 // normal of a negative `cosine` folds into the face sense.
                 let axis = if sine * cosine < 0.0 {
-                    Vector3::new(-axis.x, -axis.y, -axis.z)
+                    axis.reversed()
                 } else {
                     axis
                 };
                 Some((
-                    SolvedSurfaceGeometry::Cone(
-                        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                            scale_point(origin),
-                            axis,
-                            ref_direction,
-                            radius,
-                            ratio,
-                            sine.abs().atan2(cosine.abs()),
-                        )
-                        .ok()?,
-                    ),
+                    SolvedSurfaceGeometry::Cone(ConeSurface::new(
+                        FinitePoint3::new(scale_point(origin))?,
+                        OrthonormalFrame3::from_units(axis, ref_direction)?,
+                        NonNegativeLength::new(radius)?,
+                        PositiveReal::new(ratio)?,
+                        Angle::new(sine.abs().atan2(cosine.abs()))?,
+                    )),
                     cosine < 0.0,
                 ))
             }
         }
         "sphere" => {
             let signed = *c.doubles.first()?;
-            let equator = unit(*c.vectors.first()?);
-            let polar_axis = unit(*c.vectors.get(1)?);
             Some((
-                SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        scale_point(origin),
-                        polar_axis,
-                        equator,
-                        signed * LEN_TO_MM,
-                    )
-                    .ok()?,
-                ),
+                SolvedSurfaceGeometry::Sphere(SphereSurface::new(
+                    FinitePoint3::new(scale_point(origin))?,
+                    frame(*c.vectors.get(1)?, *c.vectors.first()?)?,
+                    NonZeroLength::new(signed * LEN_TO_MM)?,
+                )),
                 false,
             ))
         }
         "torus" => {
             let axis = *c.vectors.first()?;
-            let axis = unit(axis);
-            let ref_direction = unit(*c.vectors.get(1)?);
+            let ref_direction = *c.vectors.get(1)?;
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
-                SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        scale_point(origin),
-                        axis,
-                        ref_direction,
-                        major * LEN_TO_MM,
-                        minor * LEN_TO_MM,
-                    )
-                    .ok()?,
-                ),
+                SolvedSurfaceGeometry::Torus(TorusSurface::new(
+                    FinitePoint3::new(scale_point(origin))?,
+                    frame(axis, ref_direction)?,
+                    PositiveLength::new(major * LEN_TO_MM)?,
+                    NonZeroLength::new(minor * LEN_TO_MM)?,
+                )),
                 false,
             ))
         }
@@ -395,35 +379,29 @@ pub fn decode_curve(rec: &Record) -> Option<CurveGeometry> {
     let base = *carrier.positions.first()?;
     match rec.head() {
         "straight" => Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                scale_point(base),
-                unit(*carrier.vectors.first()?),
-            )
-            .ok()?,
+            LineCurve::new(
+                FinitePoint3::new(scale_point(base))?,
+                direction(*carrier.vectors.first()?)?,
+            ),
         ))),
         "ellipse" => {
             let axis = *carrier.vectors.first()?;
             let reference = *carrier.vectors.get(1)?;
             let ratio = *carrier.doubles.first()?;
             let major_radius = norm3(reference) * LEN_TO_MM;
+            let center = FinitePoint3::new(scale_point(base))?;
+            let conic_frame = frame(axis, reference)?;
             if (ratio.abs() - 1.0).abs() <= f64::EPSILON {
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        scale_point(base),
-                        unit(axis),
-                        unit(reference),
-                        major_radius,
-                    )
-                    .ok()?,
+                    CircleCurve::new(center, conic_frame, PositiveLength::new(major_radius)?),
                 )))
             } else {
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                        scale_point(base),
-                        unit(axis),
-                        unit(reference),
-                        major_radius,
-                        major_radius * ratio.abs(),
+                    EllipseCurve::try_from_parts(
+                        center,
+                        conic_frame,
+                        PositiveLength::new(major_radius)?,
+                        PositiveLength::new(major_radius * ratio.abs())?,
                     )
                     .ok()?,
                 )))
@@ -594,18 +572,17 @@ pub(super) fn analytic_procedural_surface(
             ..
         } => {
             let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
-            let axis = direction.unit()?;
-            if 1.0 - axis.dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10 {
+            let axis = UnitVector3::normalized(*direction)?;
+            if 1.0 - axis.as_raw().dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10
+            {
                 return None;
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    center,
-                    axis,
-                    ref_direction,
-                    radius,
-                )
-                .ok()?,
+                CylinderSurface::new(
+                    FinitePoint3::new(center)?,
+                    OrthonormalFrame3::from_units(axis, UnitVector3::new(ref_direction)?)?,
+                    PositiveLength::new(radius)?,
+                ),
             )))
         }
         DecodedProceduralSurfaceDefinition::Blend {
@@ -662,6 +639,7 @@ fn analytic_rolling_ball_surface(
         if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             || 1.0
                 - axis
+                    .as_raw()
                     .dot(support_intersection.scale(1.0 / support_intersection_norm))
                     .abs()
                 > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
@@ -672,7 +650,8 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+            if axis.as_raw().dot(plane_normal).abs()
+                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -680,13 +659,16 @@ fn analytic_rolling_ball_surface(
             }
         }
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                origin,
-                axis,
-                cadmpeg_ir::geometry::derive_reference_direction(axis),
-                radius,
-            )
-            .ok()?,
+            CylinderSurface::new(
+                FinitePoint3::new(origin)?,
+                OrthonormalFrame3::from_units(
+                    axis,
+                    UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
+                        *axis.as_raw(),
+                    ))?,
+                )?,
+                PositiveLength::new(radius)?,
+            ),
         )));
     }
 
@@ -747,20 +729,13 @@ fn analytic_rolling_ball_surface(
         return None;
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            signed_radius,
-        )
-        .ok()?,
+        TorusSurface::try_new(center, axis, ref_direction, major_radius, signed_radius).ok()?,
     )))
 }
 
 fn linear_nurbs_spine(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(Point3, UnitVector3)> {
     if curve.degree() == 0
         || curve.periodic()
         || curve.knots().iter().any(|knot| !knot.is_finite())
@@ -793,7 +768,7 @@ fn linear_nurbs_spine(
     if !extent.is_finite() || extent <= f64::EPSILON {
         return None;
     }
-    let axis = point_vector(origin, farthest).unit()?;
+    let axis = UnitVector3::normalized(point_vector(origin, farthest))?;
     // This admits an analytic replacement, not a model-length approximation.
     if curve.control_points().iter().any(|point| {
         let relative = point_vector(origin, *point);
@@ -802,7 +777,7 @@ fn linear_nurbs_spine(
             relative.y / extent,
             relative.z / extent,
         );
-        axis.cross(relative).norm() > EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10
+        axis.as_raw().cross(relative).norm() > EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10
     }) {
         return None;
     }

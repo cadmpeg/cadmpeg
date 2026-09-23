@@ -3351,7 +3351,9 @@ fn revolution_definition(
         profile => Some(profile),
     };
     let mut axis = revolution_axis(properties)?;
-    axis.direction = cadmpeg_ir::features::FeatureDirection3::new(axis.direction.unit()?)?;
+    axis.direction = cadmpeg_ir::features::FeatureDirection3::from(
+        cadmpeg_ir::units::UnitVector3::normalized(*axis.direction)?,
+    );
     let angle = || {
         scalar_named(properties, "Angle")
             .filter(|angle| angle.is_finite() && *angle > 0.0)
@@ -3850,14 +3852,17 @@ fn extrusion_shape(
         let direction_magnitude = raw_direction.map(|direction| direction.norm());
         let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
         let (mut direction, direction_source) = match direction_mode {
-            0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom {}),
+            0 => (
+                cadmpeg_ir::units::UnitVector3::normalized(raw_direction?)?,
+                ExtrusionDirectionSource::Custom {},
+            ),
             1 => {
                 let reference = property(properties, "DirLink")?;
                 if reference.links().len() != 1 {
                     return None;
                 }
                 (
-                    raw_direction?.unit()?,
+                    cadmpeg_ir::units::UnitVector3::normalized(raw_direction?)?,
                     ExtrusionDirectionSource::Edge {
                         reference: PathRef::Native(reference.id.clone()),
                     },
@@ -3873,7 +3878,10 @@ fn extrusion_shape(
                         .or(profile_normal),
                     _ => profile_normal,
                 }?;
-                (normal.unit()?, ExtrusionDirectionSource::ProfileNormal {})
+                (
+                    cadmpeg_ir::units::UnitVector3::normalized(normal)?,
+                    ExtrusionDirectionSource::ProfileNormal {},
+                )
             }
             _ => return None,
         };
@@ -3966,7 +3974,7 @@ fn extrusion_shape(
             }
         };
         if reverse_direction ^ bool_selector(properties, "Reversed", false)? {
-            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+            direction = direction.reversed();
         }
         let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
             let maker = FaceMaker::new(string_property_value(class_property)?)?;
@@ -3992,7 +4000,7 @@ fn extrusion_shape(
         return Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile,
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                vector: cadmpeg_ir::features::FeatureDirection3::from(direction),
                 source: Some(direction_source),
             },
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
@@ -4098,16 +4106,22 @@ fn extrusion_shape(
     }
     let mut direction = if use_custom {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: cadmpeg_ir::features::FeatureDirection3::new(
-                vector_property(properties, "Direction")?.unit()?,
-            )?,
+            vector: cadmpeg_ir::features::FeatureDirection3::from(
+                cadmpeg_ir::units::UnitVector3::normalized(vector_property(
+                    properties,
+                    "Direction",
+                )?)?,
+            ),
             source: Some(ExtrusionDirectionSource::Custom {}),
         }
     } else if let Some(reference_axis) = reference_axis {
         cadmpeg_ir::features::ExtrudeDirection::Explicit {
-            vector: cadmpeg_ir::features::FeatureDirection3::new(
-                vector_property(properties, "Direction")?.unit()?,
-            )?,
+            vector: cadmpeg_ir::features::FeatureDirection3::from(
+                cadmpeg_ir::units::UnitVector3::normalized(vector_property(
+                    properties,
+                    "Direction",
+                )?)?,
+            ),
             source: Some(ExtrusionDirectionSource::Edge {
                 reference: PathRef::Native(reference_axis.id.clone()),
             }),
@@ -4476,9 +4490,9 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
             plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 origin.x, origin.y, origin.z,
             ))?,
-            plane_normal: cadmpeg_ir::units::UnitVector3::new(
-                vector_property(properties, "Normal")?.unit()?,
-            )?,
+            plane_normal: cadmpeg_ir::units::UnitVector3::normalized(vector_property(
+                properties, "Normal",
+            )?)?,
             plane_reference,
         },
     ))
@@ -4513,9 +4527,10 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
         FeatureOperation::ProjectOnSurface {
             sources: PathRef::Native(sources.id.clone()),
             support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-            direction: cadmpeg_ir::units::UnitVector3::new(
-                vector_property(properties, "Direction")?.unit()?,
-            )?,
+            direction: cadmpeg_ir::units::UnitVector3::normalized(vector_property(
+                properties,
+                "Direction",
+            )?)?,
             mode,
             height: cadmpeg_ir::scalar::NonNegativeLength::new(height)?,
             offset: Length::new(offset)?,
@@ -4554,7 +4569,7 @@ fn draft_definition(
             plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
             pull: match pull_direction {
                 Some(direction) => Some(cadmpeg_ir::features::DraftPull {
-                    direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+                    direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     plane: None,
                 }),
                 None => None,
@@ -5104,9 +5119,9 @@ fn sweep_definition(
                 }
             }
             4 => SweepOrientation::Binormal {
-                direction: cadmpeg_ir::units::UnitVector3::new(
-                    vector_property(properties, "Binormal")?.unit()?,
-                )?,
+                direction: cadmpeg_ir::units::UnitVector3::normalized(vector_property(
+                    properties, "Binormal",
+                )?)?,
             },
             _ => return None,
         }
@@ -5320,10 +5335,8 @@ fn hole_definition(
             }
         }))
     };
-    let direction = match axis_reference(properties, "Profile", objects, properties_by_owner) {
-        Some((_, direction)) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
-        None => None,
-    };
+    let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
+        .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
     Some(FeatureDefinition::Operation(FeatureOperation::Hole {
         profile: Some(profile.planar().cloned()?),
         profile_filter: Some(profile_filter),
@@ -5396,7 +5409,10 @@ fn helical_sweep_definition(
     let (axis_origin, axis_direction) = vector_property(properties, "Base")
         .zip(vector_property(properties, "Axis"))
         .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
-        .or_else(|| axis_reference(properties, "ReferenceAxis", objects, properties_by_owner))?;
+        .or_else(|| {
+            axis_reference(properties, "ReferenceAxis", objects, properties_by_owner)
+                .map(|(origin, direction)| (origin, Vector3::from(direction)))
+        })?;
     let profile = profile_ref(owner, properties, sketches);
     if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
@@ -5771,7 +5787,7 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             {
                 PatternKind::new(PatternTransform::Mirror {
                     plane_origin: cadmpeg_ir::features::FinitePoint3::new(plane_origin)?,
-                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(plane_normal)?,
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
                 })
                 .ok()?
             } else {
@@ -5854,10 +5870,9 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         let (axis_origin, mut axis_dir) =
             axis_reference(properties, "Axis", objects, properties_by_owner)?;
         if bool_selector(properties, "Reversed", false)? {
-            axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
+            axis_dir = axis_dir.reversed();
         }
         let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-        let axis_dir = cadmpeg_ir::units::UnitVector3::new(axis_dir)?;
         let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
             PatternKind::new(PatternTransform::Circular {
@@ -5900,13 +5915,9 @@ fn linear_pattern_axis(
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
             .map(|(_, direction)| direction);
     if bool_selector(properties, &name("Reversed"), false)? {
-        direction =
-            direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
+        direction = direction.map(cadmpeg_ir::units::UnitVector3::reversed);
     }
-    let direction = match direction {
-        Some(direction) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
-        None => None,
-    };
+    let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
     let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
     if let Some(spacing) = uniform_step(&offsets) {
         Some(
@@ -6010,9 +6021,12 @@ fn axis_reference(
     name: &str,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(Point3, cadmpeg_ir::units::UnitVector3)> {
     if let Some(direction) = vector_property(properties, name) {
-        return Some((Point3::new(0.0, 0.0, 0.0), direction.unit()?));
+        return Some((
+            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::units::UnitVector3::normalized(direction)?,
+        ));
     }
     let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object()?;
@@ -6036,7 +6050,10 @@ fn axis_reference(
         },
         _ => return None,
     };
-    Some((origin, direction.unit()?))
+    Some((
+        origin,
+        cadmpeg_ir::units::UnitVector3::normalized(direction)?,
+    ))
 }
 
 fn plane_reference(
@@ -6044,7 +6061,7 @@ fn plane_reference(
     name: &str,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(Point3, cadmpeg_ir::units::UnitVector3)> {
     let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object()?;
     let object = objects.iter().find(|object| object.id == target)?;
@@ -6066,7 +6083,7 @@ fn plane_reference(
         },
         _ => return None,
     };
-    Some((origin, normal.unit()?))
+    Some((origin, cadmpeg_ir::units::UnitVector3::normalized(normal)?))
 }
 
 fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str> {
