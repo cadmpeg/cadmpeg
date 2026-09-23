@@ -153,9 +153,9 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
         assert!(value.try_scale_lengths(scale).is_err());
         assert_eq!(value, old);
     }
-    value.reverse_parameterization();
+    value.try_reverse_parameterization().unwrap();
     assert_eq!(*value.angle_range(), [-1.0, 0.0]);
-    value.reverse_parameterization();
+    value.try_reverse_parameterization().unwrap();
     assert_eq!(value, old);
     value.try_scale_lengths(2.0).unwrap();
     assert_eq!(*value.major(), Vector3::new(2.0, 0.0, 0.0));
@@ -163,6 +163,26 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
     let old = huge;
     assert!(huge.try_scale_lengths(1.0e200).is_err());
     assert_eq!(huge, old);
+}
+
+#[test]
+fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
+    let mut value = HelixCurveConstruction::try_new(
+        [0.0, std::f64::consts::TAU],
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        -1.0,
+        None,
+    )
+    .unwrap();
+    let original = value;
+    assert!(value.try_reverse_parameterization().is_err());
+    assert_eq!(value, original);
 }
 
 #[test]

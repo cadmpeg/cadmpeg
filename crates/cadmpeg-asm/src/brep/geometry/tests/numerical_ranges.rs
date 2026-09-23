@@ -1,8 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::super::{analytic_rolling_ball_surface, rational_four_arc_circle};
+use super::super::{
+    analytic_rolling_ball_surface, rational_four_arc_circle, reverse_procedural_curve_definition,
+};
 use cadmpeg_ir::geometry::analytic::{CylinderSurface, PlaneSurface};
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::NurbsCurve, HelixCurveConstruction, HelixFrame, ProceduralCurveDefinition,
+    SolvedSurfaceGeometry, SurfaceGeometry,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+#[test]
+fn cacheless_helix_reversal_refuses_an_unrepresentable_start_frame() {
+    let helix = HelixCurveConstruction::try_new(
+        [0.0, std::f64::consts::TAU],
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        -1.0,
+        None,
+    )
+    .unwrap();
+    let mut definition = ProceduralCurveDefinition::Helix(helix);
+    assert!(reverse_procedural_curve_definition(&mut definition).is_err());
+    assert_eq!(definition, ProceduralCurveDefinition::Helix(helix));
+}
 
 fn circle(radius: f64, z: f64, distortion: f64) -> NurbsCurve {
     let mut points = [

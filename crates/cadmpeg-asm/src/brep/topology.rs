@@ -442,13 +442,13 @@ pub(super) fn walk_reachable_topology(
                                                     &crec.tokens,
                                                     token_table,
                                                 ).and_then(|definition| definition.into_definition().ok())
+                                                .and_then(|mut definition| {
+                                                    if record_reversed(crec) {
+                                                        reverse_procedural_curve_definition(&mut definition).ok()?;
+                                                    }
+                                                    Some(definition)
+                                                })
                                             {
-                                                let mut definition = definition;
-                                                if record_reversed(crec) {
-                                                    reverse_procedural_curve_definition(
-                                                        &mut definition,
-                                                    );
-                                                }
                                                 curve_geo.insert(
                                                     cv,
                                                     CurveGeometry::Procedural {
@@ -730,11 +730,13 @@ fn keep_wire_edge(
                     token_table,
                 )
                 .and_then(|definition| definition.into_definition().ok())
+                .and_then(|mut definition| {
+                    if record_reversed(curve_record) {
+                        reverse_procedural_curve_definition(&mut definition).ok()?;
+                    }
+                    Some(definition)
+                })
             {
-                let mut definition = definition;
-                if record_reversed(curve_record) {
-                    reverse_procedural_curve_definition(&mut definition);
-                }
                 entry.insert(CurveGeometry::Procedural {
                     construction: brep_id!(
                         format,

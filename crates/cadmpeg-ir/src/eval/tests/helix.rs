@@ -121,6 +121,28 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
 }
 
 #[test]
+fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
+    let (ir, _) = helix_fixture();
+    let ProceduralCurveDefinition::Helix(mut helix) =
+        ir.model.procedural_curves[0].definition().clone()
+    else {
+        panic!("helix construction expected");
+    };
+    let original = ProceduralCurveDefinition::Helix(helix);
+    helix
+        .try_reverse_parameterization()
+        .expect("finite reversal");
+    let reversed = ProceduralCurveDefinition::Helix(helix);
+    for parameter in [0.25, 0.75, 1.7, 2.0] {
+        let before = super::super::helix_differential(&original, parameter).unwrap();
+        let after = super::super::helix_differential(&reversed, -parameter).unwrap();
+        assert_point_close(after.point, before.point);
+        assert_vector_close(after.tangent, before.tangent.scale(-1.0));
+        assert_vector_close(after.acceleration, before.acceleration);
+    }
+}
+
+#[test]
 fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let (ir, curve_id) = helix_fixture();
     let index = crate::index::ModelIndex::new(&ir);
