@@ -19,7 +19,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use crate::export::is_rigid_transform;
 use crate::export::write_step;
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -28,12 +27,13 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn rigid_transform_rejects_reflections() {
-    assert!(!is_rigid_transform(&[
+    assert!(!Transform::affine([
         [-1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
-        [0.0, 0.0, 0.0, 1.0],
-    ]));
+    ])
+    .unwrap()
+    .is_proper_rigid());
 }
 
 #[test]

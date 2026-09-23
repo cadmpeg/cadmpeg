@@ -42,6 +42,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
 };
@@ -473,7 +474,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         &surface,
         [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
         [0.0, 1.0],
-        1.0e-8,
+        NonNegativeReal::new(1.0e-8).expect("nonnegative tolerance"),
     )
     .is_none());
 
@@ -494,7 +495,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
             &surface,
             [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
             [0.0, 1.0],
-            EPS_BOUNDARY_FIT,
+            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         ),
         Some(PcurveGeometry::Line(_))
     ));
@@ -533,7 +534,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
             &surface,
             [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
             [0.0, 1.0],
-            EPS_BOUNDARY_FIT,
+            NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
         ), Some(PcurveGeometry::Line(line_pcurve))
                 if {
                     let origin = line_pcurve.origin();
@@ -1382,7 +1383,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
         [0.0, 1.0],
-        0.1,
+        NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
     ));
 
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second)) =
@@ -1405,7 +1406,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
         [0.0, 1.0],
-        0.1,
+        NonNegativeReal::new(0.1).expect("nonnegative tolerance"),
     ));
 }
 

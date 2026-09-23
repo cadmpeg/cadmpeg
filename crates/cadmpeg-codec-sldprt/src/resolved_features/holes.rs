@@ -102,7 +102,7 @@ pub(crate) fn project_helix_axes(
             continue;
         };
         let Some((axis_origin, mut axis_direction, radius, fitted_rise)) =
-            fit_helix_polyline(points, revolutions.get(), *clockwise)
+            fit_helix_polyline(points, *revolutions, *clockwise)
         else {
             continue;
         };

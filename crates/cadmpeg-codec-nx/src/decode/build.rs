@@ -397,7 +397,7 @@ pub(super) fn try_decode_geometry(
             graph,
             &view.offset_surfaces,
             &surfaces_by_xmt,
-            ir.tolerances.linear.get(),
+            ir.tolerances.linear,
             &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {

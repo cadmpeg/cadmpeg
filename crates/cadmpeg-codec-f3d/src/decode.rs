@@ -381,24 +381,15 @@ fn base_feature_body_selection_is_resolved(
         )
 }
 
-fn datum_plane_frame_is_resolved(
-    origin: &cadmpeg_ir::math::Point3,
-    normal: &cadmpeg_ir::math::Vector3,
-    u_axis: &cadmpeg_ir::math::Vector3,
-) -> bool {
+fn datum_plane_frame_is_resolved(frame: cadmpeg_ir::features::FeatureDatumPlaneFrame) -> bool {
     const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
 
-    let (Some(normal), Some(u_axis)) = (normal.unit(), u_axis.unit()) else {
+    let (Some(normal), Some(u_axis)) = (frame.normal().unit(), frame.u_axis().unit()) else {
         return false;
     };
-    origin.is_finite()
-        && normal.is_finite()
+    normal.is_finite()
         && u_axis.is_finite()
         && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
-}
-
-fn positive_finite(value: f64) -> bool {
-    value.is_finite() && value > 0.0
 }
 
 fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool {
@@ -524,14 +515,14 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         }) => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
         FeatureDefinition::Operation(FeatureOperation::Unresolved { .. }) => true,
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
-            !datum_plane_frame_is_resolved(&frame.origin(), &frame.normal(), &frame.u_axis())
+            !datum_plane_frame_is_resolved(*frame)
         }
         FeatureDefinition::Operation(FeatureOperation::DatumAxis { direction, .. }) => {
             direction.unit().is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points }) => {
-            !datum_plane_frame_is_resolved(&frame.origin(), &frame.normal(), &frame.u_axis())
+            !datum_plane_frame_is_resolved(*frame)
                 || !points.iter().all(|point| {
                     matches!(
                         point,
@@ -763,7 +754,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 ) && bodies.as_ref().is_some_and(body_selection_is_resolved);
             !bodies_are_resolved
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
-                || !thickness.is_some_and(|thickness| positive_finite(thickness.get()))
+                || thickness.is_none()
                 || outward.is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
@@ -772,7 +763,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             side,
         }) => {
             !face_selection_is_resolved(faces)
-                || !thickness.is_some_and(|thickness| positive_finite(thickness.get()))
+                || thickness.is_none()
                 || side.is_none()
         }
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
@@ -784,7 +775,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !face_selection_is_resolved(faces)
                 || merge_entities.is_none()
                 || create_solid.is_none()
-                || !gap_tolerance.is_some_and(|tolerance| positive_finite(tolerance.get()))
+                || !gap_tolerance.is_some_and(|tolerance| tolerance.get() > 0.0)
         }
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions,

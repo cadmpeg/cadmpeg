@@ -3534,28 +3534,26 @@ fn construction_curve_parameter(
 // The native and carrier parameter intervals are independent serialized semantics;
 // the revision reversal affects the derivative mapping, and the optional budget
 // must remain explicit across recursive evaluation.
-#[allow(clippy::too_many_arguments)]
 fn model_native_extrusion_partials(
     index: &crate::index::ModelIndex<'_>,
-    directrix: &crate::ids::CurveId,
-    direction: Vector3,
-    parameter_interval: Option<[f64; 2]>,
+    construction: &crate::geometry::surface_payloads::ExtrusionSurfaceConstruction,
     carrier_interval: Option<[f64; 2]>,
-    directrix_reversed: bool,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
-    if !v.is_finite() || !direction.is_finite() {
+    if !v.is_finite() {
         return None;
     }
+    let directrix = construction.directrix();
+    let direction = *construction.direction();
     let (parameter, derivative) = construction_curve_parameter(
         index,
         directrix,
         u,
-        parameter_interval,
+        construction.parameter_interval(),
         carrier_interval,
-        directrix_reversed,
+        extrusion_directrix_reversed(construction.revision_form()),
     )?;
     let differential = budget.map_or_else(
         || model_curve_differential_by_id(index, directrix, parameter),
@@ -3596,34 +3594,27 @@ fn extrusion_directrix_reversed(
         .unwrap_or(false)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn model_native_revolution_partials(
     index: &crate::index::ModelIndex<'_>,
-    directrix: &crate::ids::CurveId,
-    axis_origin: Point3,
-    axis_direction: Vector3,
-    angular_interval: [f64; 2],
-    angular_parameter_interval: Option<[f64; 2]>,
-    parameter_interval: Option<[f64; 2]>,
+    construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
     carrier_interval: Option<[f64; 2]>,
-    transposed: bool,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
-    if !angular_interval.iter().all(|value| value.is_finite()) {
-        return None;
-    }
+    let directrix = construction.directrix();
+    let angular_interval = *construction.angular_interval();
+    let transposed = *construction.transposed();
     let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
     let (directrix_parameter, derivative) = construction_curve_parameter(
         index,
         directrix,
         directrix_parameter,
-        parameter_interval,
+        construction.parameter_interval(),
         carrier_interval,
         false,
     )?;
-    let (angle, angular_derivative) = angular_parameter_interval.map_or_else(
+    let (angle, angular_derivative) = construction.angular_parameter_interval().map_or_else(
         || Some((angular_parameter, 1.0)),
         |parameter_interval| {
             let parameter_span = parameter_interval[1] - parameter_interval[0];
@@ -3645,8 +3636,8 @@ fn model_native_revolution_partials(
     let partials = model_axis_revolution_partials(
         index,
         directrix,
-        axis_origin,
-        axis_direction,
+        *construction.axis_origin(),
+        *construction.axis_direction(),
         angle,
         directrix_parameter,
         budget,
@@ -3790,12 +3781,13 @@ pub fn model_curve_parameter_near_point_in_index(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
-    model_curve_parameter_near_point_in_index_with_tolerance(
+    model_curve_parameter_near_point_with_tolerance(
         index,
         curve_id,
         point,
         seed,
         index.ir().tolerances.linear.get(),
+        0,
     )
 }
 
@@ -3817,6 +3809,10 @@ pub fn model_curve_parameter_near_point_in_index_with_tolerance(
     model_curve_parameter_near_point_with_tolerance(index, curve_id, point, seed, tolerance, 0)
 }
 
+/// Invert a model curve with a finite nonnegative tolerance. The callers pass
+/// the document linear tolerance, the tolerance admitted by
+/// [`model_curve_parameter_near_point_in_index_with_tolerance`], or an outer
+/// level's tolerance multiplied by a finite nonnegative replica scale.
 fn model_curve_parameter_near_point_with_tolerance(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
@@ -4952,17 +4948,10 @@ pub fn model_surface_point(
     let index = crate::index::ModelIndex::new(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            let directrix = definition_payload.directrix();
-            let direction = definition_payload.direction();
-            let parameter_interval = definition_payload.parameter_interval();
-            let revision_form = definition_payload.revision_form();
             model_native_extrusion_partials(
                 &index,
-                directrix,
-                *direction,
-                parameter_interval,
+                definition_payload,
                 carrier_interval,
-                extrusion_directrix_reversed(revision_form),
                 u,
                 v,
                 None,
@@ -4974,23 +4963,10 @@ pub fn model_surface_point(
                 .map(|point| offset(point, &[(v, *definition_payload.direction())]))
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            let directrix = definition_payload.directrix();
-            let axis_origin = definition_payload.axis_origin();
-            let axis_direction = definition_payload.axis_direction();
-            let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.parameter_interval();
-            let transposed = definition_payload.transposed();
             model_native_revolution_partials(
                 &index,
-                directrix,
-                *axis_origin,
-                *axis_direction,
-                *angular_interval,
-                angular_parameter_interval,
-                parameter_interval,
+                definition_payload,
                 carrier_interval,
-                *transposed,
                 u,
                 v,
                 None,
@@ -5011,15 +4987,10 @@ pub fn model_surface_point(
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
             model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
         }
-        ProceduralSurfaceDefinition::Sum(definition_payload) => model_sum_surface_partials(
-            &index,
-            definition_payload.first(),
-            definition_payload.second(),
-            *definition_payload.basepoint(),
-            u,
-            v,
-        )
-        .map(|partials| partials.point),
+        ProceduralSurfaceDefinition::Sum(definition_payload) => {
+            model_sum_surface_partials(&index, definition_payload, u, v)
+                .map(|partials| partials.point)
+        }
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
             if let Some(construction) = definition_payload.native() {
                 let profile = definition_payload.profile();
@@ -6402,17 +6373,13 @@ fn model_ruled_surface_partials(
 
 fn model_sum_surface_partials(
     index: &crate::index::ModelIndex<'_>,
-    first: &crate::ids::CurveId,
-    second: &crate::ids::CurveId,
-    basepoint: Vector3,
+    construction: &crate::geometry::surface_payloads::SumSurfaceConstruction,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
-    if !basepoint.is_finite() {
-        return None;
-    }
-    let first = model_curve_differential_by_id(index, first, u)?;
-    let second = model_curve_differential_by_id(index, second, v)?;
+    let basepoint = *construction.basepoint();
+    let first = model_curve_differential_by_id(index, construction.first(), u)?;
+    let second = model_curve_differential_by_id(index, construction.second(), v)?;
     let point = Point3::new(
         first.point.x + second.point.x - basepoint.x,
         first.point.y + second.point.y - basepoint.y,
@@ -6662,17 +6629,10 @@ fn model_surface_point_by_id_inner(
                 })
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                let directrix = definition_payload.directrix();
-                let direction = definition_payload.direction();
-                let parameter_interval = definition_payload.parameter_interval();
-                let revision_form = definition_payload.revision_form();
                 model_native_extrusion_partials(
                     index,
-                    directrix,
-                    *direction,
-                    parameter_interval,
+                    definition_payload,
                     carrier_interval,
-                    extrusion_directrix_reversed(revision_form),
                     u,
                     v,
                     budget,
@@ -6695,23 +6655,10 @@ fn model_surface_point_by_id_inner(
                     })
             }
             Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-                let directrix = definition_payload.directrix();
-                let axis_origin = definition_payload.axis_origin();
-                let axis_direction = definition_payload.axis_direction();
-                let angular_interval = definition_payload.angular_interval();
-                let angular_parameter_interval = definition_payload.angular_parameter_interval();
-                let parameter_interval = definition_payload.parameter_interval();
-                let transposed = definition_payload.transposed();
                 model_native_revolution_partials(
                     index,
-                    directrix,
-                    *axis_origin,
-                    *axis_direction,
-                    *angular_interval,
-                    angular_parameter_interval,
-                    parameter_interval,
+                    definition_payload,
                     carrier_interval,
-                    *transposed,
                     u,
                     v,
                     budget,
@@ -6730,17 +6677,11 @@ fn model_surface_point_by_id_inner(
                 })
             }
             Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
-                model_sum_surface_partials(
-                    index,
-                    definition_payload.first(),
-                    definition_payload.second(),
-                    *definition_payload.basepoint(),
-                    u,
-                    v,
-                )
-                .map(|partials| SurfaceEvaluation {
-                    point: partials.point,
-                    oriented_normal: None,
+                model_sum_surface_partials(index, definition_payload, u, v).map(|partials| {
+                    SurfaceEvaluation {
+                        point: partials.point,
+                        oriented_normal: None,
+                    }
                 })
             }
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
@@ -7191,29 +7132,20 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
-        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-            let directrix = definition_payload.directrix();
-            let direction = definition_payload.direction();
-            let parameter_interval = definition_payload.parameter_interval();
-            let revision_form = definition_payload.revision_form();
-            Some(SurfaceMapping {
-                base: model_native_extrusion_partials(
-                    index,
-                    directrix,
-                    *direction,
-                    parameter_interval,
-                    carrier_interval,
-                    extrusion_directrix_reversed(revision_form),
-                    u,
-                    v,
-                    budget,
-                )?,
-                offset_distance: 0.0,
-                u_scale: 1.0,
-                v_scale: 1.0,
-                orientation: 1.0,
-            })
-        }
+        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => Some(SurfaceMapping {
+            base: model_native_extrusion_partials(
+                index,
+                definition_payload,
+                carrier_interval,
+                u,
+                v,
+                budget,
+            )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
         Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
             let directrix = definition_payload.directrix();
             let direction = definition_payload.direction();
@@ -7237,35 +7169,20 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
-        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
-            let directrix = definition_payload.directrix();
-            let axis_origin = definition_payload.axis_origin();
-            let axis_direction = definition_payload.axis_direction();
-            let angular_interval = definition_payload.angular_interval();
-            let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.parameter_interval();
-            let transposed = definition_payload.transposed();
-            Some(SurfaceMapping {
-                base: model_native_revolution_partials(
-                    index,
-                    directrix,
-                    *axis_origin,
-                    *axis_direction,
-                    *angular_interval,
-                    angular_parameter_interval,
-                    parameter_interval,
-                    carrier_interval,
-                    *transposed,
-                    u,
-                    v,
-                    budget,
-                )?,
-                offset_distance: 0.0,
-                u_scale: 1.0,
-                v_scale: 1.0,
-                orientation: 1.0,
-            })
-        }
+        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => Some(SurfaceMapping {
+            base: model_native_revolution_partials(
+                index,
+                definition_payload,
+                carrier_interval,
+                u,
+                v,
+                budget,
+            )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
         Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => Some(SurfaceMapping {
             base: model_ruled_surface_partials(index, first, second, u, v)?,
             offset_distance: 0.0,
@@ -7274,14 +7191,7 @@ fn model_surface_mapping(
             orientation: 1.0,
         }),
         Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => Some(SurfaceMapping {
-            base: model_sum_surface_partials(
-                index,
-                definition_payload.first(),
-                definition_payload.second(),
-                *definition_payload.basepoint(),
-                u,
-                v,
-            )?,
+            base: model_sum_surface_partials(index, definition_payload, u, v)?,
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,

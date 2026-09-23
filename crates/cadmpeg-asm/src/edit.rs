@@ -17,8 +17,7 @@ use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{self, Record};
 use cadmpeg_ir::geometry::{
-    CompoundComponent, IntcurveSupportContext, ProjectionTail, SilhouetteKind, SpringLayout,
-    SurfaceCurveFamily,
+    CompoundComponent, IntcurveSupportContext, ProjectionTail, SpringLayout, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::CurveId;
 
@@ -736,13 +735,7 @@ impl AsmEditSet {
                 patch_surface_curve_definition(bytes, self.ref_width, record, family)
             }
             ProceduralCurveDefinition::Silhouette(definition_payload) => {
-                patch_silhouette_definition(
-                    bytes,
-                    self.ref_width,
-                    record,
-                    definition_payload.silhouette(),
-                    *definition_payload.light_direction(),
-                )
+                patch_silhouette_definition(bytes, self.ref_width, record, definition_payload)
             }
             ProceduralCurveDefinition::Exact { .. } => Err(CodecError::NotImplemented(
                 "ASM procedural-curve definition is not writable".into(),
@@ -1532,14 +1525,10 @@ fn patch_silhouette_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    silhouette: &SilhouetteKind,
-    light_direction: Vector3,
+    construction: &cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction,
 ) -> Result<(), CodecError> {
-    if !light_direction.is_finite() {
-        return Err(CodecError::Malformed(
-            "silhouette light direction must be finite".into(),
-        ));
-    }
+    let silhouette = construction.silhouette();
+    let light_direction = *construction.light_direction();
     let draft_factor = match silhouette {
         cadmpeg_ir::geometry::SilhouetteKind::Standard {}
         | cadmpeg_ir::geometry::SilhouetteKind::Parametric {} => None,

@@ -1396,7 +1396,7 @@ fn bounded_nurbs_for_id(
             let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
+            let radius = circle_curve.radius();
             let Some(mut nurbs) =
                 circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
             else {
@@ -1420,8 +1420,8 @@ fn bounded_nurbs_for_id(
             let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let Some(mut nurbs) = elliptical_arc_nurbs(
                 center,
                 *axis,
@@ -1451,7 +1451,7 @@ fn bounded_nurbs_for_id(
             let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance().get();
+            let focal_distance = parabola_curve.focal_distance();
             let Some(mut nurbs) =
                 parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval)?
             else {

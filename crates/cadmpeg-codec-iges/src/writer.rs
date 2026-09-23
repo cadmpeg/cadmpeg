@@ -294,7 +294,6 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            ensure_finite_point(point.position(), point.id.as_str())?;
             entities.push(point_entity(point.position()));
         }
         entities
@@ -1790,7 +1789,6 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         {
             continue;
         }
-        ensure_finite_point(point.position(), point.id.as_str())?;
         entities.push(point_entity(point.position()));
     }
     Ok(entities)
@@ -2233,7 +2231,6 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         {
             continue;
         }
-        ensure_finite_point(point.position(), point.id.as_str())?;
         entities.push(point_entity(point.position()));
     }
     Ok(entities)
@@ -3173,7 +3170,7 @@ fn oriented_curve_entity(
             let center = circle_curve.center().get();
             let axis = circle_curve.axis();
             let ref_direction = circle_curve.ref_direction();
-            let radius = circle_curve.radius().get();
+            let radius = circle_curve.radius();
             let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
                 center,
                 *axis,
@@ -3202,8 +3199,8 @@ fn oriented_curve_entity(
             let center = ellipse_curve.center().get();
             let axis = ellipse_curve.axis();
             let major_direction = ellipse_curve.major_direction();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
+            let major_radius = ellipse_curve.major_radius();
+            let minor_radius = ellipse_curve.minor_radius();
             let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
                 center,
                 *axis,
@@ -3233,7 +3230,7 @@ fn oriented_curve_entity(
             let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.axis();
             let major_direction = parabola_curve.major_direction();
-            let focal_distance = parabola_curve.focal_distance().get();
+            let focal_distance = parabola_curve.focal_distance();
             let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
                 vertex,
                 *axis,
@@ -4618,7 +4615,6 @@ fn extrusion_surface_entities(
     let inferred_target = start.translated(*direction, 1.0);
     ensure_finite_point(inferred_target, "Type 122 inferred terminate point")?;
     let target = native_position.as_ref().copied().unwrap_or(inferred_target);
-    ensure_finite_point(target, "Type 122 terminate point")?;
     if !same_point(target, inferred_target) {
         return Err(CodecError::Malformed(
             "IGES Type 122 native terminate point disagrees with its sweep direction".into(),
@@ -5588,8 +5584,6 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
     }
     let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
     let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
-    ensure_finite_point(start, &format!("edge {} start", edge.id))?;
-    ensure_finite_point(end, &format!("edge {} end", edge.id))?;
     if matches!(
         geometry,
         CurveGeometry::Solved(

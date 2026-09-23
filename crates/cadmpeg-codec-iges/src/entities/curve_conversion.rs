@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 const EPS_CURVE_CONVERSION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
@@ -32,7 +33,7 @@ pub(crate) fn circular_arc_nurbs(
     center: Point3,
     axis: Vector3,
     reference: Vector3,
-    radius: f64,
+    radius: PositiveLength,
     interval: [f64; 2],
 ) -> Result<Option<NurbsCurve>, NurbsError> {
     elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
@@ -42,21 +43,16 @@ pub(crate) fn elliptical_arc_nurbs(
     center: Point3,
     axis: Vector3,
     major_direction: Vector3,
-    major_radius: f64,
-    minor_radius: f64,
+    major_radius: PositiveLength,
+    minor_radius: PositiveLength,
     interval: [f64; 2],
 ) -> Result<Option<NurbsCurve>, NurbsError> {
     let delta = interval[1] - interval[0];
-    if !delta.is_finite()
-        || delta <= 0.0
-        || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE
-        || !major_radius.is_finite()
-        || !minor_radius.is_finite()
-        || major_radius <= 0.0
-        || minor_radius <= 0.0
-    {
+    if !delta.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE {
         return Ok(None);
     }
+    let major_radius = major_radius.get();
+    let minor_radius = minor_radius.get();
     let delta = delta.min(std::f64::consts::TAU);
     let transverse = axis.cross(major_direction);
     let spans = quarter_turn_spans(delta);
@@ -120,14 +116,15 @@ pub(crate) fn parabolic_arc_nurbs(
     vertex: Point3,
     axis: Vector3,
     major_direction: Vector3,
-    focal_distance: f64,
+    focal_distance: PositiveLength,
     interval: [f64; 2],
 ) -> Result<Option<NurbsCurve>, NurbsError> {
     let [start, end] = interval;
     let delta = end - start;
-    if !delta.is_finite() || delta <= 0.0 || !focal_distance.is_finite() || focal_distance <= 0.0 {
+    if !delta.is_finite() || delta <= 0.0 {
         return Ok(None);
     }
+    let focal_distance = focal_distance.get();
     let transverse = axis.cross(major_direction);
     let product = |a, b| cadmpeg_ir::math::product_quotient([focal_distance, a, b], [1.0]);
     let (

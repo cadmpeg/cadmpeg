@@ -21,12 +21,14 @@ mod targets;
 
 #[test]
 fn frame_admission_refuses_nonfinite_axes() {
+    use cadmpeg_ir::units::OrthonormalFrame3;
     let valid = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     let x = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
     let nan = cadmpeg_ir::math::Vector3::new(f64::NAN, 0.0, 1.0);
-    assert!(super::check_frame("test", valid, x, "circle").is_ok());
-    assert!(super::check_frame("test", nan, x, "circle").is_err());
-    assert!(super::check_frame("test", valid, nan, "circle").is_err());
+    let frame = OrthonormalFrame3::new(valid, x).expect("orthonormal frame");
+    assert!(super::check_frame("test", frame, "circle").is_ok());
+    assert!(OrthonormalFrame3::new(nan, x).is_none());
+    assert!(OrthonormalFrame3::new(valid, nan).is_none());
 }
 
 #[test]

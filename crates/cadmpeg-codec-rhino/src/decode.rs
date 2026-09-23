@@ -5472,12 +5472,14 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let source_origin = plane_surface.origin().get();
-            let normal = *plane_surface.normal();
             let u_axis = *plane_surface.u_axis();
             let origin = placed_finite_point(transform, plane_surface.origin())?;
-            let normal = transform.apply_normal(normal).ok_or_else(|| {
-                "instance plane normal transform could not produce a finite unit normal".to_string()
-            })?;
+            let normal = transform
+                .apply_unit_normal(plane_surface.frame().unit_axis())
+                .ok_or_else(|| {
+                    "instance plane normal transform could not produce a finite unit normal"
+                        .to_string()
+                })?;
             let endpoint = placed_point(
                 transform,
                 Point3::new(

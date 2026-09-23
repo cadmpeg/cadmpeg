@@ -1624,7 +1624,7 @@ impl<'a> Builder<'a> {
         let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows())) else {
             return item;
         };
-        if !is_rigid_transform(&transform.rows()) {
+        if !transform.is_proper_rigid() {
             self.loss(
                 StepLossCode::BodyNonRigidTransform,
                 format!("body '{body_id}' carries a non-rigid transform"),
@@ -3347,7 +3347,7 @@ impl<'a> Builder<'a> {
             let (Some(text), Some(placement)) = (text.as_deref(), placement.as_ref()) else {
                 continue;
             };
-            if !annotation.targets.is_empty() || !is_rigid_transform(&placement.rows()) {
+            if !annotation.targets.is_empty() || !placement.is_proper_rigid() {
                 continue;
             }
             let rows = placement.rows();
@@ -4611,10 +4611,4 @@ fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
         }
     }
     true
-}
-
-pub(crate) fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
-    rows[3] == [0.0, 0.0, 0.0, 1.0]
-        && cadmpeg_ir::transform::Transform::affine([rows[0], rows[1], rows[2]])
-            .is_some_and(|transform| transform.is_proper_rigid())
 }

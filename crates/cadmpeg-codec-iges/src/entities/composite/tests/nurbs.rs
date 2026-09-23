@@ -14,6 +14,7 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::ids::VertexId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::topology::Vertex;
@@ -45,7 +46,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         center,
         Vector3::new(1.0, 0.0, -0.0),
         Vector3::new(0.0, 0.999_999_999_999_995_7, 9.334_897_886_982_299e-8),
-        10.185_400_000_000_001,
+        PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_560_240_814_3],
     )
     .expect("carrier lanes pair")
@@ -54,7 +55,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         center,
         Vector3::new(1.0, 0.0, 0.0),
         Vector3::new(0.0, -1.0, 0.0),
-        10.185_400_000_000_001,
+        PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_746_938_772],
     )
     .expect("carrier lanes pair")

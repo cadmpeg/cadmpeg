@@ -2,7 +2,7 @@
 //! Feature-completeness predicates for NX decode.
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
     features::{
         BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
@@ -147,13 +147,11 @@ pub(crate) fn active_configuration_state_is_incomplete(
 }
 
 pub(super) fn datum_coordinate_system_is_incomplete(
-    origin: Point3,
     x_axis: Vector3,
     y_axis: Vector3,
     z_axis: Vector3,
 ) -> bool {
-    if !origin.is_finite()
-        || !unit_feature_direction(x_axis)
+    if !unit_feature_direction(x_axis)
         || !unit_feature_direction(y_axis)
         || !unit_feature_direction(z_axis)
         || !directions_are_perpendicular(x_axis, y_axis)

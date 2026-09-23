@@ -779,10 +779,11 @@ fn scalar_values_agree(first: f64, second: f64) -> bool {
     (first - second).abs() <= EPS_GEOMETRY_AGREE * scale
 }
 
-fn points_are_geometrically_coincident(first: Point3, second: Point3) -> bool {
-    if !first.is_finite() || !second.is_finite() {
-        return false;
-    }
+fn points_are_geometrically_coincident(
+    first: cadmpeg_ir::features::FinitePoint3,
+    second: cadmpeg_ir::features::FinitePoint3,
+) -> bool {
+    let (first, second) = (first.get(), second.get());
     let scale = [first.x, first.y, first.z, second.x, second.y, second.z]
         .into_iter()
         .map(f64::abs)
@@ -797,7 +798,7 @@ fn vectors_are_parallel(first: Vector3, second: Vector3) -> bool {
 
 #[derive(Clone, Copy)]
 struct NativeCircleLoop {
-    center: Point3,
+    center: cadmpeg_ir::features::FinitePoint3,
     axis: Vector3,
     radius: f64,
 }
@@ -829,10 +830,10 @@ fn native_circle_loop_geometry(
     else {
         return None;
     };
-    let first_center = circle_curve.center().get();
+    let first_center = circle_curve.center();
     let first_axis = circle_curve.axis();
     let first_radius = circle_curve.radius().get();
-    let second_center = circle_curve_2.center().get();
+    let second_center = circle_curve_2.center();
     let second_axis = circle_curve_2.axis();
     let second_radius = circle_curve_2.radius().get();
     if !scalar_values_agree(first_radius, second_radius)
@@ -872,14 +873,15 @@ fn ordered_two_edge_circle_loops<'a>(
     }
     let reference = circle_loops[0];
     if circle_loops.iter().any(|circle| {
+        let center = circle.center.get();
         let center_scale = reference
             .radius
             .max(circle.radius)
             .max(1.0)
-            .max(circle.center.x.abs())
-            .max(circle.center.y.abs())
-            .max(circle.center.z.abs());
-        let distance_from_surface = circle.center.vector_from(origin).dot(*normal).abs();
+            .max(center.x.abs())
+            .max(center.y.abs())
+            .max(center.z.abs());
+        let distance_from_surface = center.vector_from(origin).dot(*normal).abs();
         !points_are_geometrically_coincident(circle.center, reference.center)
             || !vectors_are_parallel(circle.axis, reference.axis)
             || !vectors_are_parallel(circle.axis, *normal)
@@ -887,7 +889,7 @@ fn ordered_two_edge_circle_loops<'a>(
     }) {
         return None;
     }
-    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center)?;
+    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center.get())?;
     for (circle, polygon) in circle_loops.iter().zip(polygons) {
         let [first, second] = polygon.as_slice() else {
             return None;

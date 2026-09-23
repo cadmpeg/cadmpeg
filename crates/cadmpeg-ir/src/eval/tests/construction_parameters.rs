@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
+use crate::geometry::surface_payloads::ExtrusionSurfaceConstruction;
+use crate::geometry::{
+    nurbs::NurbsCurve, CacheContract, Curve, CurveGeometry, SolvedCurveGeometry,
+};
 use crate::ids::CurveId;
 use crate::math::{Point3, Vector3};
 use crate::CadIr;
@@ -56,13 +59,19 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
     let (ir, id) = line_in_nurbs_carrier();
     let index = crate::index::ModelIndex::new(&ir);
     let direction = Vector3::new(0.0, 0.0, 1.0);
+    let extrusion = |direction| {
+        ExtrusionSurfaceConstruction::try_new(
+            id.clone(),
+            Some([0.0, 1e200]),
+            direction,
+            None,
+            CacheContract::from_form(None),
+        )
+    };
     let partials = super::super::model_native_extrusion_partials(
         &index,
-        &id,
-        direction,
-        Some([0.0, 1e200]),
+        &extrusion(direction).unwrap(),
         Some([0.0, 1.0]),
-        false,
         0.5,
         0.0,
         None,
@@ -72,16 +81,5 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
     assert!((partials.du.x - 1.0).abs() <= 8.0 * f64::EPSILON);
     assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(partials.dv, direction);
-    assert!(super::super::model_native_extrusion_partials(
-        &index,
-        &id,
-        Vector3::new(f64::NAN, 0.0, 1.0),
-        None,
-        None,
-        false,
-        0.5,
-        0.0,
-        None,
-    )
-    .is_none());
+    assert!(extrusion(Vector3::new(f64::NAN, 0.0, 1.0)).is_err());
 }
