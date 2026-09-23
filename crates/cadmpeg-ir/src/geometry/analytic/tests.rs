@@ -466,3 +466,35 @@ fn curve_admission_names_the_refused_component() {
         "DegenerateCurve.point must be finite"
     );
 }
+
+#[test]
+fn an_admitted_sphere_radius_builds_the_sphere_that_the_raw_radius_admits() {
+    use crate::scalar::NonZeroLength;
+
+    let finite = Point3::new(1.0, -2.0, 3.0);
+    let nonfinite = Point3::new(f64::NAN, 0.0, 0.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    for value in [-4.0, 2.5] {
+        let radius = NonZeroLength::new(value).expect("a finite nonzero radius");
+        let admitted = SphereSurface::try_with_radius(finite, axis, reference, radius)
+            .expect("finite center and orthonormal frame");
+        assert_eq!(
+            admitted,
+            SphereSurface::try_new(finite, axis, reference, value).expect("the raw radius")
+        );
+        assert_eq!(admitted.radius(), radius);
+        assert_eq!(
+            SphereSurface::try_with_radius(nonfinite, axis, reference, radius).unwrap_err(),
+            SphereSurface::try_new(nonfinite, axis, reference, value).unwrap_err()
+        );
+        assert_eq!(
+            SphereSurface::try_with_radius(nonfinite, axis, axis, radius).unwrap_err(),
+            "SphereSurface.axis/ref_direction must form an orthonormal frame"
+        );
+        assert_eq!(
+            SphereSurface::try_with_radius(nonfinite, axis, reference, radius).unwrap_err(),
+            "SphereSurface.center must be finite"
+        );
+    }
+}

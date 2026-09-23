@@ -355,7 +355,7 @@ pub(super) fn project(
                 let Some(radius) = record
                     .number(2)
                     .map(|radius| radius * factor)
-                    .and_then(cadmpeg_ir::scalar::PositiveReal::new)
+                    .and_then(cadmpeg_ir::scalar::PositiveLength::new)
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -401,11 +401,11 @@ pub(super) fn project(
                     continue;
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                    cadmpeg_ir::geometry::analytic::SphereSurface::try_with_radius(
                         location,
                         axis,
                         ref_direction,
-                        radius.get(),
+                        cadmpeg_ir::scalar::NonZeroLength::from(radius),
                     ),
                     entry,
                     &mut losses,

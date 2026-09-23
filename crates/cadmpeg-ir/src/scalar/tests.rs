@@ -260,3 +260,18 @@ fn finite_scalar_magnitudes_stay_admitted() {
         assert_eq!(FiniteReal::new(real.get()), Some(real));
     }
 }
+
+#[test]
+fn an_assigned_real_keeps_its_bits_in_the_length_and_angle_families() {
+    use crate::scalar::{Angle, FiniteReal, Length};
+
+    for value in [-0.0, 0.0, -2.5, 3.0, f64::MIN, f64::MAX, -f64::from_bits(1)] {
+        let real = FiniteReal::new(value).expect("a finite real");
+        let length = Length::from_assigned_real(real);
+        let angle = Angle::from_assigned_real(real);
+        assert_eq!(length.get().to_bits(), value.to_bits());
+        assert_eq!(angle.get().to_bits(), value.to_bits());
+        assert_eq!(Length::new(value), Some(length));
+        assert_eq!(Angle::new(value), Some(angle));
+    }
+}
