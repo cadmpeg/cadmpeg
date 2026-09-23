@@ -33,11 +33,23 @@ use crate::test_support::test_owned::{
 use crate::IgesCodec;
 
 use super::{
-    bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close_with_tolerance,
+    bounded_nurbs_for_curve, bounded_nurbs_for_curve_with_tolerance, close, close_with_tolerance,
     composite_child_type_allowed, composite_line_font_valid, composite_logical_connector_use_valid,
     composite_minimum_child_count, composite_use_flag_valid, concatenate_nurbs,
     elevate_nurbs_to_degree, reverse_nurbs, trim_nurbs_to_interval, CompositeIndex,
 };
+
+#[test]
+fn nonfinite_points_do_not_coincide_under_default_composite_tolerance() {
+    assert!(!close(
+        Point3::new(f64::INFINITY, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0)
+    ));
+    assert!(!close(
+        Point3::new(f64::NAN, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0)
+    ));
+}
 use crate::global::GlobalTable;
 use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveTransition};
 

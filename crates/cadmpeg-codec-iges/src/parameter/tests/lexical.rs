@@ -239,6 +239,18 @@ fn generated_parameter_layout_keeps_headers_and_numeric_delimiters_legal() {
 }
 
 #[test]
+fn whitespace_prefixed_hollerith_header_uses_its_absolute_end() {
+    let mut payload = b"116,".to_vec();
+    payload.extend(std::iter::repeat_n(b' ', 40));
+    payload.extend_from_slice(b"70H");
+    payload.extend(std::iter::repeat_n(b'x', 70));
+    payload.push(b';');
+    let cards = super::super::layout_parameter_cards(&payload)
+        .expect("the whitespace and Hollerith header fit on one card");
+    assert_eq!(&cards[0][44..47], b"70H");
+}
+
+#[test]
 fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     let mut x = String::with_capacity(60);
     x.extend(std::iter::repeat_n('0', 59));

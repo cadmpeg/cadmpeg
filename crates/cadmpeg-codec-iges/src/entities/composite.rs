@@ -1521,6 +1521,9 @@ pub(super) fn bounded_nurbs_for_curve_with_tolerance(
 }
 
 fn close(left: Point3, right: Point3) -> bool {
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
     let scale = left
         .x
         .abs()
