@@ -24,20 +24,6 @@ pub struct Transform2 {
 const BOTTOM_ROW_2: [f64; 3] = [0.0, 0.0, 1.0];
 const BOTTOM_ROW_4: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
 
-/// Whether every coefficient of one affine row is finite.
-///
-/// The walk is an index loop because a `const fn` cannot drive an iterator.
-const fn row_is_finite(row: &[f64]) -> bool {
-    let mut index = 0;
-    while index < row.len() {
-        if !row[index].is_finite() {
-            return false;
-        }
-        index += 1;
-    }
-    true
-}
-
 fn deserialize_finite2<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<[[f64; 3]; 2], D::Error> {
@@ -77,8 +63,10 @@ impl Transform2 {
     /// Build an affine transform from the two linear rows and translation.
     #[must_use]
     pub fn affine(rows: [[f64; 3]; 2]) -> Option<Self> {
-        let transform = Self { rows };
-        transform.is_finite().then_some(transform)
+        rows.iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then_some(Self { rows })
     }
 
     /// The affine rows, without the constant bottom row.
@@ -91,11 +79,6 @@ impl Transform2 {
     #[must_use]
     pub fn rows(self) -> [[f64; 3]; 3] {
         [self.rows[0], self.rows[1], BOTTOM_ROW_2]
-    }
-
-    /// Whether every matrix coefficient is finite.
-    pub const fn is_finite(&self) -> bool {
-        row_is_finite(&self.rows[0]) && row_is_finite(&self.rows[1])
     }
 
     /// Applies this affine transform to a two-dimensional point.
@@ -198,8 +181,10 @@ impl Transform {
     /// Build an affine transform from the three linear rows and translation.
     #[must_use]
     pub fn affine(rows: [[f64; 4]; 3]) -> Option<Self> {
-        let transform = Self { rows };
-        transform.is_finite().then_some(transform)
+        rows.iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then_some(Self { rows })
     }
 
     /// The affine rows, without the constant bottom row.
@@ -212,11 +197,6 @@ impl Transform {
     #[must_use]
     pub fn rows(self) -> [[f64; 4]; 4] {
         [self.rows[0], self.rows[1], self.rows[2], BOTTOM_ROW_4]
-    }
-
-    /// Whether every matrix coefficient is finite.
-    pub const fn is_finite(&self) -> bool {
-        row_is_finite(&self.rows[0]) && row_is_finite(&self.rows[1]) && row_is_finite(&self.rows[2])
     }
 
     /// Whether this is a finite, right-handed rigid transform.
@@ -488,6 +468,9 @@ mod tests {
             serde_json::from_str::<Transform2>("[[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]]")
                 .is_err()
         );
+        let mut nonfinite2 = Transform2::identity().affine_rows();
+        nonfinite2[1][2] = f64::INFINITY;
+        assert!(Transform2::affine(nonfinite2).is_none());
         let transform2 = serde_json::from_str::<Transform2>("[[1.0,0.0,0.0],[0.0,1.0,0.0]]")
             .expect("two affine rows");
         assert_eq!(transform2, Transform2::identity());
