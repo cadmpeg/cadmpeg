@@ -163,10 +163,14 @@ fn valid_class_363_operand_path_link(
         && path.class_tag().as_str() == "386"
         && link.locator_record_index == frame.reference_record_index
         && link.locator_reference_offset == frame.reference_offset
-        && link.locator_scope_reference_offset
-            == link.locator_byte_offset + u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1)
-        && link.path_reference_offset
-            == link.wrapper_byte_offset + u64_from_index(class_363_identity::OCCURRENCE_GUID + 4)
+        && link
+            .locator_byte_offset
+            .checked_add(u64_from_index(class_363_carrier::SCOPE_REFERENCE + 1))
+            == Some(link.locator_scope_reference_offset)
+        && link
+            .wrapper_byte_offset
+            .checked_add(u64_from_index(class_363_identity::OCCURRENCE_GUID + 4))
+            == Some(link.path_reference_offset)
         && link.wrapper_reference_offset < link.wrapper_byte_offset
         && link.locator_scope_reference_offset > link.locator_byte_offset
         && link.locator_reference_offset >= scope.byte_offset()
@@ -2074,11 +2078,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                 == Some(frame.transform_offset)
                                     })
                                 } else {
-                                    frame.reference_offset
-                                        == scope.byte_offset() + frame_reference_offsets[ordinal]
-                                        && frame.transform_offset
-                                            == scope.byte_offset()
-                                                + frame_transform_offsets[ordinal]
+                                    Some(frame.reference_offset)
+                                        == scope
+                                            .byte_offset()
+                                            .checked_add(frame_reference_offsets[ordinal])
+                                        && Some(frame.transform_offset)
+                                            == scope
+                                                .byte_offset()
+                                                .checked_add(frame_transform_offsets[ordinal])
                                 };
                                 let reference_exists = if as_built_frames {
                                     frame.reference_record_index != 0
@@ -2109,8 +2116,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && header.class_tag.as_str() == generation.frame_class_tag()
                         && frame.class_tag == header.class_tag
                         && frame.record_byte_offset == header.byte_offset
-                        && frame.transform_offset
-                            == frame.record_byte_offset + u64_from_index(generation.matrix_offset())
+                        && Some(frame.transform_offset)
+                            == frame
+                                .record_byte_offset
+                                .checked_add(u64_from_index(generation.matrix_offset()))
                 });
                 let operand_qualifiers_link = match alignment.form.as_ref() {
                     Some(records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(
@@ -2234,8 +2243,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && target.kind()
                                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
-                                    && target.joint_origin_transform_offset()
-                                        == Some(scope.byte_offset() + 36)
+                                    && scope
+                                        .byte_offset()
+                                        .checked_add(36)
+                                        .is_some_and(|offset| {
+                                            target.joint_origin_transform_offset() == Some(offset)
+                                        })
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
@@ -2475,8 +2488,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .eq([operation.relation_record_index])
                     && operation.source_occurrence_record_index
                         != operation.copied_occurrence_record_index
-                    && operation.source_transform_offset == scope.byte_offset() + source_at
-                    && operation.copied_transform_offset == scope.byte_offset() + source_at + 156
+                    && Some(operation.source_transform_offset)
+                        == scope.byte_offset().checked_add(source_at)
+                    && Some(operation.copied_transform_offset)
+                        == scope.byte_offset().checked_add(source_at + 156)
                     && source.is_some_and(|source| {
                         source
                             .component_guid
@@ -2698,10 +2713,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             let transform = origin.joint_origin_transform;
             let transform_offset = origin.joint_origin_transform_offset;
             let inline = match (scope.frame_length(), &origin.reference) {
-                (385, None) => transform_offset == scope.byte_offset() + 49,
+                (385, None) => Some(transform_offset) == scope.byte_offset().checked_add(49),
                 (336 | 347, Some(reference)) => {
-                    transform_offset == scope.byte_offset() + 60
-                        && reference.joint_origin_reference_offset == scope.byte_offset() + 46
+                    Some(transform_offset) == scope.byte_offset().checked_add(60)
+                        && Some(reference.joint_origin_reference_offset)
+                            == scope.byte_offset().checked_add(46)
                         && scope
                             .reference_members()
                             .values()
@@ -2732,12 +2748,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && assembly.class_tag.as_str() == "276"
                         && assembly.paired_class_tag.as_str() == "258"
                         && assembly.frame_length() == 604
-                        && transform_offset == assembly.byte_offset() + 36
+                        && Some(transform_offset) == assembly.byte_offset().checked_add(36)
                         && assembly
                             .reference_members()
                             .values()
                             .any(|value| value == &reference.joint_origin_reference)
-                        && reference.joint_origin_reference_offset == assembly.byte_offset() + 25
+                        && Some(reference.joint_origin_reference_offset)
+                            == assembly.byte_offset().checked_add(25)
                 })
             });
             inline || assembly_operand || single_operand_assembly
