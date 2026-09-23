@@ -1407,6 +1407,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let Some(message) =
+            constraint_entity_kind_refusal(constraint.definition.kind(), &geometry)
+        {
+            error_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                constraint.id.as_str(),
+                message,
+            );
+        }
         for locus in constraint_loci(constraint.definition.kind()) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;
@@ -1482,6 +1492,69 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+}
+
+/// Refuse a midpoint, arc-angle or ellipse-angle constraint whose referenced
+/// entity has a neutral geometry of another kind. An absent entity is a
+/// referential finding of its own. External and native geometry has no neutral
+/// kind, so it is admitted.
+fn constraint_entity_kind_refusal(
+    definition: &Constraint,
+    geometry: &HashMap<&crate::sketches::SketchEntityId, &SketchGeometry>,
+) -> Option<&'static str> {
+    let (entity, admitted, message): (_, fn(&SketchGeometryDefinition) -> bool, _) =
+        match definition {
+            Constraint::Midpoint { entity, .. } => (
+                entity,
+                |definition| {
+                    matches!(
+                        definition,
+                        SketchGeometryDefinition::Line { .. }
+                            | SketchGeometryDefinition::Arc { .. }
+                            | SketchGeometryDefinition::Ellipse {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Hyperbola {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Parabola {
+                                bounds: Some(_),
+                                ..
+                            }
+                            | SketchGeometryDefinition::Nurbs { .. }
+                    )
+                },
+                "sketch midpoint constraint references an entity that is not a bounded curve",
+            ),
+            Constraint::ArcAngle { entity, .. } => (
+                entity,
+                |definition| matches!(definition, SketchGeometryDefinition::Arc { .. }),
+                "sketch arc-angle constraint references an entity that is not a circular arc",
+            ),
+            Constraint::EllipseAngle { entity, .. } => (
+                entity,
+                |definition| {
+                    matches!(
+                        definition,
+                        SketchGeometryDefinition::Ellipse {
+                            bounds: Some(_),
+                            ..
+                        }
+                    )
+                },
+                "sketch ellipse-angle constraint references an entity that is not a bounded ellipse",
+            ),
+            _ => return None,
+        };
+    let definition = geometry.get(entity)?.definition();
+    let unclassified = matches!(
+        definition,
+        SketchGeometryDefinition::ExternalReference { .. }
+            | SketchGeometryDefinition::Native { .. }
+    );
+    (!unclassified && !admitted(definition)).then_some(message)
 }
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {

@@ -434,6 +434,195 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
 }
 
 #[test]
+fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
+    use crate::scalar::PositiveAngle;
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId, SketchEntity, SketchEntityId, SketchId, SketchLocus,
+    };
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let sketch = SketchId::mint("synthetic:test:sketch#kinds").unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: crate::sketches::SketchProfiles::try_from(Vec::new()).unwrap(),
+        native_ref: None,
+    });
+    let entity =
+        |name: &str| SketchEntityId::mint(format!("synthetic:test:entity#{name}")).unwrap();
+    let ellipse = |bounds| SketchGeometryDefinition::Ellipse {
+        center: Point2::new(0.0, 0.0),
+        major_angle: Angle::ZERO,
+        major_radius: Length::new(2.0).unwrap(),
+        minor_radius: Length::new(1.0).unwrap(),
+        bounds,
+    };
+    for (name, definition) in [
+        (
+            "point",
+            SketchGeometryDefinition::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        ),
+        (
+            "line",
+            SketchGeometryDefinition::Line {
+                start: Point2::new(-1.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        ),
+        (
+            "circle",
+            SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(1.0).unwrap(),
+            },
+        ),
+        (
+            "arc",
+            SketchGeometryDefinition::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(1.0).unwrap(),
+                start_angle: Angle::ZERO,
+                end_angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            },
+        ),
+        ("full-ellipse", ellipse(None)),
+        (
+            "bounded-ellipse",
+            ellipse(Some([
+                Angle::ZERO,
+                Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            ])),
+        ),
+    ] {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            entity(name),
+            sketch.clone(),
+            SketchGeometry::try_from(definition).unwrap(),
+        ));
+    }
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity("native"),
+        sketch.clone(),
+        SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("test").unwrap()),
+    ));
+
+    let quarter = PositiveAngle::QUARTER_TURN;
+    let midpoint = |name: &str| SketchConstraintDefinitionInput::Midpoint {
+        point: SketchLocus::Entity(entity("point")),
+        entity: entity(name),
+    };
+    let arc_angle = |name: &str| SketchConstraintDefinitionInput::ArcAngle {
+        entity: entity(name),
+        angle: quarter,
+    };
+    let ellipse_angle = |name: &str| SketchConstraintDefinitionInput::EllipseAngle {
+        entity: entity(name),
+        angle: quarter,
+    };
+    let midpoint_refusal =
+        "sketch midpoint constraint references an entity that is not a bounded curve";
+    let arc_refusal = "sketch arc-angle constraint references an entity that is not a circular arc";
+    let ellipse_refusal =
+        "sketch ellipse-angle constraint references an entity that is not a bounded ellipse";
+    let cases = [
+        (
+            "midpoint-circle",
+            midpoint("circle"),
+            Some(midpoint_refusal),
+        ),
+        (
+            "midpoint-full-ellipse",
+            midpoint("full-ellipse"),
+            Some(midpoint_refusal),
+        ),
+        ("midpoint-point", midpoint("point"), Some(midpoint_refusal)),
+        ("midpoint-line", midpoint("line"), None),
+        ("midpoint-arc", midpoint("arc"), None),
+        (
+            "midpoint-bounded-ellipse",
+            midpoint("bounded-ellipse"),
+            None,
+        ),
+        ("midpoint-native", midpoint("native"), None),
+        ("arc-angle-line", arc_angle("line"), Some(arc_refusal)),
+        ("arc-angle-circle", arc_angle("circle"), Some(arc_refusal)),
+        ("arc-angle-arc", arc_angle("arc"), None),
+        ("arc-angle-native", arc_angle("native"), None),
+        (
+            "ellipse-angle-full",
+            ellipse_angle("full-ellipse"),
+            Some(ellipse_refusal),
+        ),
+        (
+            "ellipse-angle-arc",
+            ellipse_angle("arc"),
+            Some(ellipse_refusal),
+        ),
+        (
+            "ellipse-angle-bounded",
+            ellipse_angle("bounded-ellipse"),
+            None,
+        ),
+        ("ellipse-angle-native", ellipse_angle("native"), None),
+    ];
+    for (name, definition, _) in &cases {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId::mint(format!("synthetic:test:constraint#{name}")).unwrap(),
+            sketch: sketch.clone(),
+            definition: SketchConstraintDefinition::try_from(definition.clone()).unwrap(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        });
+    }
+    ir.finalize();
+
+    let report = validate_neutral(&ir, Vec::new());
+    for (name, _, refusal) in cases {
+        let id = format!("synthetic:test:constraint#{name}");
+        let kind_findings = report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.entity.as_deref() == Some(id.as_str())
+                    && [midpoint_refusal, arc_refusal, ellipse_refusal]
+                        .contains(&finding.message.as_str())
+            })
+            .collect::<Vec<_>>();
+        match refusal {
+            Some(message) => {
+                assert_eq!(kind_findings.len(), 1, "{name}: {kind_findings:?}");
+                assert_eq!(
+                    kind_findings[0].check,
+                    Check::ReferentialIntegrity,
+                    "{name}"
+                );
+                assert_eq!(kind_findings[0].message, message, "{name}");
+            }
+            None => assert!(kind_findings.is_empty(), "{name}: {kind_findings:?}"),
+        }
+    }
+}
+
+#[test]
 fn sketch_constraint_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let id =
