@@ -36,20 +36,31 @@ impl From<PositiveFinite> for f64 {
     }
 }
 
-/// Deviation-from-one tolerance selected by a unit direction's exponent. Each
-/// constructor states which measurement of the direction it is applied to.
-const fn deviation_tolerance(exponent: u32) -> f64 {
-    match exponent {
-        9 => EPS_UNIT_DEVIATION_E9,
-        12 => EPS_UNIT_DEVIATION_E12,
-        _ => 0.0,
-    }
+/// A tolerance on a direction's measured length deviating from one. Each
+/// implementing type names one tolerance, so a direction admits only within a
+/// tolerance it names. A tolerance is a copyable marker, so the direction it
+/// selects stays `Copy`. Each constructor states which measurement of the
+/// direction the tolerance is applied to.
+pub(crate) trait DeviationTolerance: Copy {
+    /// The largest admitted deviation of the measured length from one.
+    const TOLERANCE: f64;
 }
 
-/// Deviation from unit length tolerated by directions selecting exponent 9.
-const EPS_UNIT_DEVIATION_E9: f64 = 1.0e-9;
-/// Deviation from unit length tolerated by directions selecting exponent 12.
-const EPS_UNIT_DEVIATION_E12: f64 = 1.0e-12;
+/// Admits a measured length within `1e-9` of one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RelaxedDeviation;
+
+impl DeviationTolerance for RelaxedDeviation {
+    const TOLERANCE: f64 = 1.0e-9;
+}
+
+/// Admits a measured length within `1e-12` of one.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ExactDeviation;
+
+impl DeviationTolerance for ExactDeviation {
+    const TOLERANCE: f64 = 1.0e-12;
+}
 
 /// A measurement of a direction's length. Each implementing type names one
 /// measurement, so a direction admits only by a measurement it names. A
@@ -92,30 +103,30 @@ impl LengthMeasurement for HypotLength {
 }
 
 /// A finite direction admitted by `Measurement` of its length deviating from
-/// one by at most `10^-TOLERANCE_EXPONENT`. Both the measurement and the
-/// tolerance are the record grammar's, so every route into the type — literal
-/// construction, derivation and serde — admits exactly the same directions.
+/// one by at most `Tolerance`. Both the measurement and the tolerance are the
+/// record grammar's, so every route into the type — literal construction,
+/// derivation and serde — admits exactly the same directions.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
-pub(crate) struct UnitVector3<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>(
+pub(crate) struct UnitVector3<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>(
     [f64; 3],
-    PhantomData<Measurement>,
+    PhantomData<(Tolerance, Measurement)>,
 );
 
 /// A direction whose squared length is one to `1e-12`.
-pub(crate) type ExactUnitVector3 = UnitVector3<12, SquaredLength>;
+pub(crate) type ExactUnitVector3 = UnitVector3<ExactDeviation, SquaredLength>;
 
 /// A direction whose norm is one to `1e-12`.
-pub(crate) type ExactNormUnitVector3 = UnitVector3<12, NormLength>;
+pub(crate) type ExactNormUnitVector3 = UnitVector3<ExactDeviation, NormLength>;
 
 /// A direction whose `hypot` length is one to `1e-12`.
-pub(crate) type ExactHypotUnitVector3 = UnitVector3<12, HypotLength>;
+pub(crate) type ExactHypotUnitVector3 = UnitVector3<ExactDeviation, HypotLength>;
 
 /// A direction whose squared length is one to `1e-9`.
-pub(crate) type RelaxedUnitVector3 = UnitVector3<9, SquaredLength>;
+pub(crate) type RelaxedUnitVector3 = UnitVector3<RelaxedDeviation, SquaredLength>;
 
 /// A direction whose `hypot` length is one to `1e-9`.
-pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<9, HypotLength>;
+pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<RelaxedDeviation, HypotLength>;
 
 /// A coordinate plane a planar direction is placed in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,25 +137,21 @@ pub(crate) enum CoordinatePlane {
     Xz,
 }
 
-/// A finite planar direction whose `hypot` length is one within
-/// `10^-TOLERANCE_EXPONENT`.
+/// A finite planar direction whose `hypot` length is one within `Tolerance`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-pub(crate) struct UnitVector2<const TOLERANCE_EXPONENT: u32>([f64; 2]);
+pub(crate) struct UnitVector2<Tolerance: DeviationTolerance>([f64; 2], PhantomData<Tolerance>);
 
 /// A planar direction stored loosely, to a deviation tolerance of `1e-9`.
-pub(crate) type RelaxedUnitVector2 = UnitVector2<9>;
+pub(crate) type RelaxedUnitVector2 = UnitVector2<RelaxedDeviation>;
 
-impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
-    /// Tolerance on this direction's `hypot` length deviating from one.
-    const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
-
+impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     /// Constructs a planar direction whose `hypot` length is one within the
     /// tolerance.
     pub(crate) fn from_hypot(value: [f64; 2]) -> Option<Self> {
         (value.iter().all(|component| component.is_finite())
-            && (value[0].hypot(value[1]) - 1.0).abs() <= Self::TOLERANCE)
-            .then_some(Self(value))
+            && (value[0].hypot(value[1]) - 1.0).abs() <= Tolerance::TOLERANCE)
+            .then_some(Self(value, PhantomData))
     }
 
     /// Returns the direction components.
@@ -155,22 +162,19 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
 
     /// Turns the direction a quarter turn, to `[-second, first]`.
     pub(crate) fn quarter_turn(self) -> Self {
-        Self([-self.0[1], self.0[0]])
+        Self([-self.0[1], self.0[0]], PhantomData)
     }
 
     /// Turns the direction a quarter turn the other way, to `[second, -first]`.
     pub(crate) fn reverse_quarter_turn(self) -> Self {
-        Self([self.0[1], -self.0[0]])
+        Self([self.0[1], -self.0[0]], PhantomData)
     }
 
     /// Places the components in a coordinate plane, leaving the third axis
     /// zero. `hypot` of a component with zero is that component's magnitude, so
     /// the spatial direction's `hypot` length is this one's, bit for bit: it
     /// inherits this direction's admission and needs no second test.
-    pub(crate) fn in_plane(
-        self,
-        plane: CoordinatePlane,
-    ) -> UnitVector3<TOLERANCE_EXPONENT, HypotLength> {
+    pub(crate) fn in_plane(self, plane: CoordinatePlane) -> UnitVector3<Tolerance, HypotLength> {
         let [first, second] = self.0;
         UnitVector3(
             match plane {
@@ -182,7 +186,7 @@ impl<const TOLERANCE_EXPONENT: u32> UnitVector2<TOLERANCE_EXPONENT> {
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 2]> for UnitVector2<TOLERANCE_EXPONENT> {
+impl<Tolerance: DeviationTolerance> TryFrom<[f64; 2]> for UnitVector2<Tolerance> {
     type Error = String;
 
     fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
@@ -191,18 +195,15 @@ impl<const TOLERANCE_EXPONENT: u32> TryFrom<[f64; 2]> for UnitVector2<TOLERANCE_
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32> From<UnitVector2<TOLERANCE_EXPONENT>> for [f64; 2] {
-    fn from(value: UnitVector2<TOLERANCE_EXPONENT>) -> Self {
+impl<Tolerance: DeviationTolerance> From<UnitVector2<Tolerance>> for [f64; 2] {
+    fn from(value: UnitVector2<Tolerance>) -> Self {
         value.0
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
-    UnitVector3<TOLERANCE_EXPONENT, Measurement>
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
+    UnitVector3<Tolerance, Measurement>
 {
-    /// Tolerance on this direction's measured length deviating from one.
-    const TOLERANCE: f64 = deviation_tolerance(TOLERANCE_EXPONENT);
-
     /// The +X direction.
     pub(crate) const X: Self = Self([1.0, 0.0, 0.0], PhantomData);
 
@@ -213,7 +214,7 @@ impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
     /// tolerance.
     pub(crate) fn new(value: [f64; 3]) -> Option<Self> {
         (value.iter().all(|component| component.is_finite())
-            && (Measurement::length(value) - 1.0).abs() <= Self::TOLERANCE)
+            && (Measurement::length(value) - 1.0).abs() <= Tolerance::TOLERANCE)
             .then_some(Self(value, PhantomData))
     }
 
@@ -232,7 +233,7 @@ impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
     /// must also pass this type's unit-length admission.
     pub(crate) fn from_scaled(stored: [f64; 3], scale: f64) -> Option<Self> {
         let length = stored[0].hypot(stored[1]).hypot(stored[2]);
-        if !(length.is_finite() && ((length / scale) - 1.0).abs() <= Self::TOLERANCE) {
+        if !(length.is_finite() && ((length / scale) - 1.0).abs() <= Tolerance::TOLERANCE) {
             return None;
         }
         Self::new(stored.map(|component| component / scale))
@@ -244,8 +245,8 @@ impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement> TryFrom<[f64; 3]>
-    for UnitVector3<TOLERANCE_EXPONENT, Measurement>
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement> TryFrom<[f64; 3]>
+    for UnitVector3<Tolerance, Measurement>
 {
     type Error = String;
 
@@ -254,10 +255,10 @@ impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement> TryFrom<[f64
     }
 }
 
-impl<const TOLERANCE_EXPONENT: u32, Measurement: LengthMeasurement>
-    From<UnitVector3<TOLERANCE_EXPONENT, Measurement>> for [f64; 3]
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
+    From<UnitVector3<Tolerance, Measurement>> for [f64; 3]
 {
-    fn from(value: UnitVector3<TOLERANCE_EXPONENT, Measurement>) -> Self {
+    fn from(value: UnitVector3<Tolerance, Measurement>) -> Self {
         value.0
     }
 }
@@ -338,8 +339,9 @@ pub(crate) fn extents_overlap<Extent: ByteExtent>(
 #[cfg(test)]
 mod tests {
     use super::{
-        CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
-        RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
+        CoordinatePlane, DeviationTolerance, ExactDeviation, ExactHypotUnitVector3,
+        ExactNormUnitVector3, ExactUnitVector3, RelaxedHypotUnitVector3, RelaxedUnitVector2,
+        RelaxedUnitVector3,
     };
 
     #[test]
@@ -362,7 +364,7 @@ mod tests {
         ] {
             let value = [0.0, component, 0.0];
             let norm = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
-            let admitted = (norm - 1.0).abs() <= ExactNormUnitVector3::TOLERANCE;
+            let admitted = (norm - 1.0).abs() <= ExactDeviation::TOLERANCE;
             assert_eq!(ExactNormUnitVector3::new(value).is_some(), admitted);
         }
     }
@@ -445,7 +447,7 @@ mod tests {
         for factor in [1.0, 1.0 + 9.0e-13, 1.0 - 9.0e-13, 1.0 + 2.0e-12] {
             let stored = [0.0, 0.0, radius * factor];
             let length = stored[0].hypot(stored[1]).hypot(stored[2]);
-            let admitted = ((length / radius) - 1.0).abs() <= ExactHypotUnitVector3::TOLERANCE;
+            let admitted = ((length / radius) - 1.0).abs() <= ExactDeviation::TOLERANCE;
             assert_eq!(
                 ExactHypotUnitVector3::from_scaled(stored, radius).is_some(),
                 admitted
