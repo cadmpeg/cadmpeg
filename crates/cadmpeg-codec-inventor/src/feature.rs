@@ -1205,8 +1205,10 @@ fn project_extrusion(
     let taper =
         cadmpeg_ir::scalar::SlopeAngle::try_from(angle_parameter(source, 5, index)?).ok()?;
     let termination = match enum16(source, 6, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if length.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::try_from(length).ok()?,
+        1 => LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::from(
+                cadmpeg_ir::scalar::PositiveLength::try_from(length).ok()?,
+            ),
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},
@@ -1452,8 +1454,10 @@ fn project_hole(
         _ => return None,
     };
     let extent = match enum16(source, 9, PmDcFeatureEnumFamily::Extent, index)? {
-        1 if depth.get() > 0.0 => LinearTermination::Blind {
-            length: cadmpeg_ir::scalar::NonZeroLength::try_from(depth).ok()?,
+        1 => LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::from(
+                cadmpeg_ir::scalar::PositiveLength::try_from(depth).ok()?,
+            ),
         },
         4 => LinearTermination::ThroughNext {},
         5 => LinearTermination::ThroughAll {},

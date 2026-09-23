@@ -3463,7 +3463,7 @@ fn attach_feature_operations(
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
                 FeatureOperation::Sphere {
                     center: *center,
-                    radius: cadmpeg_ir::scalar::PositiveLength::try_from(*radius).ok()?,
+                    radius: *radius,
                     op: sphere_op,
                 },
             ))
@@ -6029,7 +6029,11 @@ fn block_placement(
 fn sphere_body_projection(
     ir: &CadIr,
     outputs: &[BodyId],
-) -> Option<(BodyId, cadmpeg_ir::features::FinitePoint3, Length)> {
+) -> Option<(
+    BodyId,
+    cadmpeg_ir::features::FinitePoint3,
+    cadmpeg_ir::scalar::PositiveLength,
+)> {
     let body = match outputs {
         [body] => body.clone(),
         [] => {
@@ -6072,8 +6076,8 @@ fn sphere_body_projection(
         return None;
     };
     let center = sphere_surface.center();
-    let radius = sphere_surface.radius();
-    (radius.get() > 0.0).then_some((body, center, Length::from(radius)))
+    let radius = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()).ok()?;
+    Some((body, center, radius))
 }
 
 struct NewBodyEvidence<'a> {

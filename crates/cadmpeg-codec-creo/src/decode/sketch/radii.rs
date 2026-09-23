@@ -617,8 +617,8 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
         center: cadmpeg_ir::math::Point2::new(center_u, center_v),
         radius: Length::new(radius)?,
-        start_angle: Angle::new(0.0)?,
-        end_angle: Angle::new(std::f64::consts::TAU)?,
+        start_angle: Angle::ZERO,
+        end_angle: Angle::FULL_TURN,
     })
     .ok()
 }

@@ -211,6 +211,12 @@ impl Length {
 impl Angle {
     /// One full turn in radians.
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
+    /// One quarter turn in radians.
+    pub const QUARTER_TURN: Self = Self(std::f64::consts::FRAC_PI_2);
+    /// One half turn in radians.
+    pub const HALF_TURN: Self = Self(std::f64::consts::PI);
+    /// Three quarter turns in radians.
+    pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
 }
@@ -280,6 +286,12 @@ impl Length {
     pub const fn negated(self) -> Self {
         Self(-self.0)
     }
+
+    /// The magnitude. The magnitude of a finite value is finite.
+    #[must_use]
+    pub const fn abs(self) -> Self {
+        Self(self.0.abs())
+    }
 }
 
 impl Angle {
@@ -288,11 +300,19 @@ impl Angle {
     pub const fn negated(self) -> Self {
         Self(-self.0)
     }
+
+    /// The magnitude. The magnitude of a finite value is finite.
+    #[must_use]
+    pub const fn abs(self) -> Self {
+        Self(self.0.abs())
+    }
 }
 
 impl FiniteReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
+    /// Zero.
+    pub const ZERO: Self = Self(0.0);
 
     pub(crate) const fn as_raw(&self) -> &f64 {
         &self.0
@@ -302,6 +322,19 @@ impl FiniteReal {
     pub const fn negated(self) -> Self {
         Self(-self.0)
     }
+
+    /// The magnitude. The magnitude of a finite value is finite.
+    #[must_use]
+    pub const fn abs(self) -> Self {
+        Self(self.0.abs())
+    }
+}
+
+impl NonZeroReal {
+    /// Unit scalar value.
+    pub const ONE: Self = Self(1.0);
+    /// One over the square root of two.
+    pub const FRAC_1_SQRT_2: Self = Self(std::f64::consts::FRAC_1_SQRT_2);
 }
 #[cfg(test)]
 mod tests;

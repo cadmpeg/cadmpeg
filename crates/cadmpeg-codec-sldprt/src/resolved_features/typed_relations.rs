@@ -81,11 +81,11 @@ enum QuarterTurn {
 }
 
 impl QuarterTurn {
-    fn angle(self) -> f64 {
+    fn angle(self) -> cadmpeg_ir::scalar::Angle {
         match self {
-            Self::Quarter => std::f64::consts::FRAC_PI_2,
-            Self::Half => std::f64::consts::PI,
-            Self::ThreeQuarters => 3.0 * std::f64::consts::FRAC_PI_2,
+            Self::Quarter => cadmpeg_ir::scalar::Angle::QUARTER_TURN,
+            Self::Half => cadmpeg_ir::scalar::Angle::HALF_TURN,
+            Self::ThreeQuarters => cadmpeg_ir::scalar::Angle::THREE_QUARTER_TURN,
         }
     }
 }
@@ -604,14 +604,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 {
                     sweep = std::f64::consts::TAU;
                 }
-                if !same_dimension_angle(sweep, angle) {
+                if !same_dimension_angle(sweep, angle.get()) {
                     return Some(native());
                 }
             }
-            SketchConstraintDefinitionInput::ArcAngle {
-                entity,
-                angle: cadmpeg_ir::scalar::Angle::new(angle)?,
-            }
+            SketchConstraintDefinitionInput::ArcAngle { entity, angle }
         }
         MarkerRelationGroup::EllipseQuarter(quarter) => {
             let Some(entity) = linked_single_ellipse_entity(
@@ -640,13 +637,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             {
                 sweep = std::f64::consts::TAU;
             }
-            if !same_dimension_angle(sweep, angle) {
+            if !same_dimension_angle(sweep, angle.get()) {
                 return Some(native());
             }
-            SketchConstraintDefinitionInput::EllipseAngle {
-                entity,
-                angle: cadmpeg_ir::scalar::Angle::new(angle)?,
-            }
+            SketchConstraintDefinitionInput::EllipseAngle { entity, angle }
         }
         MarkerRelationGroup::Binary(binary) => {
             let owner_entities =

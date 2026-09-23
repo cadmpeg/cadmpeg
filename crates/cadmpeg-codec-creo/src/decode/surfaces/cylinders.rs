@@ -755,12 +755,12 @@ fn unique_support_tangent_cylinder_frame(
         if !tangent_to_all {
             continue;
         }
-        let Some(candidate) = crate::surface::PositionalCylinderFrame::new(
+        let Some(candidate) = crate::surface::PositionalCylinderFrame::with_admitted_length(
             origin,
             stored.frame().axis(),
             stored.frame().ref_direction(),
             stored.radius(),
-            stored.length().map(cadmpeg_ir::scalar::PositiveLength::get),
+            stored.length(),
         ) else {
             continue;
         };

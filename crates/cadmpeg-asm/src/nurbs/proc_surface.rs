@@ -1653,8 +1653,8 @@ pub(super) fn ellipse_to_nurbs(
     };
     // The rational quadratic circle states each pole with its own weight, so
     // the carrier reads rows and there is no pole lane and weight lane to pair.
-    let corner = cadmpeg_ir::scalar::NonZeroReal::new(std::f64::consts::FRAC_1_SQRT_2)?;
-    let full = cadmpeg_ir::scalar::NonZeroReal::new(1.0)?;
+    let corner = cadmpeg_ir::scalar::NonZeroReal::FRAC_1_SQRT_2;
+    let full = cadmpeg_ir::scalar::NonZeroReal::ONE;
     let pole = |point, weight| cadmpeg_ir::geometry::nurbs::WeightedPole3 { point, weight };
     NurbsCurve::new(
         2,
