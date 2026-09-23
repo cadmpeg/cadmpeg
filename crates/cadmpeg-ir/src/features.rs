@@ -16,6 +16,7 @@ use crate::scalar::{
     NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
 };
 use crate::transform::Transform;
+use crate::units::UnitVector3;
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -124,6 +125,14 @@ checked_feature_geometry!(
     value.dot(value).is_finite() && value.dot(value) > 0.0,
     "FeatureDirection3 norm must be finite and nonzero", get
 );
+
+impl From<UnitVector3> for FeatureDirection3 {
+    /// Carry an admitted unit direction. Its components are finite and its
+    /// squared norm is within rounding of one, so no admission can refuse it.
+    fn from(value: UnitVector3) -> Self {
+        Self(*value.as_raw())
+    }
+}
 
 checked_feature_geometry!(
     /// A finite right-handed rigid feature placement.

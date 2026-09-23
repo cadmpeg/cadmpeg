@@ -517,7 +517,7 @@ pub(in crate::decode) fn counterbore_axis_placement_from_sources(
     };
     Some(cadmpeg_ir::features::holes::HolePlacement::Axis {
         origin: carrier.origin(),
-        axis: cadmpeg_ir::features::FeatureDirection3::new(*carrier.axis())?,
+        axis: cadmpeg_ir::features::FeatureDirection3::from(carrier.frame().unit_axis()),
     })
 }
 
