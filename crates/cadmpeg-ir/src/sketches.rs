@@ -5,7 +5,7 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::{
     features::ParameterId,
-    scalar::{Angle, Length},
+    scalar::{Angle, Length, PositiveAngle},
 };
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -2847,14 +2847,14 @@ pub enum SketchConstraintDefinitionInput {
         /// Constrained circular arc.
         entity: SketchEntityId,
         /// Fixed positive arc angle in radians.
-        angle: Angle,
+        angle: PositiveAngle,
     },
     /// Bounded ellipse parameter sweep fixed by the relation kind.
     EllipseAngle {
         /// Constrained bounded ellipse.
         entity: SketchEntityId,
         /// Fixed positive parameter sweep in radians.
-        angle: Angle,
+        angle: PositiveAngle,
     },
     /// Distance controlled by a design parameter.
     Distance {

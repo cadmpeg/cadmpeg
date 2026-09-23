@@ -244,6 +244,12 @@ impl SlopeAngle {
 impl PositiveAngle {
     /// One full turn in radians.
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
+    /// One quarter turn in radians.
+    pub const QUARTER_TURN: Self = Self(std::f64::consts::FRAC_PI_2);
+    /// One half turn in radians.
+    pub const HALF_TURN: Self = Self(std::f64::consts::PI);
+    /// Three quarter turns in radians.
+    pub const THREE_QUARTER_TURN: Self = Self(3.0 * std::f64::consts::FRAC_PI_2);
 }
 
 /// State one subset edge inside a quantity family.

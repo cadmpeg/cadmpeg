@@ -4724,10 +4724,9 @@ pub struct VariableBlendConstruction {
     pub v_lower: Option<f64>,
     /// Requested fit tolerance for the surface cache.
     pub shape_parameter: f64,
-    /// Achieved fit tolerance for the surface cache, at or below
-    /// `shape_parameter`, in document units.
+    /// Achieved fit tolerance for the surface cache, in document units.
     pub shape_length: f64,
-    /// Non-negative integer immediately before the shared tail's enum.
+    /// Native integer immediately before the shared tail's enum.
     pub shape_tail: i64,
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: VariableBlendCache,
@@ -5263,8 +5262,8 @@ pub struct VertexBlendBoundary {
     /// Native cross flag. The wire form is a logical, so the value is the
     /// tag itself and no payload follows.
     pub boundary_type: bool,
-    /// Native magic direction. A unit direction or the zero vector, never a
-    /// length, so it carries no unit scale.
+    /// Native magic direction with finite components, stored as read. It is a
+    /// direction, never a length, so it carries no unit scale.
     pub magic: Vector3,
     /// Native U-smoothing flag, a logical on the wire.
     pub u_smoothing: bool,

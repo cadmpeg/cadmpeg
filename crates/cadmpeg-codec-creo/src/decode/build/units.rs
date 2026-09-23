@@ -578,7 +578,7 @@ fn scale_feature_operation(
         FeatureOperation::Wrap {
             mode: WrapMode::Emboss { depth } | WrapMode::Deboss { depth },
             ..
-        } => scale_length(depth, scale)?,
+        } => scale_positive_length(depth, scale)?,
         FeatureOperation::Wrap {
             mode: WrapMode::Scribe,
             ..

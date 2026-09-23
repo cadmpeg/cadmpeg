@@ -2679,7 +2679,7 @@ pub enum FeatureOperation {
         /// Single support face receiving the projection.
         support_face: FaceSelection,
         /// Unit projection direction.
-        direction: FeatureDirection3,
+        direction: UnitVector3,
         /// Result topology retained from the projected shapes.
         mode: SurfaceProjectionMode,
         /// Normal extrusion height used to turn projected faces into solids.
@@ -2767,7 +2767,7 @@ pub enum FeatureOperation {
         /// Torus center in model space.
         center: FinitePoint3,
         /// Unit normal of the torus center plane.
-        axis: FeatureDirection3,
+        axis: UnitVector3,
         /// Positive distance from the center to the tube centerline.
         major_radius: PositiveLength,
         /// Positive tube radius.
@@ -3145,7 +3145,7 @@ pub enum FeatureOperation {
         /// Point on the persisted resolved mirror plane.
         plane_origin: FinitePoint3,
         /// Unit normal of the persisted resolved mirror plane.
-        plane_normal: FeatureDirection3,
+        plane_normal: UnitVector3,
         /// Native plane, face, or circle reference that supplied the resolved plane.
         #[serde(
             default,
@@ -4648,7 +4648,7 @@ pub enum RevolutionFuseOrder {
 pub struct RevolutionAxis {
     /// A point on the axis.
     pub origin: FinitePoint3,
-    /// Unit axis direction.
+    /// Axis direction with a finite nonzero norm.
     pub direction: FeatureDirection3,
     /// Native edge, datum, or sketch-axis selection used to resolve the axis.
     #[serde(
@@ -4936,12 +4936,12 @@ pub enum WrapMode {
     /// Add material above the target face.
     Emboss {
         /// Positive normal offset above the target face.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Remove material below the target face.
     Deboss {
         /// Positive normal offset below the target face.
-        depth: Length,
+        depth: PositiveLength,
     },
     /// Imprint the profile without adding or removing material.
     Scribe,
@@ -7694,7 +7694,7 @@ pub enum SweepOrientation {
     /// Frame constrained by a fixed binormal direction.
     Binormal {
         /// Unit binormal direction.
-        direction: FeatureDirection3,
+        direction: UnitVector3,
     },
 }
 
@@ -7805,10 +7805,10 @@ pub struct HelicalSweepConstruction {
     /// Point at the start of the helix axis.
     pub axis_origin: FinitePoint3,
     /// Unit direction of positive axial travel.
-    pub axis_direction: FeatureDirection3,
+    pub axis_direction: UnitVector3,
     /// Persisted authoring law identifying the independent parameters.
     pub law: HelicalSweepLaw,
-    /// Positive axial advance per turn; zero is permitted for a planar spiral.
+    /// Nonnegative axial advance per turn; zero gives a planar spiral.
     pub pitch: NonNegativeLength,
     /// Signed axial travel and radial change per turn.
     pub travel: HelicalSweepTravel,

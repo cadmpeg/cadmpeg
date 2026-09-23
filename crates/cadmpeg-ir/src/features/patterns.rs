@@ -7,6 +7,7 @@ use super::{
 };
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
+use crate::units::UnitVector3;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -342,7 +343,7 @@ pub enum PatternTransform<C = CompositePattern> {
     Circular {
         /// A point on the pattern axis.
         axis_origin: FinitePoint3,
-        /// Unit direction of the pattern axis.
+        /// Direction of the pattern axis with a finite nonzero norm.
         axis_dir: FeatureDirection3,
         /// Angular span covered by the pattern.
         angle: PositiveAngle,
@@ -354,7 +355,7 @@ pub enum PatternTransform<C = CompositePattern> {
         /// A point on the pattern axis.
         axis_origin: FinitePoint3,
         /// Unit direction of the pattern axis.
-        axis_dir: FeatureDirection3,
+        axis_dir: UnitVector3,
         /// Cumulative angles from the original instance, beginning with zero.
         angles: Vec<Angle>,
     },
@@ -376,7 +377,7 @@ pub enum PatternTransform<C = CompositePattern> {
     Mirror {
         /// A point on the mirror plane.
         plane_origin: FinitePoint3,
-        /// Unit normal of the mirror plane.
+        /// Normal of the mirror plane with a finite nonzero norm.
         plane_normal: FeatureDirection3,
     },
     /// Reflects seeds across a source-native plane selection whose frame is not resolved.
@@ -587,7 +588,7 @@ pub enum PatternStageCombination {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct LinearPatternDirection {
-    /// Unit translation direction.
+    /// Translation direction with a finite nonzero norm.
     pub direction: FeatureDirection3,
     /// Distance between consecutive instances.
     pub spacing: PositiveLength,

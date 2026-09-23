@@ -35,7 +35,7 @@ use {
 pub struct SubSurfaceConstruction {
     /// Embedded support surface whose parameterization is retained.
     support: SurfaceId,
-    /// Ordered U and V parameter intervals.
+    /// Finite U and V parameter intervals, each with its endpoints in stored order.
     parameter_ranges: [FiniteVector<2>; 2],
 }
 
@@ -45,7 +45,7 @@ pub struct SubSurfaceConstruction {
 struct SubSurfaceConstructionWire {
     /// Embedded support surface whose parameterization is retained.
     support: SurfaceId,
-    /// Ordered U and V parameter intervals.
+    /// Finite U and V parameter intervals, each with its endpoints in stored order.
     parameter_ranges: [[f64; 2]; 2],
 }
 

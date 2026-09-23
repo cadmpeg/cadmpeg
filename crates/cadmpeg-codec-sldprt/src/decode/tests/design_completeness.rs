@@ -143,8 +143,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
             source: BodySelection::Bodies(vec![body.clone()]),
             plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
-            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
+            plane_normal: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             plane_reference: Some(FaceSelection::Native("plane".into())),
         }),
     );
@@ -247,8 +246,7 @@ fn design_completeness_audits_typed_construction_families() {
         FeatureDefinition::Operation(FeatureOperation::ProjectOnSurface {
             sources: PathRef::Native("sources".into()),
             support_face: face.clone(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
+            direction: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             mode: cadmpeg_ir::features::SurfaceProjectionMode::All,
             height: cadmpeg_ir::scalar::NonNegativeLength::new(0.0).unwrap(),
             offset: Length::new(0.0).unwrap(),

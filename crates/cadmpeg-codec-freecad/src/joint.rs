@@ -750,13 +750,13 @@ pub(crate) mod tests {
             [true, false]
         );
         assert!((angle.expect("angle").get() - 15_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
-        let cadmpeg_ir::products::JointLimits::Range { minimum, maximum } =
+        let cadmpeg_ir::products::JointLimits::Range(range) =
             angular_limits.expect("angular limits")
         else {
             panic!("bounded angular range")
         };
-        assert!((minimum.get() - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR);
-        assert!((maximum.get() - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
+        assert!((range.minimum().get() - (-30_f64).to_radians()).abs() < EPS_JOINT_SCALAR);
+        assert!((range.maximum().get() - 45_f64.to_radians()).abs() < EPS_JOINT_SCALAR);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut wire = serde_json::to_value(&result.ir().model.assembly_joints[0])

@@ -15,7 +15,7 @@ use crate::resolved_features::typed_relations::relation_owner_markers;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::PositiveAngle;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
     SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus, SketchNativeOperand,
@@ -274,7 +274,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
         typed_marker_relation_definition(&relation, &markers, &loci),
         Some(SketchConstraintDefinitionInput::ArcAngle {
             entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
-            angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+            angle: PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
         })
     );
 }

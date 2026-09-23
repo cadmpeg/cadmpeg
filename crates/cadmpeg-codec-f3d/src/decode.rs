@@ -545,12 +545,9 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 .as_ref()
                 .is_none_or(|reference| !datum_plane_reference_is_resolved(reference))
         }
-        FeatureDefinition::Operation(FeatureOperation::Sphere { op, .. }) => {
-            *op == cadmpeg_ir::features::BooleanOp::Unresolved
-        }
-        FeatureDefinition::Operation(FeatureOperation::Torus { axis, op, .. }) => {
-            axis.unit().is_none() || *op == cadmpeg_ir::features::BooleanOp::Unresolved
-        }
+        FeatureDefinition::Operation(
+            FeatureOperation::Sphere { op, .. } | FeatureOperation::Torus { op, .. },
+        ) => *op == cadmpeg_ir::features::BooleanOp::Unresolved,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile,
             start,
@@ -632,10 +629,10 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let orientation_is_resolved = match orientation {
                 Some(SweepOrientation::Auxiliary { path, .. }) => loft_path_is_resolved(path),
                 Some(SweepOrientation::GuideSurface { faces }) => face_selection_is_resolved(faces),
-                Some(SweepOrientation::Binormal { direction }) => direction.unit().is_some(),
                 None
                 | Some(
-                    SweepOrientation::CorrectedFrenet {}
+                    SweepOrientation::Binormal { .. }
+                    | SweepOrientation::CorrectedFrenet {}
                     | SweepOrientation::Fixed {}
                     | SweepOrientation::Frenet {},
                 ) => true,

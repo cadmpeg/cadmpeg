@@ -559,7 +559,7 @@ fn semantic_writer_round_trips_wrap() {
         features::{
             FaceSelection, FeatureDefinition, FeatureOperation, PlanarProfileRef, WrapMode,
         },
-        scalar::Length,
+        scalar::PositiveLength,
     };
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -601,7 +601,7 @@ fn semantic_writer_round_trips_wrap() {
             *profile = cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face_id.clone()]);
             *face = FaceSelection::Faces(vec![face_id.clone()]);
             *mode = WrapMode::Deboss {
-                depth: Length::new(3.5).unwrap(),
+                depth: PositiveLength::new(3.5).unwrap(),
             };
         });
     }

@@ -1657,7 +1657,7 @@ fn project_solid_primitive(
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,
             ))?,
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+            axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(
                 transform[0][2],
                 transform[1][2],
                 transform[2][2],

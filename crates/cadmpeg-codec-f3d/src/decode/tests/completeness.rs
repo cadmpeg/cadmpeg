@@ -251,8 +251,7 @@ fn direct_and_analytic_features_require_resolved_geometry_and_operands() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::Torus {
             center: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
+            axis: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             major_radius: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
             minor_radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
             op: BooleanOp::Join,

@@ -4476,7 +4476,7 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
             plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 origin.x, origin.y, origin.z,
             ))?,
-            plane_normal: cadmpeg_ir::features::FeatureDirection3::new(
+            plane_normal: cadmpeg_ir::units::UnitVector3::new(
                 vector_property(properties, "Normal")?.unit()?,
             )?,
             plane_reference,
@@ -4513,7 +4513,7 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
         FeatureOperation::ProjectOnSurface {
             sources: PathRef::Native(sources.id.clone()),
             support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(
+            direction: cadmpeg_ir::units::UnitVector3::new(
                 vector_property(properties, "Direction")?.unit()?,
             )?,
             mode,
@@ -5104,7 +5104,7 @@ fn sweep_definition(
                 }
             }
             4 => SweepOrientation::Binormal {
-                direction: cadmpeg_ir::features::FeatureDirection3::new(
+                direction: cadmpeg_ir::units::UnitVector3::new(
                     vector_property(properties, "Binormal")?.unit()?,
                 )?,
             },
@@ -5404,7 +5404,7 @@ fn helical_sweep_definition(
     let construction = HelicalSweepConstruction {
         profile: profile.planar().cloned()?,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
-        axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction.unit()?)?,
+        axis_direction: cadmpeg_ir::units::UnitVector3::new(axis_direction.unit()?)?,
         law,
         pitch: cadmpeg_ir::scalar::NonNegativeLength::new(scalar_named(properties, "Pitch")?)?,
         travel: cadmpeg_ir::features::HelicalSweepTravel::new(
@@ -5857,12 +5857,12 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
         let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
-        let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
+        let axis_dir = cadmpeg_ir::units::UnitVector3::new(axis_dir)?;
         let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
             PatternKind::new(PatternTransform::Circular {
                 axis_origin,
-                axis_dir,
+                axis_dir: cadmpeg_ir::features::FeatureDirection3::from(axis_dir),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(
                     (step * f64::from(count - 1)).to_radians(),
                 )?,
