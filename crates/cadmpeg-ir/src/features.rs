@@ -204,6 +204,13 @@ impl FeatureUnitPlaneFrame {
             })
     }
 
+    /// Replace the origin and keep the admitted axes. The axes alone satisfy
+    /// the frame contract, so the result needs no new admission.
+    #[must_use]
+    pub fn with_origin(self, origin: FinitePoint3) -> Self {
+        Self { origin, ..self }
+    }
+
     /// Return the model-space origin.
     pub fn origin(self) -> Point3 {
         self.origin.get()
@@ -261,6 +268,15 @@ impl FeatureCoordinateFrame {
             && y_axis.dot(z_axis).abs() <= EPS_FEATURE_UNIT_FRAME
             && x_axis.cross(y_axis).dot(z_axis) >= 1.0 - EPS_FEATURE_UNIT_FRAME)
             .then_some(Self { plane, z_axis })
+    }
+    /// Replace the origin and keep the admitted axes. The axes alone satisfy
+    /// the frame contract, so the result needs no new admission.
+    #[must_use]
+    pub fn with_origin(self, origin: FinitePoint3) -> Self {
+        Self {
+            plane: self.plane.with_origin(origin),
+            ..self
+        }
     }
     /// Return the model-space origin.
     pub fn origin(self) -> Point3 {
@@ -364,6 +380,11 @@ macro_rules! checked_feature_plane_frame {
                 if normal.dot(u_axis.get()).abs() > $bound { return None; }
                 Some(Self { origin, normal, u_axis })
             }
+            /// Replace the origin and keep the admitted directions. The
+            /// orthogonality bound depends only on the directions, so the
+            /// result needs no new admission.
+            #[must_use]
+            pub fn with_origin(self, origin: FinitePoint3) -> Self { Self { origin, ..self } }
             /// Return the model-space origin.
             pub fn origin(self) -> Point3 { self.origin.get() }
             /// Return the plane normal with its original magnitude.
@@ -631,22 +652,39 @@ impl FeatureCircularArc {
         radius: PositiveLength,
         angles: crate::geometry::DirectedParameterRange,
     ) -> Option<Self> {
-        Some(Self {
-            center: FinitePoint3::new(center)?,
-            normal: FeatureDirection3::new(normal)?,
+        Some(Self::from_parts(
+            FinitePoint3::new(center)?,
+            FeatureDirection3::new(normal)?,
             radius,
             angles,
-        })
+        ))
+    }
+
+    /// Build an arc from checked parts. The argument types state the whole
+    /// arc contract, so nothing is checked again.
+    #[must_use]
+    pub const fn from_parts(
+        center: FinitePoint3,
+        normal: FeatureDirection3,
+        radius: PositiveLength,
+        angles: crate::geometry::DirectedParameterRange,
+    ) -> Self {
+        Self {
+            center,
+            normal,
+            radius,
+            angles,
+        }
     }
 
     /// Return the circle center.
-    pub fn center(self) -> Point3 {
-        self.center.get()
+    pub fn center(self) -> FinitePoint3 {
+        self.center
     }
 
     /// Return the circle-plane normal.
-    pub fn normal(self) -> Vector3 {
-        self.normal.get()
+    pub fn normal(self) -> FeatureDirection3 {
+        self.normal
     }
 
     /// Return the radius.
@@ -739,6 +777,21 @@ impl FeatureEllipticArc {
             major_axis,
             radii,
             angles,
+        })
+    }
+
+    /// Replace the center and the radii and keep the admitted directions and
+    /// interval. Only the radius order is checked again.
+    #[must_use]
+    pub fn with_center_and_radii(
+        self,
+        center: FinitePoint3,
+        radii: [PositiveLength; 2],
+    ) -> Option<Self> {
+        (radii[1].get() <= radii[0].get()).then_some(Self {
+            center,
+            radii,
+            ..self
         })
     }
 

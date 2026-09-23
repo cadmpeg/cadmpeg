@@ -1035,6 +1035,16 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
+/// Keep the surface frame, with the reference reversed when `sign` is
+/// negative: a negative ring or local radius places the circle start on the
+/// opposite side of the axis.
+fn signed_reference_frame(mut frame: OrthonormalFrame3, sign: f64) -> OrthonormalFrame3 {
+    if sign.is_sign_negative() {
+        frame.reverse_reference();
+    }
+    frame
+}
+
 fn linear_pcurve_carrier(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
@@ -1147,13 +1157,11 @@ fn linear_pcurve_carrier(
                 <= EPS_NEAR_ZERO * first_radius.max(second_radius).max(1.0)
             {
                 (first_radius > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        center,
-                        *axis,
-                        scaled_vector(*ref_direction, local_radius.signum()),
-                        first_radius,
-                    )
-                    .ok()?,
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        FinitePoint3::new(center)?,
+                        signed_reference_frame(cone_surface.frame(), local_radius),
+                        PositiveLength::new(first_radius)?,
+                    ),
                 )))
             } else {
                 let transverse = cross(
@@ -1192,18 +1200,15 @@ fn linear_pcurve_carrier(
         {
             let center = sphere_surface.center().get();
             let axis = sphere_surface.axis();
-            let ref_direction = sphere_surface.ref_direction();
             let radius = sphere_surface.radius().get();
             (radius > 0.0).then_some(())?;
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(center, *axis, radius * start[1].sin()),
-                    *axis,
-                    scaled_vector(*ref_direction, ring.signum()),
-                    ring.abs(),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(offset_point(center, *axis, radius * start[1].sin()))?,
+                    signed_reference_frame(sphere_surface.frame(), ring),
+                    PositiveLength::new(ring.abs())?,
+                ),
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
@@ -1236,19 +1241,16 @@ fn linear_pcurve_carrier(
         {
             let center = torus_surface.center().get();
             let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             (minor_radius > 0.0).then_some(())?;
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    offset_point(center, *axis, minor_radius * start[1].sin()),
-                    *axis,
-                    scaled_vector(*ref_direction, ring.signum()),
-                    ring.abs(),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(offset_point(center, *axis, minor_radius * start[1].sin()))?,
+                    signed_reference_frame(torus_surface.frame(), ring),
+                    PositiveLength::new(ring.abs())?,
+                ),
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))

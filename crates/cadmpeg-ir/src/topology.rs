@@ -1202,11 +1202,22 @@ impl Point {
         self.position.get()
     }
 
+    /// Return the admitted coordinates.
+    #[must_use]
+    pub const fn finite_position(&self) -> FinitePoint3 {
+        self.position
+    }
+
     /// Replace the coordinates, refusing a non-finite position.
     pub fn set_position(&mut self, position: Point3) -> Result<(), &'static str> {
         self.position =
             FinitePoint3::new(position).ok_or("point position coordinates must be finite")?;
         Ok(())
+    }
+
+    /// Replace the coordinates with admitted ones.
+    pub fn set_finite_position(&mut self, position: FinitePoint3) {
+        self.position = position;
     }
 }
 
@@ -1895,6 +1906,36 @@ mod tests {
             r#"{"id":"t:model:point#0","position":{"x":1.0,"y":2.0,"z":3.0},"extra":1}"#
         )
         .is_err());
+    }
+
+    #[test]
+    fn a_point_hands_back_and_takes_its_admitted_position() {
+        use super::Point;
+        use crate::features::FinitePoint3;
+        use crate::ids::PointId;
+        use crate::math::Point3;
+
+        let raw = Point3::new(-0.0, f64::MAX, 5.0e-324);
+        let mut point = Point::new(
+            PointId::mint("t:model:point#0").expect("identity grammar"),
+            raw,
+            None,
+        )
+        .expect("a finite position is a point");
+        let admitted = point.finite_position();
+        assert_eq!(
+            admitted,
+            FinitePoint3::new(raw).expect("finite coordinates")
+        );
+        assert_eq!(
+            [admitted.x, admitted.y, admitted.z].map(f64::to_bits),
+            [raw.x, raw.y, raw.z].map(f64::to_bits)
+        );
+
+        let moved = FinitePoint3::new(Point3::new(1.0, -2.0, 3.5)).expect("finite coordinates");
+        point.set_finite_position(moved);
+        assert_eq!(point.finite_position(), moved);
+        assert_eq!(point.position(), Point3::new(1.0, -2.0, 3.5));
     }
 }
 

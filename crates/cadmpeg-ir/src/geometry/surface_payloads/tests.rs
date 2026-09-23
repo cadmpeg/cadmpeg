@@ -1596,3 +1596,36 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
         }
     }
 }
+
+#[test]
+fn an_axis_revolution_replaces_its_origin_and_keeps_the_admitted_direction() {
+    use super::AxisRevolutionSurfaceConstruction;
+    use crate::features::FinitePoint3;
+    use crate::ids::CurveId;
+    use crate::math::{Point3, Vector3};
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let direction = Vector3::new(0.0, 0.6, 0.8);
+    let mut payload = AxisRevolutionSurfaceConstruction::try_new(
+        directrix.clone(),
+        Point3::new(1.0, 2.0, 3.0),
+        direction,
+    )
+    .unwrap();
+    let moved = Point3::new(-0.0, f64::MAX, 5.0e-324);
+    payload.set_axis_origin(FinitePoint3::new(moved).unwrap());
+    assert_eq!(
+        payload,
+        AxisRevolutionSurfaceConstruction::try_new(directrix, moved, direction).unwrap()
+    );
+    assert_eq!(
+        [
+            payload.axis_origin().x,
+            payload.axis_origin().y,
+            payload.axis_origin().z
+        ]
+        .map(f64::to_bits),
+        [moved.x, moved.y, moved.z].map(f64::to_bits)
+    );
+    assert_eq!(*payload.axis_direction(), direction);
+}

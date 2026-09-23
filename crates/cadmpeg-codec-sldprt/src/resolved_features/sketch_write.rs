@@ -867,11 +867,9 @@ fn patch_direct_curve_body(
         PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(body, request, ellipse),
         PatchCurve::Nurbs(curve) => return patch_direct_nurbs(body, request, curve),
     };
-    let (axis, ref_direction) = match crate::brep::curve_by_attr(body, request.carrier_attr) {
+    let frame = match crate::brep::curve_by_attr(body, request.carrier_attr) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
-            let axis = *circle_curve.axis();
-            let ref_direction = *circle_curve.ref_direction();
-            (axis, ref_direction)
+            circle_curve.frame()
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_))) => {
             return Err(cadmpeg_core::CodecError::Malformed(
@@ -884,10 +882,18 @@ fn patch_direct_curve_body(
             ));
         }
     };
-    let center = lift_point(center_2d, request.origin, request.u_axis, request.v_axis);
+    let center = cadmpeg_ir::features::FinitePoint3::new(lift_point(
+        center_2d,
+        request.origin,
+        request.u_axis,
+        request.v_axis,
+    ))
+    .ok_or_else(|| cadmpeg_core::CodecError::malformed("CircleCurve.center must be finite"))?;
+    let circle_radius = cadmpeg_ir::scalar::PositiveLength::new(radius).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("CircleCurve.radius must be positive and finite")
+    })?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, axis, ref_direction, radius)
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+        cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle_radius),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
     if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
