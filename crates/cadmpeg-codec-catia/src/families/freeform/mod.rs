@@ -1900,10 +1900,10 @@ fn append_resolved_consolidated_surface_curves(
                 let Some(support) = freeform_surface_ids.get(carrier_index).cloned() else {
                     continue;
                 };
-                let surface = if *offset == 0.0 {
+                let surface = if offset.get() == 0.0 {
                     support
                 } else {
-                    let key = (*pos, Some(offset.to_bits()));
+                    let key = (*pos, Some(offset.get().to_bits()));
                     if let Some(id) = surface_ids.get(&key) {
                         id.clone()
                     } else {
@@ -1948,12 +1948,21 @@ fn append_resolved_consolidated_surface_curves(
                         );
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
-                            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(support, *offset, None, None, false, cadmpeg_ir::geometry::OffsetExtension::Legacy { flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {}, cache: None }).map(|admitted_payload| ProceduralSurface::new(
+                            ProceduralSurface::new(
                                 procedural_id,
-                                ProceduralSurfaceDefinition::Offset(admitted_payload),
+                                ProceduralSurfaceDefinition::Offset(
+                                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
+                                        support,
+                                        *offset,
+                                        None,
+                                        None,
+                                        false,
+                                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                                        None,
+                                    ),
+                                ),
                                 None,
-                            ))
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                            ),
                         );
                         surface_ids.insert(key, id.clone());
                         id

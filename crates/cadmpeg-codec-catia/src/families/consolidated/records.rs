@@ -493,7 +493,7 @@ pub(crate) enum ConsolidatedSupportBinding {
         /// Carrier record byte offset.
         pos: usize,
         /// Signed normal offset from the stored carrier to the shared 3D edge.
-        offset: f64,
+        offset: FiniteReal,
     },
 }
 
@@ -1419,7 +1419,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                         .filter_map(|surface| {
                             let binding = ConsolidatedSupportBinding::NurbsCarrier {
                                 pos: surface.pos,
-                                offset: 0.0,
+                                offset: FiniteReal::ZERO,
                             };
                             let points = support_points(&binding, pcurve, &carriers)?;
                             Some((binding, points))
@@ -1565,9 +1565,9 @@ fn support_points(
                     let partials = nurbs_surface_partials(surface, u, v)?;
                     let normal = partials.du.cross(partials.dv).unit()?;
                     Some(Point3::new(
-                        partials.point.x + offset * normal.x,
-                        partials.point.y + offset * normal.y,
-                        partials.point.z + offset * normal.z,
+                        partials.point.x + offset.get() * normal.x,
+                        partials.point.y + offset.get() * normal.y,
+                        partials.point.z + offset.get() * normal.z,
                     ))
                 })
                 .collect()
@@ -1588,7 +1588,7 @@ fn nurbs_carrier_offset(
     geometry: &SurfaceGeometry,
     parameters: &[[f64; 2]],
     anchors: &[Point3],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = geometry else {
         return None;
     };
@@ -1601,7 +1601,7 @@ fn nurbs_carrier_offset(
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
         if residual == Vector3::new(0.0, 0.0, 0.0) {
-            offsets.push(0.0);
+            offsets.push(FiniteReal::ZERO);
             continue;
         }
         let residual_length = residual.x.hypot(residual.y).hypot(residual.z);
@@ -1613,8 +1613,8 @@ fn nurbs_carrier_offset(
             residual.z - normal.z * distance,
         );
         let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
+        let distance = FiniteReal::new(distance)?;
         if !residual_length.is_finite()
-            || !distance.is_finite()
             || !transverse_length.is_finite()
             || transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length
         {
@@ -1623,11 +1623,10 @@ fn nurbs_carrier_offset(
         offsets.push(distance);
     }
     let first = offsets[0];
-    if !first.is_finite()
-        || offsets.iter().any(|value| {
-            (value - first).abs() > EPS_SAMPLE_AGREEMENT * value.abs().max(first.abs())
-        })
-    {
+    if offsets.iter().any(|value| {
+        (value.get() - first.get()).abs()
+            > EPS_SAMPLE_AGREEMENT * value.get().abs().max(first.get().abs())
+    }) {
         return None;
     }
     Some(first)
@@ -1765,7 +1764,7 @@ mod tests {
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
         )
         .expect("constant normal offset");
-        assert_eq!(offset, tiny);
+        assert_eq!(offset.get(), tiny);
 
         assert_eq!(
             nurbs_carrier_offset(

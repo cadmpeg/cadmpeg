@@ -5,6 +5,13 @@
 use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
 use crate::test_support::test_bytes::{le_f32, le_f64};
 
+/// Admit finite fixture parameter bounds.
+pub(crate) fn finite_bounds(bounds: [[f64; 2]; 2]) -> [[cadmpeg_ir::scalar::FiniteReal; 2]; 2] {
+    bounds.map(|pair| {
+        pair.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture bound"))
+    })
+}
+
 pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     let length = u8::try_from(payload.len()).expect("B5 test payload fits its one-byte length");
     bytes.extend_from_slice(&[0xb5, 0x03, class, length]);

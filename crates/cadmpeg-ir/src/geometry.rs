@@ -681,6 +681,18 @@ impl RecordBounds {
         ])
     }
 
+    /// Build the quartet of four present finite values in the native
+    /// record's field order. Every value is finite, so nothing is checked.
+    #[must_use]
+    pub const fn from_finite([first, second, third, fourth]: [FiniteReal; 4]) -> Self {
+        Self([
+            Some(first.get()),
+            Some(second.get()),
+            Some(third.get()),
+            Some(fourth.get()),
+        ])
+    }
+
     /// Return the admitted quartet. Every present position is finite.
     #[must_use]
     pub const fn get(self) -> [Option<f64>; 4] {

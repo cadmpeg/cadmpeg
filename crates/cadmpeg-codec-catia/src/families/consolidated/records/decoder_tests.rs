@@ -305,7 +305,7 @@ fn a5_edge_binding_resolves_partner_nurbs_carrier() {
     ));
     assert!(matches!(
         blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if offset.get() == 0.0
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
@@ -320,7 +320,7 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
     );
     assert!(matches!(
         blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1.0e-6
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.get().abs() - 1.25).abs() < 1.0e-6
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
@@ -338,7 +338,7 @@ fn a5_edge_binding_jointly_resolves_two_direct_nurbs_carriers() {
         blocks[0].supports.iter().all(|support| {
             matches!(
                 support,
-                Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if *offset == 0.0
+                Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if offset.get() == 0.0
             )
         }),
         "{:#?}",

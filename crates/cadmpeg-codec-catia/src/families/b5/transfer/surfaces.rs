@@ -10,8 +10,7 @@ use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface,
-    SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -79,30 +78,14 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
             B5SurfaceCarrier::Analytic,
         ),
-        B5Surface::Cone {
-            apex,
-            direction_x,
-            axis,
-            half_angle,
-            slant_range,
-            ..
-        } => {
-            let slant = slant_range[0];
-            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                vector(*axis),
-                vector(*direction_x),
-                slant * half_angle.sin(),
-                1.0,
-                *half_angle,
-            )
-            .map(SolvedSurfaceGeometry::Cone)
-            .map(SurfaceGeometry::Solved)
-            .map_or(
-                B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
-                B5SurfaceCarrier::Analytic,
-            )
-        }
+        B5Surface::Cone { surface, .. } => surface.map_or(
+            B5SurfaceCarrier::Procedural(B5ProceduralSurface::Unresolved),
+            |surface| {
+                B5SurfaceCarrier::Analytic(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                    surface,
+                )))
+            },
+        ),
         B5Surface::Sphere {
             center,
             direction_x,
@@ -756,7 +739,7 @@ pub(super) fn emit_surfaces(
             "30_offset_surface",
             Exactness::Derived,
         );
-        let record_bounds = parameter_record_bounds(offset.parameter_bounds)?;
+        let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         let _attached = ir.model.add_procedural_surface(
             surface.clone(),
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -781,18 +764,6 @@ pub(super) fn emit_surfaces(
         );
     }
     Ok(surface_ids)
-}
-
-fn parameter_record_bounds(
-    bounds: [[f64; 2]; 2],
-) -> Result<RecordBounds, cadmpeg_core::CodecError> {
-    RecordBounds::try_new([
-        Some(bounds[0][0]),
-        Some(bounds[0][1]),
-        Some(bounds[1][0]),
-        Some(bounds[1][1]),
-    ])
-    .map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn emit_extrusion_procedure(
@@ -962,7 +933,7 @@ fn emit_extrusion_procedure(
         "2c_extrusion_surface",
         Exactness::ByteExact,
     );
-    let record_bounds = parameter_record_bounds(extrusion.parameter_bounds)?;
+    let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     let _attached = ir.model.add_procedural_surface(
         surface_id,
         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -1051,7 +1022,10 @@ mod tests {
             directrix_object_id: 40,
             directrix_parameter_range: [0.0, 1.0],
             direction: Vector3::new(0.0, 0.0, 1.0),
-            parameter_bounds: [[-2.0, 3.0], [0.0, 1.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                [-2.0, 3.0],
+                [0.0, 1.0],
+            ]),
             directrix: ResolvedExtrusionDirectrix::Intersection {
                 cache_fit_tolerance: 1e-5,
                 supports: Box::new([

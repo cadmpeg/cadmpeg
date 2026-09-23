@@ -159,7 +159,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             source_surface: 50,
             distance: 1.0,
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
-            parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 1.0]]),
         },
     )]);
     let supported = BTreeMap::from([(
@@ -180,7 +180,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
         B5ExtrusionSurface {
             object_id: 50,
             direction: [0.0, 0.0, 1.0],
-            parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 2.0]]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 80,
                 supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
@@ -206,7 +206,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
             source_surface: 40,
             distance: 2.0,
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
-            parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 2.0]]),
         },
     )]);
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);

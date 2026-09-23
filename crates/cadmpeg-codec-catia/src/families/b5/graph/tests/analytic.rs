@@ -274,6 +274,17 @@ fn cone_surface_reads_the_native_slant_chart() {
                 0.5 - std::f64::consts::FRAC_PI_2,
                 0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
             ],
+            surface: Some(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                    cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    0.0,
+                    1.0,
+                    0.25,
+                )
+                .expect("the apex-chart cone carrier"),
+            ),
         })
     );
 
@@ -1026,7 +1037,10 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
             source_surface: 3,
             distance: -0.5,
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
-            parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                [-2.0, 3.0],
+                [-4.0, 5.0]
+            ]),
         })
     );
 }
@@ -1078,9 +1092,91 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
             source_surface: 3,
             distance: -6.5,
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Sphere,
-            parameter_bounds: [[0.0, 2.0], [-2.0, 4.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                [0.0, 2.0],
+                [-2.0, 4.0]
+            ]),
         })
     );
+}
+
+#[test]
+fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
+    let mut payload = vec![0; 185];
+    payload[0] = 0x80;
+    let set = |payload: &mut Vec<u8>, offset: usize, values: &[f64]| {
+        for (index, value) in values.iter().enumerate() {
+            payload[offset + 8 * index..offset + 8 * index + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    };
+    set(&mut payload, 1, &[1.0, 2.0, 3.0]);
+    set(&mut payload, 25, &[1.0, 0.0, 0.0]);
+    set(&mut payload, 49, &[0.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        97,
+        &[0.25, 4.0, 0.5, 0.5 + std::f64::consts::PI],
+    );
+    set(&mut payload, 129, &[2.0, 8.0, 3.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        169,
+        &[
+            0.5 - std::f64::consts::FRAC_PI_2,
+            0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
+        ],
+    );
+    let cone = |axis: [f64; 3]| {
+        let mut payload = payload.clone();
+        set(&mut payload, 73, &axis);
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload,
+        })
+    };
+    // One component 1.5e-12 from the cross product: inside the 2e-12
+    // distance, on either side of the axis. The carrier holds the stored
+    // axis and direction_x.
+    for axis in [[0.0, 1.5e-12, 1.0], [0.0, -1.5e-12, -1.0]] {
+        let Some(B5Surface::Cone {
+            surface: Some(surface),
+            ..
+        }) = cone(axis)
+        else {
+            panic!("the cone and its carrier are admitted");
+        };
+        assert_eq!(
+            *surface.frame().axis().as_raw(),
+            cadmpeg_ir::math::Vector3::from(axis)
+        );
+        assert_eq!(
+            *surface.frame().reference().as_raw(),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+        );
+        assert_eq!(surface.radius().get(), 2.0 * 0.25_f64.sin());
+    }
+    // Two components 1.5e-12 from the cross product: about 2.1e-12 away.
+    assert_eq!(cone([1.5e-12, 1.5e-12, 1.0]), None);
+    // An apex whose axis point at the slant start overflows keeps the record
+    // and has no carrier.
+    let mut overflow = payload.clone();
+    set(&mut overflow, 1, &[0.0, 0.0, f64::MAX]);
+    set(&mut overflow, 73, &[0.0, 0.0, 1.0]);
+    set(&mut overflow, 129, &[1.0e308, 1.5e308]);
+    assert!(matches!(
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x29,
+            object_id: 7,
+            payload: overflow,
+        }),
+        Some(B5Surface::Cone { surface: None, .. })
+    ));
 }
 
 #[test]
@@ -1096,6 +1192,7 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
         slant_range: [-2.0, 4.0],
         angular_scale: 3.0,
         angular_domain: [0.0, std::f64::consts::TAU],
+        surface: None,
     };
     let surfaces = BTreeMap::from([(2, carrier)]);
     let mut payload = vec![0x82, 0x82, 0x83];
@@ -1281,7 +1378,10 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             source_surface: 3,
             distance: -0.5,
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Cache,
-            parameter_bounds: [[-2.0, 3.0], [-4.0, 5.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                [-2.0, 3.0],
+                [-4.0, 5.0]
+            ]),
         })
     );
 }
@@ -1343,7 +1443,10 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         Some(B5ExtrusionSurface {
             object_id: 8,
             direction: [0.0, 0.0, 1.0],
-            parameter_bounds: [[-2.0, 6.0], [-3.0, 4.0]],
+            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                [-2.0, 6.0],
+                [-3.0, 4.0]
+            ]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 5,
                 supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
