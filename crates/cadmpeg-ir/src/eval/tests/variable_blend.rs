@@ -470,7 +470,8 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
                 BlendCrossSection::Circular,
                 crate::geometry::CacheContract::from_form(Some(Box::new(
                     RollingBallConstruction {
-                        definition_index: 0,
+                        revision: crate::scalar::PositiveI64::new(23100)
+                            .expect("positive revision"),
                         sides,
                         slice,
                         slice_range: [Some(0.0), Some(1.0)],

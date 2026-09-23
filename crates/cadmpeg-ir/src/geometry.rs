@@ -4237,8 +4237,8 @@ impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct RollingBallConstruction {
-    /// Native subtype definition-table index.
-    pub definition_index: i64,
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: PositiveI64,
     /// Two ordered primary support sides.
     pub sides: Box<[RollingBallSide; 2]>,
     /// Stored slice or center curve.

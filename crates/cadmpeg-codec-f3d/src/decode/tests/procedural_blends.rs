@@ -206,7 +206,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             panic!("expected complete rolling-ball graph")
         };
 
-        assert_eq!(native.definition_index, 22507);
+        assert_eq!(native.revision.get(), 22507);
         assert_eq!(
             native.sides[0].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
@@ -373,6 +373,46 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
         ));
+    }
+}
+
+/// The complete rolling-ball grammar opens with a positive serializer
+/// revision. A record whose leading integer is not positive is outside that
+/// grammar and carries no native rolling-ball graph.
+#[test]
+fn a_non_positive_rolling_ball_revision_is_outside_the_complete_grammar() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let mut stored = vec![0x04];
+    stored.extend_from_slice(&22507_i64.to_le_bytes());
+    for revision in [0_i64, -1] {
+        let mut smbh = synthetic_full_rolling_ball_smbh("rb_blend_spl_sur");
+        let offsets: Vec<usize> = smbh
+            .windows(stored.len())
+            .enumerate()
+            .filter_map(|(offset, window)| (window == stored.as_slice()).then_some(offset))
+            .collect();
+        assert_eq!(offsets.len(), 1, "one stored serializer revision");
+        smbh[offsets[0] + 1..offsets[0] + stored.len()].copy_from_slice(&revision.to_le_bytes());
+
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("rolling-ball decode");
+        assert!(
+            !result
+                .ir()
+                .model
+                .procedural_surfaces
+                .iter()
+                .any(|surface| matches!(
+                    surface.definition(),
+                    ProceduralSurfaceDefinition::Blend(payload) if payload.native().is_some()
+                )),
+            "revision {revision}"
+        );
     }
 }
 

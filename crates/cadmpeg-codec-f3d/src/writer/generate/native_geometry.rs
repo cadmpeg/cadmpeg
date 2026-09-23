@@ -4139,7 +4139,7 @@ fn encode_complete_native_rolling_ball(
             "rb_blend_spl_sur"
         },
     )?;
-    native_i64(bytes, construction.definition_index);
+    native_i64(bytes, construction.revision.get());
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
