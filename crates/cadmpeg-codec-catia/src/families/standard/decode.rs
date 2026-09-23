@@ -631,7 +631,7 @@ fn refine_consolidated_analytic_surfaces(
                 let radius = cylinder_surface.radius().get();
                 exactly_one(cylinders.iter().filter_map(|cylinder| {
                     (same_point(origin, cylinder.origin)
-                        && same_axis(*axis, cylinder.axis.get())
+                        && same_axis(*axis, cylinder.frame.axis().get())
                         && radius.to_bits() == quantized(cylinder.radius.get()).to_bits())
                     .then_some((cylinder.surface_geometry()?, cylinder.pos))
                 }))
@@ -690,7 +690,7 @@ fn refine_consolidated_analytic_surfaces(
                 let minor_radius = torus_surface.minor_radius().get();
                 exactly_one(tori.iter().filter(|torus| {
                     same_point(center, torus.center)
-                        && same_axis(*axis, torus.axis.get())
+                        && same_axis(*axis, torus.frame.axis().get())
                         && major_radius.to_bits() == quantized(torus.major_radius.get()).to_bits()
                         && minor_radius.to_bits() == quantized(torus.minor_radius.get()).to_bits()
                 }))

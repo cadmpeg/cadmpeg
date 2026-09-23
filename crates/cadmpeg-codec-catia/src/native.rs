@@ -7409,8 +7409,8 @@ fn consolidated_cylinders(
                 crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector } => {
                     CatiaConsolidatedCylinderPayload::RangeOrigin {
                         stored_vector,
-                        axis: cylinder.axis,
-                        reference_direction: cylinder.reference_direction,
+                        axis: cylinder.frame.axis(),
+                        reference_direction: cylinder.frame.reference(),
                         range_origin: cylinder.range_origin().unwrap_or_else(|| {
                             crate::families::b2::records::cylinder_range_origin(
                                 cylinder.radius.get(),
@@ -7422,15 +7422,15 @@ fn consolidated_cylinders(
                 crate::families::b2::records::B2CylinderLayout::Full52 => {
                     CatiaConsolidatedCylinderPayload::Layout52 {
                         frame_token: cylinder.frame_token(),
-                        axis: cylinder.axis,
-                        reference_direction: cylinder.reference_direction,
+                        axis: cylinder.frame.axis(),
+                        reference_direction: cylinder.frame.reference(),
                     }
                 }
                 crate::families::b2::records::B2CylinderLayout::Full5a { frame_token } => {
                     CatiaConsolidatedCylinderPayload::Layout5a {
                         frame_token,
-                        axis: cylinder.axis,
-                        reference_direction: cylinder.reference_direction,
+                        axis: cylinder.frame.axis(),
+                        reference_direction: cylinder.frame.reference(),
                     }
                 }
             };
@@ -7475,8 +7475,8 @@ fn consolidated_cylinder_groups(
                 u_range: embedded.cylinder.u_range,
                 v_range: embedded.cylinder.v_range,
                 frame_token: embedded.cylinder.frame_token(),
-                axis: embedded.cylinder.axis,
-                reference_direction: embedded.cylinder.reference_direction,
+                axis: embedded.cylinder.frame.axis(),
+                reference_direction: embedded.cylinder.frame.reference(),
             });
         }
         groups.push(group);
@@ -7648,7 +7648,7 @@ fn consolidated_revolutions(
             byte_offset: revolution.pos as u64,
             reference_token: revolution.reference_token,
             profile_allocation_id: revolution.profile_allocation_id,
-            origin: revolution.origin,
+            origin: revolution.origin.get().into(),
             direction_x: revolution.direction_x,
             direction_y: revolution.direction_y,
             axis: revolution.axis,
@@ -7691,9 +7691,9 @@ fn consolidated_spheres(
             id: format!("catia:consolidated:sphere#{index}"),
             byte_offset: sphere.pos as u64,
             center: sphere.center,
-            direction_x: sphere.direction_x,
+            direction_x: sphere.frame.reference(),
             direction_y: sphere.direction_y,
-            axis: sphere.axis,
+            axis: sphere.frame.axis(),
             radius: sphere.radius,
             azimuth_range: sphere.azimuth_range,
             latitude_range: sphere.latitude_range,
@@ -7709,9 +7709,9 @@ fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaC
             id: format!("catia:consolidated:torus#{index}"),
             byte_offset: torus.pos as u64,
             center: torus.center,
-            direction_x: torus.direction_x,
+            direction_x: torus.frame.reference(),
             direction_y: torus.direction_y,
-            axis: torus.axis,
+            axis: torus.frame.axis(),
             major_radius: torus.major_radius,
             minor_radius: torus.minor_radius,
             major_angular_range: torus.major_angular_range,

@@ -7,6 +7,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry},
+    surface_payloads::RevolutionSurfaceConstruction,
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
     RollingBallJetDerivative, RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -68,11 +69,7 @@ pub(super) fn append_consolidated_revolutions(
         let direction_x = Vector3::from(revolution.direction_x.get());
         let direction_y = Vector3::from(revolution.direction_y.get());
         let axis = Vector3::from(revolution.axis.get());
-        let origin = Point3::new(
-            revolution.origin[0],
-            revolution.origin[1],
-            revolution.origin[2],
-        );
+        let origin = revolution.origin.get();
         let transverse_coordinate =
             origin.x * direction_x.x + origin.y * direction_x.y + origin.z * direction_x.z;
         let center = Point3::new(
@@ -196,20 +193,21 @@ pub(super) fn append_consolidated_revolutions(
         });
         let _attached = ir.model.add_procedural_surface(
             surface,
-            cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_origin(
-                origin,
-                revolution.axis.into(),
-            )
-            .and_then(|axis| {
-                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+            RevolutionSurfaceConstruction::admit_angular_interval([
+                revolution.angular_range[0] / revolution.angular_scale.get(),
+                revolution.angular_range[1] / revolution.angular_scale.get(),
+            ])
+            .and_then(|angular_interval| {
+                RevolutionSurfaceConstruction::try_from_intervals(
                     directrix,
-                    axis,
-                    [
-                        revolution.angular_range[0] / revolution.angular_scale.get(),
-                        revolution.angular_range[1] / revolution.angular_scale.get(),
-                    ],
-                    Some(revolution.angular_range),
-                    Some(revolution.profile_range.endpoints()),
+                    (revolution.origin, revolution.axis.into()),
+                    angular_interval,
+                    Some(
+                        RevolutionSurfaceConstruction::admit_angular_parameter_interval(
+                            revolution.angular_range,
+                        )?,
+                    ),
+                    Some(revolution.profile_range),
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
@@ -4262,6 +4260,7 @@ mod tests {
         use crate::checked::ExactUnitVector3;
         use crate::families::b2::records::{B2Circle, B2ResolvedRevolution, B2Revolution};
         use crate::native::{CatiaCircleLayout, CatiaRevolutionReferenceToken};
+        use cadmpeg_ir::features::FinitePoint3;
         use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
         use cadmpeg_ir::topology::IncreasingParameterInterval;
 
@@ -4278,7 +4277,7 @@ mod tests {
                 pos: 0,
                 reference_token: CatiaRevolutionReferenceToken::Compact,
                 profile_allocation_id: 1,
-                origin: [0.0, 0.0, 0.0],
+                origin: FinitePoint3::ZERO,
                 direction_x: unit([1.0, 0.0, 0.0]),
                 direction_y: unit([0.0, 1.0, 0.0]),
                 axis: unit([0.0, 0.0, 1.0]),

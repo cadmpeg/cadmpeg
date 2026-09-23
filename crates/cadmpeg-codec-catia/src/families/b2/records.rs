@@ -19,8 +19,8 @@ use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
-    CoordinatePlane, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3,
-    RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
+    ExactDeviation, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3, HypotLength,
+    RelaxedDeviation, RelaxedUnitVector2, RelaxedUnitVector3, SquaredLength, UnitFrame3,
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
@@ -1851,8 +1851,8 @@ pub(in crate::families) fn b2_cylinder_point(
     }
     let radius = cylinder.radius.get();
     let angle = uv[0] / radius;
-    let axis = Vector3::from(cylinder.axis.get());
-    let ref_direction = Vector3::from(cylinder.reference_direction.get());
+    let axis = Vector3::from(cylinder.frame.axis().get());
+    let ref_direction = Vector3::from(cylinder.frame.reference().get());
     let perpendicular = axis.cross(ref_direction);
     Some(Point3::new(
         cylinder.origin[0]
@@ -2089,10 +2089,9 @@ pub(crate) struct B2Cylinder {
     pub(crate) pos: usize,
     /// Cylinder-axis origin.
     pub(crate) origin: [f64; 3],
-    /// Cylinder-axis unit direction.
-    pub(crate) axis: RelaxedHypotUnitVector3,
-    /// Unit direction from which the circumferential parameter is measured.
-    pub(crate) reference_direction: RelaxedHypotUnitVector3,
+    /// Cylinder-axis unit direction and the unit direction from which the
+    /// circumferential parameter is measured.
+    pub(crate) frame: UnitFrame3<RelaxedDeviation, HypotLength>,
     /// Cylinder radius.
     pub(crate) radius: PositiveLength,
     /// Arc-length circumferential range.
@@ -2132,7 +2131,7 @@ impl B2Cylinder {
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                 FinitePoint3::new(Point3::from(self.origin))?,
-                OrthonormalFrame3::from_units(self.axis.into(), self.reference_direction.into())?,
+                self.frame.into(),
                 self.radius,
             ),
         )))
@@ -2176,7 +2175,7 @@ pub(crate) struct B2Revolution {
     /// Stored profile allocation identity.
     pub(crate) profile_allocation_id: u16,
     /// Axis-frame origin.
-    pub(crate) origin: [f64; 3],
+    pub(crate) origin: FinitePoint3,
     /// First transverse unit direction.
     pub(crate) direction_x: ExactUnitVector3,
     /// Second transverse unit direction.
@@ -2223,12 +2222,10 @@ pub(crate) struct B2Sphere {
     pub(crate) pos: usize,
     /// Sphere centre.
     pub(crate) center: [f64; 3],
-    /// First transverse unit direction.
-    pub(crate) direction_x: ExactHypotUnitVector3,
+    /// Sphere-axis unit direction and the first transverse unit direction.
+    pub(crate) frame: UnitFrame3<ExactDeviation, HypotLength>,
     /// Second transverse unit direction.
     pub(crate) direction_y: ExactHypotUnitVector3,
-    /// Sphere-axis unit direction.
-    pub(crate) axis: ExactHypotUnitVector3,
     /// Sphere radius.
     pub(crate) radius: PositiveLength,
     /// Active azimuth interval.
@@ -2244,12 +2241,10 @@ pub(crate) struct B2Torus {
     pub(crate) pos: usize,
     /// Torus centre.
     pub(crate) center: [f64; 3],
-    /// First transverse unit direction.
-    pub(crate) direction_x: ExactUnitVector3,
+    /// Torus-axis unit direction and the first transverse unit direction.
+    pub(crate) frame: UnitFrame3<ExactDeviation, SquaredLength>,
     /// Second transverse unit direction.
     pub(crate) direction_y: ExactUnitVector3,
-    /// Torus-axis unit direction.
-    pub(crate) axis: ExactUnitVector3,
     /// Major radius.
     pub(crate) major_radius: PositiveLength,
     /// Minor radius.
@@ -2562,9 +2557,12 @@ pub(crate) fn b2_revolutions_from_records(
             direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
         ];
         let unit = ExactUnitVector3::new;
-        let (Some(direction_x), Some(direction_y), Some(axis)) =
-            (unit(direction_x), unit(direction_y), unit(axis))
-        else {
+        let (Some(origin), Some(direction_x), Some(direction_y), Some(axis)) = (
+            FinitePoint3::new(Point3::new(axis_frame[0], axis_frame[1], axis_frame[2])),
+            unit(direction_x),
+            unit(direction_y),
+            unit(axis),
+        ) else {
             continue;
         };
         let (Some(profile_range), Some(angular_scale)) = (
@@ -2573,9 +2571,8 @@ pub(crate) fn b2_revolutions_from_records(
         ) else {
             continue;
         };
-        if axis_frame
+        if bounds
             .iter()
-            .chain(&bounds)
             .chain(&[mean_angle_parameter])
             .any(|value| !value.is_finite())
             || profile_allocation_id == 0
@@ -2593,7 +2590,7 @@ pub(crate) fn b2_revolutions_from_records(
             pos: frame.pos,
             reference_token,
             profile_allocation_id,
-            origin: [axis_frame[0], axis_frame[1], axis_frame[2]],
+            origin,
             direction_x,
             direction_y,
             axis,
@@ -2730,12 +2727,12 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let direction_x = ExactUnitVector3::new(direction_x)?;
             let direction_y = ExactUnitVector3::new(direction_y)?;
             let axis = ExactUnitVector3::new(axis)?;
+            let axis_frame = UnitFrame3::from_units(axis, direction_x)?;
             let major_radius = PositiveLength::new(major_radius)?;
             let minor_radius = PositiveLength::new(minor_radius)?;
             let major_scale = PositiveReal::new(major_scale)?;
             let minor_scale = PositiveReal::new(minor_scale)?;
             (dot(direction_x.get(), direction_y.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && dot(direction_x.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
                 && dot(direction_y.get(), axis.get()).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
                 && cross
                     .iter()
@@ -2750,9 +2747,8 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
                 .then_some(B2Torus {
                     pos: frame.pos,
                     center,
-                    direction_x,
+                    frame: axis_frame,
                     direction_y,
-                    axis,
                     major_radius,
                     minor_radius,
                     major_angular_range,
@@ -2819,16 +2815,16 @@ pub(crate) fn b2_spheres_from_records(
                 .iter()
                 .zip(axis.get())
                 .all(|(cross, axis)| (cross - axis).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY)
-                .then_some(B2Sphere {
-                    pos: frame.pos,
-                    center,
-                    direction_x,
-                    direction_y,
-                    axis,
-                    radius,
-                    azimuth_range,
-                    latitude_range,
-                })
+                .then_some(())?;
+            Some(B2Sphere {
+                pos: frame.pos,
+                center,
+                frame: UnitFrame3::from_units(axis, direction_x)?,
+                direction_y,
+                radius,
+                azimuth_range,
+                latitude_range,
+            })
         })
         .collect()
 }
@@ -2904,7 +2900,7 @@ pub(in crate::families) fn b2_sphere_geometry(sphere: &B2Sphere) -> Option<Surfa
                 sphere.center[1],
                 sphere.center[2],
             ))?,
-            OrthonormalFrame3::from_units(sphere.axis.into(), sphere.direction_x.into())?,
+            sphere.frame.into(),
             NonZeroLength::from(sphere.radius),
         ),
     )))
@@ -2916,7 +2912,7 @@ pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> Option<SurfaceG
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::new(
             FinitePoint3::new(Point3::from(torus.center))?,
-            OrthonormalFrame3::from_units(torus.axis.into(), torus.direction_x.into())?,
+            torus.frame.into(),
             torus.major_radius,
             NonZeroLength::from(torus.minor_radius),
         ),
@@ -2977,12 +2973,10 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 0x1c => vector.reverse_quarter_turn(),
                 _ => return None,
             };
-            let ref_direction = axis.quarter_turn();
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: axis.in_plane(CoordinatePlane::Xy),
-                reference_direction: ref_direction.in_plane(CoordinatePlane::Xy),
+                frame: UnitFrame3::in_xy_plane(axis),
                 radius,
                 u_range,
                 v_range,
@@ -3011,8 +3005,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedHypotUnitVector3::X,
-                reference_direction: RelaxedHypotUnitVector3::Y,
+                frame: UnitFrame3::X_AXIS_Y_REFERENCE,
                 radius,
                 u_range,
                 v_range,
@@ -3042,8 +3035,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             Some(B2Cylinder {
                 pos,
                 origin: origin_values,
-                axis: RelaxedHypotUnitVector3::Y,
-                reference_direction: vector.in_plane(CoordinatePlane::Xz),
+                frame: UnitFrame3::about_y_axis(vector),
                 radius,
                 u_range,
                 v_range,

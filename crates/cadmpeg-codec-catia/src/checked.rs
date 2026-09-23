@@ -105,21 +105,12 @@ pub(crate) type RelaxedUnitVector3 = UnitVector3<RelaxedDeviation, SquaredLength
 /// A direction whose `hypot` length is one to `1e-9`.
 pub(crate) type RelaxedHypotUnitVector3 = UnitVector3<RelaxedDeviation, HypotLength>;
 
-/// A coordinate plane a planar direction is placed in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CoordinatePlane {
-    /// First component on X, second on Y.
-    Xy,
-    /// First component on X, second on Z.
-    Xz,
-}
-
 /// A finite planar direction whose `hypot` length is one within `Tolerance`.
 ///
 /// Every tolerance is at most the `1e-9` of the IR
 /// [`cadmpeg_ir::units::UnitVector2`] admission, which measures the same
 /// `hypot` length. The type holds the admitted IR direction, so its quarter
-/// turns and placements are the IR's length-preserving routes.
+/// turns and the frames placed from it are the IR's length-preserving routes.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub(crate) struct UnitVector2<Tolerance: DeviationTolerance>(
@@ -149,6 +140,7 @@ impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     }
 
     /// Turns the direction a quarter turn, to `[-second, first]`.
+    #[cfg(test)]
     pub(crate) fn quarter_turn(self) -> Self {
         Self(self.0.quarter_turn(), PhantomData)
     }
@@ -156,20 +148,6 @@ impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     /// Turns the direction a quarter turn the other way, to `[second, -first]`.
     pub(crate) fn reverse_quarter_turn(self) -> Self {
         Self(self.0.reverse_quarter_turn(), PhantomData)
-    }
-
-    /// Places the components in a coordinate plane, leaving the third axis
-    /// zero. `hypot` of a component with zero is that component's magnitude, so
-    /// the spatial direction's `hypot` length is this one's, bit for bit: it
-    /// inherits this direction's admission and needs no second test.
-    pub(crate) fn in_plane(self, plane: CoordinatePlane) -> UnitVector3<Tolerance, HypotLength> {
-        UnitVector3(
-            match plane {
-                CoordinatePlane::Xy => cadmpeg_ir::units::UnitVector3::in_xy_plane(self.0),
-                CoordinatePlane::Xz => cadmpeg_ir::units::UnitVector3::in_xz_plane(self.0),
-            },
-            PhantomData,
-        )
     }
 }
 
@@ -191,12 +169,6 @@ impl<Tolerance: DeviationTolerance> From<UnitVector2<Tolerance>> for [f64; 2] {
 impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
     UnitVector3<Tolerance, Measurement>
 {
-    /// The +X direction.
-    pub(crate) const X: Self = Self(cadmpeg_ir::units::UnitVector3::X_AXIS, PhantomData);
-
-    /// The +Y direction.
-    pub(crate) const Y: Self = Self(cadmpeg_ir::units::UnitVector3::Y_AXIS, PhantomData);
-
     /// Constructs a unit direction whose measured length is one within the
     /// tolerance.
     pub(crate) fn new(value: [f64; 3]) -> Option<Self> {
@@ -262,6 +234,80 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
     }
 }
 
+/// Two perpendicular directions, each admitted by `Measurement` within
+/// `Tolerance`, held as the admitted IR frame.
+///
+/// Every route stores directions that carry this type's direction admission:
+/// the constant is exact, [`Self::from_units`] stores two admitted directions
+/// unchanged, and the planar routes place an admitted planar direction with
+/// its `hypot` length bit for bit. The accessors therefore return admitted
+/// directions without a second test, and the conversion into the IR frame is
+/// total.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct UnitFrame3<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>(
+    cadmpeg_ir::units::OrthonormalFrame3,
+    PhantomData<(Tolerance, Measurement)>,
+);
+
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
+    UnitFrame3<Tolerance, Measurement>
+{
+    /// The frame with first direction +X and second direction +Y. Every
+    /// measurement gives these directions a length of exactly one.
+    pub(crate) const X_AXIS_Y_REFERENCE: Self = Self(
+        cadmpeg_ir::units::OrthonormalFrame3::X_AXIS_Y_REFERENCE,
+        PhantomData,
+    );
+
+    /// Admits two admitted directions that are perpendicular by the IR frame
+    /// measurement.
+    pub(crate) fn from_units(
+        axis: UnitVector3<Tolerance, Measurement>,
+        reference: UnitVector3<Tolerance, Measurement>,
+    ) -> Option<Self> {
+        cadmpeg_ir::units::OrthonormalFrame3::from_units(axis.0, reference.0)
+            .map(|frame| Self(frame, PhantomData))
+    }
+
+    /// Returns the first direction.
+    pub(crate) fn axis(self) -> UnitVector3<Tolerance, Measurement> {
+        UnitVector3(self.0.unit_axis(), PhantomData)
+    }
+
+    /// Returns the second direction.
+    pub(crate) fn reference(self) -> UnitVector3<Tolerance, Measurement> {
+        UnitVector3(self.0.unit_reference(), PhantomData)
+    }
+}
+
+impl<Tolerance: DeviationTolerance> UnitFrame3<Tolerance, HypotLength> {
+    /// Places a planar direction in the XY plane as the first direction, with
+    /// its quarter turn `[-second, first, 0]` as the second direction.
+    pub(crate) fn in_xy_plane(axis: UnitVector2<Tolerance>) -> Self {
+        Self(
+            cadmpeg_ir::units::OrthonormalFrame3::in_xy_plane(axis.0),
+            PhantomData,
+        )
+    }
+
+    /// Takes +Y as the first direction and places a planar direction in the
+    /// XZ plane, as `[first, 0, second]`, as the second direction.
+    pub(crate) fn about_y_axis(reference: UnitVector2<Tolerance>) -> Self {
+        Self(
+            cadmpeg_ir::units::OrthonormalFrame3::about_y_axis(reference.0),
+            PhantomData,
+        )
+    }
+}
+
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
+    From<UnitFrame3<Tolerance, Measurement>> for cadmpeg_ir::units::OrthonormalFrame3
+{
+    fn from(value: UnitFrame3<Tolerance, Measurement>) -> Self {
+        value.0
+    }
+}
+
 /// A byte-extent width that reports its own overflow on addition.
 pub(crate) trait ByteExtent: Copy + Ord {
     /// The sum, or `None` when the sum leaves the width.
@@ -297,10 +343,21 @@ pub(crate) fn extents_overlap<Extent: ByteExtent>(
 #[cfg(test)]
 mod tests {
     use super::{
-        CoordinatePlane, DeviationTolerance, ExactDeviation, ExactHypotUnitVector3,
-        ExactNormUnitVector3, ExactUnitVector3, RelaxedHypotUnitVector3, RelaxedUnitVector2,
-        RelaxedUnitVector3,
+        DeviationTolerance, ExactDeviation, ExactHypotUnitVector3, ExactNormUnitVector3,
+        ExactUnitVector3, HypotLength, RelaxedDeviation, RelaxedHypotUnitVector3,
+        RelaxedUnitVector2, RelaxedUnitVector3, UnitFrame3,
     };
+
+    type RelaxedHypotFrame = UnitFrame3<RelaxedDeviation, HypotLength>;
+
+    /// The pair placed in the XY and the XZ plane, through the frames that
+    /// place it.
+    fn placements(pair: RelaxedUnitVector2) -> [RelaxedHypotUnitVector3; 2] {
+        [
+            RelaxedHypotFrame::in_xy_plane(pair).axis(),
+            RelaxedHypotFrame::about_y_axis(pair).reference(),
+        ]
+    }
 
     #[test]
     fn exact_directions_reject_the_relaxed_tolerance_band() {
@@ -387,8 +444,7 @@ mod tests {
     fn planar_placements_deserialize_wherever_the_pair_was_admitted() {
         let component = 1.0 + 6.0e-10;
         let pair = RelaxedUnitVector2::from_hypot([component, 0.0]).expect("pair inside the band");
-        for plane in [CoordinatePlane::Xy, CoordinatePlane::Xz] {
-            let placed = pair.in_plane(plane);
+        for placed in placements(pair) {
             let wire = serde_json::to_value(placed).expect("serialize placed direction");
             assert_eq!(
                 serde_json::from_value::<RelaxedHypotUnitVector3>(wire)
@@ -427,15 +483,17 @@ mod tests {
         let exact_hypot =
             ExactHypotUnitVector3::new([0.0, 0.0, -1.0 - 9.0e-13]).expect("hypot band");
         same_ir_direction(exact_hypot.get(), exact_hypot.into());
-        for constant in [RelaxedHypotUnitVector3::X, RelaxedHypotUnitVector3::Y] {
+        for constant in [
+            RelaxedHypotFrame::X_AXIS_Y_REFERENCE.axis(),
+            RelaxedHypotFrame::X_AXIS_Y_REFERENCE.reference(),
+        ] {
             same_ir_direction(constant.get(), constant.into());
         }
 
         let pair = RelaxedUnitVector2::from_hypot([0.6 * (1.0 + 9.9e-10), 0.8 * (1.0 + 9.9e-10)])
             .expect("pair inside the band");
         for turned in [pair, pair.quarter_turn(), pair.reverse_quarter_turn()] {
-            for plane in [CoordinatePlane::Xy, CoordinatePlane::Xz] {
-                let placed = turned.in_plane(plane);
+            for placed in placements(turned) {
                 assert_eq!(RelaxedHypotUnitVector3::new(placed.get()), Some(placed));
                 same_ir_direction(placed.get(), placed.into());
             }
@@ -444,9 +502,62 @@ mod tests {
         assert_eq!(pair.quarter_turn().get(), [-second, first]);
         assert_eq!(pair.reverse_quarter_turn().get(), [second, -first]);
         assert_eq!(
-            pair.in_plane(CoordinatePlane::Xz).get().map(f64::to_bits),
+            placements(pair)[1].get().map(f64::to_bits),
             [first, 0.0, second].map(f64::to_bits)
         );
+    }
+
+    #[test]
+    fn frames_return_the_directions_they_admitted_and_convert_to_the_same_ir_frame() {
+        let pair = RelaxedUnitVector2::from_hypot([0.6 * (1.0 + 9.9e-10), -0.8])
+            .expect("pair inside the band");
+        let [first, second] = pair.get();
+        let bits = |direction: RelaxedHypotUnitVector3| direction.get().map(f64::to_bits);
+        let xy = RelaxedHypotFrame::in_xy_plane(pair);
+        assert_eq!(bits(xy.axis()), [first, second, 0.0].map(f64::to_bits));
+        assert_eq!(
+            bits(xy.reference()),
+            [-second, first, 0.0].map(f64::to_bits)
+        );
+        let about_y = RelaxedHypotFrame::about_y_axis(pair);
+        assert_eq!(bits(about_y.axis()), [0.0, 1.0, 0.0].map(f64::to_bits));
+        assert_eq!(
+            bits(about_y.reference()),
+            [first, 0.0, second].map(f64::to_bits)
+        );
+        let constant = RelaxedHypotFrame::X_AXIS_Y_REFERENCE;
+        assert_eq!(bits(constant.axis()), [1.0, 0.0, 0.0].map(f64::to_bits));
+        assert_eq!(
+            bits(constant.reference()),
+            [0.0, 1.0, 0.0].map(f64::to_bits)
+        );
+        for frame in [xy, about_y, constant] {
+            for direction in [frame.axis(), frame.reference()] {
+                assert_eq!(
+                    RelaxedHypotUnitVector3::new(direction.get()),
+                    Some(direction)
+                );
+            }
+            assert_eq!(
+                RelaxedHypotFrame::from_units(frame.axis(), frame.reference()),
+                Some(frame)
+            );
+            assert_eq!(
+                cadmpeg_ir::units::OrthonormalFrame3::from(frame),
+                cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                    frame.axis().into(),
+                    frame.reference().into()
+                )
+                .expect("perpendicular")
+            );
+        }
+
+        let axis = ExactUnitVector3::new([0.0, 0.0, 1.0]).expect("unit");
+        let tilted = ExactUnitVector3::new([1.0, 0.0, 2.0e-9]).expect("unit");
+        assert!(UnitFrame3::from_units(axis, tilted).is_none());
+        let reference = ExactUnitVector3::new([1.0, 0.0, 5.0e-10]).expect("unit");
+        let frame = UnitFrame3::from_units(axis, reference).expect("perpendicular");
+        assert_eq!((frame.axis(), frame.reference()), (axis, reference));
     }
 
     #[test]
