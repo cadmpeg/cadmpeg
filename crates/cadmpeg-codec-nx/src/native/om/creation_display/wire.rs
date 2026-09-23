@@ -153,7 +153,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
         }
         let encoding = match (wire.encoding, wire.first_index, wire.raw_first_index, wire.first_index_source_offset, wire.target_object_id) {
             (RmCreationDisplayDataEncodingWire::Index { indices, raw_indices, index_source_offsets, flag }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), None) => {
-                let [a, b, c, d] = row_indices(indices, raw_indices);
+                let [a, b, c, d] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into(), d?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
                 let flag = crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?;
@@ -163,7 +163,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 RmCreationDisplayDataEncoding::Index(row)
             }
             (RmCreationDisplayDataEncodingWire::Linked { indices, raw_indices, index_source_offsets, flag, target_index, raw_target_index, target_index_source_offset, mode, discriminator }, Some(first_index), Some(raw_first_index), Some(first_index_source_offset), target_object_id) => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let first = atom(first_index, &raw_first_index, "first_index/raw_first_index")?;
                 let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
@@ -174,7 +174,7 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 RmCreationDisplayDataEncoding::Linked { row, target_object_id }
             }
             (RmCreationDisplayDataEncodingWire::Target { indices, raw_indices, index_source_offsets, target_index, raw_target_index, target_index_source_offset, mode }, None, None, None, target_object_id) => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(target_index, &raw_target_index, "target_index/raw_target_index")?.into();
                 let row = TargetRow::<(), u64>::new(target, indices, mode, wire.source_offset).ok_or("source_offset: row extent overflows")?;
