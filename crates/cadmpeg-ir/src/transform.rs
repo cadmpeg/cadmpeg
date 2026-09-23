@@ -222,9 +222,6 @@ impl Transform {
     /// Whether this is a finite, right-handed rigid transform.
     pub fn is_proper_rigid(&self) -> bool {
         const EPSILON: f64 = 1.0e-9;
-        if !self.is_finite() {
-            return false;
-        }
         let x = [self.rows[0][0], self.rows[1][0], self.rows[2][0]];
         let y = [self.rows[0][1], self.rows[1][1], self.rows[2][1]];
         let z = [self.rows[0][2], self.rows[1][2], self.rows[2][2]];

@@ -502,8 +502,7 @@ pub(super) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool
     else {
         return true;
     };
-    face_selection_is_incomplete(faces)
-        || distance.is_none_or(|distance| !distance.get().is_finite())
+    face_selection_is_incomplete(faces) || distance.is_none()
 }
 
 pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {

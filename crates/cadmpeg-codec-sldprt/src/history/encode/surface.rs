@@ -103,12 +103,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !distance.get().is_finite() || distance.get() <= 0.0 {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has an invalid surface extension",
-                    feature.id
-                )));
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
@@ -173,12 +167,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     distance,
                 } => ("Direction", Some(*direction), *distance),
             };
-            if !distance.get().is_finite() || distance.get() <= 0.0 {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has an invalid ruled-surface distance",
-                    feature.id
-                )));
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
@@ -406,12 +394,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
-            if !distance.get().is_finite() {
-                return Err(CodecError::malformed(format_args!(
-                    "SLDPRT feature {} has a non-finite surface offset",
-                    feature.id
-                )));
-            }
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();

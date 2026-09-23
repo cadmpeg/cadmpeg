@@ -3952,9 +3952,6 @@ fn project_ruled_surface(
         operation.distance_owner_record_index,
         "ruledDistance",
     )?)?;
-    if distance.get() <= 0.0 {
-        return None;
-    }
     let angle = design_angle(parameter(operation.angle_owner_record_index, "ruledAngle")?)?;
     let mode = match operation.method {
         DesignRuledSurfaceMethod::Tangent => RuledSurfaceMode::Tangent { distance },
@@ -8852,9 +8849,6 @@ fn project_coil(
     };
     let diameter = design_positive_length(unique("Diameter")?)?;
     let section_size = design_positive_length(unique("SectionSize")?)?;
-    if diameter.get() <= 0.0 || section_size.get() <= 0.0 {
-        return None;
-    }
     let dimensionless = |kind: &str| {
         let parameter = unique(kind)?;
         parameter.unit().is_none().then_some(())?;

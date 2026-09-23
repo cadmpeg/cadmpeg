@@ -109,12 +109,8 @@ pub(super) fn extrude_extent_is_incomplete(
 pub(super) fn extrude_start_is_incomplete(start: &ExtrudeStart) -> bool {
     match start {
         ExtrudeStart::Unresolved {} => true,
-        ExtrudeStart::FromFace { face, offset } => {
-            face_selection_is_incomplete(face)
-                || offset.is_some_and(|offset| !offset.get().is_finite())
-        }
-        ExtrudeStart::OffsetProfilePlane { offset } => !offset.get().is_finite(),
-        ExtrudeStart::ProfilePlane {} => false,
+        ExtrudeStart::FromFace { face, .. } => face_selection_is_incomplete(face),
+        ExtrudeStart::OffsetProfilePlane { .. } | ExtrudeStart::ProfilePlane {} => false,
     }
 }
 
@@ -157,10 +153,7 @@ pub(super) fn revolve_feature_is_incomplete(
 pub(super) fn termination_is_incomplete(termination: &LinearTermination) -> bool {
     match termination {
         LinearTermination::Unresolved {} => true,
-        LinearTermination::ToFace { face, offset } => {
-            face_selection_is_incomplete(face)
-                || offset.is_some_and(|offset| !offset.get().is_finite())
-        }
+        LinearTermination::ToFace { face, .. } => face_selection_is_incomplete(face),
         LinearTermination::ToVertex { vertex } => match vertex {
             VertexSelection::Generated { .. } => false,
             VertexSelection::Historical {
@@ -199,10 +192,7 @@ pub(super) fn termination_dependency_is_incomplete(
 fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
     match termination {
         AngularTermination::Unresolved {} => true,
-        AngularTermination::ToFace { face, offset } => {
-            face_selection_is_incomplete(face)
-                || offset.is_some_and(|offset| !offset.get().is_finite())
-        }
+        AngularTermination::ToFace { face, .. } => face_selection_is_incomplete(face),
         AngularTermination::ToVertex { vertex } => match vertex {
             VertexSelection::Generated { .. } => false,
             VertexSelection::Historical {

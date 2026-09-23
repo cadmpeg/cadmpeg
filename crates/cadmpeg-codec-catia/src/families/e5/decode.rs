@@ -2493,9 +2493,6 @@ fn e5_boundary_curve(
     };
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
-    if !origin.is_finite() || !direction.is_finite() {
-        return None;
-    }
     let start_uv = Point2::new(
         origin.u + range[0] * direction.u,
         origin.v + range[0] * direction.v,

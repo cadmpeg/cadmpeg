@@ -3174,20 +3174,7 @@ fn helix_differential(
     let pitch = *pitch;
     let axis = *axis;
     let [start, end] = angle_range;
-    if ![start, end, apex_factor, parameter]
-        .into_iter()
-        .all(f64::is_finite)
-        || start > end
-        || parameter < start
-        || parameter > end
-        || ![
-            center.x, center.y, center.z, major.x, major.y, major.z, minor.x, minor.y, minor.z,
-            pitch.x, pitch.y, pitch.z,
-        ]
-        .into_iter()
-        .all(f64::is_finite)
-        || unit_axis(axis).is_none()
-    {
+    if !parameter.is_finite() || parameter < start || parameter > end || unit_axis(axis).is_none() {
         return None;
     }
 
@@ -4126,10 +4113,7 @@ fn helix_parameter_near_point(
     let angle_range = helix_payload.angle_range();
 
     let [start, end] = *angle_range;
-    if ![start, end, seed, tolerance]
-        .into_iter()
-        .all(f64::is_finite)
-        || start > end
+    if ![seed, tolerance].into_iter().all(f64::is_finite)
         || seed < start
         || seed > end
         || tolerance < 0.0
@@ -5178,9 +5162,6 @@ fn scalar_unary_sweep_law_differential(
     operand: ScalarSweepDifferential,
 ) -> Option<ScalarSweepDifferential> {
     let x = operand.value;
-    if !x.is_finite() || !operand.derivative.is_finite() {
-        return None;
-    }
     match operator {
         "LN" => {
             return (x > 0.0)

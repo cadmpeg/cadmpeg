@@ -366,13 +366,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.get()]
+            if ![axis_origin.x, axis_origin.y, axis_origin.z]
                 .into_iter()
                 .all(f64::is_finite)
                 || !valid_direction(*axis_direction)
-                || !radius.get().is_finite()
-                || radius.get() <= 0.0
-                || !start_angle.get().is_finite()
             {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid helix geometry",
@@ -437,11 +434,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if axis_native_ref.is_empty()
-                || !axial_rise.get().is_finite()
-                || !pitch.get().is_finite()
-                || !start_angle.get().is_finite()
-            {
+            if axis_native_ref.is_empty() {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid native-axis helix geometry",
                     feature.id

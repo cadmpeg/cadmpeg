@@ -2812,7 +2812,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
     let tolerance = index.ir().tolerances.linear.get();
-    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+    if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
     let center = model_curve_point_with_index_and_budget(index, spine, parameter, geometry_budget)?;
@@ -2828,7 +2828,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         })?;
     let contact_fit_tolerance = procedural
         .cache_fit_tolerance()
-        .filter(|fit| fit.is_finite() && *fit > 0.0)
+        .filter(|fit| *fit > 0.0)
         .map_or(tolerance, |fit| tolerance.max(fit));
     let offset_surfaces = context
         .sides()
@@ -3375,7 +3375,7 @@ fn surface_contact_direction_with_index_and_budget(
     }
     let carrier = index.surfaces(surface.as_str())?;
     let tolerance = ir.tolerances.linear.get();
-    if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
+    if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
     let requires_radius_certificate = matches!(

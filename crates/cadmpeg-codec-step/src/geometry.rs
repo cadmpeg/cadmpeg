@@ -116,18 +116,6 @@ fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
 }
 
 fn similarity_transform(transform: &Transform) -> bool {
-    if transform
-        .rows()
-        .iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-        || transform.rows()[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows()[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || transform.rows()[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-        || (transform.rows()[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
-    {
-        return false;
-    }
     let columns = [
         Vector3::new(
             transform.rows()[0][0],
