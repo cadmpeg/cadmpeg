@@ -4843,6 +4843,9 @@ fn inline_scale(first: f64, second: f64) -> f64 {
 }
 
 fn inline_close(first: f64, second: f64) -> bool {
+    if !first.is_finite() || !second.is_finite() {
+        return false;
+    }
     (first - second).abs() <= EPS_INLINE_WITNESS * inline_scale(first, second)
 }
 
