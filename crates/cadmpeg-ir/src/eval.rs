@@ -1308,7 +1308,7 @@ fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
 /// knot vector cannot support `count` poles of the given degree.
 fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<usize> {
-    if knots.len() < count + degree + 1 || count <= degree {
+    if count <= degree || knots.len() < count.checked_add(degree)?.checked_add(1)? {
         return None;
     }
     if t >= knots[count] {
