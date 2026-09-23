@@ -1081,31 +1081,33 @@ fn emit_standard_extrusion_definition(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
+            let side = cadmpeg_ir::geometry::OffsetSide::Direction {
+                direction,
+                support: Some(standard_extrusion_support_id(
+                    annotations,
+                    surfaces,
+                    procedural_supports,
+                    &support,
+                )),
+            };
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
-                    source_id,
-                    distance,
-                    cadmpeg_ir::geometry::OffsetSide::Direction {
-                        direction,
-                        support: Some(standard_extrusion_support_id(
-                            annotations,
-                            surfaces,
-                            procedural_supports,
-                            &support,
-                        )),
-                    },
-                    Some(cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                        parameter_range: source_parameter_range,
-                    }),
-                )
-                .map(|admitted_payload| {
-                    ProceduralCurve::new(
-                        procedure_id,
-                        ProceduralCurveDefinition::Offset(admitted_payload),
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::geometry::CurveOffsetRange::uniform(source_parameter_range)
+                    .and_then(|range| {
+                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                            source_id,
+                            distance,
+                            side,
+                            Some(range),
+                        )
+                    })
+                    .map(|admitted_payload| {
+                        ProceduralCurve::new(
+                            procedure_id,
+                            ProceduralCurveDefinition::Offset(admitted_payload),
+                        )
+                    })
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
         }
     }

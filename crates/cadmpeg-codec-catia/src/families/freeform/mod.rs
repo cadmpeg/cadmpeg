@@ -209,7 +209,7 @@ pub(super) fn append_consolidated_revolutions(
                         revolution.angular_range[1] / revolution.angular_scale.get(),
                     ],
                     Some(revolution.angular_range),
-                    Some(revolution.profile_range.get()),
+                    Some(revolution.profile_range.endpoints()),
                     false,
                     cadmpeg_ir::geometry::CacheContract::from_form(None),
                 )
@@ -663,7 +663,7 @@ pub(super) fn try_decode_freeform_surfaces(
             format!(
                 "header_token:{:08x}:range:{:?}:chart_shift:{}",
                 circle.header_token,
-                circle.range.get(),
+                circle.range.endpoints(),
                 circle.chart_shift
             ),
             Exactness::ByteExact,
@@ -1287,7 +1287,7 @@ fn consolidated_line_profiles(
                     format!("{:010}", line.pos),
                 )),
             },
-            range: line.range.get(),
+            range: line.range.endpoints(),
             pos: line.pos,
         });
     }
@@ -4259,16 +4259,18 @@ mod tests {
     /// record decoder emits is already proven finite and strictly increasing.
     #[test]
     fn a_refused_revolution_construction_names_the_interval() {
-        use crate::checked::{ExactUnitVector3, OrderedInterval};
+        use crate::checked::ExactUnitVector3;
         use crate::families::b2::records::{B2Circle, B2ResolvedRevolution, B2Revolution};
         use crate::native::{CatiaCircleLayout, CatiaRevolutionReferenceToken};
         use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+        use cadmpeg_ir::topology::IncreasingParameterInterval;
 
         let unit = |value: [f64; 3]| {
             ExactUnitVector3::new(value).expect("fixture direction is a unit vector")
         };
         let interval = |value: [f64; 2]| {
-            OrderedInterval::new(value).expect("fixture interval is finite and increasing")
+            IncreasingParameterInterval::new(value)
+                .expect("fixture interval is finite and increasing")
         };
         let resolved = [B2ResolvedRevolution {
             revolution_index: 0,

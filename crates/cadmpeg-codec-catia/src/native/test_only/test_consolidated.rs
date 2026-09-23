@@ -253,7 +253,7 @@ pub(super) fn validate_consolidated_cylinders(
                     && dot(axis.get(), reference_direction.get()).abs() <= 1.0e-9
                     && crate::families::b2::records::circle_range_is_full_turn(
                         cylinder.radius.get(),
-                        cylinder.u_range.get(),
+                        cylinder.u_range.endpoints(),
                     )
             }
             CatiaConsolidatedCylinderPayload::Layout5a {
@@ -267,7 +267,7 @@ pub(super) fn validate_consolidated_cylinders(
                     && dot(axis.get(), reference_direction.get()).abs() <= 1.0e-9
                     && crate::families::b2::records::circle_range_is_full_turn(
                         cylinder.radius.get(),
-                        cylinder.u_range.get(),
+                        cylinder.u_range.endpoints(),
                     )
             }
             CatiaConsolidatedCylinderPayload::RangeOrigin {
@@ -283,12 +283,12 @@ pub(super) fn validate_consolidated_cylinders(
                         == [stored_vector.get()[0], 0.0, stored_vector.get()[1]]
                     && crate::families::b2::records::circle_range_is_within_full_turn(
                         cylinder.radius.get(),
-                        cylinder.u_range.get(),
+                        cylinder.u_range.endpoints(),
                     )
                     && range_origin.to_bits()
                         == crate::families::b2::records::cylinder_range_origin(
                             cylinder.radius.get(),
-                            cylinder.u_range.get(),
+                            cylinder.u_range.endpoints(),
                         )
                         .to_bits()
             }
@@ -343,7 +343,7 @@ pub(super) fn validate_consolidated_embedded_cylinders(
             || dot(cylinder.axis.get(), cylinder.reference_direction.get()).abs() > 1.0e-9
             || !crate::families::b2::records::circle_range_is_full_turn(
                 cylinder.radius.get(),
-                cylinder.u_range.get(),
+                cylinder.u_range.endpoints(),
             )
             || index > 0 && cylinders[index - 1].byte_offset >= cylinder.byte_offset
         {

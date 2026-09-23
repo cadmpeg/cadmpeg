@@ -589,11 +589,9 @@ pub(super) fn project(
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
                 ];
-                let law = CurveOffsetDistanceLaw::Linear {
-                    basis,
-                    distances,
-                    control_range,
-                };
+                // The controls are admitted with the offset construction, so a
+                // carrier refusal is stated first.
+                let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
                 let offset_nurbs = match NurbsCurve::from_lanes(
                     1,
                     vec![start, start, end, end],
@@ -806,7 +804,7 @@ pub(super) fn project(
                 };
                 (
                     distance,
-                    Some(law),
+                    Some(Ok(law)),
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(offset_nurbs)),
                 )
             }
@@ -845,33 +843,34 @@ pub(super) fn project(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
         );
         let edge_id = crate::ids::edge(&crate::ids::Stem::directory(entry.sequence));
-        let procedural =
-            match cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
-                offset_source_id.clone(),
-                distance,
-                cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal },
-                Some(match distance_law {
-                    Some(distance_law) => cadmpeg_ir::geometry::CurveOffsetRange::Variable {
-                        parameter_range: [start, end],
-                        distance_law,
-                    },
-                    None => cadmpeg_ir::geometry::CurveOffsetRange::Uniform {
-                        parameter_range: [start, end],
-                    },
-                }),
-            )
+        let procedural = match distance_law
+            .transpose()
+            .and_then(|distance_law| match distance_law {
+                Some(distance_law) => {
+                    cadmpeg_ir::geometry::CurveOffsetRange::variable([start, end], distance_law)
+                }
+                None => cadmpeg_ir::geometry::CurveOffsetRange::uniform([start, end]),
+            })
+            .and_then(|range| {
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                    offset_source_id.clone(),
+                    distance,
+                    cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal },
+                    Some(range),
+                )
+            })
             .map(|admitted_payload| {
                 ProceduralCurve::new(
                     crate::ids::procedural_curve(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralCurveDefinition::Offset(admitted_payload),
                 )
             }) {
-                Ok(procedural) => procedural,
-                Err(error) => {
-                    losses.push(entity_loss(entry, error.to_string()));
-                    continue;
-                }
-            };
+            Ok(procedural) => procedural,
+            Err(error) => {
+                losses.push(entity_loss(entry, error.to_string()));
+                continue;
+            }
+        };
         if offset_source_id != source_id {
             sequences.record_curve(&offset_source_id, entry.sequence);
             ir.model.curves.push(Curve {

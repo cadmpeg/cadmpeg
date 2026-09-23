@@ -389,7 +389,7 @@ pub(crate) struct CatiaConsolidatedCone {
     /// Active azimuth interval.
     angular_range: [f64; 2],
     /// Native slant-coordinate interval, including zero at the apex.
-    slant_range: crate::checked::OrderedInterval,
+    slant_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Scale from azimuth to stored U parameter.
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Full-turn azimuth chart domain.
@@ -455,7 +455,7 @@ pub(crate) struct CatiaConsolidatedCircle {
     /// Circle radius in millimetres.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length parameter interval.
-    pub(crate) range: crate::checked::OrderedInterval,
+    pub(crate) range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Length-valued angular chart shift.
     chart_shift: f64,
 }
@@ -463,7 +463,10 @@ pub(crate) struct CatiaConsolidatedCircle {
 impl CatiaConsolidatedCircle {
     /// Whether the interval spans one complete circumference.
     fn full_circle(&self) -> bool {
-        crate::families::b2::records::circle_range_is_full_turn(self.radius.get(), self.range.get())
+        crate::families::b2::records::circle_range_is_full_turn(
+            self.radius.get(),
+            self.range.endpoints(),
+        )
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -475,7 +478,7 @@ struct CatiaConsolidatedCircleWire {
     frame_token: u8,
     center_pair: [f64; 2],
     radius: cadmpeg_ir::scalar::PositiveLength,
-    range: crate::checked::OrderedInterval,
+    range: cadmpeg_ir::topology::IncreasingParameterInterval,
     full_circle: bool,
     chart_shift: f64,
 }
@@ -577,9 +580,9 @@ pub(crate) struct CatiaConsolidatedCylinder {
     /// Cylinder radius.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length circumferential interval.
-    u_range: crate::checked::OrderedInterval,
+    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Axial interval.
-    v_range: crate::checked::OrderedInterval,
+    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Layout-specific frame data.
     payload: CatiaConsolidatedCylinderPayload,
 }
@@ -591,8 +594,8 @@ struct CatiaConsolidatedCylinderWire {
     layout: u8,
     origin: [f64; 3],
     radius: cadmpeg_ir::scalar::PositiveLength,
-    u_range: crate::checked::OrderedInterval,
-    v_range: crate::checked::OrderedInterval,
+    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
+    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     payload: CatiaConsolidatedCylinderPayloadWire,
 }
 
@@ -732,9 +735,9 @@ pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     /// Cylinder radius.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Full-turn arc-length circumferential interval.
-    u_range: crate::checked::OrderedInterval,
+    u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Axial interval.
-    v_range: crate::checked::OrderedInterval,
+    v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Token selecting the serialized frame-vector role.
     frame_token: u8,
     /// Cylinder-axis unit direction.
@@ -1102,7 +1105,7 @@ pub(crate) struct CatiaConsolidatedLineProfile {
     /// Unit line direction.
     direction: crate::checked::ExactUnitVector3,
     /// Increasing stored parameter interval.
-    range: crate::checked::OrderedInterval,
+    range: cadmpeg_ir::topology::IncreasingParameterInterval,
 }
 
 /// Reference-token dialect of a consolidated surface of revolution.
@@ -1158,7 +1161,7 @@ pub(crate) struct CatiaConsolidatedRevolution {
     /// Stored full-turn angular parameter interval.
     angular_range: [f64; 2],
     /// Stored profile parameter interval.
-    profile_range: crate::checked::OrderedInterval,
+    profile_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Unique consolidated circle with the same stored profile interval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     profile_circle: Option<String>,
@@ -7411,7 +7414,7 @@ fn consolidated_cylinders(
                         range_origin: cylinder.range_origin().unwrap_or_else(|| {
                             crate::families::b2::records::cylinder_range_origin(
                                 cylinder.radius.get(),
-                                cylinder.u_range.get(),
+                                cylinder.u_range.endpoints(),
                             )
                         }),
                     }

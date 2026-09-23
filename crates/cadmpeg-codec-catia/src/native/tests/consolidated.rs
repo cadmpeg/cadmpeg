@@ -376,7 +376,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert_eq!(circle.center_pair, [4.0, -2.0]);
     assert_eq!(circle.radius.get(), 3.0);
     assert_eq!(
-        circle.range.get(),
+        circle.range.endpoints(),
         [0.0, std::f64::consts::TAU * circle.radius.get()]
     );
     assert!(circle.full_circle());
@@ -482,7 +482,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     assert_eq!(cone.half_angle, 0.25);
     assert_eq!(cone.reference_radius, 4.0);
     assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
-    assert_eq!(cone.slant_range.get(), [2.0, 8.0]);
+    assert_eq!(cone.slant_range.endpoints(), [2.0, 8.0]);
     assert_eq!(cone.angular_scale.get(), 3.0);
     assert_eq!(
         cone.angular_domain,
@@ -613,7 +613,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     assert_eq!(revolution.direction_x.get(), [1.0, 0.0, 0.0]);
     assert_eq!(revolution.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(revolution.axis.get(), [0.0, 0.0, 1.0]);
-    assert_eq!(revolution.profile_range.get(), [-4.0, 9.0]);
+    assert_eq!(revolution.profile_range.endpoints(), [-4.0, 9.0]);
     assert_eq!(
         revolution.profile_circle.as_deref(),
         Some("catia:consolidated:circle#0")
@@ -728,7 +728,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     };
     assert_eq!(line.origin, [1.0, 2.0, 3.0]);
     assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
-    assert_eq!(line.range.get(), [-4.0, 9.0]);
+    assert_eq!(line.range.endpoints(), [-4.0, 9.0]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

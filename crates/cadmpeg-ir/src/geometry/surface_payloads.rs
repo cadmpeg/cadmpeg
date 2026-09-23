@@ -14,7 +14,7 @@ use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
-use crate::topology::ParameterInterval;
+use crate::topology::IncreasingParameterInterval;
 use crate::units::{FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -423,17 +423,17 @@ pub struct RevolutionSurfaceConstruction {
     /// Direction of the revolution axis, with norm within `1e-9` of one.
     axis_direction: UnitVector3,
     /// Angular start and end parameters, in radians.
-    angular_interval: ParameterInterval,
+    angular_interval: IncreasingParameterInterval,
     /// Surface-parameter interval that maps affinely to
     /// `angular_interval`. Absence means the surface parameter is already
     /// the revolution angle in radians.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    angular_parameter_interval: Option<ParameterInterval>,
+    angular_parameter_interval: Option<IncreasingParameterInterval>,
     /// Native source directrix parameter start and end values, when
     /// carried by the source representation. The neutral surface-carrier
     /// interval is in `ProceduralSurface::record_bounds`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    parameter_interval: Option<ParameterInterval>,
+    parameter_interval: Option<IncreasingParameterInterval>,
     /// Whether the source parameter directions are transposed.
     transposed: bool,
     /// Cache contract: the revision-gated form, or the legacy
@@ -512,12 +512,7 @@ impl RevolutionSurfaceConstruction {
             ));
         }
         let admit_interval = |range: [f64; 2], message| {
-            let interval = ParameterInterval::new(range)
-                .map_err(|_| ProceduralGeometryError::Payload(message))?;
-            if range[0] == range[1] {
-                return Err(ProceduralGeometryError::Payload(message));
-            }
-            Ok(interval)
+            IncreasingParameterInterval::new(range).ok_or(ProceduralGeometryError::Payload(message))
         };
         let angular_interval = admit_interval(
             angular_interval,
@@ -574,11 +569,12 @@ impl RevolutionSurfaceConstruction {
     /// Return the angular parameter interval.
     pub fn angular_parameter_interval(&self) -> Option<[f64; 2]> {
         self.angular_parameter_interval
-            .map(ParameterInterval::endpoints)
+            .map(IncreasingParameterInterval::endpoints)
     }
     /// Return the parameter interval.
     pub fn parameter_interval(&self) -> Option<[f64; 2]> {
-        self.parameter_interval.map(ParameterInterval::endpoints)
+        self.parameter_interval
+            .map(IncreasingParameterInterval::endpoints)
     }
     /// Return the transposed.
     pub fn transposed(&self) -> &bool {

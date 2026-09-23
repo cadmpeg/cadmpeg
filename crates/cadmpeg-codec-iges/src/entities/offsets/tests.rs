@@ -580,7 +580,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
         };
         assert_eq!(*basis, expected_basis);
         assert_eq!(*distances, [1.0, 3.0]);
-        assert_eq!(*control_range, [0.0, 10.0]);
+        assert_eq!(control_range.endpoints(), [0.0, 10.0]);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
