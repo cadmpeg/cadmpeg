@@ -143,6 +143,39 @@ fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
 }
 
 #[test]
+fn helix_angle_range_can_span_both_large_finite_signs() {
+    let parameter = 1e308;
+    let definition = ProceduralCurveDefinition::Helix(
+        crate::geometry::HelixCurveConstruction::try_new(
+            [-parameter, parameter],
+            crate::geometry::HelixFrame {
+                center: Point3::new(0.0, 0.0, 0.0),
+                major: Vector3::new(1.0, 0.0, 0.0),
+                minor: Vector3::new(0.0, 1.0, 0.0),
+                pitch: Vector3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            0.0,
+            None,
+        )
+        .unwrap(),
+    );
+    let result = super::super::helix_differential(&definition, parameter).unwrap();
+    assert_eq!(
+        result.point,
+        Point3::new(parameter.cos(), parameter.sin(), 0.0)
+    );
+    assert_eq!(
+        result.tangent,
+        Vector3::new(-parameter.sin(), parameter.cos(), 0.0)
+    );
+    assert_eq!(
+        result.acceleration,
+        Vector3::new(-parameter.cos(), -parameter.sin(), 0.0)
+    );
+}
+
+#[test]
 fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let (ir, curve_id) = helix_fixture();
     let index = crate::index::ModelIndex::new(&ir);

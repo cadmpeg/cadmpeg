@@ -1473,6 +1473,73 @@ fn bspline_basis_second_derivative(
         .into()
 }
 
+/// Basis derivatives with respect to a local coordinate whose unit is the
+/// active knot span. This keeps the coefficients finite when derivatives in
+/// the original parameter would exceed binary64 range.
+fn bspline_basis_scaled_derivatives(
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    t: f64,
+    scale: f64,
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    if degree == 0 {
+        return Some((vec![0.0], vec![0.0]));
+    }
+    let lower = bspline_basis(knots, degree - 1, span, t)?;
+    let first = bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower)?;
+    let second = if degree == 1 {
+        vec![0.0, 0.0]
+    } else {
+        let lower_lower = bspline_basis(knots, degree - 2, span, t)?;
+        let lower_first =
+            bspline_basis_scaled_derivative_level(knots, degree - 1, span, scale, &lower_lower)?;
+        bspline_basis_scaled_derivative_level(knots, degree, span, scale, &lower_first)?
+    };
+    Some((first, second))
+}
+
+fn bspline_basis_scaled_derivative_level(
+    knots: &[f64],
+    degree: usize,
+    span: usize,
+    scale: f64,
+    lower: &[f64],
+) -> Option<Vec<f64>> {
+    let lower_start = span - (degree - 1);
+    let mut derivative = alloc_filled(
+        degree.checked_add(1)?,
+        0.0,
+        "IR scaled B-spline derivative basis",
+    )
+    .ok()?;
+    for (local, derivative_value) in derivative.iter_mut().enumerate() {
+        let index = span - degree + local;
+        let lower_at = |values: &[f64], global: usize| {
+            global
+                .checked_sub(lower_start)
+                .and_then(|at| values.get(at))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let ratio = |hi: usize, lo: usize| {
+            if knots[hi] == knots[lo] {
+                Some(0.0)
+            } else {
+                difference_quotient(scale, 0.0, knots[hi], knots[lo])
+            }
+        };
+        let left = ratio(index + degree, index)?;
+        let right = ratio(index + degree + 1, index + 1)?;
+        *derivative_value =
+            degree as f64 * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+        if !derivative_value.is_finite() {
+            return None;
+        }
+    }
+    Some(derivative)
+}
+
 /// Evaluate a possibly-rational B-spline curve over 3D poles.
 pub fn nurbs_curve_point(
     degree: u32,
@@ -2799,7 +2866,20 @@ fn nurbs_curve_tangent(
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let derivatives = bspline_basis_derivative(knots, degree, span, t)?;
+    let mut derivatives = bspline_basis_derivative(knots, degree, span, t)?;
+    let scale = if derivatives.iter().all(|value| value.is_finite()) {
+        1.0
+    } else {
+        let scale = knots[span + 1] - knots[span];
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+        if degree == 1 {
+            return linear_nurbs_derivative(&basis, control_points, weights, span, scale, false);
+        }
+        derivatives = bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?.0;
+        scale
+    };
     let sum = |values: &[f64]| {
         Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
             let index = span - degree + local;
@@ -2815,8 +2895,18 @@ fn nurbs_curve_tangent(
     let base = sum(&basis)?;
     let derivative = sum(&derivatives)?;
     let point = base.project(base, &[])?;
-    Some(Vector3::from(
-        derivative.project(base, &[(derivative, point)])?,
+    let projected = derivative.project(base, &[(derivative, point)])?;
+    let unscale = |value| {
+        if scale == 1.0 {
+            Some(value)
+        } else {
+            difference_quotient(value, 0.0, scale, 0.0)
+        }
+    };
+    Some(Vector3::new(
+        unscale(projected[0])?,
+        unscale(projected[1])?,
+        unscale(projected[2])?,
     ))
 }
 
@@ -2830,8 +2920,26 @@ fn nurbs_curve_second_derivative(
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let first_basis = bspline_basis_derivative(knots, degree, span, t)?;
-    let second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
+    let mut first_basis = bspline_basis_derivative(knots, degree, span, t)?;
+    let mut second_basis = bspline_basis_second_derivative(knots, degree, span, t)?;
+    let scale = if first_basis
+        .iter()
+        .chain(&second_basis)
+        .all(|value| value.is_finite())
+    {
+        1.0
+    } else {
+        let scale = knots[span + 1] - knots[span];
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+        if degree == 1 {
+            return linear_nurbs_derivative(&basis, control_points, weights, span, scale, true);
+        }
+        (first_basis, second_basis) =
+            bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?;
+        scale
+    };
     let sum = |values: &[f64]| {
         Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
             let index = span - degree + local;
@@ -2849,10 +2957,83 @@ fn nurbs_curve_second_derivative(
     let second_sum = sum(&second_basis)?;
     let point = base.project(base, &[])?;
     let first = first_sum.project(base, &[(first_sum, point)])?;
-    Some(Vector3::from(second_sum.project(
+    let projected = second_sum.project(
         base,
         &[(second_sum, point), (first_sum, first), (first_sum, first)],
-    )?))
+    )?;
+    let unscale = |value| {
+        if scale == 1.0 {
+            Some(value)
+        } else {
+            difference_quotient(
+                difference_quotient(value, 0.0, scale, 0.0)?,
+                0.0,
+                scale,
+                0.0,
+            )
+        }
+    };
+    Some(Vector3::new(
+        unscale(projected[0])?,
+        unscale(projected[1])?,
+        unscale(projected[2])?,
+    ))
+}
+
+/// The degree-one rational derivative has a two-pole quotient form. Form its
+/// numerator as exact products before dividing by the span and homogeneous
+/// weight; neither derivative basis coefficient needs to fit in `f64`.
+fn linear_nurbs_derivative(
+    basis: &[f64],
+    control_points: &[Point3],
+    weights: Option<&[f64]>,
+    span: usize,
+    width: f64,
+    second: bool,
+) -> Option<Vector3> {
+    use crate::math::sum::{product_sum, scaled_finite, ProductSum};
+    let start = span.checked_sub(1)?;
+    let first = *control_points.get(start)?;
+    let last = *control_points.get(span)?;
+    let weight0 = weights
+        .and_then(|weights| weights.get(start))
+        .copied()
+        .unwrap_or(1.0);
+    let weight1 = weights
+        .and_then(|weights| weights.get(span))
+        .copied()
+        .unwrap_or(1.0);
+    let ProductSum::Value(base_weight) =
+        product_sum([Some([basis[0], weight0]), Some([basis[1], weight1])].into_iter())
+    else {
+        return None;
+    };
+    let width = scaled_finite(width)?;
+    let coordinate = |left: f64, right: f64| {
+        let mut sum = ExactSignedSum::default();
+        if second {
+            // -w0*w1*(w1-w0)*(right-left); the factor 2 is an exponent shift.
+            sum.add_factors([-weight0, weight1, weight1, right]);
+            sum.add_factors([weight0, weight1, weight1, left]);
+            sum.add_factors([weight0, weight1, weight0, right]);
+            sum.add_factors([-weight0, weight1, weight0, left]);
+            sum.finish().map_or(Some(0.0), |numerator| {
+                numerator
+                    .quotient_by_factors(&[base_weight, base_weight, base_weight, width, width], 1)
+            })
+        } else {
+            sum.add_factors([weight0, weight1, right]);
+            sum.add_factors([-weight0, weight1, left]);
+            sum.finish().map_or(Some(0.0), |numerator| {
+                numerator.quotient_by_factors(&[base_weight, base_weight, width], 0)
+            })
+        }
+    };
+    Some(Vector3::new(
+        coordinate(first.x, last.x)?,
+        coordinate(first.y, last.y)?,
+        coordinate(first.z, last.z)?,
+    ))
 }
 
 /// Evaluate a curve carrier selected by arena id, including supported
@@ -2930,7 +3111,7 @@ fn helix_differential(
     }
 
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction = (parameter - start) * inverse_revolution;
+    let revolution_fraction = difference_quotient(parameter, start, std::f64::consts::TAU, 0.0)?;
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
     let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
     let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
@@ -4383,7 +4564,7 @@ pub fn rolling_ball_jet_point(
     let second_radius = second_limit.vector_from(center);
     let second_direction = (second_radius
         - first_direction.scale(second_radius.dot(first_direction) / first_direction_squared))
-    .unit()?;
+    .unit_nonzero()?;
     let radial =
         first_direction.scale((s * angle).cos()) + second_direction.scale((s * angle).sin());
     let point = center.translated(radial, radius);
@@ -4439,12 +4620,21 @@ fn rolling_ball_jet_interpolate_scalar(
     let h01 = 10.0 * s3 - 15.0 * s4 + 6.0 * s5;
     let h11 = -4.0 * s3 + 7.0 * s4 - 3.0 * s5;
     let h21 = 0.5 * s3 - s4 + 0.5 * s5;
-    values[0] * h00
-        + first_derivatives[0] * span_width * h10
-        + second_derivatives[0] * span_width * span_width * h20
-        + values[1] * h01
-        + first_derivatives[1] * span_width * h11
-        + second_derivatives[1] * span_width * span_width * h21
+    match crate::math::sum::product_sum(
+        [
+            Some([values[0], h00, 1.0, 1.0]),
+            Some([first_derivatives[0], span_width, h10, 1.0]),
+            Some([second_derivatives[0], span_width, span_width, h20]),
+            Some([values[1], h01, 1.0, 1.0]),
+            Some([first_derivatives[1], span_width, h11, 1.0]),
+            Some([second_derivatives[1], span_width, span_width, h21]),
+        ]
+        .into_iter(),
+    ) {
+        crate::math::sum::ProductSum::Zero => 0.0,
+        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Undefined => f64::NAN,
+    }
 }
 
 /// Evaluate a directly stored surface and its exact first partial derivatives.

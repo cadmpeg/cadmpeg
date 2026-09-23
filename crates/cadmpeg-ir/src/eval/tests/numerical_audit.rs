@@ -2,6 +2,8 @@
 use crate::math::Point3;
 use crate::transform::Transform;
 
+const EPS_NURBS_RATIONAL_DERIVATIVE: f64 = 1e-12;
+
 #[test]
 fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
     let knots = [0.0, 1.0];
@@ -293,4 +295,150 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
     .unwrap();
     let point = crate::eval::nurbs_surface_point(&surface, uv.u, uv.v).unwrap();
     assert!(point.distance(target) <= 64.0 * f64::EPSILON);
+}
+
+fn audit_rolling_ball_jet(
+    radius: f64,
+    end_knot: f64,
+    second_derivative: f64,
+) -> crate::geometry::ProceduralSurfaceDefinition {
+    use crate::geometry::{
+        ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
+        RollingBallJetStation, RollingBallJetStations,
+    };
+    use crate::math::Vector3;
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    let derivative = RollingBallJetDerivative {
+        first_limit: zero,
+        second_limit: zero,
+        center: zero,
+        angle: 0.0,
+    };
+    let site = RollingBallJetSite {
+        first_limit: Point3::new(radius, 0.0, 0.0),
+        second_limit: Point3::new(0.0, radius, 0.0),
+        center: Point3::new(0.0, 0.0, 0.0),
+        angle: std::f64::consts::FRAC_PI_2,
+        first_derivative: derivative.clone(),
+        second_derivative: RollingBallJetDerivative {
+            first_limit: Vector3::new(second_derivative, 0.0, 0.0),
+            ..derivative
+        },
+    };
+    ProceduralSurfaceDefinition::RollingBallJet(
+        RollingBallJetStations::try_new(
+            5,
+            vec![
+                RollingBallJetStation {
+                    knot: 0.0,
+                    multiplicity: 6,
+                    site: site.clone(),
+                },
+                RollingBallJetStation {
+                    knot: end_knot,
+                    multiplicity: 6,
+                    site,
+                },
+            ],
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn numerical_audit_rolling_ball_keeps_small_nonzero_frame() {
+    let radius = 1e-20;
+    let jet = audit_rolling_ball_jet(radius, 1.0, 0.0);
+    assert_eq!(
+        super::super::rolling_ball_jet_point(&jet, 0.5, 0.0),
+        Some(Point3::new(radius, 0.0, 0.0))
+    );
+    let point = super::super::rolling_ball_jet_point(&jet, 0.5, 1.0).unwrap();
+    assert!(point.x.abs() <= radius * 8.0 * f64::EPSILON);
+    assert_eq!(point.y, radius);
+}
+
+#[test]
+fn numerical_audit_rolling_ball_keeps_endpoint_when_unused_product_overflows() {
+    let jet = audit_rolling_ball_jet(1.0, 1e200, 1.0);
+    assert_eq!(
+        super::super::rolling_ball_jet_point(&jet, 0.0, 0.0),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
+    use crate::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry};
+    use crate::math::Vector3;
+    let width = 1e-310;
+    let line = SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, width, width],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(width, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        super::super::curve_tangent_solved(&line, width / 2.0),
+        Some(Vector3::new(1.0, 0.0, 0.0))
+    );
+    assert_eq!(
+        super::super::curve_second_derivative_solved(&line, width / 2.0),
+        Some(Vector3::new(0.0, 0.0, 0.0))
+    );
+
+    let width = 1e-155;
+    let square = width * width;
+    let quadratic = SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, width, width, width],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(square, 0.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    );
+    let second = super::super::curve_second_derivative_solved(&quadratic, width / 2.0).unwrap();
+    assert!(
+        (second.x - 2.0).abs() <= 512.0 * f64::EPSILON,
+        "second derivative {}",
+        second.x
+    );
+    assert_eq!((second.y, second.z), (0.0, 0.0));
+}
+
+#[test]
+fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
+    use crate::geometry::{nurbs::NurbsCurve, SolvedCurveGeometry};
+    let width = 1e-310;
+    let pole = f64::from_bits(1);
+    let curve = SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, width, width],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(pole, 0.0, 0.0)],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .unwrap(),
+    );
+    let parameter = width / 2.0;
+    let fraction = parameter / width;
+    let base_weight = 1.0 + fraction;
+    let expected_first = 2.0 * (pole / width) / (base_weight * base_weight);
+    let expected_second = -4.0 * (pole / width) / width / (base_weight * base_weight * base_weight);
+    let first = super::super::curve_tangent_solved(&curve, parameter).unwrap();
+    let second = super::super::curve_second_derivative_solved(&curve, parameter).unwrap();
+    assert!((first.x / expected_first - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
+    assert!((second.x / expected_second - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
+    assert_eq!((first.y, first.z, second.y, second.z), (0.0, 0.0, 0.0, 0.0));
 }

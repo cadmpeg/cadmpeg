@@ -23,6 +23,26 @@ fn scaled_value_retains_a_finite_result_with_a_large_frame_shift() {
 }
 
 #[test]
+fn exact_dot_rounds_subnormal_ties_using_the_full_product_sum() {
+    let half_minimum = 2.0_f64.powi(-537) * 2.0_f64.powi(-538);
+    assert_eq!(half_minimum, 0.0);
+    let coefficients = [2.0_f64.powi(-537), 2.0_f64.powi(-564)];
+    let components = [2.0_f64.powi(-538), 2.0_f64.powi(-564)];
+    assert_eq!(
+        super::finite_dot(coefficients, components),
+        Some(f64::from_bits(1))
+    );
+    assert_eq!(
+        super::finite_dot([-coefficients[0], -coefficients[1]], components),
+        Some(-f64::from_bits(1))
+    );
+    assert_eq!(
+        super::finite_dot([coefficients[0], 0.0], components),
+        Some(0.0)
+    );
+}
+
+#[test]
 fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_range() {
     // The two ends `scaled_finite` reaches: the smallest positive subnormal and
     // the largest finite magnitude.

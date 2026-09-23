@@ -21,10 +21,7 @@ pub(crate) fn finite_dot<const N: usize>(
     for (coefficient, component) in coefficients.into_iter().zip(components) {
         sum.add_product(coefficient, component);
     }
-    let Some(value) = sum.finish() else {
-        return Some(0.0);
-    };
-    value.finite()
+    sum.finite_sum()
 }
 
 // The smallest exponent a finite `f64` significand carries. Every exponent
@@ -37,6 +34,7 @@ const MIN_SIGNIFICAND_EXPONENT: i32 = -1074;
 // terms, and enough high carry bits for any addressable collection of terms.
 const EXACT_PRODUCT_EXPONENT: i32 = 4 * MIN_SIGNIFICAND_EXPONENT - 64;
 const EXACT_SUM_WORDS: usize = 138;
+const SUBNORMAL_UNIT_BIT: usize = (-1074 - EXACT_PRODUCT_EXPONENT) as usize;
 
 #[derive(Clone, Copy)]
 pub(crate) struct ExactSignedSum {
@@ -147,6 +145,19 @@ impl ScaledValue {
 
     pub(crate) fn quotient(self, denominator: Self) -> Option<f64> {
         self.quotient_shifted(denominator, 0)
+    }
+
+    /// Divide by several nonzero extended-range factors before rounding to
+    /// binary64. Each normalized mantissa is in `[0.5, 1)`, so the small
+    /// product of mantissa quotients stays in range independently of exponent.
+    pub(crate) fn quotient_by_factors(self, denominators: &[Self], shift: i32) -> Option<f64> {
+        let mut mantissa = self.sign * self.mantissa;
+        let mut exponent = self.exponent.0.checked_add(shift)?;
+        for denominator in denominators {
+            mantissa /= denominator.sign * denominator.mantissa;
+            exponent = exponent.checked_sub(denominator.exponent.0)?;
+        }
+        super::scale_power_of_two(mantissa, exponent)
     }
 
     /// Divide two scaled values, then apply a power of two without rounding
@@ -335,6 +346,35 @@ impl ExactSignedSum {
             mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
             exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
         })
+    }
+
+    /// Round a sum in the subnormal range directly onto the binary64 grid.
+    /// Rounding through a 53-bit scaled mantissa first can discard a tail that
+    /// breaks a tie at half of the smallest subnormal.
+    pub(crate) fn finite_sum(self) -> Option<f64> {
+        let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
+            return Some(0.0);
+        };
+        let word = magnitude.iter().rposition(|value| *value != 0)?;
+        let highest_bit = word * 64 + magnitude[word].checked_ilog2()? as usize;
+        if highest_bit >= SUBNORMAL_UNIT_BIT + 52 {
+            return self.finish()?.finite();
+        }
+        let mut units = 0_u64;
+        if highest_bit >= SUBNORMAL_UNIT_BIT {
+            for bit in (SUBNORMAL_UNIT_BIT..=highest_bit).rev() {
+                units = (units << 1) | u64::from(bit_is_set(&magnitude, bit));
+            }
+        }
+        let guard = bit_is_set(&magnitude, SUBNORMAL_UNIT_BIT - 1);
+        let sticky = (0..SUBNORMAL_UNIT_BIT - 1).any(|bit| bit_is_set(&magnitude, bit));
+        if guard && (sticky || units & 1 != 0) {
+            units += 1;
+        }
+        if units == 0 {
+            return Some(0.0);
+        }
+        Some(f64::from_bits((u64::from(negative) << 63) | units))
     }
 }
 
