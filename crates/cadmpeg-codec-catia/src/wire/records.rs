@@ -125,7 +125,7 @@ fn parse_consolidated_pcurve(
     let read = |at: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
-            values.push(f64_le(data, *at)?);
+            values.push(f64_le(data, *at)?.get());
             *at += 8;
         }
         Some(values)
@@ -152,22 +152,12 @@ fn parse_consolidated_pcurve(
     at += 1;
     let ddu = read(&mut at)?;
     let ddv = read(&mut at)?;
-    let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
+    let range = [f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()];
     at += 16;
     if at > end
         || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
         || !knots_strictly_increasing(&knots)
         || range[0] >= range[1]
-        || knots
-            .iter()
-            .chain(&u)
-            .chain(&v)
-            .chain(&du)
-            .chain(&dv)
-            .chain(&ddu)
-            .chain(&ddv)
-            .chain(&range)
-            .any(|x| !x.is_finite())
     {
         return None;
     }

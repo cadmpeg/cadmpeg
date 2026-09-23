@@ -112,6 +112,17 @@ impl FinitePoint3 {
         z: 0.0,
     });
 
+    /// The point with three finite coordinates. Every coordinate is finite,
+    /// so the point is admitted without a check.
+    #[must_use]
+    pub const fn from_coordinates(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
+        Self(Point3 {
+            x: x.get(),
+            y: y.get(),
+            z: z.get(),
+        })
+    }
+
     /// Reflect through the model origin. Negation keeps every coordinate
     /// finite, so the result stays admitted.
     #[must_use]

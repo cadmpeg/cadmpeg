@@ -818,6 +818,24 @@ fn feature_geometry_admission_preserves_nonunit_directions_and_zero_displacement
 }
 
 #[test]
+fn a_point_from_finite_coordinates_holds_them_bit_for_bit() {
+    use crate::features::FinitePoint3;
+    use crate::scalar::FiniteReal;
+    for [x, y, z] in [[0.0, -0.0, 1.0], [f64::MAX, f64::MIN, 5.0e-324]] {
+        let point = FinitePoint3::from_coordinates(
+            FiniteReal::new(x).unwrap(),
+            FiniteReal::new(y).unwrap(),
+            FiniteReal::new(z).unwrap(),
+        );
+        assert_eq!(
+            [point.x, point.y, point.z].map(f64::to_bits),
+            [x, y, z].map(f64::to_bits)
+        );
+        assert_eq!(point, FinitePoint3::new(Point3::new(x, y, z)).unwrap());
+    }
+}
+
+#[test]
 fn feature_lines_and_polylines_close_geometry_bounds_without_changing_wire_fields() {
     use crate::features::{
         FeatureDefinition, FeatureLineSegment, FeatureOperation, FeaturePolyline,

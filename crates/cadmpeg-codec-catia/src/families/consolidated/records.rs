@@ -9,6 +9,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -354,30 +355,33 @@ pub(crate) fn consolidated_edge_definition_data(
         let operands = [first, second, third];
         let scalar_bytes = payload.get(at..)?;
         if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-            let values = finite_f64_lane(scalar_bytes)?;
+            let values = finite_f64_lane(scalar_bytes)?
+                .into_iter()
+                .map(FiniteReal::get)
+                .collect();
             return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands,
                 persistent_lead,
                 values,
             });
         }
-        let leading = read_f64_array::<5>(scalar_bytes, 0)?;
+        let leading = read_f64_array::<5>(scalar_bytes, 0)?.map(FiniteReal::get);
         let marker = *scalar_bytes.get(40)?;
-        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
+        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?
+            .into_iter()
+            .map(FiniteReal::get)
+            .collect();
         let segment = Class25ScalarSegment::try_from(Class25ScalarSegmentWire {
             marker: Class25ScalarMarker::try_from(marker).ok()?,
             trailing,
         })
         .ok()?;
-        if leading.iter().all(|value| value.is_finite()) {
-            return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-                operands,
-                persistent_lead,
-                leading,
-                segment,
-            });
-        }
-        return None;
+        return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+            operands,
+            persistent_lead,
+            leading,
+            segment,
+        });
     }
     if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
         return None;
@@ -392,7 +396,10 @@ pub(crate) fn consolidated_edge_definition_data(
     if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
         return None;
     }
-    let values = finite_f64_lane(scalar_bytes)?;
+    let values = finite_f64_lane(scalar_bytes)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     if values[2] != *values.last()? {
         return None;
     }

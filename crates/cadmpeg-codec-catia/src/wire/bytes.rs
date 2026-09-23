@@ -1,56 +1,58 @@
 //! Free-function byte readers shared across CATIA record families.
 //!
 //! Absolute-offset scalar and reference readers used by the per-family scan
-//! loops: finite-checked `f64` scalars, points, and vectors; 24-bit and
-//! compact integer decoders; persistent and allocation reference tokens; and
-//! fixed-size `f64` array reads.
+//! loops: finite `f64` scalars, points, and vectors, returned as the IR's
+//! finite types; 24-bit and compact integer decoders; persistent and
+//! allocation reference tokens; and fixed-size finite `f64` array reads.
 
 use super::cursor::Cursor;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
-pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
+/// Read a complete lane of little-endian `f64` values, each finite.
+pub(crate) fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<FiniteReal>> {
     if !bytes.len().is_multiple_of(8) {
         return None;
     }
     let mut view = View::over_retained(bytes);
     let mut values = Vec::with_capacity(bytes.len() / 8);
     while !view.is_empty() {
-        let value = view.f64_le()?;
-        if !value.is_finite() {
-            return None;
-        }
-        values.push(value);
+        values.push(FiniteReal::new(view.f64_le()?)?);
     }
     Some(values)
 }
 
-pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[f64; N]> {
-    let mut values = [0.0; N];
+/// Read `N` consecutive little-endian `f64` values, each finite.
+pub(crate) fn read_f64_array<const N: usize>(data: &[u8], start: usize) -> Option<[FiniteReal; N]> {
+    let mut values = [FiniteReal::ZERO; N];
     for (index, value) in values.iter_mut().enumerate() {
         *value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
     }
     Some(values)
 }
 
-pub(crate) fn f64_le(bytes: &[u8], at: usize) -> Option<f64> {
-    let value = View::f64_le_at(bytes, at)?;
-    value.is_finite().then_some(value)
+/// Read one finite little-endian `f64`.
+pub(crate) fn f64_le(bytes: &[u8], at: usize) -> Option<FiniteReal> {
+    FiniteReal::new(View::f64_le_at(bytes, at)?)
 }
 
-pub(crate) fn f64_point(bytes: &[u8], at: usize) -> Option<Point3> {
-    Some(Point3::new(
-        f64_le(bytes, at)?,
-        f64_le(bytes, at + 8)?,
-        f64_le(bytes, at + 16)?,
+/// Read three little-endian `f64` coordinates as a finite point.
+pub(crate) fn f64_point(bytes: &[u8], at: usize) -> Option<FinitePoint3> {
+    FinitePoint3::new(Point3::new(
+        View::f64_le_at(bytes, at)?,
+        View::f64_le_at(bytes, at.checked_add(8)?)?,
+        View::f64_le_at(bytes, at.checked_add(16)?)?,
     ))
 }
 
-pub(crate) fn f64_vector(bytes: &[u8], at: usize) -> Option<Vector3> {
-    Some(Vector3::new(
-        f64_le(bytes, at)?,
-        f64_le(bytes, at + 8)?,
-        f64_le(bytes, at + 16)?,
+/// Read three little-endian `f64` components as a finite vector.
+pub(crate) fn f64_vector(bytes: &[u8], at: usize) -> Option<FiniteVector3> {
+    FiniteVector3::new(Vector3::new(
+        View::f64_le_at(bytes, at)?,
+        View::f64_le_at(bytes, at.checked_add(8)?)?,
+        View::f64_le_at(bytes, at.checked_add(16)?)?,
     ))
 }
 
