@@ -945,6 +945,20 @@ fn revolution_sweep_within_the_angular_tolerance_states_a_full_turn() {
 }
 
 #[test]
+fn revolution_sweep_that_overflows_between_finite_endpoints_is_refused() {
+    let interval = IncreasingParameterInterval::new([-f64::MAX, f64::MAX])
+        .expect("finite strictly increasing endpoints");
+    let Err(error) = RevolutionSweep::classify(interval) else {
+        panic!("a sweep that overflows must be refused");
+    };
+    assert!(matches!(error, CodecError::InvalidInput(_)));
+    let text = error.to_string();
+    assert!(text.contains("angular_interval"));
+    assert!(text.contains("sweep overflows"));
+    assert!(!text.contains("not finite"));
+}
+
+#[test]
 fn face_loop_order_places_the_explicit_outer_loop_first() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::Face;
