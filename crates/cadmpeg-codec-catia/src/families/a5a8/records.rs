@@ -1451,7 +1451,7 @@ fn a8_external_grid_candidates(
             let Some(values) = f64_values(data, &mut at, poles, end) else {
                 continue;
             };
-            if values.iter().any(|weight| *weight == 0.0) {
+            if values.contains(&0.0) {
                 continue;
             }
             Some(values)

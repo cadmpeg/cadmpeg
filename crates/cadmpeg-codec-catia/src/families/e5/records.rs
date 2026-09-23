@@ -268,15 +268,17 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         if !scalars_finite {
             continue;
         }
-        let bounds = bounds.map(FiniteReal::get);
+        #[cfg(not(test))]
+        // discarded-value: reading the natural bounds admits them finite; only tests read them
+        let _ = bounds;
         out.push(E5Plane {
             pos,
             record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
             origin: origin.map(FiniteReal::get),
             #[cfg(test)]
-            u_range: [bounds[0], bounds[1]],
+            u_range: [bounds[0].get(), bounds[1].get()],
             #[cfg(test)]
-            v_range: [bounds[2], bounds[3]],
+            v_range: [bounds[2].get(), bounds[3].get()],
         });
     }
     out
