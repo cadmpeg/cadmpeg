@@ -664,6 +664,16 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     );
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
 
+    for (offset, value) in [
+        (133 + 114, f64::NAN),
+        (133 + 42, 1.0e308),
+        (133 + 114 + 6 * 8 + 12 + 3 * 8 + 12, 1.0e308),
+    ] {
+        let mut invalid = bytes.clone();
+        invalid[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        assert!(crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid).is_none());
+    }
+
     push_marked_reference(&mut bytes, 201);
     let segment_type = |type_guid: &str, version, module: &str, entity_ids: Vec<u64>| {
         crate::records::entity_header::SegmentType {

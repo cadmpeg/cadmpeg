@@ -462,6 +462,13 @@ fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
 }
 
 #[test]
+fn propagated_endpoint_sources_reject_mismatched_edge_counts() {
+    let raw = Some(vec![Some([0, 1]), None]);
+    let mesh = Some(vec![None]);
+    assert_eq!(combine_propagated_endpoint_pairs(raw, mesh), None);
+}
+
+#[test]
 fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
     let points = [
         Point::new(

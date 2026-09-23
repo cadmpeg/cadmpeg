@@ -2860,6 +2860,9 @@ fn owner_scoped_spatial_line_length_dimension_definition(
                 return false;
             };
             let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
+            if !measured.is_finite() {
+                return false;
+            }
             let tolerance = linear_tolerance.max(
                 EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_LINE_LENGTH_DIMENSION_DEFINITION_E9
                     * (1.0 + measured.abs().max(expected.abs())),
@@ -3069,6 +3072,9 @@ fn owner_scoped_spatial_parallel_line_set_dimension_definition(
             let Some(measured) = measured else {
                 continue;
             };
+            if !measured.is_finite() {
+                continue;
+            }
             let tolerance = linear_tolerance.max(
                 EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9
                     * (1.0 + measured.abs().max(expected.abs())),

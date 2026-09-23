@@ -8030,20 +8030,23 @@ fn consolidated_owner_packets(
             (
                 (cycle.source_index, cycle.owner_pos),
                 CatiaOwnerBoundaryCycle {
-                    face_node: cycle.face_node.map(|face_node| CatiaFaceNodeRelation {
-                        byte_offset: face_node.pos as u64,
-                        byte_len: (cycle.owner_pos - face_node.pos) as u64,
-                        header_token: face_node.header_token,
-                        target_encoding: match face_node.target_encoding {
-                            crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
-                                CatiaFaceNodeTargetEncoding::Compact
-                            }
-                            crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
-                                CatiaFaceNodeTargetEncoding::TaggedU16Strong
-                            }
-                        },
-                        target: face_node.target,
-                        terminal: face_node.terminal,
+                    face_node: cycle.face_node.and_then(|face_node| {
+                        let byte_len = cycle.owner_pos.checked_sub(face_node.pos)?;
+                        Some(CatiaFaceNodeRelation {
+                            byte_offset: face_node.pos as u64,
+                            byte_len: byte_len as u64,
+                            header_token: face_node.header_token,
+                            target_encoding: match face_node.target_encoding {
+                                crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                                    CatiaFaceNodeTargetEncoding::Compact
+                                }
+                                crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                                    CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                                }
+                            },
+                            target: face_node.target,
+                            terminal: face_node.terminal,
+                        })
                     }),
                     edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
                         slot: edge.slot,
@@ -8161,20 +8164,23 @@ fn consolidated_owner_packets(
                 payload,
                 face_node: face_nodes
                     .get(&(source_index, pos))
-                    .map(|face_node| CatiaFaceNodeRelation {
-                    byte_offset: face_node.pos as u64,
-                    byte_len: (pos - face_node.pos) as u64,
-                    header_token: face_node.header_token,
-                    target_encoding: match face_node.target_encoding {
-                        crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
-                            CatiaFaceNodeTargetEncoding::Compact
-                        }
-                        crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
-                            CatiaFaceNodeTargetEncoding::TaggedU16Strong
-                        }
-                    },
-                    target: face_node.target,
-                        terminal: face_node.terminal,
+                    .and_then(|face_node| {
+                        let byte_len = pos.checked_sub(face_node.pos)?;
+                        Some(CatiaFaceNodeRelation {
+                            byte_offset: face_node.pos as u64,
+                            byte_len: byte_len as u64,
+                            header_token: face_node.header_token,
+                            target_encoding: match face_node.target_encoding {
+                                crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                                    CatiaFaceNodeTargetEncoding::Compact
+                                }
+                                crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                                    CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                                }
+                            },
+                            target: face_node.target,
+                            terminal: face_node.terminal,
+                        })
                     }),
             }
             },

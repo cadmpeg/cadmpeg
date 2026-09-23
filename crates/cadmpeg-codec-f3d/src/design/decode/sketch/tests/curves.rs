@@ -8,6 +8,27 @@ use crate::design::decode::sketch::{
 use crate::records::sketch_geometry::SketchCurveGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+#[test]
+fn line_components_refuse_unrepresentable_scaled_endpoints() {
+    let mut values = [0.0; 12];
+    values[3] = 1.0;
+    values[6] = 1.0;
+    values[11] = 1.0;
+    values[0] = 1.0e308;
+    assert!(crate::design::decode::sketch::decode_line_components(
+        &values,
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .is_none());
+    values[0] = 0.0;
+    values[3] = 1.0e308;
+    assert!(crate::design::decode::sketch::decode_line_components(
+        &values,
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .is_none());
+}
+
 fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
     let mut payload = vec![0; 133];
     for value in values {

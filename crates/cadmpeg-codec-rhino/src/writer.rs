@@ -181,7 +181,7 @@ fn write_seekable(
             output.write_all(&attributed_object_record(
                 2,
                 POINT_CLOUD_CLASS,
-                &point_cloud_payload(&group.points),
+                &point_cloud_payload(&group.points)?,
                 &group.identity,
                 group.name.as_deref(),
                 group.color,
@@ -1709,7 +1709,9 @@ fn check_frame(
     family: &str,
 ) -> Result<(), CodecError> {
     let dot = normal.x * x.x + normal.y * x.y + normal.z * x.z;
-    if (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+    if !normal.is_finite()
+        || !x.is_finite()
+        || (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
         || dot.abs() > EPS_WRITE_DEGENERATE
     {
@@ -1857,7 +1859,12 @@ fn units_record(linear: f64, angular: f64) -> Vec<u8> {
     crc_chunk(TCODE_UNITS_AND_TOLERANCES, &body)
 }
 
-fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Vec<u8> {
+fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Result<Vec<u8>, CodecError> {
+    if points.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "Rhino point cloud requires at least one point".into(),
+        ));
+    }
     let mut payload = vec![0x10];
     payload.extend((points.len() as i32).to_le_bytes());
     for point in points {
@@ -1880,7 +1887,7 @@ fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Vec<u8> {
         payload.extend(value.to_le_bytes());
     }
     payload.extend(0_i32.to_le_bytes());
-    payload
+    Ok(payload)
 }
 
 fn circle_payload(

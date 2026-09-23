@@ -4602,7 +4602,7 @@ fn attach_standard_topology(
             .map(|(edge, pairs)| {
                 propagated_endpoint_pairs
                     .as_ref()
-                    .and_then(|propagated| propagated[edge])
+                    .and_then(|propagated| propagated.get(edge).copied().flatten())
                     .map_or_else(|| pairs.clone(), |pair| vec![pair])
             })
             .collect::<Vec<_>>()
@@ -5985,6 +5985,7 @@ fn combine_propagated_endpoint_pairs(
     mesh: Option<Vec<Option<[usize; 2]>>>,
 ) -> Option<Vec<Option<[usize; 2]>>> {
     let pairs = match (raw, mesh) {
+        (Some(raw), Some(mesh)) if raw.len() != mesh.len() => return None,
         (_, Some(mesh)) if mesh.iter().all(Option::is_some) => mesh,
         (Some(raw), _) if raw.iter().all(Option::is_some) => raw,
         (Some(raw), Some(mesh)) => raw
@@ -9169,7 +9170,7 @@ fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bo
     if choices.iter().any(Vec::is_empty) {
         return false;
     }
-    visit(choices, 0, &mut Vec::new(), &mut 0).unwrap_or(true)
+    visit(choices, 0, &mut Vec::new(), &mut 0).unwrap_or(false)
 }
 
 fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {

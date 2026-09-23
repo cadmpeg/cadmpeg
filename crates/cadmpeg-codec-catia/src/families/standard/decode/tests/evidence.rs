@@ -553,6 +553,13 @@ fn circular_face_interval_choices_select_disjoint_arc_branches() {
 }
 
 #[test]
+fn circular_face_interval_budget_cannot_admit_an_unproved_selection() {
+    let mut choices = vec![vec![[0.0, 1.0], [2.0, 3.0]]; 12];
+    choices.push(vec![[0.5, 2.5]]);
+    assert!(!circular_range_choices_have_simple_selection(&choices));
+}
+
+#[test]
 fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()

@@ -793,7 +793,7 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
     multiplicities
         .iter()
         .try_fold(0u32, |sum, value| sum.checked_add(*value))?
-        .checked_sub(degree + 1)
+        .checked_sub(degree.checked_add(1)?)
 }
 
 #[cfg(test)]

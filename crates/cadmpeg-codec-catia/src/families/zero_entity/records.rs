@@ -731,7 +731,10 @@ pub(crate) fn zero_entity_ownership_roots_in_range(
             {
                 return None;
             }
-            let count = usize::from(data[face_roster.pos + 12] - 0x80);
+            let count = usize::from(
+                data.get(face_roster.pos.checked_add(12)?)?
+                    .checked_sub(0x80)?,
+            );
             let face_slots = (0..count)
                 .map(|index| tagged_u32(data, face_roster.pos + 13 + index * 5))
                 .collect::<Option<Vec<_>>>()?;
