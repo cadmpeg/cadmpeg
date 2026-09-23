@@ -175,6 +175,22 @@ impl DecodeBudget {
         )
     }
 
+    /// Report allocator refusal after a retained charge was already recorded.
+    pub(super) fn retained_allocation_failed(
+        &self,
+        charged: u64,
+        operation: &'static str,
+    ) -> CodecError {
+        self.refuse(
+            ResourceDimension::RetainedBytes,
+            ResourceFailure::AllocationFailed,
+            self.retained_allowance(),
+            self.retained.get().saturating_sub(charged),
+            charged,
+            operation,
+        )
+    }
+
     pub(super) fn charge_entities(
         &self,
         count: u64,
@@ -339,6 +355,10 @@ impl<'a> WorkBudget<'a> {
 
     /// Charges several work units, with sticky exhaustion on refusal.
     pub fn charge_by(&self, work: usize) -> bool {
+        self.charge_by_against(work, self.session)
+    }
+
+    fn charge_by_against(&self, work: usize, session: Option<&DecodeBudget>) -> bool {
         let Some(remaining) = self.remaining.get() else {
             return false;
         };
@@ -346,7 +366,7 @@ impl<'a> WorkBudget<'a> {
             self.remaining.set(None);
             false
         } else {
-            if let Some(session) = self.session {
+            if let Some(session) = session {
                 if session.charge_work(work as u64, "work_budget").is_err() {
                     self.remaining.set(None);
                     return false;
@@ -416,7 +436,13 @@ impl<'a> WorkBudget<'a> {
     /// remainder. The budget marks itself exhausted in that case, so
     /// [`WorkBudget::exhausted`] answers `true` afterwards.
     pub fn consume_child(&self, child: &WorkBudget<'_>) -> Result<(), BudgetExhausted> {
-        if self.charge_by(child.consumed()) {
+        // A session child already charged the shared session for each unit.
+        // Only transfer its consumption into this parent's local slice.
+        let session = match (self.session, child.session) {
+            (Some(parent), Some(child)) if std::ptr::eq(parent, child) => None,
+            _ => self.session,
+        };
+        if self.charge_by_against(child.consumed(), session) {
             Ok(())
         } else {
             Err(BudgetExhausted)
@@ -485,7 +511,8 @@ fn local_limit_error(
 
 #[cfg(test)]
 mod tests {
-    use super::{work_units, WorkBudget};
+    use super::{work_units, DecodeBudget, WorkBudget};
+    use crate::decode::{DecodePolicy, ResourceDimension, ResourceFailure};
 
     fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
         let Some(_guard) = budget.recursion_guard() else {
@@ -513,5 +540,38 @@ mod tests {
         assert_eq!(budget.consumed(), 1);
         assert!(!budget.charge_by(work_units(0)));
         assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn session_child_consumption_charges_the_session_once() {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 1;
+        let session = DecodeBudget::new(policy, 1);
+        let parent = WorkBudget::for_session(2, &session);
+        let child = parent.session_child_slice(1);
+        assert!(child.charge());
+        assert_eq!(session.work.get(), 1);
+        assert!(parent.consume_child(&child).is_ok());
+        assert_eq!(parent.remaining(), 1);
+        assert_eq!(session.work.get(), 1);
+        assert!(session.fused().is_none());
+    }
+
+    #[test]
+    fn retained_allocation_refusal_uses_the_retained_dimension_and_prior_usage() {
+        let session = DecodeBudget::new(DecodePolicy::default(), 1);
+        session
+            .charge_retained(3, "copy retained")
+            .expect("retained charge fits the default session allowance");
+        let crate::CodecError::ResourceLimit(limit) =
+            session.retained_allocation_failed(3, "copy retained")
+        else {
+            panic!("retained allocation must produce a resource refusal");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.reason, ResourceFailure::AllocationFailed);
+        assert_eq!(limit.used, 0);
+        assert_eq!(limit.additional, 3);
+        assert_eq!(session.fused(), Some(limit));
     }
 }
