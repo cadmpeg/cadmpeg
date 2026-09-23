@@ -148,12 +148,36 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::card;
+    use super::{card, parameter_card};
 
     #[test]
     fn card_refuses_sequence_that_exceeds_seven_columns() {
         assert!(card(b"", b'D', 10_000_000).is_err());
         let card = card(b"", b'D', 9_999_999).expect("largest seven-column sequence");
         assert_eq!(&card[73..80], b"9999999");
+    }
+
+    #[test]
+    fn card_refuses_data_past_seventy_two_columns() {
+        let error = card(&[b'x'; 73], b'S', 1).expect_err("73 data columns");
+        assert_eq!(
+            error.to_string(),
+            "a card holds 72 data columns; this one states 73"
+        );
+        let card = card(&[b'x'; 72], b'S', 1).expect("72 data columns");
+        assert_eq!(card[..72], [b'x'; 72]);
+        assert_eq!(&card[72..], b"S      1\n");
+    }
+
+    #[test]
+    fn parameter_card_refuses_data_past_sixty_four_columns() {
+        let error = parameter_card(&[b'x'; 65], 3, 1).expect_err("65 data columns");
+        assert_eq!(
+            error.to_string(),
+            "a parameter card holds 64 data columns; this one states 65"
+        );
+        let card = parameter_card(&[b'x'; 64], 3, 1).expect("64 data columns");
+        assert_eq!(card[..64], [b'x'; 64]);
+        assert_eq!(&card[64..], b"       3P      1\n");
     }
 }
