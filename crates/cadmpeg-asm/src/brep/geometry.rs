@@ -496,10 +496,11 @@ pub(super) fn reverse_curve_geometry(geometry: &mut CurveGeometry) {
 
 pub(super) fn reverse_procedural_curve_definition(
     definition: &mut cadmpeg_ir::geometry::ProceduralCurveDefinition,
-) {
+) -> Result<(), &'static str> {
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix) = definition {
-        helix.reverse_parameterization();
+        helix.try_reverse_parameterization()?;
     }
+    Ok(())
 }
 
 pub(super) fn double_at(rec: &Record, i: usize) -> Option<f64> {

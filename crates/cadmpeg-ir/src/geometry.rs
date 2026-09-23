@@ -2350,12 +2350,36 @@ impl TryFrom<HelixCurveConstructionWire> for HelixCurveConstruction {
 }
 
 impl HelixCurveConstruction {
-    /// Reverse the native interval and signed path fields.
-    pub fn reverse_parameterization(&mut self) {
-        self.angle_range = self.angle_range.reversed_negated();
-        self.minor = self.minor.negated();
-        self.pitch = self.pitch.negated();
-        self.apex_factor = self.apex_factor.negated();
+    /// Reverse the parameter while preserving points and derivatives.
+    /// A zero radius at the new interval start has no admitted helix frame.
+    pub fn try_reverse_parameterization(&mut self) -> Result<(), &'static str> {
+        let [start, end] = self.angle_range.get();
+        let turns = (end - start) / std::f64::consts::TAU;
+        let radial_end = self.apex_factor.get().mul_add(turns, 1.0);
+        if !turns.is_finite() || !radial_end.is_finite() || radial_end == 0.0 {
+            return Err("helix curve reversal has no finite nonzero starting radius");
+        }
+        let scale = |vector: Vector3| {
+            Vector3::new(
+                vector.x * radial_end,
+                vector.y * radial_end,
+                vector.z * radial_end,
+            )
+        };
+        let candidate = Self::try_new(
+            self.angle_range.reversed_negated().get(),
+            HelixFrame {
+                center: self.center.get().translated(self.pitch.get(), turns),
+                major: scale(self.major.get()),
+                minor: scale(self.minor.negated().get()),
+                pitch: self.pitch.negated().get(),
+                axis: self.axis.get(),
+            },
+            -self.apex_factor.get() / radial_end,
+            self.cache,
+        )?;
+        *self = candidate;
+        Ok(())
     }
 
     /// Scale lengths atomically and retain the old path when admission fails.
