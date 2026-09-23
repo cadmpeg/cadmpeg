@@ -1464,3 +1464,42 @@ fn a_hole_wire_refuses_a_degenerate_drilling_direction() {
     ));
     assert_eq!(serde_json::to_value(&definition).unwrap(), admitted);
 }
+
+#[test]
+fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
+    use crate::features::FeatureDirection3;
+    use crate::units::{OrthonormalFrame3, UnitVector3};
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.6, -0.8, 0.0),
+        Vector3::new(1.0 + 0.5e-9, 0.0, 0.0),
+        Vector3::new(0.0, -(1.0 - 0.5e-9), 0.0),
+    ] {
+        let unit = UnitVector3::new(vector).unwrap();
+        for (unit, expected) in [
+            (unit, vector),
+            (
+                unit.reversed(),
+                Vector3::new(-vector.x, -vector.y, -vector.z),
+            ),
+        ] {
+            let direction = FeatureDirection3::from(unit);
+            assert_eq!(
+                [direction.x, direction.y, direction.z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(FeatureDirection3::new(expected), Some(direction));
+        }
+    }
+    let frame =
+        OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert_eq!(
+        FeatureDirection3::from(frame.unit_axis()).get(),
+        *frame.axis()
+    );
+    assert_eq!(
+        FeatureDirection3::from(frame.unit_reference()).get(),
+        *frame.reference()
+    );
+}

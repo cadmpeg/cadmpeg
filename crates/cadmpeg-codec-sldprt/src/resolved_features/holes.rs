@@ -2384,10 +2384,11 @@ fn drilled_hole_topology_candidates(
                 } =>
             {
                 let origin = cone_surface.origin().get();
-                let axis = *cone_surface.axis();
                 hole_axis_key(&HolePlacement::Axis {
                     origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-                    axis: cadmpeg_ir::features::FeatureDirection3::new(axis)?,
+                    axis: cadmpeg_ir::features::FeatureDirection3::from(
+                        cone_surface.frame().unit_axis(),
+                    ),
                 })
             }
             _ => None,
