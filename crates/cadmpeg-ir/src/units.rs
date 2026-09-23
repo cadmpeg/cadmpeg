@@ -256,6 +256,23 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// The unit direction of `value`: each component divided by the largest
+    /// component magnitude, then by the `hypot` length of the quotients. The
+    /// direction is absent when a component is not finite or every component
+    /// is zero.
+    ///
+    /// The largest quotient has magnitude one and the others at most one, so
+    /// the `hypot` length is in `[1, √3]`, finite and nonzero. The final
+    /// quotients have a norm within rounding of one, which keeps the
+    /// admission of [`Self::new`].
+    #[must_use]
+    pub fn normalized_by_largest_component(value: Vector3) -> Option<Self> {
+        if !value.is_finite() {
+            return None;
+        }
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        (largest != 0.0).then(|| Self(divided_by_largest_component(value, largest)))
+    }
     /// Normalize three exact sums, each rescaled into the frame of the largest
     /// exponent, and reverse them when `reversed` is set.
     ///
@@ -312,6 +329,14 @@ impl UnitVector3 {
         Self(Vector3::new(first, 0.0, second))
     }
 }
+/// Divide `value` by `largest`, its nonzero largest component magnitude, and
+/// then by the `hypot` length of the quotients.
+fn divided_by_largest_component(value: Vector3, largest: f64) -> Vector3 {
+    let scaled = [value.x / largest, value.y / largest, value.z / largest];
+    let length = scaled[0].hypot(scaled[1]).hypot(scaled[2]);
+    Vector3::new(scaled[0] / length, scaled[1] / length, scaled[2] / length)
+}
+
 impl TryFrom<Vector3> for UnitVector3 {
     type Error = &'static str;
     fn try_from(value: Vector3) -> Result<Self, Self::Error> {
@@ -354,6 +379,7 @@ impl UnitVector2 {
 
 const EPS_RIGHT_HANDED_FRAME: f64 = 1.0e-12;
 const EPS_RIGHT_HANDED_FRAME_DISTANCE_SQUARED: f64 = 4.0e-24;
+const EPS_RIGHT_HANDED_FRAME_1E12_DISTANCE_SQUARED: f64 = 1.0e-24;
 
 /// Two perpendicular unit directions within the analytic frame tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -460,6 +486,42 @@ impl OrthonormalFrame3 {
         reference: UnitVector3,
         binormal: UnitVector3,
     ) -> Option<Self> {
+        Self::right_handed_within(
+            axis,
+            reference,
+            binormal,
+            EPS_RIGHT_HANDED_FRAME_DISTANCE_SQUARED,
+        )
+    }
+    /// Admit the frame of `axis` and `reference` when the three directions
+    /// form a right-handed orthonormal frame to a euclidean distance of
+    /// `1e-12`: the plain dot product of `reference` and `binormal` is at
+    /// most `1e-12` in magnitude, and the squared euclidean distance of the
+    /// cross product `reference × binormal`, as [`Vector3::cross`] computes
+    /// it, from `axis` is at most `1e-24`.
+    ///
+    /// The distance bound is half the bound of
+    /// [`Self::right_handed_euclidean`], so the same argument holds
+    /// `|reference · axis|` below `2e-12`, inside the `1e-9` frame tolerance
+    /// of [`Self::from_units`].
+    pub fn right_handed_euclidean_1e12(
+        axis: UnitVector3,
+        reference: UnitVector3,
+        binormal: UnitVector3,
+    ) -> Option<Self> {
+        Self::right_handed_within(
+            axis,
+            reference,
+            binormal,
+            EPS_RIGHT_HANDED_FRAME_1E12_DISTANCE_SQUARED,
+        )
+    }
+    fn right_handed_within(
+        axis: UnitVector3,
+        reference: UnitVector3,
+        binormal: UnitVector3,
+        distance_squared: f64,
+    ) -> Option<Self> {
         let (first, second) = (reference.0, binormal.0);
         let cross = first.cross(second);
         let deviation = [cross.x - axis.0.x, cross.y - axis.0.y, cross.z - axis.0.z];
@@ -468,7 +530,7 @@ impl OrthonormalFrame3 {
             && deviation[0] * deviation[0]
                 + deviation[1] * deviation[1]
                 + deviation[2] * deviation[2]
-                <= EPS_RIGHT_HANDED_FRAME_DISTANCE_SQUARED)
+                <= distance_squared)
             .then_some(Self { axis, reference })
     }
     /// Admit the frame whose second direction is `reference` and whose first
@@ -498,6 +560,35 @@ impl OrthonormalFrame3 {
             )),
             reference,
         })
+    }
+    /// Admit the frame whose second direction is `reference` and whose first
+    /// direction is the unit direction of the cross product
+    /// `reference × transverse`, as
+    /// [`UnitVector3::normalized_by_largest_component`] computes it, when the
+    /// plain dot product of `reference` and `transverse` is at most `1e-12`
+    /// in magnitude.
+    ///
+    /// The cross product is nonzero and finite by the argument of
+    /// [`Self::completing`], so the normalization cannot refuse. The exact
+    /// cross product is perpendicular to `reference`; the computed one and
+    /// its normalization differ from it by rounding, so the first direction
+    /// is perpendicular to `reference` within about `1e-15`, inside the
+    /// `1e-9` frame tolerance of [`Self::from_units`].
+    pub fn completing_by_largest_component(
+        reference: UnitVector3,
+        transverse: UnitVector3,
+    ) -> Option<Self> {
+        let (first, second) = (reference.0, transverse.0);
+        ((first.x * second.x + first.y * second.y + first.z * second.z).abs()
+            <= EPS_RIGHT_HANDED_FRAME)
+            .then(|| {
+                let cross = first.cross(second);
+                let largest = cross.x.abs().max(cross.y.abs()).max(cross.z.abs());
+                Self {
+                    axis: UnitVector3(divided_by_largest_component(cross, largest)),
+                    reference,
+                }
+            })
     }
     /// Admit the frame whose second direction is `reference` and whose first
     /// direction is the unit direction of `reference × +z`, as
@@ -990,6 +1081,137 @@ mod tests {
             let transverse = unit(skew, 1.0, 0.0);
             assert_eq!(
                 OrthonormalFrame3::completing(UnitVector3::X_AXIS, transverse).is_some(),
+                admitted
+            );
+        }
+    }
+
+    #[test]
+    fn a_direction_normalized_by_its_largest_component_keeps_the_unit_admission() {
+        let divided = |value: Vector3| {
+            let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+            let scaled = [value.x / largest, value.y / largest, value.z / largest];
+            let length = scaled[0].hypot(scaled[1]).hypot(scaled[2]);
+            Vector3::new(scaled[0] / length, scaled[1] / length, scaled[2] / length)
+        };
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(-2.0, 0.5, 7.0),
+            Vector3::new(1.0e300, -1.0e300, 1.0e300),
+            Vector3::new(1.0e-10, 3.0e-10, -2.0e-310),
+            Vector3::new(f64::MAX, f64::MAX, f64::MAX),
+            Vector3::new(1.0e-300, 0.0, 0.0),
+        ] {
+            let unit = UnitVector3::normalized_by_largest_component(value)
+                .expect("finite nonzero direction");
+            assert_eq!(*unit.as_raw(), divided(value));
+            assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(-0.0, 0.0, -0.0),
+            Vector3::new(f64::NAN, 1.0, 0.0),
+            Vector3::new(1.0, f64::INFINITY, 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_by_largest_component(value), None);
+        }
+    }
+
+    #[test]
+    fn right_handed_frames_within_1e12_admit_half_the_euclidean_band() {
+        use super::OrthonormalFrame3;
+
+        let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
+        assert_eq!(
+            OrthonormalFrame3::right_handed_euclidean_1e12(
+                UnitVector3::Z_AXIS,
+                UnitVector3::X_AXIS,
+                UnitVector3::Y_AXIS,
+            ),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        assert!(OrthonormalFrame3::right_handed_euclidean_1e12(
+            UnitVector3::Z_AXIS.reversed(),
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .is_none());
+        let skewed = unit(2.0e-12, 1.0, 0.0);
+        assert!(OrthonormalFrame3::right_handed_euclidean_1e12(
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+            skewed
+        )
+        .is_none());
+
+        // One component 0.9e-12 from the cross product is inside the band.
+        let near = unit(0.0, 0.9e-12, 1.0);
+        let frame = OrthonormalFrame3::right_handed_euclidean_1e12(
+            near,
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .expect("the cross product is within 1e-12 of the axis");
+        assert_eq!(
+            (*frame.axis(), *frame.reference()),
+            (near, UnitVector3::X_AXIS)
+        );
+        assert_eq!(
+            OrthonormalFrame3::from_units(near, UnitVector3::X_AXIS),
+            Some(frame)
+        );
+        // One component 1.5e-12 from the cross product: the 2e-12 route
+        // admits it and this route refuses it.
+        let far = unit(0.0, 1.5e-12, 1.0);
+        assert!(OrthonormalFrame3::right_handed_euclidean(
+            far,
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS
+        )
+        .is_some());
+        assert!(OrthonormalFrame3::right_handed_euclidean_1e12(
+            far,
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn frames_completed_by_the_largest_component_normalize_the_cross_product() {
+        use super::OrthonormalFrame3;
+
+        let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
+        assert_eq!(
+            OrthonormalFrame3::completing_by_largest_component(
+                UnitVector3::X_AXIS,
+                UnitVector3::Y_AXIS
+            ),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        let (cosine, sine) = (0.696_706_709_347_165_3_f64, 0.717_356_090_899_522_8_f64);
+        let reference = unit(cosine, -sine, 0.0);
+        let transverse = unit(sine * 0.6, cosine * 0.6, 0.8);
+        let frame = OrthonormalFrame3::completing_by_largest_component(reference, transverse)
+            .expect("perpendicular unit directions");
+        assert_eq!(*frame.reference(), reference);
+        assert_eq!(
+            Some(*frame.axis()),
+            UnitVector3::normalized_by_largest_component(
+                reference.as_raw().cross(*transverse.as_raw())
+            )
+        );
+        assert!(frame.axis().as_raw().dot(*reference.as_raw()).abs() <= 4.0 * f64::EPSILON);
+        assert_eq!(
+            OrthonormalFrame3::from_units(*frame.axis(), reference),
+            Some(frame)
+        );
+
+        for (skew, admitted) in [(1.0e-12, true), (2.0e-12, false)] {
+            let transverse = unit(skew, 1.0, 0.0);
+            assert_eq!(
+                OrthonormalFrame3::completing_by_largest_component(UnitVector3::X_AXIS, transverse)
+                    .is_some(),
                 admitted
             );
         }

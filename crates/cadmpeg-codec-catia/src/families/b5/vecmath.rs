@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `[f64; 3]` vector helpers shared by the b5 parse graph and IR transfer.
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
 
 pub(super) fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
     (Vector3::from(left) + Vector3::from(right)).into()
@@ -13,4 +15,12 @@ pub(super) fn scale(value: [f64; 3], scalar: f64) -> [f64; 3] {
 
 pub(super) fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
     Vector3::from(left).cross(Vector3::from(right)).into()
+}
+
+pub(super) fn coordinates(point: FinitePoint3) -> [f64; 3] {
+    point.get().into()
+}
+
+pub(super) fn components(direction: &UnitVector3) -> [f64; 3] {
+    (*direction.as_raw()).into()
 }

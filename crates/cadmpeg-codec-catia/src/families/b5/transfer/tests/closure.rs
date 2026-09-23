@@ -308,8 +308,8 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
 #[test]
 fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
     let plane = |v_offset: f64| B5Surface::Plane {
-        origin: [0.0, v_offset, 0.0],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0, v_offset, 0.0]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -489,8 +489,8 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         surfaces: BTreeMap::from([(
             10,
             B5Surface::Plane {
-                origin: [0.0, 0.0, 0.0],
-                direction_u: [1.0, 0.0, 0.0],
+                origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+                frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
                 direction_v: [0.0, 1.0, 0.0],
                 u_range: [-1.0, 1.0],
                 v_range: [-1.0, 1.0],

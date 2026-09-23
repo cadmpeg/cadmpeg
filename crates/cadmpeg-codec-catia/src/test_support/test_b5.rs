@@ -5,6 +5,47 @@
 use crate::test_support::test_a5a8::{a8_surface_stream, a8_surface_tail};
 use crate::test_support::test_bytes::{le_f32, le_f64};
 
+/// Admit a finite fixture point.
+pub(crate) fn point(coordinates: [f64; 3]) -> cadmpeg_ir::features::FinitePoint3 {
+    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::from(coordinates))
+        .expect("finite fixture point")
+}
+
+/// Admit a fixture unit direction.
+pub(crate) fn unit(direction: [f64; 3]) -> cadmpeg_ir::units::UnitVector3 {
+    cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(direction))
+        .expect("unit fixture direction")
+}
+
+/// Admit a fixture frame of two perpendicular unit directions.
+pub(crate) fn frame(axis: [f64; 3], reference: [f64; 3]) -> cadmpeg_ir::units::OrthonormalFrame3 {
+    cadmpeg_ir::units::OrthonormalFrame3::from_units(unit(axis), unit(reference))
+        .expect("perpendicular fixture directions")
+}
+
+/// Admit a fixture plane frame the way the `b5 03 27` record admits it: the
+/// normal of `direction_u × direction_v` and the first direction.
+pub(crate) fn plane_frame(
+    direction_u: [f64; 3],
+    direction_v: [f64; 3],
+) -> cadmpeg_ir::units::OrthonormalFrame3 {
+    cadmpeg_ir::units::OrthonormalFrame3::completing_by_largest_component(
+        unit(direction_u),
+        unit(direction_v),
+    )
+    .expect("perpendicular fixture plane directions")
+}
+
+/// Admit a positive fixture length.
+pub(crate) fn positive_length(value: f64) -> cadmpeg_ir::scalar::PositiveLength {
+    cadmpeg_ir::scalar::PositiveLength::new(value).expect("positive fixture length")
+}
+
+/// Admit a positive fixture scalar.
+pub(crate) fn positive(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
+    cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive fixture scalar")
+}
+
 /// Admit a finite fixture scalar.
 pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")

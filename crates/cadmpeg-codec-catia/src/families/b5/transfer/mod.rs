@@ -11,6 +11,7 @@ use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -21,6 +22,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
@@ -71,8 +73,8 @@ type B5SupportPlan = HashMap<u32, Vec<B5Support>>;
 
 struct RevolutionPlan {
     directrix: NurbsCurve,
-    axis_origin: Point3,
-    axis_direction: Vector3,
+    axis_origin: FinitePoint3,
+    axis_direction: UnitVector3,
     angular_interval: [f64; 2],
     angular_parameter_interval: [f64; 2],
     parameter_interval: [f64; 2],
@@ -678,9 +680,9 @@ pub(in crate::families) struct ResolvedRevolutionSurface {
     /// Exact profile curve used as the revolution directrix.
     pub(in crate::families) directrix: NurbsCurve,
     /// Point on the revolution axis.
-    pub(in crate::families) axis_origin: Point3,
+    pub(in crate::families) axis_origin: FinitePoint3,
     /// Unit revolution-axis direction.
-    pub(in crate::families) axis_direction: Vector3,
+    pub(in crate::families) axis_direction: UnitVector3,
     /// Angular interval in radians.
     pub(in crate::families) angular_interval: [f64; 2],
     /// Native angular surface-parameter interval mapped to `angular_interval`.

@@ -272,8 +272,8 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
     let surfaces = BTreeMap::from([(
         7,
         B5Surface::Plane {
-            origin: [0.0, 0.0, 0.0],
-            direction_u: [1.0, 0.0, 0.0],
+            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             direction_v: [0.0, 1.0, 0.0],
             u_range: [-1.0, 1.0],
             v_range: [-1.0, 1.0],
@@ -309,17 +309,16 @@ fn surface_candidate_merge_refines_opaque_wrappers_and_rejects_exact_conflicts()
         payload: vec![0x81, 0x82],
     };
     let plane = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
     };
     let cylinder = B5Surface::Cylinder {
-        origin: [0.0; 3],
-        reference_x: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 1.0,
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(1.0),
         u_range: [0.0, std::f64::consts::TAU],
         v_range: [-1.0, 1.0],
         angular_scale: 1.0,
@@ -372,8 +371,8 @@ fn full_surface_alias_closure_is_order_independent_unbounded_and_cycle_safe() {
         .map(|record| (record.object_id, record))
         .collect::<HashMap<_, _>>();
     let plane = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -430,8 +429,8 @@ fn surface_alias_closes_after_its_terminal_construction_resolves() {
     ));
 
     let plane = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -485,15 +484,15 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
 #[test]
 fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     let carrier = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
     };
     let source = B5Surface::Plane {
-        origin: [0.0, 0.0, 0.5],
-        direction_u: [0.0, 1.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0, 0.0, 0.5]),
+        frame: crate::test_support::test_b5::plane_frame([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]),
         direction_v: [-1.0, 0.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -734,8 +733,8 @@ fn counted_face_references_reject_unknown_terminal_controls() {
 #[test]
 fn face_references_can_repeat_one_carrier_through_an_alias() {
     let plane = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -857,11 +856,10 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         surface: 4,
     };
     let surface = B5Surface::Sphere {
-        center: [0.0, 0.0, 0.0],
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 5.0,
+        radius: crate::test_support::test_b5::positive_length(5.0),
         azimuth_range: [0.0, std::f64::consts::TAU],
         latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
         construction_radius: chart_scale,
@@ -1091,8 +1089,8 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
     let surfaces = BTreeMap::from([(
         4,
         B5Surface::Plane {
-            origin: [0.0, 0.0, 0.0],
-            direction_u: [1.0, 0.0, 0.0],
+            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             direction_v: [0.0, 1.0, 0.0],
             u_range: [0.0, 10.0],
             v_range: [-1.0, 1.0],
@@ -1175,8 +1173,8 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
     let surfaces = BTreeMap::from([(
         4,
         B5Surface::Plane {
-            origin: [0.0, 0.0, 0.0],
-            direction_u: [1.0, 0.0, 0.0],
+            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             direction_v: [0.0, 1.0, 0.0],
             u_range: [0.0, 10.0],
             v_range: [-1.0, 1.0],
@@ -1224,11 +1222,10 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
     let surfaces = BTreeMap::from([(
         4,
         B5Surface::Sphere {
-            center: [0.0, 0.0, 0.0],
-            direction_x: [1.0, 0.0, 0.0],
+            center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
             direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            radius: 5.0,
+            radius: crate::test_support::test_b5::positive_length(5.0),
             azimuth_range: [0.0, std::f64::consts::TAU],
             latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
             construction_radius: chart_scale,

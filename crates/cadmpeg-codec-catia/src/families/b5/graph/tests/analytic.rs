@@ -102,13 +102,11 @@ fn revolution_surface_requires_complete_sparse_reference_chart() {
         parse_surface(&record),
         Some(B5Surface::Revolution {
             profile_curve: 0x16_8600,
-            axis_origin: [1.0, 0.0, 0.0],
-            reference_x: [1.0, 0.0, 0.0],
-            reference_y: [0.0, 1.0, 0.0],
-            axis_direction: [0.0, 0.0, 1.0],
+            axis_origin: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
+            axis_direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
             profile_range: [-1.0, 1.0],
             angular_range: [0.0, 2.0 * std::f64::consts::PI],
-            angular_scale: 2.0,
+            angular_scale: crate::test_support::test_b5::positive(2.0)
         })
     );
     let mut left_handed = record.clone();
@@ -341,11 +339,11 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Plane {
-            origin: [1.0, 2.0, 3.0],
-            direction_u: [1.0, 0.0, 0.0],
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
             direction_v: [0.0, 1.0, 0.0],
             u_range: [-4.0, 8.0],
-            v_range: [-2.0, 6.0],
+            v_range: [-2.0, 6.0]
         })
     );
     let mut wrong_family = record.clone();
@@ -355,6 +353,10 @@ fn plane_surface_requires_complete_unit_chart_frame() {
     let mut nonunit = record.clone();
     nonunit.payload[25..33].copy_from_slice(&2.0f64.to_le_bytes());
     assert_eq!(parse_surface(&nonunit), None);
+    let mut parallel = record.clone();
+    parallel.payload[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+    parallel.payload[57..65].copy_from_slice(&0.0f64.to_le_bytes());
+    assert_eq!(parse_surface(&parallel), None);
     let mut reversed_range = record;
     reversed_range.payload[97..105].copy_from_slice(&(-5.0f64).to_le_bytes());
     assert_eq!(parse_surface(&reversed_range), None);
@@ -395,14 +397,13 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cylinder {
-            origin: [1.0, 2.0, 3.0],
-            reference_x: [1.0, 0.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            radius,
+            origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            radius: crate::test_support::test_b5::positive_length(radius),
             u_range: [2.0, 10.0],
             v_range: [-4.0, 5.0],
             angular_scale,
-            chart_origin,
+            chart_origin
         })
     );
 
@@ -457,15 +458,14 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Sphere {
-            center: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
+            center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
             direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            radius: 2.0,
+            radius: crate::test_support::test_b5::positive_length(2.0),
             azimuth_range,
             latitude_range: [-1.0, 1.0],
             construction_radius,
-            chart_origin,
+            chart_origin
         })
     );
     let tiny_radius = 1e-200_f64;
@@ -481,12 +481,12 @@ fn sphere_surface_validates_radius_scaled_frame_and_chart() {
     assert!(matches!(
         parse_surface(&tiny),
         Some(B5Surface::Sphere {
-            direction_x: [1.0, 0.0, 0.0],
+            frame,
             direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
             radius,
             ..
-        }) if radius == tiny_radius
+        }) if frame == crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0])
+            && radius.get() == tiny_radius
     ));
     tiny.payload[25..33].copy_from_slice(&(2.0 * tiny_radius).to_le_bytes());
     assert_eq!(parse_surface(&tiny), None);
@@ -562,12 +562,11 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Torus {
-            center: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
+            center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
             direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            major_radius: 5.0,
-            minor_radius: 2.0,
+            major_radius: crate::test_support::test_b5::positive_length(5.0),
+            minor_radius: crate::test_support::test_b5::positive_length(2.0),
             major_angular_range: [0.0, std::f64::consts::TAU],
             major_angular_domain: [0.0, std::f64::consts::TAU],
             minor_angular_range: [0.0, std::f64::consts::PI],
@@ -576,7 +575,7 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
                 3.0 * std::f64::consts::FRAC_PI_2,
             ],
             major_scale: 4.0,
-            minor_scale: 3.0,
+            minor_scale: 3.0
         })
     );
 
@@ -592,6 +591,67 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
     let mut nonzero_tail = record;
     nonzero_tail.payload[200] = 1;
     assert_eq!(parse_surface(&nonzero_tail), None);
+}
+
+#[test]
+fn torus_frames_admit_the_native_1e12_distance_band() {
+    let mut payload = vec![0; 201];
+    payload[0] = 0x80;
+    let set = |payload: &mut Vec<u8>, offset: usize, values: &[f64]| {
+        for (index, value) in values.iter().enumerate() {
+            payload[offset + 8 * index..offset + 8 * index + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    };
+    set(&mut payload, 1, &[1.0, 2.0, 3.0]);
+    set(&mut payload, 25, &[1.0, 0.0, 0.0]);
+    set(&mut payload, 49, &[0.0, 1.0, 0.0]);
+    set(
+        &mut payload,
+        97,
+        &[
+            5.0,
+            2.0,
+            0.0,
+            std::f64::consts::TAU,
+            0.0,
+            std::f64::consts::TAU,
+            0.0,
+            std::f64::consts::PI,
+            -std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            4.0,
+            3.0,
+        ],
+    );
+    let torus = |axis: [f64; 3]| {
+        let mut payload = payload.clone();
+        set(&mut payload, 73, &axis);
+        parse_surface(&B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2b,
+            object_id: 7,
+            payload,
+        })
+    };
+    // One component 0.9e-12 from the cross product is inside the native
+    // 1e-12 distance. The frame holds the stored axis and direction_x.
+    let axis = [0.0, 0.9e-12, 1.0];
+    let Some(B5Surface::Torus { frame, .. }) = torus(axis) else {
+        panic!("the torus frame is admitted");
+    };
+    assert_eq!(
+        *frame.axis().as_raw(),
+        cadmpeg_ir::math::Vector3::from(axis)
+    );
+    assert_eq!(
+        *frame.reference().as_raw(),
+        cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+    );
+    // One component 1.5e-12 from the cross product: inside the cone's 2e-12
+    // band, outside the torus's 1e-12 band.
+    assert_eq!(torus([0.0, 1.5e-12, 1.0]), None);
 }
 
 #[test]
@@ -902,11 +962,10 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
         payload,
     };
     let sphere = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
+        radius: crate::test_support::test_b5::positive_length(radius),
         azimuth_range: [0.0, 1.5],
         latitude_range: [-1.0, 1.0],
         construction_radius: chart_scale,
@@ -1002,15 +1061,15 @@ fn surface_aliases_require_their_complete_class_layout() {
 #[test]
 fn offset_surface_separates_result_carrier_source_and_bounds() {
     let carrier = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
     };
     let source = B5Surface::Plane {
-        origin: [0.0, 0.0, 0.5],
-        direction_u: [0.0, 1.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0, 0.0, 0.5]),
+        frame: crate::test_support::test_b5::plane_frame([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]),
         direction_v: [-1.0, 0.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -1048,22 +1107,20 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
 #[test]
 fn offset_surface_accepts_a_sphere_result_carrier() {
     let carrier = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 2.0,
+        radius: crate::test_support::test_b5::positive_length(2.0),
         azimuth_range: [0.0, 1.0],
         latitude_range: [-1.0, 1.0],
         construction_radius: 2.0,
         chart_origin: -2.0,
     };
     let source = B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [0.0, 1.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
         direction_y: [-1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 8.5,
+        radius: crate::test_support::test_b5::positive_length(8.5),
         azimuth_range: [0.0, 1.0],
         latitude_range: [-1.0, 1.0],
         construction_radius: 8.5,
@@ -1218,8 +1275,8 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
 #[test]
 fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     let plane = |origin| B5Surface::Plane {
-        origin,
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point(origin),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -1237,10 +1294,9 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let cylinder = |origin, radius| B5Surface::Cylinder {
-        origin,
-        reference_x: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
+        origin: crate::test_support::test_b5::point(origin),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(radius),
         u_range: [0.0, std::f64::consts::TAU * radius],
         v_range: [-1.0, 1.0],
         angular_scale: radius,
@@ -1273,12 +1329,11 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let torus = |center, major_radius, minor_radius| B5Surface::Torus {
-        center,
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point(center),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        major_radius,
-        minor_radius,
+        major_radius: crate::test_support::test_b5::positive_length(major_radius),
+        minor_radius: crate::test_support::test_b5::positive_length(minor_radius),
         major_angular_range: [0.0, std::f64::consts::TAU],
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
@@ -1303,11 +1358,10 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
     ));
 
     let sphere = |center, radius| B5Surface::Sphere {
-        center,
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point(center),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius,
+        radius: crate::test_support::test_b5::positive_length(radius),
         azimuth_range: [0.0, 1.0],
         latitude_range: [-1.0, 1.0],
         construction_radius: radius,

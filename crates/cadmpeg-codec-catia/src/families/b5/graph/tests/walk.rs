@@ -1057,8 +1057,8 @@ fn supported_surface_preserves_ordered_support_pcurves() {
     );
     let scalar_pair = parse_supported_surface(&scalar_pair).expect("two-scalar supported surface");
     let plane = B5Surface::Plane {
-        origin: [0.0; 3],
-        direction_u: [1.0, 0.0, 0.0],
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         direction_v: [0.0, 1.0, 0.0],
         u_range: [-1.0, 1.0],
         v_range: [-1.0, 1.0],
@@ -1142,22 +1142,20 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         construction_radius: radius,
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
-        origin: [0.0; 3],
-        reference_x: [1.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: carrier_radius,
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        radius: crate::test_support::test_b5::positive_length(carrier_radius),
         u_range: [0.0, std::f64::consts::TAU * carrier_radius],
         v_range: [-1.0, 1.0],
         angular_scale: carrier_radius,
         chart_origin: 0.0,
     };
     let torus = |carrier_radius| B5Surface::Torus {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        major_radius: 1.0,
-        minor_radius: carrier_radius,
+        major_radius: crate::test_support::test_b5::positive_length(1.0),
+        minor_radius: crate::test_support::test_b5::positive_length(carrier_radius),
         major_angular_range: [0.0, std::f64::consts::TAU],
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
@@ -1166,11 +1164,10 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         minor_scale: carrier_radius,
     };
     let sphere = |carrier_radius| B5Surface::Sphere {
-        center: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
+        center: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        radius: 1.0,
+        radius: crate::test_support::test_b5::positive_length(1.0),
         azimuth_range: [0.0, 1.0],
         latitude_range: [-1.0, 1.0],
         construction_radius: carrier_radius,
