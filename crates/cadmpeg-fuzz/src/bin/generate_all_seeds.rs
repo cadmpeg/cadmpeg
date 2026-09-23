@@ -35,15 +35,15 @@ fn generate_f3d_seeds() -> Result<(), SeedError> {
         ("bare_zip_with_txt", seeds::f3d::bare_zip_with_txt()?),
         (
             "synthetic_smbh_header_only",
-            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_smbh())?,
+            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_smbh()?)?,
         ),
         (
             "synthetic_geometry",
-            seeds::f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh())?,
+            seeds::f3d::f3d_with_smbh(&f3d::synthetic_geometry_smbh()?)?,
         ),
         (
             "synthetic_mixed",
-            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_mixed_smbh())?,
+            seeds::f3d::f3d_with_smbh(&seeds::f3d::synthetic_mixed_smbh()?)?,
         ),
         ("full_f3d_with_smbh", seeds::f3d::synthetic_f3d(true)?),
         ("full_f3d_smb_only", seeds::f3d::synthetic_f3d(false)?),
@@ -64,13 +64,13 @@ mod f3d {
         t_subident, t_vec,
     };
 
-    pub(super) fn synthetic_geometry_smbh() -> Vec<u8> {
+    pub(super) fn synthetic_geometry_smbh() -> std::io::Result<Vec<u8>> {
         let mut r = Vec::new();
-        t_ident(&mut r, "asmheader").expect("fixed seed identifier fits one-byte length");
-        push_u8_string(&mut r, "231.6.3.65535").expect("fixed seed string fits one-byte length");
+        t_ident(&mut r, "asmheader")?;
+        push_u8_string(&mut r, "231.6.3.65535")?;
         t_end(&mut r);
 
-        t_ident(&mut r, "body").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "body")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -79,7 +79,7 @@ mod f3d {
         t_ref(&mut r, -1);
         t_end(&mut r);
 
-        t_ident(&mut r, "region").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "region")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -88,7 +88,7 @@ mod f3d {
         t_ref(&mut r, 1);
         t_end(&mut r);
 
-        t_ident(&mut r, "shell").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "shell")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -99,7 +99,7 @@ mod f3d {
         t_ref(&mut r, 2);
         t_end(&mut r);
 
-        t_ident(&mut r, "face").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "face")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -112,7 +112,7 @@ mod f3d {
         r.push(0x0b);
         t_end(&mut r);
 
-        t_ident(&mut r, "loop").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "loop")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -121,8 +121,8 @@ mod f3d {
         t_ref(&mut r, 4);
         t_end(&mut r);
 
-        t_subident(&mut r, "plane").expect("fixed seed string fits one-byte length");
-        t_ident(&mut r, "surface").expect("fixed seed identifier fits one-byte length");
+        t_subident(&mut r, "plane")?;
+        t_ident(&mut r, "surface")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -134,7 +134,7 @@ mod f3d {
 
         let coedges = [(7i64, 8, 9, 10), (8, 9, 7, 11), (9, 7, 8, 12)];
         for (_id, next, prev, edge) in coedges {
-            t_ident(&mut r, "coedge").expect("fixed seed identifier fits one-byte length");
+            t_ident(&mut r, "coedge")?;
             t_ref(&mut r, -1);
             t_long(&mut r, -1);
             t_ref(&mut r, -1);
@@ -151,7 +151,7 @@ mod f3d {
 
         let edges = [(10i64, 13, 14), (11, 14, 15), (12, 15, 13)];
         for (_id, start, end) in edges {
-            t_ident(&mut r, "edge").expect("fixed seed identifier fits one-byte length");
+            t_ident(&mut r, "edge")?;
             t_ref(&mut r, -1);
             t_long(&mut r, -1);
             t_ref(&mut r, -1);
@@ -162,13 +162,13 @@ mod f3d {
             t_ref(&mut r, -1);
             t_ref(&mut r, -1);
             r.push(0x0b);
-            push_u8_string(&mut r, "unknown").expect("fixed seed string fits one-byte length");
+            push_u8_string(&mut r, "unknown")?;
             t_end(&mut r);
         }
 
         let verts = [(13i64, 10, 16), (14, 11, 17), (15, 12, 18)];
         for (_id, edge, point) in verts {
-            t_ident(&mut r, "vertex").expect("fixed seed identifier fits one-byte length");
+            t_ident(&mut r, "vertex")?;
             t_ref(&mut r, -1);
             t_long(&mut r, -1);
             t_ref(&mut r, -1);
@@ -179,7 +179,7 @@ mod f3d {
         }
 
         for p in [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
-            t_ident(&mut r, "point").expect("fixed seed identifier fits one-byte length");
+            t_ident(&mut r, "point")?;
             t_ref(&mut r, -1);
             t_long(&mut r, -1);
             t_ref(&mut r, -1);
@@ -188,10 +188,10 @@ mod f3d {
             t_end(&mut r);
         }
 
-        t_ident(&mut r, "delta_state").expect("fixed seed identifier fits one-byte length");
-        let mut out = smbh_header_prefix();
+        t_ident(&mut r, "delta_state")?;
+        let mut out = smbh_header_prefix()?;
         out.extend_from_slice(&r);
-        out
+        Ok(out)
     }
 }
 

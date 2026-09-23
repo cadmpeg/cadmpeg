@@ -19,13 +19,13 @@ fn main() -> Result<(), SeedError> {
         ("bare_zip_with_txt", bare_zip_with_txt()?),
         (
             "synthetic_smbh_header_only",
-            f3d_with_smbh(&synthetic_smbh())?,
+            f3d_with_smbh(&synthetic_smbh()?)?,
         ),
         (
             "synthetic_geometry",
-            f3d_with_smbh(&synthetic_geometry_smbh())?,
+            f3d_with_smbh(&synthetic_geometry_smbh()?)?,
         ),
-        ("synthetic_mixed", f3d_with_smbh(&synthetic_mixed_smbh())?),
+        ("synthetic_mixed", f3d_with_smbh(&synthetic_mixed_smbh()?)?),
         (
             "synthetic_with_pcurve",
             f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh()?)?,
@@ -36,7 +36,7 @@ fn main() -> Result<(), SeedError> {
         ("truncated_smbh", truncated_smbh()?),
         (
             "binary_file4_width",
-            f3d_with_smbh(&synthetic_binary_file4())?,
+            f3d_with_smbh(&synthetic_binary_file4()?)?,
         ),
     ];
 
@@ -57,18 +57,16 @@ fn push_tagged_i64(b: &mut Vec<u8>, tag: u8, v: i64) {
     b.extend_from_slice(&v.to_le_bytes());
 }
 
-fn synthetic_binary_file4() -> Vec<u8> {
+fn synthetic_binary_file4() -> std::io::Result<Vec<u8>> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile4<");
     b.extend_from_slice(&[0u8; 8]);
     b.extend_from_slice(&7u64.to_be_bytes());
     b.extend_from_slice(&3u64.to_be_bytes());
     b.extend_from_slice(&[0u8; 7]);
-    push_u8_string(&mut b, "Autodesk Neutron").expect("fixed seed string fits one-byte length");
-    push_u8_string(&mut b, "ASM 231.6.3.65535 OSX")
-        .expect("fixed seed string fits one-byte length");
-    push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026")
-        .expect("fixed seed string fits one-byte length");
+    push_u8_string(&mut b, "Autodesk Neutron")?;
+    push_u8_string(&mut b, "ASM 231.6.3.65535 OSX")?;
+    push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026")?;
     push_tagged_f64(&mut b, 60.0);
     push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
     push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
@@ -76,17 +74,17 @@ fn synthetic_binary_file4() -> Vec<u8> {
     b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");
     b.extend_from_slice(&[0u8; 16]);
-    b
+    Ok(b)
 }
 
-fn synthetic_geometry_smbh() -> Vec<u8> {
+fn synthetic_geometry_smbh() -> std::io::Result<Vec<u8>> {
     let mut r = Vec::new();
 
-    t_ident(&mut r, "asmheader").expect("fixed seed identifier fits one-byte length");
-    push_u8_string(&mut r, "231.6.3.65535").expect("fixed seed string fits one-byte length");
+    t_ident(&mut r, "asmheader")?;
+    push_u8_string(&mut r, "231.6.3.65535")?;
     t_end(&mut r);
 
-    t_ident(&mut r, "body").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "body")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -95,7 +93,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, -1);
     t_end(&mut r);
 
-    t_ident(&mut r, "region").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "region")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -104,7 +102,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, 1);
     t_end(&mut r);
 
-    t_ident(&mut r, "shell").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "shell")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -115,7 +113,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, 2);
     t_end(&mut r);
 
-    t_ident(&mut r, "face").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "face")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -128,7 +126,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     r.push(0x0b);
     t_end(&mut r);
 
-    t_ident(&mut r, "loop").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "loop")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -137,8 +135,8 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, 4);
     t_end(&mut r);
 
-    t_subident(&mut r, "plane").expect("fixed seed string fits one-byte length");
-    t_ident(&mut r, "surface").expect("fixed seed identifier fits one-byte length");
+    t_subident(&mut r, "plane")?;
+    t_ident(&mut r, "surface")?;
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
@@ -150,7 +148,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
 
     let coedges = [(7i64, 8, 9, 10), (8, 9, 7, 11), (9, 7, 8, 12)];
     for (_id, next, prev, edge) in coedges {
-        t_ident(&mut r, "coedge").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "coedge")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -167,7 +165,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
 
     let edges = [(10i64, 13, 14), (11, 14, 15), (12, 15, 13)];
     for (_id, start, end) in edges {
-        t_ident(&mut r, "edge").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "edge")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -178,13 +176,13 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
         t_ref(&mut r, -1);
         t_ref(&mut r, -1);
         r.push(0x0b);
-        push_u8_string(&mut r, "unknown").expect("fixed seed string fits one-byte length");
+        push_u8_string(&mut r, "unknown")?;
         t_end(&mut r);
     }
 
     let verts = [(13i64, 10, 16), (14, 11, 17), (15, 12, 18)];
     for (_id, edge, point) in verts {
-        t_ident(&mut r, "vertex").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "vertex")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -196,7 +194,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
 
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for p in points {
-        t_ident(&mut r, "point").expect("fixed seed identifier fits one-byte length");
+        t_ident(&mut r, "point")?;
         t_ref(&mut r, -1);
         t_long(&mut r, -1);
         t_ref(&mut r, -1);
@@ -205,15 +203,15 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
         t_end(&mut r);
     }
 
-    t_ident(&mut r, "delta_state").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut r, "delta_state")?;
 
-    let mut out = smbh_header_prefix();
+    let mut out = smbh_header_prefix()?;
     out.extend_from_slice(&r);
-    out
+    Ok(out)
 }
 
 fn synthetic_geometry_with_pcurve_smbh() -> Result<Vec<u8>, SeedError> {
-    let mut bytes = synthetic_geometry_smbh();
+    let mut bytes = synthetic_geometry_smbh()?;
     let start =
         find_record_stream_start(&bytes).ok_or("synthetic geometry holds no ASM record stream")?;
     let limit = find_delta_state_offset(&bytes).ok_or("synthetic geometry holds no delta_state")?;
@@ -232,7 +230,7 @@ fn synthetic_geometry_with_pcurve_smbh() -> Result<Vec<u8>, SeedError> {
         .ok_or("synthetic geometry holds no delta_state")?
         - 2;
     let mut pcurve = Vec::new();
-    t_ident(&mut pcurve, "pcurve").expect("fixed seed identifier fits one-byte length");
+    t_ident(&mut pcurve, "pcurve")?;
     t_ref(&mut pcurve, -1);
     t_long(&mut pcurve, -1);
     t_ref(&mut pcurve, -1);

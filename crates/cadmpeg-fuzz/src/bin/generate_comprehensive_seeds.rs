@@ -129,32 +129,6 @@ mod sldprt {
         Ok(f)
     }
 
-    #[cfg(test)]
-    mod tests {
-        use super::sldprt_with_body_and_material;
-        use std::io::Read;
-
-        #[test]
-        fn material_name_length_counts_utf16_units_and_refuses_overflow() {
-            let file =
-                sldprt_with_body_and_material(&[], "é", [0, 0, 0]).expect("short material name");
-            let marker = [0x9e, 0x14, 0x01, 0x00];
-            let at = super::sldprt_with_body(&[])
-                .expect("base SLDPRT seed")
-                .len();
-            assert_eq!(&file[at..at + marker.len()], marker);
-            let name_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
-                .expect("material block name length") as usize;
-            let mut decoder = flate2::read::DeflateDecoder::new(&file[at + 24 + name_len..]);
-            let mut material = Vec::new();
-            decoder.read_to_end(&mut material).expect("material block");
-            assert!(material
-                .windows(6)
-                .any(|bytes| bytes == [0xff, 0xfe, 0xff, 1, 0xe9, 0]));
-            assert!(sldprt_with_body_and_material(&[], &"x".repeat(256), [0, 0, 0]).is_err());
-        }
-    }
-
     fn display_list_payload() -> Vec<u8> {
         fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
             let mut b = Vec::new();
@@ -518,6 +492,34 @@ mod sldprt {
             body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
         }
         body
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::sldprt_with_body_and_material;
+        use cadmpeg_container::compression::inflate_bounded_probe;
+
+        #[test]
+        fn material_name_length_counts_utf16_units_and_refuses_overflow() {
+            let file =
+                sldprt_with_body_and_material(&[], "é", [0, 0, 0]).expect("short material name");
+            let marker = [0x9e, 0x14, 0x01, 0x00];
+            let at = super::sldprt_with_body(&[])
+                .expect("base SLDPRT seed")
+                .len();
+            assert_eq!(&file[at..at + marker.len()], marker);
+            let name_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 20)
+                .expect("material block name length") as usize;
+            let payload_len = cadmpeg_core::decode::View::u32_le_at(&file, at + 16)
+                .expect("material block payload length");
+            let payload_len = usize::try_from(payload_len).expect("host payload length");
+            let material = inflate_bounded_probe(&file[at + 24 + name_len..], payload_len)
+                .expect("material block");
+            assert!(material
+                .windows(6)
+                .any(|bytes| bytes == [0xff, 0xfe, 0xff, 1, 0xe9, 0]));
+            assert!(sldprt_with_body_and_material(&[], &"x".repeat(256), [0, 0, 0]).is_err());
+        }
     }
 }
 
