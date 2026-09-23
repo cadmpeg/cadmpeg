@@ -975,7 +975,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
             let parameter = section_equation_dimension_parameter(
                 &dimension_parameters,
                 equation.radius,
-                distance,
+                distance.get(),
             );
             Some((
                 SketchConstraint {
@@ -988,7 +988,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                         SketchConstraintDefinitionInput::DistanceLociValue {
                             first,
                             second,
-                            distance: Length::new(distance)?,
+                            distance: Length::from(distance),
                             parameter,
                         },
                     )
