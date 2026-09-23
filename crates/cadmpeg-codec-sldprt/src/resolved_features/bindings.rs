@@ -737,10 +737,12 @@ fn admitted_direction(
     })
 }
 
-fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3, Vector3)> {
+fn mirror_plane_from_surface(
+    geometry: &SolvedSurfaceGeometry,
+) -> Option<(cadmpeg_ir::features::FinitePoint3, Vector3)> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin().get();
+            let origin = plane_surface.origin();
             let normal = plane_surface.normal();
             Some((origin, normal.unit()?))
         }
@@ -748,7 +750,7 @@ fn mirror_plane_from_surface(geometry: &SolvedSurfaceGeometry) -> Option<(Point3
             let (origin, normal) = mirror_plane_from_surface(placed.basis())?;
             let transform = placed.transform();
             Some((
-                transform.apply_point(origin)?,
+                cadmpeg_ir::features::FinitePoint3::new(transform.apply_point(origin.get())?)?,
                 transform.apply_normal(normal)?,
             ))
         }
@@ -853,12 +855,9 @@ pub(crate) fn bind_mirror_surface_planes(
             let [(origin, normal)] = candidates.as_slice() else {
                 break 'feature_edit;
             };
-            if let (Some(plane_origin), Some(plane_normal)) = (
-                cadmpeg_ir::features::FinitePoint3::new(*origin),
-                cadmpeg_ir::features::FeatureDirection3::new(*normal),
-            ) {
+            if let Some(plane_normal) = cadmpeg_ir::features::FeatureDirection3::new(*normal) {
                 if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
-                    plane_origin,
+                    plane_origin: *origin,
                     plane_normal,
                 }) {
                     *pattern = admitted;
