@@ -523,17 +523,7 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, 0);
     push_u32(&mut bulk, u32::MAX);
-    if bulk.len() > metadata_body.len() {
-        return Err(format!(
-            "the RSe bulk record pads out to the {}-byte metadata body; this one states {}",
-            metadata_body.len(),
-            bulk.len()
-        )
-        .into());
-    }
-    let bulk_padding = metadata_body.len() - bulk.len();
-    pad_zeros(&mut bulk, bulk_padding);
-    records.extend_from_slice(&bulk);
+    records.extend_from_slice(&pad_rse_bulk(bulk, metadata_body.len())?);
     write_seed("seeds/inventor_rse_records", "minimal", &records)?;
 
     write_seed(
@@ -548,6 +538,20 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     )?;
     write_seed("seeds/protein_decode", "malformed_page", &[0; 304])?;
     Ok(())
+}
+
+/// Pads an RSe bulk record with zeros to the metadata body's length. A bulk
+/// record longer than the body is refused.
+fn pad_rse_bulk(mut bulk: Vec<u8>, body_len: usize) -> Result<Vec<u8>, SeedError> {
+    let Some(padding) = body_len.checked_sub(bulk.len()) else {
+        return Err(format!(
+            "the RSe bulk record pads out to the {body_len}-byte metadata body; this one states {}",
+            bulk.len()
+        )
+        .into());
+    };
+    pad_zeros(&mut bulk, padding);
+    Ok(bulk)
 }
 
 fn generate_rhino_submodule_seeds() -> Result<(), SeedError> {
@@ -831,4 +835,24 @@ fn directory_entry(directory: &mut [u8], index: usize, fields: DirectoryEntry<'_
     entry[76..80].copy_from_slice(&child.to_le_bytes());
     entry[116..120].copy_from_slice(&start_sector.to_le_bytes());
     entry[120..128].copy_from_slice(&size.to_le_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pad_rse_bulk;
+
+    #[test]
+    fn rse_bulk_longer_than_metadata_body_is_refused() {
+        let error = pad_rse_bulk(vec![1; 13], 12).expect_err("13-byte bulk over a 12-byte body");
+        assert_eq!(
+            error.to_string(),
+            "the RSe bulk record pads out to the 12-byte metadata body; this one states 13"
+        );
+    }
+
+    #[test]
+    fn rse_bulk_of_metadata_body_length_is_admitted_unpadded() {
+        let bulk = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        assert_eq!(pad_rse_bulk(bulk.clone(), 12).expect("equal length"), bulk);
+    }
 }
