@@ -7067,7 +7067,7 @@ impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
     type Error = &'static str;
 
     fn try_from(wire: SurfaceCurveTailWire) -> Result<Self, Self::Error> {
-        Self::new(
+        Self::try_new(
             wire.extension,
             wire.revision,
             wire.cache,
@@ -7078,9 +7078,10 @@ impl TryFrom<SurfaceCurveTailWire> for SurfaceCurveTail {
 }
 
 impl SurfaceCurveTail {
-    /// Admit a cache-first surface-curve tail around an admitted revision
-    /// whose remaining scalars are all finite.
-    pub fn new(
+    /// Admit a cache-first surface-curve tail around an admitted revision.
+    /// The support bounds, the solved range and the cache interval are raw
+    /// values; a non-finite one is refused.
+    pub fn try_new(
         extension: i64,
         revision: PositiveI64,
         cache: RevisionCacheForm<CacheFirstCurveParameterization>,

@@ -27,7 +27,7 @@ fn support_context() -> IntcurveSupportContext {
 }
 
 fn tail() -> SurfaceCurveTail {
-    SurfaceCurveTail::new(
+    SurfaceCurveTail::try_new(
         7,
         crate::scalar::PositiveI64::new(23_100).expect("positive revision"),
         RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
@@ -145,7 +145,7 @@ fn the_surface_curve_tail_refuses_every_non_finite_scalar() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for family in 0..3 {
             let wire = degenerate_tail(family, value);
-            assert!(SurfaceCurveTail::new(
+            assert!(SurfaceCurveTail::try_new(
                 wire.extension,
                 wire.revision,
                 wire.cache.clone(),
@@ -169,7 +169,7 @@ fn the_surface_curve_tail_refuses_a_non_positive_revision() {
         assert!(serde_json::from_value::<SurfaceCurveTail>(invalid).is_err());
     }
 
-    let maximum = SurfaceCurveTail::new(
+    let maximum = SurfaceCurveTail::try_new(
         7,
         crate::scalar::PositiveI64::new(i64::MAX).expect("maximum revision is admitted"),
         RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
@@ -201,7 +201,7 @@ fn an_admitted_revision_builds_the_tail_that_the_raw_revision_admits() {
             closed_form: 0,
         })
     };
-    let admitted = SurfaceCurveTail::new(
+    let admitted = SurfaceCurveTail::try_new(
         7,
         revision,
         cache(),
@@ -216,8 +216,12 @@ fn an_admitted_revision_builds_the_tail_that_the_raw_revision_admits() {
         serde_json::from_value::<SurfaceCurveTail>(raw).expect("the raw revision is admitted")
     );
     assert_eq!(admitted.revision(), revision);
-    assert!(
-        SurfaceCurveTail::new(7, revision, cache(), [[None; 4]; 2], [Some(f64::NAN), None])
-            .is_err()
-    );
+    assert!(SurfaceCurveTail::try_new(
+        7,
+        revision,
+        cache(),
+        [[None; 4]; 2],
+        [Some(f64::NAN), None]
+    )
+    .is_err());
 }
