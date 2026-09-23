@@ -189,6 +189,17 @@ fn length(reader: &mut BoundedReader<'_>, scale: MillimeterScale) -> Result<f64,
     })
 }
 
+fn annotation_scale(reader: &mut BoundedReader<'_>) -> Result<f64, FramingError> {
+    let value = reader.f64()?;
+    if !value.is_finite() {
+        return Err(FramingError::structural(
+            reader.position(),
+            "annotation scale is non-finite",
+        ));
+    }
+    Ok(value)
+}
+
 fn annotation_settings(
     data: &[u8],
     body: std::ops::Range<usize>,
@@ -204,7 +215,7 @@ fn annotation_settings(
             "annotation-settings version is unsupported",
         ));
     }
-    let dimension_scale = reader.f64()?;
+    let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
         id: "rhino:document:annotation_settings#current".to_string(),
         source_offset: source_offset as u64,
@@ -223,9 +234,13 @@ fn annotation_settings(
         obsolete_text_alignment: reader.u32()?,
         resolution: reader.i32()?,
         font_face: utf16(&mut reader)?,
-        world_view_text_scale: (minor >= 1).then(|| reader.f64()).transpose()?,
+        world_view_text_scale: (minor >= 1)
+            .then(|| annotation_scale(&mut reader))
+            .transpose()?,
         annotation_scaling: (minor >= 1).then(|| reader.bool()).transpose()?,
-        world_view_hatch_scale: (minor >= 2).then(|| reader.f64()).transpose()?,
+        world_view_hatch_scale: (minor >= 2)
+            .then(|| annotation_scale(&mut reader))
+            .transpose()?,
         hatch_scaling: (minor >= 2).then(|| reader.bool()).transpose()?,
         model_space_annotation_scaling: (minor >= 3).then(|| reader.bool()).transpose()?,
         layout_space_annotation_scaling: (minor >= 3).then(|| reader.bool()).transpose()?,

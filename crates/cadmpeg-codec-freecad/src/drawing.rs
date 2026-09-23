@@ -656,11 +656,15 @@ fn is_finite(value: &str) -> bool {
 }
 
 fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {
-    Some([
+    let vector = [
         value.attributes.get("valueX")?.parse().ok()?,
         value.attributes.get("valueY")?.parse().ok()?,
         value.attributes.get("valueZ")?.parse().ok()?,
-    ])
+    ];
+    vector
+        .iter()
+        .all(|component: &f64| component.is_finite())
+        .then_some(vector)
 }
 
 #[cfg(test)]

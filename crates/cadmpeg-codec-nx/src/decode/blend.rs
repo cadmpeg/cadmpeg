@@ -3560,6 +3560,9 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
+    if seed.is_some_and(|seed| !seed.is_finite()) {
+        return None;
+    }
     let (center, axis, reference, ellipse) = match geometry {
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
@@ -3582,6 +3585,7 @@ fn closest_periodic_analytic_curve_parameter_with_budget(
     let circle_parameter = seed.map_or(phase, |seed| {
         phase + ((seed - phase) / std::f64::consts::TAU).round() * std::f64::consts::TAU
     });
+    circle_parameter.is_finite().then_some(())?;
     let Some(ellipse_curve) = ellipse else {
         return Some(circle_parameter);
     };

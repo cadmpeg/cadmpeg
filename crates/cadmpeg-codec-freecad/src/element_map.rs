@@ -630,7 +630,7 @@ fn parse_legacy_string_ids(value: &str) -> Result<Vec<i64>, CodecError> {
                 .parse::<i64>()
                 .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))
         })
-        .filter(|id| id.as_ref().is_ok_and(|id| *id != 0))
+        .filter(|id| !matches!(id, Ok(0)))
         .collect()
 }
 
@@ -1151,8 +1151,8 @@ fn next_u64<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        node_text_bytes, owning_property, parse, parse_element_map, parse_string_table,
-        validate_string_hasher_framing,
+        node_text_bytes, owning_property, parse, parse_element_map, parse_legacy_string_ids,
+        parse_string_table, validate_string_hasher_framing,
     };
     use crate::native::{EntryRecord, PropertyRecord};
     use crate::test_support::test_archive::{
@@ -1161,6 +1161,15 @@ mod tests {
     use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::{Cursor, Read};
+
+    #[test]
+    fn legacy_string_ids_keep_parse_errors_while_dropping_zero() {
+        assert_eq!(
+            parse_legacy_string_ids("0,12,-3").expect("valid ids"),
+            vec![12, -3]
+        );
+        assert!(parse_legacy_string_ids("12,9999999999999999999999").is_err());
+    }
 
     fn test_property(type_name: &str, raw_xml: &str) -> PropertyRecord {
         PropertyRecord {

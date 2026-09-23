@@ -17,8 +17,12 @@ mod patch_slots;
 use patch_slots::{BooleanPatchSlot, FloatPatchSlot, IntegerPatchSlot};
 
 fn exact_count(value: f64) -> Option<i64> {
+    const MAX_EXCLUSIVE_COUNT: f64 = (1_u64 << 63) as f64;
+    if !(0.0..MAX_EXCLUSIVE_COUNT).contains(&value) {
+        return None;
+    }
     let count = value as i64;
-    (count >= 0 && count as f64 == value).then_some(count)
+    (count as f64 == value).then_some(count)
 }
 
 fn dimension_subtype(
