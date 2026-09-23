@@ -2140,11 +2140,7 @@ fn zero_entity_cylinder(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
     let origin = c.point3()?;
     c.skip(1)?;
-    let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
-    if radius.get() <= 0.0 {
-        return None;
-    }
-    Some(geometry)
+    crate::analytic::cylinder_uvr(&mut c, origin).map(|(geometry, _)| geometry)
 }
 
 fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
@@ -2158,11 +2154,8 @@ fn zero_entity_cone(payload: &[u8]) -> Option<SurfaceGeometry> {
 
 fn zero_entity_torus(payload: &[u8]) -> Option<SurfaceGeometry> {
     let mut c = crate::wire::cursor::Cursor::new_at(payload, 8)?;
-    let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
-    if !(major_radius.get() > 0.0 && minor_radius.get() > 0.0) {
-        return None;
-    }
-    Some(geometry)
+    let (geometry, _, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
+    (minor_radius.get() > 0.0).then_some(geometry)
 }
 
 fn u32_tokens(bytes: &[u8], at: usize, count: usize) -> Option<(Vec<u32>, usize)> {
