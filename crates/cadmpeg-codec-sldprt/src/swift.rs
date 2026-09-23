@@ -1951,6 +1951,9 @@ fn diameters_equivalent(left: f64, right: f64) -> bool {
 }
 
 fn approximately_equal(left: f64, right: f64) -> bool {
+    if !left.is_finite() || !right.is_finite() {
+        return false;
+    }
     let scale = left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= scale * EPS_SWIFT_APPROXIMATELY_EQUAL_E9
 }
