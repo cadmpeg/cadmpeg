@@ -565,8 +565,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     {
         let value = Some(DesignBaseFlangeOperation {
-            thickness: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.2)
-                .unwrap(),
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.2).unwrap(),
             thickness_offset: 0,
             profile_group_record_index: 100,
             profile_record_index: 101,
@@ -638,10 +637,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         &format!("{stream}:scope#surface-stitch"),
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             DesignSurfaceStitchOperation {
-                gap_tolerance: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    0.01,
-                )
-                .unwrap(),
+                gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
                 gap_tolerance_offset: 0,
                 tolerance_record_index: 302,
                 settings_record_index: 303,
@@ -777,7 +773,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             )
             .expect("nominal size"),
             profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
-            pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.06).unwrap(),
+            pitch: cadmpeg_ir::scalar::PositiveReal::new(0.06).unwrap(),
             face_group_record_indices: vec![701],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(
                 0.35995, 0.293, 0.3166,

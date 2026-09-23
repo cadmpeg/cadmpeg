@@ -40,10 +40,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         &scope_id,
         crate::records::feature::scope::DesignScopePayload::SurfaceStitch(
             crate::records::feature::surface_ops::DesignSurfaceStitchOperation {
-                gap_tolerance: crate::records::feature::sheet_metal::DesignPositiveScalar::new(
-                    0.01,
-                )
-                .unwrap(),
+                gap_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.01).unwrap(),
                 gap_tolerance_offset: 0,
                 tolerance_record_index: 300,
                 settings_record_index: 301,

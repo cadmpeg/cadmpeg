@@ -424,7 +424,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             )
             .expect("nominal size"),
             profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-            pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.07).unwrap(),
+            pitch: cadmpeg_ir::scalar::PositiveReal::new(0.07).unwrap(),
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
                 .unwrap(),

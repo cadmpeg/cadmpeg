@@ -41,7 +41,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         )
         .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.35).unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.35).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::thread::DesignThreadDiameters::new(
             2.97345, 2.5732, 2.7568,
@@ -143,7 +143,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         )
         .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.1).unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::thread::DesignThreadDiameters::new(
             0.71472, 0.60355, 0.64255,
@@ -244,7 +244,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         )
         .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("GB Metric profile").unwrap(),
-        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.06).unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.06).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::thread::DesignThreadDiameters::new(
             0.35995, 0.293, 0.3166,
@@ -358,7 +358,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         )
         .expect("nominal size"),
         profile: cadmpeg_core::text::NonBlankString::new("ISO Metric profile").unwrap(),
-        pitch: crate::records::feature::sheet_metal::DesignPositiveScalar::new(0.8).unwrap(),
+        pitch: cadmpeg_ir::scalar::PositiveReal::new(0.8).unwrap(),
         face_group_record_indices: vec![988],
         diameters: crate::records::feature::thread::DesignThreadDiameters::new(
             19.08149, 18.18397, 18.50413,

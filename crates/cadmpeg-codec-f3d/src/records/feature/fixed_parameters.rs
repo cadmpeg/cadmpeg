@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed extrude, fillet and chamfer parameter payloads.
 
-use super::sheet_metal::DesignPositiveScalar;
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -85,7 +85,7 @@ impl DesignFixedFilletGroup {
     ) -> Result<Self, String> {
         if tangency_weight
             .as_ref()
-            .is_some_and(|weight| DesignPositiveScalar::new(weight.value).is_none())
+            .is_some_and(|weight| PositiveReal::new(weight.value).is_none())
         {
             return Err("tangency_weight must be positive and finite".into());
         }

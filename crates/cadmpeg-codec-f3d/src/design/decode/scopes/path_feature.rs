@@ -19,7 +19,6 @@ use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
-use crate::records::feature::sheet_metal;
 use crate::records::feature::surface_ops;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
@@ -100,7 +99,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: sheet_metal::DesignPositiveScalar::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
                     angle_record_index: angle.record_index(),
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -138,7 +137,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: sheet_metal::DesignPositiveScalar::new(angle.value)?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value)?,
                     angle_record_index: *angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::identity::Located {
@@ -169,7 +168,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
-                    angle: sheet_metal::DesignPositiveScalar::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -193,7 +192,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                    angle: sheet_metal::DesignPositiveScalar::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,

@@ -2,9 +2,9 @@
 //! Path features: revolve, loft, sweep and pipe constructions.
 
 use super::extrude::DesignExtrudeOperation;
-use super::sheet_metal::DesignPositiveScalar;
 use super::surface_ops::DesignPipeSectionShape;
 use crate::records::identity::Located;
+use cadmpeg_ir::scalar::PositiveAngle;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -43,7 +43,7 @@ pub(crate) struct DesignRevolveConstruction {
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
     /// Positive angular travel in radians.
-    pub(crate) angle: DesignPositiveScalar,
+    pub(crate) angle: PositiveAngle,
     /// Referenced angular-travel scalar record.
     pub(crate) angle_record_index: u32,
     /// Byte offset of the angular-travel scalar.
@@ -101,8 +101,7 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
         Ok(Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: DesignPositiveScalar::new(value.angle)
-                .ok_or("angle must be positive and finite")?,
+            angle: PositiveAngle::new(value.angle).ok_or("angle must be positive and finite")?,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle: match (

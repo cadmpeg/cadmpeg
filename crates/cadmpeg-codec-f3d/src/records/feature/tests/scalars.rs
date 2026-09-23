@@ -1,26 +1,23 @@
 use crate::records::feature::{
-    direct_face::DesignDraftOperation,
-    path_features::DesignRevolveConstruction,
-    sheet_metal::{DesignBaseFlangeOperation, DesignFiniteScalar, DesignPositiveScalar},
-    surface_ops::DesignSurfaceStitchOperation,
+    direct_face::DesignDraftOperation, path_features::DesignRevolveConstruction,
+    sheet_metal::DesignBaseFlangeOperation, surface_ops::DesignSurfaceStitchOperation,
 };
+use cadmpeg_ir::scalar::{Angle, PositiveReal};
 use serde::Deserialize;
 
 #[test]
 fn checked_scalars_reject_nonfinite_deserializer_values() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(DesignFiniteScalar::new(value).is_none());
-        assert!(DesignPositiveScalar::new(value).is_none());
+        assert!(Angle::new(value).is_none());
+        assert!(PositiveReal::new(value).is_none());
+        assert!(Angle::deserialize(
+            serde::de::value::F64Deserializer::<serde::de::value::Error>::new(value)
+        )
+        .is_err());
         assert!(
-            DesignFiniteScalar::deserialize(serde::de::value::F64Deserializer::<
-                serde::de::value::Error,
-            >::new(value))
-            .is_err()
-        );
-        assert!(
-            DesignPositiveScalar::deserialize(serde::de::value::F64Deserializer::<
-                serde::de::value::Error,
-            >::new(value))
+            PositiveReal::deserialize(
+                serde::de::value::F64Deserializer::<serde::de::value::Error>::new(value)
+            )
             .is_err()
         );
     }

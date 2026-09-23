@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Direct face operations: offset faces, shell, thicken, move and draft.
 
-use super::sheet_metal::DesignFiniteScalar;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_ir::scalar::Angle;
 use serde::{Deserialize, Serialize};
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ impl From<DesignMoveForm> for u32 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignDraftOperation {
     /// Signed draft angle in radians.
-    pub(crate) angle: DesignFiniteScalar,
+    pub(crate) angle: Angle,
     /// Referenced draft-angle scalar record.
     pub(crate) angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.

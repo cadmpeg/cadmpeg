@@ -201,6 +201,34 @@ fn mesh_affine_transform_preserves_rows_and_rejects_invalid_maps() {
 }
 
 #[test]
+fn mesh_affine_transform_hands_back_its_admitted_rows_and_keeps_the_bottom_row_spelling() {
+    let rows = [
+        [-2.0, 0.0, 0.0, 3.0],
+        [0.0, 4.0, 0.0, 5.0],
+        [0.0, 0.0, 6.0, 7.0],
+        [-0.0, 0.0, -0.0, 1.0],
+    ];
+    let value = crate::records::mesh::MeshAffineTransform::try_from(rows).unwrap();
+    assert_eq!(
+        value
+            .transform()
+            .affine_rows()
+            .map(|row| row.map(f64::to_bits)),
+        [rows[0], rows[1], rows[2]].map(|row| row.map(f64::to_bits))
+    );
+    let cells: [f64; 16] = std::array::from_fn(|cell| rows[cell / 4][cell % 4]);
+    assert_eq!(value.cells().map(f64::to_bits), cells.map(f64::to_bits));
+    let wire = serde_json::to_string(&value).unwrap();
+    assert_eq!(wire, serde_json::to_string(&rows).unwrap());
+    let round_trip: crate::records::mesh::MeshAffineTransform =
+        serde_json::from_str(&wire).unwrap();
+    assert_eq!(
+        round_trip.cells().map(f64::to_bits),
+        cells.map(f64::to_bits)
+    );
+}
+
+#[test]
 fn mesh_texture_file_derives_basename_and_offset_without_wire_changes() {
     fn parse(
         wire: serde_json::Value,
