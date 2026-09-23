@@ -23,7 +23,7 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
         circle.center.get(),
         cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
     );
-    assert!((circle.axis.get()[2] - 1.0).abs() < 1.0e-12);
+    assert!((circle.frame.axis().as_raw().z - 1.0).abs() < 1.0e-12);
     assert_eq!(circle.radius.get(), 7.0);
     assert_eq!(circle.range.endpoints(), [0.0, 11.2]);
     assert_eq!(circle.chart_shift, -16.391_148_575_128_55);
@@ -132,13 +132,17 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     let offset = crate::families::b2::records::B2OffsetSupport {
         pos: 0,
         support_id: 7,
-        distance: 2.0,
-        domain: [
+        distance: cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite distance"),
+        u_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([
             surface.u_knots()[0],
-            surface.v_knots()[0],
             *surface.u_knots().last().unwrap(),
+        ])
+        .expect("increasing u knots"),
+        v_range: cadmpeg_ir::topology::IncreasingParameterInterval::new([
+            surface.v_knots()[0],
             *surface.v_knots().last().unwrap(),
-        ],
+        ])
+        .expect("increasing v knots"),
     };
 
     assert_eq!(

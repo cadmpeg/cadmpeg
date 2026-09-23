@@ -354,18 +354,6 @@ impl UnitVector2 {
 
 const EPS_RIGHT_HANDED_FRAME: f64 = 1.0e-12;
 
-/// The measure of the difference between the first direction of a
-/// right-handed frame and the cross product of its second and third
-/// directions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CrossDeviation {
-    /// The largest magnitude of a component of the difference.
-    LargestComponent,
-    /// The euclidean length of the difference, the square root of the sum of
-    /// the squared components.
-    Length,
-}
-
 /// Two perpendicular unit directions within the analytic frame tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrthonormalFrame3 {
@@ -417,24 +405,26 @@ impl OrthonormalFrame3 {
     pub fn from_units(axis: UnitVector3, reference: UnitVector3) -> Option<Self> {
         (axis.0.dot(reference.0).abs() <= EPS_UNIT_FRAME).then_some(Self { axis, reference })
     }
-    /// Admit the frame of `axis` and `reference` when `binormal` completes
-    /// them to a right-handed frame: the cross product `reference × binormal`
-    /// must equal `axis` within `1e-12` by `measure`. Each component of the
-    /// cross product is a difference of two plain products.
+    /// Admit the frame of `axis` and `reference` when the three directions
+    /// form a right-handed orthonormal frame to `1e-12`: the plain dot
+    /// product of `reference` and `binormal` is at most `1e-12` in
+    /// magnitude, and each component of the cross product
+    /// `reference × binormal`, a difference of two plain products, is within
+    /// `1e-12` of the same component of `axis`.
     ///
-    /// The condition holds the frame's perpendicularity, so it is not
-    /// measured again. `reference · (reference × binormal)` is zero for the
-    /// exact cross product. `|reference · axis|` is therefore at most the
+    /// The cross-product condition holds the perpendicularity of `axis` and
+    /// `reference`, so it is not measured again.
+    /// `reference · (reference × binormal)` is zero for the exact cross
+    /// product. `|reference · axis|` is therefore at most the
     /// length of `reference`, which is within `1e-9` of one, times the
-    /// deviation, which is at most `√3·1e-12` by either measure, plus the
-    /// rounding of the computed cross product, which is below `1e-15` for
-    /// unit directions. The sum is below `2e-12`, inside the `1e-9` frame
+    /// euclidean deviation, which is at most `√3·1e-12`, plus the rounding of
+    /// the computed cross product, which is below `1e-15` for unit
+    /// directions. The sum is below `2e-12`, inside the `1e-9` frame
     /// tolerance of [`Self::from_units`].
     pub fn right_handed(
         axis: UnitVector3,
         reference: UnitVector3,
         binormal: UnitVector3,
-        measure: CrossDeviation,
     ) -> Option<Self> {
         let (first, second) = (reference.0, binormal.0);
         let cross = [
@@ -442,20 +432,55 @@ impl OrthonormalFrame3 {
             first.z * second.x - first.x * second.z,
             first.x * second.y - first.y * second.x,
         ];
-        let deviation = cross.iter().zip([axis.0.x, axis.0.y, axis.0.z]);
-        let admitted = match measure {
-            CrossDeviation::LargestComponent => deviation
-                .map(|(cross, axis)| (cross - axis).abs())
-                .all(|difference| difference <= EPS_RIGHT_HANDED_FRAME),
-            CrossDeviation::Length => {
-                deviation
-                    .map(|(cross, axis)| (cross - axis).powi(2))
-                    .sum::<f64>()
-                    .sqrt()
-                    <= EPS_RIGHT_HANDED_FRAME
-            }
-        };
-        admitted.then_some(Self { axis, reference })
+        ((first.x * second.x + first.y * second.y + first.z * second.z).abs()
+            <= EPS_RIGHT_HANDED_FRAME
+            && cross
+                .iter()
+                .zip([axis.0.x, axis.0.y, axis.0.z])
+                .all(|(cross, axis)| (cross - axis).abs() <= EPS_RIGHT_HANDED_FRAME))
+        .then_some(Self { axis, reference })
+    }
+    /// Admit the frame whose second direction is `reference` and whose first
+    /// direction is the cross product `reference × transverse` divided by its
+    /// length, when the dot product of `reference` and `transverse` is at most
+    /// `1e-12` in magnitude.
+    ///
+    /// The squared length of the cross product is
+    /// `|reference|²·|transverse|² − (reference · transverse)²`. Both lengths
+    /// are within `1e-9` of one, so the length is within about `3e-9` of one,
+    /// finite and nonzero, and the quotients have a norm within rounding of
+    /// one. The exact cross product is perpendicular to `reference`; the
+    /// computed one differs from it by rounding, so the first direction is
+    /// perpendicular to `reference` within about `1e-15`, inside the `1e-9`
+    /// frame tolerance of [`Self::from_units`].
+    pub fn completing(reference: UnitVector3, transverse: UnitVector3) -> Option<Self> {
+        if reference.0.dot(transverse.0).abs() > EPS_RIGHT_HANDED_FRAME {
+            return None;
+        }
+        let cross = reference.0.cross(transverse.0);
+        let length = cross.norm();
+        Some(Self {
+            axis: UnitVector3(Vector3::new(
+                cross.x / length,
+                cross.y / length,
+                cross.z / length,
+            )),
+            reference,
+        })
+    }
+    /// Admit the frame whose second direction is `reference` and whose first
+    /// direction is the unit direction of `reference × +z`, as
+    /// [`Vector3::unit`] computes it. The computed cross product is exactly
+    /// `[reference.y, −reference.x, ±0]`, so the two directions are
+    /// perpendicular to the rounding of the unit direction. The frame is
+    /// absent when the cross product is not longer than [`f64::EPSILON`],
+    /// where `reference` is parallel to +z to rounding.
+    pub fn about_horizontal_normal(reference: UnitVector3) -> Option<Self> {
+        let normal = reference.0.cross(Vector3::new(0.0, 0.0, 1.0)).unit()?;
+        Some(Self {
+            axis: UnitVector3(normal),
+            reference,
+        })
     }
     /// Borrow the admitted first direction. A caller that moves it into
     /// another model object keeps the unit-length guarantee and performs no
@@ -782,74 +807,128 @@ mod tests {
 
     #[test]
     fn right_handed_frames_admit_the_cross_product_band_and_hold_perpendicular_directions() {
-        use super::{CrossDeviation, OrthonormalFrame3, UnitVector3};
+        use super::{OrthonormalFrame3, UnitVector3};
         use crate::math::Vector3;
 
         let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
-        for measure in [CrossDeviation::LargestComponent, CrossDeviation::Length] {
-            let frame = OrthonormalFrame3::right_handed(
-                UnitVector3::Z_AXIS,
-                UnitVector3::X_AXIS,
-                UnitVector3::Y_AXIS,
-                measure,
-            );
-            assert_eq!(frame, Some(OrthonormalFrame3::IDENTITY));
-            assert!(OrthonormalFrame3::right_handed(
-                UnitVector3::Z_AXIS.reversed(),
-                UnitVector3::X_AXIS,
-                UnitVector3::Y_AXIS,
-                measure,
-            )
-            .is_none());
-            let tilted = unit(1.0, 0.0, 2.0e-12);
-            assert!(OrthonormalFrame3::right_handed(
-                UnitVector3::Z_AXIS,
-                tilted,
-                UnitVector3::Y_AXIS,
-                measure,
-            )
-            .is_none());
-        }
+        let frame = OrthonormalFrame3::right_handed(
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        );
+        assert_eq!(frame, Some(OrthonormalFrame3::IDENTITY));
+        assert!(OrthonormalFrame3::right_handed(
+            UnitVector3::Z_AXIS.reversed(),
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .is_none());
+        let tilted = unit(1.0, 0.0, 2.0e-12);
+        assert!(
+            OrthonormalFrame3::right_handed(UnitVector3::Z_AXIS, tilted, UnitVector3::Y_AXIS)
+                .is_none()
+        );
+        // The cross product is +z exactly, but the reference and the binormal
+        // are not perpendicular to 1e-12.
+        let skewed = unit(2.0e-12, 1.0, 0.0);
+        assert_eq!(
+            UnitVector3::X_AXIS.as_raw().cross(*skewed.as_raw()),
+            Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert!(
+            OrthonormalFrame3::right_handed(UnitVector3::Z_AXIS, UnitVector3::X_AXIS, skewed)
+                .is_none()
+        );
 
-        let one_component = unit(0.0, 1.0e-12, 1.0);
-        let two_components = unit(1.0e-12, 1.0e-12, 1.0);
-        for (axis, measure, admitted) in [
-            (one_component, CrossDeviation::LargestComponent, true),
-            (one_component, CrossDeviation::Length, true),
-            (two_components, CrossDeviation::LargestComponent, true),
-            (two_components, CrossDeviation::Length, false),
-        ] {
-            let frame = OrthonormalFrame3::right_handed(
-                axis,
-                UnitVector3::X_AXIS,
-                UnitVector3::Y_AXIS,
-                measure,
+        for axis in [unit(0.0, 1.0e-12, 1.0), unit(1.0e-12, 1.0e-12, 1.0)] {
+            let frame =
+                OrthonormalFrame3::right_handed(axis, UnitVector3::X_AXIS, UnitVector3::Y_AXIS)
+                    .expect("each cross-product component is within 1e-12 of the axis");
+            assert_eq!(
+                (*frame.axis(), *frame.reference()),
+                (axis, UnitVector3::X_AXIS)
             );
-            assert_eq!(frame.is_some(), admitted);
-            if let Some(frame) = frame {
-                assert_eq!(
-                    (*frame.axis(), *frame.reference()),
-                    (axis, UnitVector3::X_AXIS)
-                );
-                assert_eq!(
-                    OrthonormalFrame3::from_units(axis, UnitVector3::X_AXIS),
-                    Some(frame)
-                );
-            }
+            assert_eq!(
+                OrthonormalFrame3::from_units(axis, UnitVector3::X_AXIS),
+                Some(frame)
+            );
         }
+        assert!(OrthonormalFrame3::right_handed(
+            unit(2.0e-12, 0.0, 1.0),
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .is_none());
 
         let long = 1.0 + 4.0e-13;
         let binormal = unit(0.0, long, 0.0);
         let axis = unit(0.0, 1.0e-12, long);
-        let frame = OrthonormalFrame3::right_handed(
-            axis,
-            UnitVector3::X_AXIS,
-            binormal,
-            CrossDeviation::Length,
-        )
-        .expect("the cross product is within the band");
+        let frame = OrthonormalFrame3::right_handed(axis, UnitVector3::X_AXIS, binormal)
+            .expect("the cross product is within the band");
         assert!(binormal.as_raw().dot(*axis.as_raw()).abs() > 1.0e-12);
         assert!(frame.axis().as_raw().dot(*frame.reference().as_raw()).abs() <= 2.0e-12);
+    }
+
+    #[test]
+    fn completed_frames_take_the_unit_cross_product_of_perpendicular_directions() {
+        use super::{OrthonormalFrame3, UnitVector3};
+        use crate::math::Vector3;
+
+        let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
+        assert_eq!(
+            OrthonormalFrame3::completing(UnitVector3::X_AXIS, UnitVector3::Y_AXIS),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        let (cosine, sine) = (0.696_706_709_347_165_3_f64, 0.717_356_090_899_522_8_f64);
+        let reference = unit(cosine, -sine, 0.0);
+        let transverse = unit(sine, cosine, -0.0);
+        let frame = OrthonormalFrame3::completing(reference, transverse)
+            .expect("perpendicular unit directions");
+        assert_eq!(*frame.reference(), reference);
+        let axis = frame.axis().as_raw();
+        assert!((axis.norm() - 1.0).abs() <= 4.0 * f64::EPSILON);
+        assert!(axis.dot(*reference.as_raw()).abs() <= 4.0 * f64::EPSILON);
+        assert!((axis.z - 1.0).abs() <= 4.0 * f64::EPSILON);
+        assert_eq!(
+            OrthonormalFrame3::from_units(*frame.axis(), reference),
+            Some(frame)
+        );
+
+        for (skew, admitted) in [(1.0e-12, true), (2.0e-12, false)] {
+            let transverse = unit(skew, 1.0, 0.0);
+            assert_eq!(
+                OrthonormalFrame3::completing(UnitVector3::X_AXIS, transverse).is_some(),
+                admitted
+            );
+        }
+    }
+
+    #[test]
+    fn horizontal_normal_frames_hold_the_reference_and_the_unit_normal_below_it() {
+        use super::{OrthonormalFrame3, UnitVector3};
+        use crate::math::Vector3;
+
+        let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
+        let reference = unit(-0.500_000_000_000_000_2, -0.866_025_403_784_438_7, -0.0);
+        let frame =
+            OrthonormalFrame3::about_horizontal_normal(reference).expect("a horizontal reference");
+        assert_eq!(*frame.reference(), reference);
+        assert_eq!(
+            *frame.axis().as_raw(),
+            reference
+                .as_raw()
+                .cross(Vector3::new(0.0, 0.0, 1.0))
+                .unit()
+                .expect("nonzero cross product")
+        );
+        assert_eq!(
+            OrthonormalFrame3::from_units(*frame.axis(), reference),
+            Some(frame)
+        );
+        let tilted = unit(1.0, 0.0, 1.0e-9);
+        let frame = OrthonormalFrame3::about_horizontal_normal(tilted).expect("nearly horizontal");
+        assert_eq!(frame.axis().as_raw(), &Vector3::new(0.0, -1.0, 0.0));
+        assert!(OrthonormalFrame3::about_horizontal_normal(UnitVector3::Z_AXIS).is_none());
     }
 
     #[test]

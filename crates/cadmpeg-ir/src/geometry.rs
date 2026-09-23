@@ -665,6 +665,22 @@ impl RecordBounds {
         }
     }
 
+    /// Build the quartet `[u_lower, v_lower, u_upper, v_upper]` of a
+    /// parameter box: its lower corner, then its upper corner. Every endpoint
+    /// of an admitted interval is finite, so nothing is checked.
+    #[must_use]
+    pub const fn from_corners(
+        u: crate::topology::IncreasingParameterInterval,
+        v: crate::topology::IncreasingParameterInterval,
+    ) -> Self {
+        Self([
+            Some(u.lower()),
+            Some(v.lower()),
+            Some(u.upper()),
+            Some(v.upper()),
+        ])
+    }
+
     /// Return the admitted quartet. Every present position is finite.
     #[must_use]
     pub const fn get(self) -> [Option<f64>; 4] {

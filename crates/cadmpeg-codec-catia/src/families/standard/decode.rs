@@ -648,25 +648,22 @@ fn refine_consolidated_analytic_surfaces(
                 let half_angle = cone_surface.half_angle().get();
                 exactly_one(cones.iter().filter(|cone| {
                     same_point(origin, cone.apex.get().into())
-                        && same_axis(*axis, cone.axis.get())
+                        && same_axis(*axis, cone.frame.axis().get())
                         && half_angle.to_bits() == quantized(cone.half_angle.get()).to_bits()
                 }))
-                .and_then(|cone| {
-                    Some((
+                .map(|cone| {
+                    (
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                             cadmpeg_ir::geometry::analytic::ConeSurface::new(
                                 cone.apex,
-                                cadmpeg_ir::units::OrthonormalFrame3::from_units(
-                                    cone.axis.into(),
-                                    cone.t1.into(),
-                                )?,
+                                cone.frame.into(),
                                 cadmpeg_ir::scalar::NonNegativeLength::ZERO,
                                 cadmpeg_ir::scalar::PositiveReal::ONE,
                                 cone.half_angle,
                             ),
                         )),
                         cone.pos,
-                    ))
+                    )
                 })
             }
             Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) => {
@@ -2162,20 +2159,12 @@ fn try_decode_standard_population(
         );
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
     // The bindings this call returns are read below, through
-    // `bind_consolidated_revolution_faces_and_seams`. Its refusal is a
-    // `CodecError`; this route states it in the lane-refusal sink, which is
-    // the caller's channel, before it transfers no model.
-    let consolidated_revolutions = match append_consolidated_revolutions(
+    // `bind_consolidated_revolution_faces_and_seams`.
+    let consolidated_revolutions = append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    ) {
-        Ok(bindings) => bindings,
-        Err(error) => {
-            refusal.push_construction(&error);
-            return None;
-        }
-    };
+    );
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::compose(

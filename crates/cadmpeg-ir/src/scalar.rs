@@ -240,6 +240,17 @@ impl NonNegativeLength {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
 
+    /// The length times the magnitude of the sine of `angle`.
+    ///
+    /// The sine of a finite angle is finite, and a sine computed within one
+    /// unit in the last place has magnitude at most one. The product is
+    /// therefore finite, nonnegative and not above the length, so it is
+    /// admitted without a check.
+    #[must_use]
+    pub fn scaled_by_sine(self, angle: Angle) -> Self {
+        Self(self.0 * angle.0.sin().abs())
+    }
+
     /// Assign the length family to a dimensionless nonnegative value in
     /// canonical millimeters.
     ///

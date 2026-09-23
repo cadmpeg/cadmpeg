@@ -9,18 +9,22 @@
 use crate::wire::records::ConsolidatedPcurve;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
-use cadmpeg_ir::units::{CrossDeviation, OrthonormalFrame3};
+use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::checked::{
     ExactDeviation, ExactHypotUnitVector3, ExactNormUnitVector3, ExactUnitVector3, HypotLength,
-    RelaxedDeviation, RelaxedUnitVector2, RelaxedUnitVector3, SquaredLength, UnitFrame3,
+    RelaxedDeviation, RelaxedHypotUnitVector3, RelaxedUnitVector2, RelaxedUnitVector3,
+    SquaredLength, UnitFrame3,
 };
 use crate::families::a5a8::records::FreeformSurface;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
@@ -52,13 +56,11 @@ pub(in crate::families) struct B2OffsetSupport {
     /// Referenced carrier-surface identifier.
     pub(in crate::families) support_id: u32,
     /// Signed normal offset distance in millimetres.
-    pub(in crate::families) distance: f64,
-    /// Carrier UV sub-domain `[u0, v0, u1, v1]`.
-    pub(in crate::families) domain: [f64; 4],
-}
-
-fn valid_offset_domain([u0, v0, u1, v1]: [f64; 4]) -> bool {
-    [u0, v0, u1, v1].iter().all(|value| value.is_finite()) && u0 < u1 && v0 < v1
+    pub(in crate::families) distance: FiniteReal,
+    /// Carrier U sub-interval.
+    pub(in crate::families) u_range: IncreasingParameterInterval,
+    /// Carrier V sub-interval.
+    pub(in crate::families) v_range: IncreasingParameterInterval,
 }
 
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
@@ -153,19 +155,20 @@ impl B2ParameterPointPayload {
 pub(crate) enum B2PlaneCarrierPayload {
     /// Two-coordinate point, two-coordinate direction, and three tail scalars.
     PointDirection2 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
-        /// In-plane unit direction with its third component omitted.
-        direction: [f64; 2],
+        /// Stored point, with the host-implied third coordinate zero.
+        origin: FinitePoint3,
+        /// Plane normal `unit(direction × Z)` and the stored unit direction,
+        /// with its omitted third component zero.
+        frame: OrthonormalFrame3,
         /// Complete trailing scalar lane.
         tail: [f64; 3],
     },
     /// Two-coordinate point, three-coordinate direction, and three tail scalars.
     PointDirection3 {
-        /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
-        /// In-plane unit direction.
-        direction: [f64; 3],
+        /// Stored point, with the host-implied third coordinate zero.
+        origin: FinitePoint3,
+        /// Plane normal `unit(direction × Z)` and the stored unit direction.
+        frame: OrthonormalFrame3,
         /// Complete trailing scalar lane.
         tail: [f64; 3],
     },
@@ -1676,34 +1679,49 @@ pub(crate) fn b2_plane_carriers_from_records(
             if marker != 0xb4 {
                 return None;
             }
-            let values =
-                finite_f64_lane(data.get(record.payload()?.start + 2..record.payload()?.end)?)?;
+            let lane = data.get(record.payload()?.start + 2..record.payload()?.end)?;
             let payload = match selector {
                 0xe4 => {
-                    let values: [f64; 7] = values.try_into().ok()?;
+                    (lane.len() == 7 * size_of::<f64>()).then_some(())?;
+                    let values = read_f64_array::<7>(lane, 0)?;
+                    let tail = [values[4], values[5], values[6]];
+                    let (origin, frame) =
+                        b2_plane_chart([values[0], values[1]], [values[2], values[3], 0.0], tail)?;
                     B2PlaneCarrierPayload::PointDirection2 {
-                        point: [values[0], values[1]],
-                        direction: [values[2], values[3]],
-                        tail: [values[4], values[5], values[6]],
+                        origin,
+                        frame,
+                        tail,
                     }
                 }
                 0xc4 => {
-                    let values: [f64; 8] = values.try_into().ok()?;
+                    (lane.len() == 8 * size_of::<f64>()).then_some(())?;
+                    let values = read_f64_array::<8>(lane, 0)?;
+                    let tail = [values[5], values[6], values[7]];
+                    let (origin, frame) = b2_plane_chart(
+                        [values[0], values[1]],
+                        [values[2], values[3], values[4]],
+                        tail,
+                    )?;
                     B2PlaneCarrierPayload::PointDirection3 {
-                        point: [values[0], values[1]],
-                        direction: [values[2], values[3], values[4]],
-                        tail: [values[5], values[6], values[7]],
+                        origin,
+                        frame,
+                        tail,
                     }
                 }
                 0xec => {
-                    let values: [f64; 6] = values.try_into().ok()?;
+                    let values: [f64; 6] = finite_f64_lane(lane)?.try_into().ok()?;
                     B2PlaneCarrierPayload::PointTail {
                         point: [values[0], values[1]],
                         tail: [values[2], values[3], values[4], values[5]],
                     }
                 }
-                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { selector, values },
-                _ => return None,
+                _ => {
+                    let values = finite_f64_lane(lane)?;
+                    if values.is_empty() {
+                        return None;
+                    }
+                    B2PlaneCarrierPayload::ScalarLane { selector, values }
+                }
             };
             Some(B2PlaneCarrier {
                 pos: record.byte_offset(),
@@ -1717,45 +1735,39 @@ pub(crate) fn b2_plane_carriers_from_records(
         .collect()
 }
 
-/// Recover the model-space plane carried by a direction-bearing class-`0x27`
-/// layout. The omitted point coordinate is the host plane's third coordinate;
-/// the direction-bearing layouts establish the positive in-plane axis and the
-/// host Z direction establishes the second axis. The directionless `ec` layout
-/// remains a retained native record until its axis rule is resolved.
-pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
-    let (point, direction, tail) = match &carrier.payload {
-        B2PlaneCarrierPayload::PointDirection2 {
-            point,
-            direction,
-            tail,
-        } => (*point, [direction[0], direction[1], 0.0], *tail),
-        B2PlaneCarrierPayload::PointDirection3 {
-            point,
-            direction,
-            tail,
-        } => (*point, *direction, *tail),
-        B2PlaneCarrierPayload::PointTail { .. } | B2PlaneCarrierPayload::ScalarLane { .. } => {
-            return None
-        }
-    };
-    let u_axis = Vector3::new(direction[0], direction[1], direction[2]);
-    let z_axis = Vector3::new(0.0, 0.0, 1.0);
-    let normal = u_axis.cross(z_axis).unit()?;
-    let valid_direction = (u_axis.norm() - 1.0).abs() <= EPS_B2_RECORD_GEOMETRY
-        && u_axis.z.abs() <= EPS_B2_RECORD_GEOMETRY
-        && direction.iter().all(|value| value.is_finite());
-    let valid_tail =
-        tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
-    (valid_direction && valid_tail).then_some(SurfaceGeometry::Solved(
-        SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(point[0], point[1], 0.0),
-                normal,
-                u_axis,
-            )
-            .ok()?,
-        ),
+/// Admit the plane chart of a direction-bearing class-`0x27` layout from its
+/// finite lane values. The direction is unit length and lies in the global XY
+/// plane, and the tail has a positive first scalar and a strictly increasing
+/// final pair. The origin is the point with a zero third coordinate, the u
+/// axis is the direction and the normal is `unit(u_axis × Z)`.
+fn b2_plane_chart(
+    point: [f64; 2],
+    direction: [f64; 3],
+    tail: [f64; 3],
+) -> Option<(FinitePoint3, OrthonormalFrame3)> {
+    let origin = FinitePoint3::new(Point3::new(point[0], point[1], 0.0))?;
+    let u_axis = RelaxedHypotUnitVector3::new(direction)?;
+    (direction[2].abs() <= EPS_B2_RECORD_GEOMETRY && tail[0] > 0.0 && tail[1] < tail[2])
+        .then_some(())?;
+    Some((
+        origin,
+        OrthonormalFrame3::about_horizontal_normal(u_axis.into())?,
     ))
+}
+
+/// Return the model-space plane carried by a direction-bearing class-`0x27`
+/// layout. The directionless `ec` layout remains a retained native record
+/// until its axis rule is resolved.
+pub(in crate::families) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
+    match &carrier.payload {
+        B2PlaneCarrierPayload::PointDirection2 { origin, frame, .. }
+        | B2PlaneCarrierPayload::PointDirection3 { origin, frame, .. } => {
+            Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::new(*origin, *frame),
+            )))
+        }
+        B2PlaneCarrierPayload::PointTail { .. } | B2PlaneCarrierPayload::ScalarLane { .. } => None,
+    }
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
@@ -1825,7 +1837,11 @@ pub(in crate::families) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<
         return None;
     }
     let phi = uv[0] / cone.angular_scale.get();
-    let (t1, t2, axis) = (cone.t1.get(), cone.t2.get(), cone.axis.get());
+    let (t1, t2, axis) = (
+        cone.frame.reference().get(),
+        cone.t2.get(),
+        cone.frame.axis().get(),
+    );
     let radial = [
         phi.cos() * t1[0] + phi.sin() * t2[0],
         phi.cos() * t1[1] + phi.sin() * t2[1],
@@ -1918,10 +1934,8 @@ pub(in crate::families) struct B2SpatialCircle {
     pub(in crate::families) header_token: u32,
     /// Circle centre.
     pub(in crate::families) center: FinitePoint3,
-    /// Unit circle-plane normal.
-    pub(in crate::families) axis: ExactNormUnitVector3,
-    /// Unit radial reference direction.
-    pub(in crate::families) ref_direction: ExactNormUnitVector3,
+    /// Unit circle-plane normal and unit radial reference direction.
+    pub(in crate::families) frame: OrthonormalFrame3,
     /// Positive radius in millimetres.
     pub(in crate::families) radius: PositiveLength,
     /// Stored arc-length interval.
@@ -1954,31 +1968,21 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         return None;
     }
     let center = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
-    let stored_reference = Vector3::new(values[3], values[4], values[5]);
-    let transverse = Vector3::new(values[6], values[7], values[8]);
-    let transverse_norm = transverse.norm();
-    let orthogonality = stored_reference.dot(transverse).abs();
-    let cross = stored_reference.cross(transverse);
-    let axis = ExactNormUnitVector3::normalized([cross.x, cross.y, cross.z])?;
     let radius = values[9];
     let range = [values[10], values[11]];
-    if !values[3..].iter().all(|value| value.is_finite())
-        || (transverse_norm - 1.0).abs() > EPS_B2_RECORD_EXACT_GEOMETRY
-        || orthogonality > EPS_B2_RECORD_EXACT_GEOMETRY
-        || values[12].to_bits() != 1.0f64.to_bits()
-    {
+    if values[12].to_bits() != 1.0f64.to_bits() {
         return None;
     }
-    let ref_direction =
-        ExactNormUnitVector3::new([stored_reference.x, stored_reference.y, stored_reference.z])?;
+    let reference = ExactNormUnitVector3::new([values[3], values[4], values[5]])?;
+    let transverse = ExactHypotUnitVector3::new([values[6], values[7], values[8]])?;
+    let circle_frame = OrthonormalFrame3::completing(reference.into(), transverse.into())?;
     let radius = PositiveLength::new(radius)?;
     let range = IncreasingParameterInterval::new(range)?;
     Some(B2SpatialCircle {
         pos: frame.pos,
         header_token: frame.header_token,
         center,
-        axis,
-        ref_direction,
+        frame: circle_frame,
         radius,
         range,
         chart_shift: values[13],
@@ -2147,12 +2151,10 @@ pub(crate) struct B2Cone {
     pub(crate) pos: usize,
     /// Cone apex.
     pub(crate) apex: FinitePoint3,
-    /// First transverse unit direction.
-    pub(crate) t1: RelaxedUnitVector3,
+    /// Cone-axis unit direction and the first transverse unit direction.
+    pub(crate) frame: UnitFrame3<RelaxedDeviation, SquaredLength>,
     /// Second transverse unit direction.
     pub(crate) t2: RelaxedUnitVector3,
-    /// Cone-axis unit direction.
-    pub(crate) axis: RelaxedUnitVector3,
     /// Cone half-angle in radians.
     pub(crate) half_angle: Angle,
     /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -2165,6 +2167,9 @@ pub(crate) struct B2Cone {
     pub(crate) angular_scale: PositiveReal,
     /// Full-turn azimuth chart domain.
     pub(crate) angular_domain: [f64; 2],
+    /// Neutral carrier: its origin is the axis point at the slant-interval
+    /// start and its radius is the cross-section radius there.
+    pub(crate) surface: ConeSurface,
 }
 
 /// Axis-and-profile surface of revolution stored in a `b2 03 2d` record.
@@ -2178,14 +2183,17 @@ pub(crate) struct B2Revolution {
     pub(crate) profile_allocation_id: u16,
     /// Axis-frame origin.
     pub(crate) origin: FinitePoint3,
-    /// First transverse unit direction.
-    pub(crate) direction_x: ExactUnitVector3,
-    /// Second transverse unit direction.
-    pub(crate) direction_y: ExactUnitVector3,
+    /// First transverse unit direction, the profile-circle normal, as the
+    /// first direction and the second transverse unit direction, the
+    /// profile-circle zero-angle direction, as the second.
+    pub(crate) profile_frame: UnitFrame3<ExactDeviation, SquaredLength>,
     /// Revolution-axis direction.
     pub(crate) axis: ExactUnitVector3,
     /// Stored angular parameter interval.
     pub(crate) angular_range: IncreasingParameterInterval,
+    /// Revolution-angle interval in radians: the stored angular parameter
+    /// interval divided by the angular scale.
+    pub(crate) angular_interval: IncreasingParameterInterval,
     /// Stored profile parameter interval.
     pub(crate) profile_range: IncreasingParameterInterval,
     /// Positive angular chart scale.
@@ -2210,7 +2218,7 @@ pub(crate) struct B2LineProfile {
     /// Record byte offset.
     pub(crate) pos: usize,
     /// Stored line origin.
-    pub(crate) origin: [f64; 3],
+    pub(crate) origin: FinitePoint3,
     /// Unit line direction.
     pub(crate) direction: ExactUnitVector3,
     /// Increasing stored parameter interval.
@@ -2408,22 +2416,22 @@ fn b2_construction_offset_supports_from_records(
         let Some(fields) = read_f64_array::<4>(data, at + 9) else {
             continue;
         };
-        if kind != 0x01
-            || at + 41 != frame.end
-            || !distance.is_finite()
-            || fields.iter().any(|v| !v.is_finite())
-        {
+        if kind != 0x01 || at + 41 != frame.end {
             continue;
         }
-        let domain = [fields[0], fields[2], fields[1], fields[3]];
-        if !valid_offset_domain(domain) {
+        let (Some(distance), Some(u_range), Some(v_range)) = (
+            FiniteReal::new(distance),
+            IncreasingParameterInterval::new([fields[0], fields[1]]),
+            IncreasingParameterInterval::new([fields[2], fields[3]]),
+        ) else {
             continue;
-        }
+        };
         out.push(B2OffsetSupport {
             pos,
             support_id,
             distance,
-            domain,
+            u_range,
+            v_range,
         });
     }
     out
@@ -2459,11 +2467,6 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         if slant_range[0].abs() <= EPS_B2_RECORD_EXACT_GEOMETRY {
             slant_range[0] = 0.0;
         }
-        let cross = [
-            t1[1] * t2[2] - t1[2] * t2[1],
-            t1[2] * t2[0] - t1[0] * t2[2],
-            t1[0] * t2[1] - t1[1] * t2[0],
-        ];
         let unit = RelaxedUnitVector3::new;
         let (Some(t1), Some(t2), Some(axis)) = (unit(t1), unit(t2), unit(axis)) else {
             continue;
@@ -2474,41 +2477,50 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         ) else {
             continue;
         };
-        let (Some(apex), Some(half_angle)) = (
+        let (Some(apex), Some(half_angle), Some(frame), Some(slant_start)) = (
             FinitePoint3::new(Point3::new(values[0], values[1], values[2])),
             Angle::new(values[12]),
+            UnitFrame3::right_handed(axis, t1, t2),
+            NonNegativeLength::new(slant_range.lower()),
         ) else {
             continue;
         };
-        if values[3..12]
-            .iter()
-            .chain(&values[13..])
-            .all(|value| value.is_finite())
-            && cross
-                .iter()
-                .zip(axis.get())
-                .all(|(cross, axis)| (cross - axis).abs() <= EPS_B2_RECORD_GEOMETRY)
-            && 0.0 < half_angle.get()
+        if !(0.0 < half_angle.get()
             && half_angle.get() < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
             && values[19] == 1.0
-            && values[20] == 0.0
-            && 0.0 <= slant_range.lower()
+            && values[20] == 0.0)
         {
-            out.push(B2Cone {
-                pos,
-                apex,
-                t1,
-                t2,
-                axis,
-                half_angle,
-                reference_radius,
-                angular_range,
-                slant_range,
-                angular_scale,
-                angular_domain,
-            });
+            continue;
         }
+        let axial = slant_start.get() * half_angle.get().cos();
+        let (apex_point, axis) = (apex.get(), axis.get());
+        let Some(origin) = FinitePoint3::new(Point3::new(
+            apex_point.x + axial * axis[0],
+            apex_point.y + axial * axis[1],
+            apex_point.z + axial * axis[2],
+        )) else {
+            continue;
+        };
+        out.push(B2Cone {
+            pos,
+            apex,
+            frame,
+            t2,
+            half_angle,
+            reference_radius,
+            angular_range,
+            slant_range,
+            angular_scale,
+            angular_domain,
+            surface: ConeSurface::new(
+                origin,
+                frame.into(),
+                slant_start.scaled_by_sine(half_angle),
+                PositiveReal::ONE,
+                half_angle,
+            ),
+        });
     }
     out
 }
@@ -2560,11 +2572,6 @@ pub(crate) fn b2_revolutions_from_records(
         let direction_x: [f64; 3] = [axis_frame[3], axis_frame[4], axis_frame[5]];
         let direction_y: [f64; 3] = [axis_frame[6], axis_frame[7], axis_frame[8]];
         let axis: [f64; 3] = [axis_frame[9], axis_frame[10], axis_frame[11]];
-        let cross = [
-            direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
-            direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
-            direction_x[0] * direction_y[1] - direction_x[1] * direction_y[0],
-        ];
         let unit = ExactUnitVector3::new;
         let (Some(origin), Some(direction_x), Some(direction_y), Some(axis)) = (
             FinitePoint3::new(Point3::new(axis_frame[0], axis_frame[1], axis_frame[2])),
@@ -2574,6 +2581,12 @@ pub(crate) fn b2_revolutions_from_records(
         ) else {
             continue;
         };
+        // The cyclic form of the right-handed frame (direction_x,
+        // direction_y, axis): direction_y is perpendicular to the axis and
+        // their cross product is direction_x.
+        let Some(profile_frame) = UnitFrame3::right_handed(direction_x, direction_y, axis) else {
+            continue;
+        };
         let (Some(angular_range), Some(profile_range), Some(angular_scale)) = (
             IncreasingParameterInterval::new([bounds[0], bounds[1]]),
             IncreasingParameterInterval::new([bounds[2], bounds[3]]),
@@ -2581,12 +2594,14 @@ pub(crate) fn b2_revolutions_from_records(
         ) else {
             continue;
         };
+        let Some(angular_interval) = IncreasingParameterInterval::new([
+            bounds[0] / angular_scale.get(),
+            bounds[1] / angular_scale.get(),
+        ]) else {
+            continue;
+        };
         if profile_allocation_id == 0
-            || cross
-                .iter()
-                .zip(axis.get())
-                .any(|(cross, axis)| (cross - axis).abs() > EPS_B2_RECORD_EXACT_GEOMETRY)
-            || bounds[0] / angular_scale.get() != 0.5
+            || angular_interval.lower() != 0.5
             || (bounds[1] - bounds[0]) / angular_scale.get() != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale.get() != std::f64::consts::PI + 0.5
         {
@@ -2597,10 +2612,10 @@ pub(crate) fn b2_revolutions_from_records(
             reference_token,
             profile_allocation_id,
             origin,
-            direction_x,
-            direction_y,
+            profile_frame,
             axis,
             angular_range,
+            angular_interval,
             profile_range,
             angular_scale,
         });
@@ -2681,12 +2696,13 @@ pub(crate) fn b2_line_profiles_from_records(
                 return None;
             }
             let values = read_f64_array::<9>(data, frame.payload)?;
+            let origin = FinitePoint3::new(Point3::new(values[0], values[1], values[2]))?;
             let direction: [f64; 3] = [values[3], values[4], values[5]];
             let direction = ExactUnitVector3::new(direction)?;
             let range = IncreasingParameterInterval::new([values[7], values[8]])?;
             (values[6].to_bits() == 1.0_f64.to_bits()).then_some(B2LineProfile {
                 pos: frame.pos,
-                origin: [values[0], values[1], values[2]],
+                origin,
                 direction,
                 range,
             })
@@ -2728,15 +2744,12 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let direction_x = ExactUnitVector3::new(direction_x)?;
             let direction_y = ExactUnitVector3::new(direction_y)?;
             let axis = ExactUnitVector3::new(axis)?;
-            let axis_frame =
-                UnitFrame3::right_handed(axis, direction_x, direction_y, CrossDeviation::Length)?;
+            let axis_frame = UnitFrame3::right_handed(axis, direction_x, direction_y)?;
             let major_radius = PositiveLength::new(major_radius)?;
             let minor_radius = PositiveLength::new(minor_radius)?;
             let major_scale = PositiveReal::new(major_scale)?;
             let minor_scale = PositiveReal::new(minor_scale)?;
-            let [x, y] = [direction_x.get(), direction_y.get()];
-            ((x[0] * y[0] + x[1] * y[1] + x[2] * y[2]).abs() <= EPS_B2_RECORD_EXACT_GEOMETRY
-                && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
+            (periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
                 && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && values[24] == 0.0)
                 .then_some(B2Torus {
@@ -2801,12 +2814,7 @@ pub(crate) fn b2_spheres_from_records(
             Some(B2Sphere {
                 pos: frame.pos,
                 center,
-                frame: UnitFrame3::right_handed(
-                    axis,
-                    direction_x,
-                    direction_y,
-                    CrossDeviation::LargestComponent,
-                )?,
+                frame: UnitFrame3::right_handed(axis, direction_x, direction_y)?,
                 direction_y,
                 radius,
                 azimuth_range,
@@ -2856,26 +2864,10 @@ fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2
         .collect()
 }
 
-/// Convert a decoded B2 slant-coordinate cone chart to its equivalent IR carrier.
+/// Return the neutral carrier of a decoded B2 slant-coordinate cone chart.
 #[must_use]
-pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> Option<SurfaceGeometry> {
-    let slant = cone.slant_range.lower();
-    let axial = slant * cone.half_angle.get().cos();
-    let axis = cone.axis.get();
-    let apex = cone.apex.get();
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::new(
-            FinitePoint3::new(Point3::new(
-                apex.x + axial * axis[0],
-                apex.y + axial * axis[1],
-                apex.z + axial * axis[2],
-            ))?,
-            OrthonormalFrame3::from_units(cone.axis.into(), cone.t1.into())?,
-            NonNegativeLength::new(slant * cone.half_angle.get().sin())?,
-            PositiveReal::ONE,
-            cone.half_angle,
-        ),
-    )))
+pub(in crate::families) fn b2_cone_geometry(cone: &B2Cone) -> SurfaceGeometry {
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone.surface))
 }
 
 /// Build the exact neutral carrier of a validated radius-scaled sphere chart.
@@ -3175,12 +3167,12 @@ pub(in crate::families) fn b2_offset_supports_from_records(
                 _ => return None,
             };
             let values = read_f64_array::<5>(data, at)?;
-            let domain = [values[1], values[2], values[3], values[4]];
-            (values[0].is_finite() && valid_offset_domain(domain)).then_some(B2OffsetSupport {
+            Some(B2OffsetSupport {
                 pos: frame.pos,
                 support_id,
-                distance: values[0],
-                domain,
+                distance: FiniteReal::new(values[0])?,
+                u_range: IncreasingParameterInterval::new([values[1], values[3]])?,
+                v_range: IncreasingParameterInterval::new([values[2], values[4]])?,
             })
         })
         .collect::<Vec<_>>();
@@ -3201,10 +3193,8 @@ pub(in crate::families) fn offset_support_carriers(
     offsets
         .iter()
         .map(|offset| {
-            if !valid_offset_domain(offset.domain) {
-                return None;
-            }
-            let [u0, v0, u1, v1] = offset.domain;
+            let [u0, u1] = offset.u_range.endpoints();
+            let [v0, v1] = offset.v_range.endpoints();
             let candidates = carriers
                 .iter()
                 .enumerate()

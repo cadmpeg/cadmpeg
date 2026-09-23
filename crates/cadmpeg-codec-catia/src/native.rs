@@ -7384,9 +7384,9 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
             id: format!("catia:consolidated:cone#{index}"),
             byte_offset: cone.pos as u64,
             apex: cone.apex.get().into(),
-            direction_x: cone.t1,
+            direction_x: cone.frame.reference(),
             direction_y: cone.t2,
-            axis: cone.axis,
+            axis: cone.frame.axis(),
             half_angle: cone.half_angle.get(),
             reference_radius: cone.reference_radius,
             angular_range: cone.angular_range,
@@ -7532,23 +7532,29 @@ fn consolidated_plane_carriers(
         .map(|(index, carrier)| {
             let payload = match carrier.payload {
                 B2PlaneCarrierPayload::PointDirection2 {
-                    point,
-                    direction,
+                    origin,
+                    frame,
                     tail,
-                } => CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                    point,
-                    direction,
-                    tail,
-                },
+                } => {
+                    let (origin, direction) = (origin.get(), frame.reference().as_raw());
+                    CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+                        point: [origin.x, origin.y],
+                        direction: [direction.x, direction.y],
+                        tail,
+                    }
+                }
                 B2PlaneCarrierPayload::PointDirection3 {
-                    point,
-                    direction,
+                    origin,
+                    frame,
                     tail,
-                } => CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                    point,
-                    direction,
-                    tail,
-                },
+                } => {
+                    let (origin, direction) = (origin.get(), frame.reference().as_raw());
+                    CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+                        point: [origin.x, origin.y],
+                        direction: [direction.x, direction.y, direction.z],
+                        tail,
+                    }
+                }
                 B2PlaneCarrierPayload::PointTail { point, tail } => {
                     CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
                 }
@@ -7649,8 +7655,8 @@ fn consolidated_revolutions(
             reference_token: revolution.reference_token,
             profile_allocation_id: revolution.profile_allocation_id,
             origin: revolution.origin.get().into(),
-            direction_x: revolution.direction_x,
-            direction_y: revolution.direction_y,
+            direction_x: revolution.profile_frame.axis(),
+            direction_y: revolution.profile_frame.reference(),
             axis: revolution.axis,
             angular_range: revolution.angular_range.endpoints(),
             profile_range: revolution.profile_range,
@@ -7673,7 +7679,7 @@ fn consolidated_line_profiles(
         .map(|(index, line)| CatiaConsolidatedLineProfile {
             id: format!("catia:consolidated:line-profile#{index}"),
             byte_offset: line.pos as u64,
-            origin: line.origin,
+            origin: line.origin.get().into(),
             direction: line.direction,
             range: line.range,
         })
