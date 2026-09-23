@@ -1503,3 +1503,34 @@ fn feature_direction_from_unit_vector_keeps_the_admitted_components() {
         *frame.reference()
     );
 }
+
+#[test]
+fn feature_direction_reversed_negates_the_components_and_stays_admitted() {
+    use crate::features::FeatureDirection3;
+
+    for vector in [
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.6, -0.8, 0.0),
+        Vector3::new(-0.0, 3.0, -4.0),
+        Vector3::new(1.0e154, 0.0, -0.0),
+        Vector3::new(1.0e-160, 0.0, 0.0),
+        Vector3::new(-2.5, 1.0e-300, 7.0e100),
+    ] {
+        let direction = FeatureDirection3::new(vector).unwrap();
+        let reversed = direction.reversed();
+        assert_eq!(
+            [reversed.x, reversed.y, reversed.z].map(f64::to_bits),
+            [-vector.x, -vector.y, -vector.z].map(f64::to_bits)
+        );
+        assert_eq!(FeatureDirection3::new(reversed.get()), Some(reversed));
+        assert_eq!(
+            reversed.dot(reversed.get()).to_bits(),
+            direction.dot(direction.get()).to_bits()
+        );
+        let restored = reversed.reversed();
+        assert_eq!(
+            [restored.x, restored.y, restored.z].map(f64::to_bits),
+            [vector.x, vector.y, vector.z].map(f64::to_bits)
+        );
+    }
+}
