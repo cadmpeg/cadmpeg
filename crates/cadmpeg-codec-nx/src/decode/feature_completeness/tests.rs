@@ -891,11 +891,11 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         BooleanOp::NewBody,
         &[],
     ));
-    incomplete = complete.clone();
-    incomplete.axis_mut().unwrap().direction =
+    let mut non_unit_axis = complete.clone();
+    non_unit_axis.axis_mut().unwrap().direction =
         cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 2.0)).unwrap();
-    assert!(revolve_feature_is_incomplete(
-        &incomplete,
+    assert!(!revolve_feature_is_incomplete(
+        &non_unit_axis,
         BooleanOp::NewBody,
         &[],
     ));
