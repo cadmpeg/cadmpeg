@@ -158,9 +158,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{index}")),
         unit: ExpressionUnit::Millimeter,
         expression: index.to_string(),
-        value: Some(
-            crate::native::om::finite_value::FiniteValue::try_from(f64::from(index)).unwrap(),
-        ),
+        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(index)).unwrap()),
         source_entry: source_entry.into(),
         source_table: cadmpeg_core::text::NonBlankString::new(source_table).unwrap(),
         source_offset: u64::from(index),

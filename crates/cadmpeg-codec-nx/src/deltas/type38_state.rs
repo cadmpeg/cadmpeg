@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Intersection declaration forms and derived state-reference sequences.
 
-use super::inline_schema_fields::TermUseValues;
 use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -46,7 +46,7 @@ impl ReferenceLaneForm {
 enum Lanes {
     Descending {
         linked: [NonNullXmt; 2],
-        numeric: Option<TermUseValues>,
+        numeric: Option<FiniteVector<11>>,
     },
     Prior {
         linked: [NonNullXmt; 2],
@@ -81,7 +81,7 @@ impl Type38State {
         marker: IntersectionMarker,
         linked_references: Vec<NonNullXmt>,
         state_references: Vec<NonNullXmt>,
-        numeric_values: Option<TermUseValues>,
+        numeric_values: Option<FiniteVector<11>>,
     ) -> Result<Self, &'static str> {
         if leading_statuses[..4] != [1; 4] || !matches!(leading_statuses[4], 0 | 1) {
             return Err("leading_statuses: require four ones followed by zero or one");
@@ -217,7 +217,7 @@ impl Type38State {
             }
         }
     }
-    pub(super) fn numeric_values(&self) -> Option<TermUseValues> {
+    pub(super) fn numeric_values(&self) -> Option<FiniteVector<11>> {
         match self.lanes {
             Lanes::Descending { numeric, .. } => numeric,
             _ => None,
@@ -251,7 +251,7 @@ struct StateWire {
     marker: u8,
     linked_references: Vec<u32>,
     state_references: Vec<u32>,
-    numeric_values: Option<TermUseValues>,
+    numeric_values: Option<FiniteVector<11>>,
 }
 impl TryFrom<StateWire> for Type38State {
     type Error = &'static str;

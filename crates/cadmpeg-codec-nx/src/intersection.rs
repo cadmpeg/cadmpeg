@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode bounded Parasolid surface-intersection constructions.
 
-pub(crate) mod finite_point;
-use finite_point::FinitePoint;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod blend_bound_state;
@@ -156,7 +154,7 @@ pub(crate) struct TermUse {
     /// Endpoint form, including its required leading count.
     pub(crate) form: TermUseForm,
     /// Endpoint position in millimetres.
-    pub(crate) point: FinitePoint,
+    pub(crate) point: FiniteVector<3>,
     /// Serialized record framing.
     pub(crate) framing: TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -883,7 +881,7 @@ fn chart_points(
     stream.get(block..end)?;
     if point_layout == ChartPointLayout::Xyz3 {
         let points = (0..count)
-            .map(|index| point_m(stream, block + index * 24).map(Point3::from))
+            .map(|index| point_m(stream, block + index * 24).map(|point| Point3::from(point.get())))
             .collect::<Option<Vec<_>>>()?;
         return Some((SourceChartData::xyz3(points).ok()?, end));
     }
@@ -915,7 +913,7 @@ fn chart_points(
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {
-    let point = Point3::from(point_m(stream, at)?);
+    let point = Point3::from(point_m(stream, at)?.get());
     let mut mid = View::over_retained(stream).child(at.checked_add(24)?, at.checked_add(88)?)?;
     let (u0, u1, v0, v1) = (mid.f64_be()?, mid.f64_be()?, mid.f64_be()?, mid.f64_be()?);
     let tangent = [mid.f64_be()?, mid.f64_be()?, mid.f64_be()?];
@@ -932,7 +930,7 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
 fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
     term_use_records(stream)
         .into_iter()
-        .map(|term| (term.xmt, Point3::from(term.point)))
+        .map(|term| (term.xmt, Point3::from(term.point.get())))
         .collect()
 }
 
@@ -1104,14 +1102,14 @@ fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
         .filter_map(move |(offset, window)| (window == tag).then_some(offset))
 }
 
-fn point_m(stream: &[u8], at: usize) -> Option<FinitePoint> {
+fn point_m(stream: &[u8], at: usize) -> Option<FiniteVector<3>> {
     let mut view = View::over_retained(stream).child(at, stream.len())?;
     let mm = [
         view.f64_be()? * 1000.0,
         view.f64_be()? * 1000.0,
         view.f64_be()? * 1000.0,
     ];
-    FinitePoint::try_from(mm).ok()
+    FiniteVector::new(mm)
 }
 
 #[cfg(test)]

@@ -9184,8 +9184,10 @@ pub(super) fn attach_expression_parameters(
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let value = expression.value.and_then(|value| match &expression.unit {
-                crate::native::om::ExpressionUnit::Millimeter
-                | crate::native::om::ExpressionUnit::Inch => {
+                crate::native::om::ExpressionUnit::Millimeter => {
+                    Some(ParameterValue::Length(Length::from_assigned_real(value)))
+                }
+                crate::native::om::ExpressionUnit::Inch => {
                     crate::native::om::expression_length_in_millimeters(
                         &expression.unit,
                         value.get(),
