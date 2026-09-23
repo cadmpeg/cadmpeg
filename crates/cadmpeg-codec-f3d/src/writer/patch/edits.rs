@@ -3431,12 +3431,12 @@ pub(super) fn validate_procedural_surface_edits(
                     })?;
                     if interval[0] >= interval[1] {
                         return Err(CodecError::malformed(format_args!(
-                            "F3D extrusion interval must be finite and ordered: {id}"
+                            "F3D extrusion interval must be strictly increasing: {id}"
                         )));
                     }
                     if after_direction.norm() == 0.0 {
                         return Err(CodecError::malformed(format_args!(
-                            "F3D extrusion direction must be finite and nonzero: {id}"
+                            "F3D extrusion direction must be nonzero: {id}"
                         )));
                     }
                     (before_parameter_interval != after_parameter_interval
@@ -3468,7 +3468,7 @@ pub(super) fn validate_procedural_surface_edits(
                 };
                 if values.contains(&0.0) {
                     return Err(CodecError::malformed(format_args!(
-                        "F3D rolling-ball radii must be finite and nonzero: {id}"
+                        "F3D rolling-ball radii must be nonzero: {id}"
                     )));
                 }
                 (before_payload.radius() != after_payload.radius())
