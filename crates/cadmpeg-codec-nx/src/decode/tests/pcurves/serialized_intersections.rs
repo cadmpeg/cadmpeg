@@ -188,7 +188,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         else {
             panic!("fixture uses general pcurve metadata")
         };
-        metadata.set_fit_tolerance(Some(0.01)).unwrap();
+        metadata.set_admitted_fit_tolerance(Some(
+            cadmpeg_ir::geometry::FitTolerance::try_new(0.01).unwrap(),
+        ));
     }
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,

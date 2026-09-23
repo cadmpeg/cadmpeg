@@ -150,9 +150,9 @@ fn parameterized_curve_definition() -> ProceduralCurveDefinition {
             )
             .expect("finite ordered support context"),
             tail: Some(SurfaceCurveCacheFirst {
-                form: SurfaceCurveTail::try_new(
+                form: SurfaceCurveTail::new(
                     7,
-                    23_100,
+                    crate::scalar::PositiveI64::new(23_100).expect("positive revision"),
                     RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
                         interval: [Some(0.0), Some(1.0)],
                         closed_form: 0,
