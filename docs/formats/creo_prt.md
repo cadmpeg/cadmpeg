@@ -2732,6 +2732,10 @@ by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
 target and a point locus; zero or two pairings retain the native incidence.
 Operand order does not change these roles. A circle, a type-25
 section-reference line, and an axis line are not bounded midpoint targets.
+A type-35 target role does not establish a midpoint target. The target is an
+arc, or a line by its `segtab` row, its saved-section entity, or the line family
+of its other incidence roles. An endpoint-bearing native curve without line or
+arc evidence is not a midpoint target.
 An unresolved centered type-47 construction line remains a native line carrier,
 but its sense-four center is a valid midpoint locus. This center role does not
 establish line coordinates or any other line geometry.
