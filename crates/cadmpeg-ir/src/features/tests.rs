@@ -1559,3 +1559,100 @@ fn finite_point_negated_negates_the_coordinates_and_stays_admitted() {
         );
     }
 }
+
+#[test]
+fn feature_frames_replace_the_origin_and_keep_the_admitted_axes() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureSupportPlaneFrame,
+        FeatureUnitPlaneFrame, FinitePoint3,
+    };
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let moved = Point3::new(-4.0, 5.0e-324, f64::MAX);
+    let moved_origin = FinitePoint3::new(moved).unwrap();
+    let x = Vector3::new(0.6, 0.8, 0.0);
+    let y = Vector3::new(-0.8, 0.6, 0.0);
+    let z = Vector3::new(0.0, 0.0, 1.0);
+
+    let unit = FeatureUnitPlaneFrame::new(origin, x, y).unwrap();
+    assert_eq!(
+        unit.with_origin(moved_origin),
+        FeatureUnitPlaneFrame::new(moved, x, y).unwrap()
+    );
+    let coordinate = FeatureCoordinateFrame::new(origin, x, y, z).unwrap();
+    assert_eq!(
+        coordinate.with_origin(moved_origin),
+        FeatureCoordinateFrame::new(moved, x, y, z).unwrap()
+    );
+
+    // The plane frames keep non-unit directions with their magnitudes.
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let u_axis = Vector3::new(3.0, 0.0, 0.0);
+    let datum = FeatureDatumPlaneFrame::new(origin, normal, u_axis).unwrap();
+    let moved_datum = datum.with_origin(moved_origin);
+    assert_eq!(
+        moved_datum,
+        FeatureDatumPlaneFrame::new(moved, normal, u_axis).unwrap()
+    );
+    assert_eq!(moved_datum.normal(), normal);
+    assert_eq!(moved_datum.u_axis(), u_axis);
+    let support = FeatureSupportPlaneFrame::new(origin, normal, u_axis).unwrap();
+    assert_eq!(
+        support.with_origin(moved_origin),
+        FeatureSupportPlaneFrame::new(moved, normal, u_axis).unwrap()
+    );
+    assert_eq!(
+        [
+            moved_datum.origin().x,
+            moved_datum.origin().y,
+            moved_datum.origin().z
+        ]
+        .map(f64::to_bits),
+        [moved.x, moved.y, moved.z].map(f64::to_bits)
+    );
+}
+
+#[test]
+fn feature_arcs_rebuild_from_checked_parts() {
+    use crate::features::{
+        FeatureCircularArc, FeatureDirection3, FeatureEllipticArc, FinitePoint3,
+    };
+    use crate::geometry::DirectedParameterRange;
+    use crate::scalar::PositiveLength;
+
+    let center = Point3::new(1.0, 2.0, 3.0);
+    let normal = Vector3::new(0.0, 0.0, 2.0);
+    let major_axis = Vector3::new(3.0, 0.0, 0.0);
+    let angles = DirectedParameterRange::new([2.0, -1.0]).unwrap();
+    let radius = PositiveLength::new(4.0).unwrap();
+
+    let arc = FeatureCircularArc::new(center, normal, radius, angles).unwrap();
+    assert_eq!(arc.center(), FinitePoint3::new(center).unwrap());
+    assert_eq!(arc.normal(), FeatureDirection3::new(normal).unwrap());
+    assert_eq!(
+        FeatureCircularArc::from_parts(arc.center(), arc.normal(), arc.radius(), arc.angles()),
+        arc
+    );
+    let moved = FinitePoint3::new(Point3::new(-5.0, 0.0, 7.5)).unwrap();
+    let wider = PositiveLength::new(8.0).unwrap();
+    assert_eq!(
+        FeatureCircularArc::from_parts(moved, arc.normal(), wider, arc.angles()),
+        FeatureCircularArc::new(moved.get(), normal, wider, angles).unwrap()
+    );
+
+    let [major, minor] = [4.0, 2.0].map(|value| PositiveLength::new(value).unwrap());
+    let ellipse =
+        FeatureEllipticArc::new(center, normal, major_axis, [major, minor], angles).unwrap();
+    let scaled = [8.0, 4.0].map(|value| PositiveLength::new(value).unwrap());
+    assert_eq!(
+        ellipse.with_center_and_radii(moved, scaled),
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, scaled, angles)
+    );
+    assert_eq!(
+        ellipse.with_center_and_radii(moved, [major, major]),
+        FeatureEllipticArc::new(moved.get(), normal, major_axis, [major, major], angles)
+    );
+    assert!(ellipse
+        .with_center_and_radii(moved, [minor, major])
+        .is_none());
+}

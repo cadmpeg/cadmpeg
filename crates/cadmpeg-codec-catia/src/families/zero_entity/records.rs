@@ -1494,11 +1494,13 @@ fn zero_entity_model_curve(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
             if { constant_coordinate(0).is_some() } =>
         {
-            let axis = cylinder_surface.axis();
             let point = zero_entity_surface_point(surface, [constant_coordinate(0)?, 0.0])?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    cadmpeg_ir::geometry::analytic::LineCurve::try_new(point, *axis).ok()?,
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(point)?,
+                        cylinder_surface.frame().unit_axis(),
+                    ),
                 )),
                 uv_endpoints.map(|uv| uv[1]),
             ))
@@ -1508,22 +1510,19 @@ fn zero_entity_model_curve(
         {
             let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.axis();
-            let ref_direction = cylinder_surface.ref_direction();
             let radius = cylinder_surface.radius().get();
             let height = constant_coordinate(1)?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                             origin.x + height * axis.x,
                             origin.y + height * axis.y,
                             origin.z + height * axis.z,
-                        ),
-                        *axis,
-                        *ref_direction,
-                        radius,
-                    )
-                    .ok()?,
+                        ))?,
+                        cylinder_surface.frame(),
+                        cylinder_surface.radius(),
+                    ),
                 )),
                 uv_endpoints.map(|uv| uv[0] / radius),
             ))
@@ -1561,7 +1560,6 @@ fn zero_entity_model_curve(
         {
             let origin = cone_surface.origin().get();
             let axis = cone_surface.axis();
-            let ref_direction = cone_surface.ref_direction();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let slant = constant_coordinate(1)?;
@@ -1569,25 +1567,15 @@ fn zero_entity_model_curve(
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                             origin.x + slant * half_angle.cos() * axis.x,
                             origin.y + slant * half_angle.cos() * axis.y,
                             origin.z + slant * half_angle.cos() * axis.z,
-                        ),
-                        *axis,
-                        if circle_radius > 0.0 {
-                            *ref_direction
-                        } else {
-                            cadmpeg_ir::math::Vector3::new(
-                                -ref_direction.x,
-                                -ref_direction.y,
-                                -ref_direction.z,
-                            )
-                        },
-                        circle_radius.abs(),
-                    )
-                    .ok()?,
+                        ))?,
+                        signed_reference_frame(cone_surface.frame(), circle_radius),
+                        cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                    ),
                 )),
                 uv_endpoints.map(|uv| uv[0]),
             ))
@@ -1629,7 +1617,6 @@ fn zero_entity_model_curve(
         {
             let center = torus_surface.center().get();
             let axis = torus_surface.axis();
-            let ref_direction = torus_surface.ref_direction();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let angle = constant_coordinate(1)? / minor_radius;
@@ -1637,25 +1624,15 @@ fn zero_entity_model_curve(
             (circle_radius.is_finite() && circle_radius != 0.0).then_some(())?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                             center.x + minor_radius * angle.sin() * axis.x,
                             center.y + minor_radius * angle.sin() * axis.y,
                             center.z + minor_radius * angle.sin() * axis.z,
-                        ),
-                        *axis,
-                        if circle_radius > 0.0 {
-                            *ref_direction
-                        } else {
-                            cadmpeg_ir::math::Vector3::new(
-                                -ref_direction.x,
-                                -ref_direction.y,
-                                -ref_direction.z,
-                            )
-                        },
-                        circle_radius.abs(),
-                    )
-                    .ok()?,
+                        ))?,
+                        signed_reference_frame(torus_surface.frame(), circle_radius),
+                        cadmpeg_ir::scalar::PositiveLength::new(circle_radius.abs())?,
+                    ),
                 )),
                 uv_endpoints.map(|uv| uv[0] / major_radius),
             ))
@@ -1690,6 +1667,18 @@ fn zero_entity_model_curve(
         }
         _ => None,
     }
+}
+
+/// Keep the surface frame, with the reference reversed when the circle
+/// radius is negative: the circle then starts on the opposite side of the axis.
+fn signed_reference_frame(
+    mut frame: cadmpeg_ir::units::OrthonormalFrame3,
+    circle_radius: f64,
+) -> cadmpeg_ir::units::OrthonormalFrame3 {
+    if circle_radius.is_sign_negative() {
+        frame.reverse_reference();
+    }
+    frame
 }
 
 fn zero_entity_model_curve_construction(

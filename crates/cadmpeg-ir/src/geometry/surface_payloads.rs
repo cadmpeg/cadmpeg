@@ -1034,6 +1034,10 @@ impl AxisRevolutionSurfaceConstruction {
     pub fn axis_origin(&self) -> &Point3 {
         self.axis_origin.as_raw()
     }
+    /// Replace the axis origin and keep the admitted directrix and direction.
+    pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
+        self.axis_origin = axis_origin;
+    }
     /// Return the axis direction.
     pub fn axis_direction(&self) -> &Vector3 {
         self.axis_direction.as_raw()

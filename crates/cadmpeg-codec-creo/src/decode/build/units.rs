@@ -324,14 +324,10 @@ fn scale_datum_plane_reference(
     if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } = reference {
         let mut origin = frame.origin();
         scale_point3(&mut origin, scale);
-        *frame = cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
-            origin,
-            frame.normal(),
-            frame.u_axis(),
-        )
-        .ok_or_else(|| {
+        let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
             CodecError::Malformed("Creo scaled plane support must have a finite origin".into())
         })?;
+        *frame = frame.with_origin(origin);
     }
     Ok(())
 }
@@ -403,30 +399,21 @@ fn scale_feature_operation(
         FeatureOperation::DatumCoordinateSystem { frame } => {
             let mut origin = frame.origin();
             scale_point3(&mut origin, scale);
-            *frame = cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                origin,
-                frame.x_axis(),
-                frame.y_axis(),
-                frame.z_axis(),
-            )
-            .ok_or_else(|| {
+            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
                 CodecError::Malformed(
                     "Creo scaled coordinate frame must have a finite origin".into(),
                 )
             })?;
+            *frame = frame.with_origin(origin);
         }
         FeatureOperation::DatumPlane { frame }
         | FeatureOperation::DatumThreePointPlane { frame, .. } => {
             let mut origin = frame.origin();
             scale_point3(&mut origin, scale);
-            *frame = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                origin,
-                frame.normal(),
-                frame.u_axis(),
-            )
-            .ok_or_else(|| {
+            let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
                 CodecError::Malformed("Creo scaled datum plane must have a finite origin".into())
             })?;
+            *frame = frame.with_origin(origin);
         }
         FeatureOperation::DatumAxis { origin, .. }
         | FeatureOperation::MirrorShape {
@@ -469,19 +456,19 @@ fn scale_feature_operation(
                 })?;
         }
         FeatureOperation::CircularArc { arc } => {
-            let mut center = arc.center();
+            let mut center = arc.center().get();
             let mut radius = arc.radius();
             scale_point3(&mut center, scale);
             scale_positive_length(&mut radius, scale)?;
-            *arc = cadmpeg_ir::features::FeatureCircularArc::new(
+            let center = cadmpeg_ir::features::FinitePoint3::new(center).ok_or_else(|| {
+                CodecError::Malformed("Creo scaled circular arc must have finite geometry".into())
+            })?;
+            *arc = cadmpeg_ir::features::FeatureCircularArc::from_parts(
                 center,
                 arc.normal(),
                 radius,
                 arc.angles(),
-            )
-            .ok_or_else(|| {
-                CodecError::Malformed("Creo scaled circular arc must have finite geometry".into())
-            })?;
+            );
         }
         FeatureOperation::EllipticArc { arc } => {
             let mut center = arc.center();
@@ -490,18 +477,13 @@ fn scale_feature_operation(
             for radius in &mut radii {
                 scale_positive_length(radius, scale)?;
             }
-            *arc = cadmpeg_ir::features::FeatureEllipticArc::new(
-                center,
-                arc.normal(),
-                arc.major_axis(),
-                radii,
-                arc.angles(),
-            )
-            .ok_or_else(|| {
-                CodecError::Malformed(
-                    "Creo scaled elliptic arc must have finite ordered geometry".into(),
-                )
-            })?;
+            *arc = cadmpeg_ir::features::FinitePoint3::new(center)
+                .and_then(|center| arc.with_center_and_radii(center, radii))
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "Creo scaled elliptic arc must have finite ordered geometry".into(),
+                    )
+                })?;
         }
         FeatureOperation::Polyline { chain } => {
             let points = chain
@@ -883,11 +865,10 @@ fn scale_unit_plane_frame(
 ) -> Result<(), CodecError> {
     let mut origin = frame.origin();
     scale_point3(&mut origin, scale);
-    *frame =
-        cadmpeg_ir::features::FeatureUnitPlaneFrame::new(origin, frame.u_axis(), frame.v_axis())
-            .ok_or_else(|| {
-                CodecError::Malformed("Creo scaled plane frame must have a finite origin".into())
-            })?;
+    let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
+        CodecError::Malformed("Creo scaled plane frame must have a finite origin".into())
+    })?;
+    *frame = frame.with_origin(origin);
     Ok(())
 }
 
@@ -1652,11 +1633,13 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
             ProceduralSurfaceDefinition::AxisRevolution(payload) => {
                 let mut axis_origin = *payload.axis_origin();
                 scale_point3(&mut axis_origin, scale);
-                *payload = cadmpeg_ir::geometry::surface_payloads::AxisRevolutionSurfaceConstruction::try_new(
-                    payload.directrix().clone(),
-                    axis_origin,
-                    *payload.axis_direction(),
-                )?;
+                payload.set_axis_origin(
+                    cadmpeg_ir::features::FinitePoint3::new(axis_origin).ok_or(
+                        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+                            "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+                        ),
+                    )?,
+                );
             }
             ProceduralSurfaceDefinition::Sum(payload) => {
                 let mut basepoint = *payload.basepoint();

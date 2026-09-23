@@ -7627,7 +7627,8 @@ fn standard_spline_line(
     let [Some(left), Some(right)] = surfaces else {
         return None;
     };
-    let start = ir.model.points.get(points[0])?.position();
+    let start_point = ir.model.points.get(points[0])?;
+    let start = start_point.position();
     let end = ir.model.points.get(points[1])?.position();
     if !point_on_surface(start, &left.geometry)
         || !point_on_surface(start, &right.geometry)
@@ -7684,7 +7685,10 @@ fn standard_spline_line(
     }
     Some((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(start, direction).ok()?,
+            cadmpeg_ir::geometry::analytic::LineCurve::new(
+                start_point.finite_position(),
+                cadmpeg_ir::units::UnitVector3::new(direction)?,
+            ),
         )),
         [0.0, length],
     ))
@@ -8178,22 +8182,27 @@ fn build_standard_edge_curve(
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
-            let start = ir.model.points[points[0]].position();
+            let start_point = &ir.model.points[points[0]];
+            let start = start_point.position();
             let end = ir.model.points[points[1]].position();
             let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
             let length = delta.x.hypot(delta.y).hypot(delta.z);
             if !length.is_finite() || length == 0.0 {
                 return Ok((None, None));
             }
+            let Some(direction) = cadmpeg_ir::units::UnitVector3::new(Vector3::new(
+                delta.x / length,
+                delta.y / length,
+                delta.z / length,
+            )) else {
+                return Ok((None, None));
+            };
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                    match cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        start,
-                        Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-                    ) {
-                        Ok(payload) => payload,
-                        Err(_) => return Ok((None, None)),
-                    },
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        start_point.finite_position(),
+                        direction,
+                    ),
                 )),
                 Some([0.0, length]),
             )
