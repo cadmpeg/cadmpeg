@@ -258,7 +258,7 @@ impl UnitVector3 {
     /// `hypot(h, 0)` is `|h|`, so the placed direction's norm is the planar
     /// direction's `hypot` length bit for bit and keeps its admission.
     #[must_use]
-    pub fn in_xy_plane(planar: UnitVector2) -> Self {
+    fn in_xy_plane(planar: UnitVector2) -> Self {
         let [first, second] = planar.0;
         Self(Vector3::new(first, second, 0.0))
     }
@@ -268,7 +268,7 @@ impl UnitVector3 {
     /// sign of an argument, so the placed direction's norm is the planar
     /// direction's `hypot` length bit for bit and keeps its admission.
     #[must_use]
-    pub fn in_xz_plane(planar: UnitVector2) -> Self {
+    fn in_xz_plane(planar: UnitVector2) -> Self {
         let [first, second] = planar.0;
         Self(Vector3::new(first, 0.0, second))
     }
@@ -325,6 +325,36 @@ impl OrthonormalFrame3 {
         axis: UnitVector3::Z_AXIS,
         reference: UnitVector3::X_AXIS,
     };
+    /// The frame with first direction +x and second direction +y.
+    pub const X_AXIS_Y_REFERENCE: Self = Self {
+        axis: UnitVector3::X_AXIS,
+        reference: UnitVector3::Y_AXIS,
+    };
+    /// Build the frame of a planar direction in the xy plane: the first
+    /// direction is `[first, second, 0]` and the second is its quarter turn
+    /// `[-second, first, 0]`. Each has the planar direction's `hypot` length
+    /// bit for bit, so each keeps the planar admission. The two are
+    /// perpendicular exactly: the dot product is
+    /// `first·(-second) + second·first`, which is zero.
+    #[must_use]
+    pub fn in_xy_plane(axis: UnitVector2) -> Self {
+        Self {
+            axis: UnitVector3::in_xy_plane(axis),
+            reference: UnitVector3::in_xy_plane(axis.quarter_turn()),
+        }
+    }
+    /// Build the frame with first direction +y and a planar second direction
+    /// placed in the xz plane as `[first, 0, second]`. The placed direction has
+    /// the planar direction's `hypot` length bit for bit, so it keeps the
+    /// planar admission. It has no y component, so the two are perpendicular
+    /// exactly.
+    #[must_use]
+    pub fn about_y_axis(reference: UnitVector2) -> Self {
+        Self {
+            axis: UnitVector3::Y_AXIS,
+            reference: UnitVector3::in_xz_plane(reference),
+        }
+    }
     /// Admit two perpendicular unit directions.
     pub fn new(axis: Vector3, reference: Vector3) -> Option<Self> {
         Self::from_units(UnitVector3::new(axis)?, UnitVector3::new(reference)?)
@@ -565,6 +595,47 @@ mod tests {
         ] {
             assert!(UnitVector2::new(rejected).is_none());
         }
+    }
+
+    #[test]
+    fn planar_frames_are_admitted_and_perpendicular_by_construction() {
+        use super::{OrthonormalFrame3, UnitVector2, UnitVector3};
+        use crate::math::Vector3;
+
+        let bits = |value: &Vector3| [value.x, value.y, value.z].map(f64::to_bits);
+        let scale = 1.0 + 9.9e-10;
+        for value in [
+            [0.6 * scale, -0.8 * scale],
+            [-scale, 0.0],
+            [0.0, scale],
+            [0.28, 0.96],
+        ] {
+            let planar = UnitVector2::new(value).expect("planar direction inside the band");
+            let [first, second] = planar.get();
+            let xy = OrthonormalFrame3::in_xy_plane(planar);
+            assert_eq!(bits(xy.axis()), [first, second, 0.0].map(f64::to_bits));
+            assert_eq!(
+                bits(xy.reference()),
+                [-second, first, 0.0].map(f64::to_bits)
+            );
+            let about_y = OrthonormalFrame3::about_y_axis(planar);
+            assert_eq!(about_y.unit_axis(), UnitVector3::Y_AXIS);
+            assert_eq!(
+                bits(about_y.reference()),
+                [first, 0.0, second].map(f64::to_bits)
+            );
+            for frame in [xy, about_y] {
+                assert_eq!(frame.axis().dot(*frame.reference()), 0.0);
+                assert_eq!(
+                    OrthonormalFrame3::new(*frame.axis(), *frame.reference()),
+                    Some(frame)
+                );
+            }
+        }
+        assert_eq!(
+            OrthonormalFrame3::new(Vector3::new(1.0, 0.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
+            Some(OrthonormalFrame3::X_AXIS_Y_REFERENCE)
+        );
     }
 
     #[test]

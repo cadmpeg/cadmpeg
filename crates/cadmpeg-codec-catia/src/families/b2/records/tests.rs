@@ -954,7 +954,7 @@ fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
         assert_eq!(records[0].pos, 0);
         assert_eq!(u8::from(records[0].reference_token), reference_token);
         assert_eq!(records[0].profile_allocation_id, 0x1234);
-        assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
+        assert_eq!(<[f64; 3]>::from(records[0].origin.get()), [1.0, 2.0, 3.0]);
         assert_eq!(records[0].direction_x.get(), [1.0, 0.0, 0.0]);
         assert_eq!(records[0].direction_y.get(), [0.0, 1.0, 0.0]);
         assert_eq!(records[0].axis.get(), [0.0, 0.0, 1.0]);
@@ -1113,9 +1113,9 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
     };
     assert_eq!(torus.pos, 0);
     assert_eq!(torus.center, [1.0, 2.0, 3.0]);
-    assert_eq!(torus.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(torus.frame.reference().get(), [1.0, 0.0, 0.0]);
     assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
-    assert_eq!(torus.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(torus.frame.axis().get(), [0.0, 0.0, 1.0]);
     assert_eq!(torus.major_radius.get(), 7.0);
     assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
@@ -1165,9 +1165,9 @@ fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
     };
     assert_eq!(sphere.pos, 0);
     assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
-    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
     assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
     assert_eq!(sphere.radius.get(), 5.0);
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
@@ -1191,9 +1191,9 @@ fn b2_sphere_parser_validates_tiny_radius_scaled_frame() {
         .try_into()
         .expect("tiny sphere frame");
     assert_eq!(sphere.radius.get(), tiny);
-    assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
+    assert_eq!(sphere.frame.reference().get(), [1.0, 0.0, 0.0]);
     assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
-    assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
+    assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
 
     stream[5 + 3 * 8..5 + 4 * 8].copy_from_slice(&(2.0 * tiny).to_le_bytes());
     assert!(crate::families::b2::records::b2_spheres(&stream).is_empty());
@@ -1547,8 +1547,8 @@ fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
     let [cylinder] = cylinders.as_slice() else {
         panic!("one B2 cylinder with a stored pair at the tolerance edge")
     };
-    assert_eq!(cylinder.axis.get(), [component, 0.0, 0.0]);
-    assert_eq!(cylinder.reference_direction.get(), [-0.0, component, 0.0]);
+    assert_eq!(cylinder.frame.axis().get(), [component, 0.0, 0.0]);
+    assert_eq!(cylinder.frame.reference().get(), [-0.0, component, 0.0]);
 
     let mut quarter_turned = b2_cylinder_stream();
     quarter_turned[29] = 0x1c;
@@ -1558,8 +1558,8 @@ fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
     let [cylinder] = cylinders.as_slice() else {
         panic!("one quarter-turned B2 cylinder at the tolerance edge")
     };
-    assert_eq!(cylinder.axis.get(), [0.0, -component, 0.0]);
-    assert_eq!(cylinder.reference_direction.get(), [component, 0.0, 0.0]);
+    assert_eq!(cylinder.frame.axis().get(), [0.0, -component, 0.0]);
+    assert_eq!(cylinder.frame.reference().get(), [component, 0.0, 0.0]);
 
     let mut range_origin = b2_range_origin_cylinder_stream();
     range_origin[30..38].copy_from_slice(&0.0_f64.to_le_bytes());
@@ -1568,8 +1568,8 @@ fn b2_cylinder_parser_admits_the_full_stored_pair_tolerance_band() {
     let [cylinder] = cylinders.as_slice() else {
         panic!("one range-origin B2 cylinder at the tolerance edge")
     };
-    assert_eq!(cylinder.axis.get(), [0.0, 1.0, 0.0]);
-    assert_eq!(cylinder.reference_direction.get(), [0.0, 0.0, component]);
+    assert_eq!(cylinder.frame.axis().get(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.frame.reference().get(), [0.0, 0.0, component]);
 
     for mut outside in [b2_cylinder_stream(), b2_range_origin_cylinder_stream()] {
         let far = 1.0 + 2.0e-9_f64;

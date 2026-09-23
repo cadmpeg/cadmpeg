@@ -1741,23 +1741,93 @@ fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
 }
 
 #[test]
-fn an_admitted_revolution_direction_leaves_only_the_origin_to_check() {
-    use super::{admit_revolution_axis, admit_revolution_axis_origin};
-    use crate::math::{Point3, Vector3};
+fn typed_revolution_intervals_build_the_raw_construction_and_keep_the_refusal_order() {
+    use super::RevolutionSurfaceConstruction;
+    use crate::features::FinitePoint3;
+    use crate::geometry::{
+        CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
+    };
+    use crate::ids::CurveId;
+    use crate::topology::IncreasingParameterInterval;
     use crate::units::UnitVector3;
 
-    let direction = UnitVector3::new(Vector3::new(0.0, 0.0, 1.0 + 1.0e-10)).expect("unit");
-    for origin in [
-        Point3::new(1.0, -2.0, 3.0),
-        Point3::new(f64::NAN, 0.0, 0.0),
-        Point3::new(0.0, f64::NEG_INFINITY, 0.0),
-    ] {
-        assert_eq!(
-            admit_revolution_axis_origin(origin, direction),
-            admit_revolution_axis(origin, *direction.as_raw())
-        );
-    }
-    let (_, stored) =
-        admit_revolution_axis_origin(Point3::new(0.0, 0.0, 0.0), direction).expect("finite origin");
-    assert_eq!(stored, direction);
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let axis = (FinitePoint3::ZERO, UnitVector3::Y_AXIS);
+    let interval = |range: [f64; 2]| IncreasingParameterInterval::new(range).expect("increasing");
+    let raw = |angular: [f64; 2], cache: CacheContract<RevisionSurfaceForm>| {
+        RevolutionSurfaceConstruction::try_new(
+            directrix.clone(),
+            axis,
+            angular,
+            Some([1.0, 3.0]),
+            Some([-1.0, 4.0]),
+            true,
+            cache,
+        )
+    };
+    assert_eq!(
+        RevolutionSurfaceConstruction::try_from_intervals(
+            directrix.clone(),
+            axis,
+            interval([0.0, 2.0]),
+            Some(interval([1.0, 3.0])),
+            Some(interval([-1.0, 4.0])),
+            true,
+            CacheContract::from_form(None),
+        )
+        .unwrap(),
+        raw([0.0, 2.0], CacheContract::from_form(None)).unwrap()
+    );
+
+    // The interval admissions carry the refusals the raw entry states.
+    assert_eq!(
+        RevolutionSurfaceConstruction::admit_angular_interval([1.0, 1.0]).unwrap_err(),
+        raw([1.0, 1.0], CacheContract::from_form(None)).unwrap_err()
+    );
+    assert_eq!(
+        RevolutionSurfaceConstruction::admit_angular_parameter_interval([f64::NAN, 1.0])
+            .unwrap_err(),
+        RevolutionSurfaceConstruction::try_new(
+            directrix.clone(),
+            axis,
+            [0.0, 2.0],
+            Some([f64::NAN, 1.0]),
+            None,
+            false,
+            CacheContract::from_form(None),
+        )
+        .unwrap_err()
+    );
+
+    // A refused cache form is reported before a refused interval, by both
+    // entries.
+    let invalid_cache = || {
+        CacheContract::from_form(Some(RevisionSurfaceForm {
+            revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
+            support_bounds: [Some(f64::NAN), None, None, None],
+            reference_endpoints: [None; 2],
+            second_endpoints: [None; 2],
+            flags: Vec::new(),
+            cache: RevisionCacheForm::Parameterization(RevisionSurfaceParameterization::default()),
+            discontinuities: Default::default(),
+            tail_flag: false,
+            trailing_flags: Vec::new(),
+        }))
+    };
+    let cache_refusal = RevolutionSurfaceConstruction::try_from_intervals(
+        directrix.clone(),
+        axis,
+        interval([0.0, 2.0]),
+        None,
+        None,
+        false,
+        invalid_cache(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        cache_refusal.to_string(),
+        "revolution cache form is invalid"
+    );
+    assert_eq!(raw([1.0, 1.0], invalid_cache()).unwrap_err(), cache_refusal);
+    assert_eq!(raw([0.0, 2.0], invalid_cache()).unwrap_err(), cache_refusal);
 }
