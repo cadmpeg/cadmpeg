@@ -130,7 +130,7 @@ pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecErr
 #[cfg(test)]
 mod tests {
     use super::{record, single_part_prt_with_partition};
-    use std::io::Read;
+    use cadmpeg_container::compression::inflate_zlib_probe;
 
     #[test]
     fn long_partition_has_exact_directory_offset_and_size() {
@@ -154,9 +154,7 @@ mod tests {
         let size = usize::try_from(size).expect("host partition length");
         assert_eq!(offset, directory + 16);
         assert_eq!(size, file.len() - directory - 16);
-        let mut decoded = flate2::read::ZlibDecoder::new(&file[offset..]);
-        let mut recovered = Vec::new();
-        decoded.read_to_end(&mut recovered).expect("zlib partition");
+        let recovered = inflate_zlib_probe(&file[offset..], stream.len()).expect("zlib partition");
         assert_eq!(recovered, stream);
     }
 
