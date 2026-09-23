@@ -742,25 +742,21 @@ pub(super) fn emit_surfaces(
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         let _attached = ir.model.add_procedural_surface(
             surface.clone(),
-            cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                support.clone(),
-                offset.distance,
-                None,
-                None,
-                false,
-                cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                    flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                    cache: None,
-                },
-            )
-            .map(|admitted_payload| {
-                ProceduralSurface::new(
-                    procedural_id,
-                    ProceduralSurfaceDefinition::Offset(admitted_payload),
-                    Some(record_bounds),
-                )
-            })
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ProceduralSurface::new(
+                procedural_id,
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
+                        support.clone(),
+                        offset.distance,
+                        None,
+                        None,
+                        false,
+                        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                        None,
+                    ),
+                ),
+                Some(record_bounds),
+            ),
         );
     }
     Ok(surface_ids)

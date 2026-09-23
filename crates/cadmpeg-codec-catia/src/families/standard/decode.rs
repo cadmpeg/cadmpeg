@@ -2033,18 +2033,15 @@ fn try_decode_standard_population(
                     "object_stream_b5_03_30",
                     carrier_object_id,
                     ProceduralSurfaceDefinition::Offset(
-                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                             support_id,
                             distance,
                             None,
                             None,
                             false,
-                            cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                                cache: None,
-                            },
-                        )
-                        .ok()?,
+                            cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            None,
+                        ),
                     ),
                     Exactness::Derived,
                 )
@@ -2698,7 +2695,7 @@ pub(super) enum StandardSurfaceProcedure {
         carrier_object_id: u32,
         support_object_id: u32,
         support: crate::families::b5::transfer::ResolvedOffsetSupport,
-        distance: f64,
+        distance: FiniteReal,
         parameter_bounds: [[FiniteReal; 2]; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),

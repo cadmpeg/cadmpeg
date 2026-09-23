@@ -444,7 +444,7 @@ pub(in crate::families) struct B5OffsetSurface {
     /// Surface from which the result is offset.
     pub(super) source_surface: u32,
     /// Signed offset distance in millimetres.
-    pub(super) distance: f64,
+    pub(super) distance: FiniteReal,
     /// Native carrier-kind discriminator.
     pub(super) carrier_kind: B5OffsetCarrierKind,
     /// Ordered native U and V bounds.
@@ -3087,7 +3087,7 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     let mut position = 1;
     let carrier_surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
     let source_surface = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-    let distance = f64_le(&record.payload, position)?.get();
+    let distance = f64_le(&record.payload, position)?;
     position += 8;
     let carrier_kind = B5OffsetCarrierKind::from_byte(*record.payload.get(position)?)?;
     position += 1;
@@ -3139,22 +3139,30 @@ fn parse_offset_surface(
         }
     }
     let expected_kind = match surfaces.get(&carrier_surface) {
-        Some(carrier @ B5Surface::Plane { .. }) => {
-            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(B5OffsetCarrierKind::Plane)?
-        }
-        Some(carrier @ B5Surface::Cylinder { .. }) => {
-            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(B5OffsetCarrierKind::Cylinder)?
-        }
-        Some(carrier @ B5Surface::Sphere { .. }) => {
-            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(B5OffsetCarrierKind::Sphere)?
-        }
-        Some(carrier @ B5Surface::Torus { .. }) => {
-            analytic_offset_magnitude_agrees(carrier, surfaces.get(&source_surface)?, distance)
-                .then_some(B5OffsetCarrierKind::Torus)?
-        }
+        Some(carrier @ B5Surface::Plane { .. }) => analytic_offset_magnitude_agrees(
+            carrier,
+            surfaces.get(&source_surface)?,
+            distance.get(),
+        )
+        .then_some(B5OffsetCarrierKind::Plane)?,
+        Some(carrier @ B5Surface::Cylinder { .. }) => analytic_offset_magnitude_agrees(
+            carrier,
+            surfaces.get(&source_surface)?,
+            distance.get(),
+        )
+        .then_some(B5OffsetCarrierKind::Cylinder)?,
+        Some(carrier @ B5Surface::Sphere { .. }) => analytic_offset_magnitude_agrees(
+            carrier,
+            surfaces.get(&source_surface)?,
+            distance.get(),
+        )
+        .then_some(B5OffsetCarrierKind::Sphere)?,
+        Some(carrier @ B5Surface::Torus { .. }) => analytic_offset_magnitude_agrees(
+            carrier,
+            surfaces.get(&source_surface)?,
+            distance.get(),
+        )
+        .then_some(B5OffsetCarrierKind::Torus)?,
         Some(B5Surface::RollingBall { .. }) => B5OffsetCarrierKind::RollingBall,
         Some(B5Surface::Unknown {
             family: 0xb5,
@@ -3189,7 +3197,7 @@ fn parse_offset_surface(
             let source = surfaces.get(&source_surface)?;
             let cached_source = surfaces.get(&cache.source_surface)?;
             if source != cached_source
-                || distance.to_bits() != cache.distance.to_bits()
+                || distance.get().to_bits() != cache.distance.to_bits()
                 || [u0, v0, u1, v1]
                     .into_iter()
                     .zip(cache.interleaved_bounds)
@@ -3213,7 +3221,7 @@ fn parse_offset_surface(
 fn extrusion_offset_construction_agrees(
     source: &B5ExtrusionSurface,
     carrier: &B5ExtrusionSurface,
-    distance: f64,
+    distance: FiniteReal,
     parameter_bounds: [[FiniteReal; 2]; 2],
 ) -> bool {
     if carrier.direction != source.direction {
@@ -3239,7 +3247,7 @@ fn extrusion_offset_construction_agrees(
                 .zip(support.2)
                 .all(|(left, right)| left.to_bits() == right.to_bits())
         })
-        && curve_distance.to_bits() == distance.to_bits()
+        && curve_distance.to_bits() == distance.get().to_bits()
         && *direction == source.direction
         && carrier.parameter_bounds[0]
             .into_iter()
@@ -3544,7 +3552,7 @@ fn contextual_offset_extrusion_bounds(
         if source.object_id() != source_extrusion.directrix.object_id()
             || carrier.direction != source_extrusion.direction
             || *direction != source_extrusion.direction
-            || distance.to_bits() != construction.distance.to_bits()
+            || distance.to_bits() != construction.distance.get().to_bits()
             || carrier.parameter_bounds[0] != bounds[0]
             || *parameter_range != bounds[1].map(FiniteReal::get)
         {

@@ -934,7 +934,7 @@ pub(in crate::families) struct ResolvedOffsetSurface {
     /// Exact support construction.
     pub(in crate::families) support: ResolvedOffsetSupport,
     /// Signed offset distance.
-    pub(in crate::families) distance: f64,
+    pub(in crate::families) distance: FiniteReal,
     /// Ordered native U and V chart bounds.
     pub(in crate::families) parameter_bounds: [[FiniteReal; 2]; 2],
 }
