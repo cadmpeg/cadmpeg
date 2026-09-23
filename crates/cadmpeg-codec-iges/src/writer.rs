@@ -5038,7 +5038,10 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     let pole_count = u_count * v_count;
     let weights = match nurbs.pole_weights() {
         Some(values) => {
-            if values.iter().any(|weight| *weight <= 0.0) {
+            if values
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+            {
                 return Err(CodecError::NotImplemented(
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
@@ -6684,6 +6687,8 @@ fn generated_global(
 }
 
 fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
+    // A partial maximum cannot bound the full file. Use the Global field's
+    // default zero when any entity has no bound.
     entities
         .iter()
         .try_fold(0.0_f64, |bound, entity| {

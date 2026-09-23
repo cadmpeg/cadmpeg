@@ -14,6 +14,11 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 const RELATIVE_ROUNDOFF: f64 = 32.0 * f64::EPSILON;
 
 #[test]
+fn pole_count_refuses_unrepresentable_degree_successor() {
+    assert_eq!(crate::nurbs::pole_count(&[u32::MAX], u32::MAX), None);
+}
+
+#[test]
 fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
     for range in [[1e16, 1e16 + 2.0], [1e308, 1.1e308], [-1.1e308, -1e308]] {
         let [lower, upper] = range;

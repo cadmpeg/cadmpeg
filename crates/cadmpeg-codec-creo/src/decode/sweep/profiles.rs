@@ -165,12 +165,17 @@ pub(in super::super) fn circular_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
-    let segment_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
-        .ceil()
-        .max(1.0) as usize;
-    let step = (end_angle - start_angle) / segment_count as f64;
-    let mut control_points = Vec::with_capacity(2 * segment_count + 1);
-    let mut weights = Vec::with_capacity(2 * segment_count + 1);
+    const MAX_CIRCULAR_PCURVE_SEGMENTS: usize = 100_000;
+    let span = end_angle - start_angle;
+    let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
+    if !count.is_finite() || count > MAX_CIRCULAR_PCURVE_SEGMENTS as f64 {
+        return None;
+    }
+    let segment_count = count as usize;
+    let step = span / segment_count as f64;
+    let pole_count = segment_count.checked_mul(2)?.checked_add(1)?;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = Vec::with_capacity(pole_count);
     for segment in 0..segment_count {
         let first = start_angle + segment as f64 * step;
         let second = first + step;

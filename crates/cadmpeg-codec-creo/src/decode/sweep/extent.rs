@@ -47,6 +47,9 @@ fn blind_extrusion_from_carriers(
         )
         .map(f64::abs)
         .fold(length.max(1.0), f64::max);
+    if !coordinate_scale.is_finite() {
+        return None;
+    }
     let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * coordinate_scale;
     let vector_tolerance = EPS_SWEEP_EXTENT_GEOMETRY * length.max(1.0);
     let start_station = dot(first_start, direction);
@@ -174,6 +177,26 @@ fn blind_extrusion_from_carriers(
         },
         direction,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{blind_extrusion_from_carriers, ExtrusionCarrierSpan};
+
+    #[test]
+    fn infinite_carrier_origin_does_not_expand_station_tolerance() {
+        let carriers = [
+            ExtrusionCarrierSpan {
+                starts: vec![[0.0, 0.0, 0.0]],
+                vector: [0.0, 0.0, 1.0],
+            },
+            ExtrusionCarrierSpan {
+                starts: vec![[0.0, 0.0, f64::INFINITY]],
+                vector: [0.0, 0.0, 1.0],
+            },
+        ];
+        assert!(blind_extrusion_from_carriers(&carriers, &[], None).is_none());
+    }
 }
 
 pub(in super::super) fn generated_bounded_cylinder_extent(

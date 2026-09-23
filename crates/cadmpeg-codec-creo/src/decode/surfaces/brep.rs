@@ -780,6 +780,9 @@ fn scalar_values_agree(first: f64, second: f64) -> bool {
 }
 
 fn points_are_geometrically_coincident(first: Point3, second: Point3) -> bool {
+    if !first.is_finite() || !second.is_finite() {
+        return false;
+    }
     let scale = [first.x, first.y, first.z, second.x, second.y, second.z]
         .into_iter()
         .map(f64::abs)

@@ -105,6 +105,15 @@ fn two_refused_circular_pcurves_state_two_records_each_naming_its_instance() {
 }
 
 #[test]
+fn circular_pcurve_refuses_unbounded_span_before_allocation() {
+    let mut refusal = crate::lane_refusal::LaneRefusals::new();
+    assert!(
+        super::circular_pcurve([0.0, 0.0], 1.0, 0.0, 1.0e20, &"oversized arc", &mut refusal,)
+            .is_none()
+    );
+}
+
+#[test]
 fn large_profile_circle_intersections_stay_finite() {
     let r = 1e200;
     let arc = ([0., 0.], r, 0., std::f64::consts::TAU);

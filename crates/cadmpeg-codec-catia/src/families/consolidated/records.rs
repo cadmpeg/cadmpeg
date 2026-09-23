@@ -1607,7 +1607,11 @@ fn nurbs_carrier_offset(
             residual.z - normal.z * distance,
         );
         let transverse_length = transverse.x.hypot(transverse.y).hypot(transverse.z);
-        if transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length {
+        if !residual_length.is_finite()
+            || !distance.is_finite()
+            || !transverse_length.is_finite()
+            || transverse_length > EPS_TRANSVERSE_RESIDUAL * residual_length
+        {
             return None;
         }
         offsets.push(distance);
@@ -1772,6 +1776,19 @@ mod tests {
             nurbs_carrier_offset(&surface, &[[0.0, 0.0]], &[Point3::new(tiny, 0.0, tiny)],),
             None
         );
+        for invalid in [f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                nurbs_carrier_offset(
+                    &surface,
+                    &[[0.25, 0.25], [0.75, 0.75]],
+                    &[
+                        Point3::new(0.25, 0.25, tiny),
+                        Point3::new(0.75, 0.75, invalid),
+                    ],
+                ),
+                None
+            );
+        }
     }
 
     #[test]

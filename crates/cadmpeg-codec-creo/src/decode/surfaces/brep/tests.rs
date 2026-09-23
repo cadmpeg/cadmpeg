@@ -19,6 +19,14 @@ use super::{
 };
 
 #[test]
+fn infinite_point_cannot_match_a_finite_point() {
+    assert!(!super::points_are_geometrically_coincident(
+        Point3::new(f64::INFINITY, 0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+    ));
+}
+
+#[test]
 fn face_admission_diagnostics_bound_samples_and_record_counts() {
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: 6,

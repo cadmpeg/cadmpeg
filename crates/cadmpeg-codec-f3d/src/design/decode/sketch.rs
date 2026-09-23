@@ -3229,26 +3229,31 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
         return None;
     }
     let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
-    if knots.windows(2).any(|pair| pair[0] > pair[1])
+    let fit_tolerance_mm = fit_tolerance * 10.0;
+    if knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
         || weights
             .iter()
             .any(|weight| !weight.is_finite() || *weight <= 0.0)
         || coordinates.iter().any(|value| !value.is_finite())
-        || !fit_tolerance.is_finite()
+        || !fit_tolerance_mm.is_finite()
     {
         return None;
     }
     let control_points = coordinates
         .chunks_exact(3)
         .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
-        .collect();
+        .collect::<Vec<_>>();
+    if control_points.iter().any(|point| !point.is_finite()) {
+        return None;
+    }
     Some((
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
             subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
-            fit_tolerance: fit_tolerance * 10.0,
+            fit_tolerance: fit_tolerance_mm,
             scalar_width: 8,
             knots,
             poles: crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
@@ -3321,26 +3326,31 @@ fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, us
         return None;
     }
     let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
-    if knots.windows(2).any(|pair| pair[0] > pair[1])
+    let fit_tolerance_mm = fit_tolerance * 10.0;
+    if knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
         || weights
             .iter()
             .any(|weight| !weight.is_finite() || *weight <= 0.0)
         || coordinates.iter().any(|value| !value.is_finite())
-        || !fit_tolerance.is_finite()
+        || !fit_tolerance_mm.is_finite()
     {
         return None;
     }
     let control_points = coordinates
         .chunks_exact(3)
         .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
-        .collect();
+        .collect::<Vec<_>>();
+    if control_points.iter().any(|point| !point.is_finite()) {
+        return None;
+    }
     Some((
         SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
             subtype_record_index: View::u32_le_at(payload, base + 15)?,
             degree,
-            fit_tolerance: fit_tolerance * 10.0,
+            fit_tolerance: fit_tolerance_mm,
             scalar_width: 8,
             knots,
             poles: crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
@@ -3396,11 +3406,7 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
 fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
     let direction = Vector3::new(values[6], values[7], values[8]);
-    let length = displacement.norm();
-    if length <= 0.0 {
-        return None;
-    }
-    let displacement_direction = displacement.scale(1.0 / length);
+    let displacement_direction = displacement.unit_nonzero()?;
     if (direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
         || (stored_normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
     {
@@ -3443,9 +3449,13 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
         direction.cross(basis).unit()?
     };
     let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
+    let end = start.translated(displacement, 10.0);
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
     Some(SketchCurveGeometry::Line {
         start,
-        end: start.translated(displacement, 10.0),
+        end,
         direction,
         normal,
     })

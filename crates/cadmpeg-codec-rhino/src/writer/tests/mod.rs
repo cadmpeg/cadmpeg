@@ -19,6 +19,21 @@ mod nurbs;
 mod planar;
 mod targets;
 
+#[test]
+fn frame_admission_refuses_nonfinite_axes() {
+    let valid = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+    let x = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+    let nan = cadmpeg_ir::math::Vector3::new(f64::NAN, 0.0, 1.0);
+    assert!(super::check_frame("test", valid, x, "circle").is_ok());
+    assert!(super::check_frame("test", nan, x, "circle").is_err());
+    assert!(super::check_frame("test", valid, nan, "circle").is_err());
+}
+
+#[test]
+fn empty_point_cloud_cannot_emit_infinite_bounds() {
+    assert!(super::point_cloud_payload(&[]).is_err());
+}
+
 fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
     for version in [
         RhinoArchiveVersion::V5,

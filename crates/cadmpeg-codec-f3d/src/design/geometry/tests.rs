@@ -6,6 +6,13 @@ use super::{
     region_containing_points, sketch_arrangement_faces, ProfileBoundary, ProfileBoundarySegment,
     MAX_ARRANGEMENT_WALK_WORK,
 };
+
+#[test]
+fn subdivision_count_requires_positive_target_error() {
+    assert_eq!(super::subdivision_count(100.0, -1.0), None);
+    assert_eq!(super::subdivision_count(0.0, 0.0), None);
+    assert_eq!(super::subdivision_count(100.0, 10.0), Some(10));
+}
 use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};

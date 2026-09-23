@@ -1797,7 +1797,11 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     // Format invariant: densification above this count is outside the reader.
     // Session work for arrangement walks is charged separately via work_budget.
     const MAX_SUBDIVISIONS: usize = 100_000;
-    if !travel_bound.is_finite() || travel_bound < 0.0 || !target_error.is_finite() {
+    if !travel_bound.is_finite()
+        || travel_bound < 0.0
+        || !target_error.is_finite()
+        || target_error <= 0.0
+    {
         return None;
     }
     let count = (travel_bound / target_error).ceil().max(1.0);

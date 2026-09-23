@@ -31,6 +31,81 @@ use cadmpeg_ir::sketches::SketchLocus;
 use std::collections::HashMap;
 
 #[test]
+fn spatial_dimension_matchers_refuse_infinite_measured_distances() {
+    use cadmpeg_ir::sketches::{
+        SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchGeometryDefinition, SpatialSketchId,
+    };
+
+    let sketch = SpatialSketchId::mint("synthetic:test:spatial-sketch#large-lines")
+        .expect("valid sketch identity");
+    let parameter = parse_design_parameter_record(&parameter_record(
+        Some(1),
+        "4 mm",
+        "Linear Dimension-2",
+        Some("mm"),
+        "d1",
+        0.4,
+    ))
+    .expect("linear parameter");
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#large-lines")
+        .expect("valid parameter identity");
+    let line = |name: &str, start: Point3, end: Point3| {
+        SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint(format!("synthetic:test:spatial-line#{name}"))
+                .expect("valid line identity"),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .expect("finite separated endpoints"),
+        )
+    };
+    let diagonal = line(
+        "diagonal",
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0e308, 1.0e308, 0.0),
+    );
+    assert!(
+        crate::design::dimensions::owner_scoped_spatial_line_length_dimension_definition(
+            std::slice::from_ref(&diagonal),
+            &sketch,
+            &parameter,
+            &parameter_id,
+            0.0,
+        )
+        .is_none()
+    );
+
+    let first_start = Point3::new(0.0, 0.0, 0.0);
+    let first_end = Point3::new(1.0e308, 0.0, 0.0);
+    let second_start = Point3::new(0.0, 1.0e308, 0.0);
+    let second_end = Point3::new(1.0e308, 1.0e308, 0.0);
+    let entities = [
+        line("first-a", first_start, first_end),
+        line("first-b", first_start, first_end),
+        line("second-a", second_start, second_end),
+        line("second-b", second_start, second_end),
+    ];
+    assert_eq!(
+        crate::design::dimensions::spatial_parallel_line_span_distance(
+            &entities[0].geometry,
+            &entities[2].geometry,
+            0.0,
+        ),
+        Some(f64::INFINITY)
+    );
+    assert!(
+        crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(
+            &entities,
+            &sketch,
+            &parameter,
+            &parameter_id,
+            0.0,
+        )
+        .is_none()
+    );
+}
+
+#[test]
 fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
     use cadmpeg_ir::sketches::SpatialSketchGeometry;
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line;
