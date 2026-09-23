@@ -1576,16 +1576,15 @@ pub(super) fn compact_boundary_domain_viable(
                     components.push()
                 })
             });
-            if nodes[0] == nodes[1] {
-                degrees[nodes[0]] += 2;
-            } else {
-                degrees[nodes[0]] += 1;
-                degrees[nodes[1]] += 1;
+            for &node in &nodes {
+                if degrees[node] >= 2 {
+                    return false;
+                }
+                degrees[node] += 1;
+            }
+            if nodes[0] != nodes[1] {
                 components.union(nodes[0], nodes[1]);
             }
-        }
-        if degrees.iter().any(|degree| *degree > 2) {
-            return false;
         }
         let mut open_components = HashSet::new();
         for (node, degree) in degrees.into_iter().enumerate() {

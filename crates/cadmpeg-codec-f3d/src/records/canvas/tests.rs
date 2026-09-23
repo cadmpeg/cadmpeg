@@ -297,6 +297,12 @@ fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
     payload[4] = 0;
     payload[53..61].copy_from_slice(&1.0f64.to_le_bytes());
     assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
+    payload[53..61].copy_from_slice(&0.0f64.to_le_bytes());
+    payload[29..37].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
+    payload[29..37].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[5..13].copy_from_slice(&1.0e308f64.to_le_bytes());
+    assert!(DesignCanvasGeometryPayload::try_from(payload.as_slice()).is_err());
 }
 
 #[test]

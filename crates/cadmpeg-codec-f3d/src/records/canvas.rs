@@ -49,7 +49,11 @@ impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
         let v = vector()?;
         let u_axis = Vector3::new(u[0], u[1], u[2]);
         let v_axis = Vector3::new(v[0], v[1], v[2]);
-        if !origin_centimetres.into_iter().all(f64::is_finite)
+        if !origin_centimetres
+            .into_iter()
+            .all(|value| value.is_finite() && (value * DESIGN_CANVAS_LENGTH_TO_MM).is_finite())
+            || !u_axis.is_finite()
+            || !v_axis.is_finite()
             || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
             || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
             || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9

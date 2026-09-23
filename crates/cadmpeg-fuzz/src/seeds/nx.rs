@@ -25,6 +25,11 @@ pub fn put_f64(rec: &mut [u8], at: usize, v: f64) {
 }
 
 pub fn record(tag: u8, len: usize) -> Result<Vec<u8>, CodecError> {
+    if len < 2 {
+        return Err(CodecError::InvalidInput(
+            "NX seed record needs a two-byte header".into(),
+        ));
+    }
     let mut r = alloc_filled(len, 0_u8, "NX seed record")?;
     r[0] = 0x00;
     r[1] = tag;
@@ -124,7 +129,7 @@ pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecErr
 
 #[cfg(test)]
 mod tests {
-    use super::single_part_prt_with_partition;
+    use super::{record, single_part_prt_with_partition};
     use std::io::Read;
 
     #[test]
@@ -153,5 +158,12 @@ mod tests {
         let mut recovered = Vec::new();
         decoded.read_to_end(&mut recovered).expect("zlib partition");
         assert_eq!(recovered, stream);
+    }
+
+    #[test]
+    fn record_refuses_length_below_its_header() {
+        assert!(record(1, 0).is_err());
+        assert!(record(1, 1).is_err());
+        assert_eq!(record(1, 2).expect("minimal record"), [0, 1]);
     }
 }
