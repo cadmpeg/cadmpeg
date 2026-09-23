@@ -242,3 +242,16 @@ fn a_parameter_box_builds_its_lower_then_upper_corner() {
     );
     assert_eq!(RecordBounds::try_new(bounds.get()), Ok(bounds));
 }
+
+#[test]
+fn four_finite_values_build_the_quartet_in_field_order() {
+    use crate::scalar::FiniteReal;
+
+    let values = [-0.0, 4.0, f64::MAX, -5.0e-324];
+    let bounds = RecordBounds::from_finite(values.map(|value| FiniteReal::new(value).unwrap()));
+    assert_eq!(
+        bounds.get().map(|value| value.map(f64::to_bits)),
+        values.map(|value| Some(value.to_bits()))
+    );
+    assert_eq!(RecordBounds::try_new(bounds.get()), Ok(bounds));
+}

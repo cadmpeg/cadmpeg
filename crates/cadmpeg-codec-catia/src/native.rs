@@ -8490,7 +8490,7 @@ fn native_consolidated_support_binding(
             offset,
         } => CatiaConsolidatedSupportBinding::NurbsCarrier {
             byte_offset: *pos as u64,
-            offset: *offset,
+            offset: offset.get(),
         },
     }
 }

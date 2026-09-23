@@ -6,11 +6,15 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
+    analytic::ConeSurface,
     nurbs::{knots_strictly_increasing, NurbsSurface},
     ProceduralSurfaceDefinition,
 };
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveReal};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 /// Admitted topology control bytes.
 pub(in crate::families) mod controls;
@@ -22,10 +26,10 @@ use controls::{B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl
 
 use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
+use crate::checked::ExactUnitVector3;
 use crate::math::unit_vector;
 use crate::wire;
 use crate::wire::bytes::{f64_le, read_f64_array};
-use cadmpeg_ir::scalar::FiniteReal;
 
 const EPS_B5_GRAPH_GEOMETRY: f64 = 1.0e-9;
 const EPS_B5_GRAPH_DEGENERATE: f64 = 1.0e-10;
@@ -309,6 +313,10 @@ pub(in crate::families) enum B5Surface {
         angular_scale: f64,
         /// Full-turn azimuth chart domain.
         angular_domain: [f64; 2],
+        /// Neutral carrier: its origin is the axis point at the slant-interval
+        /// start and its radius is the cross-section radius there. Absent
+        /// when that origin is not finite.
+        surface: Option<ConeSurface>,
     },
     /// `b5 03 2a`: a sphere with a radius-scaled right-handed frame.
     Sphere {
@@ -440,7 +448,7 @@ pub(in crate::families) struct B5OffsetSurface {
     /// Native carrier-kind discriminator.
     pub(super) carrier_kind: B5OffsetCarrierKind,
     /// Ordered native U and V bounds.
-    pub(super) parameter_bounds: [[f64; 2]; 2],
+    pub(super) parameter_bounds: [[FiniteReal; 2]; 2],
 }
 
 /// A `b5 03 2c` extrusion construction with a two-support directrix.
@@ -451,7 +459,7 @@ pub(in crate::families) struct B5ExtrusionSurface {
     /// Unit world-space extrusion direction.
     pub(super) direction: [f64; 3],
     /// Increasing native U and V intervals.
-    pub(super) parameter_bounds: [[f64; 2]; 2],
+    pub(super) parameter_bounds: [[FiniteReal; 2]; 2],
     /// Exact directrix construction.
     pub(super) directrix: B5ExtrusionDirectrix,
 }
@@ -2737,6 +2745,26 @@ fn directions_form_right_handed_orthonormal_frame(
         && distance_squared(cross(direction_x, direction_y), axis) <= 1e-24
 }
 
+/// Admit a `b5 03 29` cone frame: the directions are unit length, the two
+/// transverse directions are perpendicular, and `direction_x × direction_y`
+/// lies within `2e-12` of the axis or of its reverse. The frame holds the
+/// stored axis and `direction_x`.
+fn cone_frame(
+    axis: [f64; 3],
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+) -> Option<OrthonormalFrame3> {
+    let axis = UnitVector3::new(Vector3::from(axis))?;
+    let direction_x = ExactUnitVector3::new(direction_x)?.into();
+    let direction_y = ExactUnitVector3::new(direction_y)?.into();
+    OrthonormalFrame3::right_handed_euclidean(axis, direction_x, direction_y).or_else(|| {
+        let mut frame =
+            OrthonormalFrame3::right_handed_euclidean(axis.reversed(), direction_x, direction_y)?;
+        frame.reverse_axis();
+        Some(frame)
+    })
+}
+
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     (record.family == 0xb5).then_some(())?;
     match record.class {
@@ -2819,9 +2847,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let direction_x = read_f64_array::<3>(&record.payload, 25)?.map(FiniteReal::get);
             let direction_y = read_f64_array::<3>(&record.payload, 49)?.map(FiniteReal::get);
             let axis = read_f64_array::<3>(&record.payload, 73)?.map(FiniteReal::get);
-            let frame_cross = cross(direction_x, direction_y);
-            let opposite_axis = [-axis[0], -axis[1], -axis[2]];
-            let half_angle = f64_le(&record.payload, 97)?.get();
+            let half_angle = f64_le(&record.payload, 97)?;
             let reference_radius = f64_le(&record.payload, 105)?.get();
             let angular_range = [
                 f64_le(&record.payload, 113)?.get(),
@@ -2839,29 +2865,39 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, 169)?.get(),
                 f64_le(&record.payload, 177)?.get(),
             ];
-            ((distance_squared(frame_cross, axis) <= 4e-24
-                || distance_squared(frame_cross, opposite_axis) <= 4e-24)
-                && directions_are_unit_and_orthogonal(direction_x, direction_y)
-                && 0.0 < half_angle
-                && half_angle < std::f64::consts::FRAC_PI_2
+            let frame = cone_frame(axis, direction_x, direction_y)?;
+            let slant_start = NonNegativeLength::new(slant_range[0])?;
+            (0.0 < half_angle.get()
+                && half_angle.get() < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
-                && slant_range[0] >= 0.0
                 && slant_range[0] < slant_range[1]
                 && angular_scale > 0.0
                 && f64_le(&record.payload, 153)?.get() == 1.0
                 && f64_le(&record.payload, 161)?.get() == 0.0)
-                .then_some(B5Surface::Cone {
-                    apex,
-                    direction_x,
-                    direction_y,
-                    axis,
-                    half_angle,
-                    reference_radius,
-                    angular_range,
-                    slant_range,
-                    angular_scale,
-                    angular_domain,
-                })
+                .then_some(())?;
+            let origin = add(apex, scale(axis, slant_range[0] * half_angle.get().cos()));
+            let half_angle_radians = Angle::from_assigned_real(half_angle);
+            Some(B5Surface::Cone {
+                apex,
+                direction_x,
+                direction_y,
+                axis,
+                half_angle: half_angle.get(),
+                reference_radius,
+                angular_range,
+                slant_range,
+                angular_scale,
+                angular_domain,
+                surface: FinitePoint3::new(Point3::from(origin)).map(|origin| {
+                    ConeSurface::new(
+                        origin,
+                        frame,
+                        slant_start.scaled_by_sine(half_angle_radians),
+                        PositiveReal::ONE,
+                        half_angle_radians,
+                    )
+                }),
+            })
         }
         0x2a => {
             (record.payload.len() == 153 && record.payload.first() == Some(&0x80)).then_some(())?;
@@ -3055,7 +3091,7 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     position += 8;
     let carrier_kind = B5OffsetCarrierKind::from_byte(*record.payload.get(position)?)?;
     position += 1;
-    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?.map(FiniteReal::get);
+    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?;
     position += 32;
     (position == record.payload.len() && u0 < u1 && v0 < v1).then_some(B5OffsetSurface {
         object_id: record.object_id,
@@ -3157,7 +3193,7 @@ fn parse_offset_surface(
                 || [u0, v0, u1, v1]
                     .into_iter()
                     .zip(cache.interleaved_bounds)
-                    .any(|(left, right)| left.to_bits() != right.to_bits())
+                    .any(|(left, right)| left.get().to_bits() != right.to_bits())
             {
                 return None;
             }
@@ -3178,7 +3214,7 @@ fn extrusion_offset_construction_agrees(
     source: &B5ExtrusionSurface,
     carrier: &B5ExtrusionSurface,
     distance: f64,
-    parameter_bounds: [[f64; 2]; 2],
+    parameter_bounds: [[FiniteReal; 2]; 2],
 ) -> bool {
     if carrier.direction != source.direction {
         return false;
@@ -3208,12 +3244,12 @@ fn extrusion_offset_construction_agrees(
         && carrier.parameter_bounds[0]
             .into_iter()
             .zip([v0, v1])
-            .all(|(left, right)| left.to_bits() == right.to_bits())
+            .all(|(left, right)| left.get().to_bits() == right.get().to_bits())
         && parameter_range
             .iter()
             .copied()
             .zip([u0, u1])
-            .all(|(left, right)| left.to_bits() == right.to_bits())
+            .all(|(left, right)| left.to_bits() == right.get().to_bits())
 }
 
 fn analytic_offset_magnitude_agrees(
@@ -3404,11 +3440,12 @@ fn parse_extrusion_surface_with_context(
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Option<B5ExtrusionSurface> {
     let carrier = extrusion_carrier(record)?;
+    let active = carrier.parameter_bounds[1].map(FiniteReal::get);
     let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
     let mut directrix = if terminal_span_chart {
         terminal_span_directrix(
             carrier.directrix_id,
-            carrier.parameter_bounds[1],
+            active,
             carrier.controls,
             object_stream_pcurves,
         )?
@@ -3434,7 +3471,7 @@ fn parse_extrusion_surface_with_context(
             directrix,
         });
     }
-    let directrix_contains_active = carrier.parameter_bounds[1].into_iter().all(|value| {
+    let directrix_contains_active = active.into_iter().all(|value| {
         cadmpeg_ir::math::parameter_in_domain(
             value,
             directrix.parameter_range(),
@@ -3445,16 +3482,16 @@ fn parse_extrusion_surface_with_context(
     if translated_chart {
         translated_directrix_span_count(
             &directrix,
-            carrier.parameter_bounds[1],
+            active,
             carrier.controls,
             object_stream_pcurves,
         )?;
-        if !directrix.reorigin_parameter_range(carrier.parameter_bounds[1]) {
+        if !directrix.reorigin_parameter_range(active) {
             return None;
         }
     } else if !directrix_contains_active {
         let source_span = directrix.parameter_range()[1] - directrix.parameter_range()[0];
-        let active_span = carrier.parameter_bounds[1][1] - carrier.parameter_bounds[1][0];
+        let active_span = active[1] - active[0];
         let suffix_span = directrix
             .supports()
             .first()
@@ -3465,7 +3502,7 @@ fn parse_extrusion_surface_with_context(
         {
             return None;
         }
-        if !directrix.reorigin_parameter_range(carrier.parameter_bounds[1]) {
+        if !directrix.reorigin_parameter_range(active) {
             return None;
         }
     }
@@ -3483,7 +3520,7 @@ fn contextual_offset_extrusion_bounds(
     directrix: &B5ExtrusionDirectrix,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
-) -> Option<[[f64; 2]; 2]> {
+) -> Option<[[FiniteReal; 2]; 2]> {
     let B5ExtrusionDirectrix::Offset {
         source,
         distance,
@@ -3509,7 +3546,7 @@ fn contextual_offset_extrusion_bounds(
             || *direction != source_extrusion.direction
             || distance.to_bits() != construction.distance.to_bits()
             || carrier.parameter_bounds[0] != bounds[0]
-            || parameter_range != &bounds[1]
+            || *parameter_range != bounds[1].map(FiniteReal::get)
         {
             return None;
         }
@@ -3605,7 +3642,7 @@ fn parameter_spans_agree(left: f64, right: f64) -> bool {
 struct B5ExtrusionCarrier {
     directrix_id: u32,
     direction: [f64; 3],
-    parameter_bounds: [[f64; 2]; 2],
+    parameter_bounds: [[FiniteReal; 2]; 2],
     controls: [u8; 2],
 }
 
@@ -3614,18 +3651,18 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
         .then_some(())?;
     let mut position = 1;
     let directrix_id = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-    let values = read_f64_array::<9>(&record.payload, position)?.map(FiniteReal::get);
+    let values = read_f64_array::<9>(&record.payload, position)?;
     position += 72;
     let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
-    let direction = [values[0], values[1], values[2]];
+    let direction = [values[0], values[1], values[2]].map(FiniteReal::get);
     let contextual_offset_chart = matches!(controls, [0x01, 0x09 | 0x15]);
     ((matches!(controls, [0x05, 0x05 | 0x11 | 0x15 | 0x19])
         || contextual_offset_chart
         || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
         && direction_is_unit(direction)
         && values[3] < values[4]
-        && values[5].to_bits() == 1.0f64.to_bits()
-        && values[6].to_bits() == 0.0f64.to_bits()
+        && values[5].get().to_bits() == 1.0f64.to_bits()
+        && values[6].get().to_bits() == 0.0f64.to_bits()
         && if contextual_offset_chart {
             values[7] > values[8]
         } else {

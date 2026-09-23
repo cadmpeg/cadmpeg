@@ -10,14 +10,14 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     Curve, CurveGeometry, DirectedParameterRange, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
-    RecordBounds, SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface,
-    SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, SupportPcurve, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
@@ -36,6 +36,7 @@ use crate::assemble::{
     rational_pcurve_arc, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
+use crate::families::b5::transfer::parameter_record_bounds;
 use crate::families::freeform::{
     append_consolidated_revolutions, append_freeform_surface_pools, ConsolidatedRevolutionBinding,
 };
@@ -1122,16 +1123,6 @@ fn emit_standard_extrusion_definition(
     Ok(definition)
 }
 
-fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> Option<RecordBounds> {
-    RecordBounds::try_new([
-        Some(bounds[0][0]),
-        Some(bounds[0][1]),
-        Some(bounds[1][0]),
-        Some(bounds[1][1]),
-    ])
-    .ok()
-}
-
 fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
     let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
     for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
@@ -1900,11 +1891,11 @@ fn try_decode_standard_population(
         );
         let record_bounds = match &procedure {
             StandardSurfaceProcedure::Extrusion(extrusion) => {
-                Some(parameter_record_bounds(extrusion.parameter_bounds)?)
+                Some(parameter_record_bounds(extrusion.parameter_bounds))
             }
             StandardSurfaceProcedure::Offset {
                 parameter_bounds, ..
-            } => Some(parameter_record_bounds(*parameter_bounds)?),
+            } => Some(parameter_record_bounds(*parameter_bounds)),
             StandardSurfaceProcedure::RollingBall { .. }
             | StandardSurfaceProcedure::Revolution(_) => None,
         };
@@ -1961,7 +1952,7 @@ fn try_decode_standard_population(
                             .clone()
                     }
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds)?;
+                        let record_bounds = parameter_record_bounds(extrusion.parameter_bounds);
                         let support_id = SurfaceId::compose(
                             &cadmpeg_ir::identity_namespace!(
                                 "catia",
@@ -2708,7 +2699,7 @@ pub(super) enum StandardSurfaceProcedure {
         support_object_id: u32,
         support: crate::families::b5::transfer::ResolvedOffsetSupport,
         distance: f64,
-        parameter_bounds: [[f64; 2]; 2],
+        parameter_bounds: [[FiniteReal; 2]; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
     Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),

@@ -342,6 +342,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         slant_range: [0.0, scale],
         angular_scale: 1.0,
         angular_domain: [0.0, std::f64::consts::TAU],
+        surface: None,
     };
     let cone_pcurve = B5Pcurve {
         control_points: vec![[0.0, scale], [0.5, scale]],
@@ -718,6 +719,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         slant_range: [-4.0, 0.0],
         angular_scale: 2.0,
         angular_domain: [0.0, std::f64::consts::TAU],
+        surface: None,
     };
     let cone_pcurve = B5Pcurve {
         control_points: vec![[0.0, -4.0], [2.0, -4.0]],
@@ -818,6 +820,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         slant_range: [2.0, 8.0],
         angular_scale: 3.0,
         angular_domain: [0.0, std::f64::consts::TAU],
+        surface: None,
     };
     let pcurve = B5Pcurve {
         object_id: 1,

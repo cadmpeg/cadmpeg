@@ -353,6 +353,7 @@ impl UnitVector2 {
 }
 
 const EPS_RIGHT_HANDED_FRAME: f64 = 1.0e-12;
+const EPS_RIGHT_HANDED_FRAME_DISTANCE_SQUARED: f64 = 4.0e-24;
 
 /// Two perpendicular unit directions within the analytic frame tolerance.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -439,6 +440,36 @@ impl OrthonormalFrame3 {
                 .zip([axis.0.x, axis.0.y, axis.0.z])
                 .all(|(cross, axis)| (cross - axis).abs() <= EPS_RIGHT_HANDED_FRAME))
         .then_some(Self { axis, reference })
+    }
+    /// Admit the frame of `axis` and `reference` when the three directions
+    /// form a right-handed orthonormal frame to a euclidean distance of
+    /// `2e-12`: the plain dot product of `reference` and `binormal` is at
+    /// most `1e-12` in magnitude, and the squared euclidean distance of the
+    /// cross product `reference × binormal`, as [`Vector3::cross`] computes
+    /// it, from `axis` is at most `4e-24`.
+    ///
+    /// The cross-product condition holds the perpendicularity of `axis` and
+    /// `reference`, so it is not measured again. `|reference · axis|` is at
+    /// most the length of `reference`, which is within `1e-9` of one, times
+    /// the distance, which is at most `2e-12`, plus the rounding of the
+    /// computed cross product, which is below `1e-15` for unit directions.
+    /// The sum is below `3e-12`, inside the `1e-9` frame tolerance of
+    /// [`Self::from_units`].
+    pub fn right_handed_euclidean(
+        axis: UnitVector3,
+        reference: UnitVector3,
+        binormal: UnitVector3,
+    ) -> Option<Self> {
+        let (first, second) = (reference.0, binormal.0);
+        let cross = first.cross(second);
+        let deviation = [cross.x - axis.0.x, cross.y - axis.0.y, cross.z - axis.0.z];
+        ((first.x * second.x + first.y * second.y + first.z * second.z).abs()
+            <= EPS_RIGHT_HANDED_FRAME
+            && deviation[0] * deviation[0]
+                + deviation[1] * deviation[1]
+                + deviation[2] * deviation[2]
+                <= EPS_RIGHT_HANDED_FRAME_DISTANCE_SQUARED)
+            .then_some(Self { axis, reference })
     }
     /// Admit the frame whose second direction is `reference` and whose first
     /// direction is the cross product `reference × transverse` divided by its
@@ -867,6 +898,67 @@ mod tests {
             .expect("the cross product is within the band");
         assert!(binormal.as_raw().dot(*axis.as_raw()).abs() > 1.0e-12);
         assert!(frame.axis().as_raw().dot(*frame.reference().as_raw()).abs() <= 2.0e-12);
+    }
+
+    #[test]
+    fn euclidean_right_handed_frames_admit_the_distance_band_and_hold_perpendicular_directions() {
+        use super::{OrthonormalFrame3, UnitVector3};
+        use crate::math::Vector3;
+
+        let unit = |x: f64, y: f64, z: f64| UnitVector3::new(Vector3::new(x, y, z)).expect("unit");
+        assert_eq!(
+            OrthonormalFrame3::right_handed_euclidean(
+                UnitVector3::Z_AXIS,
+                UnitVector3::X_AXIS,
+                UnitVector3::Y_AXIS,
+            ),
+            Some(OrthonormalFrame3::IDENTITY)
+        );
+        assert!(OrthonormalFrame3::right_handed_euclidean(
+            UnitVector3::Z_AXIS.reversed(),
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .is_none());
+        // The cross product is +z exactly, but the reference and the binormal
+        // are not perpendicular to 1e-12.
+        let skewed = unit(2.0e-12, 1.0, 0.0);
+        assert!(OrthonormalFrame3::right_handed_euclidean(
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+            skewed
+        )
+        .is_none());
+
+        // One component 1.5e-12 from the cross product: the componentwise
+        // route refuses it and the euclidean route admits it.
+        let axis = unit(0.0, 1.5e-12, 1.0);
+        assert!(
+            OrthonormalFrame3::right_handed(axis, UnitVector3::X_AXIS, UnitVector3::Y_AXIS)
+                .is_none()
+        );
+        let frame = OrthonormalFrame3::right_handed_euclidean(
+            axis,
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .expect("the cross product is within 2e-12 of the axis");
+        assert_eq!(
+            (*frame.axis(), *frame.reference()),
+            (axis, UnitVector3::X_AXIS)
+        );
+        assert_eq!(
+            OrthonormalFrame3::from_units(axis, UnitVector3::X_AXIS),
+            Some(frame)
+        );
+        // Two components 1.5e-12 from the cross product: the distance is
+        // about 2.1e-12.
+        assert!(OrthonormalFrame3::right_handed_euclidean(
+            unit(1.5e-12, 1.5e-12, 1.0),
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+        )
+        .is_none());
     }
 
     #[test]
