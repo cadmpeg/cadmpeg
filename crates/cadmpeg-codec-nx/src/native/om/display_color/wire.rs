@@ -104,7 +104,7 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
                 discriminator,
                 flag,
             } => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(
                     target_index,
@@ -147,7 +147,7 @@ impl TryFrom<EncodingWire> for RmDisplayColorAssignmentEncoding {
                 index_source_offsets,
                 mode,
             } => {
-                let [a, b, c] = row_indices(indices, raw_indices);
+                let [a, b, c] = row_indices(&indices, &raw_indices);
                 let indices = [a?.into(), b?.into(), c?.into()];
                 let target = atom(
                     target_index,

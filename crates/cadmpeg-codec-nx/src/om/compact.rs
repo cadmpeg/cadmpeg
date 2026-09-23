@@ -16,11 +16,10 @@ pub(crate) fn atom(value: u32, raw: &[u8], field: &str) -> Result<CompactIndexAt
     CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
+/// Reads a row's compact indices from their wire values and raw tokens.
 pub(crate) fn row_indices<const N: usize>(
-    values: [u32; N],
-    raw: [Vec<u8>; N],
+    values: &[u32; N],
+    raw: &[Vec<u8>; N],
 ) -> [Result<CompactIndexAtom, String>; N] {
     std::array::from_fn(|i| atom(values[i], &raw[i], "indices/raw_indices"))
 }

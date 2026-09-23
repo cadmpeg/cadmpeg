@@ -45,7 +45,7 @@ pub(super) struct DataBlockIndexRowWire {
 impl TryFrom<DataBlockIndexRowWire> for DataBlockIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c, d] = row_indices(wire.indices, wire.raw_indices);
+        let [a, b, c, d] = row_indices(&wire.indices, &wire.raw_indices);
         let [a_block, b_block, c_block, d_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
@@ -160,7 +160,7 @@ pub(super) struct DataBlockLinkedIndexRowWire {
 impl TryFrom<DataBlockLinkedIndexRowWire> for DataBlockLinkedIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockLinkedIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c] = row_indices(wire.indices, wire.raw_indices);
+        let [a, b, c] = row_indices(&wire.indices, &wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
@@ -288,7 +288,7 @@ pub(super) struct DataBlockTargetIndexRowWire {
 impl TryFrom<DataBlockTargetIndexRowWire> for DataBlockTargetIndexRow {
     type Error = String;
     fn try_from(wire: DataBlockTargetIndexRowWire) -> Result<Self, Self::Error> {
-        let [a, b, c] = row_indices(wire.indices, wire.raw_indices);
+        let [a, b, c] = row_indices(&wire.indices, &wire.raw_indices);
         let [target_block, a_block, b_block, c_block] = wire.data_blocks;
         let indices = [
             CompactIndexTarget {
