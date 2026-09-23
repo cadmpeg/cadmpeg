@@ -1741,66 +1741,63 @@ fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
 }
 
 #[test]
-fn typed_revolution_intervals_build_the_raw_construction_and_keep_the_refusal_order() {
+fn revolution_refusals_name_the_cache_form_first_then_each_interval() {
     use super::RevolutionSurfaceConstruction;
     use crate::features::FinitePoint3;
     use crate::geometry::{
         CacheContract, RevisionCacheForm, RevisionSurfaceForm, RevisionSurfaceParameterization,
     };
     use crate::ids::CurveId;
-    use crate::topology::IncreasingParameterInterval;
     use crate::units::UnitVector3;
 
     let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
     let axis = (FinitePoint3::ZERO, UnitVector3::Y_AXIS);
-    let interval = |range: [f64; 2]| IncreasingParameterInterval::new(range).expect("increasing");
-    let raw = |angular: [f64; 2], cache: CacheContract<RevisionSurfaceForm>| {
+    let raw = |angular: [f64; 2],
+               angular_parameter: Option<[f64; 2]>,
+               parameter: Option<[f64; 2]>,
+               cache: CacheContract<RevisionSurfaceForm>| {
         RevolutionSurfaceConstruction::try_new(
             directrix.clone(),
             axis,
             angular,
-            Some([1.0, 3.0]),
-            Some([-1.0, 4.0]),
+            angular_parameter,
+            parameter,
             true,
             cache,
         )
     };
-    assert_eq!(
-        RevolutionSurfaceConstruction::try_from_intervals(
-            directrix.clone(),
-            axis,
-            interval([0.0, 2.0]),
-            Some(interval([1.0, 3.0])),
-            Some(interval([-1.0, 4.0])),
-            true,
-            CacheContract::from_form(None),
-        )
-        .unwrap(),
-        raw([0.0, 2.0], CacheContract::from_form(None)).unwrap()
-    );
 
-    // The interval admissions carry the refusals the raw entry states.
+    // Each interval refusal names its interval.
     assert_eq!(
-        RevolutionSurfaceConstruction::admit_angular_interval([1.0, 1.0]).unwrap_err(),
-        raw([1.0, 1.0], CacheContract::from_form(None)).unwrap_err()
+        raw([1.0, 1.0], None, None, CacheContract::from_form(None))
+            .unwrap_err()
+            .to_string(),
+        "revolution angular_interval must be finite and strictly increasing"
     );
     assert_eq!(
-        RevolutionSurfaceConstruction::admit_angular_parameter_interval([f64::NAN, 1.0])
-            .unwrap_err(),
-        RevolutionSurfaceConstruction::try_new(
-            directrix.clone(),
-            axis,
+        raw(
             [0.0, 2.0],
             Some([f64::NAN, 1.0]),
             None,
-            false,
-            CacheContract::from_form(None),
+            CacheContract::from_form(None)
         )
         .unwrap_err()
+        .to_string(),
+        "revolution angular_parameter_interval must be finite and strictly increasing"
+    );
+    assert_eq!(
+        raw(
+            [0.0, 2.0],
+            Some([1.0, 3.0]),
+            Some([4.0, -1.0]),
+            CacheContract::from_form(None)
+        )
+        .unwrap_err()
+        .to_string(),
+        "revolution parameter_interval must be finite and strictly increasing"
     );
 
-    // A refused cache form is reported before a refused interval, by both
-    // entries.
+    // A refused cache form is reported before a refused interval.
     let invalid_cache = || {
         CacheContract::from_form(Some(RevisionSurfaceForm {
             revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
@@ -1814,22 +1811,19 @@ fn typed_revolution_intervals_build_the_raw_construction_and_keep_the_refusal_or
             trailing_flags: Vec::new(),
         }))
     };
-    let cache_refusal = RevolutionSurfaceConstruction::try_from_intervals(
-        directrix.clone(),
-        axis,
-        interval([0.0, 2.0]),
-        None,
-        None,
-        false,
-        invalid_cache(),
-    )
-    .unwrap_err();
+    let cache_refusal = raw([0.0, 2.0], None, None, invalid_cache()).unwrap_err();
     assert_eq!(
         cache_refusal.to_string(),
         "revolution cache form is invalid"
     );
-    assert_eq!(raw([1.0, 1.0], invalid_cache()).unwrap_err(), cache_refusal);
-    assert_eq!(raw([0.0, 2.0], invalid_cache()).unwrap_err(), cache_refusal);
+    assert_eq!(
+        raw([1.0, 1.0], None, None, invalid_cache()).unwrap_err(),
+        cache_refusal
+    );
+    assert_eq!(
+        raw([0.0, 2.0], Some([f64::NAN, 1.0]), None, invalid_cache()).unwrap_err(),
+        cache_refusal
+    );
 }
 
 #[test]
@@ -1867,7 +1861,7 @@ fn a_legacy_offset_from_admitted_parts_matches_its_raw_admission() {
 }
 
 #[test]
-fn a_legacy_revolution_from_admitted_parts_matches_its_interval_admission() {
+fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
     use super::RevolutionSurfaceConstruction;
     use crate::features::FinitePoint3;
     use crate::geometry::CacheContract;
@@ -1887,12 +1881,12 @@ fn a_legacy_revolution_from_admitted_parts_matches_its_interval_admission() {
         (None, None, false),
     ] {
         assert_eq!(
-            RevolutionSurfaceConstruction::try_from_intervals(
+            RevolutionSurfaceConstruction::try_new(
                 directrix.clone(),
                 axis,
-                interval([0.5, 0.5 + std::f64::consts::TAU]),
-                angular_parameter,
-                parameter,
+                [0.5, 0.5 + std::f64::consts::TAU],
+                angular_parameter.map(IncreasingParameterInterval::endpoints),
+                parameter.map(IncreasingParameterInterval::endpoints),
                 transposed,
                 CacheContract::from_form(None),
             ),
