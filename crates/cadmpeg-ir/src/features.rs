@@ -2685,11 +2685,12 @@ pub enum FeatureOperation {
         )]
         bidirectional: Option<bool>,
     },
-    /// Shapes projected along a direction onto one support surface.
+    /// Shapes projected along a direction onto a support face selection.
     ProjectOnSurface {
         /// Ordered shapes and subelements projected onto the support.
         sources: PathRef,
-        /// Single support face receiving the projection.
+        /// Support face selection receiving the projection. The selection
+        /// admits any number of faces.
         support_face: FaceSelection,
         /// Unit projection direction.
         direction: UnitVector3,
