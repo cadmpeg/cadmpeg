@@ -351,7 +351,8 @@ pub struct EmbeddedRevisionG2Blend {
     pub shape_prefix: i64,
     /// Requested fit tolerance.
     pub shape_parameter: f64,
-    /// Achieved fit tolerance, at or below `shape_parameter`.
+    /// Achieved fit tolerance in document length units, read as stored. The
+    /// reader does not compare it with `shape_parameter`.
     pub shape_length: f64,
     /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
@@ -413,7 +414,8 @@ pub struct EmbeddedVariableBlend {
     pub v_lower: Option<f64>,
     /// Requested fit tolerance.
     pub shape_parameter: f64,
-    /// Achieved fit tolerance, at or below `shape_parameter`.
+    /// Achieved fit tolerance in document length units, read as stored. The
+    /// reader does not compare it with `shape_parameter`.
     pub shape_length: f64,
     /// Signed integer immediately before the shared tail's enum, taking the
     /// values `-1` and `1`.
