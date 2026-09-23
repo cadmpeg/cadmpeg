@@ -1316,9 +1316,7 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         name: crate::om::parameter_name::ParameterName::new(format!("p{key}")),
         unit: crate::native::om::ExpressionUnit::Millimeter,
         expression: key.to_string(),
-        value: Some(
-            crate::native::om::finite_value::FiniteValue::try_from(f64::from(key)).unwrap(),
-        ),
+        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(f64::from(key)).unwrap()),
         source_entry: "part".into(),
         source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
             .unwrap(),
@@ -1390,9 +1388,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: crate::native::om::ExpressionUnit::Inch,
             expression: formula.into(),
-            value: value.map(|value| {
-                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-            }),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".into(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -1439,7 +1435,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         name: crate::om::parameter_name::ParameterName::new("p1".to_string()),
         unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
         expression: "4".into(),
-        value: Some(crate::native::om::finite_value::FiniteValue::try_from(4.0).unwrap()),
+        value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(4.0).unwrap()),
         source_entry: "part".into(),
         source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
             .unwrap(),

@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
-use crate::intersection::finite_point::FinitePoint;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
+use cadmpeg_ir::units::FiniteVector;
 use std::num::NonZeroU32;
 
 pub(super) mod structured_value_kind;
@@ -1544,7 +1544,7 @@ pub(super) struct ParasolidTermUseRecord {
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
-    point: FinitePoint,
+    point: FiniteVector<3>,
     /// Serialized record framing.
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.
@@ -1564,7 +1564,7 @@ struct ParasolidTermUseRecordWire {
     /// Two-byte endpoint-form discriminator as printable ASCII.
     form: crate::intersection::TermUseForm,
     /// Endpoint position in millimetres.
-    point: FinitePoint,
+    point: FiniteVector<3>,
     /// Serialized record framing.
     framing: crate::intersection::TermUseFraming,
     /// Tag or inline-payload offset in the inflated stream.

@@ -20,9 +20,8 @@ mod type101_state;
 mod type38_state;
 mod type70_state;
 use attdef_state::AttdefState;
-use inline_schema_fields::{
-    BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues,
-};
+use cadmpeg_ir::units::FiniteVector;
+use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields};
 use precision_state::PrecisionState;
 use reference_lanes::{MapEntries, TaggedReferences};
 use type38_state::{IntersectionMarker, ReferenceLaneForm, Type38State};
@@ -1193,7 +1192,7 @@ fn type_41_schema_state(
     stream: &[u8],
     offset: usize,
     gap_end: usize,
-) -> Option<(NonNullXmt, TermUseValues, usize)> {
+) -> Option<(NonNullXmt, FiniteVector<11>, usize)> {
     (stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
         == Some(TYPE_41_SCHEMA_HEADER))
     .then_some(())?;
@@ -1211,7 +1210,7 @@ fn type_41_schema_state(
         at = at.checked_add(8)?;
     }
     (at <= gap_end).then_some(())?;
-    Some((reference, TermUseValues::try_from(numeric_values).ok()?, at))
+    Some((reference, FiniteVector::new(numeric_values)?, at))
 }
 
 fn inline_body_states(stream: &[u8], census: &Census) -> Vec<InlineBodyState> {
@@ -3063,6 +3062,7 @@ mod inline_schema_tests {
     };
     use crate::framing::xmt_reference::NonNullXmt;
     use crate::test_support::test_deltas::push_xmt;
+    use cadmpeg_ir::units::FiniteVector;
 
     #[test]
     fn body_schema_header_is_bounded_independently_of_instance_state() {
@@ -3267,9 +3267,10 @@ mod inline_schema_tests {
                             .map(|value| value.try_into().unwrap())
                             .collect(),
                         Some(
-                            [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-                                .try_into()
-                                .unwrap()
+                            FiniteVector::new([
+                                0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0
+                            ])
+                            .unwrap()
                         ),
                     )
                     .unwrap(),
@@ -3413,9 +3414,10 @@ mod inline_schema_tests {
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type41 {
                     reference: 86.try_into().unwrap(),
-                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,]
-                        .try_into()
-                        .unwrap(),
+                    numeric_values: FiniteVector::new([
+                        0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,
+                    ])
+                    .unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),

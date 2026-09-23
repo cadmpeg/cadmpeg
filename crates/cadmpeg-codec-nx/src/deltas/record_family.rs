@@ -33,7 +33,7 @@ impl From<PointCoordinates> for [f64; 3] {
     }
 }
 
-use crate::intersection::finite_point::FinitePoint;
+use cadmpeg_ir::units::FiniteVector;
 
 /// Semantic family of one admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,17 +75,17 @@ pub(crate) enum RecordFamily {
         position: PointCoordinates,
     },
     Line {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Circle {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Ellipse {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
@@ -97,27 +97,27 @@ pub(crate) enum RecordFamily {
     TermUse,
     Type45,
     Plane {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Cylinder {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Cone {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Sphere {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
     Torus {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 5],
         node_id: u32,
     },
@@ -181,7 +181,7 @@ pub(crate) enum RecordFamily {
     Multiplicities,
     Knots,
     TrimmedCurve {
-        position: FinitePoint,
+        position: FiniteVector<3>,
         references: [u32; 6],
         node_id: u32,
     },
@@ -337,7 +337,7 @@ impl RecordFamily {
             | Self::Cone { position, .. }
             | Self::Sphere { position, .. }
             | Self::Torus { position, .. }
-            | Self::TrimmedCurve { position, .. } => Some((*position).into()),
+            | Self::TrimmedCurve { position, .. } => Some(position.get()),
             _ => None,
         }
     }
@@ -464,17 +464,17 @@ impl RecordFamily {
                 position: position?.try_into().ok()?,
             },
             30 => Self::Line {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             31 => Self::Circle {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             32 => Self::Ellipse {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -483,27 +483,27 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             50 => Self::Plane {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             51 => Self::Cylinder {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             52 => Self::Cone {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             53 => Self::Sphere {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             54 => Self::Torus {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -520,7 +520,7 @@ impl RecordFamily {
                 node_id: node_id?,
             },
             133 => Self::TrimmedCurve {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -583,17 +583,17 @@ impl RecordFamily {
                 position: position?.try_into().ok()?,
             },
             "LINE" => Self::Line {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CIRCLE" => Self::Circle {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "ELLIPSE" => Self::Ellipse {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -614,27 +614,27 @@ impl RecordFamily {
                 Self::Type45
             }
             "PLANE" => Self::Plane {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CYLINDER" => Self::Cylinder {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "CONE" => Self::Cone {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "SPHERE" => Self::Sphere {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
             "TORUS" => Self::Torus {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },
@@ -746,7 +746,7 @@ impl RecordFamily {
                 Self::Knots
             }
             "TRIMMED_CURVE" => Self::TrimmedCurve {
-                position: position?.try_into().ok()?,
+                position: FiniteVector::new(position?)?,
                 references: references.try_into().ok()?,
                 node_id: node_id?,
             },

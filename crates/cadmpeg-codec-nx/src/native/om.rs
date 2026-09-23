@@ -13,9 +13,8 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
-pub(super) mod finite_value;
 pub(super) mod journal_group;
-use finite_value::FiniteValue;
+use cadmpeg_ir::scalar::FiniteReal;
 pub(super) mod material_texture;
 pub(super) mod object_uuid;
 mod reference_wire;
@@ -674,7 +673,7 @@ pub(super) struct Expression {
     pub(super) expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(super) value: Option<FiniteValue>,
+    pub(super) value: Option<FiniteReal>,
     /// Directory entry containing the OM section.
     pub(super) source_entry: String,
     /// Self-contained expression table selected by the nearest preceding table marker.
@@ -745,7 +744,7 @@ impl From<Expression> for ExpressionWire {
             name: value.name.into_spelling(),
             unit: value.unit,
             expression: value.expression,
-            value: value.value.map(FiniteValue::get),
+            value: value.value.map(FiniteReal::get),
             source_entry: value.source_entry,
             source_table: value.source_table.as_str().to_owned(),
             source_offset: value.source_offset,
@@ -772,7 +771,10 @@ impl TryFrom<ExpressionWire> for Expression {
             name,
             unit: wire.unit,
             expression: wire.expression,
-            value: wire.value.map(FiniteValue::try_from).transpose()?,
+            value: wire
+                .value
+                .map(|value| FiniteReal::new(value).ok_or("expression value must be finite"))
+                .transpose()?,
             source_entry: wire.source_entry,
             source_table: cadmpeg_core::text::NonBlankString::new(wire.source_table)
                 .ok_or("source_table must not be empty")?,
@@ -4186,9 +4188,7 @@ pub(super) fn expressions(container: &Container) -> Vec<Expression> {
                     };
                     Some(declaration.id.clone())
                 });
-            let value = expression
-                .constant_value()
-                .and_then(|value| FiniteValue::try_from(value).ok());
+            let value = expression.constant_value().and_then(FiniteReal::new);
             let Some(source_table) = cadmpeg_core::text::NonBlankString::new(format!(
                 "nx:om-entry-{entry_index}:expression-table#{table_offset}"
             )) else {
@@ -4270,7 +4270,7 @@ fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                 }
                 values.get(&key).copied()
             });
-            if let Some(value) = evaluated.and_then(|value| FiniteValue::try_from(value).ok()) {
+            if let Some(value) = evaluated.and_then(FiniteReal::new) {
                 expression.value = Some(value);
                 values.insert(expression_key.clone(), value.get());
                 changed = true;
@@ -4355,9 +4355,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value: value.map(|value| {
-                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-            }),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -4374,13 +4372,13 @@ mod tests {
         assert_eq!(
             expressions[1]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             None
         );
         assert_eq!(
             expressions[2]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             None
         );
     }
@@ -4394,9 +4392,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value: value.map(|value| {
-                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-            }),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -4414,13 +4410,13 @@ mod tests {
         assert_eq!(
             expressions[2]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(10.0)
         );
         assert_eq!(
             expressions[3]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(13.0)
         );
     }
@@ -4434,9 +4430,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: formula.into(),
-            value: value.map(|value| {
-                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-            }),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "part".into(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -4453,13 +4447,13 @@ mod tests {
         assert_eq!(
             expressions[1]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(4.0)
         );
         assert_eq!(
             expressions[2]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(-4.0)
         );
     }
@@ -4474,9 +4468,7 @@ mod tests {
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value: value.map(|value| {
-                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-                }),
+                value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
                 source_entry: "part".into(),
                 source_table: cadmpeg_core::text::NonBlankString::new(table).unwrap(),
                 source_offset: 0,
@@ -4518,13 +4510,13 @@ mod tests {
         assert_eq!(
             expressions[1]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(10.0)
         );
         assert_eq!(
             expressions[3]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(14.0)
         );
     }
@@ -4539,9 +4531,7 @@ mod tests {
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit: super::ExpressionUnit::Millimeter,
                 expression: formula.into(),
-                value: value.map(|value| {
-                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-                }),
+                value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
                 source_entry: "part".into(),
                 source_table: cadmpeg_core::text::NonBlankString::new(table).unwrap(),
                 source_offset: 0,
@@ -4590,31 +4580,31 @@ mod tests {
         assert_eq!(
             expressions[0]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             None
         );
         assert_eq!(
             expressions[1]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             None
         );
         assert_eq!(
             expressions[2]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             None
         );
         assert_eq!(
             expressions[3]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(7.0)
         );
         assert_eq!(
             expressions[4]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(14.0)
         );
     }
@@ -4633,9 +4623,7 @@ mod tests {
                 name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                 unit,
                 expression: formula.into(),
-                value: value.map(|value| {
-                    crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-                }),
+                value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
                 source_entry: "part".into(),
                 source_table: cadmpeg_core::text::NonBlankString::new(
                     "nx:test:expression-table#table",
@@ -4680,25 +4668,25 @@ mod tests {
         assert_eq!(
             expressions[0]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(5.0)
         );
         assert_eq!(
             expressions[1]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(45.0)
         );
         assert_eq!(
             expressions[2]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(10.0)
         );
         assert_eq!(
             expressions[3]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(15.0)
         );
     }
@@ -4712,9 +4700,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new(name.to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: text.into(),
-            value: value.map(|value| {
-                crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-            }),
+            value: value.map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".into(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -4788,9 +4774,8 @@ mod tests {
                     name: crate::om::parameter_name::ParameterName::new(name.to_string()),
                     unit,
                     expression: text.into(),
-                    value: value.map(|value| {
-                        crate::native::om::finite_value::FiniteValue::try_from(value).unwrap()
-                    }),
+                    value: value
+                        .map(|value| cadmpeg_ir::scalar::FiniteReal::try_from(value).unwrap()),
                     source_entry: "/Root/UG_PART/UG_PART".into(),
                     source_table: cadmpeg_core::text::NonBlankString::new(
                         "nx:test:expression-table#table",
@@ -5147,7 +5132,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
+            value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -5182,7 +5167,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
+            value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -5233,7 +5218,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p20".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "5".to_string(),
-            value: Some(crate::native::om::finite_value::FiniteValue::try_from(5.0).unwrap()),
+            value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(5.0).unwrap()),
             source_entry: "part".to_string(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -5320,7 +5305,7 @@ mod tests {
             name: crate::om::parameter_name::ParameterName::new("p3".to_string()),
             unit: super::ExpressionUnit::Millimeter,
             expression: "12".to_string(),
-            value: Some(crate::native::om::finite_value::FiniteValue::try_from(12.0).unwrap()),
+            value: Some(cadmpeg_ir::scalar::FiniteReal::try_from(12.0).unwrap()),
             source_entry: "/Root/UG_PART/UG_PART".to_string(),
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
@@ -5637,7 +5622,7 @@ mod tests {
         assert_eq!(
             expressions[0]
                 .value
-                .map(crate::native::om::finite_value::FiniteValue::get),
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             Some(120.0)
         );
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");

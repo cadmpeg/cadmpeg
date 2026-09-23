@@ -86,7 +86,7 @@ fn expression_wire_rejects_nonfinite_rust_values() {
         expression.value.unwrap().get().to_bits(),
         (-0.0_f64).to_bits()
     );
-    expression.value = Some(super::super::finite_value::FiniteValue::try_from(-1.0).unwrap());
+    expression.value = Some(cadmpeg_ir::scalar::FiniteReal::try_from(-1.0).unwrap());
     let wire = serde_json::to_value(expression).unwrap();
     assert_eq!(wire["value"], serde_json::json!(-1.0));
 }
