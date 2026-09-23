@@ -1749,3 +1749,25 @@ fn a_revolution_replaces_its_origin_and_keeps_the_admitted_fields() {
         [moved.x, moved.y, moved.z].map(f64::to_bits)
     );
 }
+
+#[test]
+fn an_admitted_revolution_direction_leaves_only_the_origin_to_check() {
+    use super::{admit_revolution_axis, admit_revolution_axis_origin};
+    use crate::math::{Point3, Vector3};
+    use crate::units::UnitVector3;
+
+    let direction = UnitVector3::new(Vector3::new(0.0, 0.0, 1.0 + 1.0e-10)).expect("unit");
+    for origin in [
+        Point3::new(1.0, -2.0, 3.0),
+        Point3::new(f64::NAN, 0.0, 0.0),
+        Point3::new(0.0, f64::NEG_INFINITY, 0.0),
+    ] {
+        assert_eq!(
+            admit_revolution_axis_origin(origin, direction),
+            admit_revolution_axis(origin, *direction.as_raw())
+        );
+    }
+    let (_, stored) =
+        admit_revolution_axis_origin(Point3::new(0.0, 0.0, 0.0), direction).expect("finite origin");
+    assert_eq!(stored, direction);
+}

@@ -654,15 +654,16 @@ fn refine_consolidated_analytic_surfaces(
                 .and_then(|cone| {
                     Some((
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                                Point3::from(cone.apex),
-                                Vector3::from(cone.axis.get()),
-                                Vector3::from(cone.t1.get()),
-                                0.0,
-                                1.0,
-                                cone.half_angle,
-                            )
-                            .ok()?,
+                            cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                                cadmpeg_ir::features::FinitePoint3::new(Point3::from(cone.apex))?,
+                                cadmpeg_ir::units::OrthonormalFrame3::from_units(
+                                    cone.axis.into(),
+                                    cone.t1.into(),
+                                )?,
+                                cadmpeg_ir::scalar::NonNegativeLength::ZERO,
+                                cadmpeg_ir::scalar::PositiveReal::ONE,
+                                cadmpeg_ir::scalar::Angle::new(cone.half_angle)?,
+                            ),
                         )),
                         cone.pos,
                     ))

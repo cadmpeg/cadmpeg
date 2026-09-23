@@ -3,6 +3,7 @@
 
 use std::marker::PhantomData;
 
+use cadmpeg_ir::math::Vector3;
 use serde::{Deserialize, Serialize};
 
 /// A tolerance on a direction's measured length deviating from one. Each
@@ -75,10 +76,17 @@ impl LengthMeasurement for HypotLength {
 /// one by at most `Tolerance`. Both the measurement and the tolerance are the
 /// record grammar's, so every route into the type — literal construction,
 /// derivation and serde — admits exactly the same directions.
+///
+/// Every measurement and tolerance admits a subset of the IR
+/// [`cadmpeg_ir::units::UnitVector3`] set, whose admission is the `hypot`
+/// length within `1e-9` of one. A squared length within `1e-9` of one puts
+/// the norm within about `5e-10` of one, and the square-root and `hypot`
+/// measurements differ from each other by a few units in the last place. The
+/// type holds the admitted IR direction, so the conversion into it is total.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
 pub(crate) struct UnitVector3<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>(
-    [f64; 3],
+    cadmpeg_ir::units::UnitVector3,
     PhantomData<(Tolerance, Measurement)>,
 );
 
@@ -107,9 +115,17 @@ pub(crate) enum CoordinatePlane {
 }
 
 /// A finite planar direction whose `hypot` length is one within `Tolerance`.
+///
+/// Every tolerance is at most the `1e-9` of the IR
+/// [`cadmpeg_ir::units::UnitVector2`] admission, which measures the same
+/// `hypot` length. The type holds the admitted IR direction, so its quarter
+/// turns and placements are the IR's length-preserving routes.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
-pub(crate) struct UnitVector2<Tolerance: DeviationTolerance>([f64; 2], PhantomData<Tolerance>);
+pub(crate) struct UnitVector2<Tolerance: DeviationTolerance>(
+    cadmpeg_ir::units::UnitVector2,
+    PhantomData<Tolerance>,
+);
 
 /// A planar direction stored loosely, to a deviation tolerance of `1e-9`.
 pub(crate) type RelaxedUnitVector2 = UnitVector2<RelaxedDeviation>;
@@ -118,25 +134,28 @@ impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     /// Constructs a planar direction whose `hypot` length is one within the
     /// tolerance.
     pub(crate) fn from_hypot(value: [f64; 2]) -> Option<Self> {
-        (value.iter().all(|component| component.is_finite())
+        if !(value.iter().all(|component| component.is_finite())
             && (value[0].hypot(value[1]) - 1.0).abs() <= Tolerance::TOLERANCE)
-            .then_some(Self(value, PhantomData))
+        {
+            return None;
+        }
+        cadmpeg_ir::units::UnitVector2::new(value).map(|direction| Self(direction, PhantomData))
     }
 
     /// Returns the direction components.
     #[cfg(test)]
     pub(crate) fn get(self) -> [f64; 2] {
-        self.0
+        self.0.get()
     }
 
     /// Turns the direction a quarter turn, to `[-second, first]`.
     pub(crate) fn quarter_turn(self) -> Self {
-        Self([-self.0[1], self.0[0]], PhantomData)
+        Self(self.0.quarter_turn(), PhantomData)
     }
 
     /// Turns the direction a quarter turn the other way, to `[second, -first]`.
     pub(crate) fn reverse_quarter_turn(self) -> Self {
-        Self([self.0[1], -self.0[0]], PhantomData)
+        Self(self.0.reverse_quarter_turn(), PhantomData)
     }
 
     /// Places the components in a coordinate plane, leaving the third axis
@@ -144,11 +163,10 @@ impl<Tolerance: DeviationTolerance> UnitVector2<Tolerance> {
     /// the spatial direction's `hypot` length is this one's, bit for bit: it
     /// inherits this direction's admission and needs no second test.
     pub(crate) fn in_plane(self, plane: CoordinatePlane) -> UnitVector3<Tolerance, HypotLength> {
-        let [first, second] = self.0;
         UnitVector3(
             match plane {
-                CoordinatePlane::Xy => [first, second, 0.0],
-                CoordinatePlane::Xz => [first, 0.0, second],
+                CoordinatePlane::Xy => cadmpeg_ir::units::UnitVector3::in_xy_plane(self.0),
+                CoordinatePlane::Xz => cadmpeg_ir::units::UnitVector3::in_xz_plane(self.0),
             },
             PhantomData,
         )
@@ -166,7 +184,7 @@ impl<Tolerance: DeviationTolerance> TryFrom<[f64; 2]> for UnitVector2<Tolerance>
 
 impl<Tolerance: DeviationTolerance> From<UnitVector2<Tolerance>> for [f64; 2] {
     fn from(value: UnitVector2<Tolerance>) -> Self {
-        value.0
+        value.0.get()
     }
 }
 
@@ -174,17 +192,21 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
     UnitVector3<Tolerance, Measurement>
 {
     /// The +X direction.
-    pub(crate) const X: Self = Self([1.0, 0.0, 0.0], PhantomData);
+    pub(crate) const X: Self = Self(cadmpeg_ir::units::UnitVector3::X_AXIS, PhantomData);
 
     /// The +Y direction.
-    pub(crate) const Y: Self = Self([0.0, 1.0, 0.0], PhantomData);
+    pub(crate) const Y: Self = Self(cadmpeg_ir::units::UnitVector3::Y_AXIS, PhantomData);
 
     /// Constructs a unit direction whose measured length is one within the
     /// tolerance.
     pub(crate) fn new(value: [f64; 3]) -> Option<Self> {
-        (value.iter().all(|component| component.is_finite())
+        if !(value.iter().all(|component| component.is_finite())
             && (Measurement::length(value) - 1.0).abs() <= Tolerance::TOLERANCE)
-            .then_some(Self(value, PhantomData))
+        {
+            return None;
+        }
+        cadmpeg_ir::units::UnitVector3::new(Vector3::from(value))
+            .map(|direction| Self(direction, PhantomData))
     }
 
     /// Normalizes a finite direction whose norm is above [`f64::EPSILON`].
@@ -210,7 +232,15 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
 
     /// Returns the direction components.
     pub(crate) fn get(self) -> [f64; 3] {
-        self.0
+        (*self.0.as_raw()).into()
+    }
+}
+
+impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
+    From<UnitVector3<Tolerance, Measurement>> for cadmpeg_ir::units::UnitVector3
+{
+    fn from(value: UnitVector3<Tolerance, Measurement>) -> Self {
+        value.0
     }
 }
 
@@ -228,7 +258,7 @@ impl<Tolerance: DeviationTolerance, Measurement: LengthMeasurement>
     From<UnitVector3<Tolerance, Measurement>> for [f64; 3]
 {
     fn from(value: UnitVector3<Tolerance, Measurement>) -> Self {
-        value.0
+        value.get()
     }
 }
 
@@ -408,6 +438,56 @@ mod tests {
             );
         }
         assert!(RelaxedUnitVector3::new([component, 0.0, 0.0]).is_none());
+    }
+
+    #[test]
+    fn admitted_directions_convert_to_the_ir_direction_with_the_same_components() {
+        fn same_ir_direction(components: [f64; 3], converted: cadmpeg_ir::units::UnitVector3) {
+            let raw = *converted.as_raw();
+            assert_eq!(
+                [raw.x, raw.y, raw.z].map(f64::to_bits),
+                components.map(f64::to_bits)
+            );
+            assert_eq!(
+                cadmpeg_ir::units::UnitVector3::new(raw),
+                Some(converted),
+                "the IR admission accepts every value the codec admission accepts"
+            );
+        }
+
+        let relaxed_edge = [0.0, 0.0, (1.0_f64 + 9.9e-10).sqrt()];
+        let relaxed = RelaxedUnitVector3::new(relaxed_edge).expect("squared length in the band");
+        same_ir_direction(relaxed.get(), relaxed.into());
+        let exact_edge = [0.0, (1.0_f64 + 9.9e-13).sqrt(), 0.0];
+        let exact = ExactUnitVector3::new(exact_edge).expect("squared length in the band");
+        same_ir_direction(exact.get(), exact.into());
+        let norm = ExactNormUnitVector3::new([0.6, 0.8 + 9.0e-13, 0.0]).expect("norm in the band");
+        same_ir_direction(norm.get(), norm.into());
+        let hypot = RelaxedHypotUnitVector3::new([1.0 + 9.9e-10, 0.0, 0.0]).expect("hypot band");
+        same_ir_direction(hypot.get(), hypot.into());
+        let exact_hypot =
+            ExactHypotUnitVector3::new([0.0, 0.0, -1.0 - 9.0e-13]).expect("hypot band");
+        same_ir_direction(exact_hypot.get(), exact_hypot.into());
+        for constant in [RelaxedHypotUnitVector3::X, RelaxedHypotUnitVector3::Y] {
+            same_ir_direction(constant.get(), constant.into());
+        }
+
+        let pair = RelaxedUnitVector2::from_hypot([0.6 * (1.0 + 9.9e-10), 0.8 * (1.0 + 9.9e-10)])
+            .expect("pair inside the band");
+        for turned in [pair, pair.quarter_turn(), pair.reverse_quarter_turn()] {
+            for plane in [CoordinatePlane::Xy, CoordinatePlane::Xz] {
+                let placed = turned.in_plane(plane);
+                assert_eq!(RelaxedHypotUnitVector3::new(placed.get()), Some(placed));
+                same_ir_direction(placed.get(), placed.into());
+            }
+        }
+        let [first, second] = pair.get();
+        assert_eq!(pair.quarter_turn().get(), [-second, first]);
+        assert_eq!(pair.reverse_quarter_turn().get(), [second, -first]);
+        assert_eq!(
+            pair.in_plane(CoordinatePlane::Xz).get().map(f64::to_bits),
+            [first, 0.0, second].map(f64::to_bits)
+        );
     }
 
     #[test]
