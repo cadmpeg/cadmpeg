@@ -255,12 +255,7 @@ fn decode_emits_rolling_ball_blend_surface() {
     let native = definition_payload.native();
 
     assert_eq!(*cross_section, BlendCrossSection::Circular);
-    assert_eq!(
-        *radius,
-        BlendRadiusLaw::Constant {
-            signed_radius: -3.0
-        }
-    );
+    assert_eq!(*radius, BlendRadiusLaw::constant(-3.0).unwrap());
     assert_eq!(supports[0].as_ref().map(|side| side.reversed), Some(true));
     assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
     assert!(spine.is_none());

@@ -2021,25 +2021,25 @@ fn decode_graph(
                         &cadmpeg_ir::identity_namespace!("sldprt", "brep", "blend-construction"),
                         f.bridge_attr,
                     );
-                    let admitted_payload =
-                        cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                            [
-                                Some(BlendSupport {
-                                    surface: first,
-                                    reversed: blend.reversed[0],
-                                }),
-                                Some(BlendSupport {
-                                    surface: second,
-                                    reversed: blend.reversed[1],
-                                }),
-                            ],
-                            spine,
-                            BlendRadiusLaw::Constant {
-                                signed_radius: blend.signed_radius,
-                            },
-                            BlendCrossSection::Circular,
-                            cadmpeg_ir::geometry::CacheContract::from_form(None),
-                        )
+                    let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
+                        .and_then(|radius| {
+                            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                                [
+                                    Some(BlendSupport {
+                                        surface: first,
+                                        reversed: blend.reversed[0],
+                                    }),
+                                    Some(BlendSupport {
+                                        surface: second,
+                                        reversed: blend.reversed[1],
+                                    }),
+                                ],
+                                spine,
+                                radius,
+                                BlendCrossSection::Circular,
+                                cadmpeg_ir::geometry::CacheContract::from_form(None),
+                            )
+                        })
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                     out.procedural_surfaces.push(ProceduralSurface::new(
                         procedural_id.clone(),
@@ -6770,7 +6770,7 @@ mod tests {
                     cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
                         [None, None],
                         Some(spine.clone()),
-                        BlendRadiusLaw::Constant { signed_radius: 0.5 },
+                        BlendRadiusLaw::constant(0.5).unwrap(),
                         BlendCrossSection::Circular,
                         cadmpeg_ir::geometry::CacheContract::from_form(None),
                     )

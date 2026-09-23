@@ -3458,15 +3458,15 @@ pub(super) fn validate_procedural_surface_edits(
                 && before_payload.native() == after_payload.native() =>
             {
                 let values = match after_payload.radius() {
-                    BlendRadiusLaw::Constant { signed_radius } => [*signed_radius; 2],
-                    BlendRadiusLaw::Linear { start, end } => [*start, *end],
+                    BlendRadiusLaw::Constant { signed_radius } => [signed_radius.get(); 2],
+                    BlendRadiusLaw::Linear { start, end } => [start.get(), end.get()],
                     BlendRadiusLaw::Law { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "F3D explicit blend-law regeneration is unsupported: {id}"
                         )));
                     }
                 };
-                if !values.into_iter().all(f64::is_finite) || values.contains(&0.0) {
+                if values.contains(&0.0) {
                     return Err(CodecError::malformed(format_args!(
                         "F3D rolling-ball radii must be finite and nonzero: {id}"
                     )));

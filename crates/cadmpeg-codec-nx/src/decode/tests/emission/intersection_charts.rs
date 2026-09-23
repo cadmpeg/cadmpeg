@@ -659,7 +659,7 @@ fn blend_contact_transfer_fixture(
                     }),
                 ],
                 Some(spine),
-                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendRadiusLaw::constant(2.0).unwrap(),
                 BlendCrossSection::Circular,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )
@@ -793,7 +793,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
                     }),
                 ],
                 Some(spine),
-                BlendRadiusLaw::Constant { signed_radius: 2.0 },
+                BlendRadiusLaw::constant(2.0).unwrap(),
                 BlendCrossSection::Circular,
                 cadmpeg_ir::geometry::CacheContract::from_form(None),
             )

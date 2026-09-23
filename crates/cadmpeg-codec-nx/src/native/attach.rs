@@ -5396,10 +5396,8 @@ fn blend_feature_definition(
     let constant_radii = laws
         .iter()
         .map(|law| match law {
-            BlendRadiusLaw::Constant { signed_radius }
-                if signed_radius.is_finite() && *signed_radius != 0.0 =>
-            {
-                Some(signed_radius.abs())
+            BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
+                Some(signed_radius.get().abs())
             }
             _ => None,
         })

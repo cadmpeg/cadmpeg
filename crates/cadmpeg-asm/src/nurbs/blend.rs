@@ -28,7 +28,7 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, RollingBallSide, RollingBallSideExtension,
+    BlendCrossSection, CurveGeometry, RollingBallSide, RollingBallSideExtension,
     RollingBallSupportCurve, RollingBallSupportSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry, VariableBlendCache,
 };
@@ -1456,19 +1456,6 @@ pub(super) fn vertex_blend_spl_sur(
     ))
 }
 
-fn blend_radius_law(offsets: [f64; 2]) -> BlendRadiusLaw {
-    if offsets[0] == offsets[1] {
-        BlendRadiusLaw::Constant {
-            signed_radius: offsets[0],
-        }
-    } else {
-        BlendRadiusLaw::Linear {
-            start: offsets[0],
-            end: offsets[1],
-        }
-    }
-}
-
 pub(super) fn full_rb_blend_spl_sur(
     toks: &[Token],
     table: &SubtypeTable,
@@ -1525,7 +1512,6 @@ pub(super) fn full_rb_blend_spl_sur(
     };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     cur.at_scope_end().then_some(())?;
-    let radius = blend_radius_law(offsets);
     Some(DecodedProceduralSurface::revision(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
@@ -1533,7 +1519,7 @@ pub(super) fn full_rb_blend_spl_sur(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => Some(curve.clone()),
                 _ => None,
             },
-            radius,
+            radius_offsets: offsets,
             cross_section: BlendCrossSection::Circular,
             native: Some(Box::new(EmbeddedRollingBall {
                 revision,
@@ -1607,12 +1593,11 @@ pub(super) fn compact_rb_blend_spl_sur(toks: &[Token]) -> Option<DecodedProcedur
     };
     cur.at_scope_end().then_some(())?;
 
-    let radius = blend_radius_law(offsets);
     Some(DecodedProceduralSurface::legacy(
         DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new(supports),
             spine: Some(spine),
-            radius,
+            radius_offsets: offsets,
             cross_section: BlendCrossSection::Circular,
             native: None,
         },

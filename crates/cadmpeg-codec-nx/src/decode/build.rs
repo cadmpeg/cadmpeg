@@ -530,7 +530,9 @@ pub(super) fn try_decode_geometry(
                             [None, None],
                             None,
                             BlendRadiusLaw::Constant {
-                                signed_radius: blend.state.offsets()[0],
+                                signed_radius: cadmpeg_ir::scalar::Length::from(
+                                    blend.state.first_offset(),
+                                ),
                             },
                             BlendCrossSection::Circular,
                             cadmpeg_ir::geometry::CacheContract::from_form(None),

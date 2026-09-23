@@ -325,12 +325,7 @@ fn decode_replaces_partition_blend_surface_from_status_framed_deltas() {
     };
     let radius = definition_payload.radius();
 
-    assert_eq!(
-        *radius,
-        BlendRadiusLaw::Constant {
-            signed_radius: -4.0
-        }
-    );
+    assert_eq!(*radius, BlendRadiusLaw::constant(-4.0).unwrap());
     assert_eq!(
         result.ir().model.faces[0].surface,
         *result

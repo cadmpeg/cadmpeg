@@ -3312,8 +3312,8 @@ fn blend_surface_definition_from_procedural(
         return None;
     };
 
-    let radius = signed_radius.abs();
-    (radius.is_finite() && radius > 0.0).then(|| {
+    let radius = signed_radius.get().abs();
+    (radius > 0.0).then(|| {
         (
             [first.surface.clone(), second.surface.clone()],
             spine.clone(),

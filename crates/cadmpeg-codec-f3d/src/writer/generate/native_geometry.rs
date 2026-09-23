@@ -4266,8 +4266,8 @@ fn encode_native_rolling_ball(
     )?;
     native_nurbs_curve(bytes, &spine)?;
     let (start, end) = match radius {
-        BlendRadiusLaw::Constant { signed_radius } => (*signed_radius, *signed_radius),
-        BlendRadiusLaw::Linear { start, end } => (*start, *end),
+        BlendRadiusLaw::Constant { signed_radius } => (signed_radius.get(), signed_radius.get()),
+        BlendRadiusLaw::Linear { start, end } => (start.get(), end.get()),
         BlendRadiusLaw::Law { .. } => {
             return Err(CodecError::NotImplemented(
                 "source-less rb_blend_spl_sur explicit radius law is not defined".into(),

@@ -6159,6 +6159,7 @@ fn cacheless_constant_rolling_ball_section(
     let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
         return None;
     };
+    let signed_radius = signed_radius.get();
     if !matches!(
         native.cache,
         crate::geometry::RevisionCacheForm::Parameterization(_)
@@ -6176,7 +6177,7 @@ fn cacheless_constant_rolling_ball_section(
         return None;
     }
     let radius = signed_radius.abs();
-    if !radius.is_finite() || radius <= f64::EPSILON {
+    if radius <= f64::EPSILON {
         return None;
     }
     for (support, side) in supports.iter().zip(native.sides.iter()) {

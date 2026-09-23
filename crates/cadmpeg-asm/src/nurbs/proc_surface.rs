@@ -19,9 +19,9 @@ use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::PcurveNurbs,
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, RevisionCacheForm,
-    RevisionSurfaceParameterization, RollingBallSide, RollingBallSupportCurve, SolvedCurveGeometry,
-    SurfaceGeometry, VariableBlendCache,
+    BlendCrossSection, CurveGeometry, RevisionCacheForm, RevisionSurfaceParameterization,
+    RollingBallSide, RollingBallSupportCurve, SolvedCurveGeometry, SurfaceGeometry,
+    VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveI64;
@@ -257,8 +257,9 @@ pub enum DecodedProceduralSurfaceDefinition {
         supports: Box<[Option<SurfaceGeometry>; 2]>,
         /// Embedded center/spine curve.
         spine: Option<NurbsCurve>,
-        /// Signed radius law.
-        radius: BlendRadiusLaw,
+        /// Signed radius offsets at the spine start and end, in
+        /// millimetres. Equal offsets state a constant radius.
+        radius_offsets: [f64; 2],
         /// Blend cross-section family.
         cross_section: BlendCrossSection,
         /// Complete native construction graph when the full layout decoded.

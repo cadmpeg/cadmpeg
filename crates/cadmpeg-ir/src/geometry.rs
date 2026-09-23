@@ -6270,14 +6270,14 @@ pub enum BlendRadiusLaw {
     /// Constant blend radius along the whole spine.
     Constant {
         /// Signed radius, in document length units; sign selects the support offset side.
-        signed_radius: f64,
+        signed_radius: crate::scalar::Length,
     },
     /// Radius varying linearly from `start` to `end` along the spine.
     Linear {
         /// Signed radius at the spine start, in document length units.
-        start: f64,
+        start: crate::scalar::Length,
         /// Signed radius at the spine end, in document length units.
-        end: f64,
+        end: crate::scalar::Length,
     },
     /// Radius varying along the spine per an explicit law curve.
     Law {
@@ -6286,17 +6286,27 @@ pub enum BlendRadiusLaw {
     },
 }
 
+/// The refusal of a blend radius law with a non-finite radius.
+const NON_FINITE_BLEND_RADIUS: ProceduralGeometryError =
+    ProceduralGeometryError::Payload("blend radius law is not finite");
+
 impl BlendRadiusLaw {
-    /// Whether every scalar this law carries is finite. The sign of a radius
-    /// selects the support offset side, so a negative radius is admitted. A
-    /// law curve states its own checked control points.
-    #[must_use]
-    fn values_are_finite(&self) -> bool {
-        match self {
-            Self::Constant { signed_radius } => signed_radius.is_finite(),
-            Self::Linear { start, end } => start.is_finite() && end.is_finite(),
-            Self::Law { .. } => true,
-        }
+    /// Admit a constant law from a finite signed radius. The sign of a radius
+    /// selects the support offset side, so a negative radius is admitted.
+    pub fn constant(signed_radius: f64) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Constant {
+            signed_radius: crate::scalar::Length::new(signed_radius)
+                .ok_or(NON_FINITE_BLEND_RADIUS)?,
+        })
+    }
+
+    /// Admit a linear law from finite signed radii at the spine start and
+    /// end, with the refusal of [`BlendRadiusLaw::constant`].
+    pub fn linear(start: f64, end: f64) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self::Linear {
+            start: crate::scalar::Length::new(start).ok_or(NON_FINITE_BLEND_RADIUS)?,
+            end: crate::scalar::Length::new(end).ok_or(NON_FINITE_BLEND_RADIUS)?,
+        })
     }
 }
 

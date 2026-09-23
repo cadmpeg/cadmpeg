@@ -951,7 +951,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
         BlendSurfacePayload::try_new(
             [None, None],
             None,
-            BlendRadiusLaw::Constant { signed_radius: 1.0 },
+            BlendRadiusLaw::constant(1.0).unwrap(),
             BlendCrossSection::Circular,
             rolling(fields),
         )
@@ -960,7 +960,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
         BlendSurfacePayload::try_from(BlendSurfacePayloadWire {
             supports: [None, None],
             spine: None,
-            radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+            radius: BlendRadiusLaw::constant(1.0).unwrap(),
             cross_section: BlendCrossSection::Circular,
             cache: rolling(fields),
         })
@@ -1555,11 +1555,7 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
     // The sign of a radius selects the support offset side, so a negative
     // radius is admitted on both routes.
     let admitted = ProceduralSurfaceDefinition::Blend(
-        blend_new(BlendRadiusLaw::Linear {
-            start: -1.5,
-            end: 2.5,
-        })
-        .unwrap(),
+        blend_new(BlendRadiusLaw::linear(-1.5, 2.5).unwrap()).unwrap(),
     );
     let wire = serde_json::to_value(&admitted).unwrap();
     assert_eq!(wire["radius"]["kind"], serde_json::json!("linear"));
@@ -1569,27 +1565,21 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
         serde_json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         admitted
     );
-    assert!(blend_new(BlendRadiusLaw::Constant {
-        signed_radius: -3.0
-    })
-    .is_ok());
+    assert!(blend_new(BlendRadiusLaw::constant(-3.0).unwrap()).is_ok());
+    assert!(blend_wire(BlendRadiusLaw::constant(-3.0).unwrap()).is_ok());
 
+    // The law types state finiteness, so a non-finite radius is refused where
+    // the law is admitted, with the refusal the payload stated for it.
+    let refusal = Err(crate::geometry::ProceduralGeometryError::Payload(
+        "blend radius law is not finite",
+    ));
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         for law in [
-            BlendRadiusLaw::Constant {
-                signed_radius: value,
-            },
-            BlendRadiusLaw::Linear {
-                start: value,
-                end: 1.0,
-            },
-            BlendRadiusLaw::Linear {
-                start: 1.0,
-                end: value,
-            },
+            BlendRadiusLaw::constant(value),
+            BlendRadiusLaw::linear(value, 1.0),
+            BlendRadiusLaw::linear(1.0, value),
         ] {
-            assert!(blend_new(law.clone()).is_err());
-            assert!(blend_wire(law).is_err());
+            assert_eq!(law, refusal.clone());
         }
     }
 }
