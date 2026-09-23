@@ -693,10 +693,10 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
-        let lower_translation = transform.normal().map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower());
         let sweep = transform
             .normal()
-            .map(|value| value * (span.upper - span.lower));
+            .map(|value| value * (span.upper() - span.lower()));
         for (native_surface_id, internal_id, spline) in splines {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(spline, &mut refusal) else {

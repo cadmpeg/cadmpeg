@@ -364,8 +364,7 @@ pub(in super::super) fn transfer_hole_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::try_from(geometry)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(
@@ -1480,8 +1479,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             );
             ir.model.surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::try_from(sweep.geometry)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(sweep.geometry)),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!(

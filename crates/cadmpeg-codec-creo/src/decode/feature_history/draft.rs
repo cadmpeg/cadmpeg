@@ -352,13 +352,11 @@ pub(in super::super) fn schema_feature_definition(
                 )
             },
             |hole| {
-                let origin = hole.geometry.origin;
-                let radius = hole.geometry.radius;
                 (
                     hole.entry_surface_id.map(face_selection),
-                    Some(origin),
-                    Some(Vector3::from(hole.direction)),
-                    Length::new(2.0 * radius),
+                    Some(hole.geometry.origin().get()),
+                    Some(*hole.geometry.axis()),
+                    Length::new(2.0 * hole.geometry.radius().get()),
                     Some(hole.extent),
                     Some(HoleBottom::Flat),
                 )

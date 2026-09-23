@@ -567,10 +567,10 @@ pub(in super::super) fn extrusion_brep_side_surface(
         SketchGeometryDefinition::Nurbs { .. }
     ) {
         let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
-        let lower_translation = transform.normal().map(|value| value * span.lower);
+        let lower_translation = transform.normal().map(|value| value * span.lower());
         let sweep = transform
             .normal()
-            .map(|value| value * (span.upper - span.lower));
+            .map(|value| value * (span.upper() - span.lower()));
         let placed = placed_section_nurbs(transform, &directrix)?;
         let translated = translated_nurbs_curve(&placed, lower_translation)?;
         return Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(

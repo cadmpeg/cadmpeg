@@ -135,7 +135,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 )
             };
         }
-        let length = span.upper - span.lower;
+        let length = span.upper() - span.lower();
         let Some(sketch) = exactly_one(
             ir.model
                 .sketches
@@ -248,7 +248,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             SurfaceId,
             cadmpeg_ir::identity_key!("surface").colon(cadmpeg_ir::identity_key!("top"))
         );
-        for (id, offset) in [(&bottom_surface, span.lower), (&top_surface, span.upper)] {
+        for (id, offset) in [
+            (&bottom_surface, span.lower()),
+            (&top_surface, span.upper()),
+        ] {
             annotate(
                 annotations,
                 id,
@@ -286,8 +289,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 let start = entity.start();
 
                 for (side, offset, arena) in [
-                    ("bottom", span.lower, &mut bottom_vertices),
-                    ("top", span.upper, &mut top_vertices),
+                    ("bottom", span.lower(), &mut bottom_vertices),
+                    ("top", span.upper(), &mut top_vertices),
                 ] {
                     let position = section_point_in_model(transform, start);
                     let side_key = match side {
@@ -344,8 +347,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
 
                 let next = (index + 1) % count;
                 for (side, offset, vertices, arena) in [
-                    ("bottom", span.lower, &bottom_vertices, &mut bottom_edges),
-                    ("top", span.upper, &top_vertices, &mut top_edges),
+                    ("bottom", span.lower(), &bottom_vertices, &mut bottom_edges),
+                    ("top", span.upper(), &top_vertices, &mut top_edges),
                 ] {
                     let side_key = match side {
                         "bottom" => cadmpeg_ir::identity_key!("bottom"),
@@ -493,9 +496,9 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                             Point3::new(
-                                origin[0] + span.lower * transform.normal()[0],
-                                origin[1] + span.lower * transform.normal()[1],
-                                origin[2] + span.lower * transform.normal()[2],
+                                origin[0] + span.lower() * transform.normal()[0],
+                                origin[1] + span.lower() * transform.normal()[1],
+                                origin[2] + span.lower() * transform.normal()[2],
                             ),
                             transform.normal_vector(),
                         )

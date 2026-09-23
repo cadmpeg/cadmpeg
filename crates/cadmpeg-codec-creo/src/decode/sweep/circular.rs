@@ -14,8 +14,8 @@ use super::profiles::{circular_pcurve, line_pcurve};
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::recipe::feature_is_first_material_operation;
 use crate::vecmath::dot;
-use crate::vecmath::normalize;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -131,7 +131,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
         let center = section_point_in_model(transform, section_center);
         let seam =
             std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis()[axis]);
-        let sides = [("bottom", span.lower), ("top", span.upper)];
+        let sides = [("bottom", span.lower()), ("top", span.upper())];
         let mut face_ids = Vec::new();
         let mut cap_coedges = Vec::new();
         let mut side_coedges = Vec::new();
@@ -489,15 +489,12 @@ fn resolved_circular_extrusion_profile(
 
 pub(in super::super) fn circular_section_profile_from_cylinder(
     transform: &crate::placement::FeatureSectionTransform,
-    geometry: &super::super::holes::placement::HoleCylinder,
+    geometry: &CylinderSurface,
 ) -> Option<([f64; 2], f64)> {
-    let origin = geometry.origin;
-    let axis = geometry.axis;
-    let radius = geometry.radius;
-    let axis = normalize([axis.x, axis.y, axis.z])?;
-    (dot(axis, transform.normal()).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
-        && radius.is_finite()
-        && radius > 0.0)
+    let origin = geometry.origin().get();
+    let axis = geometry.axis();
+    let radius = geometry.radius().get();
+    (dot([axis.x, axis.y, axis.z], transform.normal()).abs() >= 1.0 - EPS_AXIS_ALIGNMENT)
         .then_some(())?;
     let delta = [
         origin.x - transform.origin()[0],

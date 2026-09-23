@@ -95,3 +95,23 @@ fn circular_sweep_requires_an_exact_materialized_surface_roster() {
         [46, 51]
     ));
 }
+
+#[test]
+fn extrusion_span_refuses_offsets_whose_length_overflows() {
+    let planes = [
+        ([0.0, 0.0, f64::MAX], [0.0, 0.0, 1.0]),
+        ([0.0, 0.0, -f64::MAX], [0.0, 0.0, 1.0]),
+    ];
+    assert!(super::extrusion_span([0.0; 3], [0.0, 0.0, 1.0], planes).is_none());
+    assert_eq!(
+        super::extrusion_span(
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [
+                ([0.0, 0.0, 2.0], [0.0, 0.0, 1.0]),
+                ([0.0, 0.0, -1.0], [0.0, 0.0, -1.0]),
+            ],
+        ),
+        Some(super::ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"))
+    );
+}
