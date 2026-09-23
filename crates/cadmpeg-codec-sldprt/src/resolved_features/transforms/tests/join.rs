@@ -420,7 +420,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
             Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-                angle: cadmpeg_ir::scalar::Angle::new(angle).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap(),
             })
         );
         arc_angle.links.as_mut().unwrap().entries_mut()[0].entity_ref =

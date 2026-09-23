@@ -1108,7 +1108,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         op: cadmpeg_ir::features::BooleanOp::Intersect,
     }) if construction.law == cadmpeg_ir::features::HelicalSweepLaw::HeightTurnsGrowth
         && construction.pitch.get() == 0.0 && construction.travel.radial_growth().get() == 2.0
-        && construction.axis_direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        && *construction.axis_direction.as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         && construction.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.1)
         && construction.allow_multi_profile_faces == Some(false))
     );

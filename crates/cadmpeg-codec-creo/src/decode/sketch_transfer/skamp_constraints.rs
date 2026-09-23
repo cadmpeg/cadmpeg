@@ -12,7 +12,7 @@ use crate::decode::sketch_transfer::loci::{
     unique_bounded_curve_segment,
 };
 use crate::feature::definitions::SolverSubtable;
-use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::PositiveAngle;
 use cadmpeg_ir::sketches::{
     NativeOperandField, SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
@@ -363,9 +363,9 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         SketchConstraintDefinitionInput::ArcAngle {
                             entity: sketch_entity_id(sketch, item.entity_id)?,
                             angle: if kind == 10 {
-                                Angle::QUARTER_TURN
+                                PositiveAngle::QUARTER_TURN
                             } else {
-                                Angle::HALF_TURN
+                                PositiveAngle::HALF_TURN
                             },
                         }
                     }

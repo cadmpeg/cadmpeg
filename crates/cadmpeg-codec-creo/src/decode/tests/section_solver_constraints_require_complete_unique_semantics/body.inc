@@ -572,7 +572,7 @@ offset: 30,
                 .definition).kind(),
             SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("creo:featdefs:sketch_entity#917:13".to_string()).expect("valid test fixture"),
-                angle: Angle::new(angle).expect("finite angle fixture"),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(angle).expect("positive angle fixture"),
             }
         );
         fixed_arc.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[0].status = 34;

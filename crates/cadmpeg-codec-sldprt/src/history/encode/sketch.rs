@@ -119,12 +119,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             match mode {
                 WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
-                    if !depth.get().is_finite() || depth.get() <= 0.0 {
-                        return Err(CodecError::malformed(format_args!(
-                            "SLDPRT feature {} has invalid wrap depth",
-                            feature.id
-                        )));
-                    }
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Depth"),
                         format_length_mm(depth.get()),

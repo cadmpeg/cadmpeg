@@ -791,6 +791,41 @@ mod tests {
     }
 
     #[test]
+    fn a_joint_limit_range_owns_the_order_of_its_bounds() {
+        use super::JointLimitRange;
+        use crate::scalar::FiniteReal;
+
+        let bound = |value: f64| FiniteReal::new(value).unwrap();
+        assert!(JointLimitRange::new(bound(2.0), bound(1.0)).is_none());
+        let equal = JointLimitRange::new(bound(1.0), bound(1.0)).unwrap();
+        assert_eq!([equal.minimum(), equal.maximum()], [bound(1.0), bound(1.0)]);
+        let range = JointLimitRange::new(bound(-2.0), bound(3.0)).unwrap();
+        assert_eq!(
+            [range.minimum(), range.maximum()],
+            [bound(-2.0), bound(3.0)]
+        );
+
+        let wire = serde_json::to_value(JointLimits::Range(range)).unwrap();
+        assert_eq!(
+            wire,
+            serde_json::json!({"bounds": "range", "minimum": -2.0, "maximum": 3.0})
+        );
+        assert_eq!(
+            serde_json::from_value::<JointLimits>(wire).unwrap(),
+            JointLimits::Range(range)
+        );
+        let error = serde_json::from_value::<JointLimits>(
+            serde_json::json!({"bounds": "range", "minimum": 2.0, "maximum": 1.0}),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("joint limit range must be ordered"),
+            "{error}"
+        );
+    }
+
+    #[test]
     fn empty_link_state_is_absent() {
         assert!(LinkState::new(Vec::new(), None, None, None).is_none());
         assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
@@ -1052,7 +1087,8 @@ impl JointOperand {
 /// Enabled bounds for one joint degree of freedom.
 ///
 /// Each arm names the bounds the source enabled, so "neither bound" has no
-/// spelling. The two-bound arm mints the ordered pair.
+/// spelling. The two-bound arm holds a [`JointLimitRange`], which owns the
+/// order of its bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "JointLimitsWire", into = "JointLimitsWire")]
 pub enum JointLimits {
@@ -1067,12 +1103,35 @@ pub enum JointLimits {
         maximum: FiniteReal,
     },
     /// Both bounds are enabled, in order.
-    Range {
-        /// Lower bound.
-        minimum: FiniteReal,
-        /// Upper bound, at or above `minimum`.
-        maximum: FiniteReal,
-    },
+    Range(JointLimitRange),
+}
+
+/// Finite lower and upper joint bounds with the upper bound at or above the
+/// lower bound.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JointLimitRange {
+    minimum: FiniteReal,
+    maximum: FiniteReal,
+}
+
+impl JointLimitRange {
+    /// Admit bounds whose upper bound is at or above the lower bound.
+    #[must_use]
+    pub fn new(minimum: FiniteReal, maximum: FiniteReal) -> Option<Self> {
+        (minimum.get() <= maximum.get()).then_some(Self { minimum, maximum })
+    }
+
+    /// Return the lower bound.
+    #[must_use]
+    pub const fn minimum(self) -> FiniteReal {
+        self.minimum
+    }
+
+    /// Return the upper bound, at or above [`Self::minimum`].
+    #[must_use]
+    pub const fn maximum(self) -> FiniteReal {
+        self.maximum
+    }
 }
 
 impl JointLimits {
@@ -1091,7 +1150,7 @@ impl JointLimits {
             (Some(minimum), None) => Some(Self::Minimum { minimum }),
             (None, Some(maximum)) => Some(Self::Maximum { maximum }),
             (Some(minimum), Some(maximum)) => {
-                (minimum.get() <= maximum.get()).then_some(Self::Range { minimum, maximum })
+                JointLimitRange::new(minimum, maximum).map(Self::Range)
             }
         }
     }
@@ -1127,7 +1186,10 @@ impl From<JointLimits> for JointLimitsWire {
         match limits {
             JointLimits::Minimum { minimum } => Self::Minimum { minimum },
             JointLimits::Maximum { maximum } => Self::Maximum { maximum },
-            JointLimits::Range { minimum, maximum } => Self::Range { minimum, maximum },
+            JointLimits::Range(range) => Self::Range {
+                minimum: range.minimum(),
+                maximum: range.maximum(),
+            },
         }
     }
 }
@@ -1139,12 +1201,10 @@ impl TryFrom<JointLimitsWire> for JointLimits {
         Ok(match wire {
             JointLimitsWire::Minimum { minimum } => Self::Minimum { minimum },
             JointLimitsWire::Maximum { maximum } => Self::Maximum { maximum },
-            JointLimitsWire::Range { minimum, maximum } => {
-                if minimum.get() > maximum.get() {
-                    return Err("joint limit range must be ordered");
-                }
-                Self::Range { minimum, maximum }
-            }
+            JointLimitsWire::Range { minimum, maximum } => Self::Range(
+                JointLimitRange::new(minimum, maximum)
+                    .ok_or("joint limit range must be ordered")?,
+            ),
         })
     }
 }

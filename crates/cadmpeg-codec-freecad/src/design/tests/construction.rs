@@ -702,7 +702,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
             plane_origin: geometry_1,
             plane_normal: geometry_2,
             plane_reference: Some(cadmpeg_ir::features::FaceSelection::Native(reference)),
-        }) if ( source.ends_with(":Source") && reference.ends_with(":MirrorPlane")) && matches!(geometry_1.get(), cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(geometry_2.get(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+        }) if ( source.ends_with(":Source") && reference.ends_with(":MirrorPlane")) && matches!(geometry_1.get(), cadmpeg_ir::math::Point3 { x: 1.0, y: 2.0, z: 3.0 }) && matches!(*geometry_2.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 2);
     assert!(result.report().losses.is_empty());
@@ -753,7 +753,7 @@ fn transfers_part_projection_on_surface_construction() {
             height: actual_height,
             offset: actual_offset,
         }) if ( (sources.ends_with(":Projection")
-            && support.ends_with(":SupportFace")) && actual_height.get() == 8.0 && actual_offset.get() == -1.5) && matches!(geometry_1.get(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
+            && support.ends_with(":SupportFace")) && actual_height.get() == 8.0 && actual_offset.get() == -1.5) && matches!(*geometry_1.as_raw(), cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
     assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report().losses.is_empty());
@@ -994,7 +994,7 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
             orientation: Some(SweepOrientation::Binormal { direction }),
             transition: Some(SweepTransition::RoundCorner),
             ..
-        }) if direction.z == 1.0
+        }) if direction.as_raw().z == 1.0
     ));
     for (name, expected) in [
         ("Linear", SweepTransformation::Linear),

@@ -265,10 +265,14 @@ pub(super) fn project_wrap(
         .as_str()
     {
         "emboss" => WrapMode::Emboss {
-            depth: Length::new(parse_positive_length_mm(feature.parameters.get("Depth")?)?)?,
+            depth: cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
+                feature.parameters.get("Depth")?,
+            )?)?,
         },
         "deboss" => WrapMode::Deboss {
-            depth: Length::new(parse_positive_length_mm(feature.parameters.get("Depth")?)?)?,
+            depth: cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
+                feature.parameters.get("Depth")?,
+            )?)?,
         },
         "scribe" => WrapMode::Scribe,
         _ => return None,

@@ -9,6 +9,7 @@ use crate::{
         FaceSelection, FeatureDirection3, FinitePoint3,
     },
     scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal},
+    units::UnitVector3,
 };
 use serde_json::json;
 
@@ -111,7 +112,7 @@ fn pattern_locations_start_at_zero_and_increase() {
         assert!(
             PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
                 axis_origin: point(0.0, 0.0, 0.0),
-                axis_dir: direction(0.0, 0.0, 1.0),
+                axis_dir: UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
                 angles,
             })
             .is_err()
@@ -127,7 +128,7 @@ fn pattern_locations_start_at_zero_and_increase() {
     assert!(
         PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
             axis_origin: point(0.0, 0.0, 0.0),
-            axis_dir: direction(0.0, 0.0, 1.0),
+            axis_dir: UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             angles: vec![Angle::ZERO],
         })
         .is_ok()
@@ -298,4 +299,31 @@ fn admitted_pattern_wire_round_trips_every_carried_field() {
         let transform: PatternTransform = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&transform).unwrap(), wire);
     }
+}
+
+#[test]
+fn circular_angle_patterns_admit_only_a_unit_axis_on_the_wire() {
+    let pattern = PatternKind::<CompositePattern>::new(PatternTransform::CircularAngles {
+        axis_origin: point(0.0, 0.0, 0.0),
+        axis_dir: UnitVector3::Z_AXIS,
+        angles: vec![Angle::ZERO, Angle::QUARTER_TURN],
+    })
+    .unwrap();
+    let wire = serde_json::to_value(&pattern).unwrap();
+    for refused in [
+        json!({"x": 0.0, "y": 0.0, "z": 2.0}),
+        json!({"x": 0.0, "y": 0.0, "z": 0.0}),
+        json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
+    ] {
+        let mut refused_wire = wire.clone();
+        refused_wire["axis_dir"] = refused;
+        let error = serde_json::from_value::<PatternKind>(refused_wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("direction must have unit length"), "{error}");
+    }
+    let mut near_unit = wire.clone();
+    near_unit["axis_dir"] = json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
+    let decoded = serde_json::from_value::<PatternKind>(near_unit.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), near_unit);
 }

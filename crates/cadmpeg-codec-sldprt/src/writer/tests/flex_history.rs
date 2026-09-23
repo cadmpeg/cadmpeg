@@ -375,7 +375,7 @@ fn encoder_writes_source_less_curved_sketches() {
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::ArcAngle {
                 entity: entity_ids[1].clone(),
-                angle: Angle::new(std::f64::consts::PI).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::PI).unwrap(),
             },
         )
         .unwrap(),
@@ -396,7 +396,7 @@ fn encoder_writes_source_less_curved_sketches() {
         definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::EllipseAngle {
                 entity: entity_ids[23].clone(),
-                angle: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
             },
         )
         .unwrap(),

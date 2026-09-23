@@ -81,11 +81,11 @@ enum QuarterTurn {
 }
 
 impl QuarterTurn {
-    fn angle(self) -> cadmpeg_ir::scalar::Angle {
+    fn angle(self) -> cadmpeg_ir::scalar::PositiveAngle {
         match self {
-            Self::Quarter => cadmpeg_ir::scalar::Angle::QUARTER_TURN,
-            Self::Half => cadmpeg_ir::scalar::Angle::HALF_TURN,
-            Self::ThreeQuarters => cadmpeg_ir::scalar::Angle::THREE_QUARTER_TURN,
+            Self::Quarter => cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
+            Self::Half => cadmpeg_ir::scalar::PositiveAngle::HALF_TURN,
+            Self::ThreeQuarters => cadmpeg_ir::scalar::PositiveAngle::THREE_QUARTER_TURN,
         }
     }
 }
