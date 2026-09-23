@@ -85,21 +85,57 @@ pub fn just_magic() -> Vec<u8> {
     MAGIC.to_vec()
 }
 
-pub fn assembly_prt() -> Vec<u8> {
-    let mut f = Vec::new();
-    f.extend_from_slice(MAGIC);
-    f.push(0x06);
-    f.extend_from_slice(&[0, 0, 0]);
-    f.extend_from_slice(&[0, 0, 0, 0]);
-    f.push(0x00);
-    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
-    f.extend_from_slice(&[0, 0]);
-    f.extend_from_slice(b"HEADER");
-    let name = b"/Root/UG_PART/ExternalReferences";
-    f.extend_from_slice(&(name.len() as u32).to_le_bytes());
-    f.extend_from_slice(name);
-    f.extend_from_slice(&[0u8; 16]);
-    f
+/// An `EXTREFSTREAM` payload: a record index over one empty record (7) and one
+/// four-slot handle-set record (6), each handle-set slot naming one string of
+/// the end-anchored four-string table that closes the payload.
+fn external_reference_stream() -> Result<Vec<u8>, CodecError> {
+    let mut p = b"EXTREFSTREAM".to_vec();
+    // Header through byte 24, which is zero.
+    p.extend_from_slice(&[0; 13]);
+    // Record index in ascending offset order: record 7 at 45, record 6 at 51,
+    // then the zero terminator.
+    for (record_id, offset) in [(7_u32, 45_u32), (6, 51)] {
+        p.extend_from_slice(&record_id.to_le_bytes());
+        p.extend_from_slice(&offset.to_le_bytes());
+    }
+    p.extend_from_slice(&0_u32.to_le_bytes());
+    // Record 7: the six-byte empty form.
+    p.extend_from_slice(&[1, 0, 0, 0, 0, 1]);
+    // Record 6: marker, declared count, marker, four id slots, marker, token
+    // count, two ascending handles and the closing count.
+    p.extend_from_slice(&[1, 0, 0, 0]);
+    p.extend_from_slice(&2_u16.to_be_bytes());
+    p.push(1);
+    for slot in [0_u32, 1, 2, 3] {
+        p.extend_from_slice(&slot.to_le_bytes());
+    }
+    p.push(1);
+    p.push(3);
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x10]);
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x20]);
+    p.push(3);
+    // Record 6 tail: one persistent-handle / tagged-reference pair.
+    p.extend_from_slice(&[0xe0, 0, 0, 0, 0x05, 0xc0, 0, 0, 0x01]);
+    // String table: marker, count, then length-prefixed strings to the end.
+    p.push(1);
+    p.extend_from_slice(&4_u32.to_le_bytes());
+    for value in ["child.prt", "dirA", "dirB", "extra"] {
+        let len = u16::try_from(value.len()).map_err(|_| {
+            CodecError::InvalidInput("NX seed external reference string length overflows".into())
+        })?;
+        p.extend_from_slice(&len.to_le_bytes());
+        p.extend_from_slice(value.as_bytes());
+    }
+    Ok(p)
+}
+
+/// An assembly part: one `/Root/UG_PART/ExternalReferences` file entry and no
+/// Parasolid partition.
+pub fn assembly_prt() -> Result<Vec<u8>, CodecError> {
+    prt_with_file_entry(
+        b"/Root/UG_PART/ExternalReferences",
+        &external_reference_stream()?,
+    )
 }
 
 pub fn zlib_compress(raw: &[u8]) -> std::io::Result<Vec<u8>> {
@@ -114,12 +150,18 @@ pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
 
 /// Build an SPLMSSTR part whose HEADER directory holds one
 /// `/Root/UG_PART/UG_PART` file entry spanning the zlib-compressed `stream`.
+pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
+    prt_with_file_entry(b"/Root/UG_PART/UG_PART", &zlib_compress(stream)?)
+}
+
+/// Build an SPLMSSTR file whose HEADER directory holds one file entry `name`
+/// spanning `payload`.
 ///
 /// The HEADER region runs from the `HEADER` marker to the FOOTER region, whose
 /// offset is the 48-bit little-endian value at byte 17. The FOOTER region holds
 /// an empty counted directory followed by the four-byte fingerprint that ends
 /// the file.
-pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecError> {
     const FOOTER_OFFSET: usize = 17;
     const FOOTER_OFFSET_LEN: usize = 6;
     let offset_overflow = || CodecError::InvalidInput("NX seed directory offset overflows".into());
@@ -135,20 +177,18 @@ pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecErr
 
     f.extend_from_slice(b"HEADER");
     f.extend_from_slice(&1_u32.to_le_bytes());
-    let name = b"/Root/UG_PART/UG_PART";
     let name_len = u32::try_from(name.len())
         .map_err(|_| CodecError::InvalidInput("NX seed entry name length overflows".into()))?;
     f.extend_from_slice(&name_len.to_le_bytes());
     f.extend_from_slice(name);
 
-    let blob = zlib_compress(stream)?;
     let dir_end = f.len().checked_add(16).ok_or_else(offset_overflow)?;
-    let blob_off = u64::try_from(dir_end).map_err(|_| offset_overflow())?;
-    let blob_len = u64::try_from(blob.len())
-        .map_err(|_| CodecError::InvalidInput("NX seed partition length overflows".into()))?;
-    f.extend_from_slice(&blob_off.to_le_bytes());
-    f.extend_from_slice(&blob_len.to_le_bytes());
-    f.extend_from_slice(&blob);
+    let payload_off = u64::try_from(dir_end).map_err(|_| offset_overflow())?;
+    let payload_len = u64::try_from(payload.len())
+        .map_err(|_| CodecError::InvalidInput("NX seed payload length overflows".into()))?;
+    f.extend_from_slice(&payload_off.to_le_bytes());
+    f.extend_from_slice(&payload_len.to_le_bytes());
+    f.extend_from_slice(payload);
 
     let footer_offset = u64::try_from(f.len()).map_err(|_| offset_overflow())?;
     let footer_offset = footer_offset.to_le_bytes();
