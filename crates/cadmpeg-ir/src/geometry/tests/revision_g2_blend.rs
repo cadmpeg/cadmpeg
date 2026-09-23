@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::{
     ProceduralGeometryError, ProceduralSurfaceDefinition, RevisionCacheForm,
-    RevisionG2BlendConstruction, RevisionG2BlendConstructionWire, RevisionG2RadiusValue,
-    RevisionSurfaceParameterization, RollingBallRadiusSelector, RollingBallSide,
-    RollingBallSupportCurve, RollingBallSupportSurface, VariableBlendSupportKind,
+    RevisionG2BlendConstruction, RevisionG2BlendConstructionWire, RevisionSurfaceParameterization,
+    RollingBallRadiusSelector, RollingBallSide, RollingBallSupportCurve, RollingBallSupportSurface,
+    VariableBlendSupportKind,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Point3;
@@ -81,7 +81,7 @@ fn stored(fields: &Fields) -> RevisionG2BlendConstructionWire {
         center_range: fields.center_range,
         radii: [fields.radius, 15.0],
         radius_selector: RollingBallRadiusSelector::Value {
-            value: RevisionG2RadiusValue::new(3).expect("a positive selector"),
+            value: PositiveI64::new(3).expect("a positive selector"),
         },
         u_range: fields.u_range,
         v_range: fields.v_range,
@@ -194,7 +194,7 @@ fn the_revision_g2_blend_admits_the_full_positive_revision_lane() {
 #[test]
 fn radius_selector_diagnostic_reports_the_rejected_integer() {
     for value in [0, -2, i64::MIN] {
-        let error = serde_json::from_value::<RevisionG2RadiusValue>(serde_json::json!(value))
+        let error = serde_json::from_value::<PositiveI64>(serde_json::json!(value))
             .unwrap_err()
             .to_string();
         assert!(error.contains(&value.to_string()), "{error}");

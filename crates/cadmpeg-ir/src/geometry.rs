@@ -4198,56 +4198,6 @@ pub enum RollingBallRadiusSelector<T = f64> {
     },
 }
 
-/// Integer radius-selector value in a revision G2 blend.
-///
-/// A radius selector is positive. The native absence spelling is the enum
-/// variant the decoder reads before this value is constructed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(transparent))]
-pub struct RevisionG2RadiusValue(i64);
-
-impl RevisionG2RadiusValue {
-    /// Construct an explicit selector value.
-    #[must_use]
-    pub const fn new(value: i64) -> Option<Self> {
-        if value > 0 {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
-
-    /// Return the native integer value.
-    #[must_use]
-    pub const fn get(self) -> i64 {
-        self.0
-    }
-}
-
-impl Serialize for RevisionG2RadiusValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RevisionG2RadiusValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = i64::deserialize(deserializer)?;
-        Self::new(value).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "revision G2 radius selector value must be positive, got {value}"
-            ))
-        })
-    }
-}
-
 /// Complete byte-backed rolling-ball or three-surface blend context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4779,7 +4729,7 @@ pub struct RevisionG2BlendConstruction {
     #[serde(default)]
     center_range: [Option<f64>; 2],
     radii: [f64; 2],
-    radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
+    radius_selector: RollingBallRadiusSelector<PositiveI64>,
     u_range: [Option<f64>; 2],
     v_range: [Option<f64>; 2],
     shape_prefix: i64,
@@ -4815,7 +4765,7 @@ pub struct RevisionG2BlendConstructionWire {
     /// Two signed blend radii in document length units.
     pub radii: [f64; 2],
     /// Integer-valued optional-radius selector following the radii.
-    pub radius_selector: RollingBallRadiusSelector<RevisionG2RadiusValue>,
+    pub radius_selector: RollingBallRadiusSelector<PositiveI64>,
     /// Native optional U interval endpoints.
     pub u_range: [Option<f64>; 2],
     /// Native optional V interval endpoints.
@@ -4912,7 +4862,7 @@ impl RevisionG2BlendConstruction {
 
     /// Return the optional-radius selector.
     #[must_use]
-    pub const fn radius_selector(&self) -> &RollingBallRadiusSelector<RevisionG2RadiusValue> {
+    pub const fn radius_selector(&self) -> &RollingBallRadiusSelector<PositiveI64> {
         &self.radius_selector
     }
 

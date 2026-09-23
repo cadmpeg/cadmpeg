@@ -101,10 +101,10 @@ impl PositiveI64 {
 }
 
 impl TryFrom<i64> for PositiveI64 {
-    type Error = &'static str;
+    type Error = String;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
-        Self::new(value).ok_or("PositiveI64 must be positive")
+        Self::new(value).ok_or_else(|| format!("PositiveI64 must be positive, got {value}"))
     }
 }
 
