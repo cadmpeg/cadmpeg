@@ -349,7 +349,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         states: &mut usize,
         state_limit: usize,
         exhausted: &mut bool,
-        base_degrees: &mut HashMap<(usize, usize), u8>,
+        base_degrees: &mut HashMap<(usize, usize), usize>,
         budget: Option<&WorkBudget<'_>>,
     ) {
         enum CoordinateBranch {
@@ -358,7 +358,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
 
         struct DegreeUndo {
-            entries: Vec<((usize, usize), Option<u8>)>,
+            entries: Vec<((usize, usize), Option<usize>)>,
         }
 
         fn adjust_assignment_degrees(
@@ -367,7 +367,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             edges: &[[usize; 2]],
             root_edges: &[Vec<usize>],
             incidence: Option<&LocalIncidence<'_>>,
-            degrees: &mut HashMap<(usize, usize), u8>,
+            degrees: &mut HashMap<(usize, usize), usize>,
         ) -> DegreeUndo {
             let mut undo = DegreeUndo {
                 entries: Vec::new(),
@@ -389,7 +389,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     for point in [left, right] {
                         let key = (face, point);
                         let previous = degrees.get(&key).copied();
-                        *degrees.entry(key).or_default() += 1;
+                        let degree = degrees.entry(key).or_default();
+                        *degree = degree.saturating_add(1);
                         undo.entries.push((key, previous));
                     }
                 }
@@ -397,7 +398,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
             undo
         }
 
-        fn restore_assignment_degrees(degrees: &mut HashMap<(usize, usize), u8>, undo: DegreeUndo) {
+        fn restore_assignment_degrees(
+            degrees: &mut HashMap<(usize, usize), usize>,
+            undo: DegreeUndo,
+        ) {
             for (key, previous) in undo.entries.into_iter().rev() {
                 match previous {
                     Some(degree) => {
@@ -418,7 +422,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             edges: &[[usize; 2]],
             root_edges: &[Vec<usize>],
             incidence: Option<&LocalIncidence<'_>>,
-            degrees: &mut HashMap<(usize, usize), u8>,
+            degrees: &mut HashMap<(usize, usize), usize>,
             budget: Option<&WorkBudget<'_>>,
         ) -> Option<DegreeUndo> {
             if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
@@ -433,7 +437,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         fn unassign(
             root: usize,
             assigned: &mut [Option<usize>],
-            degrees: &mut HashMap<(usize, usize), u8>,
+            degrees: &mut HashMap<(usize, usize), usize>,
             undo: DegreeUndo,
         ) {
             restore_assignment_degrees(degrees, undo);
@@ -445,7 +449,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
             propagated: Vec<(usize, usize, DegreeUndo)>,
-            degrees: &mut HashMap<(usize, usize), u8>,
+            degrees: &mut HashMap<(usize, usize), usize>,
         ) {
             for (root, point, undo) in propagated.into_iter().rev() {
                 point_uses[point] -= 1;
@@ -488,7 +492,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
         let viable_values = |root: usize,
                              assigned: &[Option<usize>],
-                             base_degrees: &HashMap<(usize, usize), u8>,
+                             base_degrees: &HashMap<(usize, usize), usize>,
                              work_budget: Option<&WorkBudget<'_>>| {
             domains[root]
                 .iter()
@@ -920,7 +924,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
                         return false;
                     }
-                    let mut degrees = HashMap::<(usize, usize), u8>::new();
+                    let mut degrees = HashMap::<(usize, usize), usize>::new();
                     for (edge, [left, right]) in edges.iter().copied().enumerate() {
                         let [left, right] = [solution[left], solution[right]];
                         let faces = incidence.edge_faces[edge];
@@ -929,7 +933,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 continue;
                             }
                             for point in [left, right] {
-                                *degrees.entry((face, point)).or_default() += 1;
+                                let degree = degrees.entry((face, point)).or_default();
+                                *degree = degree.saturating_add(1);
                             }
                         }
                     }

@@ -163,6 +163,13 @@ fn component_reference_curve_accepts_count_minus_one_with_instance_separator() {
 }
 
 #[test]
+fn component_reference_curve_refuses_out_of_range_markers() {
+    for marker in [0, 7, usize::MAX] {
+        assert_eq!(component_reference_curve_path_at(&[0; 32], marker), None);
+    }
+}
+
+#[test]
 fn local_links_require_the_reference_trailer() {
     let mut payload = vec![0; 80];
     payload[64..66].copy_from_slice(&37u16.to_le_bytes());
