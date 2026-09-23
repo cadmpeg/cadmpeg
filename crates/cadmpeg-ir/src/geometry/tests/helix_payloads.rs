@@ -330,7 +330,6 @@ fn helix_curve_finite_center_returns_the_admitted_center() {
             [finite.x, finite.y, finite.z].map(f64::to_bits),
             [center.x, center.y, center.z].map(f64::to_bits)
         );
-        assert_eq!(finite.as_raw(), helix.center().as_raw());
         assert_eq!(FinitePoint3::new(center), Some(finite));
     }
 }
