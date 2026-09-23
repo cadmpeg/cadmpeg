@@ -2730,8 +2730,8 @@ incidence activity. The point operand is either a sense-zero point entity, the
 center of a sense-zero arc or circle, or an endpoint or center locus selected
 by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
 target and a point locus; zero or two pairings retain the native incidence.
-Operand order does not change these roles. A circle is not a bounded midpoint
-target.
+Operand order does not change these roles. A circle, a type-25
+section-reference line, and an axis line are not bounded midpoint targets.
 An unresolved centered type-47 construction line remains a native line carrier,
 but its sense-four center is a valid midpoint locus. This center role does not
 establish line coordinates or any other line geometry.
