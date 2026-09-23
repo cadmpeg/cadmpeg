@@ -378,6 +378,22 @@ impl TryFrom<ExtrusionSurfaceConstructionWire> for ExtrusionSurfaceConstruction 
     }
 }
 
+/// Admit a revolution axis: a point on the axis with finite coordinates and
+/// a direction whose norm is within `1e-9` of one. Both revolution
+/// constructions store the axis in this form.
+pub fn admit_revolution_axis(
+    origin: Point3,
+    direction: Vector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
+    const INVALID_AXIS: ProceduralGeometryError = ProceduralGeometryError::Payload(
+        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+    );
+    Ok((
+        FinitePoint3::new(origin).ok_or(INVALID_AXIS)?,
+        UnitVector3::new(direction).ok_or(INVALID_AXIS)?,
+    ))
+}
+
 /// Admitted revolution surface parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -389,10 +405,10 @@ impl TryFrom<ExtrusionSurfaceConstructionWire> for ExtrusionSurfaceConstruction 
 pub struct RevolutionSurfaceConstruction {
     /// Curve revolved about the axis to form the surface.
     directrix: CurveId,
-    /// A point on the revolution axis.
-    axis_origin: Point3,
-    /// Unit direction of the revolution axis.
-    axis_direction: Vector3,
+    /// A point on the revolution axis, with finite coordinates.
+    axis_origin: FinitePoint3,
+    /// Direction of the revolution axis, with norm within `1e-9` of one.
+    axis_direction: UnitVector3,
     /// Angular start and end parameters, in radians.
     angular_interval: ParameterInterval,
     /// Surface-parameter interval that maps affinely to
@@ -420,9 +436,9 @@ pub struct RevolutionSurfaceConstruction {
 struct RevolutionSurfaceConstructionWire {
     /// Curve revolved about the axis to form the surface.
     directrix: CurveId,
-    /// A point on the revolution axis.
+    /// A point on the revolution axis, with finite coordinates.
     axis_origin: Point3,
-    /// Unit direction of the revolution axis.
+    /// Direction of the revolution axis, with norm within `1e-9` of one.
     axis_direction: Vector3,
     /// Angular start and end parameters, in radians.
     angular_interval: [f64; 2],
@@ -466,10 +482,11 @@ impl RevolutionSurfaceConstruction {
         )
     }
 
-    /// Admit the construction parameters.
+    /// Admit the construction parameters. The axis types state the axis
+    /// contract; the cache form and the intervals are checked here.
     pub fn try_new(
         directrix: CurveId,
-        (axis_origin, axis_direction): (Point3, Vector3),
+        (axis_origin, axis_direction): (FinitePoint3, UnitVector3),
         angular_interval: [f64; 2],
         angular_parameter_interval: Option<[f64; 2]>,
         parameter_interval: Option<[f64; 2]>,
@@ -479,11 +496,6 @@ impl RevolutionSurfaceConstruction {
         if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
                 "revolution cache form is invalid",
-            ));
-        }
-        if !axis_origin.is_finite() || !axis_direction.is_finite() {
-            return Err(ProceduralGeometryError::Payload(
-                "revolution axis_origin and axis_direction must be finite",
             ));
         }
         let admit_interval = |range: [f64; 2], message| {
@@ -532,11 +544,15 @@ impl RevolutionSurfaceConstruction {
     }
     /// Return the axis origin.
     pub fn axis_origin(&self) -> &Point3 {
-        &self.axis_origin
+        self.axis_origin.as_raw()
+    }
+    /// Replace the axis origin and keep every other admitted field.
+    pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
+        self.axis_origin = axis_origin;
     }
     /// Return the axis direction.
     pub fn axis_direction(&self) -> &Vector3 {
-        &self.axis_direction
+        self.axis_direction.as_raw()
     }
     /// Return the angular interval.
     pub fn angular_interval(&self) -> &[f64; 2] {
@@ -566,7 +582,7 @@ impl TryFrom<RevolutionSurfaceConstructionWire> for RevolutionSurfaceConstructio
     fn try_from(wire: RevolutionSurfaceConstructionWire) -> Result<Self, Self::Error> {
         Self::try_new(
             wire.directrix,
-            (wire.axis_origin, wire.axis_direction),
+            admit_revolution_axis(wire.axis_origin, wire.axis_direction)?,
             wire.angular_interval,
             wire.angular_parameter_interval,
             wire.parameter_interval,
@@ -1017,13 +1033,11 @@ impl AxisRevolutionSurfaceConstruction {
         axis_origin: Point3,
         axis_direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        const INVALID_AXIS: ProceduralGeometryError = ProceduralGeometryError::Payload(
-            "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
-        );
+        let (axis_origin, axis_direction) = admit_revolution_axis(axis_origin, axis_direction)?;
         Ok(Self {
             directrix,
-            axis_origin: FinitePoint3::new(axis_origin).ok_or(INVALID_AXIS)?,
-            axis_direction: UnitVector3::new(axis_direction).ok_or(INVALID_AXIS)?,
+            axis_origin,
+            axis_direction,
         })
     }
     /// Return the directrix.

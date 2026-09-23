@@ -384,15 +384,21 @@ fn emit_carrier_surface(
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        directrix_id,
-                        (axis_origin, axis_direction),
-                        angular_interval,
-                        None,
-                        Some(parameter_interval),
-                        false,
-                        cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
+                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                        axis_origin,
+                        axis_direction,
                     )
+                    .and_then(|axis| {
+                        cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                            directrix_id,
+                            axis,
+                            angular_interval,
+                            None,
+                            Some(parameter_interval),
+                            false,
+                            cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
+                        )
+                    })
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 )
             }

@@ -5926,15 +5926,21 @@ fn append_text_surface(
             )?;
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                    directrix_id,
-                    (*axis_origin, *axis_direction),
-                    [0.0, std::f64::consts::TAU],
-                    None,
-                    None,
-                    true,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                    *axis_origin,
+                    *axis_direction,
                 )
+                .and_then(|axis| {
+                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                        directrix_id,
+                        axis,
+                        [0.0, std::f64::consts::TAU],
+                        None,
+                        None,
+                        true,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                })
                 .map(|admitted_payload| {
                     ProceduralSurface::new(
                         ProceduralSurfaceId::compose(

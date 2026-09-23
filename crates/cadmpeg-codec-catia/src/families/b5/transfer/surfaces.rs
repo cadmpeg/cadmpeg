@@ -680,15 +680,21 @@ pub(super) fn emit_surfaces(
                 );
                 let _attached = ir.model.add_procedural_surface(
                     id,
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        directrix_id,
-                        (revolution.axis_origin, revolution.axis_direction),
-                        revolution.angular_interval,
-                        Some(revolution.angular_parameter_interval),
-                        Some(revolution.parameter_interval),
-                        false,
-                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                        revolution.axis_origin,
+                        revolution.axis_direction,
                     )
+                    .and_then(|axis| {
+                        cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                            directrix_id,
+                            axis,
+                            revolution.angular_interval,
+                            Some(revolution.angular_parameter_interval),
+                            Some(revolution.parameter_interval),
+                            false,
+                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        )
+                    })
                     .map(|admitted_payload| {
                         ProceduralSurface::new(
                             procedural_id,

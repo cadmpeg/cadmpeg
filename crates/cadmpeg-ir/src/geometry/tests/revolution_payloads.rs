@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::features::FinitePoint3;
 use crate::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
 use crate::ids::{CurveId, ProceduralSurfaceId};
 use crate::math::{Point3, Vector3};
+use crate::units::UnitVector3;
 
 fn id() -> ProceduralSurfaceId {
     ProceduralSurfaceId::mint("synthetic:test:procedural_surface#revolution").unwrap()
@@ -17,7 +19,7 @@ fn revolution(
     Ok(ProceduralSurfaceDefinition::Revolution(
         crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
             curve(),
-            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            (FinitePoint3::ZERO, UnitVector3::Z_AXIS),
             intervals[0],
             Some(intervals[1]),
             Some(intervals[2]),
@@ -51,7 +53,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
     let definition = ProceduralSurfaceDefinition::Revolution(
         crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
             curve(),
-            (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            (FinitePoint3::ZERO, UnitVector3::Z_AXIS),
             [-1.0, 0.0],
             None,
             None,

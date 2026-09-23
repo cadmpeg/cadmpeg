@@ -1569,6 +1569,13 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
     Ok(())
 }
 
+/// Refusal of a scaled revolution-axis origin that is not finite. The text is
+/// the one both revolution constructions give for an axis they do not admit.
+const SCALED_REVOLUTION_AXIS_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
+    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+        "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
+    );
+
 trait ScaleProceduralLengths {
     fn scale_lengths(
         &mut self,
@@ -1615,30 +1622,19 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                     )?;
             }
             ProceduralSurfaceDefinition::Revolution(payload) => {
-                let mut origin = *payload.axis_origin();
-                scale_point3(&mut origin, scale);
-                *payload =
-                    cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
-                        payload.directrix().clone(),
-                        (origin, *payload.axis_direction()),
-                        *payload.angular_interval(),
-                        payload.angular_parameter_interval(),
-                        payload.parameter_interval(),
-                        *payload.transposed(),
-                        cadmpeg_ir::geometry::CacheContract::from_form(
-                            payload.revision_form().cloned(),
-                        ),
-                    )?;
+                let mut axis_origin = *payload.axis_origin();
+                scale_point3(&mut axis_origin, scale);
+                payload.set_axis_origin(
+                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                        .ok_or(SCALED_REVOLUTION_AXIS_REFUSAL)?,
+                );
             }
             ProceduralSurfaceDefinition::AxisRevolution(payload) => {
                 let mut axis_origin = *payload.axis_origin();
                 scale_point3(&mut axis_origin, scale);
                 payload.set_axis_origin(
-                    cadmpeg_ir::features::FinitePoint3::new(axis_origin).ok_or(
-                        cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
-                            "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
-                        ),
-                    )?,
+                    cadmpeg_ir::features::FinitePoint3::new(axis_origin)
+                        .ok_or(SCALED_REVOLUTION_AXIS_REFUSAL)?,
                 );
             }
             ProceduralSurfaceDefinition::Sum(payload) => {
