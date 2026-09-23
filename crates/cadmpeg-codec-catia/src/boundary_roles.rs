@@ -6,7 +6,6 @@ use cadmpeg_ir::ids::LoopId;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::FaceLoops;
 
-const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
@@ -155,20 +154,8 @@ pub(crate) fn classify_planar_boundaries(
         return unspecified();
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
-    let Some(normal) = normal.unit() else {
-        return unspecified();
-    };
-    let Some(u_axis) = u_axis.unit() else {
-        return unspecified();
-    };
-    if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
-        return unspecified();
-    }
-    let Some(v_axis) = normal.cross(u_axis).unit() else {
-        return unspecified();
-    };
+    let u_axis = *plane_surface.frame().reference().as_raw();
+    let v_axis = *plane_surface.frame().binormal().as_raw();
     let polygons = rows
         .iter()
         .map(|(_, boundary)| {

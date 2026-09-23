@@ -21,8 +21,6 @@ use super::pcurves::PcurveUses;
 use super::{annotate, OrientedLoop, OrientedLoopMember, OwnershipPlan, TransferPlan};
 use crate::solve::union_find::UnionFind;
 
-const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
-
 pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut face_ids = HashSet::new();
     let mut loop_owners = HashMap::<u32, usize>::new();
@@ -221,14 +219,8 @@ fn b5_planar_loop_points(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
-    let normal = normal.unit()?;
-    let u_axis = u_axis.unit()?;
-    if normal.dot(u_axis).abs() > EPS_PLANE_AXES_ORTHO {
-        return None;
-    }
-    let v_axis = normal.cross(u_axis).unit()?;
+    let u_axis = *plane_surface.frame().reference().as_raw();
+    let v_axis = *plane_surface.frame().binormal().as_raw();
     let loop_ = graph.loops.get(&loop_id)?;
     let mut points = Vec::with_capacity(loop_.members.len());
     for member in loop_orientation.member_order() {
