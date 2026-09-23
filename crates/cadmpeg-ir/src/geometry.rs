@@ -2300,6 +2300,12 @@ impl HelixCurveConstruction {
         self.center.as_raw()
     }
 
+    /// Return the admitted center.
+    #[must_use]
+    pub const fn finite_center(&self) -> FinitePoint3 {
+        self.center
+    }
+
     /// Return the major.
     #[must_use]
     pub const fn major(&self) -> &Vector3 {

@@ -1534,3 +1534,28 @@ fn feature_direction_reversed_negates_the_components_and_stays_admitted() {
         );
     }
 }
+
+#[test]
+fn finite_point_negated_negates_the_coordinates_and_stays_admitted() {
+    use crate::features::FinitePoint3;
+
+    for point in [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(-0.0, 1.0, -2.5),
+        Point3::new(f64::MAX, -f64::MAX, f64::MIN_POSITIVE),
+        Point3::new(5.0e-324, -1.0e300, 3.0),
+    ] {
+        let admitted = FinitePoint3::new(point).unwrap();
+        let negated = admitted.negated();
+        assert_eq!(
+            [negated.x, negated.y, negated.z].map(f64::to_bits),
+            [-point.x, -point.y, -point.z].map(f64::to_bits)
+        );
+        assert_eq!(FinitePoint3::new(negated.get()), Some(negated));
+        let restored = negated.negated();
+        assert_eq!(
+            [restored.x, restored.y, restored.z].map(f64::to_bits),
+            [point.x, point.y, point.z].map(f64::to_bits)
+        );
+    }
+}

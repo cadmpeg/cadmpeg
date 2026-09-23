@@ -104,6 +104,15 @@ checked_feature_geometry!(
     value.is_finite(),
     "FinitePoint3 coordinates must be finite", get, as_raw
 );
+impl FinitePoint3 {
+    /// Reflect through the model origin. Negation keeps every coordinate
+    /// finite, so the result stays admitted.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+}
+
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,
