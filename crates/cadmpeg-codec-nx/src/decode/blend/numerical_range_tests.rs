@@ -4,6 +4,30 @@ use super::*;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
 #[test]
+fn periodic_circle_inverse_refuses_nonfinite_seeds() {
+    let circle = SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("unit circle is valid"),
+    );
+    for seed in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert_eq!(
+            closest_periodic_analytic_curve_parameter_with_budget(
+                &circle,
+                Point3::new(1.0, 0.0, 0.0),
+                Some(seed),
+                &GeometryWorkBudget::new(100),
+            ),
+            None
+        );
+    }
+}
+
+#[test]
 fn numerical_0922_contact_inverse_ignores_knot_units() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("nx:test:surface#1").unwrap();

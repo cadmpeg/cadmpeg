@@ -235,6 +235,25 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
 }
 
 #[test]
+fn annotation_settings_refuse_nonfinite_scales() {
+    for (minor, original) in [(0, 1.0_f64), (1, 1.25), (2, 2.5)] {
+        let mut bytes = annotation_body(minor);
+        let offset = bytes
+            .windows(8)
+            .position(|window| window == original.to_le_bytes())
+            .expect("fixture contains the selected annotation scale");
+        bytes[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(annotation_settings(
+            &bytes,
+            0..bytes.len(),
+            19,
+            crate::settings::MillimeterScale::IDENTITY,
+        )
+        .is_err());
+    }
+}
+
+#[test]
 fn grid_defaults_accept_future_minor_and_scale_lengths() {
     let bytes = grid_body();
     let value = grid_defaults(

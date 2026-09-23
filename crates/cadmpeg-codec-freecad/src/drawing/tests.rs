@@ -11,6 +11,28 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn drawing_direction_vector_refuses_nonfinite_components() {
+    let mut attributes = std::collections::BTreeMap::from([
+        ("valueX".into(), "0".into()),
+        ("valueY".into(), "1".into()),
+        ("valueZ".into(), "0".into()),
+    ]);
+    let value = |attributes| crate::native::ValueRecord {
+        tag: "PropertyVector".into(),
+        order: 0,
+        attributes,
+        text: None,
+        raw_xml: String::new(),
+    };
+    assert_eq!(
+        super::vector_value(&value(attributes.clone())),
+        Some([0.0, 1.0, 0.0])
+    );
+    attributes.insert("valueY".into(), "inf".into());
+    assert_eq!(super::vector_value(&value(attributes)), None);
+}
+
+#[test]
 pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

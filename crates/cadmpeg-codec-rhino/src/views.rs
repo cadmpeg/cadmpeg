@@ -655,6 +655,10 @@ fn parse_window_position(
             result.floating_viewport = reader.u8()?;
         }
 
+        if result.left.is_nan() || result.right.is_nan() {
+            result.left = 0.0;
+            result.right = 1.0;
+        }
         if result.left > result.right {
             std::mem::swap(&mut result.left, &mut result.right);
         }
@@ -667,6 +671,10 @@ fn parse_window_position(
         if result.left >= result.right {
             result.left = 0.0;
             result.right = 1.0;
+        }
+        if result.top.is_nan() || result.bottom.is_nan() {
+            result.top = 0.0;
+            result.bottom = 1.0;
         }
         if result.top > result.bottom {
             std::mem::swap(&mut result.top, &mut result.bottom);
@@ -1682,6 +1690,20 @@ mod tests {
         assert_eq!(value.top, 0.0);
         assert_eq!(value.bottom, 1.0);
         assert_eq!(value.floating_viewport, 3);
+    }
+
+    #[test]
+    fn window_position_defaults_pairs_with_nan_coordinates() {
+        let mut body = vec![0x10];
+        body.extend(0_i32.to_le_bytes());
+        for value in [f64::NAN, 0.8, 0.2, f64::NAN] {
+            body.extend(value.to_le_bytes());
+        }
+        let value = parse_window_position(&body, 0..body.len()).expect("window position");
+        assert_eq!(
+            [value.left, value.right, value.top, value.bottom],
+            [0.0, 1.0, 0.0, 1.0]
+        );
     }
 
     #[test]

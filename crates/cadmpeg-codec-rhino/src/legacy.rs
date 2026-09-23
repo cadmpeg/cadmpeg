@@ -882,8 +882,11 @@ fn v1_nurbs_curve_data(
             "invalid RhinoIO V1 NURBS curve flag {flag}"
         )));
     }
-    let knot_count = usize::try_from(order + control_count - 2)
-        .map_err(|_| CodecError::Malformed("V1 NURBS curve knot count overflow".to_string()))?;
+    let knot_count = order
+        .checked_add(control_count)
+        .and_then(|sum| sum.checked_sub(2))
+        .and_then(|count| usize::try_from(count).ok())
+        .ok_or_else(|| CodecError::Malformed("V1 NURBS curve knot count overflow".to_string()))?;
     if knot_count > 1 << 20 {
         return Err(CodecError::Malformed(
             "V1 NURBS curve knot count exceeds limit".to_string(),
@@ -983,10 +986,16 @@ fn v1_nurbs_surface_data(
         )));
     }
     let knot_counts = [
-        usize::try_from(orders[0] + control_counts[0] - 2)
-            .map_err(|_| CodecError::Malformed("V1 U knot count overflow".to_string()))?,
-        usize::try_from(orders[1] + control_counts[1] - 2)
-            .map_err(|_| CodecError::Malformed("V1 V knot count overflow".to_string()))?,
+        orders[0]
+            .checked_add(control_counts[0])
+            .and_then(|sum| sum.checked_sub(2))
+            .and_then(|count| usize::try_from(count).ok())
+            .ok_or_else(|| CodecError::Malformed("V1 U knot count overflow".to_string()))?,
+        orders[1]
+            .checked_add(control_counts[1])
+            .and_then(|sum| sum.checked_sub(2))
+            .and_then(|count| usize::try_from(count).ok())
+            .ok_or_else(|| CodecError::Malformed("V1 V knot count overflow".to_string()))?,
     ];
     if knot_counts.iter().any(|count| *count > 1 << 20) {
         return Err(CodecError::Malformed(
@@ -2678,13 +2687,14 @@ fn v1_nurbs_object<T>(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_v1, TCODE_ANGULAR_DIMENSION, TCODE_ANNOTATION_LEADER, TCODE_COMMENT,
-        TCODE_ENDOFFILE, TCODE_ENDOFTABLE, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF,
-        TCODE_LEGACY_CRV, TCODE_LEGACY_CRVSTUFF, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF,
-        TCODE_LEGACY_SHL, TCODE_LEGACY_SHLSTUFF, TCODE_LEGACY_SPL, TCODE_LEGACY_SPLSTUFF,
-        TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF,
-        TCODE_LINEAR_DIMENSION, TCODE_NAMED_CPLANE, TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION,
-        TCODE_RHINOIO_OBJECT_BREP, TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
+        decode_v1, v1_nurbs_curve_data, v1_nurbs_surface_data, TCODE_ANGULAR_DIMENSION,
+        TCODE_ANNOTATION_LEADER, TCODE_COMMENT, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
+        TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF, TCODE_LEGACY_CRV, TCODE_LEGACY_CRVSTUFF,
+        TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF, TCODE_LEGACY_SHL, TCODE_LEGACY_SHLSTUFF,
+        TCODE_LEGACY_SPL, TCODE_LEGACY_SPLSTUFF, TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF,
+        TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF, TCODE_LINEAR_DIMENSION, TCODE_NAMED_CPLANE,
+        TCODE_NAMED_VIEW, TCODE_RADIAL_DIMENSION, TCODE_RHINOIO_OBJECT_BREP,
+        TCODE_RHINOIO_OBJECT_DATA, TCODE_RHINOIO_OBJECT_NURBS_CURVE,
         TCODE_RHINOIO_OBJECT_NURBS_SURFACE, TCODE_RH_POINT, TCODE_TEXT_BLOCK,
         TCODE_UNIT_AND_TOLERANCES, TCODE_VIEWPORT,
     };
@@ -2693,6 +2703,23 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_test_support::{wire, EditableDecodeResult};
+
+    #[test]
+    fn v1_nurbs_knot_counts_refuse_i32_addition_overflow() {
+        let words = [100_i32, 3, 0, 2, i32::MAX, 0];
+        let curve = words
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(v1_nurbs_curve_data(&curve, 0..curve.len()).is_err());
+
+        let words = [100_i32, 3, 0, 2, 2, i32::MAX, 2, 0];
+        let surface = words
+            .into_iter()
+            .flat_map(i32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(v1_nurbs_surface_data(&surface, 0..surface.len()).is_err());
+    }
 
     fn chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = typecode.to_le_bytes().to_vec();

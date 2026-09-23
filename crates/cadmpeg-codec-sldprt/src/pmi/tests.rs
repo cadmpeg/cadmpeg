@@ -17,9 +17,17 @@ use cadmpeg_ir::{
 };
 
 use super::{
-    apply_to_parameters, dimension_subtype, enrich_history_parameters, neutral_parameter_is_count,
-    parse_payload, patch_payload, patch_slots,
+    apply_to_parameters, dimension_subtype, enrich_history_parameters, exact_count,
+    neutral_parameter_is_count, parse_payload, patch_payload, patch_slots,
 };
+
+#[test]
+fn exact_count_refuses_the_i64_boundary_before_a_saturating_cast() {
+    let boundary = (1_u64 << 63) as f64;
+    assert_eq!(exact_count(boundary), None);
+    let below = f64::from_bits(boundary.to_bits() - 1);
+    assert_eq!(exact_count(below), Some(below as i64));
+}
 use crate::records::PmiDimension;
 use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
