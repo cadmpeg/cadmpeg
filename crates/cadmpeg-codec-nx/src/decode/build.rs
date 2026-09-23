@@ -963,12 +963,12 @@ pub(super) fn try_decode_geometry(
                         match &mut carrier.metadata {
                             cadmpeg_ir::geometry::pcurve::PcurveMetadata::General {
                                 form: metadata,
-                            } => metadata.set_admitted_fit_tolerance(fit_tolerance),
+                            } => metadata.set_fit_tolerance(fit_tolerance),
                             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
                                 form: inline,
                             } => {
                                 if let Some(fit_tolerance) = fit_tolerance {
-                                    inline.set_admitted_fit_tolerance(fit_tolerance);
+                                    inline.set_fit_tolerance(fit_tolerance);
                                 }
                             }
                         }
