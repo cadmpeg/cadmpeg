@@ -561,6 +561,7 @@ pub(super) fn transfer_section_entities(
                 match unique_section_incidence_curve_family(definition, segment.external_id) {
                     Some(SectionEntityIncidenceFamily::Point) => "point".to_string(),
                     Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve".to_string(),
+                    Some(SectionEntityIncidenceFamily::LineOrArc) => "line_or_arc".to_string(),
                     Some(SectionEntityIncidenceFamily::Line) => "line".to_string(),
                     Some(SectionEntityIncidenceFamily::Arc) => "arc".to_string(),
                     Some(SectionEntityIncidenceFamily::Circular) => "circle".to_string(),

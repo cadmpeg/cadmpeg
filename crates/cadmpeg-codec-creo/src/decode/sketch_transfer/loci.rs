@@ -357,18 +357,21 @@ fn section_entity_family_locus(
         (SectionEntityIncidenceFamily::Point, 0) => Some(SketchLocus::Entity(entity)),
         (
             SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::LineOrArc
             | SectionEntityIncidenceFamily::Line
             | SectionEntityIncidenceFamily::Arc,
             0,
         ) => Some(SketchLocus::Entity(entity)),
         (
             SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::LineOrArc
             | SectionEntityIncidenceFamily::Line
             | SectionEntityIncidenceFamily::Arc,
             2,
         ) => Some(SketchLocus::Start(entity)),
         (
             SectionEntityIncidenceFamily::BoundedCurve
+            | SectionEntityIncidenceFamily::LineOrArc
             | SectionEntityIncidenceFamily::Line
             | SectionEntityIncidenceFamily::Arc,
             3,
@@ -778,13 +781,19 @@ pub(super) fn section_skamp_curve_entity(
     }
     let is_curve = section_skamp_is_line(definition, item)
         || unique_bounded_curve_segment(definition, item.entity_id).is_some()
-        || unique_section_incidence_curve_family(definition, item.entity_id)
-            == Some(SectionEntityIncidenceFamily::BoundedCurve)
+        || matches!(
+            unique_section_incidence_curve_family(definition, item.entity_id),
+            Some(
+                SectionEntityIncidenceFamily::BoundedCurve
+                    | SectionEntityIncidenceFamily::LineOrArc
+            )
+        )
         || section_skamp_is_circular(definition, item)
         || matches!(
             solver_only_section_entity_family(definition, item.entity_id),
             Some(
                 SectionEntityIncidenceFamily::BoundedCurve
+                    | SectionEntityIncidenceFamily::LineOrArc
                     | SectionEntityIncidenceFamily::Arc
                     | SectionEntityIncidenceFamily::Circular
             )
