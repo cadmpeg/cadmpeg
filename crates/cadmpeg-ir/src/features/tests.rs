@@ -1656,3 +1656,46 @@ fn feature_arcs_rebuild_from_checked_parts() {
         .with_center_and_radii(moved, [minor, major])
         .is_none());
 }
+
+#[test]
+fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
+    use crate::features::FinitePoint3;
+    use crate::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.5, 0.0, 4.0],
+        [0.0, 3.0, 0.0, -2.0],
+        [0.0, 0.0, 4.0, 1.0],
+    ])
+    .unwrap();
+    for point in [
+        Point3::new(1.0, 2.0, 3.0),
+        Point3::new(-0.0, 5.0e-324, -1.0e300),
+    ] {
+        let admitted = FinitePoint3::new(point).unwrap();
+        let placed = admitted.transformed(transform).unwrap();
+        let raw = transform.apply_point(point).unwrap();
+        assert_eq!(
+            [placed.x, placed.y, placed.z].map(f64::to_bits),
+            [raw.x, raw.y, raw.z].map(f64::to_bits)
+        );
+        assert_eq!(FinitePoint3::new(raw), Some(placed));
+    }
+
+    // A finite translation added to a coordinate near the finite range
+    // overflows, and the transform hands back no point.
+    let overflow = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let edge = FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).unwrap();
+    assert_eq!(edge.transformed(overflow), None);
+    assert_eq!(
+        FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
+            .unwrap()
+            .transformed(overflow),
+        FinitePoint3::new(Point3::new(f64::MAX, 0.0, 1.0))
+    );
+}

@@ -19,7 +19,7 @@ use cadmpeg_ir::ids::{CurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
-use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -48,18 +48,16 @@ fn placed_offset_source(
     let orientation = transform_orientation(transform)?;
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    transform.apply_point(origin)?,
-                    unit_vector(transform.apply_vector(direction)?)?,
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    line_curve.origin().transformed(transform)?,
+                    UnitVector3::new(unit_vector(transform.apply_vector(direction)?)?)?,
+                ),
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = FinitePoint3::new(transform.apply_point(circle_curve.center().get())?)?;
+            let center = circle_curve.center().transformed(transform)?;
             let frame = OrthonormalFrame3::new(
                 unit_vector(transform.apply_vector(*circle_curve.axis())?)?.scale(orientation),
                 unit_vector(transform.apply_vector(*circle_curve.ref_direction())?)?,

@@ -9,7 +9,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::tessellation::TessellationError;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
@@ -114,10 +114,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
 
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
-            let placed = placed_point(*transform, point.position())?;
-            point
-                .set_position(placed.get())
-                .map_err(|refusal| CodecError::Malformed(refusal.into()))?;
+            let placed = placed_point(*transform, point.finite_position())?;
+            point.set_finite_position(placed);
         }
     }
     for surface in &mut ir.model.surfaces {
@@ -226,11 +224,8 @@ fn sampled_edit_error(error: GeometryLayoutError) -> CodecError {
 }
 
 /// Places a point, refusing a placement that leaves the finite range.
-fn placed_point(transform: Transform, point: Point3) -> Result<FinitePoint3, CodecError> {
-    transform
-        .apply_point(point)
-        .and_then(FinitePoint3::new)
-        .ok_or_else(non_finite_point)
+fn placed_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, CodecError> {
+    point.transformed(transform).ok_or_else(non_finite_point)
 }
 
 /// Places a direction, refusing a placement that leaves the finite range.
@@ -263,7 +258,7 @@ fn transform_surface(
 ) -> Result<(), CodecError> {
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-            let origin = placed_point(transform, plane_surface.origin().get())?;
+            let origin = placed_point(transform, plane_surface.origin())?;
             let frame = placed_frame(
                 transform,
                 plane_surface.frame(),
@@ -272,7 +267,7 @@ fn transform_surface(
             *plane_surface = cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, frame);
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-            let origin = placed_point(transform, cylinder_surface.origin().get())?;
+            let origin = placed_point(transform, cylinder_surface.origin())?;
             let frame = placed_frame(
                 transform,
                 cylinder_surface.frame(),
@@ -285,7 +280,7 @@ fn transform_surface(
             );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-            let origin = placed_point(transform, cone_surface.origin().get())?;
+            let origin = placed_point(transform, cone_surface.origin())?;
             let frame = placed_frame(
                 transform,
                 cone_surface.frame(),
@@ -300,7 +295,7 @@ fn transform_surface(
             );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-            let center = placed_point(transform, sphere_surface.center().get())?;
+            let center = placed_point(transform, sphere_surface.center())?;
             let frame = placed_frame(
                 transform,
                 sphere_surface.frame(),
@@ -313,7 +308,7 @@ fn transform_surface(
             );
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-            let center = placed_point(transform, torus_surface.center().get())?;
+            let center = placed_point(transform, torus_surface.center())?;
             let frame = placed_frame(
                 transform,
                 torus_surface.frame(),
@@ -372,7 +367,7 @@ fn transform_surface(
 fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result<(), CodecError> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = placed_point(transform, line_curve.origin().get())?;
+            let origin = placed_point(transform, line_curve.origin())?;
             let direction =
                 UnitVector3::new(placed_vector(transform, *line_curve.direction().as_raw())?)
                     .ok_or_else(|| {
@@ -381,7 +376,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = placed_point(transform, circle_curve.center().get())?;
+            let center = placed_point(transform, circle_curve.center())?;
             let frame = placed_frame(
                 transform,
                 circle_curve.frame(),
@@ -394,7 +389,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = placed_point(transform, ellipse_curve.center().get())?;
+            let center = placed_point(transform, ellipse_curve.center())?;
             let frame = placed_frame(
                 transform,
                 ellipse_curve.frame(),
@@ -436,7 +431,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 .map_err(sampled_edit_error)?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-            let vertex = placed_point(transform, parabola_curve.vertex().get())?;
+            let vertex = placed_point(transform, parabola_curve.vertex())?;
             let frame = placed_frame(
                 transform,
                 parabola_curve.frame(),
@@ -449,7 +444,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = placed_point(transform, hyperbola_curve.center().get())?;
+            let center = placed_point(transform, hyperbola_curve.center())?;
             let frame = placed_frame(
                 transform,
                 hyperbola_curve.frame(),
@@ -463,7 +458,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             );
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let point = placed_point(transform, degenerate_curve.point().get())?;
+            let point = placed_point(transform, degenerate_curve.point())?;
             *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point);
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. }) => {}
@@ -487,6 +482,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
 mod tests {
     use super::{placed_point, placed_vector, transform_curve, transform_surface};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
     use cadmpeg_ir::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
     use cadmpeg_ir::geometry::{
@@ -506,8 +502,11 @@ mod tests {
 
     #[test]
     fn admitted_point_overflow_is_not_implemented() {
-        let error = placed_point(maximum_translation(), Point3::new(f64::MAX, 0.0, 0.0))
-            .expect_err("the admitted operands overflow");
+        let error = placed_point(
+            maximum_translation(),
+            FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).expect("a finite point"),
+        )
+        .expect_err("the admitted operands overflow");
         assert!(matches!(error, CodecError::NotImplemented(_)));
     }
 

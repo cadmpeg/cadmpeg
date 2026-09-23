@@ -6127,13 +6127,10 @@ fn apply_rigid_transform(
     geometry: CurveGeometry,
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
-    let point = |value: Point3| -> Result<FinitePoint3, CodecError> {
-        transform
-            .apply_point(value)
-            .and_then(FinitePoint3::new)
-            .ok_or_else(|| {
-                CodecError::malformed("transformed curve point has a non-finite coordinate")
-            })
+    let point = |value: FinitePoint3| -> Result<FinitePoint3, CodecError> {
+        value.transformed(transform).ok_or_else(|| {
+            CodecError::malformed("transformed curve point has a non-finite coordinate")
+        })
     };
     let vector = |value: Vector3, label: &str| -> Result<Vector3, CodecError> {
         let placed = transform.apply_vector(value).ok_or_else(|| {
@@ -6143,11 +6140,10 @@ fn apply_rigid_transform(
     };
     Ok(match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
-            let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    point(origin)?,
+                    point(line_curve.origin())?,
                     UnitVector3::new(vector(direction, "transformed line direction")?).ok_or_else(
                         || CodecError::malformed("LineCurve.direction must have unit length"),
                     )?,
@@ -6155,7 +6151,7 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = point(circle_curve.center().get())?;
+            let center = point(circle_curve.center())?;
             let frame = OrthonormalFrame3::new(
                 vector(*circle_curve.axis(), "transformed circle axis")?,
                 vector(
@@ -6177,7 +6173,7 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = point(ellipse_curve.center().get())?;
+            let center = point(ellipse_curve.center())?;
             let frame = OrthonormalFrame3::new(
                 vector(*ellipse_curve.axis(), "transformed ellipse axis")?,
                 vector(
@@ -6201,7 +6197,7 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
-            let vertex = point(parabola_curve.vertex().get())?;
+            let vertex = point(parabola_curve.vertex())?;
             let frame = OrthonormalFrame3::new(
                 vector(*parabola_curve.axis(), "transformed parabola axis")?,
                 vector(
@@ -6223,7 +6219,7 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
-            let center = point(hyperbola_curve.center().get())?;
+            let center = point(hyperbola_curve.center())?;
             let frame = OrthonormalFrame3::new(
                 vector(*hyperbola_curve.axis(), "transformed hyperbola axis")?,
                 vector(
@@ -6246,9 +6242,10 @@ fn apply_rigid_transform(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
-            let value = degenerate_curve.point().get();
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
-                cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point(value)?),
+                cadmpeg_ir::geometry::analytic::DegenerateCurve::new(point(
+                    degenerate_curve.point(),
+                )?),
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {

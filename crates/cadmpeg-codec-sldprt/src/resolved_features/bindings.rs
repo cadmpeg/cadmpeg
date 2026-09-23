@@ -750,7 +750,7 @@ fn mirror_plane_from_surface(
             let (origin, normal) = mirror_plane_from_surface(placed.basis())?;
             let transform = placed.transform();
             Some((
-                cadmpeg_ir::features::FinitePoint3::new(transform.apply_point(origin.get())?)?,
+                origin.transformed(*transform)?,
                 transform.apply_normal(normal)?,
             ))
         }
