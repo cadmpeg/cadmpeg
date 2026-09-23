@@ -1564,8 +1564,8 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         Point3::new(7.0, 0.0, 0.0),
         Point3::new(0.0, 7.0, 0.0),
-        *origin,
-        *direction,
+        line_pcurve.finite_origin(),
+        line_pcurve.nonzero_direction().into(),
     )
     .expect("torus circle range");
     assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
@@ -1622,8 +1622,8 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
         Vector3::new(1.0, 0.0, 0.0),
         start,
         end,
-        *origin,
-        *direction,
+        line_pcurve.finite_origin(),
+        line_pcurve.nonzero_direction().into(),
     )
     .expect("torus meridian circle range");
     assert_eq!(range, [0.0, long_sweep]);

@@ -4,6 +4,7 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength};
 #[cfg(feature = "schema")]
@@ -244,6 +245,44 @@ impl UnitVector3 {
     pub fn new(value: Vector3) -> Option<Self> {
         ((value.norm() - 1.0).abs() <= EPS_UNIT_FRAME).then_some(Self(value))
     }
+    /// The unit direction of `value`, as [`Vector3::unit`] computes it.
+    ///
+    /// [`Vector3::unit`] divides finite components, charted so the largest
+    /// magnitude is in `[0.5, 1)`, by their finite nonzero norm. Each quotient
+    /// is finite and within a few rounding errors of the exact unit
+    /// direction, so the norm is within rounding of one and the result keeps
+    /// the admission of [`Self::new`].
+    #[must_use]
+    pub fn normalized(value: Vector3) -> Option<Self> {
+        value.unit().map(Self)
+    }
+    /// Normalize three exact sums, each rescaled into the frame of the largest
+    /// exponent, and reverse them when `reversed` is set.
+    ///
+    /// The largest sum rescales to its mantissa, whose magnitude is in
+    /// `[0.5, 1)`, and every other sum to a magnitude below one. The squared
+    /// length is therefore in `[0.25, 3)`, its square root is finite and
+    /// nonzero, and the three quotients have a norm within rounding of one,
+    /// which keeps the admission of [`Self::new`]. The result is absent only
+    /// when every sum is zero.
+    pub(crate) fn from_exact_sums(
+        values: [Option<ScaledValue>; 3],
+        reversed: bool,
+    ) -> Option<Self> {
+        let scale_exponent = values
+            .iter()
+            .filter_map(|value| value.map(|value| value.exponent))
+            .max()?;
+        let orientation = if reversed { -1.0 } else { 1.0 };
+        let scaled = values
+            .map(|value| value.map_or(0.0, |value| orientation * value.scaled_by(scale_exponent)));
+        let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
+        Some(Self(Vector3::new(
+            scaled[0] / length,
+            scaled[1] / length,
+            scaled[2] / length,
+        )))
+    }
     /// Borrow the direction.
     pub const fn as_raw(&self) -> &Vector3 {
         &self.0
@@ -451,6 +490,13 @@ impl From<NonzeroPoint2> for Point2 {
         value.0
     }
 }
+impl From<NonzeroPoint2> for FinitePoint2 {
+    /// Carry an admitted direction as a point. The nonzero admission
+    /// requires finite coordinates, so no admission can refuse it.
+    fn from(value: NonzeroPoint2) -> Self {
+        Self(value.0)
+    }
+}
 
 impl FiniteVector<2> {
     /// Reverse coordinate order and signs.
@@ -462,9 +508,34 @@ impl FiniteVector<2> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FiniteVector, NonzeroVector, Tolerances};
+    use super::{FiniteVector, NonzeroVector, Tolerances, UnitVector3};
+    use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn a_normalized_direction_keeps_the_unit_admission() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e300, -1.0e300, 1.0e300),
+            Vector3::new(1.0e-10, 3.0e-10, -2.0e-310),
+            Vector3::new(f64::MAX, f64::MAX, f64::MAX),
+            Vector3::new(1.0, 1.0e-310, 0.0),
+        ] {
+            let unit = UnitVector3::normalized(value).expect("normalizable direction");
+            assert_eq!(Some(*unit.as_raw()), value.unit());
+            assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0e-300, 0.0, 0.0),
+            Vector3::new(f64::NAN, 1.0, 0.0),
+            Vector3::new(f64::INFINITY, 0.0, 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized(value), None);
+            assert_eq!(value.unit(), None);
+        }
+    }
 
     #[test]
     fn scalar_admission_matches_each_numeric_contract() {

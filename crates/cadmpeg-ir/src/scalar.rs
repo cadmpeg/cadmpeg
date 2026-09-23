@@ -239,6 +239,18 @@ impl Angle {
 impl NonNegativeLength {
     /// Zero in canonical units.
     pub const ZERO: Self = Self(0.0);
+
+    /// Assign the length family to a dimensionless nonnegative value in
+    /// canonical millimeters.
+    ///
+    /// The caller calls this route only where its own context states that
+    /// the value is a length, for example a tolerance that bounds model-space
+    /// distances. Both domains admit every finite nonnegative value, so the
+    /// assignment keeps the value and cannot refuse.
+    #[must_use]
+    pub const fn from_assigned_real(value: NonNegativeReal) -> Self {
+        Self(value.0)
+    }
 }
 
 impl PositiveReal {

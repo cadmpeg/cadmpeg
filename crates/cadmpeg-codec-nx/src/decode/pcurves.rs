@@ -32,6 +32,7 @@ use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point_with_budget, curve_second_derivative_with_budget,
     curve_tangent_with_budget, model_curve_point_by_id_with_budget,
     model_surface_partials_by_id_with_budget, nurbs_curve_speed_bound, nurbs_surface_isocurve,
+    nurbs_surface_parameter_within_nonnegative_tolerance_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point_with_budget,
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
@@ -1699,6 +1700,7 @@ fn exact_boundary_pcurve_with_index(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<PcurveGeometry> {
     (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    let nonnegative_tolerance = tolerance;
     let tolerance = tolerance.get();
     let carrier = index.surfaces(surface.as_str())?;
     if let Some(candidate) = exact_analytic_isocurve_pcurve_with_index_and_budget(
@@ -1845,18 +1847,18 @@ fn exact_boundary_pcurve_with_index(
         return None;
     }
     let parameters = [
-        nurbs_surface_parameter_within_tolerance_with_budget(
+        nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
             nurbs,
             endpoints[0],
             None,
-            tolerance,
+            nonnegative_tolerance,
             geometry_budget,
         )?,
-        nurbs_surface_parameter_within_tolerance_with_budget(
+        nurbs_surface_parameter_within_nonnegative_tolerance_with_budget(
             nurbs,
             endpoints[1],
             None,
-            tolerance,
+            nonnegative_tolerance,
             geometry_budget,
         )?,
     ];

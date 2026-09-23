@@ -256,6 +256,12 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/tessellation.rs", "Strip", "keyless"),
     ("crates/cadmpeg-ir/src/tessellation.rs", "Strips", "keyless"),
+    ("crates/cadmpeg-ir/src/transform.rs", "Transform", "keyless"),
+    (
+        "crates/cadmpeg-ir/src/transform.rs",
+        "Transform2",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/units.rs", "$name", "keyless"),
 ];
 

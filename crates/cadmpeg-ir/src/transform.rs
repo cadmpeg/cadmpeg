@@ -14,37 +14,30 @@ use crate::units::UnitVector3;
 /// The two stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and is
 /// neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform2 {
-    #[serde(deserialize_with = "deserialize_finite2")]
     rows: [[f64; 3]; 2],
 }
 
 const BOTTOM_ROW_2: [f64; 3] = [0.0, 0.0, 1.0];
 const BOTTOM_ROW_4: [f64; 4] = [0.0, 0.0, 0.0, 1.0];
 
-fn deserialize_finite2<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<[[f64; 3]; 2], D::Error> {
-    let rows = <[[f64; 3]; 2]>::deserialize(deserializer)?;
-    rows.iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        .then_some(rows)
-        .ok_or_else(|| serde::de::Error::custom("transform2 coefficients must be finite"))
+impl<'de> Deserialize<'de> for Transform2 {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let rows = <[[f64; 3]; 2]>::deserialize(deserializer)?;
+        Self::affine(rows)
+            .ok_or_else(|| serde::de::Error::custom("transform2 coefficients must be finite"))
+    }
 }
 
-fn deserialize_finite4<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<[[f64; 4]; 3], D::Error> {
-    let rows = <[[f64; 4]; 3]>::deserialize(deserializer)?;
-    rows.iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        .then_some(rows)
-        .ok_or_else(|| serde::de::Error::custom("transform coefficients must be finite"))
+impl<'de> Deserialize<'de> for Transform {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let rows = <[[f64; 4]; 3]>::deserialize(deserializer)?;
+        Self::affine(rows)
+            .ok_or_else(|| serde::de::Error::custom("transform coefficients must be finite"))
+    }
 }
 
 impl Default for Transform2 {
@@ -153,11 +146,10 @@ pub enum TransformError {
 /// The three stored rows preserve the source coefficients. The bottom row
 /// `[0, 0, 0, 1]` is a fact of the type: it is produced by [`Self::rows`] and
 /// is neither carried nor compared.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct Transform {
-    #[serde(deserialize_with = "deserialize_finite4")]
     rows: [[f64; 4]; 3],
 }
 
@@ -283,17 +275,17 @@ impl Transform {
         if !normal.is_finite() {
             return None;
         }
-        self.apply_finite_normal(normal)
+        self.apply_finite_normal(normal).map(Vector3::from)
     }
 
     /// Applies the inverse-transpose linear transform to an admitted unit
     /// normal and normalizes the result.
-    pub fn apply_unit_normal(self, normal: UnitVector3) -> Option<Vector3> {
+    pub fn apply_unit_normal(self, normal: UnitVector3) -> Option<UnitVector3> {
         self.apply_finite_normal(*normal.as_raw())
     }
 
     /// The inverse-transpose map of a normal with finite components.
-    fn apply_finite_normal(self, normal: Vector3) -> Option<Vector3> {
+    fn apply_finite_normal(self, normal: Vector3) -> Option<UnitVector3> {
         let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
         let determinant = linear_determinant(&matrix)?;
         let orientation = determinant.rescale(determinant.exponent())?.signum();
@@ -305,21 +297,7 @@ impl Transform {
             }
             sum.finish()
         });
-        let scale_exponent = values
-            .iter()
-            .filter_map(|value| value.map(|value| value.exponent))
-            .max()?;
-        let scaled = values
-            .map(|value| value.map_or(0.0, |value| orientation * value.scaled_by(scale_exponent)));
-        let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
-        if !length.is_finite() || length == 0.0 {
-            return None;
-        }
-        Some(Vector3::new(
-            scaled[0] / length,
-            scaled[1] / length,
-            scaled[2] / length,
-        ))
+        UnitVector3::from_exact_sums(values, orientation < 0.0)
     }
 
     /// Inverts a finite affine transform with a nonsingular linear component.
@@ -446,7 +424,9 @@ mod tests {
             ))
         );
         assert_eq!(
-            transform.apply_unit_normal(crate::units::UnitVector3::X_AXIS),
+            transform
+                .apply_unit_normal(crate::units::UnitVector3::X_AXIS)
+                .map(Vector3::from),
             transform.apply_normal(Vector3::new(1.0, 0.0, 0.0))
         );
         let mut rows = transform.affine_rows();
@@ -454,6 +434,72 @@ mod tests {
         let singular = Transform::affine(rows).expect("affine transform");
         assert_eq!(singular.try_inverse_affine(), Err(TransformError::Singular));
         assert!(singular.apply_normal(Vector3::new(1.0, 0.0, 0.0)).is_none());
+    }
+
+    #[test]
+    fn a_unit_normal_maps_to_an_admitted_unit_normal() {
+        use crate::units::UnitVector3;
+        let transform = Transform::affine([
+            [1.0e-300, 0.0, 0.0, 0.0],
+            [0.0, 1.0e300, 0.0, 0.0],
+            [0.3, 0.2, 7.0, 0.0],
+        ])
+        .expect("affine transform");
+        for normal in [
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+            UnitVector3::Z_AXIS,
+            UnitVector3::new(Vector3::new(0.6, 0.8, 0.0)).expect("unit normal"),
+        ] {
+            let mapped = transform
+                .apply_unit_normal(normal)
+                .expect("nonsingular linear component");
+            assert_eq!(UnitVector3::new(*mapped.as_raw()), Some(mapped));
+            assert_eq!(
+                transform.apply_normal(*normal.as_raw()),
+                Some(*mapped.as_raw())
+            );
+        }
+    }
+
+    #[test]
+    fn deserialization_admits_rows_through_the_affine_constructor() {
+        use serde::de::value::Error;
+        use serde::de::IntoDeserializer;
+        use serde::Deserialize;
+
+        fn from_rows<T: for<'de> Deserialize<'de>>(rows: Vec<Vec<f64>>) -> Result<T, Error> {
+            T::deserialize(rows.into_deserializer())
+        }
+        let rows = |value: f64| {
+            vec![
+                vec![1.0, 0.0, 0.0, value],
+                vec![0.0, 1.0, 0.0, 0.0],
+                vec![0.0, 0.0, 1.0, 0.0],
+            ]
+        };
+        assert_eq!(
+            from_rows::<Transform>(rows(2.0)).ok(),
+            Transform::affine([
+                [1.0, 0.0, 0.0, 2.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+        );
+        for value in [f64::NAN, f64::INFINITY] {
+            let error = from_rows::<Transform>(rows(value)).expect_err("non-finite coefficient");
+            assert_eq!(error.to_string(), "transform coefficients must be finite");
+        }
+
+        let rows2 = |value: f64| vec![vec![1.0, 0.0, value], vec![0.0, 1.0, 0.0]];
+        assert_eq!(
+            from_rows::<Transform2>(rows2(2.0)).ok(),
+            Transform2::affine([[1.0, 0.0, 2.0], [0.0, 1.0, 0.0]])
+        );
+        for value in [f64::NAN, f64::NEG_INFINITY] {
+            let error = from_rows::<Transform2>(rows2(value)).expect_err("non-finite coefficient");
+            assert_eq!(error.to_string(), "transform2 coefficients must be finite");
+        }
     }
 
     #[test]

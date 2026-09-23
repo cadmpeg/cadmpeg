@@ -209,6 +209,20 @@ impl LinePcurve {
     pub const fn direction(&self) -> &Point2 {
         self.direction.as_raw()
     }
+
+    /// Return the admitted origin. A caller that passes it on keeps the
+    /// finiteness guarantee and performs no new admission.
+    #[must_use]
+    pub const fn finite_origin(&self) -> FinitePoint2 {
+        self.origin
+    }
+
+    /// Return the admitted direction. A caller that passes it on keeps the
+    /// finite nonzero guarantee and performs no new admission.
+    #[must_use]
+    pub const fn nonzero_direction(&self) -> NonzeroPoint2 {
+        self.direction
+    }
 }
 
 impl TryFrom<LinePcurveWire> for LinePcurve {

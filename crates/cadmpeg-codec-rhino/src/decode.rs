@@ -5474,12 +5474,13 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             let source_origin = plane_surface.origin().get();
             let u_axis = *plane_surface.u_axis();
             let origin = placed_finite_point(transform, plane_surface.origin())?;
-            let normal = transform
+            let unit_normal = transform
                 .apply_unit_normal(plane_surface.frame().unit_axis())
                 .ok_or_else(|| {
                     "instance plane normal transform could not produce a finite unit normal"
                         .to_string()
                 })?;
+            let normal = *unit_normal.as_raw();
             let endpoint = placed_point(
                 transform,
                 Point3::new(
@@ -5506,14 +5507,12 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::new(
                     origin,
-                    OrthonormalFrame3::new(
-                        normal,
-                        cadmpeg_ir::math::Vector3::new(
-                            value.x / length,
-                            value.y / length,
-                            value.z / length,
-                        ),
-                    )
+                    UnitVector3::new(cadmpeg_ir::math::Vector3::new(
+                        value.x / length,
+                        value.y / length,
+                        value.z / length,
+                    ))
+                    .and_then(|u_axis| OrthonormalFrame3::from_units(unit_normal, u_axis))
                     .ok_or("PlaneSurface.normal/u_axis must form an orthonormal frame")?,
                 ),
             ))

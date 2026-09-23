@@ -42,7 +42,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::NonNegativeReal;
+use cadmpeg_ir::scalar::{NonNegativeLength, NonNegativeReal};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
 };
@@ -659,7 +659,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         &support,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
-        0.001,
+        NonNegativeLength::new(0.001).expect("nonnegative tolerance"),
     )
     .expect("whole-patch fit");
     assert!((fit - 0.000_5).abs() < 1.0e-12);
@@ -667,7 +667,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         &support,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
-        0.000_4
+        NonNegativeLength::new(0.000_4).expect("nonnegative tolerance")
     )
     .is_none());
 }
@@ -783,7 +783,7 @@ fn offset_cache_fit_accepts_higher_degree_translation_nets() {
             &quadratic_translation_surface(0.0),
             &quadratic_translation_surface(4.0),
             4.0,
-            0.0
+            NonNegativeLength::ZERO
         ),
         Some(0.0)
     );
@@ -843,7 +843,7 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     };
 
     assert_eq!(
-        certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &candidate, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
@@ -854,7 +854,7 @@ fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
         &affine_nurbs_surface(0.0),
         &degree_elevated_affine_surface(4.0),
         4.0,
-        0.1,
+        NonNegativeLength::new(0.1).expect("nonnegative tolerance"),
     )
     .expect("degree-elevated cache fit");
     assert!(bound <= 0.1);
@@ -864,11 +864,16 @@ fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
 fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
     let support = quadratic_paraboloid_surface();
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
-    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
-        .expect("nonzero curved offset certified");
+    let bound = certified_offset_cache_fit(
+        &support,
+        &support,
+        0.01,
+        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+    )
+    .expect("nonzero curved offset certified");
     assert!((0.01..=0.02).contains(&bound));
 }
 
@@ -894,8 +899,13 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
         .unwrap(),
     ));
 
-    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
-        .expect("each regular knot span certifies independently");
+    let bound = certified_offset_cache_fit(
+        &support,
+        &support,
+        0.01,
+        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+    )
+    .expect("each regular knot span certifies independently");
     assert!((0.01..=0.02).contains(&bound));
 }
 
@@ -921,8 +931,13 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
         .unwrap(),
     ));
 
-    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
-        .expect("regular spans certify across the C0 knot break");
+    let bound = certified_offset_cache_fit(
+        &support,
+        &support,
+        0.01,
+        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+    )
+    .expect("regular spans certify across the C0 knot break");
     assert!((0.01..=0.02).contains(&bound));
 }
 
@@ -945,7 +960,13 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
             Ok(())
         })
         .unwrap();
-    assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
+    assert!(certified_offset_cache_fit(
+        &support,
+        &support,
+        0.0,
+        NonNegativeLength::new(1.0).expect("nonnegative tolerance")
+    )
+    .is_none());
 }
 
 #[test]
@@ -965,7 +986,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
         })
         .unwrap();
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
@@ -998,7 +1019,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
 
     assert!(translation_net_normal(surface).is_none());
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
@@ -1052,10 +1073,16 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     .unwrap();
 
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
-    assert!(certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
+    assert!(certified_offset_cache_fit(
+        &support,
+        &support,
+        0.01,
+        NonNegativeLength::new(0.02).expect("nonnegative tolerance")
+    )
+    .is_some());
 }
 
 #[test]
@@ -1098,8 +1125,13 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     }
     .unwrap();
 
-    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
-        .expect("absolute placement does not widen rational derivative bounds");
+    let bound = certified_offset_cache_fit(
+        &support,
+        &support,
+        0.01,
+        NonNegativeLength::new(0.02).expect("nonnegative tolerance"),
+    )
+    .expect("absolute placement does not widen rational derivative bounds");
     assert!(bound <= 0.02);
 }
 

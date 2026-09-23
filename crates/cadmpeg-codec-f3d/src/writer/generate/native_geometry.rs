@@ -11,6 +11,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
 use super::native_bytes::{
@@ -928,7 +929,7 @@ fn native_procedural_surface_definition(
             let axis_direction = definition_payload.axis_direction();
             let angular_interval = definition_payload.angular_interval();
             let angular_parameter_interval = definition_payload.angular_parameter_interval();
-            let parameter_interval = definition_payload.parameter_interval();
+            let parameter_interval = definition_payload.increasing_parameter_interval();
             let transposed = definition_payload.transposed();
             let revision_form = definition_payload.revision_form();
             {
@@ -992,7 +993,7 @@ fn native_procedural_surface_definition(
                             procedural.id
                         ))
                     })?;
-                let directrix = native_interval_curve(
+                let directrix = native_increasing_interval_curve(
                     directrix.geometry.solved().ok_or_else(|| {
                         CodecError::NotImplemented(
                             "source-less F3D carrier has no solved geometry".into(),
@@ -1000,6 +1001,7 @@ fn native_procedural_surface_definition(
                     })?,
                     parameter_interval,
                 )?;
+                let parameter_interval = parameter_interval.endpoints();
                 let native_parameter_interval = [
                     directrix.knots().first().copied().unwrap_or(0.0),
                     directrix.knots().last().copied().unwrap_or(0.0),
@@ -4367,12 +4369,19 @@ fn native_interval_curve(
     geometry: &SolvedCurveGeometry,
     parameter_range: [f64; 2],
 ) -> Result<NurbsCurve, CodecError> {
-    if !parameter_range.into_iter().all(f64::is_finite) || parameter_range[0] >= parameter_range[1]
-    {
-        return Err(CodecError::NotImplemented(
+    let parameter_range = IncreasingParameterInterval::new(parameter_range).ok_or_else(|| {
+        CodecError::NotImplemented(
             "source-less F3D interval curve requires a finite ordered range".into(),
-        ));
-    }
+        )
+    })?;
+    native_increasing_interval_curve(geometry, parameter_range)
+}
+
+fn native_increasing_interval_curve(
+    geometry: &SolvedCurveGeometry,
+    parameter_range: IncreasingParameterInterval,
+) -> Result<NurbsCurve, CodecError> {
+    let parameter_range = parameter_range.endpoints();
     match geometry {
         SolvedCurveGeometry::Nurbs(curve) => Ok(curve.clone()),
         SolvedCurveGeometry::Line(line_curve) => {

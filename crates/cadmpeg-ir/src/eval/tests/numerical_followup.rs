@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
     direct_curve_parameter_near_point, map_nurbs_curve_parameter, nurbs_curve_parameter_near_point,
-    nurbs_curve_speed_bound, nurbs_pcurve_contains_point, nurbs_surface_parameter_near_point,
-    scalar_sweep_law_differential, scalar_unary_sweep_law_differential, ScalarSweepDifferential,
+    nurbs_curve_parameter_near_point_with_nonnegative_tolerance, nurbs_curve_speed_bound,
+    nurbs_pcurve_contains_point, nurbs_surface_parameter_near_point, scalar_sweep_law_differential,
+    scalar_unary_sweep_law_differential, ScalarSweepDifferential,
 };
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::{
@@ -49,6 +50,33 @@ fn numerical_followup_curve_search_rejects_a_nonzero_zero_tolerance_residual() {
     assert_eq!(
         nurbs_curve_parameter_near_point(&curve, Point3::new(0., 1e-200, 0.), 0., 0.),
         None
+    );
+}
+
+#[test]
+fn curve_search_admits_its_tolerance_before_the_search() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+        None,
+        false,
+    )
+    .unwrap();
+    let point = Point3::new(0.25, 1e-3, 0.);
+    for tolerance in [-1e-3, f64::NAN, f64::INFINITY] {
+        assert_eq!(
+            nurbs_curve_parameter_near_point(&curve, point, tolerance, 0.5),
+            None
+        );
+    }
+    let tolerance = crate::scalar::NonNegativeLength::new(2e-3).unwrap();
+    let parameter =
+        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, 0.5);
+    assert!(parameter.is_some());
+    assert_eq!(
+        parameter,
+        nurbs_curve_parameter_near_point(&curve, point, tolerance.get(), 0.5)
     );
 }
 
@@ -170,7 +198,12 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
         .unwrap(),
     );
     assert_eq!(
-        direct_curve_parameter_near_point(&line, Point3::new(0., 1e-200, 0.), 0., 0.),
+        direct_curve_parameter_near_point(
+            &line,
+            Point3::new(0., 1e-200, 0.),
+            0.,
+            crate::scalar::NonNegativeLength::ZERO,
+        ),
         None
     );
 }

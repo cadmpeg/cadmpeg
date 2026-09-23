@@ -19,6 +19,7 @@ use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell,
     Vertex,
 };
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -2493,19 +2494,25 @@ fn e5_boundary_curve(
     };
     let origin = line_pcurve.origin();
     let direction = line_pcurve.direction();
-    let start_uv = Point2::new(
-        origin.u + range[0] * direction.u,
-        origin.v + range[0] * direction.v,
-    );
     let span = range[1] - range[0];
-    let span_direction = Point2::new(span * direction.u, span * direction.v);
-    if !start_uv.is_finite() || !span.is_finite() || !span_direction.is_finite() {
+    let (Some(start_uv), true, Some(span_direction)) = (
+        FinitePoint2::new(Point2::new(
+            origin.u + range[0] * direction.u,
+            origin.v + range[0] * direction.v,
+        )),
+        span.is_finite(),
+        FinitePoint2::new(Point2::new(span * direction.u, span * direction.v)),
+    ) else {
         return None;
-    }
+    };
 
     let circle = match e5_isoparametric_direction(*direction) {
-        Some(E5IsoparametricDirection::ConstantV) => e5_constant_v_circle(surface, start_uv.v),
-        Some(E5IsoparametricDirection::ConstantU) => e5_constant_u_circle(surface, start_uv.u),
+        Some(E5IsoparametricDirection::ConstantV) => {
+            e5_constant_v_circle(surface, start_uv.as_raw().v)
+        }
+        Some(E5IsoparametricDirection::ConstantU) => {
+            e5_constant_u_circle(surface, start_uv.as_raw().u)
+        }
         None => None,
     };
     if let Some((center, radius, axis)) = circle {

@@ -9248,8 +9248,6 @@ fn standard_circle_param_range(
         else {
             return None;
         };
-        let origin = line_pcurve.origin();
-        let direction = line_pcurve.direction();
         circle_parameter_range_from_surface_branch(
             &surface.geometry,
             center,
@@ -9258,8 +9256,8 @@ fn standard_circle_param_range(
             ref_direction,
             start,
             end,
-            *origin,
-            *direction,
+            line_pcurve.finite_origin(),
+            line_pcurve.nonzero_direction().into(),
         )
     });
     let range = ranges.next()?;

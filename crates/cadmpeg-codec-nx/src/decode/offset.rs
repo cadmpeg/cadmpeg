@@ -25,6 +25,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::{NonNegativeLength, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod sample_count;
@@ -46,10 +47,9 @@ pub(super) fn saved_offset_carriers(
     graph: &Graph,
     offsets: &[crate::topology::OffsetSurface],
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    tolerance: cadmpeg_ir::scalar::PositiveLength,
+    tolerance: PositiveLength,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> BTreeMap<u32, (SurfaceId, f64)> {
-    let tolerance = tolerance.get();
     let face_surfaces = graph
         .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
@@ -103,7 +103,7 @@ pub(super) fn saved_offset_carriers(
                 support_id.clone(),
                 (*candidate_id).clone(),
                 offset.state.distance().to_bits(),
-                tolerance.to_bits(),
+                tolerance.get().to_bits(),
             );
             let fit = if let Some(fit) = fit_cache.get(&key).copied() {
                 fit
@@ -112,7 +112,7 @@ pub(super) fn saved_offset_carriers(
                     support,
                     candidate,
                     offset.state.distance(),
-                    tolerance,
+                    NonNegativeLength::from(tolerance),
                     geometry_budget,
                 );
                 if fit_cache.len() < MAX_OFFSET_FIT_CACHE_ENTRIES {
@@ -150,7 +150,7 @@ pub(super) fn certified_offset_cache_fit(
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
-    tolerance: f64,
+    tolerance: NonNegativeLength,
 ) -> Option<f64> {
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     certified_offset_cache_fit_with_budget(
@@ -166,9 +166,10 @@ fn certified_offset_cache_fit_with_budget(
     support: &SurfaceGeometry,
     candidate: &SurfaceGeometry,
     distance: f64,
-    tolerance: f64,
+    tolerance: NonNegativeLength,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
+    let tolerance = tolerance.get();
     let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)),
@@ -183,11 +184,7 @@ fn certified_offset_cache_fit_with_budget(
             .is_some_and(|(support, candidate)| support == candidate)
         && positive_weights(support.pole_weights())
         && positive_weights(candidate.pole_weights());
-    if !compatible_parameterization
-        || !distance.is_finite()
-        || !tolerance.is_finite()
-        || tolerance < 0.0
-    {
+    if !compatible_parameterization || !distance.is_finite() {
         return None;
     }
     let same_basis = candidate.u_degree() == support.u_degree()
@@ -2316,6 +2313,7 @@ mod tests {
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::NonNegativeLength;
     use std::collections::BTreeSet;
 
     #[test]
@@ -2405,10 +2403,14 @@ mod tests {
         let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
         let budget = GeometryWorkBudget::new(200);
 
-        assert!(
-            certified_offset_cache_fit_with_budget(&support, &candidate, 0.0, 0.01, &budget,)
-                .is_none()
-        );
+        assert!(certified_offset_cache_fit_with_budget(
+            &support,
+            &candidate,
+            0.0,
+            NonNegativeLength::new(0.01).expect("nonnegative tolerance"),
+            &budget,
+        )
+        .is_none());
         assert!(budget.consumed() > 0);
         assert!(!budget.exhausted());
     }
