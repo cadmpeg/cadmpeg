@@ -736,12 +736,13 @@ fn generate_nx_seeds() -> Result<(), SeedError> {
 
 mod nx {
     use cadmpeg_core::CodecError;
-    use cadmpeg_fuzz::seeds::nx::{put_f64, put_vec3, record, single_part_prt_with_partition};
+    use cadmpeg_fuzz::seeds::nx::{
+        put_f64, put_ref, put_vec3, record, single_part_prt_with_partition,
+    };
 
-    fn put_ref(rec: &mut [u8], at: usize, value: u16) {
-        rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
-    }
-
+    /// A connected sheet: body, shell, one face on a plane, one loop with a
+    /// one-fin ring, one edge on a line, one vertex on a point, and the
+    /// shell's region. Face, edge and vertex carry their tolerances.
     fn topology_partition_stream() -> Result<Vec<u8>, CodecError> {
         let mut s = Vec::new();
         s.extend_from_slice(b"PS\x00\x00");
@@ -755,12 +756,21 @@ mod nx {
 
         let mut shell = record(13, 24)?;
         put_ref(&mut shell, 2, 3);
+        put_ref(&mut shell, 8, 1);
         put_ref(&mut shell, 10, 2);
+        put_ref(&mut shell, 12, 1);
         put_ref(&mut shell, 14, 4);
+        put_ref(&mut shell, 16, 1);
+        put_ref(&mut shell, 18, 1);
+        put_ref(&mut shell, 20, 12);
+        put_ref(&mut shell, 22, 1);
         s.extend_from_slice(&shell);
 
         let mut face = record(14, 39)?;
         put_ref(&mut face, 2, 4);
+        put_f64(&mut face, 10, 0.000_2);
+        put_ref(&mut face, 18, 1);
+        put_ref(&mut face, 20, 1);
         put_ref(&mut face, 22, 5);
         put_ref(&mut face, 24, 3);
         put_ref(&mut face, 26, 6);
@@ -771,6 +781,7 @@ mod nx {
         put_ref(&mut loop_, 2, 5);
         put_ref(&mut loop_, 10, 7);
         put_ref(&mut loop_, 12, 4);
+        put_ref(&mut loop_, 14, 1);
         s.extend_from_slice(&loop_);
 
         let mut fin = record(17, 23)?;
@@ -779,6 +790,7 @@ mod nx {
         put_ref(&mut fin, 8, 7);
         put_ref(&mut fin, 10, 7);
         put_ref(&mut fin, 12, 10);
+        put_ref(&mut fin, 14, 1);
         put_ref(&mut fin, 16, 8);
         put_ref(&mut fin, 18, 9);
         fin[22] = b'+';
@@ -786,12 +798,14 @@ mod nx {
 
         let mut edge = record(16, 32)?;
         put_ref(&mut edge, 2, 8);
+        put_f64(&mut edge, 10, 0.000_3);
         put_ref(&mut edge, 18, 7);
         put_ref(&mut edge, 24, 9);
         s.extend_from_slice(&edge);
 
         let mut plane = record(50, 91)?;
         put_ref(&mut plane, 2, 6);
+        plane[18] = b'+';
         put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
         put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
@@ -799,6 +813,7 @@ mod nx {
 
         let mut line = record(30, 67)?;
         put_ref(&mut line, 2, 9);
+        line[18] = b'+';
         put_vec3(&mut line, 19, [0.0, 0.0, 0.0]);
         put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
         s.extend_from_slice(&line);
@@ -806,7 +821,12 @@ mod nx {
         let mut vertex = record(18, 28)?;
         put_ref(&mut vertex, 2, 10);
         put_ref(&mut vertex, 16, 11);
+        put_f64(&mut vertex, 18, 0.000_1);
         s.extend_from_slice(&vertex);
+
+        let mut region = record(19, 16)?;
+        put_ref(&mut region, 2, 12);
+        s.extend_from_slice(&region);
 
         let mut point = record(29, 40)?;
         put_ref(&mut point, 2, 11);
@@ -821,6 +841,7 @@ mod nx {
         s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
         let mut surface = record(124, 23)?;
         put_ref(&mut surface, 2, 10);
+        surface[18] = b'+';
         put_ref(&mut surface, 19, 20);
         put_ref(&mut surface, 21, 21);
         s.extend(surface);
@@ -877,6 +898,7 @@ mod nx {
 
         let mut curve = record(134, 23)?;
         put_ref(&mut curve, 2, 50);
+        curve[18] = b'+';
         put_ref(&mut curve, 19, 40);
         put_ref(&mut curve, 21, 41);
         s.extend(curve);
@@ -918,5 +940,110 @@ mod nx {
     }
     pub(super) fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
         single_part_prt_with_partition(&bspline_partition_stream()?)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::Cursor;
+
+        use cadmpeg_codec_nx::NxCodec;
+        use cadmpeg_core::decode::InspectOptions;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+        use cadmpeg_ir::geometry::{
+            CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+        };
+
+        /// Inspect and decode one seed. The container must catalogue the
+        /// `/Root/UG_PART/UG_PART` file entry and inflate exactly one
+        /// Parasolid partition stream from it.
+        fn decode_single_partition(bytes: &[u8]) -> DecodeResult {
+            let summary = NxCodec
+                .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
+                .expect("the container passes its directory stage");
+            let part = summary
+                .entries
+                .iter()
+                .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+                .expect("the HEADER directory catalogues the part payload");
+            assert!(part.attributes.contains_key("file_offset"));
+            let partitions = summary
+                .entries
+                .iter()
+                .filter(|entry| {
+                    entry.name.starts_with("parasolid#")
+                        && entry.attributes.get("kind").map(String::as_str) == Some("partition")
+                })
+                .count();
+            assert_eq!(partitions, 1);
+            NxCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("the partition decodes")
+        }
+
+        #[test]
+        fn single_part_seed_decodes_its_analytic_carriers() {
+            let bytes = cadmpeg_fuzz::seeds::nx::single_part_prt().expect("single_part seed");
+            let result = decode_single_partition(&bytes);
+            let model = &result.ir().model;
+            assert_eq!(model.points.len(), 1);
+            let surface_count = |kind: fn(&SolvedSurfaceGeometry) -> bool| {
+                model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| {
+                        matches!(&surface.geometry, SurfaceGeometry::Solved(solved) if kind(solved))
+                    })
+                    .count()
+            };
+            assert_eq!(
+                surface_count(|s| matches!(s, SolvedSurfaceGeometry::Plane(_))),
+                1
+            );
+            assert_eq!(
+                surface_count(|s| matches!(s, SolvedSurfaceGeometry::Cylinder(_))),
+                1
+            );
+            assert_eq!(
+                model
+                    .curves
+                    .iter()
+                    .filter(|curve| matches!(
+                        curve.geometry,
+                        CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+                    ))
+                    .count(),
+                1
+            );
+        }
+
+        #[test]
+        fn topology_part_seed_decodes_its_connected_sheet() {
+            let bytes = super::topology_part_prt().expect("topology_part seed");
+            let result = decode_single_partition(&bytes);
+            let model = &result.ir().model;
+            assert_eq!(model.bodies.len(), 1);
+            assert_eq!(model.regions.len(), 1);
+            assert_eq!(model.shells.len(), 1);
+            assert_eq!(model.faces.len(), 1);
+            assert_eq!(model.loops.len(), 1);
+            assert_eq!(model.coedges.len(), 1);
+            assert_eq!(model.edges.len(), 1);
+            assert_eq!(model.vertices.len(), 1);
+        }
+
+        #[test]
+        fn bspline_part_seed_decodes_its_nurbs_surface_and_curve() {
+            let bytes = super::bspline_part_prt().expect("bspline_part seed");
+            let result = decode_single_partition(&bytes);
+            let model = &result.ir().model;
+            assert!(model.surfaces.iter().any(|surface| matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+            )));
+            assert!(model.curves.iter().any(|curve| matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
+            )));
+        }
     }
 }
