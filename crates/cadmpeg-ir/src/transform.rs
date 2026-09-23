@@ -5,7 +5,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::math::sum::{fast_dot, finite_dot, scaled_finite, ExactSignedSum, ScaledValue};
+use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
 
 /// A row-major affine transform applied to two-dimensional geometry.
@@ -100,19 +100,57 @@ impl Transform2 {
 
     /// Applies this affine transform to a two-dimensional point.
     pub fn apply_point(self, point: Point2) -> Point2 {
-        Point2::new(
-            self.rows[0][0] * point.u + self.rows[0][1] * point.v + self.rows[0][2],
-            self.rows[1][0] * point.u + self.rows[1][1] * point.v + self.rows[1][2],
-        )
+        let components = [point.u, point.v, 1.0];
+        let apply = |row: [f64; 3]| {
+            finite_dot(row, components)
+                .unwrap_or_else(|| row[0] * point.u + row[1] * point.v + row[2])
+        };
+        Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
 
     /// Applies this transform's linear component to a two-dimensional vector.
     pub fn apply_vector(self, vector: Point2) -> Point2 {
-        Point2::new(
-            self.rows[0][0] * vector.u + self.rows[0][1] * vector.v,
-            self.rows[1][0] * vector.u + self.rows[1][1] * vector.v,
-        )
+        let components = [vector.u, vector.v];
+        let apply = |row: [f64; 3]| {
+            finite_dot([row[0], row[1]], components)
+                .unwrap_or_else(|| row[0] * vector.u + row[1] * vector.v)
+        };
+        Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
+}
+
+/// Add one cyclic cofactor multiplied by a finite scalar. Cyclic row and
+/// column order includes the alternating cofactor sign.
+fn add_cofactor_product(
+    sum: &mut ExactSignedSum,
+    matrix: &[[f64; 3]; 3],
+    row: usize,
+    column: usize,
+    factor: f64,
+) {
+    let r1 = (row + 1) % 3;
+    let r2 = (row + 2) % 3;
+    let c1 = (column + 1) % 3;
+    let c2 = (column + 2) % 3;
+    sum.add_factors([matrix[r1][c1], matrix[r2][c2], factor]);
+    sum.add_factors([-matrix[r1][c2], matrix[r2][c1], factor]);
+}
+
+/// Exact-product determinant of a finite 3×3 linear component.
+fn linear_determinant(matrix: &[[f64; 3]; 3]) -> Option<ScaledValue> {
+    let [a, b, c] = matrix;
+    let mut determinant = ExactSignedSum::default();
+    for factors in [
+        [a[0], b[1], c[2]],
+        [a[1], b[2], c[0]],
+        [a[2], b[0], c[1]],
+        [-a[0], b[2], c[1]],
+        [-a[1], b[0], c[2]],
+        [-a[2], b[1], c[0]],
+    ] {
+        determinant.add_factors(factors);
+    }
+    determinant.finish()
 }
 
 /// Failure to compute a finite affine transform.
@@ -257,19 +295,8 @@ impl Transform {
     /// Sign of the linear determinant; absent for a singular map.
     /// Products retain their exponent range until cancellation is complete.
     pub fn orientation(self) -> Option<f64> {
-        let [a, b, c] = self.rows;
-        let mut determinant = ExactSignedSum::default();
-        for factors in [
-            [a[0], b[1], c[2]],
-            [a[1], b[2], c[0]],
-            [a[2], b[0], c[1]],
-            [-a[0], b[2], c[1]],
-            [-a[1], b[0], c[2]],
-            [-a[2], b[1], c[0]],
-        ] {
-            determinant.add_factors(factors);
-        }
-        let value = determinant.finish()?;
+        let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
+        let value = linear_determinant(&matrix)?;
         Some(value.rescale(value.exponent())?.signum())
     }
 
@@ -278,30 +305,23 @@ impl Transform {
         if !normal.is_finite() {
             return None;
         }
-        let inverse = self.inverse_linear().ok()?;
+        let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
+        let determinant = linear_determinant(&matrix)?;
+        let orientation = determinant.rescale(determinant.exponent())?.signum();
         let components = [normal.x, normal.y, normal.z];
-        let values: [Option<ScaledValue>; 3] = std::array::from_fn(|column| {
-            let coefficients = [inverse[0][column], inverse[1][column], inverse[2][column]];
-            let products = [
-                coefficients[0] * components[0],
-                coefficients[1] * components[1],
-                coefficients[2] * components[2],
-            ];
-            fast_dot(coefficients, components, products)
-                .and_then(scaled_finite)
-                .or_else(|| {
-                    let mut sum = ExactSignedSum::default();
-                    for (coefficient, component) in coefficients.into_iter().zip(components) {
-                        sum.add_product(coefficient, component);
-                    }
-                    sum.finish()
-                })
+        let values: [Option<ScaledValue>; 3] = std::array::from_fn(|row| {
+            let mut sum = ExactSignedSum::default();
+            for (column, component) in components.into_iter().enumerate() {
+                add_cofactor_product(&mut sum, &matrix, row, column, component);
+            }
+            sum.finish()
         });
         let scale_exponent = values
             .iter()
             .filter_map(|value| value.map(|value| value.exponent))
             .max()?;
-        let scaled = values.map(|value| value.map_or(0.0, |value| value.scaled_by(scale_exponent)));
+        let scaled = values
+            .map(|value| value.map_or(0.0, |value| orientation * value.scaled_by(scale_exponent)));
         let length = scaled.iter().map(|value| value * value).sum::<f64>().sqrt();
         if !length.is_finite() || length == 0.0 {
             return None;
@@ -328,64 +348,19 @@ impl Transform {
     }
 
     fn inverse_linear(self) -> Result<[[f64; 3]; 3], TransformError> {
-        let mut matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
-        let mut inverse = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
-        let mut columns = [0, 1, 2];
-        // Full pivoting avoids multiplying source coefficients into a determinant.
-        for column in 0..3 {
-            let mut pivot_row = column;
-            let mut pivot_column = column;
-            for row in column..3 {
-                for candidate in column..3 {
-                    if matrix[row][candidate].abs() > matrix[pivot_row][pivot_column].abs() {
-                        pivot_row = row;
-                        pivot_column = candidate;
-                    }
-                }
-            }
-            let pivot = matrix[pivot_row][pivot_column];
-            if pivot == 0.0 {
-                return Err(TransformError::Singular);
-            }
-            matrix.swap(column, pivot_row);
-            inverse.swap(column, pivot_row);
-            for row in &mut matrix {
-                row.swap(column, pivot_column);
-            }
-            columns.swap(column, pivot_column);
-            for value in &mut matrix[column] {
-                *value /= pivot;
-            }
-            for value in &mut inverse[column] {
-                *value /= pivot;
-            }
-            for row in 0..3 {
-                if row == column {
-                    continue;
-                }
-                let factor = matrix[row][column];
-                for entry in 0..3 {
-                    matrix[row][entry] =
-                        (-factor).mul_add(matrix[column][entry], matrix[row][entry]);
-                    inverse[row][entry] =
-                        (-factor).mul_add(inverse[column][entry], inverse[row][entry]);
-                }
-                matrix[row][column] = 0.0;
-            }
-            if !matrix
-                .iter()
-                .chain(&inverse)
-                .flatten()
-                .all(|value| value.is_finite())
-            {
-                return Err(TransformError::NonFinite);
+        let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
+        let determinant = linear_determinant(&matrix).ok_or(TransformError::Singular)?;
+        let mut inverse = [[0.0; 3]; 3];
+        for (row, entries) in inverse.iter_mut().enumerate() {
+            for (column, entry) in entries.iter_mut().enumerate() {
+                let mut cofactor = ExactSignedSum::default();
+                add_cofactor_product(&mut cofactor, &matrix, column, row, 1.0);
+                *entry = cofactor.finish().map_or(Ok(0.0), |value| {
+                    value.quotient(determinant).ok_or(TransformError::NonFinite)
+                })?;
             }
         }
-        let mut rows = [[0.0; 3]; 3];
-        for (row, source) in columns.into_iter().zip(inverse) {
-            rows[row] = source;
-        }
-        Ok(rows)
+        Ok(inverse)
     }
 }
 

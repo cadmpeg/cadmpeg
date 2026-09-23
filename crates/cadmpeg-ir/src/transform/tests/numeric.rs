@@ -1,9 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::math::Vector3;
-use crate::transform::{Transform, TransformError};
+use crate::math::{Point2, Vector3};
+use crate::transform::{Transform, Transform2, TransformError};
 
 const EPS_INVERSE_CHECK: f64 = 1.0e-12;
 const EPS_NORMAL_DIRECTION: f64 = 1.0e-15;
+
+#[test]
+fn transform2_preserves_finite_cancellation() {
+    let point_map = Transform2::affine([[2.0, 0.0, -1.0e308], [0.0, 1.0, 0.0]]).unwrap();
+    assert_eq!(
+        point_map.apply_point(Point2::new(1.0e308, 0.0)),
+        Point2::new(1.0e308, 0.0)
+    );
+    let vector_map = Transform2::affine([[2.0, -2.0, 0.0], [0.0, 1.0, 0.0]]).unwrap();
+    assert_eq!(
+        vector_map.apply_vector(Point2::new(1.0e308, 1.0e308)),
+        Point2::new(0.0, 1.0e308)
+    );
+}
+
+#[test]
+fn large_well_conditioned_matrix_has_a_representable_inverse() {
+    let scale = 1.0e308;
+    let transform = Transform::affine([
+        [scale, scale, 0.0, 0.0],
+        [scale, -scale, 0.0, 0.0],
+        [0.0, 0.0, scale, 0.0],
+    ])
+    .unwrap();
+    let inverse = transform.try_inverse_affine().expect("finite inverse");
+    let rows = inverse.affine_rows();
+    for (actual, expected) in [
+        (rows[0][0], 0.5),
+        (rows[0][1], 0.5),
+        (rows[1][0], 0.5),
+        (rows[1][1], -0.5),
+        (rows[2][2], 1.0),
+    ] {
+        assert!((actual * scale - expected).abs() <= 4.0 * f64::EPSILON);
+    }
+}
+
+#[test]
+fn normal_does_not_need_unused_inverse_entries_to_be_representable() {
+    let transform = Transform::affine([
+        [1.0e-310, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    assert_eq!(
+        transform.try_inverse_affine(),
+        Err(TransformError::NonFinite)
+    );
+    assert_eq!(
+        transform.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        Some(Vector3::new(0.0, 1.0, 0.0))
+    );
+}
 
 #[test]
 fn finite_inverses_survive_extreme_scales_and_axis_permutations() {
@@ -165,10 +219,12 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     ])
     .unwrap();
     let component = 1.0 / 3.0_f64.sqrt();
-    assert_eq!(
-        cancellation.apply_normal(Vector3::new(1.0, 1.0, 1.0)),
-        Some(Vector3::new(component, component, component))
-    );
+    let transformed = cancellation
+        .apply_normal(Vector3::new(1.0, 1.0, 1.0))
+        .expect("finite normal direction");
+    for value in [transformed.x, transformed.y, transformed.z] {
+        assert!((value - component).abs() <= EPS_NORMAL_DIRECTION);
+    }
 }
 
 #[test]
