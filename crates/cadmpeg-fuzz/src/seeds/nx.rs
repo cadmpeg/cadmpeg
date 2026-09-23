@@ -89,6 +89,10 @@ pub fn zlib_compress(raw: &[u8]) -> std::io::Result<Vec<u8>> {
 }
 
 pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
+    single_part_prt_with_partition(&partition_stream()?)
+}
+
+pub fn single_part_prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut f = Vec::new();
     f.extend_from_slice(MAGIC);
     f.push(0x06);
@@ -103,11 +107,51 @@ pub fn single_part_prt() -> Result<Vec<u8>, CodecError> {
     f.extend_from_slice(&(name.len() as u32).to_le_bytes());
     f.extend_from_slice(name);
 
-    let blob = zlib_compress(&partition_stream()?)?;
-    let dir_end = f.len() + 16;
-    let blob_off = dir_end as u64;
+    let blob = zlib_compress(stream)?;
+    let dir_end = f
+        .len()
+        .checked_add(16)
+        .ok_or_else(|| CodecError::InvalidInput("NX seed directory offset overflows".into()))?;
+    let blob_off = u64::try_from(dir_end)
+        .map_err(|_| CodecError::InvalidInput("NX seed directory offset overflows".into()))?;
+    let blob_len = u64::try_from(blob.len())
+        .map_err(|_| CodecError::InvalidInput("NX seed partition length overflows".into()))?;
     f.extend_from_slice(&blob_off.to_le_bytes());
-    f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+    f.extend_from_slice(&blob_len.to_le_bytes());
     f.extend_from_slice(&blob);
     Ok(f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::single_part_prt_with_partition;
+    use std::io::Read;
+
+    #[test]
+    fn long_partition_has_exact_directory_offset_and_size() {
+        let mut state = 0x1234_5678u32;
+        let stream = (0..10_000)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 16) as u8
+            })
+            .collect::<Vec<_>>();
+        let file = single_part_prt_with_partition(&stream).expect("seed partition");
+        let name = b"/Root/UG_PART/UG_PART";
+        let directory = 8 + 1 + 3 + 4 + 1 + 6 + 2 + 6 + 4 + name.len();
+        let offset =
+            cadmpeg_core::decode::View::u64_le_at(&file, directory).expect("partition offset");
+        let size =
+            cadmpeg_core::decode::View::u64_le_at(&file, directory + 8).expect("partition length");
+        let offset = usize::try_from(offset).expect("host partition offset");
+        let size = usize::try_from(size).expect("host partition length");
+        assert_eq!(offset, directory + 16);
+        assert_eq!(size, file.len() - directory - 16);
+        let mut decoded = flate2::read::ZlibDecoder::new(&file[offset..]);
+        let mut recovered = Vec::new();
+        decoded.read_to_end(&mut recovered).expect("zlib partition");
+        assert_eq!(recovered, stream);
+    }
 }

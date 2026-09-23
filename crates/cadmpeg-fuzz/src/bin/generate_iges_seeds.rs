@@ -22,6 +22,9 @@ fn card(data: &[u8], section: u8, sequence: u32) -> io::Result<Vec<u8>> {
             data.len()
         )));
     }
+    if sequence > 9_999_999 {
+        return Err(io::Error::other("card sequence exceeds seven columns"));
+    }
     let mut result = vec![b' '; 80];
     result[..data.len()].copy_from_slice(data);
     result[CARD_DATA_COLUMNS] = section;
@@ -141,4 +144,16 @@ fn main() -> io::Result<()> {
         println!("iges/{name} ({} bytes)", bytes.len());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::card;
+
+    #[test]
+    fn card_refuses_sequence_that_exceeds_seven_columns() {
+        assert!(card(b"", b'D', 10_000_000).is_err());
+        let card = card(b"", b'D', 9_999_999).expect("largest seven-column sequence");
+        assert_eq!(&card[73..80], b"9999999");
+    }
 }
