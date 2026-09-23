@@ -1073,7 +1073,8 @@ fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
         let placements = crate::resolved_features::holes::carrier_placements(positions.map(|x| {
             (
                 Point3::new(x, 0.0, 0.0),
-                cadmpeg_ir::features::FeatureDirection3::new(axis).unwrap(),
+                cadmpeg_ir::features::FeatureDirection3::new(axis)
+                    .expect("unit +Z axis is an admitted feature direction"),
             )
         }))
         .unwrap();
