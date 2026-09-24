@@ -1000,8 +1000,9 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         if end > *last && end - *last <= tolerance {
             end = *last;
         }
-        edge.set_param_range(Some([start, end]))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        edge.carrier =
+            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([start, end]))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     Ok(())
 }
@@ -1271,7 +1272,9 @@ mod tests {
         };
         super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
         assert_eq!(out.edges[0].param_range(), Some([-1e-10, 5e-13]));
-        out.edges[0].set_param_range(Some([-1e-23, 5e-13])).unwrap();
+        out.edges[0].set_param_range(Some(
+            cadmpeg_ir::topology::ParameterInterval::new([-1e-23, 5e-13]).unwrap(),
+        ));
         super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
         assert_eq!(out.edges[0].param_range(), Some([0., 5e-13]));
     }

@@ -736,7 +736,10 @@ fn tolerance_scaling_maps_unset_and_zero_to_none() {
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(12.7)
     );
-    assert_eq!(finite_tolerance(0.5), Some(0.5));
+    assert_eq!(
+        finite_tolerance(0.5).map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.5)
+    );
     assert_eq!(finite_tolerance(-1.0), None);
 }
 

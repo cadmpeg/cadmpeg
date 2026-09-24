@@ -2885,9 +2885,11 @@ pub(super) fn validate_edge_range_edits(
     for (id, before) in baseline {
         let after = target[id];
         let mut normalized = after.clone();
-        normalized
-            .set_param_range(before.param_range())
-            .map_err(CodecError::malformed)?;
+        normalized.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            normalized.curve().cloned(),
+            before.param_range(),
+        )
+        .map_err(CodecError::malformed)?;
         normalized.tolerance = before.tolerance;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(

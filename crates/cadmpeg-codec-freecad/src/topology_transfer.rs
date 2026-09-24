@@ -7,6 +7,7 @@ use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{
@@ -339,12 +340,17 @@ impl<'a> Builder<'a> {
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
-                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                    metadata: PcurveMetadata::general(
                         None,
-                        primary_range,
+                        primary_range
+                            .map(|range| {
+                                cadmpeg_ir::units::FiniteVector::new(range)
+                                    .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                            })
+                            .transpose()
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
                         None,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                 });
                 if let Some(secondary) = secondary {
                     let secondary_read = match pcurve_geometry(&self.tables.curve2ds[secondary - 1])
@@ -372,12 +378,17 @@ impl<'a> Builder<'a> {
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
-                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                        metadata: PcurveMetadata::general(
                             None,
-                            secondary_range,
+                            secondary_range
+                                .map(|range| {
+                                    cadmpeg_ir::units::FiniteVector::new(range)
+                                        .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                                })
+                                .transpose()
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
                             None,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                     });
                 }
             }

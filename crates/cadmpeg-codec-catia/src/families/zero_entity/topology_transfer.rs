@@ -479,12 +479,13 @@ pub(super) fn transfer_closed_face_topology(
         ir.model.pcurves.push(Pcurve {
             id: pcurve.id.clone(),
             geometry: pcurve.geometry.clone(),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(pcurve.parameter_range),
+                Some(cadmpeg_ir::units::FiniteVector::new(
+                    pcurve.parameter_range,
+                )?),
                 None,
-            )
-            .ok()?,
+            ),
         });
     }
 

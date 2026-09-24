@@ -11,6 +11,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::RevolutionAxis;
+use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -57,12 +58,15 @@ pub(super) fn add_extrusion_pcurve(
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+        metadata: PcurveMetadata::general(
             None,
-            Some(parameter_range),
+            Some(
+                cadmpeg_ir::units::FiniteVector::new(parameter_range)
+                    .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             None,
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+        ),
     });
     Ok(id)
 }

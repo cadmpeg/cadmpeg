@@ -137,8 +137,9 @@ pub(super) fn infer_edge_parameter_ranges(
 
     for (index, range) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
-            edge.set_param_range(Some(range))
-                .map_err(CodecError::malformed)?;
+            edge.carrier =
+                cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range))
+                    .map_err(CodecError::malformed)?;
         }
     }
     Ok(())

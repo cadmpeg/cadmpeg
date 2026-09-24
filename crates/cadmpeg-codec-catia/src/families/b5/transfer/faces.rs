@@ -667,12 +667,14 @@ mod tests {
                         )
                         .expect("valid LinePcurve fixture"),
                     ),
-                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                         None,
-                        Some([0.0, 1.0]),
+                        Some(
+                            cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
+                                .expect("finite fixture range"),
+                        ),
                         None,
-                    )
-                    .expect("valid PcurveMetadata fixture"),
+                    ),
                 });
                 pcurve_uses.insert(
                     (loop_id, member),

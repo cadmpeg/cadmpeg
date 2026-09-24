@@ -2226,12 +2226,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                         source_index,
                         (
                             candidate.0.clone(),
-                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                                 None,
-                                Some(candidate.1),
-                                fit_tolerance,
-                            )
-                            .ok()?,
+                                Some(cadmpeg_ir::units::FiniteVector::new(candidate.1)?),
+                                fit_tolerance
+                                    .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+                                    .transpose()
+                                    .ok()?,
+                            ),
                         ),
                     ))
                 },

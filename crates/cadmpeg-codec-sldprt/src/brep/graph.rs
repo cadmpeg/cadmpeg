@@ -1728,12 +1728,16 @@ fn decode_graph(
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
-                            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                                 None,
-                                Some(parameter_range),
-                                Some(support_data.fit_tolerance_mm),
-                            )
-                            .ok()?,
+                                Some(cadmpeg_ir::units::FiniteVector::new(parameter_range)?),
+                                Some(
+                                    cadmpeg_ir::geometry::FitTolerance::try_new(
+                                        support_data.fit_tolerance_mm,
+                                    )
+                                    .ok()?,
+                                ),
+                            ),
                         });
                         Some(
                             cadmpeg_ir::geometry::DirectedParameterRange::new(parameter_range).map(
@@ -2990,20 +2994,22 @@ fn derive_cylindrical_pcurves(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("cylinder:").then(coedge.id.key()),
         );
+        let parameter_range = match parameter_range.map(cadmpeg_ir::units::FiniteVector::new) {
+            Some(None) => continue,
+            Some(Some(range)) => Some(range),
+            None => None,
+        };
         derived.push((
             coedge.id.clone(),
             id.clone(),
             Pcurve {
                 id,
                 geometry,
-                metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     parameter_range,
                     None,
-                ) {
-                    Ok(metadata) => metadata,
-                    Err(_) => continue,
-                },
+                ),
             },
         ));
     }
@@ -3806,20 +3812,28 @@ fn derive_nurbs_isoparametric_pcurves(
             }
             .then(coedge.id.key()),
         );
+        let parameter_range = match parameter_range.map(cadmpeg_ir::units::FiniteVector::new) {
+            Some(None) => continue,
+            Some(Some(range)) => Some(range),
+            None => None,
+        };
+        let Ok(fit_tolerance) = fit_tolerance
+            .map(cadmpeg_ir::geometry::FitTolerance::try_new)
+            .transpose()
+        else {
+            continue;
+        };
         derived.push((
             coedge.id.clone(),
             id.clone(),
             Pcurve {
                 id,
                 geometry,
-                metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
                     parameter_range,
                     fit_tolerance,
-                ) {
-                    Ok(metadata) => metadata,
-                    Err(_) => continue,
-                },
+                ),
             },
             cache,
         ));
@@ -5789,17 +5803,18 @@ fn synthesize_sphere_seams(
             end: pole_vertex,
             tolerance: None,
         });
+        let Some(full_turn) = cadmpeg_ir::units::FiniteVector::new([0.0, std::f64::consts::TAU])
+        else {
+            continue;
+        };
         out.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry: PcurveGeometry::Line(pcurve),
-            metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some([0.0, std::f64::consts::TAU]),
+                Some(full_turn),
                 None,
-            ) {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            },
+            ),
         });
         ring.push(coedge_id.clone());
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());

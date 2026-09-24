@@ -33,6 +33,17 @@ fn tolerant_intersection_rejects_equal_supports_and_invalid_numeric_bounds() {
 }
 
 #[test]
+fn a_tolerant_parameterization_hands_back_its_admitted_interval() {
+    let pcurves =
+        std::array::from_fn(|_| PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS));
+    let parameterization =
+        TolerantIntersectionParameterization::try_new(pcurves, [-1.0, 2.5]).expect("strict range");
+    let interval = parameterization.parameter_interval();
+    assert_eq!(interval.endpoints(), [-1.0, 2.5]);
+    assert_eq!(interval.endpoints(), parameterization.parameter_range());
+}
+
+#[test]
 fn tolerant_parameterization_requires_a_finite_strict_interval() {
     let pcurves = || {
         std::array::from_fn(|_| PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS))

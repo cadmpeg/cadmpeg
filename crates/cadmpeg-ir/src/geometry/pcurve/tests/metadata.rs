@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_test_support::edit;
 
-use crate::geometry::pcurve::{PcurveGeneralForm, PcurveInlineForm, PcurveMetadata};
+use crate::geometry::pcurve::{
+    admit_pcurve_fit_tolerance, admit_pcurve_parameter_range, PcurveGeneralForm, PcurveInlineForm,
+    PcurveMetadata,
+};
 use crate::geometry::FitTolerance;
+use crate::units::FiniteVector;
 
 #[test]
 fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
     for range in [[-2.0, 3.0], [3.0, -2.0], [2.0, 2.0]] {
-        let general = PcurveMetadata::try_general(Some(false), Some(range), Some(2.0)).unwrap();
+        let general = PcurveMetadata::general(
+            Some(false),
+            Some(FiniteVector::new(range).unwrap()),
+            Some(FitTolerance::try_new(2.0).unwrap()),
+        );
         let wire = serde_json::json!({
             "source": "general",
             "form": {
@@ -43,6 +51,34 @@ fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
 }
 
 #[test]
+fn admitted_pcurve_fields_build_the_forms_the_wire_admits() {
+    let range = FiniteVector::new([3.0, -2.0]).unwrap();
+    let tolerance = FitTolerance::try_new(0.25).unwrap();
+    assert_eq!(
+        PcurveMetadata::general(Some(true), Some(range), Some(tolerance)),
+        PcurveMetadata::General {
+            form: PcurveGeneralForm::try_new(Some(true), Some([3.0, -2.0]), Some(0.25)).unwrap()
+        }
+    );
+    assert_eq!(
+        PcurveGeneralForm::new(None, None, None),
+        PcurveGeneralForm::default()
+    );
+    assert_eq!(
+        PcurveInlineForm::new(false, [true, false, false, true], range, tolerance),
+        PcurveInlineForm::try_new(false, [true, false, false, true], [3.0, -2.0], 0.25).unwrap()
+    );
+    assert_eq!(
+        PcurveMetadata::NON_FINITE_PARAMETER_RANGE,
+        "pcurve parameter_range endpoints must be finite"
+    );
+    assert_eq!(
+        PcurveMetadata::INVALID_FIT_TOLERANCE,
+        "pcurve fit_tolerance must be finite and non-negative"
+    );
+}
+
+#[test]
 fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
     let mut inline =
         PcurveInlineForm::try_new(false, [false, false, false, false], [0.0, 1.0], 0.0).unwrap();
@@ -56,7 +92,10 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
             PcurveInlineForm::try_new(false, [false, false, false, false], range, 0.0).is_err()
         );
         assert!(PcurveGeneralForm::try_new(None, Some(range), None).is_err());
-        assert!(PcurveMetadata::try_general(None, Some(range), None).is_err());
+        assert_eq!(
+            admit_pcurve_parameter_range(range),
+            Err(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+        );
         assert!({
             let replacement = range;
             edit::replace(&mut inline, |previous| {
@@ -148,7 +187,10 @@ fn pcurve_fit_tolerance_admission_and_mutation_preserve_valid_values() {
     for value in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(PcurveInlineForm::try_new(false, [false; 4], [1.0, 0.0], value).is_err());
         assert!(PcurveGeneralForm::try_new(None, None, Some(value)).is_err());
-        assert!(PcurveMetadata::try_general(None, None, Some(value)).is_err());
+        assert_eq!(
+            admit_pcurve_fit_tolerance(value),
+            Err(PcurveMetadata::INVALID_FIT_TOLERANCE)
+        );
         assert!(FitTolerance::try_new(value).is_err());
         assert_eq!(inline.fit_tolerance(), 2.0);
         assert_eq!(general.fit_tolerance(), Some(2.0));

@@ -116,12 +116,17 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some([0.0, 10.0]),
-                Some(0.02),
-            )
-            .unwrap(),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([0.0, 10.0])
+                        .expect("finite fixture range"),
+                ),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.02)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
@@ -234,7 +239,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         *parameterization = None;
     });
     let edge = &mut ir.model.edges[0];
-    edge.set_param_range(None).unwrap();
+    edge.set_param_range(None);
     std::mem::swap(&mut edge.start, &mut edge.end);
     for pcurve in &mut ir.model.pcurves {
         pcurve.geometry = PcurveGeometry::Line(
@@ -308,7 +313,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         .unwrap();
         *parameterization = None;
     });
-    ir.model.edges[0].set_param_range(None).unwrap();
+    ir.model.edges[0].set_param_range(None);
     for coedge in &mut ir.model.coedges {
         coedge.pcurves[0].parameter_range =
             Some(cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap());
@@ -322,11 +327,16 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         {
             let replacement = Some(range);
             edit::replace(metadata, |previous| {
-                cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
+                Ok::<_, &str>(cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::new(
                     previous.wrapper_reversed,
-                    replacement,
-                    previous.fit_tolerance(),
-                )
+                    replacement.map(|range| {
+                        cadmpeg_ir::units::FiniteVector::new(range).expect("finite fixture range")
+                    }),
+                    previous.fit_tolerance().map(|value| {
+                        cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                            .expect("admitted fit tolerance")
+                    }),
+                ))
             })
         }
         .unwrap();
@@ -381,7 +391,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         .unwrap();
         *parameterization = None;
     });
-    ir.model.edges[0].set_param_range(None).unwrap();
+    ir.model.edges[0].set_param_range(None);
     complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,

@@ -2033,13 +2033,15 @@ pub(in super::super) fn transfer_native_brep(
                     }
                     let pcurves = pcurve_geometry
                         .and_then(|(geometry, parameter_range, offset, tag)| {
-                            let metadata =
-                                cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
-                                    None,
-                                    parameter_range,
-                                    None,
-                                )
-                                .ok()?;
+                            let parameter_range = match parameter_range {
+                                Some(range) => Some(cadmpeg_ir::units::FiniteVector::new(range)?),
+                                None => None,
+                            };
+                            let metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                                None,
+                                parameter_range,
+                                None,
+                            );
                             let pcurve = PcurveId::compose(
                                 &crate::identity::VISIBGEOM_PCURVE,
                                 cadmpeg_ir::ids::IdentityKey::from(half_edge.curve_id)

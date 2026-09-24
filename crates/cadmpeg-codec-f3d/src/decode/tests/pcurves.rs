@@ -1089,12 +1089,13 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     {
         let replacement = [-2.0, 3.0];
         edit::replace(inline, |previous| {
-            cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
+            Ok::<_, &str>(cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
-                replacement,
-                previous.fit_tolerance(),
-            )
+                cadmpeg_ir::units::FiniteVector::new(replacement).expect("finite fixture range"),
+                cadmpeg_ir::geometry::FitTolerance::try_new(previous.fit_tolerance())
+                    .expect("admitted fit tolerance"),
+            ))
         })
     }
     .unwrap();
@@ -1249,11 +1250,16 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     {
         let replacement = Some([-3.0, 5.0]);
         edit::replace(metadata, |previous| {
-            cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::try_new(
+            Ok::<_, &str>(cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::new(
                 previous.wrapper_reversed,
-                replacement,
-                previous.fit_tolerance(),
-            )
+                replacement.map(|range| {
+                    cadmpeg_ir::units::FiniteVector::new(range).expect("finite fixture range")
+                }),
+                previous.fit_tolerance().map(|value| {
+                    cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                        .expect("admitted fit tolerance")
+                }),
+            ))
         })
     }
     .unwrap();
@@ -1298,13 +1304,13 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         panic!("ref-form fixture carries a parameter range")
     };
     inline.metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline {
-        form: cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
+        form: cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
             false,
             [true, false, true, false],
-            parameter_range,
-            0.002,
-        )
-        .unwrap(),
+            cadmpeg_ir::units::FiniteVector::new(parameter_range).expect("finite fixture range"),
+            cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+                .expect("finite non-negative fixture tolerance"),
+        ),
     };
     mixed.model.coedges[1].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: inline.id.clone(),

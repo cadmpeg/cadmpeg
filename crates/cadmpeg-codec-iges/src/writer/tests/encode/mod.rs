@@ -1008,12 +1008,13 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                 )
                 .expect("valid sheet pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some([0.0, 1.0]),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range"),
+                ),
                 None,
-            )
-            .unwrap(),
+            ),
         });
         let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: pcurve_ids[index].clone(),
@@ -1036,12 +1037,14 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
                     )
                     .expect("valid split sheet pcurve"),
                 },
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
-                    Some([0.0, 1.0]),
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new([0.0, 1.0])
+                            .expect("finite fixture range"),
+                    ),
                     None,
-                )
-                .unwrap(),
+                ),
             });
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: split_pcurve_id,
@@ -1598,12 +1601,11 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             )
             .expect("valid source-less pcurve"),
         },
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            Some([0.0, 1.0]),
+            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
-        )
-        .unwrap(),
+        ),
     });
     decoded.ir_mut().model.coedges[coedge_index]
         .pcurves

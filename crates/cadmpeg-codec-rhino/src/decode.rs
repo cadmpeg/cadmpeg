@@ -3582,14 +3582,18 @@ fn stage_extrusion_caps(
             ir.model.pcurves.push(Pcurve {
                 id: pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs { nurbs },
-                metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
-                    Some(parameter_range),
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new(parameter_range).ok_or_else(|| {
+                            format!(
+                                "extrusion cap staging: {}",
+                                cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE
+                            )
+                        })?,
+                    ),
                     None,
-                ) {
-                    Ok(metadata) => metadata,
-                    Err(error) => return Err(format!("extrusion cap staging: {error}")),
-                },
+                ),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
@@ -4890,20 +4894,21 @@ fn decode_pcurves(
                 continue;
             }
         };
+        let Some(domain) = cadmpeg_ir::units::FiniteVector::new(trim.domain.0) else {
+            warnings.push(format!(
+                "trim {index}: {}",
+                cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE
+            ));
+            continue;
+        };
         values.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
-            metadata: match cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(trim.proxy_reversed),
-                Some(trim.domain.0),
+                Some(domain),
                 finite_tolerance(trim.tolerances[0]),
-            ) {
-                Ok(metadata) => metadata,
-                Err(error) => {
-                    warnings.push(format!("trim {index}: {error}"));
-                    continue;
-                }
-            },
+            ),
         });
         ids.insert(index, id);
     }
@@ -4960,8 +4965,10 @@ fn c2_curve_to_nurbs_join(
     }
 }
 
-fn finite_tolerance(value: f64) -> Option<f64> {
-    (value.is_finite() && value > 0.0).then_some(value)
+fn finite_tolerance(value: f64) -> Option<cadmpeg_ir::geometry::FitTolerance> {
+    cadmpeg_ir::geometry::FitTolerance::try_new(value)
+        .ok()
+        .filter(|_| value > 0.0)
 }
 
 fn scaled_tolerance(

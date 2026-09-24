@@ -1308,9 +1308,11 @@ fn generated_source_less_planar_face_writes_straight_edge_carriers() {
             source_object: None,
         });
         source_less.model.edges[index].set_curve(Some(id)).unwrap();
-        source_less.model.edges[index]
-            .set_param_range(Some([0.0, length]))
-            .unwrap();
+        source_less.model.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            source_less.model.edges[index].curve().cloned(),
+            Some([0.0, length]),
+        )
+        .unwrap();
     }
 
     let expected = source_less
@@ -1383,9 +1385,11 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0]
-        .set_param_range(Some([0.25, 1.75]))
-        .unwrap();
+    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.model.edges[0].curve().cloned(),
+        Some([0.25, 1.75]),
+    )
+    .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1458,9 +1462,11 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0]
-        .set_param_range(Some([0.5, 2.0]))
-        .unwrap();
+    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.model.edges[0].curve().cloned(),
+        Some([0.5, 2.0]),
+    )
+    .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec

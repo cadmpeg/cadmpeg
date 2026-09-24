@@ -60,7 +60,17 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                     )
                     .unwrap(),
                 },
-                metadata: PcurveMetadata::try_general(None, Some([0., 1.]), Some(EPS_FIT)).unwrap(),
+                metadata: PcurveMetadata::general(
+                    None,
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new([0., 1.])
+                            .expect("finite fixture range"),
+                    ),
+                    Some(
+                        cadmpeg_ir::geometry::FitTolerance::try_new(EPS_FIT)
+                            .expect("finite non-negative fixture tolerance"),
+                    ),
+                ),
             };
             let edge = WritableEdge {
                 source: &source,

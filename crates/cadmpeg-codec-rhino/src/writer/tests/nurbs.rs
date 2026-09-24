@@ -22,7 +22,8 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];
-    edge.set_param_range(Some([2.0, 5.0])).unwrap();
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([2.0, 5.0])).unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -100,7 +101,11 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
 #[test]
 fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
     let mut ir = adjacent_quad_sheet();
-    ir.model.edges[1].set_param_range(Some([2.0, 5.0])).unwrap();
+    ir.model.edges[1].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges[1].curve().cloned(),
+        Some([2.0, 5.0]),
+    )
+    .unwrap();
     ir.model.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -140,12 +145,16 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                 )
                 .expect("valid explicit pcurve"),
             },
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(false),
-                Some([2.0, 5.0]),
-                Some(0.001),
-            )
-            .unwrap(),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([2.0, 5.0]).expect("finite fixture range"),
+                ),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
         });
         ir.model.coedges[coedge].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -209,12 +218,13 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            ir.model.edges[0].param_range(),
+            (ir.model.edges[0].param_range()).map(|value| {
+                cadmpeg_ir::units::FiniteVector::new(value).expect("finite fixture range")
+            }),
             None,
-        )
-        .unwrap(),
+        ),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -259,12 +269,13 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
                 )
                 .unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some([0.0, 2.0]),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range"),
+                ),
                 None,
-            )
-            .unwrap(),
+            ),
         });
     }
     ir.model.coedges[0].pcurves = vec![
@@ -311,12 +322,14 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             )
             .unwrap(),
         ),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            Some([0.0, 2.0]),
-            Some(0.002),
-        )
-        .unwrap(),
+            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 2.0]).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
+        ),
     });
     ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
         pcurve: id,
@@ -732,7 +745,14 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
         },
-        metadata: PcurveMetadata::try_general(None, Some(domain), Some(0.001)).unwrap(),
+        metadata: PcurveMetadata::general(
+            None,
+            Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
+        ),
     };
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -799,7 +819,14 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(1, knots, uv.clone(), None, false).unwrap(),
         },
-        metadata: PcurveMetadata::try_general(None, Some(domain), Some(0.001)).unwrap(),
+        metadata: PcurveMetadata::general(
+            None,
+            Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+            Some(
+                cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                    .expect("finite non-negative fixture tolerance"),
+            ),
+        ),
     };
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),

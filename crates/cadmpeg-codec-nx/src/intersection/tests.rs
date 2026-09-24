@@ -100,12 +100,11 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     ir.model.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
-        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            Some([0.0, 1.0]),
+            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
-        )
-        .unwrap(),
+        ),
     });
     let second_face = ir
         .model

@@ -98,8 +98,9 @@ pub(super) fn normalize_model_lengths(
             edge.curve().and_then(|id| curve_parameter_scales.get(id)),
         ) {
             scale_pair(&mut range, *scale);
-            edge.set_param_range(Some(range))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            edge.carrier =
+                cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range))
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
         }
     }
     for coedge in &mut ir.model.coedges {

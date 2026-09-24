@@ -206,16 +206,20 @@ fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
 fn carrierless_edge_range_requires_finite_values_but_not_ordering() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.edges[0].set_curve(None).unwrap();
-    ir.model.edges[0].set_param_range(Some([1.0, 0.0])).unwrap();
+    ir.model.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([1.0, 0.0]))
+            .unwrap();
     let report = validate_neutral(&ir, Vec::new());
     assert!(!report.findings.iter().any(|finding| {
         finding.check == Check::ParameterDomain
             && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
     }));
 
-    assert!(ir.model.edges[0]
-        .set_param_range(Some([f64::NAN, 0.0]))
-        .is_err());
+    assert!(crate::topology::EdgeCarrier::new(
+        ir.model.edges[0].curve().cloned(),
+        Some([f64::NAN, 0.0])
+    )
+    .is_err());
 }
 
 #[test]
