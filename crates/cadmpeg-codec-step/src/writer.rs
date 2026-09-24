@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::transform::Transform;
 
 pub(crate) mod target;
 
@@ -22,15 +23,25 @@ impl std::fmt::Display for Ref {
     }
 }
 
+/// A value the emitter was asked to state and Part 21 cannot state.
+#[derive(Clone, Copy)]
+enum Refusal {
+    /// A non-finite number [`Emitter::real`] was asked to format.
+    NonFiniteReal(f64),
+    /// A transform [`Emitter::refuse_operator`] was given, which is not a
+    /// similarity.
+    NonSimilarOperator(Transform),
+}
+
 /// Accumulates DATA instances in allocation order and counts their entity types.
 pub(crate) struct Emitter {
     lines: Vec<String>,
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
-    /// The first non-finite number [`Self::real`] was asked to format. The
-    /// emitted lines are not handed out once one is recorded.
-    refused_real: Cell<Option<f64>>,
+    /// The first value the emitter could not state. The emitted lines are
+    /// not handed out once one is recorded.
+    refusal: Cell<Option<Refusal>>,
 }
 
 impl Emitter {
@@ -39,8 +50,21 @@ impl Emitter {
             lines: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
-            refused_real: Cell::new(None),
+            refusal: Cell::new(None),
         }
+    }
+
+    /// Record `refusal` unless an earlier one is recorded.
+    fn refuse(&self, refusal: Refusal) {
+        if self.refusal.get().is_none() {
+            self.refusal.set(Some(refusal));
+        }
+    }
+
+    /// Record that `transform` has no `CARTESIAN_TRANSFORMATION_OPERATOR_3D`
+    /// statement. [`Self::into_lines`] then refuses the whole DATA section.
+    pub(crate) fn refuse_operator(&self, transform: Transform) {
+        self.refuse(Refusal::NonSimilarOperator(transform));
     }
 
     /// Format `v` as a Part 21 real literal.
@@ -50,9 +74,7 @@ impl Emitter {
     /// so the placeholder this returns never reaches a file.
     pub(crate) fn real(&self, v: f64) -> String {
         part21_real(v).unwrap_or_else(|| {
-            if self.refused_real.get().is_none() {
-                self.refused_real.set(Some(v));
-            }
+            self.refuse(Refusal::NonFiniteReal(v));
             String::new()
         })
     }
@@ -98,13 +120,20 @@ impl Emitter {
 
     /// Consume the emitter and return one encoded DATA instance per element,
     /// or refuse the section when [`Self::real`] was handed a non-finite
-    /// number.
+    /// number or [`Self::refuse_operator`] a transform.
     pub(crate) fn into_lines(self) -> Result<Vec<String>, CodecError> {
-        match self.refused_real.get() {
+        match self.refusal.get() {
             None => Ok(self.lines),
-            Some(value) => Err(CodecError::NotImplemented(format!(
+            Some(Refusal::NonFiniteReal(value)) => Err(CodecError::NotImplemented(format!(
                 "STEP writer computed the non-finite real {value}, which Part 21 cannot state"
             ))),
+            Some(Refusal::NonSimilarOperator(transform)) => {
+                Err(CodecError::NotImplemented(format!(
+                    "STEP writer cannot state the transform with rows {:?} as a \
+                     CARTESIAN_TRANSFORMATION_OPERATOR_3D, which states a similarity",
+                    transform.rows()
+                )))
+            }
         }
     }
 }

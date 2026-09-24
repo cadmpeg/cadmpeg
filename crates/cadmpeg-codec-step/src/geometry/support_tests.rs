@@ -259,3 +259,75 @@ fn a_direction_whose_length_overflows_keeps_its_orientation() {
     assert!((components[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPS_UNIT_COMPONENT);
     assert_eq!(components[2], 0.0);
 }
+
+/// The section written for one transformation operator over `rows`.
+fn operator_section(rows: [[f64; 4]; 3]) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let transform = Transform::affine(rows).expect("affine transform");
+    let mut emitter = crate::writer::Emitter::new();
+    super::transformation_operator(&mut emitter, transform);
+    emitter.into_lines()
+}
+
+/// A transform with no `CARTESIAN_TRANSFORMATION_OPERATOR_3D` statement
+/// refuses the section.
+fn assert_operator_is_refused(rows: [[f64; 4]; 3]) {
+    let written = operator_section(rows);
+    let Err(error) = written else {
+        panic!("{written:?}");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
+        "{error}"
+    );
+}
+
+/// `CARTESIAN_TRANSFORMATION_OPERATOR_3D` states a similarity: three axis
+/// directions and one scale.
+#[test]
+fn a_transformation_operator_states_a_similarity() {
+    let lines = operator_section([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ])
+    .expect("a similarity is written");
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D")),
+        "{lines:?}"
+    );
+}
+
+/// A shear is refused, where it was written as the rotation of its
+/// normalized columns.
+#[test]
+fn a_transformation_operator_refuses_a_shear() {
+    assert_operator_is_refused([
+        [1.0, 0.5, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]);
+}
+
+/// A non-uniform scale is refused, where it was written with the scale of
+/// its first column.
+#[test]
+fn a_transformation_operator_refuses_a_non_uniform_scale() {
+    assert_operator_is_refused([
+        [2.0, 0.0, 0.0, 0.0],
+        [0.0, 3.0, 0.0, 0.0],
+        [0.0, 0.0, 2.0, 0.0],
+    ]);
+}
+
+/// A zero column is refused, where it was written as the direction
+/// `(0,0,1)`.
+#[test]
+fn a_transformation_operator_refuses_a_zero_column() {
+    assert_operator_is_refused([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ]);
+}

@@ -378,7 +378,14 @@ pub(crate) fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir:
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
+/// Emit a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, which states three axis
+/// directions, an origin and one scale: a similarity. Any other transform,
+/// including one with a zero column, is refused through
+/// [`Emitter::refuse_operator`], and the section is not written.
 pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+    if !similarity_transform(&transform) {
+        e.refuse_operator(transform);
+    }
     let origin = point(
         e,
         Point3::new(
