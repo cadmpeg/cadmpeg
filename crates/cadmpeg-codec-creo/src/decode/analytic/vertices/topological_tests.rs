@@ -1,10 +1,18 @@
 use crate::decode::analytic::vertices::{
-    conic_conic_intersections, incident_analytic_vertex_domain, line_conic_intersections,
-    line_line_intersection, model_points_agree,
+    conic_conic_intersections, finite_model_point, incident_analytic_vertex_domain,
+    line_conic_intersections, line_line_intersection, model_points_agree,
 };
 use crate::decode::surfaces::intersection_resolve::curve_contains_points;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+/// Whether two finite fixture points agree.
+fn agree(first: [f64; 3], second: [f64; 3]) -> bool {
+    model_points_agree(
+        finite_model_point(first).expect("finite fixture point"),
+        finite_model_point(second).expect("finite fixture point"),
+    )
+}
 
 fn line(origin: [f64; 3], direction: [f64; 3]) -> CurveGeometry {
     CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -118,8 +126,7 @@ fn line_conic_candidates_cover_periodic_and_nonperiodic_families() {
         line_conic_intersections(&line([4.0, -3.0, 0.0], [0.0, 1.0, 0.0]), &hyperbola);
     assert_eq!(hyperbola_points.len(), 2);
     assert!(hyperbola_points.iter().all(|point| {
-        model_points_agree(*point, [4.0, 3.0_f64.sqrt(), 0.0])
-            || model_points_agree(*point, [4.0, -3.0_f64.sqrt(), 0.0])
+        agree(*point, [4.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [4.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
         line_conic_intersections(&line([-3.0, 0.0, 0.0], [1.0, 0.0, 0.0]), &hyperbola),
@@ -158,8 +165,7 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     let secant_points = conic_conic_intersections(&first, &secant);
     assert_eq!(secant_points.len(), 2);
     assert!(secant_points.iter().all(|point| {
-        model_points_agree(*point, [1.0, 3.0_f64.sqrt(), 0.0])
-            || model_points_agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
+        agree(*point, [1.0, 3.0_f64.sqrt(), 0.0]) || agree(*point, [1.0, -3.0_f64.sqrt(), 0.0])
     }));
     assert_eq!(
         conic_conic_intersections(&first, &tangent),
@@ -167,9 +173,9 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     );
     let transverse_points = conic_conic_intersections(&first, &transverse);
     assert_eq!(transverse_points.len(), 2);
-    assert!(transverse_points.iter().all(|point| {
-        model_points_agree(*point, [0.0, 2.0, 0.0]) || model_points_agree(*point, [0.0, -2.0, 0.0])
-    }));
+    assert!(transverse_points
+        .iter()
+        .all(|point| { agree(*point, [0.0, 2.0, 0.0]) || agree(*point, [0.0, -2.0, 0.0]) }));
 
     let ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -183,9 +189,9 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     ));
     let ellipse_points = conic_conic_intersections(&first, &ellipse);
     assert_eq!(ellipse_points.len(), 2);
-    assert!(ellipse_points.iter().all(|point| {
-        model_points_agree(*point, [0.0, 2.0, 0.0]) || model_points_agree(*point, [0.0, -2.0, 0.0])
-    }));
+    assert!(ellipse_points
+        .iter()
+        .all(|point| { agree(*point, [0.0, 2.0, 0.0]) || agree(*point, [0.0, -2.0, 0.0]) }));
     let diagonal_ellipse = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -218,5 +224,5 @@ fn conic_pair_candidates_cover_coplanar_and_transverse_planes() {
     let tangent_circle = circle([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
     let tangent_points = conic_conic_intersections(&parabola, &tangent_circle);
     assert_eq!(tangent_points.len(), 1);
-    assert!(model_points_agree(tangent_points[0], [0.0, 0.0, 0.0]));
+    assert!(agree(tangent_points[0], [0.0, 0.0, 0.0]));
 }

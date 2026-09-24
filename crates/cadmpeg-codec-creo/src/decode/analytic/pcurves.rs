@@ -30,7 +30,7 @@ use super::edges::{
 };
 use super::equations::{CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
-use super::vertices::model_points_agree;
+use super::vertices::{finite_model_point, model_points_agree};
 use crate::vecmath::{cross, dot};
 
 const EPS_AGREE: f64 = 1.0e-9;
@@ -135,34 +135,34 @@ fn map_two_chart_endpoint_sets(
         .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
     let mut missing_surface_paths = 0;
     let mut unevaluable_paths = 0;
-    let mapped_samples: [Option<Vec<[f64; 3]>>; 2] = std::array::from_fn(|face_index| {
-        let Some(surface) = surfaces[face_index] else {
-            missing_surface_paths += 1;
-            return None;
-        };
-        let Some(points) = pcurve
-            .samples
-            .iter()
-            .map(|sample| {
-                // A non-finite sample is a mapped sample; the agreement test
-                // reads it as a mismatch.
-                let point = match cadmpeg_ir::eval::surface_point(
-                    &surface.geometry,
-                    sample[face_index][0],
-                    sample[face_index][1],
-                ) {
-                    Ok(point) => point.get(),
-                    Err(failure) => failure.non_finite()?,
-                };
-                Some([point.x, point.y, point.z])
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            unevaluable_paths += 1;
-            return None;
-        };
-        Some(points)
-    });
+    // A sample that leaves the finite range is a mapped sample; it agrees
+    // with no sample on the other chart.
+    let mapped_samples: [Option<Vec<Result<FinitePoint3, Point3>>>; 2] =
+        std::array::from_fn(|face_index| {
+            let Some(surface) = surfaces[face_index] else {
+                missing_surface_paths += 1;
+                return None;
+            };
+            let Some(points) = pcurve
+                .samples
+                .iter()
+                .map(|sample| {
+                    match cadmpeg_ir::eval::surface_point(
+                        &surface.geometry,
+                        sample[face_index][0],
+                        sample[face_index][1],
+                    ) {
+                        Ok(point) => Some(Ok(point)),
+                        Err(failure) => failure.non_finite().map(Err),
+                    }
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                unevaluable_paths += 1;
+                return None;
+            };
+            Some(points)
+        });
     let canonical = canonicalized_pcurve_endpoints(
         scan,
         pcurve.faces.map(NonZeroU32::new),
@@ -182,7 +182,10 @@ fn map_two_chart_endpoint_sets(
             !first_path
                 .iter()
                 .zip(second_path)
-                .all(|(first, second)| model_points_agree(*first, *second))
+                .all(|(first, second)| match (first, second) {
+                    (Ok(first), Ok(second)) => model_points_agree(*first, *second),
+                    _ => false,
+                })
         } else {
             false
         };
@@ -718,11 +721,20 @@ fn pcurve_endpoint_evidence_from_mapped(
     authoritative: bool,
 ) -> Option<PcurveEndpointEvidence> {
     let first = mapped.first()?.endpoints;
+    // An endpoint outside the finite range agrees with no endpoint, so a
+    // path that reaches one forms no evidence.
+    let admitted = first.map(finite_model_point);
     mapped
         .iter()
         .all(|candidate| {
-            model_points_agree(first[0], candidate.endpoints[0])
-                && model_points_agree(first[1], candidate.endpoints[1])
+            admitted
+                .into_iter()
+                .zip(candidate.endpoints)
+                .all(|(first, candidate)| {
+                    first
+                        .zip(finite_model_point(candidate))
+                        .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+                })
         })
         .then_some(PcurveEndpointEvidence {
             points: first,
@@ -1018,9 +1030,17 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let Some(first) = candidates.first().copied() else {
             continue;
         };
+        // An endpoint outside the finite range agrees with no endpoint.
+        let admitted = first.points.map(finite_model_point);
         if candidates.iter().all(|candidate| {
-            model_points_agree(first.points[0], candidate.points[0])
-                && model_points_agree(first.points[1], candidate.points[1])
+            admitted
+                .into_iter()
+                .zip(candidate.points)
+                .all(|(first, candidate)| {
+                    first
+                        .zip(finite_model_point(candidate))
+                        .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+                })
         }) {
             evidence.insert(
                 curve_id,
@@ -1485,12 +1505,18 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
     authoritative_points: &BTreeMap<u32, [f64; 3]>,
 ) -> BTreeMap<u32, [f64; 3]> {
+    // A point outside the finite range agrees with no point.
+    let agree = |first: [f64; 3], second: [f64; 3]| {
+        finite_model_point(first)
+            .zip(finite_model_point(second))
+            .is_some_and(|(first, second)| model_points_agree(first, second))
+    };
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for (vertices, points) in constraints {
         if vertices[0] == vertices[1] {
             match domains.entry(vertices[0]) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(if model_points_agree(points[0], points[1]) {
+                    entry.insert(if agree(points[0], points[1]) {
                         vec![points[0]]
                     } else {
                         Vec::new()
@@ -1498,8 +1524,8 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let domain = entry.get_mut();
-                    if model_points_agree(points[0], points[1]) {
-                        domain.retain(|candidate| model_points_agree(*candidate, points[0]));
+                    if agree(points[0], points[1]) {
+                        domain.retain(|candidate| agree(*candidate, points[0]));
                     } else {
                         domain.clear();
                     }
@@ -1509,11 +1535,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         }
         for vertex in vertices {
             let domain = domains.entry(*vertex).or_insert_with(|| points.to_vec());
-            domain.retain(|candidate| {
-                points
-                    .iter()
-                    .any(|point| model_points_agree(*candidate, *point))
-            });
+            domain.retain(|candidate| points.iter().any(|point| agree(*candidate, *point)));
         }
     }
     for (vertex, candidates) in analytic_domains {
@@ -1525,11 +1547,9 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
                 entry.insert(candidates.clone());
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
-                entry.get_mut().retain(|point| {
-                    candidates
-                        .iter()
-                        .any(|candidate| model_points_agree(*point, *candidate))
-                });
+                entry
+                    .get_mut()
+                    .retain(|point| candidates.iter().any(|candidate| agree(*point, *candidate)));
             }
         }
     }
@@ -1541,7 +1561,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 entry
                     .get_mut()
-                    .retain(|candidate| model_points_agree(*candidate, *point));
+                    .retain(|candidate| agree(*candidate, *point));
             }
         }
     }
@@ -1558,8 +1578,8 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
         }
     }
     let compatible = |first: [f64; 3], second: [f64; 3], points: [[f64; 3]; 2]| {
-        (model_points_agree(first, points[0]) && model_points_agree(second, points[1]))
-            || (model_points_agree(first, points[1]) && model_points_agree(second, points[0]))
+        (agree(first, points[0]) && agree(second, points[1]))
+            || (agree(first, points[1]) && agree(second, points[0]))
     };
     loop {
         let mut changed = false;
@@ -1598,7 +1618,7 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     domains
         .into_iter()
         .filter_map(|(vertex, mut domain)| {
-            domain.dedup_by(|first, second| model_points_agree(*first, *second));
+            domain.dedup_by(|first, second| agree(*first, *second));
             let [point] = domain.as_slice() else {
                 return None;
             };
@@ -1612,26 +1632,30 @@ pub(super) fn native_pcurve_midpoint(
     endpoints: [[f64; 2]; 2],
     edge_points: [[f64; 3]; 2],
 ) -> Option<[f64; 3]> {
-    // A non-finite point is aligned and returned as the evaluation reached it.
-    let mapped_point = |uv: [f64; 2]| {
-        let point = match cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) {
-            Ok(point) => point.get(),
-            Err(failure) => failure.non_finite()?,
-        };
-        Some([point.x, point.y, point.z])
-    };
-    let mapped = endpoints.map(mapped_point);
-    let [Some(first), Some(second)] = mapped else {
+    // A point outside the finite range, mapped or on the edge, aligns with
+    // no point.
+    let mapped_point = |uv: [f64; 2]| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok();
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) = (
+        endpoints.map(mapped_point),
+        edge_points.map(finite_model_point),
+    ) else {
         return None;
     };
-    point_pair_alignments([first, second], edge_points)
+    point_pair_alignments([first, second], [start, end])
         .into_iter()
         .any(|matches| matches)
         .then_some(())?;
-    mapped_point([
+    // A midpoint outside the finite range is returned as the evaluation
+    // reached it.
+    let point = match cadmpeg_ir::eval::surface_point(
+        surface,
         f64::midpoint(endpoints[0][0], endpoints[1][0]),
         f64::midpoint(endpoints[0][1], endpoints[1][1]),
-    ])
+    ) {
+        Ok(point) => point.get(),
+        Err(failure) => failure.non_finite()?,
+    };
+    Some(<[f64; 3]>::from(point))
 }
 
 pub(in crate::decode) type NativePcurveCandidates =
@@ -1676,18 +1700,15 @@ fn oriented_native_pcurve_endpoints(
     endpoints: [[f64; 2]; 2],
     traversal: [[f64; 3]; 2],
 ) -> Option<[[f64; 2]; 2]> {
-    // A non-finite point is aligned as the evaluation reached it.
-    let mapped = endpoints.map(|uv| {
-        let point = match cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) {
-            Ok(point) => point.get(),
-            Err(failure) => failure.non_finite()?,
-        };
-        Some([point.x, point.y, point.z])
-    });
-    let [Some(first), Some(second)] = mapped else {
+    // A point outside the finite range, mapped or traversed, aligns with no
+    // point.
+    let mapped = endpoints.map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok());
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) =
+        (mapped, traversal.map(finite_model_point))
+    else {
         return None;
     };
-    match point_pair_alignments([first, second], traversal) {
+    match point_pair_alignments([first, second], [start, end]) {
         [true, false] => Some(endpoints),
         [false, true] => Some([endpoints[1], endpoints[0]]),
         _ => None,
@@ -2663,12 +2684,15 @@ mod tests {
     }
 
     #[test]
-    fn a_native_pcurve_with_an_overflowing_endpoint_aligns_on_its_finite_endpoint() {
+    fn a_native_pcurve_with_an_overflowing_endpoint_has_no_midpoint_and_no_orientation() {
+        // The endpoint u = MAX reaches x = +inf on the plane through
+        // (MAX, 0, 0). A point outside the finite range aligns with no edge
+        // point, so neither pairing aligns.
         let surface = overflowing_plane_surface(7).geometry;
         let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
         assert_eq!(
             super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
-            Some([f64::MAX, 2.5, 0.0])
+            None
         );
         assert_eq!(
             super::oriented_native_pcurve_endpoints(
@@ -2676,7 +2700,7 @@ mod tests {
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
             ),
-            Some(endpoints)
+            None
         );
     }
 
@@ -2707,10 +2731,10 @@ mod tests {
     }
 
     #[test]
-    fn a_two_chart_path_with_an_overflowing_placed_sample_is_mapped_on_both_charts() {
-        // The placed sample reaches x = +inf. `model_points_agree` scales its
-        // tolerance by the largest coordinate, which is then infinite, so the
-        // two charts agree.
+    fn a_two_chart_path_with_an_overflowing_placed_sample_is_a_surface_mismatch() {
+        // The placed sample reaches x = +inf. It is a mapped sample on both
+        // charts, and a point outside the finite range agrees with no point,
+        // so the charts do not agree.
         let scan = crate::container::scan_bytes_ok(Vec::new());
         let mut ir = CadIr::empty();
         ir.model
@@ -2731,7 +2755,7 @@ mod tests {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
                 unevaluable_paths: 0,
-                surface_mismatch: false,
+                surface_mismatch: true,
             }
         ));
     }
@@ -2800,16 +2824,15 @@ mod tests {
     }
 
     #[test]
-    fn a_native_pcurve_with_an_overflowing_placed_endpoint_has_a_midpoint_and_no_orientation() {
-        // The placed endpoint reaches x = +inf. `point_pair_alignments` scales
-        // its tolerance by the largest coordinate, which is then infinite, so
-        // both pairings align: the midpoint is read, and the orientation is
-        // ambiguous.
+    fn a_native_pcurve_with_an_overflowing_placed_endpoint_has_no_midpoint_and_no_orientation() {
+        // The placed endpoint reaches x = +inf. A point outside the finite
+        // range aligns with no edge point, so neither pairing aligns: no
+        // midpoint is read, and no orientation is found.
         let surface = overflowing_placed_plane_surface(7).geometry;
         let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
         assert_eq!(
             super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
-            Some([f64::MAX, 2.5, 0.0])
+            None
         );
         assert_eq!(
             super::oriented_native_pcurve_endpoints(

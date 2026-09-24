@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -26,7 +27,7 @@ use super::equations::{
     intersect_plane_with_two_quadrics, intersect_two_planes_with_quadric,
     intersect_two_planes_with_torus, solve_planes, CarrierEquation, PlaneEquation, SphereEquation,
 };
-use super::vertices::model_points_agree;
+use super::vertices::{finite_model_point, model_points_agree};
 use crate::vecmath::{cross, dot, local_system_lanes};
 
 const EPS_ON_CARRIER: f64 = 1.0e-7;
@@ -620,16 +621,15 @@ fn plane_candidates_equivalent(first: PlaneCandidate, second: PlaneCandidate) ->
         }
 }
 
-fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]> {
+fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<FinitePoint3> {
     let chart = candidate.chart?;
     let normal = normalize(chart.normal)?;
     let u_axis = normalize(chart.u_axis)?;
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
     let v_axis = cross(normal, u_axis);
-    let point = std::array::from_fn(|axis| {
+    finite_model_point(std::array::from_fn(|axis| {
         chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
-    });
-    point.iter().all(|value| value.is_finite()).then_some(point)
+    }))
 }
 
 fn pcurve_candidate_endpoint_witness(
@@ -660,9 +660,12 @@ fn pcurve_candidate_endpoint_witness(
     if model_points_agree(points[0], points[1]) {
         return false;
     }
-    points
-        .into_iter()
-        .all(|point| point_on_carrier(point, CarrierEquation::Plane(adjacent.equation)))
+    points.into_iter().all(|point| {
+        point_on_carrier(
+            <[f64; 3]>::from(point.get()),
+            CarrierEquation::Plane(adjacent.equation),
+        )
+    })
 }
 
 fn pcurve_candidates_agree(
@@ -1041,7 +1044,7 @@ fn plane_candidate_pcurve_lies_on_carrier(
     !model_points_agree(points[0], points[1])
         && points
             .into_iter()
-            .all(|point| point_on_carrier(point, carrier))
+            .all(|point| point_on_carrier(<[f64; 3]>::from(point.get()), carrier))
 }
 
 fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, CarrierEquation> {
@@ -1730,7 +1733,12 @@ pub(super) fn topology_bound_plane(
             })
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    points.dedup_by(|left, right| model_points_agree(*left, *right));
+    // A point outside the finite range agrees with no point.
+    points.dedup_by(|left, right| {
+        finite_model_point(*left)
+            .zip(finite_model_point(*right))
+            .is_some_and(|(left, right)| model_points_agree(left, right))
+    });
     let origin = *points.first()?;
     let scale = points
         .iter()
