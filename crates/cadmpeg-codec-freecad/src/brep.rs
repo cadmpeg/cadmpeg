@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -17,6 +18,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
@@ -1334,7 +1336,7 @@ impl TryFrom<TextEdgeRepresentationWire> for TextEdgeRepresentation {
 pub(crate) enum TextTShapeGeometry {
     Vertex {
         tolerance: f64,
-        point: Point3,
+        point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
@@ -1499,7 +1501,7 @@ struct TextTShapeWire {
 enum TextTShapeGeometryWire {
     Vertex {
         tolerance: f64,
-        point: Point3,
+        point: FinitePoint3,
         representations: Vec<TextPointRepresentation>,
     },
     Edge {
@@ -1537,7 +1539,7 @@ struct TextTShapeOut<'a> {
 enum TextTShapeGeometryOut<'a> {
     Vertex {
         tolerance: f64,
-        point: Point3,
+        point: FinitePoint3,
         representations: &'a [TextPointRepresentation],
     },
     Edge {
@@ -2886,7 +2888,7 @@ fn parse_binary_tshape(
     let geometry = match kind {
         TextShapeKind::Vertex => {
             let tolerance = cursor.f64("binary vertex tolerance")?;
-            let point = cursor.point3("binary vertex point")?;
+            let point = cursor.finite_point3("binary vertex point")?;
             let mut representations = Vec::new();
             loop {
                 let representation_kind = cursor.u8("binary vertex representation kind")?;
@@ -3869,10 +3871,12 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
+        self.finite_f64(label).map(FiniteReal::get)
+    }
+
+    fn finite_f64(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.view.f64_le().ok_or_else(|| Self::truncated(label))?;
-        value
-            .is_finite()
-            .then_some(value)
+        FiniteReal::new(value)
             .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
@@ -3893,6 +3897,14 @@ impl<'a> BinaryCursor<'a> {
             self.f64(label)?,
             self.f64(label)?,
             self.f64(label)?,
+        ))
+    }
+
+    fn finite_point3(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
+        Ok(FinitePoint3::from_coordinates(
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
+            self.finite_f64(label)?,
         ))
     }
 
@@ -4491,7 +4503,7 @@ fn parse_vertex_geometry(
     counts: &BTreeMap<String, usize>,
 ) -> Result<TextTShapeGeometry, CodecError> {
     let tolerance = cursor.real("vertex tolerance")?;
-    let point = cursor.point("vertex point")?;
+    let point = cursor.finite_point("vertex point")?;
     let mut representations = Vec::new();
     loop {
         let parameter = cursor.real("vertex representation parameter")?;
@@ -5480,15 +5492,26 @@ impl<'a> TokenCursor<'a> {
     }
 
     fn real(&mut self, label: &str) -> Result<f64, CodecError> {
+        self.finite_real(label).map(FiniteReal::get)
+    }
+
+    fn finite_real(&mut self, label: &str) -> Result<FiniteReal, CodecError> {
         let value = self.next(label)?.parse::<f64>().map_err(|_| {
             CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
         })?;
-        if !value.is_finite() {
-            return Err(CodecError::malformed(format_args!(
+        FiniteReal::new(value).ok_or_else(|| {
+            CodecError::malformed(format_args!(
                 "non-finite {label} in text B-rep Curves table"
-            )));
-        }
-        Ok(value)
+            ))
+        })
+    }
+
+    fn finite_point(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
+        Ok(FinitePoint3::from_coordinates(
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+            self.finite_real(label)?,
+        ))
     }
 
     fn point(&mut self, label: &str) -> Result<Point3, CodecError> {
@@ -6861,6 +6884,29 @@ pub(crate) mod tests {
         assert_eq!(representations[0].parameter_range(), Some([0.0, 1.0]));
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
+    }
+
+    #[test]
+    fn a_text_vertex_holds_its_admitted_point() {
+        let table = |point: &str| {
+            format!(
+                "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 1\nVe 0.001 {point} 0 0 1001000 *\n+1 0 *"
+            )
+        };
+        let facts = parse_text(table("1 -2.5 3").as_bytes())
+            .expect("vertex table")
+            .0;
+        let TextTShapeGeometry::Vertex { point, .. } = facts.tshapes[0].geometry else {
+            panic!("expected vertex geometry")
+        };
+        assert_eq!(point, Point3::new(1.0, -2.5, 3.0));
+        let error = parse_text(table("1 inf 3").as_bytes()).expect_err("non-finite vertex");
+        assert!(
+            error
+                .to_string()
+                .contains("non-finite vertex point in text B-rep Curves table"),
+            "{error}"
+        );
     }
 
     #[test]

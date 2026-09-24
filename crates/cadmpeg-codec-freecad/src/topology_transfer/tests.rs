@@ -31,7 +31,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
             tolerance: 0.0,
-            point: Point3::new(0.0, 0.0, 0.0),
+            point: cadmpeg_ir::features::FinitePoint3::ZERO,
             representations: Vec::new(),
         },
         TextShapeKind::Edge => TextTShapeGeometry::Edge {
