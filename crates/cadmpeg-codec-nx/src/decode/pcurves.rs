@@ -2939,7 +2939,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
         return false;
     };
     let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
-        .and_then(|tangent| tangent.unit_nonzero())
+        .and_then(FiniteVector3::unit_nonzero)
     else {
         return false;
     };
