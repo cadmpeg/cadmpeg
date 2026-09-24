@@ -259,10 +259,9 @@ fn cone_surface_reads_the_native_slant_chart() {
     assert_eq!(
         parse_surface(&record),
         Some(B5Surface::Cone {
-            apex: [1.0, 2.0, 3.0],
-            direction_x: [1.0, 0.0, 0.0],
-            direction_y: [0.0, 1.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
+            apex: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
+            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
             half_angle: 0.25,
             reference_radius: 4.0,
             angular_range: [0.5, 0.5 + std::f64::consts::PI],
@@ -1257,10 +1256,9 @@ fn cone_frames_admit_the_native_distance_band_on_either_side_of_the_axis() {
 #[test]
 fn offset_surface_does_not_infer_cone_construction_from_result_class() {
     let carrier = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: 0.25,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
