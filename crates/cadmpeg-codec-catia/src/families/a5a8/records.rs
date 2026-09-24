@@ -782,7 +782,10 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     if at.checked_add(known_bytes)? > frame.end {
         return None;
     }
-    let knots = f64_values(data, &mut at, count, frame.end)?;
+    let knots = f64_values(data, &mut at, count, frame.end)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     if !knots_strictly_increasing(&knots) {
         return None;
     }
@@ -1458,6 +1461,7 @@ fn a8_external_grid_candidates(
             let Some(values) = f64_values(data, &mut at, poles, end) else {
                 continue;
             };
+            let values = values.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
             if values.contains(&0.0) {
                 continue;
             }
@@ -1510,12 +1514,18 @@ fn a5_surface(
     at += 1;
     let u_distinct_count = a5_int(*data.get(at)?)? as usize;
     at = a5_array_marker(data, at + 1)?;
-    let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?;
+    let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     let v_degree = a5_int(*data.get(at)?)?;
     at += 1;
     let v_distinct_count = a5_int(*data.get(at)?)? as usize;
     at = a5_array_marker(data, at + 1)?;
-    let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
+    let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     let mode = *data.get(at)?;
     at += 1;
     if !knots_strictly_increasing(&u_distinct) || !knots_strictly_increasing(&v_distinct) {
@@ -1699,7 +1709,10 @@ fn a8_surface_from_parsed(
         pole_start += 24;
     }
     let weights = if rational {
-        let values = f64_values(data, &mut pole_start, poles, end)?;
+        let values = f64_values(data, &mut pole_start, poles, end)?
+            .into_iter()
+            .map(FiniteReal::get)
+            .collect::<Vec<_>>();
         values
             .iter()
             .all(|weight| *weight != 0.0)
@@ -1769,13 +1782,13 @@ fn consume_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
 }
 
 /// Read `count` finite little-endian `f64` values that end at or before `end`.
-fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<Vec<f64>> {
+fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<Vec<FiniteReal>> {
     if at.checked_add(count.checked_mul(8)?)? > end {
         return None;
     }
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
-        values.push(f64_le(bytes, *at)?.get());
+        values.push(f64_le(bytes, *at)?);
         *at += 8;
     }
     Some(values)
@@ -1828,6 +1841,7 @@ fn a5_weights(
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
         return f64_values(bytes, at, count, end)
+            .map(|weights| weights.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
             .filter(|weights| weights.iter().all(|weight| *weight != 0.0));
     }
     if bytes.get(*at) != Some(&0x01) {
@@ -1846,7 +1860,10 @@ fn a5_weights(
                 return None;
             }
             *at += 3;
-            let seed = f64_values(bytes, at, seed_count, end)?;
+            let seed = f64_values(bytes, at, seed_count, end)?
+                .into_iter()
+                .map(FiniteReal::get)
+                .collect::<Vec<_>>();
             let mut row = seed.clone();
             row.extend(seed[..cols / 2].iter().rev().copied());
             if row.len() != cols {

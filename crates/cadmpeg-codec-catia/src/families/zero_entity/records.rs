@@ -834,7 +834,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     };
                     let start = *nurbs.knots().get(usize::try_from(nurbs.degree()).ok()?)?;
                     let end = *nurbs.knots().get(nurbs.control_points().len())?;
-                    if !start.is_finite() || !end.is_finite() || start >= end {
+                    if start >= end {
                         return None;
                     }
                     let uv = pcurve_uv(pcurve, start + (end - start) * 0.5)?;

@@ -7,7 +7,7 @@
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
+    nurbs::{NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
@@ -25,36 +25,10 @@ const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
 const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
-fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
-    nurbs.knots().iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(nurbs.knots())
-        && nurbs
-            .control_points()
-            .iter()
-            .copied()
-            .all(|point| point.is_finite())
-        && nurbs.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .copied()
-                .all(|weight| weight.is_finite() && weight != 0.0)
-        })
-}
-
-fn valid_pcurve_nurbs(nurbs: &PcurveNurbs) -> bool {
-    nurbs.knots().iter().copied().all(f64::is_finite)
-        && knots_nondecreasing(nurbs.knots())
-        && nurbs
-            .control_points()
-            .iter()
-            .copied()
-            .all(|point| point.is_finite())
-        && nurbs.weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .copied()
-                .all(|weight| weight.is_finite() && weight > 0.0)
-        })
+fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
+    nurbs
+        .weights()
+        .is_none_or(|weights| weights.iter().all(|weight| *weight > 0.0))
 }
 
 /// Sink for carrier records whose lanes the IR carrier refuses.
@@ -209,7 +183,7 @@ pub(crate) fn reverse_pcurve_geometry(
             ))
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            if !valid_pcurve_nurbs(nurbs) {
+            if !pcurve_weights_are_positive(nurbs) {
                 return None;
             }
             let reversed_knots = reverse_knots(nurbs.knots(), range);
@@ -277,9 +251,6 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            if !valid_nurbs_curve(nurbs) {
-                return None;
-            }
             match reverse_nurbs_curve(nurbs, range) {
                 Ok(curve) => Some((
                     CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -424,17 +395,7 @@ pub(crate) fn reverse_helix_definition(
     let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
-    if range != *angle_range
-        || ![center.x, center.y, center.z]
-            .into_iter()
-            .chain(
-                [major, minor, pitch, axis]
-                    .into_iter()
-                    .flat_map(|vector| [vector.x, vector.y, vector.z]),
-            )
-            .chain([apex_factor])
-            .all(f64::is_finite)
-    {
+    if range != *angle_range {
         return None;
     }
     let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
@@ -644,9 +605,6 @@ pub(crate) fn circular_helix_cache(
         Ok(curve) => curve,
         Err(error) => return note_refusal(Err(error), refusal, record),
     };
-    if !valid_nurbs_curve(&curve) || !knots_nondecreasing(curve.knots()) {
-        return None;
-    }
     Some(CircularHelixCache {
         curve,
         fit_tolerance: FitTolerance::try_new(fit_tolerance).ok()?,
