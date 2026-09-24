@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Canonical [`serde_json::Value`] construction for typed native records.
 //!
-//! Builds exactly the value `serde_json::to_value` produces for a record —
-//! the `Value` scalar conventions apply (a non-finite float is `null`, an
-//! `f32` widens to `f64`, an integer map key becomes its decimal string) —
-//! and adds the two admissions the plain value serializer does not make:
-//! object keys must be distinct, and a `RawValue` payload is read through
-//! one-container replay, so a record nested deeper than the JSON parser's
-//! recursion limit is still admitted.
+//! Builds exactly the value `serde_json::to_value` produces for a record of
+//! finite numbers — the `Value` scalar conventions apply (an `f32` widens to
+//! `f64`, an integer map key becomes its decimal string) — and adds the three
+//! admissions the plain value serializer does not make: a NaN or infinite
+//! number is refused by its member path, where `serde_json::to_value` writes
+//! `null`; object keys must be distinct; and a `RawValue` payload is read
+//! through one-container replay, so a record nested deeper than the JSON
+//! parser's recursion limit is still admitted.
 //!
 //! The serializer recurses one frame per container of the record it is handed,
 //! and a record field holding a `serde_json::Value` states its own shape, so
@@ -58,13 +59,102 @@ fn tagged(variant: &str, payload: Value) -> Node {
     Node::Value(Value::Object(entries))
 }
 
+/// One member step from a record to a value inside it.
+#[derive(Debug)]
+pub(super) enum Step {
+    /// An object member, an externally tagged variant, or a struct field.
+    Key(String),
+    /// A sequence element.
+    Index(usize),
+}
+
+/// A value the canonical serializer refuses.
+#[derive(Debug)]
+pub(super) enum CanonError {
+    /// A NaN or infinite number, which JSON cannot state. The steps from the
+    /// record to the number are collected innermost first while the refusal
+    /// returns through the containers that hold it.
+    NonFinite(Vec<Step>),
+    /// Any other refusal.
+    Json(serde_json::Error),
+}
+
+impl CanonError {
+    /// This refusal, stated from one container further out.
+    fn within(self, step: impl FnOnce() -> Step) -> Self {
+        match self {
+            Self::NonFinite(mut steps) => {
+                steps.push(step());
+                Self::NonFinite(steps)
+            }
+            Self::Json(error) => Self::Json(error),
+        }
+    }
+
+    /// The member path of a refused number, outermost step first: a key is
+    /// joined by `.` and an element index is written `[index]`.
+    pub(super) fn field_path(steps: &[Step]) -> String {
+        let mut path = String::new();
+        for step in steps.iter().rev() {
+            match step {
+                Step::Key(key) => {
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
+                    path.push_str(key);
+                }
+                Step::Index(index) => {
+                    path.push('[');
+                    path.push_str(&index.to_string());
+                    path.push(']');
+                }
+            }
+        }
+        path
+    }
+}
+
+impl std::fmt::Display for CanonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NonFinite(steps) => write!(
+                f,
+                "field {} holds a non-finite number",
+                Self::field_path(steps)
+            ),
+            Self::Json(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for CanonError {}
+
+impl ser::Error for CanonError {
+    fn custom<T: Display>(message: T) -> Self {
+        Self::Json(<serde_json::Error as ser::Error>::custom(message))
+    }
+}
+
+impl From<serde_json::Error> for CanonError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+
+/// A finite number as a JSON value, or the refusal of a NaN or infinite one.
+fn number(value: f64) -> Result<Node, CanonError> {
+    serde_json::Number::from_f64(value)
+        .map(|number| Node::Value(Value::Number(number)))
+        .ok_or(CanonError::NonFinite(Vec::new()))
+}
+
 /// The canonical-value serializer. Every `serialize_*` returns a [`Node`].
 pub(super) struct CanonValue {
     /// Containers this value may still enter.
     depth: usize,
 }
 
-type Error = serde_json::Error;
+type Error = CanonError;
 
 impl CanonValue {
     /// The serializer for one whole typed record.
@@ -158,11 +248,11 @@ impl ser::Serializer for CanonValue {
     }
 
     fn serialize_f32(self, value: f32) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(f64::from(value))))
+        number(f64::from(value))
     }
 
     fn serialize_f64(self, value: f64) -> Result<Node, Error> {
-        Ok(Node::Value(Value::from(value)))
+        number(value)
     }
 
     fn serialize_char(self, value: char) -> Result<Node, Error> {
@@ -224,7 +314,10 @@ impl ser::Serializer for CanonValue {
         value: &T,
     ) -> Result<Node, Error> {
         let depth = self.enter()?;
-        let inner = value.serialize(CanonValue::within(depth))?.into_value();
+        let inner = value
+            .serialize(CanonValue::within(depth))
+            .map_err(|error| error.within(|| Step::Key(variant.to_owned())))?
+            .into_value();
         Ok(tagged(variant, inner))
     }
 
@@ -314,8 +407,10 @@ impl ser::SerializeSeq for CanonSeq {
     type Error = Error;
 
     fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
+        let index = self.out.len();
         let element = value
-            .serialize(CanonValue::within(self.depth))?
+            .serialize(CanonValue::within(self.depth))
+            .map_err(|error| error.within(|| Step::Index(index)))?
             .into_value();
         self.out.push(element);
         Ok(())
@@ -363,7 +458,9 @@ impl ser::SerializeTupleVariant for CanonVariantSeq {
     type Error = Error;
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
+        let variant = self.variant;
         ser::SerializeSeq::serialize_element(&mut self.seq, value)
+            .map_err(|error| error.within(|| Step::Key(variant.to_owned())))
     }
 
     fn end(self) -> Result<Node, Error> {
@@ -385,7 +482,10 @@ impl CanonMap {
         let depth = self.depth;
         match self.entries.entry(key) {
             serde_json::map::Entry::Vacant(entry) => {
-                let value = value.serialize(CanonValue::within(depth))?.into_value();
+                let value = value
+                    .serialize(CanonValue::within(depth))
+                    .map_err(|error| error.within(|| Step::Key(entry.key().clone())))?
+                    .into_value();
                 entry.insert(value);
                 Ok(())
             }
@@ -503,7 +603,10 @@ impl ser::SerializeStructVariant for CanonVariantMap {
         key: &'static str,
         value: &T,
     ) -> Result<(), Error> {
-        self.map.insert(key.to_owned(), value)
+        let variant = self.variant;
+        self.map
+            .insert(key.to_owned(), value)
+            .map_err(|error| error.within(|| Step::Key(variant.to_owned())))
     }
 
     fn end(self) -> Result<Node, Error> {
@@ -578,7 +681,7 @@ impl ser::Serializer for CanonKey {
 
     fn serialize_f32(self, value: f32) -> Result<String, Error> {
         if value.is_finite() {
-            serde_json::to_string(&value)
+            Ok(serde_json::to_string(&value)?)
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }
@@ -586,7 +689,7 @@ impl ser::Serializer for CanonKey {
 
     fn serialize_f64(self, value: f64) -> Result<String, Error> {
         if value.is_finite() {
-            serde_json::to_string(&value)
+            Ok(serde_json::to_string(&value)?)
         } else {
             Err(ser::Error::custom("float key must be finite"))
         }
