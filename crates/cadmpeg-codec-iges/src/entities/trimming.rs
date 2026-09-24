@@ -241,9 +241,7 @@ fn create_boundary_vertices(
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<FinitePoint3> {
     let point_id = &index.vertices(id.as_str())?.point;
-    index
-        .points(point_id.as_str())
-        .map(|point| point.position())
+    index.points(point_id.as_str()).map(Point::position)
 }
 
 pub(super) struct PcurveSupport<'a> {
