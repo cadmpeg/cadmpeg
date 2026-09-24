@@ -130,8 +130,8 @@ impl<'a> WritableObjectCurve<'a> {
     }
 
     /// Encodes the admitted curve as a native class payload.
-    pub(super) fn payload(&self) -> ([u8; 16], Vec<u8>) {
-        match self.geometry {
+    pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), CodecError> {
+        Ok(match self.geometry {
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
                 let axis = circle.frame().axis().as_raw();
@@ -139,13 +139,13 @@ impl<'a> WritableObjectCurve<'a> {
                 let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(center, *axis, *ref_direction, radius),
+                    super::circle_payload(center, *axis, *ref_direction, radius)?,
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {
-                (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs))
+                (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs)?)
             }
-        }
+        })
     }
 }
 
@@ -198,24 +198,24 @@ impl<'a> WritableFaceSurface<'a> {
         }
     }
 
-    pub(super) fn payload(self) -> ([u8; 16], Vec<u8>) {
-        match self {
+    pub(super) fn payload(self) -> Result<([u8; 16], Vec<u8>), CodecError> {
+        Ok(match self {
             Self::Plane {
                 origin,
                 normal,
                 u_axis,
             } => (
                 super::PLANE_SURFACE_CLASS,
-                super::plane_surface_payload(origin, normal, u_axis),
+                super::plane_surface_payload(origin, normal, u_axis)?,
             ),
             Self::Nurbs {
                 surface,
                 pole_count,
             } => (
                 super::NURBS_SURFACE_CLASS,
-                super::nurbs_surface_payload(surface, pole_count),
+                super::nurbs_surface_payload(surface, pole_count)?,
             ),
-        }
+        })
     }
 }
 
