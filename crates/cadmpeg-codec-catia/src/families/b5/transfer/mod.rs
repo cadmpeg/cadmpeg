@@ -1154,15 +1154,14 @@ fn curve_on_parameter_range(
                 .map(CurveGeometry::Solved);
             }
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    FinitePoint3::new(Point3::new(
                         origin.x + (source[0] - target[0] * source_per_target) * direction.x,
                         origin.y + (source[0] - target[0] * source_per_target) * direction.y,
                         origin.z + (source[0] - target[0] * source_per_target) * direction.z,
-                    ),
-                    direction,
-                )
-                .ok()?,
+                    ))?,
+                    line_curve.direction(),
+                ),
             )))
         }
         _ => None,

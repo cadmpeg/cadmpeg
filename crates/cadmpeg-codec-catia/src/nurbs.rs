@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3};
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -237,7 +237,10 @@ pub(crate) fn reverse_curve_geometry(
             let tangent = axis.cross(reference);
             let end = range[1];
             let reference = reference.scale(end.cos()) + tangent.scale(end.sin());
-            let frame = OrthonormalFrame3::new(axis.scale(-1.0), reference)?;
+            let frame = OrthonormalFrame3::from_units(
+                circle_curve.frame().axis().reversed(),
+                UnitVector3::new(reference)?,
+            )?;
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(

@@ -5,6 +5,7 @@ use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -17,11 +18,12 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use serde::{de::DeserializeOwned, Serialize};
@@ -7728,44 +7730,25 @@ fn standard_spline_cylinder_plane(
     let [Some(left), Some(right)] = surfaces else {
         return None;
     };
-    let (cylinder_axis, cylinder_origin, cylinder_radius, plane_origin, plane_normal) =
+    let (cylinder_axis, cylinder_origin, cylinder_radius, plane_origin, plane_axis) =
         match (&left.geometry, &right.geometry) {
             (
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-            ) => {
-                let cylinder_origin = cylinder_surface.origin();
-                let axis = cylinder_surface.frame().axis().as_raw();
-                let radius = cylinder_surface.radius().get();
-                let plane_origin = plane_surface.origin();
-                let plane_normal = plane_surface.frame().axis().as_raw();
-                (
-                    *axis,
-                    *cylinder_origin,
-                    radius,
-                    *plane_origin,
-                    *plane_normal,
-                )
-            }
-            (
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface_2)),
-            ) => {
-                let plane_origin = plane_surface_2.origin();
-                let plane_normal = plane_surface_2.frame().axis().as_raw();
-                let cylinder_origin = cylinder_surface_2.origin();
-                let axis = cylinder_surface_2.frame().axis().as_raw();
-                let radius = cylinder_surface_2.radius().get();
-                (
-                    *axis,
-                    *cylinder_origin,
-                    radius,
-                    *plane_origin,
-                    *plane_normal,
-                )
-            }
+            )
+            | (
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
+            ) => (
+                *cylinder_surface.frame().axis().as_raw(),
+                *cylinder_surface.origin(),
+                cylinder_surface.radius(),
+                *plane_surface.origin(),
+                *plane_surface.frame().axis(),
+            ),
             _ => return None,
         };
+    let plane_normal = *plane_axis.as_raw();
     let axis_dot_normal = cylinder_axis.dot(plane_normal);
     if !axis_dot_normal.is_finite() || axis_dot_normal.abs() <= CYLINDER_PLANE_CONIC_TOLERANCE {
         return None;
@@ -7791,14 +7774,18 @@ fn standard_spline_cylinder_plane(
         return None;
     }
     if minor_norm <= CYLINDER_PLANE_CONIC_TOLERANCE {
-        return Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                center,
+        let frame = OrthonormalFrame3::from_units(
+            plane_axis,
+            UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
                 plane_normal,
-                cadmpeg_ir::geometry::derive_reference_direction(plane_normal),
+            ))?,
+        )?;
+        return Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                FinitePoint3::new(center)?,
+                frame,
                 cylinder_radius,
-            )
-            .ok()?,
+            ),
         )));
     }
     let minor_direction = minor_vector.scale(1.0 / minor_norm);
@@ -7810,25 +7797,22 @@ fn standard_spline_cylinder_plane(
         return None;
     }
     let major_direction = major_unscaled.scale(1.0 / major_norm);
-    let major_radius = cylinder_radius * major_norm;
-    if !major_radius.is_finite() || major_radius <= 0.0 {
-        return None;
-    }
+    let major_radius = PositiveLength::new(cylinder_radius.get() * major_norm)?;
     let endpoint_is_on_ellipse = |point: Point3| {
         let offset = point.vector_from(center);
-        let major = offset.dot(major_direction) / major_radius;
-        let minor = offset.dot(minor_direction) / cylinder_radius;
+        let major = offset.dot(major_direction) / major_radius.get();
+        let minor = offset.dot(minor_direction) / cylinder_radius.get();
         let equation = major * major + minor * minor;
         equation.is_finite() && (equation - 1.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE
     };
     if !endpoint_is_on_ellipse(start) || !endpoint_is_on_ellipse(end) {
         return None;
     }
+    let frame = OrthonormalFrame3::from_units(plane_axis, UnitVector3::new(major_direction)?)?;
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-            center,
-            plane_normal,
-            major_direction,
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+            FinitePoint3::new(center)?,
+            frame,
             major_radius,
             cylinder_radius,
         )
