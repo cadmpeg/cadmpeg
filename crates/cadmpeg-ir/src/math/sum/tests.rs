@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    scaled_finite, ExactSignedSum, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
+    scaled_finite, ExactSignedSum, ScaledValue, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
     MIN_SIGNIFICAND_EXPONENT,
 };
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 
 #[test]
 fn a_zero_value_or_denominator_makes_every_ratio_product_zero() {
@@ -140,4 +140,30 @@ fn an_overflowing_quotient_value_or_dot_product_carries_the_value_it_reached() {
         super::finite_dot([1.0, -1.0], [f64::MAX, f64::MAX]),
         Ok(FiniteReal::ZERO)
     );
+}
+
+#[test]
+fn a_nonzero_value_has_a_scaled_form_that_states_it_exactly() {
+    // Normal and subnormal magnitudes of both signs, the two ends of the
+    // finite range among them.
+    for value in [
+        1.0,
+        -3.5,
+        f64::MAX,
+        -f64::MAX,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        -f64::from_bits(0x000f_ffff_ffff_ffff),
+        1.0e-310,
+    ] {
+        let scaled = ScaledValue::of_nonzero(NonZeroReal::new(value).expect("nonzero value"));
+        assert!((0.5..1.0).contains(&scaled.mantissa), "{value:e}");
+        assert_eq!(
+            scaled.finite().map(|value| value.get().to_bits()),
+            Ok(value.to_bits()),
+            "{value:e}"
+        );
+    }
+    assert!(scaled_finite(0.0).is_none());
+    assert!(scaled_finite(f64::INFINITY).is_none());
 }

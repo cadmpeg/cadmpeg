@@ -165,34 +165,6 @@ impl Vector3 {
     }
 }
 
-impl crate::features::FiniteVector3 {
-    /// Unit direction for every nonzero vector, including subnormals.
-    /// Callers that impose a geometric length threshold must check it separately.
-    #[must_use]
-    pub fn unit_nonzero(self) -> Option<Vector3> {
-        // Chart by the largest component's power of two so the norm stays in
-        // range. A charted subnormal may already be rounded or zero; form that
-        // final quotient from its original component instead.
-        let ([x, y, z], exponent) = self.binade_chart()?;
-        let scaled = Vector3::new(x.get(), y.get(), z.get());
-        let length = scaled.norm();
-        let component = |value: f64, chart: f64| {
-            if value != 0.0 && chart.abs() < f64::MIN_POSITIVE {
-                sum::scaled_finite(value)?
-                    .quotient_shifted(sum::scaled_finite(length)?, -exponent)
-                    .map(FiniteReal::get)
-            } else {
-                Some(chart / length)
-            }
-        };
-        Some(Vector3::new(
-            component(self.x, scaled.x)?,
-            component(self.y, scaled.y)?,
-            component(self.z, scaled.z)?,
-        ))
-    }
-}
-
 impl std::ops::Add for Vector3 {
     type Output = Vector3;
 

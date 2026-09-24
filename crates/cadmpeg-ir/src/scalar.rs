@@ -784,6 +784,39 @@ impl crate::features::FiniteVector3 {
             exponent,
         ))
     }
+
+    /// Unit direction for every nonzero vector, including subnormals, and
+    /// none for the zero vector. Callers that impose a geometric length
+    /// threshold must check it separately.
+    ///
+    /// The vector is charted by the binade of its largest component
+    /// ([`Self::binade_chart`]), so the norm stays in range: the largest
+    /// charted magnitude is at least one half and none reaches one, so the
+    /// chart's norm lies in `[1/2, √3)`. Each unit component is a charted
+    /// component over that norm, at most one in magnitude. A charted component
+    /// below the normal range may already be rounded or zero; its quotient is
+    /// formed from the original component instead, rounded once. Nothing is
+    /// checked. The route lives beside [`FiniteReal`] because only this module
+    /// constructs the nonzero norm.
+    #[must_use]
+    pub fn unit_nonzero(self) -> Option<crate::math::Vector3> {
+        use crate::math::sum::ScaledValue;
+        let ([x, y, z], exponent) = self.binade_chart()?;
+        let length = crate::math::Vector3::new(x.0, y.0, z.0).norm();
+        let scaled_length = ScaledValue::of_nonzero(NonZeroReal(length));
+        let component = |value: f64, chart: FiniteReal| match NonZeroReal::new(value) {
+            Some(value) if chart.0.abs() < f64::MIN_POSITIVE => {
+                ScaledValue::of_nonzero(value).quotient_shifted_product(scaled_length, -exponent)
+            }
+            _ => chart.0 / length,
+        };
+        let vector = self.get();
+        Some(crate::math::Vector3::new(
+            component(vector.x, x),
+            component(vector.y, y),
+            component(vector.z, z),
+        ))
+    }
 }
 
 impl crate::units::FinitePoint2 {

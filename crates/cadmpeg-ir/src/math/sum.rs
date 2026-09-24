@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Finite sums with an exact-product fallback for floating-point range loss.
 
-use crate::scalar::FiniteReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
 ///
@@ -90,16 +90,17 @@ const MAX_SCALED_EXPONENT: i32 = EXACT_PRODUCT_EXPONENT + EXACT_SUM_WORDS as i32
 /// The power of two that scales a [`ScaledValue`]'s mantissa back to the value.
 ///
 /// The field is private and the type has no constructor of its own, so the two
-/// construction expressions in [`scaled_finite`] and [`ExactSignedSum::finish`]
-/// are the only values that exist. Neither reads an exponent from outside, and
-/// the four `const` assertions below state that both reach only
-/// `MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT`.
+/// construction expressions in [`ScaledValue::of_nonzero`] and
+/// [`ExactSignedSum::finish`] are the only values that exist. Neither reads an
+/// exponent from outside, and the four `const` assertions below state that
+/// both reach only `MIN_SCALED_EXPONENT..=MAX_SCALED_EXPONENT`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ScaledExponent(i32);
 
-/// `scaled_finite` states `MIN_SIGNIFICAND_EXPONENT + biased + bits`, with
-/// `biased` from zero to `MAX_BIASED_SIGNIFICAND_EXPONENT` and `bits` from one
-/// to `MAX_SIGNIFICAND_BITS`.
+/// `ScaledValue::of_nonzero` states the exponent of the value's own
+/// significand, `MIN_SIGNIFICAND_EXPONENT + biased + bits`, with `biased` from
+/// zero to `MAX_BIASED_SIGNIFICAND_EXPONENT` and `bits` from one to
+/// `MAX_SIGNIFICAND_BITS`: the raise of a subnormal value is taken back off.
 const _: () = assert!(MIN_SIGNIFICAND_EXPONENT + 1 >= MIN_SCALED_EXPONENT);
 const _: () = assert!(
     MIN_SIGNIFICAND_EXPONENT + MAX_BIASED_SIGNIFICAND_EXPONENT + MAX_SIGNIFICAND_BITS
@@ -192,19 +193,52 @@ impl ScaledValue {
         super::scale_power_of_two(mantissa, exponent).ok_or(mantissa.signum() * f64::INFINITY)
     }
 
-    /// Divide two scaled values, then apply a power of two without rounding
-    /// either operand into the binary64 range first.
-    pub(crate) fn quotient_shifted(
-        self,
-        denominator: Self,
-        exponent_shift: i32,
-    ) -> Option<FiniteReal> {
-        super::scale_power_of_two(
+    /// `self / denominator` times `2^exponent_shift`, without rounding either
+    /// operand into the binary64 range first: the ratio of the two mantissas
+    /// lies in `(0.5, 2)`, and only the final scaling rounds. The caller
+    /// states the bound that keeps the product finite.
+    ///
+    /// Plain `+`: the exponent difference lies in the `ScaledExponent` span,
+    /// and a shift within the binary64 exponent range keeps the sum far inside
+    /// `i32`.
+    pub(crate) fn quotient_shifted_product(self, denominator: Self, exponent_shift: i32) -> f64 {
+        super::power_of_two_product(
             self.sign * denominator.sign * (self.mantissa / denominator.mantissa),
-            self.exponent
-                .difference(denominator.exponent)
-                .checked_add(exponent_shift)?,
+            self.exponent.difference(denominator.exponent) + exponent_shift,
         )
+    }
+
+    /// The scaled form of a nonzero finite value: its sign, the mantissa of
+    /// its magnitude in `[0.5, 1)`, and the power of two between them.
+    ///
+    /// A subnormal magnitude is first raised by `2^RAISE`, which is exact and
+    /// makes it normal, and the raise is taken back off the exponent. A normal
+    /// magnitude's significand is `(1 << 52) | fraction`, whose highest bit is
+    /// set, so its 53 bits form the mantissa without a search. Every nonzero
+    /// finite value has this form, so nothing is checked.
+    pub(crate) fn of_nonzero(value: NonZeroReal) -> Self {
+        // The least subnormal magnitude is `2^-1074`; raised, it is `2^-1010`,
+        // above the least normal magnitude `2^-1022`.
+        const RAISE: i32 = 64;
+        let value = value.get();
+        let (normal, raised) = if value.abs() < f64::MIN_POSITIVE {
+            (value * 2.0_f64.powi(RAISE), RAISE)
+        } else {
+            (value, 0)
+        };
+        let bits = normal.to_bits();
+        // The mask keeps eleven bits, so the field is an `i32` by
+        // construction; a normal field is at least one.
+        let field = ((bits >> 52) & 0x7ff) as i32;
+        let significand = (1_u64 << 52) | (bits & ((1_u64 << 52) - 1));
+        Self {
+            sign: if bits >> 63 != 0 { -1.0 } else { 1.0 },
+            // A 53-bit integer converts exactly.
+            mantissa: significand as f64 * 2.0_f64.powi(-MAX_SIGNIFICAND_BITS),
+            exponent: ScaledExponent(
+                field - 1 + MIN_SIGNIFICAND_EXPONENT + MAX_SIGNIFICAND_BITS - raised,
+            ),
+        }
     }
 }
 
@@ -447,20 +481,10 @@ fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
 }
 
+/// The scaled form of a finite nonzero value; a zero or non-finite value has
+/// none.
 pub(crate) fn scaled_finite(value: f64) -> Option<ScaledValue> {
-    let (negative, significand, exponent) = finite_significand(value)?;
-    // A finite significand is never zero: the subnormal branch requires a
-    // nonzero fraction and the normal branch sets bit 52.
-    let highest_bit = significand.checked_ilog2()?;
-    // `finite_significand` answers a significand whose highest set bit is at
-    // most 52, so `bits` is at most `MAX_SIGNIFICAND_BITS`. That is the bound
-    // the `ScaledExponent` assertion above relies on.
-    let bits = highest_bit as i32 + 1;
-    Some(ScaledValue {
-        sign: if negative { -1.0 } else { 1.0 },
-        mantissa: significand as f64 * 2.0_f64.powi(-bits),
-        exponent: ScaledExponent(i32::from(exponent) + MIN_SIGNIFICAND_EXPONENT + bits),
-    })
+    NonZeroReal::new(value).map(ScaledValue::of_nonzero)
 }
 
 /// `value / denominator`, multiplied by each factor through one quotient that
