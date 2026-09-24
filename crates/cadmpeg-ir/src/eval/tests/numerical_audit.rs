@@ -65,12 +65,15 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
                 .map(crate::features::FinitePoint3::get),
             Some(Point3::new(3.0, 0.0, 0.0))
         );
+        let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
         assert_eq!(
-            nurbs_curve_tangent(1, &knots, &poles, Some(&weights), 0.5),
+            nurbs_curve_tangent(1, &knots, &admitted, Some(&weights), 0.5)
+                .map(crate::features::FiniteVector3::get),
             Some(Vector3::new(2.0, 0.0, 0.0))
         );
         assert_eq!(
-            nurbs_curve_second_derivative(1, &knots, &poles, Some(&weights), 0.5),
+            nurbs_curve_second_derivative(1, &knots, &admitted, Some(&weights), 0.5)
+                .map(crate::features::FiniteVector3::get),
             Some(Vector3::new(0.0, 0.0, 0.0))
         );
         let surface = bilinear_surface(vec![vec![weight; 2]; 2], [2.0, 4.0]);
@@ -297,12 +300,13 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
             &[Point3::new(-1e308, 0.0, 0.0), Point3::new(1e308, 0.0, 0.0)],
             &[0.0, 1.0],
             0.5
-        ),
+        )
+        .map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
     let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
     assert_eq!(
-        polyline_point(&points, &[-1e308, 1e308], 0.0),
+        polyline_point(&points, &[-1e308, 1e308], 0.0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.5, 0.0, 0.0))
     );
     let tangent = polyline_tangent(&points, &[-1e308, 1e308], 0.0).unwrap();

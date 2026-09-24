@@ -818,6 +818,18 @@ impl crate::geometry::pcurve::PcurveNurbs {
             .collect()
     }
 }
+impl crate::geometry::pcurve::PolarPcurveNurbs {
+    /// Radial-plane poles in parameter order. [`Self::new`] admits every pole
+    /// finite, so each pole is carried without a check. The route lives beside
+    /// [`FinitePoint2`] because only this module constructs one.
+    #[must_use]
+    pub fn radial_control_points(&self) -> Vec<FinitePoint2> {
+        self.poles()
+            .into_iter()
+            .map(|pole| FinitePoint2(pole.radial))
+            .collect()
+    }
+}
 impl std::ops::Deref for FinitePoint2 {
     type Target = Point2;
     fn deref(&self) -> &Point2 {

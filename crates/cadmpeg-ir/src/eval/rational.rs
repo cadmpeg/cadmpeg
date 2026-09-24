@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
+use crate::features::FinitePoint3;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
-use crate::math::Point3;
 use crate::scalar::FiniteReal;
 
 #[derive(Clone, Copy)]
 pub(super) struct Homogeneous {
     values: [Option<ScaledValue>; 4],
-    constant: [Option<f64>; 3],
+    constant: [Option<FiniteReal>; 3],
 }
 
 impl Homogeneous {
     pub(super) fn sum(
-        terms: impl Iterator<Item = Option<([f64; 2], f64, Point3)>> + Clone,
+        terms: impl Iterator<Item = Option<([f64; 2], f64, FinitePoint3)>> + Clone,
     ) -> Option<Self> {
         let mut values = [None; 4];
         for (axis, value) in values.iter_mut().enumerate() {
@@ -40,7 +40,7 @@ impl Homogeneous {
             if basis.contains(&0.0) || weight == 0.0 {
                 continue;
             }
-            for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            for (axis, coordinate) in point.coordinates().into_iter().enumerate() {
                 if first {
                     constant[axis] = Some(coordinate);
                 } else if constant[axis] != Some(coordinate) {
@@ -102,9 +102,13 @@ impl Homogeneous {
     /// Subtract the specified weight derivatives, then divide by the base
     /// weight. Repeated corrections express second derivatives without first
     /// multiplying a possibly large first derivative by two.
-    pub(super) fn project(self, base: Self, subtract: &[(Self, [f64; 3])]) -> Option<[f64; 3]> {
+    pub(super) fn project(
+        self,
+        base: Self,
+        subtract: &[(Self, [FiniteReal; 3])],
+    ) -> Option<[FiniteReal; 3]> {
         let denominator = base.values[3]?;
-        let mut result = [0.0; 3];
+        let mut result = [FiniteReal::ZERO; 3];
         for (axis, coordinate) in result.iter_mut().enumerate() {
             // A constant coordinate divides out exactly, including at f64::MAX.
             if subtract.is_empty() {
@@ -119,13 +123,13 @@ impl Homogeneous {
                 let mut sum = ExactSignedSum::default();
                 sum.add_scaled_product(self.values[axis], 1.0)?;
                 for (weight, factor) in subtract {
-                    sum.add_scaled_product(weight.values[3], -factor[axis])?;
+                    sum.add_scaled_product(weight.values[3], factor[axis].negated().get())?;
                 }
                 sum.finish()
             };
             *coordinate = match numerator {
-                Some(value) => value.quotient(denominator)?.get(),
-                None => 0.0,
+                Some(value) => value.quotient(denominator)?,
+                None => FiniteReal::ZERO,
             };
         }
         Some(result)

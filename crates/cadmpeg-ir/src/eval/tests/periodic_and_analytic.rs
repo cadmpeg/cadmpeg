@@ -271,6 +271,83 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
 }
 
 #[test]
+fn conic_arms_refuse_points_and_derivatives_that_overflow() {
+    use crate::eval::{curve_point, curve_second_derivative, curve_tangent};
+    use crate::geometry::analytic::{CircleCurve, EllipseCurve, HyperbolaCurve, ParabolaCurve};
+
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let edge = Point3::new(f64::MAX, 0.0, 0.0);
+    let origin = Point3::new(0.0, 0.0, 0.0);
+    let solved = CurveGeometry::Solved;
+
+    // A finite center and a finite radial term sum past the finite range.
+    let circle = solved(SolvedCurveGeometry::Circle(
+        CircleCurve::try_new(edge, axis, reference, 1.0e308).unwrap(),
+    ));
+    assert!(curve_point(&circle, 0.0).is_none());
+    assert!(curve_point(&circle, std::f64::consts::PI).is_some());
+    let ellipse = solved(SolvedCurveGeometry::Ellipse(
+        EllipseCurve::try_new(edge, axis, reference, 1.0e308, 1.0).unwrap(),
+    ));
+    assert!(curve_point(&ellipse, 0.0).is_none());
+    assert!(curve_point(&ellipse, std::f64::consts::PI).is_some());
+    let parabola = solved(SolvedCurveGeometry::Parabola(
+        ParabolaCurve::try_new(edge, axis, reference, 1.0).unwrap(),
+    ));
+    assert!(curve_point(&parabola, 1.0e154).is_none());
+    assert!(curve_point(&parabola, 0.0).is_some());
+    let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
+        HyperbolaCurve::try_new(edge, axis, reference, 1.0e308, 1.0).unwrap(),
+    ));
+    assert!(curve_point(&hyperbola, 0.0).is_none());
+    let centered = solved(SolvedCurveGeometry::Hyperbola(
+        HyperbolaCurve::try_new(origin, axis, reference, 1.0e308, 1.0).unwrap(),
+    ));
+    assert!(curve_point(&centered, 0.0).is_some());
+
+    // A frame direction admitted within the unit tolerance but longer than
+    // one carries a largest-radius derivative term past the finite range.
+    let stretched = Vector3::new(1.0 + 5.0e-10, 0.0, 0.0);
+    let circle = solved(SolvedCurveGeometry::Circle(
+        CircleCurve::try_new(origin, axis, stretched, f64::MAX).unwrap(),
+    ));
+    assert!(curve_tangent(&circle, 0.0).is_none());
+    assert!(curve_second_derivative(&circle, 0.0).is_none());
+    assert!(curve_tangent(&circle, std::f64::consts::FRAC_PI_4).is_some());
+    assert!(curve_second_derivative(&circle, std::f64::consts::FRAC_PI_4).is_some());
+    let ellipse = solved(SolvedCurveGeometry::Ellipse(
+        EllipseCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
+    ));
+    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_2).is_none());
+    assert!(curve_second_derivative(&ellipse, 0.0).is_none());
+    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_4).is_some());
+    let parabola = solved(SolvedCurveGeometry::Parabola(
+        ParabolaCurve::try_new(origin, axis, stretched, 0.5 * f64::MAX).unwrap(),
+    ));
+    assert!(curve_tangent(&parabola, 1.0).is_none());
+    assert!(curve_second_derivative(&parabola, 0.0).is_none());
+    let parabola = solved(SolvedCurveGeometry::Parabola(
+        ParabolaCurve::try_new(origin, axis, reference, 0.5 * f64::MAX).unwrap(),
+    ));
+    assert!(curve_tangent(&parabola, 0.5).is_some());
+    assert!(curve_second_derivative(&parabola, 0.0).is_some());
+    let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
+        HyperbolaCurve::try_new(origin, axis, stretched, 1.0, f64::MAX).unwrap(),
+    ));
+    assert!(curve_tangent(&hyperbola, 0.0).is_none());
+    let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
+        HyperbolaCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
+    ));
+    assert!(curve_second_derivative(&hyperbola, 0.0).is_none());
+    let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
+        HyperbolaCurve::try_new(origin, axis, reference, 1.0, f64::MAX).unwrap(),
+    ));
+    assert!(curve_tangent(&hyperbola, 0.0).is_some());
+    assert!(curve_second_derivative(&hyperbola, 0.0).is_some());
+}
+
+#[test]
 fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
     use crate::features::{FinitePoint3, FiniteVector3};
 
