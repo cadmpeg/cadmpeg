@@ -589,3 +589,66 @@ fn analytic_parameters_are_finite_where_their_quotients_overflow() {
         crate::math::Point2::new(std::f64::consts::FRAC_PI_4, std::f64::consts::FRAC_PI_4)
     );
 }
+
+#[test]
+fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
+    use crate::eval::EvaluationFailure;
+    use crate::geometry::ProceduralSurface;
+
+    let base_id =
+        crate::ids::SurfaceId::mint("test:model:entity#far-base").expect("valid identity");
+    let subset_id =
+        crate::ids::SurfaceId::mint("test:model:entity#far-subset").expect("valid identity");
+    let subset_construction =
+        crate::ids::ProceduralSurfaceId::mint("test:model:entity#far-subset-construction")
+            .expect("valid identity");
+    let plane = SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let mut ir = crate::CadIr::empty();
+    ir.model.surfaces = vec![
+        crate::geometry::Surface {
+            id: base_id.clone(),
+            geometry: SurfaceGeometry::Solved(plane.clone()),
+            source_object: None,
+        },
+        crate::geometry::Surface {
+            id: subset_id.clone(),
+            geometry: SurfaceGeometry::Solved(plane),
+            source_object: None,
+        },
+    ];
+    // The u range runs down from 1e308 while its sense runs up, so the
+    // support parameter at the far end of the span is 2e308.
+    ir.model
+        .add_procedural_surface(
+            subset_id.clone(),
+            procedural_surface! {
+                id: subset_construction,
+                definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .expect("subset surface exists and has no procedural construction");
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(
+        matches!(
+            crate::eval::model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5),
+            Err(EvaluationFailure::NonFinite(_))
+        ),
+        "{:?}",
+        crate::eval::model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5)
+    );
+    assert_eq!(
+        crate::eval::model_surface_point_by_id(&index, &subset_id, 0.0, 0.5)
+            .map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(1.0e308, 0.5, 0.0))
+    );
+}

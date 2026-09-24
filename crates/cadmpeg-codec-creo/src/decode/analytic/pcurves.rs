@@ -2639,7 +2639,7 @@ mod tests {
         let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
         assert_eq!(diagnostics.mapped_paths, 2);
         assert_eq!(diagnostics.unevaluable_paths, 0);
-        assert!(evidence.get(&7).is_none());
+        assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
             .expect("valid source object identity");
