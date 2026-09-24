@@ -25,7 +25,7 @@ use cadmpeg_ir::ids::{
     PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
@@ -3601,7 +3601,7 @@ fn pcurve_locus_witness(
         let pcurve_parameter = endpoint
             .start_parameter
             .mul_add(1.0 - fraction, endpoint.end_parameter * fraction);
-        let Some(uv) = pcurve_uv(geometry, pcurve_parameter) else {
+        let Some(uv) = pcurve_selection_uv(geometry, pcurve_parameter) else {
             return false;
         };
         let Some(mapped) = surface_selection_point(index, surface_id, uv.u, uv.v) else {
@@ -3759,7 +3759,12 @@ fn surface_selection_point(
     v: f64,
 ) -> Option<Point3> {
     let [u, v] = surface_selection_parameters(index, surface_id, u, v);
-    model_surface_point_by_id(index, surface_id, u, v).map(cadmpeg_ir::features::FinitePoint3::get)
+    // A non-finite point is returned as the evaluation reached it; the
+    // selection measures read it as a miss.
+    match model_surface_point_by_id(index, surface_id, u, v) {
+        Ok(point) => Some(point.get()),
+        Err(failure) => failure.non_finite(),
+    }
 }
 
 #[cfg(test)]
@@ -3771,8 +3776,8 @@ fn pcurve_declared_endpoint_fit(
     start: Point3,
     end: Point3,
 ) -> Option<f64> {
-    let first_uv = pcurve_uv(geometry, range[0])?;
-    let last_uv = pcurve_uv(geometry, range[1])?;
+    let first_uv = pcurve_selection_uv(geometry, range[0])?;
+    let last_uv = pcurve_selection_uv(geometry, range[1])?;
     let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
     let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
     let forward = first.distance(start).max(last.distance(end));
@@ -3788,11 +3793,21 @@ fn pcurve_declared_endpoint_fit_directed(
     start: Point3,
     end: Point3,
 ) -> Option<f64> {
-    let first_uv = pcurve_uv(geometry, range[0])?;
-    let last_uv = pcurve_uv(geometry, range[1])?;
+    let first_uv = pcurve_selection_uv(geometry, range[0])?;
+    let last_uv = pcurve_selection_uv(geometry, range[1])?;
     let first = surface_selection_point(index, surface_id, first_uv.u, first_uv.v)?;
     let last = surface_selection_point(index, surface_id, last_uv.u, last_uv.v)?;
     Some(first.distance(start).max(last.distance(end)))
+}
+
+/// The pcurve point at `parameter`. A non-finite offset-pcurve point is
+/// returned as the evaluation reached it; the selection measures read it as a
+/// miss.
+fn pcurve_selection_uv(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2> {
+    match pcurve_uv(geometry, parameter) {
+        Ok(uv) => Some(uv.get()),
+        Err(failure) => failure.non_finite(),
+    }
 }
 
 fn pcurve_surface_closest(
@@ -3831,12 +3846,12 @@ fn mapped_pcurve_closest(
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate_point = |parameter: f64| {
-        let uv = pcurve_uv(geometry, parameter)?;
+        let uv = pcurve_selection_uv(geometry, parameter)?;
         surface_selection_point(index, surface_id, uv.u, uv.v)
     };
     let evaluate_tangent = |parameter: f64| {
-        let uv = pcurve_uv(geometry, parameter)?;
-        let tangent_uv = pcurve_tangent(geometry, parameter)?;
+        let uv = pcurve_selection_uv(geometry, parameter)?;
+        let tangent_uv = pcurve_tangent(geometry, parameter).ok()?;
         let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
         let partials = model_surface_partials_by_id(index, surface_id, u, v)?;
         Some(Vector3::new(

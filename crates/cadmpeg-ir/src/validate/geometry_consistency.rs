@@ -265,10 +265,18 @@ fn check_support_sides(
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
+        // A non-finite pcurve or support point is measured as a finite one
+        // is: the mismatch it produces is the finding's measure.
         let support = context.parameter_range().endpoints().map(|parameter| {
-            side.pcurve_parameter(context.parameter_range(), parameter)
-                .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter.get()))
-                .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))
+            let parameter = side.pcurve_parameter(context.parameter_range(), parameter)?;
+            let uv = match pcurve_uv(&pcurve.geometry, parameter.get()) {
+                Ok(uv) => uv.get(),
+                Err(failure) => failure.non_finite()?,
+            };
+            match model_surface_point_by_id(index, surface_id, uv.u, uv.v) {
+                Ok(point) => Some(point.get()),
+                Err(failure) => failure.non_finite(),
+            }
         });
         let [Some(support_start), Some(support_end)] = support else {
             continue;
@@ -277,8 +285,8 @@ fn check_support_sides(
             let distance = Point3::distance(constrained, support);
             expected_distance.map_or(distance, |expected| (distance - expected).abs())
         };
-        let mismatch = endpoint_mismatch(constrained[0], support_start.get())
-            .max(endpoint_mismatch(constrained[1], support_end.get()));
+        let mismatch = endpoint_mismatch(constrained[0], support_start)
+            .max(endpoint_mismatch(constrained[1], support_end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -629,14 +637,26 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(mismatch) = intervals
             .into_iter()
             .filter_map(|[t0, t1]| {
+                // A non-finite pcurve or surface point is measured as a finite
+                // one is: the distance it produces is the finding's measure.
+                let pcurve_point = |geometry, parameter| match pcurve_uv(geometry, parameter) {
+                    Ok(uv) => Some(uv.get()),
+                    Err(failure) => failure.non_finite(),
+                };
+                let surface_point = |uv: crate::math::Point2| match model_surface_point_by_id(
+                    &index,
+                    &face.surface,
+                    uv.u,
+                    uv.v,
+                ) {
+                    Ok(point) => Some(point.get()),
+                    Err(failure) => failure.non_finite(),
+                };
                 let (uv0, uv1) = (
-                    pcurve_uv(&first.geometry, t0)?,
-                    pcurve_uv(&last.geometry, t1)?,
+                    pcurve_point(&first.geometry, t0)?,
+                    pcurve_point(&last.geometry, t1)?,
                 );
-                let (p0, p1) = (
-                    model_surface_point_by_id(&index, &face.surface, uv0.u, uv0.v)?.get(),
-                    model_surface_point_by_id(&index, &face.surface, uv1.u, uv1.v)?.get(),
-                );
+                let (p0, p1) = (surface_point(uv0)?, surface_point(uv1)?);
                 let forward = Point3::distance(p0, *start).max(Point3::distance(p1, *end));
                 let reversed = Point3::distance(p0, *end).max(Point3::distance(p1, *start));
                 Some(forward.min(reversed))
@@ -785,10 +805,18 @@ fn mapped_pcurve_parameter_near_point(
     let domain = pcurve_parameter_domain(pcurve_geometry);
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
+    // A non-finite pcurve or surface point is evaluated as a finite one is;
+    // the search reads its non-finite distance.
     let evaluate = |parameter: f64| {
-        let uv = pcurve_uv(pcurve_geometry, parameter)?;
-        let point = model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v)?.get();
-        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter)?;
+        let uv = match pcurve_uv(pcurve_geometry, parameter) {
+            Ok(uv) => uv.get(),
+            Err(failure) => failure.non_finite()?,
+        };
+        let point = match model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v) {
+            Ok(point) => point.get(),
+            Err(failure) => failure.non_finite()?,
+        };
+        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter).ok()?;
         let partials = model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v)?;
         let tangent = Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,

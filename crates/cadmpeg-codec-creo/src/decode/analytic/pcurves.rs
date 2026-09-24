@@ -144,11 +144,16 @@ fn map_two_chart_endpoint_sets(
             .samples
             .iter()
             .map(|sample| {
-                let point = cadmpeg_ir::eval::surface_point(
+                // A non-finite sample is a mapped sample; the agreement test
+                // reads it as a mismatch.
+                let point = match cadmpeg_ir::eval::surface_point(
                     &surface.geometry,
                     sample[face_index][0],
                     sample[face_index][1],
-                )?;
+                ) {
+                    Ok(point) => point.get(),
+                    Err(failure) => failure.non_finite()?,
+                };
                 Some([point.x, point.y, point.z])
             })
             .collect::<Option<Vec<_>>>()
@@ -418,7 +423,7 @@ fn pcurve_plane_carrier_status(
                 endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
                 endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
             ];
-            let Some(point) = cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) else {
+            let Ok(point) = cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) else {
                 return false;
             };
             let point = [point.x, point.y, point.z];
@@ -473,7 +478,7 @@ fn pcurve_endpoint_carrier_status(
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
     let valid = endpoints.into_iter().all(|uv| {
-        let Some(point) = cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) else {
+        let Ok(point) = cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) else {
             return false;
         };
         let point = [point.x, point.y, point.z];
@@ -528,7 +533,7 @@ fn support_cone_witness_matches(
     plane: PlaneEquation,
 ) -> bool {
     endpoints.into_iter().all(|uv| {
-        let Some(point) = cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]) else {
+        let Ok(point) = cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]) else {
             return false;
         };
         point_on_carrier([point.x, point.y, point.z], CarrierEquation::Plane(plane))
@@ -687,9 +692,14 @@ fn map_pcurve_paths(
             result.missing_surfaces += 1;
             continue;
         };
+        // A non-finite endpoint is a mapped endpoint; the path comparisons
+        // read it as a mismatch.
         let [first, second] = endpoints.map(|uv| {
-            cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
-                .map(|point| [point.x, point.y, point.z])
+            let point = match cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) {
+                Ok(point) => point.get(),
+                Err(failure) => failure.non_finite()?,
+            };
+            Some([point.x, point.y, point.z])
         });
         let [Some(first), Some(second)] = [first, second] else {
             result.unevaluable_paths += 1;
@@ -1068,6 +1078,7 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .ok()
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
@@ -1124,6 +1135,7 @@ fn linear_pcurve_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
             let [first, second] = endpoints.map(|uv| {
                 cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+                    .ok()
                     .map(|point| [point.x, point.y, point.z])
             });
             let [first, second] = [first?, second?];
@@ -1304,8 +1316,13 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
                 return;
             };
+            // A path whose endpoint evaluates to a non-finite point is
+            // evaluable; only an endpoint with no value is not.
             if endpoints.iter().all(|uv| {
-                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]).is_some()
+                !matches!(
+                    cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]),
+                    Err(cadmpeg_ir::eval::EvaluationFailure::NoValue)
+                )
             }) {
                 *evaluable_path_counts.entry(curve_id).or_default() += 1;
             }
@@ -1595,10 +1612,15 @@ pub(super) fn native_pcurve_midpoint(
     endpoints: [[f64; 2]; 2],
     edge_points: [[f64; 3]; 2],
 ) -> Option<[f64; 3]> {
-    let mapped = endpoints.map(|uv| {
-        cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
-            .map(|point| [point.x, point.y, point.z])
-    });
+    // A non-finite point is aligned and returned as the evaluation reached it.
+    let mapped_point = |uv: [f64; 2]| {
+        let point = match cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) {
+            Ok(point) => point.get(),
+            Err(failure) => failure.non_finite()?,
+        };
+        Some([point.x, point.y, point.z])
+    };
+    let mapped = endpoints.map(mapped_point);
     let [Some(first), Some(second)] = mapped else {
         return None;
     };
@@ -1606,11 +1628,10 @@ pub(super) fn native_pcurve_midpoint(
         .into_iter()
         .any(|matches| matches)
         .then_some(())?;
-    let uv = [
+    mapped_point([
         f64::midpoint(endpoints[0][0], endpoints[1][0]),
         f64::midpoint(endpoints[0][1], endpoints[1][1]),
-    ];
-    cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).map(|point| [point.x, point.y, point.z])
+    ])
 }
 
 pub(in crate::decode) type NativePcurveCandidates =
@@ -1655,9 +1676,13 @@ fn oriented_native_pcurve_endpoints(
     endpoints: [[f64; 2]; 2],
     traversal: [[f64; 3]; 2],
 ) -> Option<[[f64; 2]; 2]> {
+    // A non-finite point is aligned as the evaluation reached it.
     let mapped = endpoints.map(|uv| {
-        cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
-            .map(|point| [point.x, point.y, point.z])
+        let point = match cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]) {
+            Ok(point) => point.get(),
+            Err(failure) => failure.non_finite()?,
+        };
+        Some([point.x, point.y, point.z])
     });
     let [Some(first), Some(second)] = mapped else {
         return None;
@@ -2495,5 +2520,163 @@ mod tests {
         ));
 
         assert_eq!(mirrored_support_apex_cone(&slack), Some(expected));
+    }
+
+    /// A plane whose origin is the largest finite x coordinate: the pcurve
+    /// point u = MAX lifts to a point without a finite x, and u = -MAX lifts
+    /// onto the plane x = 0.
+    fn overflowing_plane_surface(face_id: u32) -> Surface {
+        Surface {
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        }
+    }
+
+    fn unit_plane_surface(face_id: u32) -> Surface {
+        Surface {
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            source_object: None,
+        }
+    }
+
+    #[test]
+    fn a_two_chart_path_with_an_overflowing_sample_is_mapped_and_mismatched() {
+        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut ir = CadIr::empty();
+        ir.model
+            .surfaces
+            .extend([overflowing_plane_surface(7), unit_plane_surface(8)]);
+        let pcurve = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            samples: vec![
+                [[f64::MAX, 0.0], [0.0, 0.0]],
+                [[-f64::MAX, 1.0], [0.0, 1.0]],
+            ],
+            offset: 0,
+        };
+        assert!(matches!(
+            map_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            TwoChartMapping::Mapped {
+                endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
+                missing_surface_paths: 0,
+                unevaluable_paths: 0,
+                surface_mismatch: true,
+            }
+        ));
+    }
+
+    #[test]
+    fn a_pcurve_path_with_an_overflowing_endpoint_is_mapped() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(overflowing_plane_surface(7));
+        let mapped = super::map_pcurve_paths(
+            &ir,
+            [(
+                std::num::NonZeroU32::new(7),
+                [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
+            )],
+        );
+        assert_eq!(mapped.unevaluable_paths, 0);
+        assert_eq!(mapped.mapped.len(), 1);
+        assert!(mapped.mapped[0].endpoints[0][0].is_nan());
+        assert_eq!(mapped.mapped[0].endpoints[1], [0.0, 5.0, 0.0]);
+    }
+
+    #[test]
+    fn a_pcurve_path_with_an_overflowing_endpoint_withholds_the_curve_carrier() {
+        // Face 11's path lifts one endpoint to a point without a finite x. It
+        // is a mapped path that no endpoint evidence agrees with, and an
+        // evaluable path without a line carrier, so the curve keeps no carrier.
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 7,
+                type_byte: 0,
+                feature_id: 0,
+                directions: [0x01, 0xf6],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
+                next_edges: [7, 7],
+                offset: 0,
+            });
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [10, 11].map(std::num::NonZeroU32::new),
+            face_0_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            face_1_endpoints: [[f64::MAX, 2.0], [-f64::MAX, 4.0]],
+            offset: 0,
+        });
+        scan.topology.loops.push(crate::topology::Loop {
+            face_id: std::num::NonZeroU32::new(10),
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            }],
+        });
+        let mut ir = CadIr::empty();
+        ir.model
+            .surfaces
+            .extend([unit_plane_surface(10), overflowing_plane_surface(11)]);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        assert_eq!(diagnostics.mapped_paths, 2);
+        assert_eq!(diagnostics.unevaluable_paths, 0);
+        assert!(evidence.get(&7).is_none());
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
+            .expect("valid source object identity");
+        assert!(transferred.is_empty(), "{transferred:?}");
+        assert!(ir.model.curves.is_empty());
+
+        let mut finite = CadIr::empty();
+        finite
+            .model
+            .surfaces
+            .extend([unit_plane_surface(10), unit_plane_surface(11)]);
+        scan.curves.pcurves[0].face_1_endpoints = [[1.0, 2.0], [3.0, 4.0]];
+        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut finite, &mut annotations)
+            .expect("valid source object identity");
+        assert_eq!(
+            transferred,
+            BTreeSet::from([
+                CurveId::mint("creo:visibgeom:curve#7".to_string()).expect("identity grammar")
+            ])
+        );
+    }
+
+    #[test]
+    fn a_native_pcurve_with_an_overflowing_endpoint_aligns_on_its_finite_endpoint() {
+        let surface = overflowing_plane_surface(7).geometry;
+        let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
+        assert_eq!(
+            super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
+            Some([f64::MAX, 2.5, 0.0])
+        );
+        assert_eq!(
+            super::oriented_native_pcurve_endpoints(
+                &surface,
+                endpoints,
+                [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
+            ),
+            Some(endpoints)
+        );
     }
 }

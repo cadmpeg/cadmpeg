@@ -813,7 +813,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                         fully_validated = false;
                         break;
                     }
-                    let Some(uv) = pcurve_uv(&pcurve.geometry, *parameter) else {
+                    let Some(uv) = pcurve_uv(&pcurve.geometry, *parameter).ok() else {
                         fully_validated = false;
                         continue;
                     };

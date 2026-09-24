@@ -61,3 +61,74 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
         Some((1e200, 0.))
     );
 }
+
+/// A plane whose origin x coordinate is `origin_x`.
+fn plane_at(origin_x: f64) -> (cadmpeg_ir::CadIr, SurfaceId) {
+    let (mut ir, id) = plane();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(origin_x, 0., 0.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+        )
+        .unwrap(),
+    ));
+    (ir, id)
+}
+
+#[test]
+fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end() {
+    // On the plane at x = MAX, the line end u = MAX has no finite point and
+    // the start u = -MAX maps to the model origin.
+    let (ir, id) = plane_at(f64::MAX);
+    let index = ModelIndex::new_model_only(&ir);
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0., 0.),
+            Point2::new(f64::MAX, 0.),
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        pcurve_declared_endpoint_fit_directed(
+            &index,
+            &id,
+            &pcurve,
+            [-1., 1.],
+            Point3::new(0., 0., 0.),
+            Point3::new(7., 7., 7.),
+        ),
+        Some(0.)
+    );
+}
+
+#[test]
+fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
+    // On the plane at x = 1.78e308 the parabola `(t^2, t)` overflows for t
+    // above about 1.33e153. The Newton step from t = 1e152 toward the point
+    // at t = 1.2e153 lands at about 7.25e153; halving it returns the search
+    // to the finite range.
+    let (ir, id) = plane_at(1.78e308);
+    let index = ModelIndex::new_model_only(&ir);
+    let parabola = PcurveGeometry::Parabola(
+        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
+            Point2::new(0., 0.),
+            Point2::new(1., 0.),
+            Point2::new(0., 1.),
+            0.25,
+        )
+        .unwrap(),
+    );
+    let target_parameter = 1.2e153;
+    let target = Point3::new(
+        1.78e308 + target_parameter * target_parameter,
+        target_parameter,
+        0.,
+    );
+    let (error, parameter) = mapped_pcurve_closest(&index, &id, &parabola, target, 1e152).unwrap();
+    assert!(
+        (parameter / target_parameter - 1.).abs() < 1e-6,
+        "{parameter}"
+    );
+    assert!(error < 1e300, "{error}");
+}

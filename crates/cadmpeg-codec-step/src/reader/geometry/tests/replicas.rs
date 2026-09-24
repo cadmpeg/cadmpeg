@@ -459,7 +459,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             0.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.0, 0.0))
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(
@@ -469,7 +469,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             1.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(4.0, 4.0, 0.0))
+        Ok(Point3::new(4.0, 4.0, 0.0))
     );
 
     let mut output = Vec::new();
@@ -827,7 +827,7 @@ fn replicas_retain_bounded_parent_relations() {
             0.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(3.0, 9.0, 0.0))
+        Ok(Point3::new(3.0, 9.0, 0.0))
     );
 
     let mut output = Vec::new();

@@ -4,7 +4,8 @@
 use cadmpeg_test_support::edit;
 
 use super::{
-    check_procedural_support_consistency, edge_pcurve_parameter_ranges, pcurve_parameter_domain,
+    check_pcurve_surface_consistency, check_procedural_support_consistency,
+    edge_pcurve_parameter_ranges, mapped_pcurve_parameter_near_point, pcurve_parameter_domain,
     pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface, SurfacePcurveContext,
 };
 use crate::document::CadIr;
@@ -1183,3 +1184,132 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
 }
 
 mod parameter_scaling;
+
+/// A plane whose points at `u` beyond `2^970` overflow: its origin is the
+/// largest finite x coordinate.
+fn overflowing_plane() -> SurfaceGeometry {
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ))
+}
+
+#[test]
+fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
+    let mut ir = mapped_surface_curve([1.0e300, 2.0e300]);
+    ir.model.surfaces[0].geometry = overflowing_plane();
+    let mut findings = Vec::new();
+    check_procedural_support_consistency(&ir, &mut findings);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].message,
+        "procedural support side 0 misses its endpoint distance contract by NaN"
+    );
+}
+
+#[test]
+fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
+    // The offset of the vertical line at the largest finite u by the largest
+    // finite distance reaches u = +inf, and the face plane maps it to a point
+    // with no finite coordinate.
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.pcurves.push(Pcurve {
+        id: crate::ids::PcurveId::mint("synthetic:cube:pcurve#overflow").expect("valid identity"),
+        geometry: PcurveGeometry::Offset(
+            crate::geometry::pcurve::OffsetPcurve::try_new(
+                -f64::MAX,
+                Box::new(PcurveGeometry::Line(
+                    crate::geometry::pcurve::LinePcurve::try_new(
+                        Point2::new(f64::MAX, 0.0),
+                        Point2::new(0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    let coedge = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| {
+            coedge.id.as_str().contains("bottom") && coedge.edge.as_str() == "synthetic:cube:edge#0"
+        })
+        .expect("bottom face uses edge #0");
+    coedge.pcurves = vec![PcurveUse {
+        pcurve: crate::ids::PcurveId::mint("synthetic:cube:pcurve#overflow")
+            .expect("valid identity"),
+        isoparametric: None,
+        parameter_range: None,
+    }];
+    let coedge_id = coedge.id.as_str().to_owned();
+    let mut findings = Vec::new();
+    check_pcurve_surface_consistency(&ir, &mut findings);
+    assert!(
+        findings.iter().any(|finding| {
+            finding.entity.as_deref() == Some(coedge_id.as_str())
+                && finding.message
+                    == "pcurve mapped through the face surface misses the edge's vertex positions \
+                        by NaN"
+        }),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
+    // On the plane with origin x = 1.78e308, the parabola `(t^2, t)` maps to
+    // `(1.78e308 + t^2, t, 0)`, which overflows for t above about 1.33e153.
+    // The Newton step from t = 1e152 toward the point at t = 1.2e153 lands
+    // at about 7.25e153; halving it returns the search to the finite range.
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(1.78e308, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let surface_id =
+        SurfaceId::mint("test:model:surface#overflow".to_string()).expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface.clone(),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let context = SurfacePcurveContext {
+        index: &index,
+        surface_id: &surface_id,
+        geometry: &surface,
+    };
+    let parabola = PcurveGeometry::Parabola(
+        crate::geometry::pcurve::ParabolaPcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            0.25,
+        )
+        .unwrap(),
+    );
+    let target_parameter = 1.2e153;
+    let target = Point3::new(
+        1.78e308 + target_parameter * target_parameter,
+        target_parameter,
+        0.0,
+    );
+    let parameter =
+        mapped_pcurve_parameter_near_point(&context, &parabola, target, 1.0e152, 1.0e300)
+            .expect("the halved step reaches the target");
+    assert!(
+        (parameter / target_parameter - 1.0).abs() < 1.0e-6,
+        "{parameter}"
+    );
+}

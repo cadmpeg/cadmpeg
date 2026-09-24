@@ -1197,7 +1197,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         assert_eq!(
             cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
-            Some(Point3::new(10.5, 20.0, 31.0))
+            Ok(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(
             result
@@ -1233,7 +1233,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(
         cadmpeg_ir::eval::surface_point(&result.ir().model.surfaces[0].geometry, 1.0, 3.0)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
+        Ok(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

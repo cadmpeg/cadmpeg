@@ -252,12 +252,16 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         let (Some(start), Some(end)) = (
-            cadmpeg_ir::eval::pcurve_uv(&geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-            }),
-            cadmpeg_ir::eval::pcurve_uv(&geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v)
-            }),
+            cadmpeg_ir::eval::pcurve_uv(&geometry, range[0])
+                .ok()
+                .and_then(|uv| {
+                    cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v).ok()
+                }),
+            cadmpeg_ir::eval::pcurve_uv(&geometry, range[1])
+                .ok()
+                .and_then(|uv| {
+                    cadmpeg_ir::eval::model_surface_point_by_id(index, support.id, uv.u, uv.v).ok()
+                }),
         ) else {
             return Ok(None);
         };

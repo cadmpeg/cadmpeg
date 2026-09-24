@@ -262,7 +262,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             .unwrap(),
         );
         let result = pcurve_uv_differential(&curve, 0.5).unwrap();
-        assert!((result.point.u - 0.5).abs() <= 8.0 * f64::EPSILON);
+        assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
     }

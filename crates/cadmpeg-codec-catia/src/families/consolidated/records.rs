@@ -1319,6 +1319,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                                 let geometry = b2_sphere_geometry(sphere);
                                 pcurve_endpoints_match(pcurve, &points, |[u, v]| {
                                     cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                        .ok()
                                         .map(cadmpeg_ir::features::FinitePoint3::get)
                                 })
                             })
@@ -1340,6 +1341,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                                 b2_plane_geometry(plane).is_some_and(|geometry| {
                                     pcurve_endpoints_match(pcurve, &points, |[u, v]| {
                                         cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                            .ok()
                                             .map(cadmpeg_ir::features::FinitePoint3::get)
                                     })
                                 })
@@ -1526,8 +1528,11 @@ fn support_points(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                    // A non-finite site is compared as a finite one is.
+                    match cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v) {
+                        Ok(point) => Some(point.get()),
+                        Err(failure) => failure.non_finite(),
+                    }
                 })
                 .collect()
         }
@@ -1547,8 +1552,11 @@ fn support_points(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    cadmpeg_ir::eval::surface_point(&geometry, u, v)
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                    // A non-finite site is compared as a finite one is.
+                    match cadmpeg_ir::eval::surface_point(&geometry, u, v) {
+                        Ok(point) => Some(point.get()),
+                        Err(failure) => failure.non_finite(),
+                    }
                 })
                 .collect()
         }
@@ -1577,13 +1585,18 @@ fn support_points(
     }
 }
 
+/// The torus point at stored site `[u, v]`. A non-finite point is returned
+/// as the evaluation reached it; the loci comparisons read it as a
+/// disagreement.
 fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
-    cadmpeg_ir::eval::surface_point(
+    match cadmpeg_ir::eval::surface_point(
         &b2_torus_geometry(torus),
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
-    )
-    .map(cadmpeg_ir::features::FinitePoint3::get)
+    ) {
+        Ok(point) => Some(point.get()),
+        Err(failure) => failure.non_finite(),
+    }
 }
 
 fn nurbs_carrier_offset(
@@ -1848,6 +1861,79 @@ mod tests {
             &circle
         ));
     }
+    #[test]
+    fn support_loci_with_an_overflowing_site_do_not_agree() {
+        // The plane's origin is the largest finite x coordinate: the site
+        // u = MAX lifts to a point without a finite x, and u = -MAX lifts to
+        // the model origin.
+        let plane = crate::families::b2::records::B2PlaneCarrier {
+            pos: 7,
+            end: 0,
+            width: crate::wire::records::ConsolidatedFrameWidth::One,
+            flag: crate::wire::records::ConsolidatedFrameFlag::Flag03,
+            header_token: 0,
+            payload: crate::families::b2::records::B2PlaneCarrierPayload::PointDirection2 {
+                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+                    .expect("finite origin"),
+                frame: cadmpeg_ir::units::OrthonormalFrame3::new(
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("orthonormal frame"),
+                tail: cadmpeg_ir::units::FiniteVector::new([0.0; 3]).expect("finite tail"),
+            },
+        };
+        let pcurve = |points: [[f64; 2]; 2]| ConsolidatedPcurve {
+            pos: 0,
+            support_id: 1,
+            extrapolation_sites: 0,
+            sites: points
+                .into_iter()
+                .enumerate()
+                .map(
+                    |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
+                        knot: crate::test_support::test_b5::finite(index as f64),
+                        point: crate::test_support::test_b5::finite_vector(point),
+                        first_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                        second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                    },
+                )
+                .collect(),
+            range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+            tail: Vec::new(),
+        };
+        let block = super::ConsolidatedEdgeBlock {
+            pcurves: [
+                pcurve([[f64::MAX, 0.0], [-f64::MAX, 0.0]]),
+                pcurve([[-f64::MAX, 0.0], [-f64::MAX, 0.0]]),
+            ],
+            parameters: crate::families::b2::records::B2EdgeParameters {
+                pos: 0,
+                range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+                tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
+            },
+        };
+        let planes = [plane];
+        let carriers = super::ConsolidatedCarriers {
+            cylinders: &[],
+            embedded_cylinders: &[],
+            cones: &[],
+            spheres: &[],
+            tori: &[],
+            planes: &planes,
+            nurbs_surfaces: &[],
+        };
+        let binding = || Some(super::ConsolidatedSupportBinding::Plane { pos: 7 });
+        assert_eq!(
+            super::resolved_support_loci(&block, &[None, binding()], &carriers),
+            Some(vec![Point3::new(0.0, 0.0, 0.0); 2])
+        );
+        assert_eq!(
+            super::resolved_support_loci(&block, &[binding(), binding()], &carriers),
+            None
+        );
+    }
+
     #[test]
     fn class25_wire_rejects_unknown_marker_and_wrong_arity() {
         for (marker, count) in [(0x99, 0), (0x82, 0), (0x83, 7), (0x89, 19), (0x8b, 25)] {

@@ -658,7 +658,7 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<PcurveGeometry>, NurbsError> {
     let points = range.map(|parameter| {
-        let uv = pcurve_uv(pcurve, parameter)?;
+        let uv = pcurve_uv(pcurve, parameter).ok()?;
         decoded_surface_point_inner_with_budget(index, support, uv.u, uv.v, 0, geometry_budget)
     });
     let [Some(first), Some(second)] = points else {
@@ -684,8 +684,8 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                     curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)?.get(),
                 )?;
                 let alignment = |candidate: &PcurveGeometry| {
-                    let uv = pcurve_uv(candidate, range[0])?;
-                    let uv_tangent = pcurve_tangent(candidate, range[0])?;
+                    let uv = pcurve_uv(candidate, range[0]).ok()?;
+                    let uv_tangent = pcurve_tangent(candidate, range[0]).ok()?;
                     let partials = model_surface_partials_by_id_with_budget(
                         index,
                         support,
@@ -814,7 +814,7 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::Parabola(_)
             if reflection != 0.0 && start.is_finite() && end.is_finite() && start < end =>
         {
-            let (Some(first), Some(last), Some(tangent)) = (
+            let (Ok(first), Ok(last), Ok(tangent)) = (
                 pcurve_uv(pcurve, end),
                 pcurve_uv(pcurve, start),
                 pcurve_tangent(pcurve, end),
@@ -1719,7 +1719,7 @@ fn exact_boundary_pcurve_with_index(
             .ok()?,
         );
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
-            let uv = pcurve_uv(&candidate, parameter)?;
+            let uv = pcurve_uv(&candidate, parameter).ok()?;
             if !geometry_budget.charge() {
                 return None;
             }
@@ -1875,7 +1875,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         if !geometry_budget.charge() {
             return false;
         }
-        let Some(uv) = pcurve_uv(pcurve, parameter) else {
+        let Some(uv) = pcurve_uv(pcurve, parameter).ok() else {
             return false;
         };
         let Some(expected) =
@@ -2037,7 +2037,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         .ok()?,
     );
     let parameter = range[0];
-    let uv = pcurve_uv(&candidate, parameter)?;
+    let uv = pcurve_uv(&candidate, parameter).ok()?;
     geometry_budget.charge().then_some(())?;
     let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
     let curve_position =
@@ -2111,7 +2111,7 @@ fn coincident_pcurve_pair_with_index(
             return None;
         }
         let points = [0usize, 1usize].map(|side| {
-            let uv = pcurve_uv(pcurves[side], parameter)?;
+            let uv = pcurve_uv(pcurves[side], parameter).ok()?;
             decoded_surface_point_inner_with_budget(
                 index,
                 surfaces[side],
@@ -2653,7 +2653,7 @@ fn transferred_pcurve_sample_with_budget(
     if !budget.charge() {
         return None;
     }
-    let source_uv = pcurve_uv(source_pcurve, parameter)?;
+    let source_uv = pcurve_uv(source_pcurve, parameter).ok()?;
     let point = source_geometry
         .and_then(|geometry| {
             decoded_surface_point_with_geometry_and_budget(
@@ -2794,7 +2794,7 @@ fn blend_transfer_point_with_index(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
-    let uv = pcurve_uv(contact.pcurve, parameter)?;
+    let uv = pcurve_uv(contact.pcurve, parameter).ok()?;
     decoded_surface_point_with_geometry_and_budget(
         index,
         contact.support,
@@ -2992,7 +2992,7 @@ fn append_transferred_pcurve_segment_with_budget(
             // which is the independent chord-fit condition.
             midpoint.2
         } else {
-            let Some(source_uv) = pcurve_uv(source_pcurve, parameter) else {
+            let Some(source_uv) = pcurve_uv(source_pcurve, parameter).ok() else {
                 return false;
             };
             let Some(source_point) = source_geometry
@@ -3573,7 +3573,7 @@ pub(super) fn pcurve_surface_endpoints_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Point3; 2]> {
     let [t0, t1] = parameter_range.or_else(|| pcurve_parameter_range(geometry))?;
-    let [first_uv, second_uv] = [pcurve_uv(geometry, t0)?, pcurve_uv(geometry, t1)?];
+    let [first_uv, second_uv] = [pcurve_uv(geometry, t0).ok()?, pcurve_uv(geometry, t1).ok()?];
     Some([
         decoded_surface_point_inner_with_budget(
             index,

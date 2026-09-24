@@ -401,10 +401,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         .enumerate()
         .all(|(side, pcurve)| {
             for parameter in [0.0, 1.0, 3.0, 5.0, std::f64::consts::TAU] {
-                let Some(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
+                let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter) else {
                     return false;
                 };
-                let Some(point) = cadmpeg_ir::eval::model_surface_point_by_id(
+                let Ok(point) = cadmpeg_ir::eval::model_surface_point_by_id(
                     &cadmpeg_ir::index::ModelIndex::new(&ir),
                     &supports[side],
                     uv.u,

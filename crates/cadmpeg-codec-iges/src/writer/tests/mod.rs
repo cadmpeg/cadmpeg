@@ -61,6 +61,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod encode;
+mod pcurve_orientation;
 mod quarantine;
 mod roundtrip;
 

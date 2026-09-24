@@ -1402,3 +1402,51 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     assert!((tolerances[&0].get() - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
     assert!(!tolerances.contains_key(&1));
 }
+
+#[test]
+fn b5_supports_with_an_overflowing_endpoint_agree_on_their_finite_endpoints() {
+    // The plane's origin is the largest finite x coordinate, so the pcurve
+    // start u = MAX lifts to a point without a finite x and the end u = -MAX
+    // lifts to the origin of the model.
+    let surfaces = BTreeMap::from([(
+        10,
+        SurfacePlan {
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            procedure: None,
+        },
+    )]);
+    let pcurves = BTreeMap::from([(
+        20,
+        (
+            PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(f64::MAX, 0.0),
+                )
+                .expect("valid LinePcurve fixture"),
+            ),
+            false,
+            crate::test_support::test_b5::finite_pair([-1.0, 1.0]),
+        ),
+    )]);
+    let supports = [
+        (
+            10,
+            20,
+            crate::test_support::test_b5::finite_pair([1.0, -1.0]),
+        ),
+        (
+            10,
+            20,
+            crate::test_support::test_b5::finite_pair([1.0, -1.0]),
+        ),
+    ];
+    assert!(b5_supports_agree(&supports, &surfaces, &pcurves));
+}

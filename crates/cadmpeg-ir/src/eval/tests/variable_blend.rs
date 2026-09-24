@@ -189,17 +189,17 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(2.0, 3.5, 0.0))
+        Ok(Point3::new(2.0, 3.5, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(10.0, 7.0, 8.5))
+        Ok(Point3::new(10.0, 7.0, 8.5))
     );
     assert_eq!(
         model_surface_point(&ir, &ir.model.surfaces[2].geometry, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(4.0, 4.375, 2.125))
+        Ok(Point3::new(4.0, 4.375, 2.125))
     );
     let partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
         .expect("cacheless ruled variable blend");
@@ -228,7 +228,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(4.0, 4.375, 2.125))
+        Ok(Point3::new(4.0, 4.375, 2.125))
     );
 
     let zero_radius = VariableBlendValue {
@@ -259,7 +259,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(4.0, 4.375, 2.125))
+        Ok(Point3::new(4.0, 4.375, 2.125))
     );
     assert!(variable_blend_is_zero_radius(
         &VariableBlendValue {
@@ -317,7 +317,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.25, 0.5, 0.0))
+        Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
         .expect("current variable blend cache partials");
@@ -341,7 +341,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
-        None
+        Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
 }
@@ -361,12 +361,12 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(3.0, 0.5, 0.0))
+        Ok(Point3::new(3.0, 0.5, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.5, 3.0))
+        Ok(Point3::new(0.0, 0.5, 3.0))
     );
     let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
         .expect("cacheless circular variable blend");
@@ -517,12 +517,12 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(3.0, 0.5, 0.0))
+        Ok(Point3::new(3.0, 0.5, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 1.0, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.5, 3.0))
+        Ok(Point3::new(0.0, 0.5, 3.0))
     );
     let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
         .expect("cacheless constant rolling-ball blend");
@@ -598,7 +598,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         .unwrap(),
     ));
     let index = crate::index::ModelIndex::new(&ir);
-    assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_some());
+    assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_ok());
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
 
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
@@ -629,7 +629,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
-        None
+        Err(crate::eval::EvaluationFailure::NoValue)
     );
 
     let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[2].geometry else {
@@ -668,7 +668,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.25, 0.5, 0.0))
+        Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
         .expect("current rolling-ball cache partials");
@@ -705,7 +705,10 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .expect("a blend payload states a legacy cache slot");
     });
     let index = crate::index::ModelIndex::new(&ir);
-    assert!(model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
 }
 
