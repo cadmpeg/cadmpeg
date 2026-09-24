@@ -386,10 +386,7 @@ pub(super) fn emit_edges(
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
                 definition
-                    .set_legacy_cache(
-                        cadmpeg_ir::geometry::LegacyCache::try_new(tolerance)
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                    )
+                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(tolerance))
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);

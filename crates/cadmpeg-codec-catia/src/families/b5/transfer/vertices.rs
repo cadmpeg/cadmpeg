@@ -8,7 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -25,7 +25,7 @@ pub(super) fn transfer_vertex_tolerances(
     supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> BTreeMap<usize, f64> {
+) -> BTreeMap<usize, PositiveReal> {
     let mut tolerances = graph.vertex_tolerances.clone();
     for (&edge, supports) in supports {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {
@@ -52,14 +52,21 @@ pub(super) fn transfer_vertex_tolerances(
                 [(vertices[1], reverse[0]), (vertices[0], reverse[1])]
             };
             for (vertex, residual) in residuals {
-                if residual > EPS_VERTEX_RESIDUAL_INCREMENT && residual.is_finite() {
-                    tolerances
-                        .entry(vertex.combined_index(graph.vertices.raw_points().len()))
-                        .and_modify(|tolerance| {
-                            *tolerance = tolerance.max(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
-                        })
-                        .or_insert(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
+                if residual <= EPS_VERTEX_RESIDUAL_INCREMENT {
+                    continue;
                 }
+                let Some(candidate) = PositiveReal::new(residual + EPS_VERTEX_RESIDUAL_INCREMENT)
+                else {
+                    continue;
+                };
+                tolerances
+                    .entry(vertex.combined_index(graph.vertices.raw_points().len()))
+                    .and_modify(|tolerance| {
+                        if candidate > *tolerance {
+                            *tolerance = candidate;
+                        }
+                    })
+                    .or_insert(candidate);
             }
         }
     }

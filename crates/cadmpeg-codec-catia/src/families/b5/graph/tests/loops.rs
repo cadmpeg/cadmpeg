@@ -301,11 +301,11 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
     };
     assert_eq!(
         lift_parameter_incidence(2, crate::test_support::test_b5::finite(0.0), &geometry),
-        Some([0.0, 0.0, 0.0])
+        Some(crate::test_support::test_b5::point([0.0, 0.0, 0.0]))
     );
     assert_eq!(
         lift_parameter_incidence(2, crate::test_support::test_b5::finite(10.0), &geometry),
-        Some([1.0, 0.0, 0.0])
+        Some(crate::test_support::test_b5::point([1.0, 0.0, 0.0]))
     );
 }
 
@@ -329,7 +329,7 @@ fn surface_candidate_merge_refines_opaque_wrappers_and_rejects_exact_conflicts()
         radius: crate::test_support::test_b5::positive_length(1.0),
         u_range: [0.0, std::f64::consts::TAU],
         v_range: [-1.0, 1.0],
-        angular_scale: 1.0,
+        angular_scale: crate::test_support::test_b5::finite(1.0),
         chart_origin: 0.0,
     };
     let mut surfaces = BTreeMap::from([(1, unknown)]);
@@ -888,7 +888,9 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         edge_parameter_incidences: &edge_parameter_incidences,
         parameter_incidences: &parameter_incidences,
     };
-    let endpoints = pcurve_endpoints(2, 3, &geometry).expect("validated sphere pcurve endpoints");
+    let endpoints = pcurve_endpoints(2, 3, &geometry)
+        .expect("validated sphere pcurve endpoints")
+        .map(crate::test_support::test_b5::coordinates);
     assert!(distance_squared(endpoints[0], [5.0, 0.0, 0.0]) < 1e-24);
     assert!(distance_squared(endpoints[1], [0.0, 5.0, 0.0]) < 1e-24);
 
@@ -964,7 +966,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         bind_edge_vertices(
             &BTreeMap::from([(1, loop_)]),
             &trimmed_geometry,
-            &trimmed_points,
+            &trimmed_points.map(crate::test_support::test_b5::coordinates),
         ),
         BTreeMap::from([(3, [0, 1])])
     );
@@ -986,7 +988,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
             parameter_range: None,
             parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
-            lifted_endpoints: Some(endpoints),
+            lifted_endpoints: Some(crate::test_support::test_b5::points(endpoints)),
         },
     )]);
     let opaque_pcurves = BTreeMap::new();
@@ -1063,7 +1065,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         ]
     );
     assert_eq!(mismatched.tolerances.len(), 1);
-    assert!((mismatched.tolerances[&0] - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
+    assert!((mismatched.tolerances[&0].get() - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -1092,7 +1094,10 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             parameter_range: None,
             parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
-            lifted_endpoints: Some([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]),
+            lifted_endpoints: Some(crate::test_support::test_b5::points([
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+            ])),
         },
     )]);
     let surfaces = BTreeMap::from([(
@@ -1149,7 +1154,10 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
 
     assert_eq!(
         pcurve_endpoints(2, 3, &geometry),
-        Some([[2.5, 0.0, 0.0], [7.5, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [2.5, 0.0, 0.0],
+            [7.5, 0.0, 0.0]
+        ]))
     );
     assert_eq!(
         bind_edge_vertices(
@@ -1204,7 +1212,10 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
 
     assert_eq!(
         pcurve_endpoints(2, 3, &geometry),
-        Some([[2.0, 0.0, 0.0], [8.0, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [2.0, 0.0, 0.0],
+            [8.0, 0.0, 0.0]
+        ]))
     );
 }
 
@@ -1308,6 +1319,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
                 &surfaces[&4],
                 crate::test_support::test_b5::finite(parameter),
             )
+            .map(crate::test_support::test_b5::coordinates)
             .expect("sphere endpoint"),
             [0.0, 5.0, 0.0]
         ) < 1e-24
@@ -1419,7 +1431,7 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
-        lifted_endpoints: Some(endpoints),
+        lifted_endpoints: Some(crate::test_support::test_b5::points(endpoints)),
     };
     let pcurves = BTreeMap::from([
         (10, pcurve(10, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])),

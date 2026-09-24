@@ -484,7 +484,9 @@ fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
         )
         .expect("a finite position is a point"),
     ];
-    let tolerances = [(2usize, 0.02)].into_iter().collect();
+    let tolerances = [(2usize, crate::test_support::test_b5::positive(0.02))]
+        .into_iter()
+        .collect();
     let vertices = [B5LogicalVertex {
         object_id: 7,
         point: [1.0, 0.0, 0.0],

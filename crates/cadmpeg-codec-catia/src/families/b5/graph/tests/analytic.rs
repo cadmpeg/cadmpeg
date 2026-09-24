@@ -267,7 +267,7 @@ fn cone_surface_reads_the_native_slant_chart() {
             reference_radius: 4.0,
             angular_range: [0.5, 0.5 + std::f64::consts::PI],
             slant_range: [0.0, 8.0],
-            angular_scale: 3.0,
+            angular_scale: crate::test_support::test_b5::positive(3.0),
             angular_domain: [
                 0.5 - std::f64::consts::FRAC_PI_2,
                 0.5 + 3.0 * std::f64::consts::FRAC_PI_2,
@@ -402,7 +402,7 @@ fn cylinder_surface_retains_independent_angular_gauge_and_domain() {
             radius: crate::test_support::test_b5::positive_length(radius),
             u_range: [2.0, 10.0],
             v_range: [-4.0, 5.0],
-            angular_scale,
+            angular_scale: crate::test_support::test_b5::finite(angular_scale),
             chart_origin
         })
     );
@@ -574,8 +574,8 @@ fn torus_surface_separates_geometric_radii_from_chart_scales() {
                 -std::f64::consts::FRAC_PI_2,
                 3.0 * std::f64::consts::FRAC_PI_2,
             ],
-            major_scale: 4.0,
-            minor_scale: 3.0
+            major_scale: crate::test_support::test_b5::positive(4.0),
+            minor_scale: crate::test_support::test_b5::positive(3.0)
         })
     );
 
@@ -758,7 +758,7 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
     assert_eq!(pcurve.control_points.len(), 5);
     let weights = pcurve.weights.expect("rational weights");
     assert_eq!(weights.len(), 5);
-    assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
+    assert!((weights[1].get() - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
     assert!((pcurve.control_points[0][0] - 2.0).abs() < 1.0e-12);
     assert!((pcurve.control_points[4][0] + 2.0).abs() < 1.0e-12);
     let mut wrong_family = record;
@@ -1265,7 +1265,7 @@ fn offset_surface_does_not_infer_cone_construction_from_result_class() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [-2.0, 4.0],
-        angular_scale: 3.0,
+        angular_scale: crate::test_support::test_b5::positive(3.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -1317,7 +1317,7 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
         radius: crate::test_support::test_b5::positive_length(radius),
         u_range: [0.0, std::f64::consts::TAU * radius],
         v_range: [-1.0, 1.0],
-        angular_scale: radius,
+        angular_scale: crate::test_support::test_b5::finite(radius),
         chart_origin: 0.0,
     };
     assert!(analytic_offset_magnitude_agrees(
@@ -1356,8 +1356,8 @@ fn analytic_offset_gate_requires_coaxial_equal_family_carriers() {
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
         minor_angular_domain: [0.0, std::f64::consts::TAU],
-        major_scale: major_radius,
-        minor_scale: minor_radius,
+        major_scale: crate::test_support::test_b5::positive(major_radius),
+        minor_scale: crate::test_support::test_b5::positive(minor_radius),
     };
     assert!(analytic_offset_magnitude_agrees(
         &torus([0.0; 3], 8.0, 3.0),

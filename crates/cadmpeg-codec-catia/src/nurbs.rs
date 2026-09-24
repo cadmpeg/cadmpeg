@@ -9,9 +9,10 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
     pcurve::{PcurveGeometry, PcurveNurbs},
-    CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
+    CurveGeometry, FitTolerance, ProceduralCurveDefinition, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::OrthonormalFrame3;
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
@@ -503,7 +504,7 @@ pub(crate) struct CircularHelixCache {
     /// Piecewise-linear curve cache on the construction's angle interval.
     pub(crate) curve: NurbsCurve,
     /// Maximum radial sagitta deviation in model length units.
-    pub(crate) fit_tolerance: f64,
+    pub(crate) fit_tolerance: FitTolerance,
 }
 
 /// Fit a circular helix with a bounded angle-parameterized polyline cache.
@@ -515,10 +516,11 @@ pub(crate) struct CircularHelixCache {
 /// increasing, and the lane refusal from `NurbsCurve::from_lanes`.
 pub(crate) fn circular_helix_cache(
     construction: &ProceduralCurveDefinition,
-    requested_tolerance: f64,
+    requested_tolerance: PositiveReal,
     refusal: &mut LaneRefusals,
     record: &str,
 ) -> Option<CircularHelixCache> {
+    let requested_tolerance = requested_tolerance.get();
     let ProceduralCurveDefinition::Helix(helix_payload) = construction else {
         return None;
     };
@@ -544,9 +546,7 @@ pub(crate) fn circular_helix_cache(
             + (left.z / left.x.hypot(left.y).hypot(left.z))
                 * (right.z / right.x.hypot(right.y).hypot(right.z))
     };
-    if !requested_tolerance.is_finite()
-        || requested_tolerance <= 0.0
-        || !radius.is_finite()
+    if !radius.is_finite()
         || radius <= 0.0
         || !minor_radius.is_finite()
         || minor_radius <= 0.0
@@ -583,8 +583,8 @@ pub(crate) fn circular_helix_cache(
     }
     let relative_tolerance = requested_tolerance / radius;
     // The step whose chord sagitta is the requested tolerance is
-    // `2 * acos(1 - relative_tolerance)`. The refusals above state
-    // `requested_tolerance > 0` and `radius > 0`, so the relative tolerance is
+    // `2 * acos(1 - relative_tolerance)`. The requested tolerance is positive
+    // and the refusals above state `radius > 0`, so the relative tolerance is
     // positive and `1 - relative_tolerance` never passes `acos`'s upper bound.
     // It passes the lower bound when the tolerance reaches the diameter, and
     // that is a stated step rather than a value out of domain: a tolerance at
@@ -644,15 +644,12 @@ pub(crate) fn circular_helix_cache(
         Ok(curve) => curve,
         Err(error) => return note_refusal(Err(error), refusal, record),
     };
-    if !fit_tolerance.is_finite()
-        || !valid_nurbs_curve(&curve)
-        || !knots_nondecreasing(curve.knots())
-    {
+    if !valid_nurbs_curve(&curve) || !knots_nondecreasing(curve.knots()) {
         return None;
     }
     Some(CircularHelixCache {
         curve,
-        fit_tolerance,
+        fit_tolerance: FitTolerance::try_new(fit_tolerance).ok()?,
     })
 }
 
@@ -783,6 +780,7 @@ mod tests {
         CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::scalar::PositiveReal;
 
     use super::{
         canonical_model_curve_range, circular_helix_cache, quintic_jet_bspline,
@@ -1102,14 +1100,14 @@ mod tests {
 
         let cache = circular_helix_cache(
             &definition,
-            1.0e-4,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record",
         )
         .expect("valid helix");
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
-        assert!(cache.fit_tolerance.is_finite());
+        assert!(cache.fit_tolerance.get() > 0.0);
         assert!(cache
             .curve
             .control_points()
@@ -1151,7 +1149,7 @@ mod tests {
         let cache = |tolerance| {
             circular_helix_cache(
                 &definition,
-                tolerance,
+                PositiveReal::new(tolerance).expect("positive fixture tolerance"),
                 &mut crate::nurbs::LaneRefusals::new(),
                 "test record",
             )
@@ -1193,21 +1191,21 @@ mod tests {
 
         assert!(circular_helix_cache(
             &definition(Vector3::new(0.0, radius, 0.0)),
-            1.0e-4,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_some());
         assert!(circular_helix_cache(
             &definition(Vector3::new(0.0, 2.0 * radius, 0.0)),
-            1.0e-4,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
         .is_none());
         assert!(circular_helix_cache(
             &definition(Vector3::new(radius, 0.0, 0.0)),
-            1.0e-4,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
@@ -1255,7 +1253,7 @@ mod tests {
         }
         assert!(circular_helix_cache(
             &non_axial_pitch,
-            1.0e-4,
+            PositiveReal::new(1.0e-4).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )
@@ -1278,7 +1276,7 @@ mod tests {
         );
         assert!(circular_helix_cache(
             &overflowing_points,
-            f64::MAX,
+            PositiveReal::new(f64::MAX).expect("positive fixture tolerance"),
             &mut crate::nurbs::LaneRefusals::new(),
             "test record"
         )

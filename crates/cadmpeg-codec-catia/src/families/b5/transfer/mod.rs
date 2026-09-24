@@ -20,7 +20,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -61,8 +61,8 @@ const POINT_TOLERANCE: f64 = 1e-3;
 /// the larger of that residual and the object-stream incidence tolerance: the
 /// gate never runs tighter than the format's own incidence tolerance, and a
 /// stated tolerance is never floored, because none reaches here.
-fn endpoint_gate_radius(residual: Option<f64>) -> f64 {
-    match residual {
+fn endpoint_gate_radius(residual: Option<PositiveReal>) -> f64 {
+    match residual.map(PositiveReal::get) {
         Some(residual) if residual > POINT_TOLERANCE => residual,
         _ => POINT_TOLERANCE,
     }
@@ -100,7 +100,7 @@ struct CurvePlan {
     geometry: CurveGeometry,
     parameter_range: Option<[f64; 2]>,
     edge_tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
-    cache_fit_tolerance: Option<f64>,
+    cache_fit_tolerance: Option<cadmpeg_ir::geometry::FitTolerance>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,7 +108,7 @@ struct HelixPlan {
     definition: ProceduralCurveDefinition,
     cache: NurbsCurve,
     parameter_range: [f64; 2],
-    fit_tolerance: f64,
+    fit_tolerance: cadmpeg_ir::geometry::FitTolerance,
 }
 
 struct OwnershipPlan {
@@ -452,7 +452,9 @@ fn build_plan(
                             .iter()
                             .map(|point| neutral_pcurve_point(*point, surface))
                             .collect(),
-                        pcurve.weights.clone(),
+                        pcurve.weights.as_ref().map(|weights| {
+                            weights.iter().copied().map(PositiveReal::get).collect()
+                        }),
                         false,
                     ),
                     refusal,
@@ -573,7 +575,7 @@ fn build_plan(
                         )),
                         parameter_range: Some(helix.parameter_range),
                         edge_tolerance: Some(cadmpeg_ir::scalar::PositiveReal::new(
-                            helix.fit_tolerance,
+                            helix.fit_tolerance.get(),
                         )?),
                         cache_fit_tolerance: Some(helix.fit_tolerance),
                     },
@@ -660,10 +662,7 @@ fn build_plan(
         edge_support_plan,
         edge_ids,
         loop_orientation,
-        vertex_tolerances: vertex_tolerances
-            .into_iter()
-            .map(|(vertex, value)| Some((vertex, cadmpeg_ir::scalar::PositiveReal::new(value)?)))
-            .collect::<Option<_>>()?,
+        vertex_tolerances,
         exact_support_edges,
         exact_support_curves,
         used_vertices,
@@ -996,7 +995,10 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         .iter()
                         .map(|point| neutral_pcurve_point(*point, source_surface))
                         .collect(),
-                    pcurve.weights.clone(),
+                    pcurve
+                        .weights
+                        .as_ref()
+                        .map(|weights| weights.iter().copied().map(PositiveReal::get).collect()),
                     false,
                 ),
                 refusal,
