@@ -5853,8 +5853,11 @@ fn block_placement(
         maximum: f64,
     }
 
-    fn canonical_normal(mut normal: Vector3, angular_tolerance: f64) -> Option<Vector3> {
-        normal = Vector3::unit_nonzero(normal)?;
+    fn canonical_normal(
+        normal: cadmpeg_ir::units::UnitVector3,
+        angular_tolerance: f64,
+    ) -> Option<Vector3> {
+        let mut normal = *normal.to_unit_length_charted().as_raw();
         let leading = [normal.x, normal.y, normal.z]
             .into_iter()
             .find(|component| component.abs() > angular_tolerance)?;
@@ -5903,8 +5906,7 @@ fn block_placement(
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.frame().axis().as_raw();
-        let normal = canonical_normal(*normal, angular_tolerance)?;
+        let normal = canonical_normal(*plane_surface.frame().axis(), angular_tolerance)?;
         let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
         let existing = bands
             .iter_mut()
@@ -7379,8 +7381,8 @@ struct BlindBoreCylinderWitness {
     depth: f64,
 }
 
-fn canonical_axis(axis: Vector3, angular_tolerance: f64) -> Option<Vector3> {
-    let mut axis = Vector3::unit_nonzero(axis)?;
+fn canonical_axis(axis: cadmpeg_ir::units::UnitVector3, angular_tolerance: f64) -> Option<Vector3> {
+    let mut axis = *axis.to_unit_length_charted().as_raw();
     let leading = [axis.x, axis.y, axis.z]
         .into_iter()
         .find(|component| component.abs() > angular_tolerance)?;
@@ -7411,7 +7413,7 @@ fn circular_loop_geometry(
             return None;
         };
         let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
+        let axis = circle_curve.frame().axis();
         let radius = circle_curve.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         if let Some((previous_center, previous_axis, previous_radius)) = witness {
@@ -7489,7 +7491,7 @@ fn cylindrical_face_witnesses(
             continue;
         };
         let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.frame().axis().as_raw();
+        let axis = cylinder_surface.frame().axis();
         let radius = cylinder_surface.radius().get();
         let axis = canonical_axis(*axis, angular_tolerance)?;
         let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
@@ -7601,7 +7603,7 @@ fn plane_annulus_witness(
             continue;
         };
         let origin = plane_surface.origin().get();
-        let normal = plane_surface.frame().axis().as_raw();
+        let normal = plane_surface.frame().axis();
         let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
             continue;
         };
@@ -7832,7 +7834,7 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
                 continue;
             };
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis().as_raw();
+            let normal = plane_surface.frame().axis();
             let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
                 continue;
             };

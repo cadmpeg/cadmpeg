@@ -337,6 +337,51 @@ impl UnitVector3 {
             self.0.z / length,
         ))
     }
+    /// The direction divided by its length with the arithmetic of
+    /// [`Vector3::unit_nonzero`], for a reader whose output bits follow that
+    /// arithmetic.
+    ///
+    /// `unit_nonzero` multiplies each component by the power of two that
+    /// puts the largest magnitude in `[0.5, 1)` and divides the result by
+    /// the `hypot` length of the three results. A component whose result is
+    /// below the normal range is divided from its original value instead:
+    /// the quotient of the two significands is rounded once, then the power
+    /// of two is applied with one more rounding.
+    ///
+    /// The admission holds the length within `1e-9` of one, so the largest
+    /// magnitude is in `[0.5, 2)` and the power of two is one below one and
+    /// one half from one. The multiplied components are finite, the length
+    /// is in `[0.5, √3)`, and every quotient is finite: no step refuses.
+    /// Multiplying a small component by `2^64` is exact and keeps it and its
+    /// quotient by the length normal, so that quotient rounds the same
+    /// significand quotient. One multiplication by the remaining power of
+    /// two then gives the same final rounding. The quotients have unit
+    /// length to rounding, which keeps the admission.
+    #[must_use]
+    pub fn to_unit_length_charted(self) -> Self {
+        let value = self.0;
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        let exponent = if largest < 1.0 { 0 } else { 1 };
+        let chart_scale = 2.0_f64.powi(-exponent);
+        let chart = Vector3::new(
+            value.x * chart_scale,
+            value.y * chart_scale,
+            value.z * chart_scale,
+        );
+        let length = chart.norm();
+        let component = |original: f64, charted: f64| {
+            if original != 0.0 && charted.abs() < f64::MIN_POSITIVE {
+                original * 2.0_f64.powi(64) / length * 2.0_f64.powi(-64 - exponent)
+            } else {
+                charted / length
+            }
+        };
+        Self(Vector3::new(
+            component(value.x, chart.x),
+            component(value.y, chart.y),
+            component(value.z, chart.z),
+        ))
+    }
     /// Reverse the direction.
     #[must_use]
     pub fn reversed(self) -> Self {
@@ -806,6 +851,30 @@ mod tests {
             assert!((unit.as_raw().z - expected.z).abs() <= f64::EPSILON);
             assert!((unit.as_raw().norm() - 1.0).abs() <= 2.0 * f64::EPSILON);
             assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+        }
+    }
+
+    #[test]
+    fn a_charted_unit_direction_has_the_bits_of_unit_nonzero() {
+        for admitted in [
+            Vector3::new(
+                f64::from_bits(0xbff0_0000_0003_9c52),
+                f64::from_bits(0x0000_a645_6bb3_8f02),
+                f64::from_bits(0x169e_ea5d_0b4d_3dca),
+            ),
+            Vector3::new(0.6, 0.8, 0.0),
+            Vector3::new(0.0, -1.0 - 8.0e-10, 0.0),
+            Vector3::new(1.0 + 5.0e-10, 3.0e-310, -1.5 * f64::MIN_POSITIVE),
+            Vector3::new(-0.0, 0.999_999_999_5, 5.0e-324),
+            Vector3::new(0.577_350_269_2, -0.577_350_269_2, 0.577_350_269_2),
+        ] {
+            let direction = UnitVector3::new(admitted).expect("admitted direction");
+            let expected = admitted.unit_nonzero().expect("finite nonzero direction");
+            let charted = *direction.to_unit_length_charted().as_raw();
+            assert_eq!(
+                [charted.x, charted.y, charted.z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
         }
     }
 
