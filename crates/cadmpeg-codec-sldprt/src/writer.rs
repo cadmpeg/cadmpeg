@@ -3441,11 +3441,13 @@ fn homogeneous_poles(
     let mut out = Vec::with_capacity(points.len() * if weights.is_some() { 4 } else { 3 });
     for (index, point) in points.iter().enumerate() {
         let weight = weights.map_or(1.0, |values| values[index]);
-        out.extend([
-            point.x * length_scale * weight,
-            point.y * length_scale * weight,
-            point.z * length_scale * weight,
-        ]);
+        let homogeneous = [point.x, point.y, point.z].map(|value| value * length_scale * weight);
+        if !homogeneous.iter().all(|value| value.is_finite()) {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
+            )));
+        }
+        out.extend(homogeneous);
         if weights.is_some() {
             out.push(weight);
         }

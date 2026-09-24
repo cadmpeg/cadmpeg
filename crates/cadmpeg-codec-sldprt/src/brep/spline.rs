@@ -553,11 +553,11 @@ fn homogeneous_poles(points: &[Point3], weights: Option<&[f64]>, scale: f64) -> 
         if weight.abs() <= f64::EPSILON {
             return None;
         }
-        out.extend([
-            point.x * scale * weight,
-            point.y * scale * weight,
-            point.z * scale * weight,
-        ]);
+        let homogeneous = [point.x, point.y, point.z].map(|value| value * scale * weight);
+        if !homogeneous.iter().all(|value| value.is_finite()) {
+            return None;
+        }
+        out.extend(homogeneous);
         if weights.is_some() {
             out.push(weight);
         }
@@ -1043,6 +1043,22 @@ mod tests {
         let (values, multiplicities) = unique_knots(&knots);
         assert_eq!(values, [0.0, 1.0]);
         assert_eq!(multiplicities, [count, 1]);
+    }
+
+    /// A rational pole whose coordinate times its weight overflows declines
+    /// the patch, where its homogeneous coordinate was written as an
+    /// infinity.
+    #[test]
+    fn a_pole_whose_weighted_coordinate_overflows_declines_the_patch() {
+        let point = cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0);
+        assert_eq!(
+            super::homogeneous_poles(&[point], Some(&[1.0e300]), 0.001),
+            None
+        );
+        assert_eq!(
+            super::homogeneous_poles(&[point], Some(&[2.0]), 0.001),
+            Some(vec![1.0e300 * 0.001 * 2.0, 0.0, 0.0, 2.0])
+        );
     }
 
     #[test]
