@@ -190,6 +190,13 @@ impl LinePcurve {
         direction: NonzeroPoint2::U_AXIS,
     };
 
+    /// Build a line from admitted parts. The argument types state the whole
+    /// invariant, so nothing is checked again.
+    #[must_use]
+    pub const fn new(origin: FinitePoint2, direction: NonzeroPoint2) -> Self {
+        Self { origin, direction }
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(origin: Point2, direction: Point2) -> Result<Self, &'static str> {
         let origin = FinitePoint2::new(origin).ok_or("LinePcurve.origin must be finite")?;

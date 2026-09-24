@@ -321,3 +321,35 @@ fn parabola_coordinate_scaling_preserves_parameterization() {
         }
     }
 }
+
+#[test]
+fn a_line_pcurve_from_admitted_parts_matches_its_raw_admission() {
+    use crate::units::{FinitePoint2, NonzeroPoint2};
+
+    let origin = Point2::new(1.5, -2.0);
+    let direction = Point2::new(0.25, 3.0);
+    let admitted = LinePcurve::new(
+        FinitePoint2::new(origin).unwrap(),
+        NonzeroPoint2::new(direction).unwrap(),
+    );
+    assert_eq!(admitted, LinePcurve::try_new(origin, direction).unwrap());
+    assert_eq!(*admitted.origin().as_raw(), origin);
+    assert_eq!(*admitted.direction().as_raw(), direction);
+}
+
+#[test]
+fn a_reversed_nonzero_direction_is_the_admitted_negation() {
+    use crate::units::NonzeroPoint2;
+
+    for direction in [
+        Point2::new(0.25, -3.0),
+        Point2::new(-f64::MAX, 0.0),
+        Point2::new(0.0, 2.0e-8),
+    ] {
+        let reversed = NonzeroPoint2::new(direction).unwrap().reversed();
+        assert_eq!(
+            Some(reversed),
+            NonzeroPoint2::new(Point2::new(-direction.u, -direction.v))
+        );
+    }
+}
