@@ -1062,24 +1062,33 @@ fn patch_retained_swobjects_metadata(
         let offset = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
         })?;
-        match MetadataRecord::project(attribute, length_scale)? {
+        // The retained record's token and unit-name marker are checked once
+        // the values have the record's shape and before they are admitted.
+        let retained = |token: &'static [u8]| {
+            require_token(payload, offset, token)?;
+            if token == UNIT_NAME_TOKEN {
+                resident_unit_name_len(payload, offset + token.len())?;
+            }
+            Ok(())
+        };
+        match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
-                let token = b"moBBoxCenterData_c";
-                require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(32);
                 for value in values {
                     bytes.extend(value.to_le_bytes());
                 }
-                overwrite_bytes(payload, offset + token.len() + 4, &bytes)?;
+                overwrite_bytes(payload, offset + BOUNDING_ENVELOPE_TOKEN.len() + 4, &bytes)?;
             }
             Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                let token = b"moDefaultRefPlnData_c";
-                require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(72);
                 for value in origin.into_iter().chain(frame) {
                     bytes.extend(value.to_le_bytes());
                 }
-                overwrite_bytes(payload, offset + token.len(), &bytes)?;
+                overwrite_bytes(
+                    payload,
+                    offset + DEFAULT_REFERENCE_PLANE_TOKEN.len(),
+                    &bytes,
+                )?;
             }
             Some(MetadataRecord::TransformedReferencePlane {
                 center,
@@ -1087,8 +1096,6 @@ fn patch_retained_swobjects_metadata(
                 auxiliary,
                 diagonal,
             }) => {
-                let token = b"moTransRefPlaneData_c";
-                require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(72);
                 for value in center
                     .into_iter()
@@ -1098,38 +1105,30 @@ fn patch_retained_swobjects_metadata(
                 {
                     bytes.extend(value.to_le_bytes());
                 }
-                overwrite_bytes(payload, offset + token.len() + 8, &bytes)?;
+                overwrite_bytes(
+                    payload,
+                    offset + TRANSFORMED_REFERENCE_PLANE_TOKEN.len() + 8,
+                    &bytes,
+                )?;
             }
             Some(MetadataRecord::PartRecord { id, version }) => {
-                let token = b"moPart_c";
-                require_token(payload, offset, token)?;
-                overwrite_bytes(payload, offset + token.len(), &id.to_le_bytes())?;
-                overwrite_bytes(payload, offset + token.len() + 8, &version.to_le_bytes())?;
+                let start = offset + PART_RECORD_TOKEN.len();
+                overwrite_bytes(payload, start, &id.to_le_bytes())?;
+                overwrite_bytes(payload, start + 8, &version.to_le_bytes())?;
             }
             Some(MetadataRecord::ConfigurationManager {
                 minor,
                 states,
                 filetime,
             }) => {
-                let token = b"moConfigurationMgr_c";
-                require_token(payload, offset, token)?;
-                let start = offset + token.len();
+                let start = offset + CONFIGURATION_MANAGER_TOKEN.len();
                 overwrite_bytes(payload, start + 66, &minor.to_le_bytes())?;
                 overwrite_bytes(payload, start + 107, &[states])?;
                 overwrite_bytes(payload, start + 117, &filetime.to_le_bytes())?;
             }
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
-                let token = b"moLengthUserUnits_c";
-                require_token(payload, offset, token)?;
-                let marker = offset + token.len();
-                if payload.get(marker..marker + 3) != Some(&[0xff, 0xfe, 0xff]) {
-                    return Err(CodecError::Malformed(
-                        "retained SLDPRT unit-name marker does not match its provenance".into(),
-                    ));
-                }
-                let old_len = usize::from(*payload.get(marker + 3).ok_or_else(|| {
-                    CodecError::Malformed("truncated retained SLDPRT unit name".into())
-                })?);
+                let marker = offset + UNIT_NAME_TOKEN.len();
+                let old_len = resident_unit_name_len(payload, marker)?;
                 if usize::from(byte_len) != old_len {
                     return Err(CodecError::NotImplemented(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
@@ -1156,6 +1155,18 @@ fn patch_retained_swobjects_metadata(
         }
     }
     Ok(())
+}
+
+/// The byte length of the retained unit name after its marker at `marker`.
+fn resident_unit_name_len(payload: &[u8], marker: usize) -> Result<usize, CodecError> {
+    if payload.get(marker..marker + 3) != Some(&[0xff, 0xfe, 0xff]) {
+        return Err(CodecError::Malformed(
+            "retained SLDPRT unit-name marker does not match its provenance".into(),
+        ));
+    }
+    Ok(usize::from(*payload.get(marker + 3).ok_or_else(|| {
+        CodecError::Malformed("truncated retained SLDPRT unit name".into())
+    })?))
 }
 
 fn require_token(payload: &[u8], offset: usize, token: &[u8]) -> Result<(), CodecError> {
@@ -1449,6 +1460,13 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
     Some((section.parse().ok()?, offset.parse().ok()?))
 }
 
+const BOUNDING_ENVELOPE_TOKEN: &[u8] = b"moBBoxCenterData_c";
+const DEFAULT_REFERENCE_PLANE_TOKEN: &[u8] = b"moDefaultRefPlnData_c";
+const TRANSFORMED_REFERENCE_PLANE_TOKEN: &[u8] = b"moTransRefPlaneData_c";
+const PART_RECORD_TOKEN: &[u8] = b"moPart_c";
+const CONFIGURATION_MANAGER_TOKEN: &[u8] = b"moConfigurationMgr_c";
+const UNIT_NAME_TOKEN: &[u8] = b"moLengthUserUnits_c";
+
 /// One `SWObjects` metadata attribute admitted for writing. Its values have
 /// the shape the record states, and each length, multiplied into source
 /// units, is finite. Both metadata writers take their bytes from here.
@@ -1481,9 +1499,14 @@ enum MetadataRecord {
 
 impl MetadataRecord {
     /// Admit one metadata attribute, or `None` for a name no writer states.
+    ///
+    /// The values' shape is checked first. `retained` then receives the
+    /// record's `SWObjects` token, and the values are admitted after it
+    /// returns.
     fn project(
         attribute: &cadmpeg_ir::attributes::SourceAttribute,
         length_scale: f64,
+        retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
     ) -> Result<Option<Self>, CodecError> {
         use cadmpeg_ir::attributes::AttributeValue;
 
@@ -1495,17 +1518,20 @@ impl MetadataRecord {
                 let [AttributeValue::Vector(values)] = values else {
                     return Err(invalid(kind));
                 };
-                Self::BoundingEnvelope(lengths(values, length_scale).ok_or_else(|| invalid(kind))?)
+                let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
+                retained(BOUNDING_ENVELOPE_TOKEN)?;
+                Self::BoundingEnvelope(scaled(values, length_scale).ok_or_else(|| invalid(kind))?)
             }
             "default_reference_plane" => {
                 let kind = "default reference plane";
                 let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
                     return Err(invalid(kind));
                 };
-                let (Some(origin), Some(frame)) = (lengths(origin, length_scale), ratios(frame))
-                else {
+                let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
                     return Err(invalid(kind));
                 };
+                retained(DEFAULT_REFERENCE_PLANE_TOKEN)?;
+                let origin = scaled(origin, length_scale).ok_or_else(|| invalid(kind))?;
                 Self::DefaultReferencePlane { origin, frame }
             }
             "transformed_reference_plane" => {
@@ -1515,10 +1541,15 @@ impl MetadataRecord {
                 else {
                     return Err(invalid(kind));
                 };
-                let (Some(center), Some(extents), Some(auxiliary), Some([diagonal])) = (
-                    lengths(center, length_scale),
-                    lengths(extents, length_scale),
-                    ratios(auxiliary),
+                let (Some(center), Some(extents), Some(auxiliary)) =
+                    (ratios::<3>(center), ratios::<2>(extents), ratios(auxiliary))
+                else {
+                    return Err(invalid(kind));
+                };
+                retained(TRANSFORMED_REFERENCE_PLANE_TOKEN)?;
+                let (Some(center), Some(extents), Some([diagonal])) = (
+                    scaled(center, length_scale),
+                    scaled(extents, length_scale),
                     scaled([diagonal.get()], length_scale),
                 ) else {
                     return Err(invalid(kind));
@@ -1534,6 +1565,7 @@ impl MetadataRecord {
                 let [AttributeValue::Integer(id), AttributeValue::Integer(version)] = values else {
                     return Err(invalid("part record"));
                 };
+                retained(PART_RECORD_TOKEN)?;
                 Self::PartRecord {
                     id: u32::try_from(*id).map_err(|_| invalid("part id"))?,
                     version: u32::try_from(*version).map_err(|_| invalid("part version"))?,
@@ -1545,6 +1577,7 @@ impl MetadataRecord {
                 else {
                     return Err(invalid("configuration manager"));
                 };
+                retained(CONFIGURATION_MANAGER_TOKEN)?;
                 Self::ConfigurationManager {
                     minor: u32::try_from(*minor)
                         .map_err(|_| invalid("configuration minor version"))?,
@@ -1564,6 +1597,7 @@ impl MetadataRecord {
                 let [AttributeValue::String(name)] = values else {
                     return Err(invalid("source linear unit name"));
                 };
+                retained(UNIT_NAME_TOKEN)?;
                 let units = name.encode_utf16().collect::<Vec<_>>();
                 // The resident u16 vector occupies two bytes per unit.
                 let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
@@ -1579,12 +1613,6 @@ impl MetadataRecord {
             _ => return Ok(None),
         }))
     }
-}
-
-/// `N` lengths multiplied into source units, or `None` for another count or
-/// a product that is not finite.
-fn lengths<const N: usize>(values: &[FiniteReal], scale: f64) -> Option<[f64; N]> {
-    scaled(ratios(values)?, scale)
 }
 
 /// `N` unitless values, or `None` for another count.
@@ -1634,16 +1662,16 @@ fn metadata_payloads(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
         }
-        match MetadataRecord::project(attribute, length_scale)? {
+        match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
-                objects.extend_from_slice(b"moBBoxCenterData_c");
+                objects.extend_from_slice(BOUNDING_ENVELOPE_TOKEN);
                 objects.extend_from_slice(&1u32.to_le_bytes());
                 for value in values {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
             Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                objects.extend_from_slice(b"moDefaultRefPlnData_c");
+                objects.extend_from_slice(DEFAULT_REFERENCE_PLANE_TOKEN);
                 for value in origin.into_iter().chain(frame) {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
@@ -1654,7 +1682,7 @@ fn metadata_payloads(
                 auxiliary,
                 diagonal,
             }) => {
-                objects.extend_from_slice(b"moTransRefPlaneData_c");
+                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_TOKEN);
                 objects.extend_from_slice(&[0xff; 8]);
                 for value in center
                     .into_iter()
@@ -1666,7 +1694,7 @@ fn metadata_payloads(
                 }
             }
             Some(MetadataRecord::PartRecord { id, version }) => {
-                objects.extend_from_slice(b"moPart_c");
+                objects.extend_from_slice(PART_RECORD_TOKEN);
                 objects.extend_from_slice(&id.to_le_bytes());
                 objects.extend_from_slice(&0u32.to_le_bytes());
                 objects.extend_from_slice(&version.to_le_bytes());
@@ -1681,12 +1709,12 @@ fn metadata_payloads(
                 record[66..70].copy_from_slice(&minor.to_le_bytes());
                 record[107] = states;
                 record[117..125].copy_from_slice(&filetime.to_le_bytes());
-                objects.extend_from_slice(b"moConfigurationMgr_c");
+                objects.extend_from_slice(CONFIGURATION_MANAGER_TOKEN);
                 objects.extend_from_slice(&record);
             }
             Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
             Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
-                objects.extend_from_slice(b"moLengthUserUnits_c");
+                objects.extend_from_slice(UNIT_NAME_TOKEN);
                 objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }

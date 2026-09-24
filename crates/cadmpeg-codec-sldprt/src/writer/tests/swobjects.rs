@@ -956,12 +956,128 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
             AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap(),
         ],
     };
-    assert!(crate::writer::MetadataRecord::project(&attribute, 0.001).is_ok());
-    let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300) else {
+    assert!(crate::writer::MetadataRecord::project(&attribute, 0.001, |_| Ok(())).is_ok());
+    let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300, |_| Ok(())) else {
         panic!("an overflowing origin has no source-unit value");
     };
     assert_eq!(
         error.to_string(),
         "malformed container: invalid default reference plane"
+    );
+}
+
+/// The retained `SWObjects` section `payload` after the patch writer states
+/// the document attribute `name` with `values` in the record at byte zero.
+fn patched_retained_metadata(
+    name: &str,
+    values: Vec<cadmpeg_ir::attributes::AttributeValue>,
+    payload: Vec<u8>,
+) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+
+    let id = format!("sldprt:metadata:{name}#0:0");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
+        target: AttributeTarget::Document,
+        name: name.into(),
+        values,
+    });
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    crate::annotations::note(
+        &mut annotations,
+        id,
+        &cadmpeg_ir::stream_name!("SWObjects"),
+        0,
+        "metadata",
+        cadmpeg_ir::Exactness::ByteExact,
+    );
+    let mut sections = vec![("SWObjects".to_owned(), payload)];
+    crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 1.0)?;
+    Ok(sections.remove(0).1)
+}
+
+/// The patch writer refuses `values` for `name` against `payload` with
+/// `expected`.
+fn assert_patch_refusal(
+    name: &str,
+    values: Vec<cadmpeg_ir::attributes::AttributeValue>,
+    payload: &[u8],
+    expected: &str,
+) {
+    let Err(error) = patched_retained_metadata(name, values, payload.to_vec()) else {
+        panic!("{name} is refused");
+    };
+    assert_eq!(error.to_string(), expected);
+}
+
+/// A unit name too long for its length byte, in a record whose token does
+/// not match, is refused for the token first.
+#[test]
+fn a_retained_unit_name_is_refused_for_its_token_before_its_length() {
+    assert_patch_refusal(
+        "source_linear_unit_name",
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "u".repeat(200),
+        )],
+        b"moLengthUserUnitsXc\xff\xfe\xff\x02I\x00",
+        "malformed container: retained SLDPRT metadata token does not match its provenance",
+    );
+}
+
+/// An empty unit name, in a record whose marker does not match, is refused
+/// for the marker first.
+#[test]
+fn a_retained_unit_name_is_refused_for_its_marker_before_its_emptiness() {
+    assert_patch_refusal(
+        "source_linear_unit_name",
+        vec![cadmpeg_ir::attributes::AttributeValue::String(String::new())],
+        b"moLengthUserUnits_c\x00\x00\x00\x02I\x00",
+        "malformed container: retained SLDPRT unit-name marker does not match its provenance",
+    );
+}
+
+/// A unit name too long for its length byte, in a record truncated before
+/// that byte, is refused for the truncation first.
+#[test]
+fn a_retained_unit_name_is_refused_for_its_truncation_before_its_length() {
+    assert_patch_refusal(
+        "source_linear_unit_name",
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "u".repeat(200),
+        )],
+        b"moLengthUserUnits_c\xff\xfe\xff",
+        "malformed container: truncated retained SLDPRT unit name",
+    );
+}
+
+/// A part identity outside `u32`, in a record whose token does not match,
+/// is refused for the token first.
+#[test]
+fn a_retained_part_record_is_refused_for_its_token_before_its_identity() {
+    assert_patch_refusal(
+        "part_record",
+        vec![
+            cadmpeg_ir::attributes::AttributeValue::Integer(-1),
+            cadmpeg_ir::attributes::AttributeValue::Integer(1),
+        ],
+        &[b"moPartXc".as_slice(), &[0; 16]].concat(),
+        "malformed container: retained SLDPRT metadata token does not match its provenance",
+    );
+}
+
+/// A configuration state count outside `u8`, in a record whose token does
+/// not match, is refused for the token first.
+#[test]
+fn a_retained_configuration_is_refused_for_its_token_before_its_state_count() {
+    assert_patch_refusal(
+        "configuration_manager",
+        vec![
+            cadmpeg_ir::attributes::AttributeValue::Integer(1),
+            cadmpeg_ir::attributes::AttributeValue::Integer(256),
+            cadmpeg_ir::attributes::AttributeValue::Integer(0),
+        ],
+        &[b"moConfigurationMgrXc".as_slice(), &[0; 125]].concat(),
+        "malformed container: retained SLDPRT metadata token does not match its provenance",
     );
 }
