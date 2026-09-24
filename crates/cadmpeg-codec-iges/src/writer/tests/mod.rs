@@ -36,6 +36,7 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::topology::Loop;
 use cadmpeg_ir::topology::Sense;
@@ -208,6 +209,11 @@ fn generation_timestamp_uses_the_declared_version_width() {
     );
 }
 
+/// A finite test value as the formatter's checked input.
+fn real(value: f64) -> FiniteReal {
+    FiniteReal::new(value).expect("a finite test value")
+}
+
 #[test]
 fn number_preserves_distinct_finite_values() {
     for value in [
@@ -217,7 +223,7 @@ fn number_preserves_distinct_finite_values() {
         1.802_581_857_082_682,
         1.802_581_857_082_681_5,
     ] {
-        let encoded = number(value);
+        let encoded = number(real(value));
         let decoded = encoded
             .replace('D', "E")
             .parse::<f64>()
@@ -351,7 +357,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, 0.001, 1000.0);
+        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
@@ -762,7 +768,11 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
-        entity.transform.expect("hyperbola has a placement").rows,
+        entity
+            .transform
+            .expect("hyperbola has a placement")
+            .rows
+            .map(|row| row.map(FiniteReal::get)),
         [
             [1.0, 0.0, 0.0, 1.0],
             [0.0, -1.0, 0.0, 2.0],
@@ -775,8 +785,8 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         String::from_utf8(entity.parameter_text()).expect("parameters are ASCII"),
         format!(
             "104,{},0,{},0,0,-1,0,{},{},{},{};",
-            number(1.0 / 4.0),
-            number(-1.0 / 9.0),
+            number(real(1.0 / 4.0)),
+            number(real(-1.0 / 9.0)),
             number(start[0]),
             number(start[1]),
             number(end[0]),
@@ -823,7 +833,7 @@ fn generated_reals_round_trip_without_writer_quantization() {
         1.0e-20,
         5.0e-13,
     ] {
-        let encoded = number(value);
+        let encoded = number(real(value));
         assert!(encoded.contains('D'), "{value}: {encoded}");
         let decoded = encoded
             .replace('D', "E")
@@ -831,13 +841,13 @@ fn generated_reals_round_trip_without_writer_quantization() {
             .expect("generated real must parse");
         assert_eq!(decoded.to_bits(), value.to_bits(), "{value}: {encoded}");
     }
-    assert_eq!(number(0.0), "0");
-    assert_eq!(number(-0.0), "0");
+    assert_eq!(number(real(0.0)), "0");
+    assert_eq!(number(real(-0.0)), "0");
 }
 
 #[test]
 fn generated_parameter_cards_preserve_field_boundaries() {
-    let token = number(f64::MAX);
+    let token = number(real(f64::MAX));
     let parameters = format!("128,{token},{token},{token},{token};");
     let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
         .expect("ordinary generated real tokens fit one card");
@@ -1066,14 +1076,16 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
 fn conic_coefficients_preserve_extreme_finite_radii() {
     for radius in [1e-308, 1e-200, 1.0, 1e200, 1e308] {
         let [a, c, f] = super::conic_coefficients(radius, radius)
-            .expect("scaled circle coefficients remain representable");
+            .expect("scaled circle coefficients remain representable")
+            .map(FiniteReal::get);
         assert!(a.is_finite() && a > 0.0 && c == a && f.is_finite() && f < 0.0);
         let recovered = (-f).sqrt() / a.sqrt();
         assert!((recovered / radius - 1.0).abs() <= 16.0 * f64::EPSILON);
     }
     assert_eq!(
         super::conic_coefficients(2.0, 1.0)
-            .expect("ordinary ellipse coefficients remain representable"),
+            .expect("ordinary ellipse coefficients remain representable")
+            .map(FiniteReal::get),
         [0.25, 1.0, -1.0]
     );
     assert!(super::conic_coefficients(1e-200, 1e200).is_err());
@@ -1171,7 +1183,8 @@ fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
     let expected = (720.0 + 1e-10_f64.ln()).exp() * 0.5;
     for parameter in [-720.0_f64, 720.0] {
         let point = hyperbola_point(1e-10, 1e-10, parameter)
-            .expect("a hyperbola endpoint at parameter magnitude 720 stays finite");
+            .expect("a hyperbola endpoint at parameter magnitude 720 stays finite")
+            .map(FiniteReal::get);
         assert!((point[0] / expected - 1.).abs() < 1024.0 * f64::EPSILON);
         assert_eq!(point[1], point[0] * parameter.signum());
     }
@@ -1290,4 +1303,36 @@ fn decreasing_polyline_parameters_are_not_implemented() {
         ),
         Err(CodecError::NotImplemented(_))
     ));
+}
+
+/// The Type 104 parabola coefficient `-4f` of a finite focal distance
+/// between a quarter and a half of the largest finite `f64` is not finite,
+/// while the endpoints `(-2ft, ft^2)` are. It is refused, where it was
+/// written as `-inf`, which is no IGES real.
+#[test]
+fn parabola_coefficient_that_overflows_is_not_implemented() {
+    let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        5.0e307,
+    )
+    .expect("the IR admits a finite positive focal distance");
+    let span = CurveSpan {
+        range: [0.0, 1.0e-160],
+        start: Point3::new(0.0, 0.0, 0.0),
+        end: Point3::new(0.0, 0.0, 0.0),
+    };
+    let written = curve_entity(
+        &SolvedCurveGeometry::Parabola(parabola),
+        Some(&span),
+        IgesVersion::V5_3,
+    );
+    let Err(CodecError::NotImplemented(message)) = written else {
+        panic!(
+            "{:?}",
+            written.map(|entity| String::from_utf8_lossy(&entity.parameter_body).into_owned())
+        );
+    };
+    assert!(message.contains("parabola"), "{message}");
 }
