@@ -8239,7 +8239,7 @@ fn consolidated_edge_runs(
                 pcurve_ids.get(&pcurve_offsets[0])?.clone(),
                 pcurve_ids.get(&pcurve_offsets[1])?.clone(),
             ],
-            parameter_range: run.edge.parameters.range,
+            parameter_range: run.edge.parameters.range.endpoints(),
             tolerance: run.edge.parameters.tolerance,
             node: node.id.clone(),
             support_bindings: resolved.map_or([None, None], |resolved| {

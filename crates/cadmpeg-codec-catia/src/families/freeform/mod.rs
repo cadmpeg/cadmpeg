@@ -1874,7 +1874,7 @@ fn append_resolved_consolidated_surface_curves(
                     standard_endpoint_loci = standard_carrier_endpoint_loci(
                         &geometry,
                         surface_geometry,
-                        resolved.block.parameters.range,
+                        resolved.block.parameters.range.endpoints(),
                     );
                 }
                 sides[side] = IntcurveSupportSide {
@@ -2147,7 +2147,7 @@ fn append_resolved_consolidated_surface_curves(
                 &sides[*resolved_side].pcurve.as_ref()?.geometry,
                 resolved_geometry,
                 &partner_pcurve,
-                resolved.block.parameters.range,
+                resolved.block.parameters.range.endpoints(),
                 candidates
                     .iter()
                     .map(|(index, geometry)| (*index, geometry)),
@@ -2191,7 +2191,7 @@ fn append_resolved_consolidated_surface_curves(
                     .map(|side| match &side.pcurve {
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
                             &pcurve.geometry,
-                            resolved.block.parameters.range,
+                            resolved.block.parameters.range.endpoints(),
                             refusal,
                             &format!(
                                 "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
@@ -2299,7 +2299,7 @@ fn append_resolved_consolidated_surface_curves(
                             if reversed {
                                 pcurve = crate::nurbs::reverse_pcurve_geometry(
                                     &pcurve,
-                                    resolved.block.parameters.range,
+                                    resolved.block.parameters.range.endpoints(),
                                     refusal,
                                     &format!(
                                         "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
@@ -2381,7 +2381,7 @@ fn append_resolved_consolidated_surface_curves(
                             ) {
                                 geometry = crate::nurbs::reverse_pcurve_geometry(
                                     &geometry,
-                                    resolved.block.parameters.range,
+                                    resolved.block.parameters.range.endpoints(),
                                     refusal,
                                     &format!(
                                         "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
@@ -2407,7 +2407,7 @@ fn append_resolved_consolidated_surface_curves(
                             pcurve_lift_reaches_endpoints(
                                 &geometry,
                                 surface_geometry.solved()?,
-                                resolved.block.parameters.range,
+                                resolved.block.parameters.range.endpoints(),
                                 edge_endpoints,
                                 face_allowance,
                             )
@@ -2465,12 +2465,7 @@ fn append_resolved_consolidated_surface_curves(
             pending.push_back(resolved);
             continue;
         }
-        let context = IntcurveSupportContext::try_new(
-            sides,
-            resolved.block.parameters.range,
-            std::array::from_fn(|_| Vec::new()),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let context = IntcurveSupportContext::over_interval(sides, resolved.block.parameters.range);
         let definition = if exact_side_count == 2 {
             ProceduralCurveDefinition::Intersection {
                 context,
@@ -2515,7 +2510,7 @@ fn append_resolved_consolidated_surface_curves(
                         geometry,
                         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
                             None,
-                            Some(resolved.block.parameters.range),
+                            Some(resolved.block.parameters.range.endpoints()),
                             None,
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2533,7 +2528,7 @@ fn append_resolved_consolidated_surface_curves(
                 }
             }
             ir.model.edges[edge_index]
-                .set_param_range(Some(resolved.block.parameters.range))
+                .set_param_range(Some(resolved.block.parameters.range.endpoints()))
                 .map_err(cadmpeg_core::CodecError::malformed)?;
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             procedural.replace_definition(definition);

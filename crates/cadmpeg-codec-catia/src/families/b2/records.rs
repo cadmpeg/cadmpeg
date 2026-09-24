@@ -1802,7 +1802,7 @@ pub(crate) struct B2EdgeParameters {
     /// Record byte offset.
     pub(in crate::families) pos: usize,
     /// Native shared-edge parameter range.
-    pub(crate) range: [f64; 2],
+    pub(crate) range: IncreasingParameterInterval,
     /// Shared-edge geometric tolerance.
     pub(crate) tolerance: f64,
 }
@@ -3103,8 +3103,10 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
             continue;
         };
         let values = values.map(FiniteReal::get);
-        if values[0] < values[1]
-            && values[0] == values[3]
+        let Some(range) = IncreasingParameterInterval::new([values[0], values[1]]) else {
+            continue;
+        };
+        if values[0] == values[3]
             && values[0] == values[6]
             && values[1] == values[4]
             && values[1] == values[7]
@@ -3113,7 +3115,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
         {
             out.push(B2EdgeParameters {
                 pos,
-                range: [values[0], values[1]],
+                range,
                 tolerance: values[2],
             });
         }

@@ -568,7 +568,7 @@ fn consolidated_edge_blocks_from_records(
                 let parameters = parameters.get(&parameter_record.byte_offset())?;
                 let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
-                    && first.range == parameters.range;
+                    && first.range == parameters.range.endpoints();
                 co_parametric.then(|| ConsolidatedEdgeBlock {
                     pcurves: [first.clone(), second.clone()],
                     parameters: parameters.clone(),

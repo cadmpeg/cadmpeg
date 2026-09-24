@@ -1739,7 +1739,7 @@ impl EvaluatedFormulaValue {
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
                     value,
                     FormulaDimension::LENGTH,
-                    finite_integrality(value),
+                    Some(value.fract() == 0.0),
                     Some(value),
                 ))
             }
@@ -1749,14 +1749,14 @@ impl EvaluatedFormulaValue {
                 Self::Scalar(EvaluatedFormulaScalar::from_parts(
                     value,
                     FormulaDimension::ANGLE,
-                    finite_integrality(value),
+                    Some(value.fract() == 0.0),
                     Some(value),
                 ))
             }
             ParameterValue::Real(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
                 value.get(),
                 FormulaDimension::SCALAR,
-                finite_integrality(value.get()),
+                Some(value.get().fract() == 0.0),
                 Some(value.get()),
             )),
             ParameterValue::Integer(value) => Self::Scalar(EvaluatedFormulaScalar::from_parts(
