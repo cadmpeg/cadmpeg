@@ -751,7 +751,9 @@ fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Ve
     )?
     .into_iter()
     .map(|parameter| {
-        cadmpeg_ir::eval::pcurve_uv(geometry, parameter).map(|point| [point.u, point.v])
+        cadmpeg_ir::eval::pcurve_uv(geometry, parameter)
+            .ok()
+            .map(|point| [point.u, point.v])
     })
     .collect()
 }
@@ -1403,12 +1405,16 @@ fn pcurves_agree(
     let mapped = pcurves
         .iter()
         .map(|(geometry, range)| {
-            let start = cadmpeg_ir::eval::pcurve_uv(geometry, range[0]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
-            })?;
-            let end = cadmpeg_ir::eval::pcurve_uv(geometry, range[1]).and_then(|uv| {
-                cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
-            })?;
+            let start = cadmpeg_ir::eval::pcurve_uv(geometry, range[0])
+                .ok()
+                .and_then(|uv| {
+                    cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v).ok()
+                })?;
+            let end = cadmpeg_ir::eval::pcurve_uv(geometry, range[1])
+                .ok()
+                .and_then(|uv| {
+                    cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v).ok()
+                })?;
             Some((start.get(), end.get()))
         })
         .collect::<Option<Vec<_>>>();

@@ -365,13 +365,13 @@ pub(in super::super) fn revolution_face_sense(
     } else {
         revolution_boundary_pcurve(surface, model_point, axis, record, refusal)?
     };
-    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter)?;
-    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v)?;
-    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v)?;
+    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter).ok()?;
+    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v).ok()?;
+    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v).ok()?;
     let before_v =
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP)?;
+        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP).ok()?;
     let after_v =
-        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP)?;
+        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP).ok()?;
     let du = [
         after_u.x - before_u.x,
         after_u.y - before_u.y,

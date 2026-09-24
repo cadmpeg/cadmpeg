@@ -17,7 +17,7 @@ use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
 use cadmpeg_ir::eval::{
     curve_point_with_budget, curve_second_derivative_with_budget, curve_tangent_with_budget,
     model_surface_partials_by_id_with_budget, model_surface_point_by_id_with_budget,
-    pcurve_tangent, pcurve_uv, surface_point_with_budget,
+    pcurve_tangent, pcurve_uv, surface_point_with_budget, EvaluationFailure,
 };
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
@@ -258,18 +258,20 @@ pub(super) fn decoded_surface_point_inner_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
-        .map(cadmpeg_ir::features::FinitePoint3::get)
-        .or_else(|| {
-            blend_surface_point_inner_with_index_and_budget(
-                index,
-                surface,
-                u,
-                v,
-                depth + 1,
-                geometry_budget,
-            )
-        })
+    // A non-finite point is returned as the evaluation reached it; only an
+    // evaluation with no value falls back to the blend construction.
+    match model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget) {
+        Ok(point) => Some(point.get()),
+        Err(EvaluationFailure::NonFinite(point)) => Some(point),
+        Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
+            index,
+            surface,
+            u,
+            v,
+            depth + 1,
+            geometry_budget,
+        ),
+    }
 }
 
 pub(super) fn decoded_surface_point_with_geometry_and_budget(
@@ -282,20 +284,26 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    let direct = surface_point_with_budget(geometry, u, v, geometry_budget);
-    direct
-        .or_else(|| model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget))
-        .map(cadmpeg_ir::features::FinitePoint3::get)
-        .or_else(|| {
-            blend_surface_point_inner_with_index_and_budget(
-                index,
-                surface,
-                u,
-                v,
-                depth + 1,
-                geometry_budget,
-            )
-        })
+    // A non-finite point is returned as the evaluation reached it; only an
+    // evaluation with no value falls back to the next route.
+    let evaluated = match surface_point_with_budget(geometry, u, v, geometry_budget) {
+        Err(EvaluationFailure::NoValue) => {
+            model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
+        }
+        direct => direct,
+    };
+    match evaluated {
+        Ok(point) => Some(point.get()),
+        Err(EvaluationFailure::NonFinite(point)) => Some(point),
+        Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
+            index,
+            surface,
+            u,
+            v,
+            depth + 1,
+            geometry_budget,
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -1453,8 +1461,8 @@ impl BlendContactDerivativeContext<'_> {
             self.radius,
             self.depth + 1,
         )?;
-        let uv = pcurve_uv(pcurve, self.parameter)?;
-        let uv_derivative = pcurve_tangent(pcurve, self.parameter)?;
+        let uv = pcurve_uv(pcurve, self.parameter).ok()?;
+        let uv_derivative = pcurve_tangent(pcurve, self.parameter).ok()?;
         let support = model_surface_partials_by_id_with_budget(
             self.index,
             support,
@@ -1819,7 +1827,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     if matches != 1 {
         return None;
     }
-    let source_uv = pcurve_uv(source_pcurve, curve_parameter)?;
+    let source_uv = pcurve_uv(source_pcurve, curve_parameter).ok()?;
     if !target.point.is_finite() || !target.tolerance.is_finite() || target.tolerance < 0.0 {
         return None;
     }
@@ -1847,7 +1855,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
     let (_, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
     let contact_pcurve = spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?;
     let certify = |parameter: f64| {
-        let uv = pcurve_uv(contact_pcurve, parameter)?;
+        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
         let candidate = decoded_surface_point_inner_with_budget(
             index,
             support,
@@ -1962,7 +1970,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         }
     };
     let distance = |parameter: f64| {
-        let uv = pcurve_uv(contact_pcurve, parameter)?;
+        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
         let candidate = decoded_surface_point_inner_with_budget(
             index,
             support,
@@ -1995,8 +2003,8 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         .into_iter()
         .min_by(|first, second| first.1.total_cmp(&second.1))?;
     for _ in 0..LOCAL_CONTACT_PCURVE_SEARCH_STEPS {
-        let uv = pcurve_uv(contact_pcurve, parameter)?;
-        let uv_tangent = pcurve_tangent(contact_pcurve, parameter)?;
+        let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
+        let uv_tangent = pcurve_tangent(contact_pcurve, parameter).ok()?;
         let partials =
             model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget)?;
         let tangent = Vector3::new(
@@ -2068,7 +2076,7 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
+    let support_uv = pcurve_uv(support_pcurve, curve_parameter).ok()?;
     let parameter = target
         .seed
         .and_then(|seed| {
@@ -2078,7 +2086,7 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
     [parameter]
         .into_iter()
         .find(|parameter| {
-            let Some(uv) = pcurve_uv(contact_pcurve, *parameter) else {
+            let Some(uv) = pcurve_uv(contact_pcurve, *parameter).ok() else {
                 return false;
             };
             let candidate = decoded_surface_point_with_geometry_and_budget(
@@ -2126,7 +2134,7 @@ fn closest_pcurve_parameter_from_coarse_grid(
             index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64,
         )?
         .get();
-        let candidate = pcurve_uv(pcurve, parameter)?;
+        let candidate = pcurve_uv(pcurve, parameter).ok()?;
         let distance = (candidate.u - point.u).hypot(candidate.v - point.v);
         if !distance.is_finite() {
             continue;
@@ -2150,8 +2158,8 @@ fn closest_pcurve_parameter_from_seed(
         seed.clamp(domain[0], domain[1])
     };
     for _ in 0..LOCAL_PCURVE_SEARCH_STEPS {
-        let candidate = pcurve_uv(pcurve, parameter)?;
-        let tangent = pcurve_tangent(pcurve, parameter)?;
+        let candidate = pcurve_uv(pcurve, parameter).ok()?;
+        let tangent = pcurve_tangent(pcurve, parameter).ok()?;
         let tangent_scale = tangent.u.abs().max(tangent.v.abs());
         if tangent_scale == 0.0 {
             return None;
@@ -2765,7 +2773,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
     (depth < 32).then_some(())?;
     if let Some(pcurve) = spine_contact_pcurve_with_index(index, support, spine, radius, depth + 1)
     {
-        let uv = pcurve_uv(pcurve, parameter)?;
+        let uv = pcurve_uv(pcurve, parameter).ok()?;
         return decoded_surface_point_inner_with_budget(
             index,
             support,
@@ -2851,7 +2859,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         let (Some(side_surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter) else {
+        let Some(side_uv) = pcurve_uv(&pcurve.geometry, parameter).ok() else {
             continue;
         };
         let Some(side_point) = decoded_surface_point_inner_with_budget(

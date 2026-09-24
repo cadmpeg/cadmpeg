@@ -11,7 +11,7 @@ use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ExportBody, WritePath};
-use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
+use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv, EvaluationFailure};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
@@ -3756,34 +3756,41 @@ impl PcurveOrientationContext<'_> {
                     self.owner, pcurve.id
                 )));
             }
-            let start_uv = pcurve_uv(&pcurve.geometry, range[0]).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES {} pcurve {} start cannot be evaluated",
-                    self.owner, pcurve.id
-                ))
-            })?;
-            let end_uv = pcurve_uv(&pcurve.geometry, range[1]).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "IGES {} pcurve {} end cannot be evaluated",
-                    self.owner, pcurve.id
-                ))
-            })?;
-            let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v)
-                .ok_or_else(|| {
+            // A non-finite pcurve point is evaluated on the support as a finite
+            // one is.
+            let pcurve_point = |parameter, position| match pcurve_uv(&pcurve.geometry, parameter) {
+                Ok(uv) => Ok(uv.get()),
+                Err(failure) => failure.non_finite().ok_or_else(|| {
                     CodecError::malformed(format_args!(
-                        "IGES {} pcurve {} start is outside its support",
+                        "IGES {} pcurve {} {position} cannot be evaluated",
                         self.owner, pcurve.id
                     ))
-                })?;
-            let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v).ok_or_else(
-                || {
+                }),
+            };
+            let start_uv = pcurve_point(range[0], "start")?;
+            let end_uv = pcurve_point(range[1], "end")?;
+            let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v);
+            let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v);
+            // Both ends are refused outside the support before either is
+            // refused as non-finite.
+            for (point, position) in [(&start, "start"), (&end, "end")] {
+                if matches!(point, Err(EvaluationFailure::NoValue)) {
+                    return Err(CodecError::malformed(format_args!(
+                        "IGES {} pcurve {} {position} is outside its support",
+                        self.owner, pcurve.id
+                    )));
+                }
+            }
+            let finite = |point: Result<FinitePoint3, EvaluationFailure<Point3>>,
+                          position: &str| {
+                point.map_err(|_| {
                     CodecError::malformed(format_args!(
-                        "IGES {} pcurve {} end is outside its support",
+                        "IGES point {} pcurve {} {position} has non-finite coordinates",
                         self.owner, pcurve.id
                     ))
-                },
-            )?;
-            mapped.push((start.get(), end.get()));
+                })
+            };
+            mapped.push((finite(start, "start")?.get(), finite(end, "end")?.get()));
         }
         Ok(mapped)
     }

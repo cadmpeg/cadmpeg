@@ -317,7 +317,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
         0.75,
         &budget
     )
-    .is_none());
+    .is_err_and(|failure| failure == crate::eval::EvaluationFailure::NoValue));
     assert!(budget.exhausted());
     let budget = WorkBudget::new(13);
     assert_eq!(
@@ -328,7 +328,7 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
             &budget
         )
         .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.25, 0.75, 1.0))
+        Ok(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
 }
@@ -379,14 +379,15 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     let index = crate::index::ModelIndex::new(&ir);
     let budget = WorkBudget::new(5);
     assert!(
-        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget).is_none()
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget)
+            == Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
     assert_eq!(
         model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.25, 0.0, 2.0))
+        Ok(Point3::new(0.25, 0.0, 2.0))
     );
     assert_eq!(budget.consumed(), 6);
 }
@@ -938,19 +939,19 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     assert_eq!(
         model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(1.0e16, -1.0e16, -3.0))
+        Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
     assert!(
         model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
-            .is_none()
+            == Err(crate::eval::EvaluationFailure::NoValue)
     );
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
     assert_eq!(
         model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(1.0e16, -1.0e16, -3.0))
+        Ok(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
     let partials = model_surface_partials_by_id(&index, &second_id, 1.0e16, -1.0e16)
@@ -1143,7 +1144,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     assert_eq!(
         model_surface_point_by_id(&index, &offset_id, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(-0.25, 0.5, -2.0))
+        Ok(Point3::new(-0.25, 0.5, -2.0))
     );
     let partials = model_surface_partials_by_id(&index, &offset_id, 0.25, 0.5)
         .expect("offset of a reversed subset evaluates");
@@ -1198,7 +1199,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     assert_eq!(
         model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(1.25, 2.75, 3.0))
+        Ok(Point3::new(1.25, 2.75, 3.0))
     );
     let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
         .expect("curve-bounded support evaluates");
@@ -1427,12 +1428,12 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 0.5, 0.25)
             .map(crate::features::FinitePoint3::get),
-        Some(expected)
+        Ok(expected)
     );
     assert_eq!(
         model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25)
             .map(crate::features::FinitePoint3::get),
-        Some(expected)
+        Ok(expected)
     );
     let partials = model_surface_partials_by_id(&index, &surface_id, 0.5, 0.25)
         .expect("cacheless sweep partials");

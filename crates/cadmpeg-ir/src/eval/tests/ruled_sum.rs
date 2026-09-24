@@ -93,7 +93,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
     assert_eq!(
         model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(point)
+        Ok(point)
     );
     let partials = model_surface_second_partials_by_id(&index, &surface_id, 0.25, 0.5)
         .expect("cacheless ruled second partials");

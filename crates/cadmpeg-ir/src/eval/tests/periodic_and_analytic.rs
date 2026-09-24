@@ -223,7 +223,7 @@ fn transformed_carriers_preserve_basis_parameters() {
     ));
     assert_eq!(
         crate::eval::surface_point(&surface, 2.0, 3.0).map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 11.0, 6.0))
+        Ok(Point3::new(0.0, 11.0, 6.0))
     );
 }
 
@@ -271,8 +271,8 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
 }
 
 #[test]
-fn analytic_surface_points_are_absent_when_they_overflow() {
-    use crate::eval::{surface_point, surface_point_with_budget};
+fn analytic_surface_points_that_overflow_report_the_non_finite_point() {
+    use crate::eval::{surface_point, surface_point_with_budget, EvaluationFailure};
 
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         crate::geometry::analytic::PlaneSurface::try_new(
@@ -285,17 +285,111 @@ fn analytic_surface_points_are_absent_when_they_overflow() {
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
     // A finite origin and a finite in-plane displacement sum past the finite
     // range on every surface route.
-    assert!(surface_point(&plane, f64::MAX, 0.0).is_none());
-    assert!(surface_point_with_budget(&plane, f64::MAX, 0.0, &budget).is_none());
+    let overflowed = |point: Result<_, EvaluationFailure<Point3>>| {
+        matches!(point, Err(EvaluationFailure::NonFinite(point))
+            if point.x.is_nan() && point.y == 0.0 && point.z == 0.0)
+    };
+    assert!(overflowed(surface_point(&plane, f64::MAX, 0.0)));
+    assert!(overflowed(surface_point_with_budget(
+        &plane,
+        f64::MAX,
+        0.0,
+        &budget
+    )));
     assert_eq!(
         surface_point(&plane, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.0, 0.0))
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
         surface_point_with_budget(&plane, -f64::MAX, 0.0, &budget)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.0, 0.0))
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
+}
+
+/// A plane whose points at `u` beyond `2^970` overflow: its origin is the
+/// largest finite x coordinate.
+fn overflowing_plane() -> SolvedSurfaceGeometry {
+    SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn a_placed_surface_has_no_point_where_its_basis_point_overflows() {
+    use crate::eval::{surface_point, surface_point_with_budget, EvaluationFailure};
+
+    let placed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(overflowing_plane()),
+            crate::transform::Transform::affine([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed surface"),
+    ));
+    let budget = cadmpeg_core::decode::WorkBudget::new(64);
+    assert_eq!(
+        surface_point(&placed, f64::MAX, 0.0),
+        Err(EvaluationFailure::NoValue)
+    );
+    assert_eq!(
+        surface_point_with_budget(&placed, f64::MAX, 0.0, &budget),
+        Err(EvaluationFailure::NoValue)
+    );
+    assert_eq!(
+        surface_point(&placed, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(0.0, 0.0, 1.0))
+    );
+}
+
+#[test]
+fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
+    use crate::eval::EvaluationFailure;
+    use crate::eval::{model_surface_point_by_id, model_surface_point_by_id_with_budget};
+
+    let mut ir = crate::CadIr::empty();
+    let surface_id = crate::ids::SurfaceId::mint("test:model:surface#overflow".to_string())
+        .expect("valid identity");
+    ir.model.surfaces.push(crate::geometry::Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(overflowing_plane()),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = cadmpeg_core::decode::WorkBudget::new(64);
+    for point in [
+        model_surface_point_by_id(&index, &surface_id, f64::MAX, 2.0),
+        model_surface_point_by_id_with_budget(&index, &surface_id, f64::MAX, 2.0, &budget),
+    ] {
+        assert!(
+            matches!(point, Err(EvaluationFailure::NonFinite(point))
+                if point.x.is_nan() && point.y == 2.0 && point.z == 0.0),
+            "{point:?}"
+        );
+    }
+}
+
+#[test]
+fn a_line_pcurve_whose_point_overflows_has_no_value() {
+    use crate::eval::{pcurve_uv, EvaluationFailure};
+    use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use crate::math::Point2;
+
+    // Only an offset carrier reports the non-finite point it reaches; the
+    // other carriers read an overflowing point as no point.
+    let line = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(f64::MAX, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+    );
+    assert_eq!(pcurve_uv(&line, f64::MAX), Err(EvaluationFailure::NoValue));
 }
 
 #[test]

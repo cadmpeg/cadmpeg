@@ -5509,10 +5509,13 @@ fn standard_native_support_endpoint_pair(
             else {
                 return None;
             };
+            // A non-finite lift is measured as a finite one is.
             Some(support.parameter_range.map(|parameter| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
-                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
-                    .map(cadmpeg_ir::features::FinitePoint3::get)
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
+                match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
+                    Ok(point) => Some(point.get()),
+                    Err(failure) => failure.non_finite(),
+                }
             }))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -7343,7 +7346,7 @@ fn standard_pcurve_geometry(
 
     let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
     let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
-    let midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
+    let midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v).ok()?;
     let on_curve = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);
@@ -7424,7 +7427,8 @@ fn witnessed_surface_circle_end(
                 surface,
                 0.5 * (uv[0].u + candidate.u),
                 0.5 * (uv[0].v + candidate.v),
-            )?;
+            )
+            .ok()?;
             ((midpoint.distance_squared(center).sqrt() - radius).abs() <= 2e-3).then_some(candidate)
         })
         .collect::<Vec<_>>();
@@ -7959,8 +7963,9 @@ fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point
             else {
                 return None;
             };
-            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
             cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+                .ok()
                 .map(cadmpeg_ir::features::FinitePoint3::get)
         })
         .collect::<Option<Vec<_>>>()?;
@@ -9231,10 +9236,13 @@ fn native_support_circle_param_range(
             };
             let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
             (carrier_axis.dot(axis) >= 0.9999).then_some(())?;
+            // A non-finite lift is measured as a finite one is.
             Some(parameters.map(|parameter| {
-                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
-                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
-                    .map(cadmpeg_ir::features::FinitePoint3::get)
+                let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
+                match cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v) {
+                    Ok(point) => Some(point.get()),
+                    Err(failure) => failure.non_finite(),
+                }
             }))
         })
         .collect::<Option<Vec<_>>>()?;

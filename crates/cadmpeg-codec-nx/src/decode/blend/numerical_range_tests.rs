@@ -329,3 +329,48 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
         0.
     );
 }
+
+/// A model holding one plane whose origin is the largest finite x
+/// coordinate: its points at u = MAX have no finite x.
+fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) {
+    let surface_id = SurfaceId::mint("test:nx:surface#overflow").expect("identity grammar");
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid PlaneSurface fixture"),
+    ));
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: surface_id.clone(),
+        geometry: geometry.clone(),
+        source_object: None,
+    });
+    (ir, surface_id, geometry)
+}
+
+#[test]
+fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
+    let (ir, surface_id, geometry) = overflowing_plane_model();
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let budget = GeometryWorkBudget::new(1024);
+    for point in [
+        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget),
+        decoded_surface_point_with_geometry_and_budget(
+            &index,
+            &surface_id,
+            &geometry,
+            f64::MAX,
+            3.0,
+            0,
+            &budget,
+        ),
+    ] {
+        assert!(
+            point.is_some_and(|point| point.x.is_nan() && point.y == 3.0 && point.z == 0.0),
+            "{point:?}"
+        );
+    }
+}

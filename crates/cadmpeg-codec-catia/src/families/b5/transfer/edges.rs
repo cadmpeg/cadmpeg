@@ -238,8 +238,12 @@ pub(super) fn b5_support_endpoints(
     let (pcurve, _, domain) = pcurves.get(pcurve)?;
     bounded_occurrence_range(*range, *domain)?;
     let lifted = range.map(|parameter| {
-        let uv = pcurve_uv(pcurve, parameter.get())?;
-        let point = surface_point(&surface.geometry, uv.u, uv.v)?;
+        let uv = pcurve_uv(pcurve, parameter.get()).ok()?;
+        // A non-finite support point is compared as a finite one is.
+        let point = match surface_point(&surface.geometry, uv.u, uv.v) {
+            Ok(point) => point.get(),
+            Err(failure) => failure.non_finite()?,
+        };
         Some([point.x, point.y, point.z])
     });
     let [Some(start), Some(end)] = lifted else {

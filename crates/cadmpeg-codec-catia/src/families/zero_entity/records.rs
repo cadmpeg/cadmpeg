@@ -841,7 +841,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     if start >= end {
                         return None;
                     }
-                    let uv = pcurve_uv(pcurve, start + (end - start) * 0.5)?;
+                    let uv = pcurve_uv(pcurve, start + (end - start) * 0.5).ok()?;
                     zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
                 });
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {

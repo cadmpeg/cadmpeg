@@ -2159,7 +2159,8 @@ fn e5_pcurve_on_surface(
             if !uv.iter().copied().all(|point| point.is_finite()) {
                 return None;
             }
-            let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
+            let lifted =
+                uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v).ok());
             let endpoints = [lifted[0]?.get(), lifted[1]?.get()];
             Some((
                 PcurveGeometry::Line(
@@ -2204,6 +2205,7 @@ fn e5_pcurve_on_surface(
                     (center[0] + radius * angle.cos()) * scale[0],
                     (center[1] + radius * angle.sin()) * scale[1],
                 )
+                .ok()
             });
             let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, angular_range, endpoints))
@@ -2252,7 +2254,7 @@ fn e5_pcurve_on_surface(
                 ),
             )?;
             let endpoints = [*points.first()?, *points.last()?]
-                .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
+                .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok());
             let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, range.map(FiniteReal::get), endpoints))
         }
@@ -2292,10 +2294,11 @@ fn e5_pcurve_on_surface(
                 )?,
             };
             let range = range.map(FiniteReal::get);
-            let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
+            let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter).ok());
             let uv = uv[0].zip(uv[1])?;
             let uv = [uv.0, uv.1];
-            let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
+            let lifted =
+                uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v).ok());
             let endpoints = lifted[0].zip(lifted[1])?;
             let endpoints = [endpoints.0.get(), endpoints.1.get()];
             Some((geometry, range, endpoints))

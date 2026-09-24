@@ -3638,10 +3638,10 @@ fn derive_spherical_pcurves(
         ]
         .into_iter()
         .all(|parameter| {
-            let Some(uv) = cadmpeg_ir::eval::pcurve_uv(&geometry, parameter) else {
+            let Ok(uv) = cadmpeg_ir::eval::pcurve_uv(&geometry, parameter) else {
                 return false;
             };
-            let Some(lifted) = surface_point(&surface.geometry, uv.u, uv.v) else {
+            let Ok(lifted) = surface_point(&surface.geometry, uv.u, uv.v) else {
                 return false;
             };
             let Some(curve_point) = cadmpeg_ir::eval::curve_point(
@@ -4110,6 +4110,7 @@ fn intersection_support_pcurve(
         .zip(targets)
         .any(|(parameters, target)| {
             surface_point(surface, parameters.u, parameters.v)
+                .ok()
                 .is_none_or(|point| squared_distance(point.get(), target) > tolerance * tolerance)
         })
     {
@@ -4119,6 +4120,7 @@ fn intersection_support_pcurve(
         .iter()
         .map(|parameters| {
             surface_point(surface, parameters.u, parameters.v)
+                .ok()
                 .map(cadmpeg_ir::features::FinitePoint3::get)
         })
         .collect::<Option<Vec<_>>>()?;

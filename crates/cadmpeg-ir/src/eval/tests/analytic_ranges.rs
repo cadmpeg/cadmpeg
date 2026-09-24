@@ -35,7 +35,7 @@ fn numerical_ranges_parabola_point_and_tangent_stay_finite() {
     assert_eq!(point.v, 1e200);
     assert_eq!(
         pcurve_tangent(&pcurve, 1e200).map(crate::units::FinitePoint2::get),
-        Some(Point2::new(0.5, 1.))
+        Ok(Point2::new(0.5, 1.))
     );
 }
 #[test]
@@ -127,7 +127,10 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
     let expected = (1.0_f64.exp() - 1.) * 1e308;
     assert!((point.u / expected - 1.).abs() < EPS_RELATIVE);
     assert_eq!(point.v, 0.);
-    assert_eq!(pcurve_tangent(&curve, 1.), None);
+    assert_eq!(
+        pcurve_tangent(&curve, 1.),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
 }
 
 #[test]
@@ -145,7 +148,7 @@ fn numerical_ranges_nurbs_basis_supports_spans_wider_than_f64() {
     for (parameter, expected) in [(-1e308, 0.), (0., 0.5), (1e308, 1.)] {
         assert_eq!(
             pcurve_uv(&pcurve, parameter).map(crate::units::FinitePoint2::get),
-            Some(Point2::new(expected, 0.))
+            Ok(Point2::new(expected, 0.))
         );
         let tangent = pcurve_tangent(&pcurve, parameter).unwrap();
         assert!((tangent.u / 5e-309 - 1.).abs() < EPS_RELATIVE);

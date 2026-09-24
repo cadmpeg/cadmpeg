@@ -1354,12 +1354,16 @@ fn validate_nurbs_trim(
             let parameter = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
-            let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "pcurve {} cannot be evaluated over its edge domain",
-                    pcurve.id.as_str()
-                ))
-            })?;
+            // A non-finite pcurve point is refused by the domain test.
+            let uv = match pcurve_uv(&pcurve.geometry, parameter) {
+                Ok(uv) => uv.get(),
+                Err(failure) => failure.non_finite().ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "pcurve {} cannot be evaluated over its edge domain",
+                        pcurve.id.as_str()
+                    ))
+                })?,
+            };
             if !inside_domain(uv.u, uv.v) {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} leaves its NURBS surface parameter domain",

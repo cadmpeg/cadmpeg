@@ -258,7 +258,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(
         model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.25, 0.5, 0.0))
+        Ok(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
         .expect("current sweep cache partials");
@@ -297,7 +297,10 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         .unwrap();
     });
     let index = crate::index::ModelIndex::new(&ir);
-    assert!(model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).is_none());
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
     assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());
 }
 

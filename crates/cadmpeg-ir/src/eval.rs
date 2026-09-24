@@ -2583,6 +2583,41 @@ pub fn nurbs_surface_isocurve(
     NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic).ok()
 }
 
+/// Why a surface or pcurve evaluator has no finite value at its input.
+///
+/// [`NoValue`](Self::NoValue) states that the input has no value: it is
+/// outside the carrier's support, or the evaluator cannot evaluate it.
+/// [`NonFinite`](Self::NonFinite) states that the evaluation left the finite
+/// range, and carries the value it reached.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EvaluationFailure<R> {
+    /// The input has no value.
+    NoValue,
+    /// The evaluation left the finite range at this value.
+    NonFinite(R),
+}
+
+impl<R> EvaluationFailure<R> {
+    /// The value a non-finite evaluation reached, absent for an input with no
+    /// value.
+    pub fn non_finite(self) -> Option<R> {
+        match self {
+            Self::NoValue => None,
+            Self::NonFinite(value) => Some(value),
+        }
+    }
+}
+
+/// Admit an evaluated surface point, or report the non-finite point.
+fn admit_surface_point(point: Point3) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    FinitePoint3::new(point).ok_or(EvaluationFailure::NonFinite(point))
+}
+
+/// Admit an evaluated parameter-space value, or report the non-finite value.
+fn admit_parameter_point(point: Point2) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
+    FinitePoint2::new(point).ok_or(EvaluationFailure::NonFinite(point))
+}
+
 /// Point and first partial derivatives of a NURBS surface in its stored
 /// parameterization.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -3834,19 +3869,26 @@ fn model_curve_point_by_id_inner(
                 return None;
             }
             let points = std::array::from_fn(|side| {
-                let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
-                budget.map_or_else(
-                    || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
-                    |budget| {
-                        model_surface_point_by_id_with_budget(
-                            index,
-                            &supports[side],
-                            uv.u,
-                            uv.v,
-                            budget,
-                        )
-                    },
-                )
+                // A non-finite offset-pcurve point is evaluated on its support
+                // as a finite one is.
+                let uv = match pcurve_uv(&parameterization.pcurves[side], parameter) {
+                    Ok(uv) => uv.get(),
+                    Err(failure) => failure.non_finite()?,
+                };
+                budget
+                    .map_or_else(
+                        || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
+                        |budget| {
+                            model_surface_point_by_id_with_budget(
+                                index,
+                                &supports[side],
+                                uv.u,
+                                uv.v,
+                                budget,
+                            )
+                        },
+                    )
+                    .ok()
             });
             let [Some(first), Some(second)] = points else {
                 return None;
@@ -4035,7 +4077,8 @@ fn model_curve_parameter_near_point_with_tolerance(
         let direction = line_pcurve.direction().as_raw();
         let parameter = match &surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-                let Some(base) = model_surface_point_by_id(index, support_id, origin.u, origin.v)
+                let Some(base) =
+                    model_surface_point_by_id(index, support_id, origin.u, origin.v).ok()
                 else {
                     continue;
                 };
@@ -4044,7 +4087,8 @@ fn model_curve_parameter_near_point_with_tolerance(
                     support_id,
                     origin.u + direction.u,
                     origin.v + direction.v,
-                ) else {
+                )
+                .ok() else {
                     continue;
                 };
                 let tangent = Vector3::new(next.x - base.x, next.y - base.y, next.z - base.z);
@@ -4546,9 +4590,10 @@ pub fn surface_point_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<FinitePoint3> {
-    surface_second_partials_solved(geometry, u, v)
-        .and_then(|partials| FinitePoint3::new(partials.point))
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let partials =
+        surface_second_partials_solved(geometry, u, v).ok_or(EvaluationFailure::NoValue)?;
+    admit_surface_point(partials.point)
 }
 
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
@@ -4562,14 +4607,14 @@ pub fn surface_point_with_budget_solved(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
             let u_axis = plane_surface.frame().reference().as_raw();
             let v_axis = normal.cross(*u_axis);
-            FinitePoint3::new(offset(origin, &[(u, *u_axis), (v, v_axis)]))
+            admit_surface_point(offset(origin, &[(u, *u_axis), (v, v_axis)]))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
@@ -4579,7 +4624,7 @@ pub fn surface_point_with_budget_solved(
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
-            FinitePoint3::new(offset(
+            admit_surface_point(offset(
                 origin,
                 &[
                     (radius * cosine, *ref_direction),
@@ -4600,7 +4645,7 @@ pub fn surface_point_with_budget_solved(
             let sine = u.sin();
             let radial_slope = half_angle.tan();
             let local_radius = radius + v * radial_slope;
-            FinitePoint3::new(offset(
+            admit_surface_point(offset(
                 origin,
                 &[
                     (local_radius * cosine, *ref_direction),
@@ -4619,7 +4664,7 @@ pub fn surface_point_with_budget_solved(
             let u_sine = u.sin();
             let v_cosine = v.cos();
             let v_sine = v.sin();
-            FinitePoint3::new(offset(
+            admit_surface_point(offset(
                 center,
                 &[
                     (radius * v_cosine * u_cosine, *ref_direction),
@@ -4640,7 +4685,7 @@ pub fn surface_point_with_budget_solved(
             let v_cosine = v.cos();
             let v_sine = v.sin();
             let ring = major_radius + minor_radius * v_cosine;
-            FinitePoint3::new(offset(
+            admit_surface_point(offset(
                 center,
                 &[
                     (ring * u_cosine, *ref_direction),
@@ -4649,13 +4694,24 @@ pub fn surface_point_with_budget_solved(
                 ],
             ))
         }
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            budget.charge().then_some(())?;
-            surface_point_with_budget_solved(placed.basis(), u, v, budget)
-                .and_then(|point| placed.transform().apply_point(point.get()))
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_surface_point_with_budget(nurbs, u, v, budget).ok_or(EvaluationFailure::NoValue)
         }
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            budget
+                .charge()
+                .then_some(())
+                .ok_or(EvaluationFailure::NoValue)?;
+            // A non-finite basis point, and a transformed point that
+            // overflows, have no value.
+            surface_point_with_budget_solved(placed.basis(), u, v, budget)
+                .ok()
+                .and_then(|point| placed.transform().apply_point(point.get()))
+                .ok_or(EvaluationFailure::NoValue)
+        }
+        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => {
+            Err(EvaluationFailure::NoValue)
+        }
     }
 }
 
@@ -5068,7 +5124,7 @@ pub fn model_surface_point(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     if let Some(cache) = geometry.solved_cache() {
         return surface_point_solved(cache, u, v);
     }
@@ -5079,7 +5135,8 @@ pub fn model_surface_point(
         .model
         .procedural_surfaces
         .iter()
-        .find(|procedural| procedural.id == *construction)?;
+        .find(|procedural| procedural.id == *construction)
+        .ok_or(EvaluationFailure::NoValue)?;
     let carrier_interval = record_u_interval(procedural.record_bounds());
     let index = crate::index::ModelIndex::new(ir);
     let point = match procedural.definition() {
@@ -5162,11 +5219,12 @@ pub fn model_surface_point(
             }
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
-            return rolling_ball_jet_point(procedural.definition(), u, v);
+            return rolling_ball_jet_point(procedural.definition(), u, v)
+                .ok_or(EvaluationFailure::NoValue);
         }
         _ => None,
     };
-    point.and_then(FinitePoint3::new)
+    point.map_or(Err(EvaluationFailure::NoValue), admit_surface_point)
 }
 
 #[derive(Clone, Copy)]
@@ -5916,8 +5974,13 @@ fn variable_blend_contact_track_differential(
 ) -> Option<ContactTrackDifferential> {
     let surface = &side.surface.as_ref()?.surface;
     let pcurve = side.pcurve.as_ref()?;
-    let uv = pcurve_uv(pcurve, parameter)?;
-    let uv_tangent = pcurve_tangent(pcurve, parameter)?;
+    // A non-finite offset-pcurve point is evaluated on its support as a
+    // finite one is.
+    let uv = match pcurve_uv(pcurve, parameter) {
+        Ok(uv) => uv.get(),
+        Err(failure) => failure.non_finite()?,
+    };
+    let uv_tangent = pcurve_tangent(pcurve, parameter).ok()?;
     let support = model_surface_partials_by_id(index, surface, uv.u, uv.v)?;
     let normal_derivative = model_surface_second_partials_by_id(index, surface, uv.u, uv.v)
         .and_then(|support| {
@@ -6081,7 +6144,7 @@ fn variable_blend_radius(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let [radius, _] = pcurve_uv(function, parameter)?.coordinates();
+            let [radius, _] = pcurve_uv(function, parameter).ok()?.coordinates();
             Some(radius)
         }
         _ => None,
@@ -6113,8 +6176,8 @@ fn variable_blend_radius_differential(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let [radius, _] = pcurve_uv(function, parameter)?.coordinates();
-            let [derivative, _] = pcurve_tangent(function, parameter)?.coordinates();
+            let [radius, _] = pcurve_uv(function, parameter).ok()?.coordinates();
+            let [derivative, _] = pcurve_tangent(function, parameter).ok()?.coordinates();
             Some(ScalarSweepDifferential {
                 value: radius.get(),
                 derivative: derivative.get(),
@@ -6628,15 +6691,22 @@ fn model_surface_point_with_budget_solved(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match (geometry, budget) {
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
-            nurbs_surface_point_with_budget(nurbs, u, v, budget)
+            nurbs_surface_point_with_budget(nurbs, u, v, budget).ok_or(EvaluationFailure::NoValue)
         }
         (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
-            budget.charge().then_some(())?;
+            budget
+                .charge()
+                .then_some(())
+                .ok_or(EvaluationFailure::NoValue)?;
+            // A non-finite basis point, and a transformed point that
+            // overflows, have no value.
             model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget))
+                .ok()
                 .and_then(|point| placed.transform().apply_point(point.get()))
+                .ok_or(EvaluationFailure::NoValue)
         }
         _ => surface_point_solved(geometry, u, v),
     }
@@ -6723,7 +6793,7 @@ pub fn model_surface_point_by_id(
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     model_surface_point_by_id_inner(index, surface, u, v, None)
 }
 
@@ -6736,8 +6806,8 @@ pub fn model_surface_point_by_id_with_budget(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FinitePoint3> {
-    let _guard = budget.recursion_guard()?;
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
     model_surface_point_by_id_inner(index, surface, u, v, Some(budget))
 }
 
@@ -6747,7 +6817,7 @@ fn model_surface_point_by_id_inner(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     struct SurfaceEvaluation {
         point: Point3,
         oriented_normal: Option<Vector3>,
@@ -7121,12 +7191,16 @@ fn model_surface_point_by_id_inner(
                 }
             }
             _ if procedural.is_some() => {
-                model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget).map(
-                    |point| SurfaceEvaluation {
-                        point: point.get(),
-                        oriented_normal: None,
-                    },
-                )
+                // A non-finite point enters the evaluation as a finite one
+                // does.
+                match model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget) {
+                    Ok(point) => Some(point.get()),
+                    Err(failure) => failure.non_finite(),
+                }
+                .map(|point| SurfaceEvaluation {
+                    point,
+                    oriented_normal: None,
+                })
             }
             _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                 let normal = partials.du.cross(partials.dv);
@@ -7161,14 +7235,20 @@ fn model_surface_point_by_id_inner(
             .procedural_surface_for_surface(surface.as_str())
             .is_none()
         {
-            budget.charge().then_some(())?;
-            return index
+            budget
+                .charge()
+                .then_some(())
+                .ok_or(EvaluationFailure::NoValue)?;
+            let surface = index
                 .surfaces(surface.as_str())
-                .and_then(|surface| surface_point_with_budget(&surface.geometry, u, v, budget));
+                .ok_or(EvaluationFailure::NoValue)?;
+            return surface_point_with_budget(&surface.geometry, u, v, budget);
         }
     }
     evaluate(index, surface, u, v, &mut Vec::new(), budget)
-        .and_then(|evaluation| FinitePoint3::new(evaluation.point))
+        .map_or(Err(EvaluationFailure::NoValue), |evaluation| {
+            admit_surface_point(evaluation.point)
+        })
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
@@ -7689,22 +7769,37 @@ fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
 /// Evaluation is total over the carrier's stated shape and does not consult a
 /// declared domain. A NURBS carrier extrapolates its end span past the knot
 /// interval, a trim hands `t` to its basis outside the trim interval, and a
-/// line and a conic evaluate at every finite `t`. `None` means the carrier
-/// cannot produce a point at all — a non-finite result, or an offset whose
-/// basis has no finite nonzero tangent — never that `t` is out of domain.
+/// line and a conic evaluate at every finite `t`. The failure is never that
+/// `t` is out of domain.
+///
+/// An offset carrier whose point overflows reports
+/// [`EvaluationFailure::NonFinite`]. Every other carrier that cannot produce
+/// a finite point, and an offset whose basis has no finite nonzero tangent,
+/// reports [`EvaluationFailure::NoValue`].
 ///
 /// Callers that recover a parameter from an unreliable declared interval
 /// depend on this: they seed and step outside the interval and use the
 /// evaluated point as the witness. A caller that wants the domain asks
 /// the carrier for it.
-pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<FinitePoint2> {
-    pcurve_uv_differential(geometry, t).map(|differential| differential.point)
+pub fn pcurve_uv(
+    geometry: &PcurveGeometry,
+    t: f64,
+) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
+    pcurve_uv_differential(geometry, t)
+        .ok_or(EvaluationFailure::NoValue)?
+        .point
+        .map_err(EvaluationFailure::NonFinite)
 }
 
-/// Evaluate the exact first derivative of a directly stored pcurve. The
-/// derivative is absent when a coordinate is not finite.
-pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<FinitePoint2> {
-    pcurve_uv_differential(geometry, t)?.tangent
+/// Evaluate the exact first derivative of a directly stored pcurve. A
+/// carrier without a finite point has no derivative.
+pub fn pcurve_tangent(
+    geometry: &PcurveGeometry,
+    t: f64,
+) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
+    pcurve_uv_differential(geometry, t)
+        .ok_or(EvaluationFailure::NoValue)?
+        .tangent
 }
 
 // Differentiate atan2 without squaring coordinates in the finite f64 range.
@@ -7746,7 +7841,29 @@ fn polar_angle_differential(
     Some((v.atan2(u), first, second))
 }
 
+/// A pcurve carrier's point and first two derivatives at a parameter.
+struct PcurveEvaluation {
+    /// The point, or the non-finite point an offset carrier reached.
+    point: Result<FinitePoint2, Point2>,
+    /// The first derivative, or why it has no finite value.
+    tangent: Result<FinitePoint2, EvaluationFailure<Point2>>,
+    /// The second derivative, where it is finite.
+    acceleration: Option<FinitePoint2>,
+}
+
+impl From<PcurveDifferential> for PcurveEvaluation {
+    fn from(differential: PcurveDifferential) -> Self {
+        Self {
+            point: Ok(differential.point),
+            tangent: differential.tangent.ok_or(EvaluationFailure::NoValue),
+            acceleration: differential.acceleration,
+        }
+    }
+}
+
 /// Evaluate a pcurve carrier's point and its first two derivatives at `t`.
+/// A carrier other than an offset has no evaluation where its point is not
+/// finite.
 ///
 /// The recursion needs no depth budget. It descends only through
 /// [`PlacedPcurve`](crate::geometry::pcurve::PlacedPcurve),
@@ -7755,7 +7872,7 @@ fn polar_angle_differential(
 /// inline `Box<PcurveGeometry>` behind a `try_new` that refuses a chain past
 /// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING). No arm
 /// follows an arena id, so the value handed in bounds the descent.
-fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDifferential> {
+fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveEvaluation> {
     let pair = match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
@@ -7895,9 +8012,9 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let point_on = |u: Option<FiniteReal>, v: Option<FiniteReal>| {
                 Some(FinitePoint2::from_coordinates(u?, v?))
             };
-            return Some(PcurveDifferential {
-                point: FinitePoint2::from_coordinates(u.0, v.0),
-                tangent: point_on(u.1, v.1),
+            return Some(PcurveEvaluation {
+                point: Ok(FinitePoint2::from_coordinates(u.0, v.0)),
+                tangent: point_on(u.1, v.1).ok_or(EvaluationFailure::NoValue),
                 acceleration: point_on(u.2, v.2),
             });
         }
@@ -7923,17 +8040,20 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             )?;
             let axial = FiniteReal::new(axial_origin + axial_cos * cosine + axial_sin * sine)?;
             let paired = |polar: FiniteReal, axial: f64| {
-                Some(FinitePoint2::from_coordinates(
-                    polar,
-                    FiniteReal::new(axial)?,
-                ))
+                FiniteReal::new(axial)
+                    .map(|axial| FinitePoint2::from_coordinates(polar, axial))
+                    .ok_or(EvaluationFailure::NonFinite(Point2::new(
+                        polar.get(),
+                        axial,
+                    )))
             };
-            return Some(PcurveDifferential {
-                point: FinitePoint2::from_coordinates(angle, axial),
-                tangent: first
-                    .and_then(|first| paired(first, -axial_cos * sine + axial_sin * cosine)),
+            return Some(PcurveEvaluation {
+                point: Ok(FinitePoint2::from_coordinates(angle, axial)),
+                tangent: first.map_or(Err(EvaluationFailure::NoValue), |first| {
+                    paired(first, -axial_cos * sine + axial_sin * cosine)
+                }),
                 acceleration: second
-                    .and_then(|second| paired(second, -axial_cos * cosine - axial_sin * sine)),
+                    .and_then(|second| paired(second, -axial_cos * cosine - axial_sin * sine).ok()),
             });
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
@@ -7967,11 +8087,12 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let paired = |polar: FiniteReal, axial: FinitePoint2| {
                 FinitePoint2::from_coordinates(polar, axial.coordinates()[0])
             };
-            return Some(PcurveDifferential {
-                point: paired(angle, axial.point),
+            return Some(PcurveEvaluation {
+                point: Ok(paired(angle, axial.point)),
                 tangent: first
                     .zip(axial.tangent)
-                    .map(|(first, axial)| paired(first, axial)),
+                    .map(|(first, axial)| paired(first, axial))
+                    .ok_or(EvaluationFailure::NoValue),
                 acceleration: second
                     .zip(axial.acceleration)
                     .map(|(second, axial)| paired(second, axial)),
@@ -8010,9 +8131,9 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                         .map_or(Some(FiniteReal::ZERO), ScaledValue::finite)
                 })
                 .map(|value| FinitePoint2::from_coordinates(FiniteReal::ZERO, value));
-            return Some(PcurveDifferential {
-                point: FinitePoint2::from_coordinates(azimuth, latitude),
-                tangent,
+            return Some(PcurveEvaluation {
+                point: Ok(FinitePoint2::from_coordinates(azimuth, latitude)),
+                tangent: tangent.ok_or(EvaluationFailure::NoValue),
                 acceleration,
             });
         }
@@ -8025,15 +8146,22 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 |index| control_points.get(index).copied().map(planar_pole),
                 nurbs.pole_rows().weights().as_deref(),
                 t,
-            );
+            )
+            .map(PcurveEvaluation::from);
         }
         PcurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
             let basis = pcurve_uv_differential(placed.basis(), t)?;
-            let point = FinitePoint2::new(transform.apply_point(basis.point.get()))?;
+            // A non-finite basis point, a transformed point that overflows,
+            // and a derivative the transform leaves non-finite leave the
+            // carrier without an evaluation.
+            let point = FinitePoint2::new(transform.apply_point(basis.point.ok()?.get()))?;
             let tangent = match basis.tangent {
-                Some(tangent) => Some(FinitePoint2::new(transform.apply_vector(tangent.get()))?),
-                None => None,
+                Ok(tangent) => Ok(FinitePoint2::new(transform.apply_vector(tangent.get()))?),
+                Err(EvaluationFailure::NonFinite(tangent)) => Err(EvaluationFailure::NonFinite(
+                    transform.apply_vector(tangent),
+                )),
+                Err(EvaluationFailure::NoValue) => Err(EvaluationFailure::NoValue),
             };
             let acceleration = match basis.acceleration {
                 Some(acceleration) => Some(FinitePoint2::new(
@@ -8041,8 +8169,8 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 )?),
                 None => None,
             };
-            return Some(PcurveDifferential {
-                point,
+            return Some(PcurveEvaluation {
+                point: Ok(point),
                 tangent,
                 acceleration,
             });
@@ -8055,16 +8183,19 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let basis = pcurve_uv_differential(basis, t)?;
-            let tangent = basis.tangent?;
+            let tangent = basis.tangent.ok()?;
             let speed = tangent.u.hypot(tangent.v);
             if !speed.is_finite() || speed == 0.0 {
                 return None;
             }
             let unit = Point2::new(tangent.u / speed, tangent.v / speed);
-            let point = FinitePoint2::new(Point2::new(
-                basis.point.u - distance.get() * unit.v,
-                basis.point.v + distance.get() * unit.u,
-            ))?;
+            // The offset of a non-finite basis point is the non-finite point
+            // it reaches.
+            let basis_point = basis.point.map_or_else(|point| point, FinitePoint2::get);
+            let point = Point2::new(
+                basis_point.u - distance.get() * unit.v,
+                basis_point.v + distance.get() * unit.u,
+            );
             let tangent = basis.acceleration.map(|acceleration| {
                 let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
                 let unit_derivative = Point2::new(
@@ -8076,16 +8207,16 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                     tangent.v + distance.get() * unit_derivative.u,
                 )
             });
-            return Some(PcurveDifferential {
-                point,
-                tangent: tangent.and_then(FinitePoint2::new),
+            return Some(PcurveEvaluation {
+                point: FinitePoint2::new(point).ok_or(point),
+                tangent: tangent.map_or(Err(EvaluationFailure::NoValue), admit_parameter_point),
                 acceleration: None,
             });
         }
     };
-    Some(PcurveDifferential {
-        point: FinitePoint2::new(pair.0)?,
-        tangent: FinitePoint2::new(pair.1),
+    Some(PcurveEvaluation {
+        point: Ok(FinitePoint2::new(pair.0)?),
+        tangent: admit_parameter_point(pair.1),
         acceleration: FinitePoint2::new(pair.2),
     })
 }
@@ -8153,8 +8284,12 @@ pub fn curve_second_derivative_with_budget(
 }
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization.
-pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<FinitePoint3> {
-    surface_point_solved(geometry.solved()?, u, v)
+pub fn surface_point(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    surface_point_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
 }
 
 /// Evaluate a surface carrier at `(u, v)` within a caller-owned work slice.
@@ -8163,8 +8298,13 @@ pub fn surface_point_with_budget(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FinitePoint3> {
-    surface_point_with_budget_solved(geometry.solved()?, u, v, budget)
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    surface_point_with_budget_solved(
+        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
+        u,
+        v,
+        budget,
+    )
 }
 
 /// Evaluate the first partial derivatives of a surface carrier.
@@ -8213,7 +8353,7 @@ fn model_surface_point_with_budget(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<FinitePoint3> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match geometry.solved() {
         Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget),
         None => model_surface_point(ir, geometry, u, v),

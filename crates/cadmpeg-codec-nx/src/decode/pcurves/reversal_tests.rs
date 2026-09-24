@@ -293,11 +293,11 @@ fn numerical_ranges_nurbs_reversal_avoids_reflection_sum_overflow() {
     let reversed = reverse_pcurve_over_range(&pcurve, range).unwrap().unwrap();
     assert_eq!(
         cadmpeg_ir::eval::pcurve_uv(&reversed, range[0]).map(cadmpeg_ir::units::FinitePoint2::get),
-        Some(Point2::new(1., 1.))
+        Ok(Point2::new(1., 1.))
     );
     assert_eq!(
         cadmpeg_ir::eval::pcurve_uv(&reversed, range[1]).map(cadmpeg_ir::units::FinitePoint2::get),
-        Some(Point2::new(0., 0.))
+        Ok(Point2::new(0., 0.))
     );
     assert_eq!(
         reverse_pcurve_over_range(&reversed, range).unwrap(),

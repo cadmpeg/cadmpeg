@@ -1180,12 +1180,16 @@ fn standard_carrier_endpoint_loci(
     surface: &SurfaceGeometry,
     range: [f64; 2],
 ) -> Option<[Point3; 2]> {
-    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, range[0])?;
-    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, range[1])?;
-    Some([
-        cadmpeg_ir::eval::surface_point(surface, start.u, start.v)?.get(),
-        cadmpeg_ir::eval::surface_point(surface, end.u, end.v)?.get(),
-    ])
+    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, range[0]).ok()?;
+    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, range[1]).ok()?;
+    // A non-finite locus is kept as the evaluation reached it.
+    let locus = |uv: cadmpeg_ir::units::FinitePoint2| match cadmpeg_ir::eval::surface_point(
+        surface, uv.u, uv.v,
+    ) {
+        Ok(point) => Some(point.get()),
+        Err(failure) => failure.non_finite(),
+    };
+    Some([locus(start)?, locus(end)?])
 }
 
 /// One exact consolidated line carrier: the curve it states, the wire interval
@@ -2607,7 +2611,7 @@ fn solve_planar_chart_rechart(
             let uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
                 target, *locus,
             )?);
-            let back = cadmpeg_ir::eval::surface_point(target, uv.u, uv.v)?;
+            let back = cadmpeg_ir::eval::surface_point(target, uv.u, uv.v).ok()?;
             ((back.x - locus.x)
                 .hypot(back.y - locus.y)
                 .hypot(back.z - locus.z)
@@ -2744,10 +2748,13 @@ fn pcurve_lift_reaches_endpoints(
     if matches!(surface, SolvedSurfaceGeometry::Unknown { .. }) {
         return false;
     }
+    // A non-finite lift is measured as a finite one is.
     let lift = |parameter| {
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
-        cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v)
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).ok()?;
+        match cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v) {
+            Ok(point) => Some(point.get()),
+            Err(failure) => failure.non_finite(),
+        }
     };
     let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
         return false;
@@ -2783,8 +2790,8 @@ fn unique_paired_surface_lift_match<'a, T>(
     let midpoint = parameter_range[0] + (parameter_range[1] - parameter_range[0]) * 0.5;
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
     let resolved_lift = |parameter| {
-        let uv = cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter)?;
-        cadmpeg_ir::eval::surface_point(resolved_surface, uv.u, uv.v)
+        let uv = cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter).ok()?;
+        cadmpeg_ir::eval::surface_point(resolved_surface, uv.u, uv.v).ok()
     };
     let resolved_loci = [
         resolved_lift(parameters[0])?,
@@ -2792,16 +2799,16 @@ fn unique_paired_surface_lift_match<'a, T>(
         resolved_lift(parameters[2])?,
     ];
     let partner_uv = [
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[0])?,
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[1])?,
-        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[2])?,
+        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[0]).ok()?,
+        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[1]).ok()?,
+        cadmpeg_ir::eval::pcurve_uv(partner_pcurve, parameters[2]).ok()?,
     ];
     let mut matches = candidates.filter_map(|(identity, surface)| {
         resolved_loci
             .iter()
             .zip(&partner_uv)
             .all(|(resolved, uv)| {
-                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).is_some_and(|partner| {
+                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).is_ok_and(|partner| {
                     (resolved.x - partner.x)
                         .hypot(resolved.y - partner.y)
                         .hypot(resolved.z - partner.z)
@@ -4341,5 +4348,52 @@ mod tests {
                 assert_eq!(chart.point(point), point);
             }
         }
+    }
+
+    /// A unit-radius cone about +Z whose cross-section radius overflows at
+    /// v = 1e308, and the pcurve from its overflowing section at t = 0 to
+    /// its unit circle at t = 1.
+    fn overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    1.0,
+                    1.0,
+                    1.5,
+                )
+                .expect("valid ConeSurface fixture"),
+            )),
+            PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(0.0, 1.0e308),
+                    Point2::new(0.0, -1.0e308),
+                )
+                .expect("valid LinePcurve fixture"),
+            ),
+        )
+    }
+
+    #[test]
+    fn standard_carrier_endpoint_loci_keep_an_overflowing_lift() {
+        let (cone, pcurve) = overflowing_cone_lift();
+        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("both ends lift");
+        assert!(!loci[0].is_finite());
+        assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn a_pcurve_lift_with_an_overflowing_end_is_measured_at_its_finite_end() {
+        let (cone, pcurve) = overflowing_cone_lift();
+        assert!(pcurve_lift_reaches_endpoints(
+            &pcurve,
+            cone.solved().expect("solved carrier"),
+            [0.0, 1.0],
+            [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
+            cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
+        ));
     }
 }

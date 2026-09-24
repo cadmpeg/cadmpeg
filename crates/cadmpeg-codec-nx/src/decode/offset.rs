@@ -1045,7 +1045,8 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             parameters.u,
             parameters.v,
             geometry_budget,
-        )?
+        )
+        .ok()?
         .get();
         let residual = Point3::distance(position, point);
         if !residual.is_finite() {
@@ -1176,14 +1177,18 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             if !linear_extension {
                 clamp_surface_parameters(&mut candidate, domain);
             }
-            let candidate_position = model_surface_point_by_id_with_budget(
+            // A non-finite candidate position is measured as a finite one is,
+            // and its non-finite distance halves the step.
+            let candidate_position = match model_surface_point_by_id_with_budget(
                 index,
                 surface,
                 candidate.u,
                 candidate.v,
                 geometry_budget,
-            )?
-            .get();
+            ) {
+                Ok(point) => point.get(),
+                Err(failure) => failure.non_finite()?,
+            };
             let candidate_distance = distance(candidate_position);
             if candidate_distance.is_finite() && candidate_distance <= current_distance {
                 accepted = Some((candidate, candidate_distance));
@@ -1214,7 +1219,8 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
         parameters.u,
         parameters.v,
         geometry_budget,
-    )?
+    )
+    .ok()?
     .get();
     (distance(position) <= fit_tolerance).then_some(parameters)
 }
@@ -1245,6 +1251,7 @@ pub(super) fn coarse_model_surface_parameters(
                 parameters.v,
                 geometry_budget,
             )
+            .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get) else {
                 continue;
             };
@@ -1430,10 +1437,12 @@ fn model_surface_derivative(
         return None;
     }
     let first =
-        model_surface_point_by_id_with_budget(index, surface, before.u, before.v, geometry_budget)?
+        model_surface_point_by_id_with_budget(index, surface, before.u, before.v, geometry_budget)
+            .ok()?
             .get();
     let second =
-        model_surface_point_by_id_with_budget(index, surface, after.u, after.v, geometry_budget)?
+        model_surface_point_by_id_with_budget(index, surface, after.u, after.v, geometry_budget)
+            .ok()?
             .get();
     Some(Vector3::new(
         (second.x - first.x) / width,
@@ -1464,7 +1473,8 @@ fn model_surface_point_and_derivatives(
         parameters.u,
         parameters.v,
         geometry_budget,
-    )?
+    )
+    .ok()?
     .get();
     let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
     let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
@@ -1650,7 +1660,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         current[0],
         current[1],
         geometry_budget,
-    )?
+    )
+    .ok()?
     .get();
     if Point3::distance(first_point, chart[0]) > fit_tolerance {
         return None;
@@ -1725,7 +1736,8 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
             corrected[0],
             corrected[1],
             geometry_budget,
-        )?
+        )
+        .ok()?
         .get();
         if Point3::distance(point, chart_pair[1]) > fit_tolerance {
             return None;
@@ -1857,7 +1869,8 @@ fn correct_intersection_parameters(
             corrected[0],
             corrected[1],
             geometry_budget,
-        )?
+        )
+        .ok()?
         .get();
         let second = model_surface_point_by_id_with_budget(
             index,
@@ -1865,7 +1878,8 @@ fn correct_intersection_parameters(
             corrected[2],
             corrected[3],
             geometry_budget,
-        )?
+        )
+        .ok()?
         .get();
         let residual = [
             first.x - second.x,
