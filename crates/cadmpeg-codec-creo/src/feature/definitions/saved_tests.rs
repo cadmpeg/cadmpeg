@@ -559,7 +559,7 @@ fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
     assert_eq!(conic.parameters, [Some(0.0), None]);
     assert_eq!(conic.coefficients, [Some(1.0); 2]);
     assert_eq!(
-        conic.local_system,
+        conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
     );
     assert_eq!(conic.body, payload[b"\xe0\x00entity(conic)\0".len()..]);

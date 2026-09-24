@@ -117,7 +117,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
                         [0.5, 0.0, 0.0],
                         [-1.0, 0.0, 0.0],
                         [0.0, 1.0, 0.0],
-                        std::f64::consts::FRAC_PI_4,
+                        crate::surface::ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4)
+                            .expect("apex cone half angle"),
                     )
                     .expect("valid positional cone frame"),
                 ),
@@ -428,7 +429,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     assert_eq!(frame.frame().origin(), [-8.5, 0.0, -3.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius(), 0.5);
+    assert_eq!(frame.radius().get(), 0.5);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
     assert!(super::round_support_envelope_cylinder(
         &scan,

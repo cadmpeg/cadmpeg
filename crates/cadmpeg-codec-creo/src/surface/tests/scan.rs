@@ -332,7 +332,7 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
     let override_value = scan.surfaces.parameters[0]
         .cone_half_angle_override()
         .expect("terminal cone half-angle");
-    assert_eq!(override_value.radians, expected);
+    assert_eq!(override_value.radians.get().get(), expected);
     assert_eq!(override_value.offset, 3);
     assert!(crate::surface::SurfaceParameterRecord {
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(

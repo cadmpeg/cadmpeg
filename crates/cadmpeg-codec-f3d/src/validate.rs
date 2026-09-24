@@ -1963,7 +1963,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && owner.record_index() == *record_index
                                     && owner.scope_record_index() == scope.record_index
                                     && owner.local_ordinal() == ordinal as u32
-                                    && owner.evaluated_value() == value
+                                    && owner.evaluated_value().get() == value
                                     && owner.evaluated_value_offset() == value_offset
                             })
                         })
@@ -2297,7 +2297,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                                 && owner.record_index() == record_index
                                                 && owner.scope_record_index() == scope.record_index
                                                 && owner.local_ordinal() == local_ordinal
-                                                && owner.evaluated_value() == value
+                                                && owner.evaluated_value().get() == value
                                                 && owner.evaluated_value_offset() == value_offset
                                         })
                                     },
@@ -2316,7 +2316,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                             && owner.scope_record_index() == scope.record_index
                                             && owner.local_ordinal()
                                                 == (alignment_start + ordinal) as u32
-                                            && owner.evaluated_value() == *value
+                                            && owner.evaluated_value().get() == *value
                                             && owner.evaluated_value_offset() == lane.offset
                                     })
                                 },
@@ -3669,7 +3669,7 @@ fn valid_work_plane_construction(
         design_stream(owner.id()) == native_stream
             && owner.record_index() == *extra_offset
             && owner.scope_record_index() == scope.record_index
-            && owner.evaluated_value() == 0.0
+            && owner.evaluated_value().get() == 0.0
     }) else {
         return false;
     };
@@ -3694,7 +3694,7 @@ fn valid_work_plane_construction(
                 && parameter.record_index == owner.parameter_record_index()
                 && parameter.owner_record_index() == Some(owner.record_index())
                 && parameter.source_kind() == "ExtraOffset"
-                && parameter.evaluated_value() == 0.0
+                && parameter.evaluated_value().get() == 0.0
         })
 }
 
@@ -4727,7 +4727,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
                     })
                     .filter(|parameter| parameter.source_kind() == source_kind)
-                    .map(|parameter| parameter.evaluated_value())
+                    .map(|parameter| parameter.evaluated_value().get())
                     .collect::<Vec<_>>()
             };
             let along_count = parameter_kind_count("AlongDistance");
@@ -5001,7 +5001,7 @@ fn validate_fillet_radius_groups<'a>(
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value() > 0.0
+                            && parameter.evaluated_value().get() > 0.0
                     })
                 }
                 records::topology::fillet::DesignFilletRadiusLaw::Chordal {
@@ -5013,7 +5013,7 @@ fn validate_fillet_radius_groups<'a>(
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value() > 0.0
+                            && parameter.evaluated_value().get() > 0.0
                     },
                 ),
                 records::topology::fillet::DesignFilletRadiusLaw::Asymmetric {
@@ -5031,7 +5031,7 @@ fn validate_fillet_radius_groups<'a>(
                                 .unit()
                                 .map(|field| field.value.as_str())
                                 .is_some_and(design::feature_project::design_length_unit)
-                            && parameter.evaluated_value() > 0.0
+                            && parameter.evaluated_value().get() > 0.0
                     })
                 }),
                 records::topology::fillet::DesignFilletRadiusLaw::Variable {
@@ -5047,9 +5047,9 @@ fn validate_fillet_radius_groups<'a>(
                                         .unit()
                                         .map(|field| field.value.as_str())
                                         .is_some_and(design::feature_project::design_length_unit)
-                                    && parameter.evaluated_value() >= 0.0
+                                    && parameter.evaluated_value().get() >= 0.0
                             })
-                            .map(crate::records::parameters::DesignParameter::evaluated_value)
+                            .map(|parameter| parameter.evaluated_value().get())
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
@@ -5064,9 +5064,9 @@ fn validate_fillet_radius_groups<'a>(
                                 .filter(|parameter| {
                                     parameter.source_kind() == "MidParams"
                                         && parameter.unit().is_none()
-                                        && (0.0..1.0).contains(&parameter.evaluated_value())
+                                        && (0.0..1.0).contains(&parameter.evaluated_value().get())
                                 })
-                                .map(crate::records::parameters::DesignParameter::evaluated_value)
+                                .map(|parameter| parameter.evaluated_value().get())
                         })
                         .collect::<Option<Vec<_>>>();
                     start.zip(end).zip(middle).zip(positions).is_some_and(
@@ -6926,7 +6926,8 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
             && parameter.is_some_and(|parameter| {
                 parameter.owner_record_index() == Some(owner.record_index())
-                    && parameter.evaluated_value().to_bits() == owner.evaluated_value().to_bits()
+                    && parameter.evaluated_value().get().to_bits()
+                        == owner.evaluated_value().get().to_bits()
             })
             && unique_index
             && unique_local_ordinal;

@@ -3,6 +3,7 @@
 
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_center_position, [f64; 3], "center_position");
@@ -25,8 +26,8 @@ pub(crate) struct DesignScaleOperation {
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
     pub(crate) center_position: Option<Located<[f64; 3]>>,
-    /// Positive uniform scale factor.
-    pub(crate) uniform_factor: f64,
+    /// Uniform scale factor.
+    pub(crate) uniform_factor: PositiveReal,
     /// Byte offset of `uniform_factor`.
     pub(crate) uniform_factor_offset: u64,
 }
@@ -65,7 +66,7 @@ impl From<DesignScaleOperation> for DesignScaleOperationWire {
             center_record_index: value.center_record_index,
             center_position: value.center_position.map(|center| center.value),
             center_position_offset: value.center_position.map(|center| center.offset),
-            uniform_factor: value.uniform_factor,
+            uniform_factor: value.uniform_factor.get(),
             uniform_factor_offset: value.uniform_factor_offset,
         }
     }
@@ -82,7 +83,8 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
                 value.center_position_offset,
                 "center_position",
             )?,
-            uniform_factor: value.uniform_factor,
+            uniform_factor: PositiveReal::new(value.uniform_factor)
+                .ok_or("uniform_factor must be positive and finite")?,
             uniform_factor_offset: value.uniform_factor_offset,
         })
     }

@@ -106,6 +106,6 @@ fn parameter_numeric_and_source_edits_keep_the_old_value_on_failure() {
     assert_eq!(edited, parameter);
     for value in [-1.0, -0.0, 0.0, f64::MAX] {
         edited.try_set_evaluated_value(value).unwrap();
-        assert_eq!(edited.evaluated_value().to_bits(), value.to_bits());
+        assert_eq!(edited.evaluated_value().get().to_bits(), value.to_bits());
     }
 }

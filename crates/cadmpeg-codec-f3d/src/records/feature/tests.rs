@@ -641,7 +641,8 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: center,
-            uniform_factor: 2.5,
+            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
+                .expect("checked fixture value"),
             uniform_factor_offset: 21,
         };
         let expected = match center {
@@ -1814,6 +1815,8 @@ mod fillet_law;
 mod combine;
 
 mod copied_bodies;
+
+mod admitted_scalars;
 
 #[test]
 fn required_surface_operations_reject_absence() {

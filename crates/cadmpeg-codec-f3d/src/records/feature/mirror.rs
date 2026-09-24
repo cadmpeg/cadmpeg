@@ -4,6 +4,7 @@
 use super::patterns::DesignPlane;
 use crate::records::identity::Located;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_plane_normal, Vector3, "plane_normal");
@@ -59,8 +60,8 @@ pub(crate) struct DesignMirrorConstruction {
     pub(crate) count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
     pub(crate) count_offset: u64,
-    /// Positive model-space stitch tolerance in source centimetres.
-    pub(crate) stitch_tolerance: f64,
+    /// Model-space stitch tolerance in source centimetres.
+    pub(crate) stitch_tolerance: PositiveReal,
     /// Byte offset of the evaluated stitch-tolerance scalar.
     pub(crate) stitch_tolerance_offset: u64,
     /// Owner-backed or inline scope-frame tolerance carrier.
@@ -184,7 +185,8 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
         Ok(Self {
             count_record_index: wire.count_record_index,
             count_offset: wire.count_offset,
-            stitch_tolerance: wire.stitch_tolerance,
+            stitch_tolerance: PositiveReal::new(wire.stitch_tolerance)
+                .ok_or("stitch_tolerance must be positive and finite")?,
             stitch_tolerance_offset: wire.stitch_tolerance_offset,
             tolerance_source,
             seed_group_record_index: wire.seed_group_record_index,
@@ -212,7 +214,7 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
             count: 2,
             count_record_index: record.count_record_index,
             count_offset: record.count_offset,
-            stitch_tolerance: record.stitch_tolerance,
+            stitch_tolerance: record.stitch_tolerance.get(),
             stitch_tolerance_record_index,
             stitch_tolerance_offset: record.stitch_tolerance_offset,
             stitch_tolerance_scope,

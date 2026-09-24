@@ -31,7 +31,8 @@ fn dispatcher_projects_perpendicular_surface_extend() {
             boundary_reference_record_index: 900,
             boundary_reference_offset: 106,
             edge_record_indices: vec![503, 507],
-            tolerance: f64::EPSILON,
+            tolerance: cadmpeg_ir::scalar::PositiveReal::new(f64::EPSILON)
+                .expect("checked fixture value"),
             tolerance_offset: 139,
         });
     }

@@ -340,8 +340,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     pub(crate) opaque_index: NonZeroU32,
     /// Byte offset of the first `opaque_index` copy.
     opaque_index_offset: u64,
-    /// Opaque nonnegative finite f64.
-    opaque_scalar: f64,
+    /// Opaque scalar.
+    opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
 }
@@ -370,9 +370,8 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
         }
         let opaque_index =
             NonZeroU32::new(draft.opaque_index).ok_or("opaque_index must be nonzero")?;
-        if !draft.opaque_scalar.is_finite() || draft.opaque_scalar < 0.0 {
-            return Err("opaque_scalar must be finite and nonnegative".into());
-        }
+        let opaque_scalar = cadmpeg_ir::scalar::NonNegativeReal::new(draft.opaque_scalar)
+            .ok_or("opaque_scalar must be finite and nonnegative")?;
         if draft.opaque_index_offset < 18
             || draft.opaque_index_offset.checked_add(4) != Some(draft.opaque_scalar_offset)
         {
@@ -416,7 +415,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             trailing_flags: draft.trailing_flags,
             opaque_index,
             opaque_index_offset: draft.opaque_index_offset,
-            opaque_scalar: draft.opaque_scalar,
+            opaque_scalar,
             variant: draft.variant,
         })
     }
@@ -448,8 +447,8 @@ impl DesignConstructionOperandGroupFrame {
     pub(crate) fn opaque_scalar_offset(&self) -> u64 {
         self.opaque_index_offset + 4
     }
-    /// Finite nonnegative scalar.
-    pub(crate) fn opaque_scalar(&self) -> f64 {
+    /// Opaque scalar.
+    pub(crate) fn opaque_scalar(&self) -> cadmpeg_ir::scalar::NonNegativeReal {
         self.opaque_scalar
     }
     /// Zero or one trailing reference.
@@ -592,7 +591,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
 impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGroupFrameWire {
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
         let opaque_scalar_offset = frame.opaque_scalar_offset();
-        let opaque_scalar = frame.opaque_scalar();
+        let opaque_scalar = frame.opaque_scalar().get();
         let opaque_index_offset = frame.opaque_index_offset();
         Self {
             member_count_offset: frame.member_count_offset,

@@ -1182,18 +1182,21 @@ pub(crate) enum SketchCurveGeometry {
         start: Point3,
         /// End point in sketch space, millimetres.
         end: Point3,
-        /// Unit direction vector from `start` to `end`.
+        /// Direction from `start` to `end`; the decoder stores it at unit length.
         direction: Vector3,
-        /// Unit normal of the sketch plane the line lies in.
+        /// Normal of the sketch plane the line lies in; the decoder stores it at
+        /// unit length.
         normal: Vector3,
     },
     /// A circular arc.
     Arc {
         /// Arc center in sketch space, millimetres.
         center: Point3,
-        /// Unit normal of the sketch plane the arc lies in.
+        /// Normal of the sketch plane the arc lies in; the decoder admits a norm
+        /// within `1e-9` of one.
         normal: Vector3,
-        /// Unit vector marking the zero-angle direction for `start_angle`/`end_angle`.
+        /// Zero-angle direction for `start_angle`/`end_angle`; the decoder admits a
+        /// norm within `1e-9` of one.
         reference_direction: Vector3,
         /// Arc radius in millimetres.
         radius: f64,
@@ -1235,18 +1238,21 @@ enum SketchCurveGeometryWire {
         start: Point3,
         /// End point in sketch space, millimetres.
         end: Point3,
-        /// Unit direction vector from `start` to `end`.
+        /// Direction from `start` to `end`; the decoder stores it at unit length.
         direction: Vector3,
-        /// Unit normal of the sketch plane the line lies in.
+        /// Normal of the sketch plane the line lies in; the decoder stores it at
+        /// unit length.
         normal: Vector3,
     },
     /// A circular arc.
     Arc {
         /// Arc center in sketch space, millimetres.
         center: Point3,
-        /// Unit normal of the sketch plane the arc lies in.
+        /// Normal of the sketch plane the arc lies in; the decoder admits a norm
+        /// within `1e-9` of one.
         normal: Vector3,
-        /// Unit vector marking the zero-angle direction for `start_angle`/`end_angle`.
+        /// Zero-angle direction for `start_angle`/`end_angle`; the decoder admits a
+        /// norm within `1e-9` of one.
         reference_direction: Vector3,
         /// Arc radius in millimetres.
         radius: f64,

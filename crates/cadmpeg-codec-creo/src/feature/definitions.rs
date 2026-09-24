@@ -1276,7 +1276,7 @@ pub(crate) struct FeatureSavedConic {
     /// Semi-axis coefficients.
     pub(crate) coefficients: [Option<f64>; 2],
     /// Two in-plane axes, positive normal, and origin.
-    pub(crate) local_system: Option<[f64; 12]>,
+    pub(crate) local_system: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Exact entity-body bytes, excluding the following entity boundary.
     pub(crate) body: Vec<u8>,
     /// Byte offset of the entity label in the original stream.

@@ -334,8 +334,8 @@ pub(crate) enum DesignFixedChamferParameters {
 /// One fixed Chamfer distance lane and its source provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedChamferDistance {
-    /// Positive distance in source centimetres.
-    pub(crate) value: f64,
+    /// Distance in source centimetres.
+    pub(crate) value: PositiveReal,
     /// Referenced scalar record.
     pub(crate) record_index: u32,
     /// Byte offset of the scalar.

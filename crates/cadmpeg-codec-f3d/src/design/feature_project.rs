@@ -932,9 +932,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                     }),
                     |operation| {
-                        let Some(factor) = cadmpeg_ir::scalar::NonZeroReal::new(operation.uniform_factor) else {
-                            return FeatureDefinition::Operation(FeatureOperation::Native { kind: scope.kind_name().into(), parameters: BTreeMap::new() });
-                        };
+                        let factor = cadmpeg_ir::scalar::NonZeroReal::from(operation.uniform_factor);
                         let body_group = construction_groups.iter().find(|group| {
                             native_stream(&group.id) == Some(native_scope)
                                 && group.scope_record_index == scope.record_index
@@ -1410,18 +1408,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
                 Some(unit) if design_length_unit(unit) => {
-                    Length::new(parameter.evaluated_value() * 10.0).map(ParameterValue::Length)
+                    Length::new(parameter.evaluated_value().get() * 10.0)
+                        .map(ParameterValue::Length)
                 }
                 Some(unit) if design_angle_unit(unit) => {
-                    Angle::new(parameter.evaluated_value()).map(ParameterValue::Angle)
+                    Angle::new(parameter.evaluated_value().get()).map(ParameterValue::Angle)
                 }
-                None => cadmpeg_ir::scalar::FiniteReal::new(parameter.evaluated_value())
-                    .map(ParameterValue::Real),
+                None => Some(ParameterValue::Real(parameter.evaluated_value())),
                 Some(unit) => {
                     properties.insert(cadmpeg_core::nonblank_literal!("unit"), unit.into());
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("evaluated_scalar"),
-                        parameter.evaluated_value().to_string(),
+                        parameter.evaluated_value().get().to_string(),
                     );
                     None
                 }
@@ -1832,12 +1830,14 @@ fn project_work_point_construction(
                 .map(|(_, parameter)| *parameter)
                 .filter(|parameter| parameter.source_kind() == "PathDistance");
             let distance = distances.next()?;
-            if distances.next().is_some() || !(0.0..=1.0).contains(&distance.evaluated_value()) {
+            if distances.next().is_some()
+                || !(0.0..=1.0).contains(&distance.evaluated_value().get())
+            {
                 return None;
             }
             DatumPointConstruction::DistanceOnEdge {
                 edge: edge(input)?,
-                fraction: cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value())?,
+                fraction: cadmpeg_ir::scalar::Fraction::new(distance.evaluated_value().get())?,
             }
         }
         DesignWorkPointRuleForm::Native { .. } => return None,
@@ -2159,7 +2159,6 @@ fn resolved_fillet_assignments<'a>(
                 .map(|record| {
                     parameter(record, "TangencyWeight")
                         .map(crate::records::parameters::DesignParameter::evaluated_value)
-                        .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 })
                 .map_or(Some(None), |value| value.map(Some))?;
             let radius = match &assignment.law {
@@ -3357,7 +3356,9 @@ pub(super) fn project_shell(
     Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies,
         removed_faces,
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(*thickness * 10.0)?),
+        thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
+            thickness.get() * 10.0,
+        )?),
         outward: Some(*outward),
         mode: None,
         join: None,
@@ -5329,7 +5330,7 @@ fn design_positive_length(
 }
 
 pub(super) fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::scalar::Length> {
-    let value = parameter.evaluated_value() * 10.0;
+    let value = parameter.evaluated_value().get() * 10.0;
     (parameter
         .unit()
         .map(|field| field.value.as_str())
@@ -5432,9 +5433,7 @@ fn variable_fillet_law(
         });
         match (matches.next(), matches.next()) {
             (None, None) => None,
-            (Some(parameter), None) => Some(cadmpeg_ir::scalar::FiniteReal::new(
-                parameter.evaluated_value(),
-            )?),
+            (Some(parameter), None) => Some(parameter.evaluated_value()),
             (None, Some(_)) => return None,
             (Some(_), Some(_)) => return None,
         }
@@ -5470,7 +5469,7 @@ fn variable_fillet_law(
     });
     for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
         let radius = design_length(radius)?;
-        let parameter = parameter.evaluated_value();
+        let parameter = parameter.evaluated_value().get();
         points.push(VariableRadius { parameter, radius });
     }
     points.push(VariableRadius {
@@ -5757,13 +5756,13 @@ fn project_fixed_chamfer(
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
-                distance: cadmpeg_ir::scalar::PositiveLength::new(distance.value * 10.0)?,
+                distance: cadmpeg_ir::scalar::PositiveLength::new(distance.value.get() * 10.0)?,
             }
         }
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::TwoDistances { first, second } => {
             ChamferSpec::TwoDistances {
-                first: cadmpeg_ir::scalar::PositiveLength::new(first.value * 10.0)?,
-                second: cadmpeg_ir::scalar::PositiveLength::new(second.value * 10.0)?,
+                first: cadmpeg_ir::scalar::PositiveLength::new(first.value.get() * 10.0)?,
+                second: cadmpeg_ir::scalar::PositiveLength::new(second.value.get() * 10.0)?,
             }
         }
     };
@@ -6588,8 +6587,6 @@ fn project_circular_pattern(
         patterns::{PatternKind, PatternSeed, PatternTransform},
         FeatureDefinition, FeatureOperation,
     };
-    use cadmpeg_ir::scalar::PositiveAngle;
-
     let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
     let stream = native_stream(&scope.id)?;
@@ -6628,7 +6625,7 @@ fn project_circular_pattern(
         pattern: PatternKind::new(PatternTransform::Circular {
             axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
             axis_dir: cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?,
-            angle: PositiveAngle::new(construction.angle)?,
+            angle: construction.angle,
             count: construction.count,
         })
         .ok()?,
@@ -7139,10 +7136,10 @@ fn project_fixed_pipe(
     let section_thickness = design_positive_length(section_thickness_parameter)?;
     if along.unit().is_some()
         || against.unit().is_some()
-        || along.evaluated_value() != values[0]
-        || against.evaluated_value() != values[1]
-        || section_size_parameter.evaluated_value() != values[2]
-        || section_thickness_parameter.evaluated_value() != values[3]
+        || along.evaluated_value().get() != values[0]
+        || against.evaluated_value().get() != values[1]
+        || section_size_parameter.evaluated_value().get() != values[2]
+        || section_thickness_parameter.evaluated_value().get() != values[3]
         || section_size.get() <= 0.0
     {
         return None;
@@ -8837,7 +8834,7 @@ fn project_coil(
     let dimensionless = |kind: &str| {
         let parameter = unique(kind)?;
         parameter.unit().is_none().then_some(())?;
-        cadmpeg_ir::scalar::PositiveReal::new(parameter.evaluated_value())
+        cadmpeg_ir::scalar::PositiveReal::new(parameter.evaluated_value().get())
     };
     let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent()? {
         DesignCoilExtent::RevolutionsHeight => (

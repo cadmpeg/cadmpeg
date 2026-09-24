@@ -326,11 +326,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     edge_operand.treatment_radius_candidates = vec![
         crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 17,
-            radius: 3.0,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("checked fixture value"),
         },
         crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 18,
-            radius: 3.0,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("checked fixture value"),
         },
     ];
     let second_operand = edge_operand.clone();
@@ -352,18 +352,18 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     chain_left.treatment_radius_candidates.push(
         crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
-            radius: 3.0,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("checked fixture value"),
         },
     );
     let mut chain_right = edge_operand.clone();
     chain_right.treatment_radius_candidates = vec![
         crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 19,
-            radius: 3.0,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("checked fixture value"),
         },
         crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
             edge_slot: 20,
-            radius: 3.0,
+            radius: cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("checked fixture value"),
         },
     ];
     chain_right.deleted_boundary_edge_slots = vec![19, 20];

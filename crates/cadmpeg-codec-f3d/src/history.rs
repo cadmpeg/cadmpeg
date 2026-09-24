@@ -6279,8 +6279,8 @@ fn treatment_edge_candidates(
             .filter(|candidate| candidate.surface == carrier);
         let radius = radii
             .next()
-            .map(|candidate| candidate.radius)
-            .filter(|radius| radii.next().is_none() && radius.is_finite() && *radius > 0.0)
+            .and_then(|candidate| cadmpeg_ir::scalar::PositiveReal::new(candidate.radius))
+            .filter(|_| radii.next().is_none())
             .filter(|_| {
                 candidate_edges.is_empty() || !inserted_boundary.is_disjoint(&candidate_edges)
             });
@@ -6311,7 +6311,8 @@ fn treatment_edge_candidates(
     }
     radii_out.sort_by(|left, right| {
         left.radius
-            .total_cmp(&right.radius)
+            .get()
+            .total_cmp(&right.radius.get())
             .then(left.edge_slot.cmp(&right.edge_slot))
     });
     radii_out

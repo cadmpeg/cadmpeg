@@ -1434,7 +1434,7 @@ pub(super) fn radius_edge_group_candidates(
             operand
                 .treatment_radius_candidates
                 .iter()
-                .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
                 .map(|candidate| candidate.edge_slot),
         );
     }
@@ -1447,7 +1447,7 @@ pub(super) fn radius_edge_group_candidates(
         let has_radius_candidate = operand
             .treatment_radius_candidates
             .iter()
-            .any(|candidate| (candidate.radius - radius).abs() <= tolerance);
+            .any(|candidate| (candidate.radius.get() - radius).abs() <= tolerance);
         if resolved_edge_operand(operand).is_none()
             && !has_radius_candidate
             && !operand.changed_boundary_edge_slots.is_empty()
@@ -1485,7 +1485,7 @@ fn radius_edge_identity_group_candidates(
                 operand
                     .treatment_radius_candidates
                     .iter()
-                    .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
+                    .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
                     .map(|candidate| candidate.edge_slot),
             );
         }

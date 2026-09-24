@@ -348,7 +348,7 @@ pub(crate) fn positional_cylinder_frames_agree(
         .origin()
         .into_iter()
         .chain(second.frame().origin())
-        .chain([first.radius, second.radius])
+        .chain([first.radius.get(), second.radius.get()])
         .chain(first.length.map(PositiveLength::get))
         .chain(second.length.map(PositiveLength::get))
         .map(f64::abs)
@@ -373,7 +373,7 @@ pub(crate) fn positional_cylinder_frames_agree(
             .into_iter()
             .zip(second.frame().ref_direction())
             .all(|(left, right)| close(left, right))
-        && close(first.radius, second.radius)
+        && close(first.radius.get(), second.radius.get())
         && match (first.length, second.length) {
             (Some(left), Some(right)) => close(left.get(), right.get()),
             (None, None) => true,

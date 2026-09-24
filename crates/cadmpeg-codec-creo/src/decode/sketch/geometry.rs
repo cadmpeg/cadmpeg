@@ -609,8 +609,7 @@ pub(in crate::decode) fn saved_section_entity_geometry(
             let first_length = first_axis[0].hypot(first_axis[1]);
             let second_length = second_axis[0].hypot(second_axis[1]);
             let scale = first_length.max(second_length).max(1.0);
-            if !frame.into_iter().all(f64::is_finite)
-                || first_radius <= EPS_POINT_NONZERO
+            if first_radius <= EPS_POINT_NONZERO
                 || second_radius <= EPS_POINT_NONZERO
                 || (first_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale
                 || (second_length - 1.0).abs() > EPS_SECTION_FRAME_ORTHONORMAL * scale

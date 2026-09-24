@@ -47,7 +47,7 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -207,7 +207,7 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -323,7 +323,7 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker =
             constructed_marker.with_test_identity(Some(object_index), Some(local_id));
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -475,7 +475,7 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker =
             constructed_marker.with_test_identity(Some(object_index), Some(local_id));
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -712,7 +712,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -934,7 +934,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(11), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.01, 0.02]);
         constructed_marker.links = None;
         constructed_marker
@@ -996,7 +996,7 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 1000, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.03, 0.04]);
         constructed_marker.links = None;
         constructed_marker
@@ -1591,7 +1591,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
                 SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker
@@ -1699,7 +1699,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
                 SketchInputEntity::new(marker_id, marker_parent, 1, 20, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(1), Some(0));
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
             constructed_marker
@@ -1716,7 +1716,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
             );
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = None;
             constructed_marker.links = crate::records::SketchInputLinks::new(
                 0,
@@ -1740,7 +1740,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
                 SketchInputEntity::new(marker_id, marker_parent, 3, 30, SketchInputKind::Point);
             constructed_marker.feature_ref = Some(feature_ref.into());
             constructed_marker = constructed_marker.with_test_identity(Some(2), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.002, 0.0]);
             constructed_marker.links = None;
             constructed_marker

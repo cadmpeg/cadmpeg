@@ -126,19 +126,19 @@ pub(super) fn exact_legacy_as_built_421_alignment(
         (limit_first, limit_second)
     };
     let kind = generation.limit_kind();
-    let minimum = minimum_owner.evaluated_value();
-    let maximum = maximum_owner.evaluated_value();
+    let minimum = minimum_owner.evaluated_value().get();
+    let maximum = maximum_owner.evaluated_value().get();
     let limit_owner_record_indices = [minimum_owner.record_index(), maximum_owner.record_index()];
     let limit_value_offsets = [
         minimum_owner.evaluated_value_offset(),
         maximum_owner.evaluated_value_offset(),
     ];
     Some(LegacyAsBuilt421Alignment {
-        angle: angle.evaluated_value(),
+        angle: angle.evaluated_value().get(),
         offset: [
-            offset_x.evaluated_value(),
-            offset_y.evaluated_value(),
-            offset_z.evaluated_value(),
+            offset_x.evaluated_value().get(),
+            offset_y.evaluated_value().get(),
+            offset_z.evaluated_value().get(),
         ],
         owners: [angle, offset_x, offset_y, offset_z]
             .into_iter()

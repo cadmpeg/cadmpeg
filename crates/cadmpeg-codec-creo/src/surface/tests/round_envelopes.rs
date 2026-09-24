@@ -186,7 +186,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     );
     assert_eq!(frame.frame().axis(), [0.0, -1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 4.5);
+    assert_eq!(frame.radius.get(), 4.5);
     assert!(
         (frame.length.expect("required invariant").get() - 6.872_998_848_194_527).abs() < 1.0e-12
     );
@@ -210,7 +210,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
-    assert!((frame.radius - 5.0).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 5.0).abs() < 1.0e-12);
     assert!((frame.length.expect("required invariant").get() - 21.643_2).abs() < 1.0e-12);
 
     let mut ambiguous = record.clone();
@@ -241,7 +241,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert!((frame.radius - 0.1).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 0.1).abs() < 1.0e-12);
     assert!((frame.length.expect("required invariant").get() - 6.4).abs() < 1.0e-12);
 
     let nine_slot_body = [
@@ -263,7 +263,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 0.5);
+    assert_eq!(frame.radius.get(), 0.5);
     assert_eq!(frame.length.map(PositiveLength::get), Some(40.0));
 
     let single_diameter_body = [
@@ -283,7 +283,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
         [2.0 / 5.0_f64.sqrt(), 0.0, 1.0 / 5.0_f64.sqrt()]
     );
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert!(
         (frame.length.expect("bounded carrier").get() - 31.25_f64.sqrt() * 5.0).abs() < 1.0e-12
     );
@@ -318,7 +318,7 @@ fn decodes_terminal_square_radial_type24_round_envelope() {
     assert!((frame.frame().origin()[2] - 7.9).abs() < EPS_FRAME_COMPONENT);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, -1.0, 0.0]);
-    assert!((frame.radius - 0.1).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 0.1).abs() < 1.0e-12);
     assert_eq!(frame.length, None);
 
     let mut unequal_radials = unbounded;
@@ -343,7 +343,7 @@ fn decodes_negative_a7_repeated_diameter_round_envelope() {
 
     assert_eq!(frame.frame().origin(), [-42.3, 1.25, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.3).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
     assert!((frame.length.expect("required invariant").get() - length).abs() < 1.0e-12);
     assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
@@ -373,7 +373,7 @@ fn decodes_prefixed_repeated_diameter_round_envelope() {
     assert!((frame.frame().origin()[1] + 1.75).abs() < EPS_FRAME_COMPONENT);
     assert_eq!(frame.frame().origin()[2], 0.0);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert!((frame.radius - 0.3).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 0.3).abs() < 1.0e-12);
     let length = 85.1_f64.hypot(0.5);
     assert!((frame.length.expect("required invariant").get() - length).abs() < 1.0e-12);
     assert!((frame.frame().axis()[0] - 85.1 / length).abs() < EPS_FRAME_COMPONENT);
@@ -414,7 +414,7 @@ fn decodes_held_coordinate_type24_round_envelope() {
     assert_eq!(frame.frame().origin(), [34.0, 5.0, 10.0]);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
     assert_eq!(base_record.type24_round_radius(), Some(1.0));
 

@@ -452,7 +452,7 @@ fn positional_cylinder_carrier(
         origin: frame.frame().origin(),
         axis: frame.frame().axis(),
         ref_direction: frame.frame().ref_direction(),
-        radius: frame.radius(),
+        radius: frame.radius().get(),
     }))
 }
 

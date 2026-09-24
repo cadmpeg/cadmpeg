@@ -19,7 +19,7 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
             kind,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -77,7 +77,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -88,7 +88,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 1, 10, SketchInputKind::Arc);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.0, 0.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(
             0,
@@ -162,7 +162,7 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker

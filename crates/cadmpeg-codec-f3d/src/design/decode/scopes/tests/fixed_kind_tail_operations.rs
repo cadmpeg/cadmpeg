@@ -199,7 +199,8 @@ pub(super) fn fixed_kind_tail_operations(
             body_group_record_index: 102,
             center_record_index: 105,
             center_position: None,
-            uniform_factor: 1.5,
+            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(1.5)
+                .expect("checked fixture value"),
             uniform_factor_offset: (scale_at + 25) as u64,
         })
     );
@@ -677,12 +678,12 @@ pub(super) fn fixed_kind_tail_operations(
         &shell_scope.payload(),
         crate::records::feature::scope::DesignScopePayload::Shell(Some(
             crate::records::feature::direct_face::DesignShellOperation {
-                thickness: 0.5,
+                thickness,
                 thickness_record_index: 1_778,
                 outward: true,
                 ..
             }
-        ))
+        )) if thickness.get() == 0.5
     ));
     let mut shell_group = thicken_group.clone();
     shell_group.id = "shell-group".into();
@@ -746,12 +747,12 @@ pub(super) fn fixed_kind_tail_operations(
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &compact_shell_scope),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness: 0.25,
+            thickness,
             thickness_record_index: 9_000,
             outward: true,
             outward_offset,
             ..
-        })) if outward_offset == (compact_shell_at + 21) as u64
+        })) if thickness.get() == 0.25 && outward_offset == (compact_shell_at + 21) as u64
     ));
     let shifted_shell_at = bytes.len();
     let mut shifted_shell = vec![0; 278];
@@ -783,12 +784,12 @@ pub(super) fn fixed_kind_tail_operations(
             &shifted_shell_scope,
         ),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness: 0.25,
+            thickness,
             thickness_record_index: 9_000,
             outward: false,
             outward_offset,
             ..
-        })) if outward_offset == (shifted_shell_at + 21) as u64
+        })) if thickness.get() == 0.25 && outward_offset == (shifted_shell_at + 21) as u64
     ));
     {
         let construction = exact_direct_face_operation(
@@ -1129,7 +1130,8 @@ pub(super) fn fixed_kind_tail_operations(
             boundary_reference_record_index: 900,
             boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
             edge_record_indices: extend_edge_record_indices.to_vec(),
-            tolerance: 1.0e-6,
+            tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
+                .expect("checked fixture value"),
             tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
         }
     );
@@ -1189,7 +1191,8 @@ pub(super) fn fixed_kind_tail_operations(
                 boundary_reference_record_index: 900,
                 boundary_reference_offset: (extend_boundary_at + extend_boundary_tail + 6) as u64,
                 edge_record_indices: extend_edge_record_indices.to_vec(),
-                tolerance: 1.0e-6,
+                tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
+                    .expect("checked fixture value"),
                 tolerance_offset: (extend_boundary_at + extend_boundary_tail + 39) as u64,
             },
         }

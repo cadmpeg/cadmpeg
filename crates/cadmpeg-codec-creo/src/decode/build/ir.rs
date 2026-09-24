@@ -314,7 +314,7 @@ fn transfer_reference_circles(
                     Point3::from(circle.center),
                     Vector3::from(circle.axis),
                     Vector3::from(reference),
-                    circle.radius,
+                    circle.radius.get(),
                 )
                 .map_err(CodecError::malformed)?,
             )),
@@ -384,8 +384,8 @@ fn transfer_reference_ellipses(
                     Point3::from(ellipse.center),
                     Vector3::from(ellipse.axis),
                     Vector3::from(ellipse.major_direction),
-                    ellipse.major_radius,
-                    ellipse.minor_radius,
+                    ellipse.major_radius.get(),
+                    ellipse.minor_radius.get(),
                 )
                 .map_err(CodecError::malformed)?,
             )),

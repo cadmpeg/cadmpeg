@@ -27,8 +27,8 @@ pub(crate) struct DesignCircularPatternConstruction {
     pub(crate) count_record_index: u32,
     /// Byte offset of the evaluated count scalar.
     pub(crate) count_offset: u64,
-    /// Positive angular span in radians.
-    pub(crate) angle: f64,
+    /// Angular span.
+    pub(crate) angle: cadmpeg_ir::scalar::PositiveAngle,
     /// Referenced total-angle scalar.
     pub(crate) angle_record_index: u32,
     /// Byte offset of the total-angle scalar.
@@ -68,7 +68,8 @@ pub(crate) enum DesignCircularPatternAxis {
         origin: [f64; 3],
         /// Byte offset of the first origin coordinate.
         origin_offset: u64,
-        /// Unit axis direction derived from the serialized displacement.
+        /// Axis direction; the decoder stores the serialized displacement at unit
+        /// length.
         direction: [f64; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
@@ -101,7 +102,8 @@ enum DesignCircularPatternAxisWire {
         origin: [f64; 3],
         /// Byte offset of the first origin coordinate.
         origin_offset: u64,
-        /// Unit axis direction derived from the serialized displacement.
+        /// Axis direction; the decoder stores the serialized displacement at unit
+        /// length.
         direction: [f64; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,

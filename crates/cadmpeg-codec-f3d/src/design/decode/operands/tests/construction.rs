@@ -157,7 +157,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         [300]
     );
     assert_eq!(group.frame.opaque_index.get(), 180);
-    assert_eq!(group.frame.opaque_scalar(), 0.125);
+    assert_eq!(group.frame.opaque_scalar().get(), 0.125);
     assert!(group.frame.variant);
     assert_eq!(group.paired_byte_offset, paired_at as u64);
 

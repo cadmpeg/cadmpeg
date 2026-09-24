@@ -916,7 +916,12 @@ fn packed_legacy_geometry_locus_carries_profile_coordinates() {
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].kind(), SketchInputKind::Point);
     assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
-    assert_eq!(entities[0].state_value, Some(1.0));
+    assert_eq!(
+        entities[0]
+            .state_value
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(1.0)
+    );
 }
 
 #[test]

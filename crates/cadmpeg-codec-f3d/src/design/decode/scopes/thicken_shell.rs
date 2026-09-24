@@ -170,12 +170,9 @@ pub(super) fn exact_shell_class_369_261(
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    if scalar.value <= 0.0 {
-        return None;
-    }
     Some(DesignDirectFaceOperation::Shell(
         direct_face::DesignShellOperation {
-            thickness: scalar.value,
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?,
             thickness_record_index,
             thickness_offset: scalar.value_offset,
             outward,

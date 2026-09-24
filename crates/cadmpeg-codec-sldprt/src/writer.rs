@@ -1442,11 +1442,6 @@ fn resolved_feature_payload(
         })?;
         field.copy_from_slice(&entity.kind().native_code().to_le_bytes());
         if let Some(value) = entity.state_value {
-            if !value.is_finite() {
-                return Err(CodecError::Malformed(
-                    "feature-input state value must be finite".into(),
-                ));
-            }
             let state_start = offset
                 .checked_add(48)
                 .ok_or_else(|| CodecError::Malformed("feature-input offset overflow".into()))?;
@@ -1456,7 +1451,7 @@ fn resolved_feature_payload(
             let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
                 CodecError::Malformed("feature-input state field exceeds retained payload".into())
             })?;
-            state.copy_from_slice(&value.to_le_bytes());
+            state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
             if !coordinates.iter().all(|value| value.is_finite()) {

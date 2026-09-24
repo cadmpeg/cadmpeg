@@ -1086,7 +1086,8 @@ pub(crate) struct SketchPatternDirection {
     pub(crate) evaluated_count: SketchPatternCount,
     /// Record index of the count parameter value record.
     pub(crate) count_parameter: u32,
-    /// Unit direction vector in sketch coordinates.
+    /// Direction in sketch coordinates; the decoder admits a squared length
+    /// within `1e-6` of one.
     pub(crate) direction: [f64; 3],
     /// Evaluated source distance along this direction, in source units. The
     /// owning relation's [`SketchRelation::rectangular_counted_reference_count`]

@@ -82,7 +82,8 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
                         [0.5, 0.0, 0.0],
                         [-1.0, 0.0, 0.0],
                         [0.0, 1.0, 0.0],
-                        std::f64::consts::FRAC_PI_4,
+                        crate::surface::ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4)
+                            .expect("apex cone half angle"),
                     )
                     .expect("valid positional cone frame"),
                 ),

@@ -21,6 +21,7 @@ use super::{
     ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
+use cadmpeg_ir::scalar::PositiveLength;
 
 #[test]
 fn decodes_complete_positional_line_rows() {
@@ -237,8 +238,8 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
             center: [2.0, 2.0, 4.0],
             axis: [0.0, 0.0, 1.0],
             major_direction: [-1.0, 0.0, 0.0],
-            major_radius: 5.0,
-            minor_radius: 2.0,
+            major_radius: PositiveLength::new(5.0).expect("positive radius"),
+            minor_radius: PositiveLength::new(2.0).expect("positive radius"),
             offset: 10,
         }]
     );
@@ -302,7 +303,7 @@ fn decodes_line3d_with_matching_original_length() {
         line.kind,
         ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: 1.0
+            original_length: PositiveLength::new(1.0).expect("positive length")
         }
     );
     assert_eq!(line.start, [0.0; 3]);
@@ -339,6 +340,17 @@ fn withholds_line3d_with_inconsistent_original_length() {
 }
 
 #[test]
+fn withholds_line3d_with_unbounded_original_length() {
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+            \x0f\x0f\x0f\xe4\x0f\x0f\xed\x7f\xf0\x00\x00\x00\x00\x00\x00";
+    assert!(line3d_lines(payload).is_empty());
+    let mut bounded = payload.to_vec();
+    let length = bounded.len() - 8;
+    bounded[length..].copy_from_slice(&1.0_f64.to_be_bytes());
+    assert_eq!(line3d_lines(&bounded).len(), 1);
+}
+
+#[test]
 fn withholds_line3d_when_endpoint_norm_overflows() {
     let mut body = Vec::new();
     for value in [-f64::MAX, 0.0, 0.0, f64::MAX, 0.0, 0.0, f64::MAX] {
@@ -361,7 +373,7 @@ fn decodes_arc_z_diameter_rows() {
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
     assert_eq!(circle.entity_id, 7);
     assert_eq!(circle.center, [0.0; 3]);
-    assert_eq!(circle.radius, 1.0);
+    assert_eq!(circle.radius.get(), 1.0);
     assert_eq!(circle.start, [1.0, 0.0, 0.0]);
     assert_eq!(circle.end, [-1.0, 0.0, 0.0]);
 }
@@ -373,7 +385,7 @@ fn decodes_arc_z_explicit_center_rows() {
             \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
     assert_eq!(circle.center, [3.5, 10.0, -4.0]);
-    assert_eq!(circle.radius, 2.0);
+    assert_eq!(circle.radius.get(), 2.0);
     assert_eq!(circle.start, [5.5, 10.0, -4.0]);
     assert_eq!(circle.end, [3.5, 8.0, -4.0]);
 }
@@ -441,7 +453,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     let scan = container::scan_bytes_ok(data.clone());
     assert_eq!(scan.references.circles.len(), 1);
     assert_eq!(scan.references.circles[0].center, [0.0; 3]);
-    assert_eq!(scan.references.circles[0].radius, 1.0);
+    assert_eq!(scan.references.circles[0].radius.get(), 1.0);
 
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -490,7 +502,7 @@ fn decode_retains_line3d_original_length() {
         line.kind,
         crate::reference::ReferenceLineKind::Line3d {
             entity_id: 35,
-            original_length: 1.0
+            original_length: PositiveLength::new(1.0).expect("positive length")
         }
     );
 

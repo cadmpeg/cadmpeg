@@ -181,7 +181,7 @@ pub(super) fn fixed_kind_path_operations(
         member_count_offset: 32,
         opaque_index: std::num::NonZeroU8::new(89).expect("nonzero ordinal"),
         opaque_index_offset: 47,
-        opaque_scalar: 1.25,
+        opaque_scalar: cadmpeg_ir::scalar::FiniteReal::new(1.25).expect("checked fixture value"),
         opaque_scalar_offset: 51,
         repeated_opaque_index_offset: 59,
         next_next_record_index: 502,

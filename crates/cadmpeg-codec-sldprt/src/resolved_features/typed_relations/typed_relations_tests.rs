@@ -249,7 +249,7 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
             );
             constructed_marker.feature_ref = Some("sketch".into());
             constructed_marker = constructed_marker.with_test_identity(object_index, None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
             constructed_marker
@@ -297,7 +297,7 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -360,7 +360,7 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -412,7 +412,7 @@ fn terminal_legacy_indexed_curve_retains_its_sibling_line_kind() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

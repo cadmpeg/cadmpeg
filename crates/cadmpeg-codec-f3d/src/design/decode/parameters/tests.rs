@@ -160,7 +160,7 @@ fn compact_owned_design_parameter_has_no_family_discriminator() {
         Some("mm")
     );
     assert_eq!(parameter.name(), "d99");
-    assert_eq!(parameter.evaluated_value(), 8.2);
+    assert_eq!(parameter.evaluated_value().get(), 8.2);
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn legacy_owned_design_parameter_uses_the_compact_identity_prefix() {
         Some("mm")
     );
     assert_eq!(parameter.name(), "d5");
-    assert_eq!(parameter.evaluated_value(), 0.0);
+    assert_eq!(parameter.evaluated_value().get(), 0.0);
 }
 
 #[test]
@@ -209,7 +209,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     assert_eq!(user.kind(), DesignParameterKind::User);
     assert_eq!(user.owner_record_index(), None);
     assert_eq!(user.unit().map(|field| field.value.as_str()), Some("mm"));
-    assert_eq!(user.evaluated_value(), 6.0);
+    assert_eq!(user.evaluated_value().get(), 6.0);
 
     let feature = parse_design_parameter_record(&parameter_record(
         Some(44),
@@ -247,7 +247,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     );
     assert_eq!(tangency.unit(), None);
     assert_eq!(tangency.name(), "d81");
-    assert_eq!(tangency.evaluated_value(), 1.0);
+    assert_eq!(tangency.evaluated_value().get(), 1.0);
 
     let mut earlier_tangency =
         parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
@@ -273,7 +273,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
     );
     assert_eq!(scale_factor.owner_record_index(), Some(1331));
     assert_eq!(scale_factor.unit(), None);
-    assert_eq!(scale_factor.evaluated_value(), 1.0);
+    assert_eq!(scale_factor.evaluated_value().get(), 1.0);
 
     for discriminator in [3u64, 4] {
         let mut earlier_distance = parameter_record(
@@ -336,7 +336,7 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         .expect("sheet-metal parameter with ten-byte expression trailer");
     assert_eq!(sheet_metal.source_kind(), "FlangeHeight");
     assert_eq!(sheet_metal.owner_record_index(), Some(301));
-    assert_eq!(sheet_metal.evaluated_value(), 5.0);
+    assert_eq!(sheet_metal.evaluated_value().get(), 5.0);
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
     assert_eq!(parameter.record_index, 71);
     assert_eq!(parameter.byte_offset(), 0);
     assert_eq!(parameter.expression(), "first");
-    assert_eq!(parameter.evaluated_value(), 1.0);
+    assert_eq!(parameter.evaluated_value().get(), 1.0);
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
@@ -681,7 +681,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
         .owned_ordinal,
         290
     );
-    assert_eq!(parsed.evaluated_value(), 0.0);
+    assert_eq!(parsed.evaluated_value().get(), 0.0);
 
     for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
         assert!(parse_legacy_parameter_owner_68(
@@ -747,7 +747,7 @@ fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     );
     assert_eq!(parsed.parameter_record_index(), 101);
     assert_eq!(parsed.companion_record_index(), 102);
-    assert_eq!(parsed.evaluated_value(), 2.5);
+    assert_eq!(parsed.evaluated_value().get(), 2.5);
 
     for class_tag in ["282", "336", "325", "297"] {
         assert!(
@@ -1155,7 +1155,7 @@ fn legacy_parameter_owner_preserves_external_scalar_offsets() {
                 .unwrap();
             assert_eq!(owner.byte_offset(), frame_start);
             assert_eq!(owner.evaluated_value_offset(), 700);
-            assert_eq!(owner.evaluated_value(), 2.5);
+            assert_eq!(owner.evaluated_value().get(), 2.5);
             assert_eq!(
                 owner.id(),
                 &crate::ids::native_design_parameter_owner_id("Design/BulkStream.dat", frame_start)

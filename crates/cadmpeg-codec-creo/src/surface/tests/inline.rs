@@ -130,7 +130,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
     assert_eq!(frame.frame().origin(), [-4.0, 3.0, -4.0]);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
@@ -244,7 +244,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
     assert_eq!(cylinder_frame.frame().origin(), [2.0, 2.0, 4.0]);
     assert_eq!(cylinder_frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
-    assert_eq!(cylinder_frame.radius, 2.0);
+    assert_eq!(cylinder_frame.radius.get(), 2.0);
     assert_eq!(cylinder_frame.length.map(PositiveLength::get), Some(2.0));
     assert_eq!(cylinder.boundary, SurfaceBodyBoundary::CompoundClose);
 
@@ -263,7 +263,10 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
     assert_eq!(cone_frame.frame().origin(), [4.0, 4.0, 4.0]);
     assert_eq!(cone_frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(cone_frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
-    assert_eq!(cone_frame.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(
+        cone_frame.half_angle.get().get(),
+        std::f64::consts::FRAC_PI_4
+    );
 
     let torus = inline_non_plane_record(
         0x26,
@@ -280,8 +283,8 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         .positional_torus_frame()
         .expect("witnessed inline torus");
     assert_eq!(torus_frame.frame().origin(), [5.0, 5.0, 4.0]);
-    assert_eq!(torus_frame.major_radius, 4.0);
-    assert_eq!(torus_frame.minor_radius, 1.0);
+    assert_eq!(torus_frame.major_radius.get(), 4.0);
+    assert_eq!(torus_frame.minor_radius.get(), 1.0);
 
     let sphere = inline_non_plane_record(
         0x26,
@@ -298,8 +301,8 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         .positional_torus_frame()
         .expect("witnessed inline sphere");
     assert_eq!(sphere_frame.frame().origin(), [2.0, 2.0, 4.0]);
-    assert_eq!(sphere_frame.major_radius, 0.0);
-    assert_eq!(sphere_frame.minor_radius, 2.0);
+    assert_eq!(sphere_frame.major_radius.get(), 0.0);
+    assert_eq!(sphere_frame.minor_radius.get(), 2.0);
 }
 
 #[test]
@@ -322,7 +325,7 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     assert_eq!(frame.frame().origin(), [2.0, 0.0, 5.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(3.0));
 }
 
@@ -369,7 +372,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
     assert_eq!(frame.frame().origin(), [0.0, 0.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.radius.get(), 2.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(8.0));
 }
 
@@ -403,7 +406,7 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
     assert_eq!(frame.frame().origin(), [-3.0, -3.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.radius.get(), 2.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
@@ -435,7 +438,7 @@ fn selector_placeholder_resolves_from_one_radial_extreme() {
     };
     assert_eq!(frame.frame().origin(), [-4.0, -4.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.radius.get(), 2.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
@@ -459,7 +462,7 @@ fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     assert_eq!(frame.frame().origin(), [2.0, 2.0, 3.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 1.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(2.0));
 }
 
@@ -491,7 +494,7 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
     assert_eq!(frame.frame().origin(), [-4.0, 2.0, 5.0]);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 }
 
@@ -525,7 +528,7 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
     assert_eq!(frame.frame().origin(), [-4.0, 2.0, 5.0]);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 
     let mut degenerate_u_interval = payload;
@@ -572,7 +575,7 @@ fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
     assert_eq!(frame.frame().origin(), [-4.75, -4.0, -5.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length.map(PositiveLength::get), Some(3.0));
 }
 
@@ -605,7 +608,7 @@ fn inline_envelope_rejects_lane_aliases_by_geometry() {
     assert_eq!(frame.frame().origin()[..2], [-4.0, 2.0]);
     assert!((frame.frame().origin()[2] - expected_z).abs() <= f64::EPSILON);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
 }
 
 #[test]
@@ -632,8 +635,8 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(torus_frame.frame().origin(), [-7.0, 8.0, 5.0]);
     assert_eq!(torus_frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(torus_frame.frame().ref_direction(), [0.8, 0.6, 0.0]);
-    assert_eq!(torus_frame.major_radius, 3.0);
-    assert_eq!(torus_frame.minor_radius, 1.0);
+    assert_eq!(torus_frame.major_radius.get(), 3.0);
+    assert_eq!(torus_frame.minor_radius.get(), 1.0);
     assert!(torus.has_inline_non_plane_local_system_suffix());
     assert_eq!(torus.boundary, SurfaceBodyBoundary::CompoundClose);
 
@@ -648,7 +651,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(cylinder_frame.frame().origin(), [2.0, 3.0, 4.0]);
     assert_eq!(cylinder_frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(cylinder_frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert_eq!(cylinder_frame.radius, 1.0);
+    assert_eq!(cylinder_frame.radius.get(), 1.0);
     assert_eq!(cylinder_frame.length, None);
     assert!(cylinder.has_inline_non_plane_local_system_suffix());
 }
@@ -662,7 +665,7 @@ fn cylinder_inline_suffix_uses_the_11_10_13_placement_witness() {
     assert_eq!(frame.frame().origin(), [-4.0, 0.0, -4.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length, None);
 
     let mut alternate_replay = inline_11_10_13_cylinder_row(-3.0, -4.0, -5.0);
@@ -705,7 +708,7 @@ fn cylinder_inline_suffix_uses_the_held_axis_placement_witness() {
     assert_eq!(frame.frame().origin(), [-4.0, 0.0, -2.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.radius.get(), 1.0);
     assert_eq!(frame.length, None);
 }
 
@@ -728,7 +731,7 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
     assert_eq!(frame.frame().origin(), [1.0, 8.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
 }
 
 #[test]
@@ -754,7 +757,7 @@ fn inline_cone_accepts_a_complete_support_apex_operand_after_its_envelope() {
     assert_eq!(frame.frame().origin(), [-4.0, 0.0, 0.0]);
     assert_eq!(frame.frame().axis(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, -1.0]);
-    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
 
     let mut compound_replay = vec![0x99, 0xe3];
     compound_replay.extend_from_slice(&first_support_apex);
@@ -788,7 +791,7 @@ fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
     assert_eq!(frame.frame().origin(), [0.0, -2.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
 }
 
 #[test]

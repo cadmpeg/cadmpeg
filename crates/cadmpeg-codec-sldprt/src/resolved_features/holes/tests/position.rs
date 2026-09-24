@@ -99,7 +99,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             );
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some(coordinates_m);
             constructed_marker.links = None;
             constructed_marker
@@ -145,7 +145,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
                 SketchInputEntity::new(marker_id, marker_parent, 2, 2, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([1.0, 1.0]);
             constructed_marker.links = None;
             constructed_marker
@@ -156,7 +156,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             let mut constructed_marker =
                 SketchInputEntity::new(marker_id, marker_parent, 3, 3, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("position".into());
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
             constructed_marker
@@ -249,7 +249,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
             constructed_marker.feature_ref = Some("position".into());
             constructed_marker =
                 constructed_marker.with_test_identity(Some((ordinal + 1) as u32), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some(coordinates_m);
             constructed_marker.links = None;
             constructed_marker
@@ -307,7 +307,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         );
         constructed_marker.feature_ref = Some("position".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -660,7 +660,7 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
             SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.002, 0.003]);
         constructed_marker.links = None;
         constructed_marker
@@ -912,7 +912,7 @@ fn unique_unindexed_point_locus_is_projected() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("native-position-sketch".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -1033,7 +1033,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
             SketchInputEntity::new(marker_id, marker_parent, 0, 80, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1045,7 +1045,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
             SketchInputEntity::new(marker_id, marker_parent, 1, 90, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(2), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1057,7 +1057,7 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
             SketchInputEntity::new(marker_id, marker_parent, 2, 100, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1304,7 +1304,7 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         );
         constructed_marker.feature_ref = Some("native-position-sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

@@ -230,7 +230,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         operation_label: operation_label.clone(),
         named_record: "named-record".to_string(),
         name: "Point1".to_string(),
-        coordinates: [1.0, 2.0],
+        coordinates: cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]).expect("finite coordinates"),
         scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
     };
     let named_point = OffsetStoreNamedPoint {
@@ -291,7 +291,9 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
 
     let mut different = point.clone();
     different.id = "different".to_string();
-    different.coordinates[1] = f64::from_bits(2.0_f64.to_bits() + 1);
+    different.coordinates =
+        cadmpeg_ir::units::FiniteVector::new([1.0, f64::from_bits(2.0_f64.to_bits() + 1)])
+            .expect("finite coordinates");
     let different_groups = feature_sketch_point_groups(std::slice::from_ref(&different));
     assert!(feature_sketch_point_uses(
         &different_groups,

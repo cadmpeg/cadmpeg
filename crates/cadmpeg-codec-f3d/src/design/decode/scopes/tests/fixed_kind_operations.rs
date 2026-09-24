@@ -405,7 +405,7 @@ fn fixed_kind_edge_and_revolve_operations(
         ),
         Some(DesignFixedChamferParameters::EqualDistance {
             distance: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
-                value: 0.04,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
                 record_index: 86,
                 value_offset: (chamfer_scalar_start + 40) as u64,
             },
@@ -439,12 +439,12 @@ fn fixed_kind_edge_and_revolve_operations(
         ),
         Some(DesignFixedChamferParameters::TwoDistances {
             first: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
-                value: 0.04,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
                 record_index: 86,
                 value_offset: (chamfer_scalar_start + 40) as u64,
             },
             second: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
-                value: 0.08,
+                value: cadmpeg_ir::scalar::PositiveReal::new(0.08).expect("checked fixture value"),
                 record_index: 96,
                 value_offset: (second_chamfer_scalar_start + 40) as u64,
             },

@@ -77,7 +77,8 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
         *slot = Some(DesignMirrorConstruction {
             count_record_index: 11,
             count_offset: 0,
-            stitch_tolerance: 0.001,
+            stitch_tolerance: cadmpeg_ir::scalar::PositiveReal::new(0.001)
+                .expect("checked fixture value"),
             stitch_tolerance_offset: 0,
             tolerance_source: crate::records::feature::mirror::DesignMirrorToleranceSource::Owner {
                 record_index: 12,

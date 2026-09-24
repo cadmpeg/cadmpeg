@@ -260,14 +260,14 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
             },
         ])
         .unwrap();
-    let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+    let mut first = identity(10, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
     let mut draft = first.into_draft();
     draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
     draft.context_id_offset = draft.asset_id_offset + 76;
     first =
         crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(draft).unwrap();
-    let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+    let mut second = identity(11, &[(17, 1.0), (18, 1.0), (19, 1.0)]);
     let mut draft = second.into_draft();
     draft.layout = crate::records::topology::edge_identity::DesignEdgeIdentityLayout::Full;
     draft.asset_id_offset = draft.byte_offset + draft.layout.local_id_offset() + 18;
@@ -381,7 +381,7 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
     let mut operand = recipe_edge_operand(10, &[17], &[17]);
     operand.recipe_program = vec![1];
     operand.recipe_state_id = Some(7);
-    let mut persistent_identity = identity(10, &[(17, 0.0)]);
+    let mut persistent_identity = identity(10, &[(17, 1.0)]);
     persistent_identity.resolved_edge_slot = Some(17);
     let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
         .expect("identity grammar");
@@ -892,8 +892,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
             },
         ])
         .unwrap();
-    let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
-    let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
+    let first_identity = identity(10, &[(17, 1.0), (18, 1.0)]);
+    let mut second_identity = identity(11, &[(17, 1.0), (18, 1.0)]);
     second_identity.group_member_ordinal = 1;
     let context = |changed_reference_edge_slots| {
         serde_json::from_value(serde_json::json!({
@@ -954,8 +954,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
             },
         ])
         .unwrap();
-    let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
-    let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
+    let first_identity = identity(10, &[(17, 1.0), (18, 1.0)]);
+    let mut second_identity = identity(11, &[(17, 1.0), (18, 1.0)]);
     second_identity.group_member_ordinal = 1;
     let recipe_operands = [
         recipe_edge_operand(10, &[19], &[19]),

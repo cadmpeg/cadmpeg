@@ -917,7 +917,7 @@ fn treatment_radius_candidates_require_a_new_radius_carrier_and_deleted_support_
     );
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].edge_slot, 17);
-    assert_eq!(candidates[0].radius, 3.0);
+    assert_eq!(candidates[0].radius.get(), 3.0);
     assert_eq!(
         treatment_transition_edge_candidates(&[20], &result, &preceding, &[17]),
         [17]

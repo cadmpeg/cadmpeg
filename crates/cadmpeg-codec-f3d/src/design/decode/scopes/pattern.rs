@@ -40,7 +40,6 @@ pub(super) fn exact_rectangular_pattern_construction(
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
-                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
     lanes.sort_by_key(|owner| owner.local_ordinal());
@@ -58,14 +57,14 @@ pub(super) fn exact_rectangular_pattern_construction(
         (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
             .then_some(value as u32)
     };
-    let u_count_value = exact_count(u_count.evaluated_value())?;
-    let v_count_value = exact_count(v_count.evaluated_value())?;
+    let u_count_value = exact_count(u_count.evaluated_value().get())?;
+    let v_count_value = exact_count(v_count.evaluated_value().get())?;
     let mut construction = DesignRectangularPatternConstruction::try_from(
         patterns::DesignRectangularPatternConstructionWire {
             u_count: u_count_value,
             v_count: v_count_value,
-            u_extent: u_extent.evaluated_value(),
-            v_extent: v_extent.evaluated_value(),
+            u_extent: u_extent.evaluated_value().get(),
+            v_extent: v_extent.evaluated_value().get(),
             owner_record_indices: [
                 u_count.record_index(),
                 v_count.record_index(),
@@ -348,15 +347,14 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         if native_stream(owner.id()) != native_stream(&scope.id)
             || owner.scope_record_index() != scope.record_index
             || owner.local_ordinal() != 0
-            || !owner.evaluated_value().is_finite()
-            || owner.evaluated_value() <= 0.0
-            || owner.evaluated_value() > f64::from(u32::MAX)
-            || owner.evaluated_value().fract() != 0.0
+            || owner.evaluated_value().get() <= 0.0
+            || owner.evaluated_value().get() > f64::from(u32::MAX)
+            || owner.evaluated_value().get().fract() != 0.0
         {
             return None;
         }
         Some((
-            owner.evaluated_value() as u32,
+            owner.evaluated_value().get() as u32,
             owner.record_index(),
             owner.evaluated_value_offset(),
         ))
@@ -381,14 +379,13 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
     let owner_angle_candidates = parameter_owners.iter().filter_map(|owner| {
         (native_stream(owner.id()) == native_stream(&scope.id)
             && owner.scope_record_index() == scope.record_index
-            && owner.local_ordinal() == 1
-            && owner.evaluated_value().is_finite()
-            && owner.evaluated_value() > 0.0)
-            .then_some((
-                owner.evaluated_value(),
-                owner.record_index(),
-                owner.evaluated_value_offset(),
-            ))
+            && owner.local_ordinal() == 1)
+            .then_some(())?;
+        Some((
+            cadmpeg_ir::scalar::PositiveAngle::new(owner.evaluated_value().get())?,
+            owner.record_index(),
+            owner.evaluated_value_offset(),
+        ))
     });
     let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
     if angle_candidates.is_empty() {
@@ -398,16 +395,20 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                    (scalar.owner_record_index == Some(scope.record_index)
-                        && scalar.ordinal == 1
-                        && scalar.value > 0.0)
-                        .then_some((scalar.value, *record_index, scalar.value_offset))
+                    (scalar.owner_record_index == Some(scope.record_index) && scalar.ordinal == 1)
+                        .then_some(())?;
+                    Some((
+                        cadmpeg_ir::scalar::PositiveAngle::new(scalar.value)?,
+                        *record_index,
+                        scalar.value_offset,
+                    ))
                 }),
         );
     }
     angle_candidates.sort_by(|left, right| {
         left.0
-            .total_cmp(&right.0)
+            .get()
+            .total_cmp(&right.0.get())
             .then_with(|| left.1.cmp(&right.1))
             .then_with(|| left.2.cmp(&right.2))
     });

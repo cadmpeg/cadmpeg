@@ -107,8 +107,8 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         },
         valid.frame().axis(),
         valid.frame().ref_direction(),
-        valid.major_radius,
-        valid.minor_radius
+        valid.major_radius.get(),
+        valid.minor_radius.get()
     )
     .is_none());
 
@@ -117,7 +117,7 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         valid.frame().axis(),
         valid.frame().ref_direction(),
         0.0,
-        valid.minor_radius
+        valid.minor_radius.get()
     )
     .is_some());
 
@@ -126,7 +126,7 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         valid.frame().axis(),
         valid.frame().ref_direction(),
         -0.1,
-        valid.minor_radius
+        valid.minor_radius.get()
     )
     .is_none());
 
@@ -134,8 +134,8 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         valid.frame().origin(),
         [0.0, 0.0, 2.0],
         valid.frame().ref_direction(),
-        valid.major_radius,
-        valid.minor_radius
+        valid.major_radius.get(),
+        valid.minor_radius.get()
     )
     .is_none());
 
@@ -143,8 +143,8 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         valid.frame().origin(),
         valid.frame().axis(),
         [0.0, 0.0, 1.0],
-        valid.major_radius,
-        valid.minor_radius
+        valid.major_radius.get(),
+        valid.minor_radius.get()
     )
     .is_none());
 
@@ -152,7 +152,7 @@ fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
         valid.frame().origin(),
         valid.frame().axis(),
         valid.frame().ref_direction(),
-        valid.major_radius,
+        valid.major_radius.get(),
         f64::NAN
     )
     .is_none());
@@ -425,8 +425,8 @@ fn decodes_complete_positional_torus_frame() {
         .into_iter()
         .zip([-0.999_899_554_583_406_1, 0.014_173_240_416_574_131, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
-    assert!((frame.major_radius - 4.45).abs() < 1.0e-12);
-    assert!((frame.minor_radius - 0.5).abs() < 1.0e-12);
+    assert!((frame.major_radius.get() - 4.45).abs() < 1.0e-12);
+    assert!((frame.minor_radius.get() - 0.5).abs() < 1.0e-12);
 
     payload[55] = 0x20;
     assert!(parameter_records(&payload)[0]
@@ -472,7 +472,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .expect("complete repeated-diameter carrier");
     assert_eq!(frame.frame().origin(), [2.2, -22.35, -1.45]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert!((frame.radius - 0.2).abs() < 1.0e-12);
+    assert!((frame.radius.get() - 0.2).abs() < 1.0e-12);
     assert!(
         (frame.length.expect("required invariant").get() - 46.241_026_156_433_854).abs() < 1.0e-12
     );
@@ -566,7 +566,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         selector_corner_frame.frame().ref_direction(),
         [1.0, 0.0, 0.0]
     );
-    assert!((selector_corner_frame.radius - 9.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((selector_corner_frame.radius.get() - 9.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert!(selector_corner_frame
         .length
         .map(PositiveLength::get)
@@ -597,7 +597,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     let prefixed_frame = record(&prefixed_auxiliary)
         .positional_cylinder_frame()
         .expect("selector-prefixed auxiliary repeated-diameter carrier");
-    assert!((prefixed_frame.radius - 3.250_923_087_748_478).abs() < 1.0e-12);
+    assert!((prefixed_frame.radius.get() - 3.250_923_087_748_478).abs() < 1.0e-12);
     assert_eq!(prefixed_frame.frame().ref_direction(), [0.0, -1.0, 0.0]);
     assert!(prefixed_frame
         .frame()
@@ -635,7 +635,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert!((split_frame.frame().origin()[2] - 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert_eq!(split_frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(split_frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert!((split_frame.radius - 7.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.radius.get() - 7.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
     assert!(split_frame
         .length
         .map(PositiveLength::get)
@@ -707,7 +707,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .expect("complete first-coordinate round carrier");
     assert_eq!(frame.frame().origin(), [9.0, 38.0, -2.0]);
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.radius.get(), 2.0);
     let length = frame.length.expect("bounded axial span").get();
     let expected_length = 9.308_504_271_834_785_f64.hypot(9.976_063_033_979_35);
     assert!((length - expected_length).abs() < 1.0e-12);
@@ -732,7 +732,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         opposite.frame().origin(),
         [-18.308_504_271_834_785, 38.0, -2.0]
     );
-    assert_eq!(opposite.radius, 2.0);
+    assert_eq!(opposite.radius.get(), 2.0);
     assert!((opposite.length.expect("required invariant").get() - expected_length).abs() < 1.0e-12);
 
     let segmented = [
@@ -751,7 +751,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         [-8.111_111_111_111_11, 34.0, 0.5 * diameter]
     );
     assert_eq!(frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert_eq!(frame.radius, 0.5 * diameter);
+    assert_eq!(frame.radius.get(), 0.5 * diameter);
     let expected_length = 1.111_111_111_111_110_7_f64.hypot(3.142_696_805_273_545);
     assert!((frame.length.expect("required invariant").get() - expected_length).abs() < 1.0e-12);
     assert_eq!(segmented.type24_round_radius(), Some(0.5 * diameter));
@@ -775,7 +775,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         [1.0 / 2.0_f64.sqrt(), 1.0 / 2.0_f64.sqrt(), 0.0]
     );
     assert_eq!(split_frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
-    assert!((split_frame.radius - 2.0).abs() < 1.0e-12);
+    assert!((split_frame.radius.get() - 2.0).abs() < 1.0e-12);
     assert_eq!(
         split_frame.length.map(PositiveLength::get),
         Some(50.0_f64.sqrt())
@@ -798,7 +798,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         .expect("opposite split first-coordinate round carrier");
     assert_eq!(opposite_frame.frame().origin(), [-7.0, 9.0, 2.0]);
     assert_eq!(opposite_frame.frame().axis(), split_frame.frame().axis());
-    assert!((opposite_frame.radius - 2.0).abs() < 1.0e-12);
+    assert!((opposite_frame.radius.get() - 2.0).abs() < 1.0e-12);
 
     let mut incomplete_split = split_coordinate;
     incomplete_split[24] = 0x18;

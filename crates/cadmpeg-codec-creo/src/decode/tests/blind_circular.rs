@@ -1123,7 +1123,7 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
         entity_id,
         center: [0.0; 3],
         center_stored: true,
-        radius: 2.0,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
         axis,
         start,
         end,
@@ -1140,7 +1140,7 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
     assert_eq!(frame.frame().origin(), [4.5, 9.0, -6.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius(), 1.0);
+    assert_eq!(frame.radius().get(), 1.0);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
     assert!(reference_cap_bound_round_frame(envelope, &[&first]).is_none());
 
@@ -1166,7 +1166,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         entity_id,
         center,
         center_stored: true,
-        radius: 2.0,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
         axis,
         start,
         end: [0.0, 0.0, 0.0],
@@ -1191,7 +1191,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
     let mut unequal_radius = second.clone();
-    unequal_radius.radius = 1.0;
+    unequal_radius.radius = cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
 
     let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
@@ -1363,7 +1363,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         frames[1].frame().origin(),
         frames[1].frame().axis(),
         frames[1].frame().ref_direction(),
-        frames[1].radius(),
+        frames[1].radius().get(),
         Some(33.0),
     )
     .expect("valid positional cylinder frame");
@@ -1375,7 +1375,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         origin,
         frames[1].frame().axis(),
         frames[1].frame().ref_direction(),
-        frames[1].radius(),
+        frames[1].radius().get(),
         frames[1].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
@@ -1395,7 +1395,7 @@ fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
         diagonal_transform.origin(),
         [diagonal, -diagonal, 0.0],
         [0.0, 0.0, 1.0],
-        frames[0].radius(),
+        frames[0].radius().get(),
         frames[0].length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame")];
@@ -1603,7 +1603,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         frame.frame().origin(),
         frame.frame().axis(),
         frame.frame().ref_direction(),
-        frame.radius(),
+        frame.radius().get(),
         None,
     )
     .expect("valid positional cylinder frame");
@@ -1644,7 +1644,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         frame.frame().origin(),
         frame.frame().axis(),
         frame.frame().ref_direction(),
-        frame.radius(),
+        frame.radius().get(),
         Some(8.0),
     )
     .expect("valid positional cylinder frame");
@@ -1756,7 +1756,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         frame.frame().origin(),
         frame.frame().axis(),
         frame.frame().ref_direction(),
-        frame.radius(),
+        frame.radius().get(),
         Some(7.0),
     )
     .expect("valid positional cylinder frame");
@@ -1771,7 +1771,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         frame.frame().origin(),
         frame.frame().axis(),
         frame.frame().ref_direction(),
-        frame.radius(),
+        frame.radius().get(),
         Some(8.0),
     )
     .expect("valid positional cylinder frame");

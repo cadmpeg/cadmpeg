@@ -487,7 +487,7 @@ fn serialize_reference_line_kind<S: serde::Serializer>(
         ReferenceLineKind::Line3d {
             entity_id,
             original_length,
-        } => ("line3d", Some(*entity_id), Some(*original_length)),
+        } => ("line3d", Some(*entity_id), Some(original_length.get())),
     };
     let mut map = serializer.serialize_map(Some(3))?;
     map.serialize_entry("family", &family)?;
@@ -570,7 +570,7 @@ pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenc
             } else {
                 "endpoint_midpoint"
             },
-            radius: circle.radius,
+            radius: circle.radius.get(),
             axis: circle.axis,
             endpoints: [circle.start, circle.end],
             offset: circle.offset,
@@ -608,8 +608,8 @@ pub(super) fn reference_ellipse_records(scan: &ContainerScan) -> Vec<CreoReferen
             center: ellipse.center,
             axis: ellipse.axis,
             major_direction: ellipse.major_direction,
-            major_radius: ellipse.major_radius,
-            minor_radius: ellipse.minor_radius,
+            major_radius: ellipse.major_radius.get(),
+            minor_radius: ellipse.minor_radius.get(),
             offset: ellipse.offset,
         })
         .collect()
@@ -1399,7 +1399,7 @@ pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylin
             origin: record.frame.frame().origin(),
             axis: record.frame.frame().axis(),
             ref_direction: record.frame.frame().ref_direction(),
-            radius: record.frame.radius(),
+            radius: record.frame.radius().get(),
             length: record
                 .frame
                 .length()
@@ -2029,7 +2029,7 @@ pub(super) fn surface_parameter_records(
                         origin: frame.frame().origin(),
                         axis: frame.frame().axis(),
                         ref_direction: frame.frame().ref_direction(),
-                        radius: frame.radius(),
+                        radius: frame.radius().get(),
                         length: frame.length().map(cadmpeg_ir::scalar::PositiveLength::get),
                     }
                 }),
@@ -2039,7 +2039,7 @@ pub(super) fn surface_parameter_records(
                         apex: frame.frame().origin(),
                         axis: frame.frame().axis(),
                         ref_direction: frame.frame().ref_direction(),
-                        half_angle: frame.half_angle(),
+                        half_angle: frame.half_angle().get().get(),
                     }
                 }),
                 positional_torus_frame: record.positional_torus_frame().map(|frame| {
@@ -2047,8 +2047,8 @@ pub(super) fn surface_parameter_records(
                         center: frame.frame().origin(),
                         axis: frame.frame().axis(),
                         ref_direction: frame.frame().ref_direction(),
-                        major_radius: frame.major_radius(),
-                        minor_radius: frame.minor_radius(),
+                        major_radius: frame.major_radius().get(),
+                        minor_radius: frame.minor_radius().get(),
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame().map(|frame| {
@@ -2086,7 +2086,7 @@ pub(super) fn surface_parameter_records(
                 replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
                 cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
                     CreoConeHalfAngleOverride {
-                        radians: half_angle.radians,
+                        radians: half_angle.radians.get().get(),
                         offset: half_angle.offset,
                     }
                 }),
@@ -2567,7 +2567,9 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             endpoints: conic.endpoints,
                             parameters: conic.parameters,
                             coefficients: conic.coefficients,
-                            local_system: conic.local_system,
+                            local_system: conic
+                                .local_system
+                                .map(cadmpeg_ir::units::FiniteVector::get),
                             body: conic.body.clone(),
                             offset: conic.offset,
                         }

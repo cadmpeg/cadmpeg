@@ -12,7 +12,7 @@ use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{NonNegativeLength, PositiveAngle, PositiveLength};
 use cadmpeg_ir::units::OrthonormalFrame3;
 
 use crate::layout::type24_first_coordinate_bounded_round as type24_round;
@@ -777,7 +777,7 @@ impl PositionalFrame {
 pub(crate) struct PositionalCylinderFrame {
     frame: PositionalFrame,
     /// Cylinder radius.
-    radius: f64,
+    radius: PositiveLength,
     /// Distance between the axial ends.
     ///
     /// The type carries the sign and the finiteness of a present extent, so a reader converting
@@ -802,19 +802,19 @@ impl PositionalCylinderFrame {
             Some(length) => Some(PositiveLength::new(length)?),
             None => None,
         };
-        Self::with_admitted_length(origin, axis, ref_direction, radius, length)
+        let radius = PositiveLength::new(radius)?;
+        Self::with_admitted_dimensions(origin, axis, ref_direction, radius, length)
     }
-    /// Admits a finite frame with valid directions and radius around an admitted extent.
-    pub(crate) fn with_admitted_length(
+    /// Admits a finite frame with valid directions around an admitted radius and extent.
+    pub(crate) fn with_admitted_dimensions(
         origin: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
-        radius: f64,
+        radius: PositiveLength,
         length: Option<PositiveLength>,
     ) -> Option<Self> {
-        let frame = PositionalFrame::new(origin, axis, ref_direction)?;
-        (radius.is_finite() && radius > 0.0).then_some(Self {
-            frame,
+        Some(Self {
+            frame: PositionalFrame::new(origin, axis, ref_direction)?,
             radius,
             length,
         })
@@ -824,7 +824,7 @@ impl PositionalCylinderFrame {
         &self.frame
     }
     /// Returns the radius.
-    pub(crate) fn radius(&self) -> f64 {
+    pub(crate) fn radius(&self) -> PositiveLength {
         self.radius
     }
     /// Returns the length.
@@ -837,27 +837,28 @@ impl PositionalCylinderFrame {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalConeFrame {
     frame: PositionalFrame,
-    /// Positive cone half-angle in radians.
-    half_angle: f64,
+    half_angle: ApexConeHalfAngle,
 }
 
 impl PositionalConeFrame {
-    /// Admits a finite frame with valid directions and dimensions.
+    /// Admits a finite apex and valid directions around an admitted half angle.
     pub(crate) fn new(
         apex: [f64; 3],
         axis: [f64; 3],
         ref_direction: [f64; 3],
-        half_angle: f64,
+        half_angle: ApexConeHalfAngle,
     ) -> Option<Self> {
-        let frame = PositionalFrame::new(apex, axis, ref_direction)?;
-        valid_apex_cone_half_angle(half_angle).then_some(Self { frame, half_angle })
+        Some(Self {
+            frame: PositionalFrame::new(apex, axis, ref_direction)?,
+            half_angle,
+        })
     }
     /// Returns the frame, whose origin is the apex.
     pub(crate) fn frame(&self) -> &PositionalFrame {
         &self.frame
     }
     /// Returns the half angle.
-    pub(crate) fn half_angle(&self) -> f64 {
+    pub(crate) fn half_angle(&self) -> ApexConeHalfAngle {
         self.half_angle
     }
 }
@@ -866,10 +867,10 @@ impl PositionalConeFrame {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalTorusFrame {
     frame: PositionalFrame,
-    /// Non-negative major radius; zero selects the sphere form.
-    major_radius: f64,
-    /// Positive minor radius.
-    minor_radius: f64,
+    /// Major radius; zero selects the sphere form.
+    major_radius: NonNegativeLength,
+    /// Minor radius.
+    minor_radius: PositiveLength,
 }
 
 impl PositionalTorusFrame {
@@ -881,27 +882,22 @@ impl PositionalTorusFrame {
         major_radius: f64,
         minor_radius: f64,
     ) -> Option<Self> {
-        let frame = PositionalFrame::new(center, axis, ref_direction)?;
-        (major_radius.is_finite()
-            && major_radius >= 0.0
-            && minor_radius.is_finite()
-            && minor_radius > 0.0)
-            .then_some(Self {
-                frame,
-                major_radius,
-                minor_radius,
-            })
+        Some(Self {
+            frame: PositionalFrame::new(center, axis, ref_direction)?,
+            major_radius: NonNegativeLength::new(major_radius)?,
+            minor_radius: PositiveLength::new(minor_radius)?,
+        })
     }
     /// Returns the frame, whose origin is the center.
     pub(crate) fn frame(&self) -> &PositionalFrame {
         &self.frame
     }
     /// Returns the major radius.
-    pub(crate) fn major_radius(&self) -> f64 {
+    pub(crate) fn major_radius(&self) -> NonNegativeLength {
         self.major_radius
     }
     /// Returns the minor radius.
-    pub(crate) fn minor_radius(&self) -> f64 {
+    pub(crate) fn minor_radius(&self) -> PositiveLength {
         self.minor_radius
     }
 }
@@ -960,15 +956,15 @@ pub(crate) enum TorusRadius2Encoding {
 /// Terminal half-angle override in a positional cone body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ConeHalfAngleOverride {
-    /// Cone half-angle in radians, strictly between zero and pi/2.
-    pub(crate) radians: f64,
+    /// Cone half angle.
+    pub(crate) radians: ApexConeHalfAngle,
     /// Byte offset of the positive-DICT token relative to the parameter body.
     pub(crate) offset: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ConeHalfAngleLayout {
-    value: f64,
+    value: ApexConeHalfAngle,
     start: usize,
     end: usize,
 }
@@ -1498,11 +1494,12 @@ impl SurfaceParameterRecord {
                 (self.is_type24_first_coordinate_round_body()
                     || self.is_type24_segmented_first_coordinate_round_body())
                 .then_some(())?;
-                self.positional_cylinder_frame().map(|frame| frame.radius)
+                self.positional_cylinder_frame()
+                    .map(|frame| frame.radius.get())
             })
             .or_else(|| {
                 self.type24_held_coordinate_round_frame()
-                    .map(|frame| frame.radius)
+                    .map(|frame| frame.radius.get())
             })
             .or_else(|| self.type24_terminal_round_radius())
     }
@@ -1514,7 +1511,7 @@ impl SurfaceParameterRecord {
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let axial_candidates = self.type24_axial_interval_corner_candidates();
         if let Some(first) = axial_candidates.first() {
-            return Some(first.radius);
+            return Some(first.radius.get());
         }
         if let Some(envelope) = self.type24_round_edge_envelope() {
             return perpendicular_round_edge_radius(envelope);
@@ -3289,7 +3286,7 @@ fn parsed_named_surface_value(
             Some((if body[cursor] == 0x0d { 0.25 } else { 0.5 }, cursor + 1))
         } else if name == "half_angle" {
             scalar::decode_positive_dict(body, cursor)
-                .filter(|(value, _)| valid_apex_cone_half_angle(*value))
+                .filter(|(value, _)| ApexConeHalfAngle::new(*value).is_some())
         } else if radius_field {
             scalar::decode_named_surface_radius(body, cursor, cache)
         } else if parameter_bound_field {
@@ -3550,11 +3547,8 @@ fn unique_cone_half_angle_layout(
 ) -> Option<ConeHalfAngleLayout> {
     let mut layouts = (0..body.len()).filter_map(|start| {
         let (value, end) = scalar::decode_positive_dict(body, start)?;
-        (valid_apex_cone_half_angle(value) && accepts_end(end)).then_some(ConeHalfAngleLayout {
-            value,
-            start,
-            end,
-        })
+        let value = ApexConeHalfAngle::new(value)?;
+        accepts_end(end).then_some(ConeHalfAngleLayout { value, start, end })
     });
     let layout = layouts.next()?;
     layouts.next().is_none().then_some(layout)
@@ -3625,7 +3619,7 @@ fn scalar_tokens(
         if let Some(layout) = cone_half_angle {
             if cursor == layout.start {
                 tokens.push(SurfaceParameterScalar {
-                    value: Some(layout.value),
+                    value: Some(layout.value.get().get()),
                     raw: body[layout.start..layout.end].to_vec(),
                     offset: layout.start,
                 });
@@ -4152,7 +4146,7 @@ fn inline_suffix_witness_agrees(
                         .into_iter()
                         .zip(candidate.frame().origin())
                         .all(|(left, right)| inline_close(left, right))
-                        && inline_close(witness.radius, candidate.radius)
+                        && inline_close(witness.radius.get(), candidate.radius.get())
                         && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
                 })
                 .count();
@@ -4169,8 +4163,10 @@ fn inline_suffix_witness_agrees(
                 .zip(candidate.frame().axis())
                 .map(|(left, right)| left * right)
                 .sum::<f64>();
-            inline_close(witness.half_angle, candidate.half_angle)
-                && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
+            inline_close(
+                witness.half_angle.get().get(),
+                candidate.half_angle.get().get(),
+            ) && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
         }),
         InlineSurfaceCarrier::Torus(_)
         | InlineSurfaceCarrier::CylinderBounds(_)
@@ -4448,10 +4444,9 @@ fn inline_surface_carrier(
             })
         }
         SurfaceKind::Cone => {
-            let half_angle = suffix[0];
-            valid_apex_cone_half_angle(half_angle).then_some(())?;
-            let radial_extent =
-                envelope.axial.into_iter().map(f64::abs).fold(0.0, f64::max) * half_angle.tan();
+            let half_angle = ApexConeHalfAngle::new(suffix[0])?;
+            let radial_extent = envelope.axial.into_iter().map(f64::abs).fold(0.0, f64::max)
+                * half_angle.get().get().tan();
             for coordinate in 0..3 {
                 if coordinate != axis_index {
                     origin[coordinate] = unique_inline_center(
@@ -4471,11 +4466,6 @@ fn inline_surface_carrier(
         }
         SurfaceKind::TorusOrSphere => {
             let [major_radius, minor_radius] = suffix;
-            (major_radius.is_finite()
-                && major_radius >= 0.0
-                && minor_radius.is_finite()
-                && minor_radius > 0.0)
-                .then_some(())?;
             let radial_extent = major_radius + minor_radius;
             for coordinate in 0..3 {
                 if coordinate != axis_index {
@@ -4549,8 +4539,7 @@ fn inline_surface_suffix_carrier(
             })
         }
         SurfaceKind::Cone => {
-            let half_angle = suffix[0];
-            valid_apex_cone_half_angle(half_angle).then_some(())?;
+            let half_angle = ApexConeHalfAngle::new(suffix[0])?;
             Some(InlineSurfaceCarrier::Cone(PositionalConeFrame::new(
                 origin,
                 axis,
@@ -4560,11 +4549,6 @@ fn inline_surface_suffix_carrier(
         }
         SurfaceKind::TorusOrSphere => {
             let [major_radius, minor_radius] = suffix;
-            (major_radius.is_finite()
-                && major_radius >= 0.0
-                && minor_radius.is_finite()
-                && minor_radius > 0.0)
-                .then_some(())?;
             Some(InlineSurfaceCarrier::Torus(PositionalTorusFrame::new(
                 origin,
                 axis,
@@ -5291,8 +5275,7 @@ fn decode_planar_envelope_cone_frame(
     let outer_apex = outer_axial - outer_distance;
     let inner_apex = inner_axial - inner_distance;
     close(outer_apex, inner_apex).then_some(())?;
-    let half_angle = radial_high.atan2(outer_distance);
-    valid_apex_cone_half_angle(half_angle).then_some(())?;
+    let half_angle = ApexConeHalfAngle::new(radial_high.atan2(outer_distance))?;
     PositionalConeFrame::new(
         [0.0, outer_apex.midpoint(inner_apex), 0.0],
         [0.0, 1.0, 0.0],
@@ -5303,10 +5286,9 @@ fn decode_planar_envelope_cone_frame(
 
 fn decode_support_apex_cone_frame(
     body: &[u8],
-    half_angle: f64,
+    half_angle: ApexConeHalfAngle,
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    valid_apex_cone_half_angle(half_angle).then_some(())?;
     let reference_candidates = (0..body.len())
         .filter_map(|start| {
             matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
@@ -5392,7 +5374,7 @@ pub(crate) fn prototype_cone_frame(record: &SurfacePrototypeRecord) -> Option<Po
     };
     decode_support_apex_cone_frame(
         &local_system.body[3..],
-        *half_angle,
+        ApexConeHalfAngle::new(*half_angle)?,
         &scalar::ScalarCache::default(),
     )
 }
@@ -6876,7 +6858,7 @@ pub(crate) fn prototype_count(payload: &[u8]) -> usize {
     named + unlabeled
 }
 
-/// Admits the half angle of an apex cone: finite and in `(0, pi/2)`.
+/// Half angle of an apex cone in radians: finite and in `(0, pi/2)`.
 ///
 /// A cone surface record carries an apex, an axis, a reference direction and this half angle,
 /// and no radius, so the surface radius is the distance from the apex times the tangent of the
@@ -6884,8 +6866,19 @@ pub(crate) fn prototype_count(payload: &[u8]) -> usize {
 /// cylinder through [`SurfaceKind::Cylinder`], whose [`PositionalCylinderFrame`] carries the
 /// radius. At `pi/2` the locus is the apex plane, and above it the tangent is negative, which is
 /// the same cone about the opposite axis direction.
-pub(crate) fn valid_apex_cone_half_angle(value: f64) -> bool {
-    value.is_finite() && value > 0.0 && value < std::f64::consts::FRAC_PI_2
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ApexConeHalfAngle(PositiveAngle);
+
+impl ApexConeHalfAngle {
+    /// Admits a finite half angle in `(0, pi/2)`.
+    pub(crate) fn new(value: f64) -> Option<Self> {
+        (value < std::f64::consts::FRAC_PI_2).then_some(())?;
+        PositiveAngle::new(value).map(Self)
+    }
+    /// Returns the half angle.
+    pub(crate) fn get(self) -> PositiveAngle {
+        self.0
+    }
 }
 
 fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {

@@ -22,7 +22,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -145,7 +145,7 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -236,7 +236,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, local_id);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some(coordinates_m);
         constructed_marker.links = None;
         constructed_marker
@@ -297,7 +297,7 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
                 );
                 constructed_marker.feature_ref = Some("feature".into());
                 constructed_marker = constructed_marker.with_test_identity(Some(6), Some(6));
-                constructed_marker.state_value = Some(1.0);
+                constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
                 constructed_marker.coordinates_m = Some([0.020, 0.020]);
                 constructed_marker.links = None;
                 constructed_marker
