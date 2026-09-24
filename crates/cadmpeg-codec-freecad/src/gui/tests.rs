@@ -1720,3 +1720,51 @@ fn a_blank_gui_property_key_is_charged_and_the_presentation_graph_survives() {
     assert_eq!(view.visible, Some(true));
     assert!(view.properties.contains_key("Visibility"));
 }
+
+/// Decodes one shape whose view provider states `shininess` as its
+/// `ShapeMaterial` shininess and asserts that GUI property validation refuses
+/// the document with `expected`. The appearance transfer reads the material
+/// only after that validation, so it never meets such a value.
+fn assert_material_shininess_is_refused(shininess: &str, expected: &str) {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = format!(
+        r#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="A"><Properties Count="2">
+<Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287454020"/></Property>
+<Property name="ShapeMaterial" type="App::PropertyMaterial"><PropertyMaterial ambientColor="1" diffuseColor="2" specularColor="3" emissiveColor="4" shininess="{shininess}" transparency="0.25"/></Property>
+</Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#
+    );
+    let decoded = FcstdCodec.decode(
+        &mut Cursor::new(archive_entries(&[
+            ("Document.xml", document),
+            ("GuiDocument.xml", gui.as_bytes()),
+        ])),
+        &DecodeOptions::default(),
+    );
+    let Err(error) = decoded else {
+        panic!("a {shininess} material shininess is refused");
+    };
+    assert_eq!(error.to_string(), expected);
+}
+
+/// A `nan` material shininess refuses the GUI document.
+#[test]
+fn a_non_finite_material_value_refuses_the_gui_document() {
+    assert_material_shininess_is_refused(
+        "nan",
+        "malformed container: GUI property ShapeMaterial material has a non-finite shininess",
+    );
+}
+
+/// An unparsable material shininess refuses the GUI document.
+#[test]
+fn an_unparsable_material_value_refuses_the_gui_document() {
+    assert_material_shininess_is_refused(
+        "glossy",
+        "malformed container: GUI property ShapeMaterial material has an invalid shininess",
+    );
+}
