@@ -68,35 +68,6 @@ pub struct ShadedTriangle<N = Vector3> {
     pub normals: [N; 3],
 }
 
-/// The position every mesh vertex carries, whatever else it carries.
-pub trait MeshVertex {
-    /// Position of this vertex in document units.
-    fn position(&self) -> Point3;
-
-    /// Position of this vertex, for editing in place.
-    fn position_mut(&mut self) -> &mut Point3;
-}
-
-impl MeshVertex for Point3 {
-    fn position(&self) -> Point3 {
-        *self
-    }
-
-    fn position_mut(&mut self) -> &mut Point3 {
-        self
-    }
-}
-
-impl MeshVertex for ShadedVertex {
-    fn position(&self) -> Point3 {
-        self.position
-    }
-
-    fn position_mut(&mut self) -> &mut Point3 {
-        &mut self.position
-    }
-}
-
 /// One triangle strip: the vertices it spans, at least three of them.
 ///
 /// A strip of one or two vertices spans no triangle, so it is not a strip at
