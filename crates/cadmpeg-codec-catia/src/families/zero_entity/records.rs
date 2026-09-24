@@ -1830,7 +1830,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
             )
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-            nurbs_surface_point(surface, u, v)?
+            return nurbs_surface_point(surface, u, v);
         }
         _ => return None,
     };

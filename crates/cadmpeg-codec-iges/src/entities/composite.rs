@@ -350,8 +350,8 @@ fn select_composite_edge(
                 return false;
             };
             // GE-05: candidate admission uses the same strict MUR rule as joins.
-            close_with_tolerance(evaluated_start, start.get(), Some(tolerance))
-                && close_with_tolerance(evaluated_end, end.get(), Some(tolerance))
+            close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
+                && close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
         })
         .collect::<Vec<_>>();
     let first = usable.first()?;
@@ -1260,7 +1260,7 @@ fn concatenate_nurbs<T>(
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
-    let endpoint = |t: f64| -> Result<Point3, CompositeCurveError> {
+    let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
         cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),
@@ -1615,8 +1615,8 @@ fn anchor_analytic_nurbs_endpoint_poles(
         weights.as_deref(),
         interval[1],
     )?;
-    if !close_with_tolerance(evaluated_start, start, Some(tolerance))
-        || !close_with_tolerance(evaluated_end, end, Some(tolerance))
+    if !close_with_tolerance(evaluated_start.get(), start, Some(tolerance))
+        || !close_with_tolerance(evaluated_end.get(), end, Some(tolerance))
     {
         return None;
     }
@@ -2134,12 +2134,6 @@ fn project_with_type_130_policy(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve_id = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
-        let start = FinitePoint3::new(start)
-            .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        let end = FinitePoint3::new(end)
-            .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),

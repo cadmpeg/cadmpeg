@@ -736,7 +736,7 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
             None,
             parameter,
         )
-        .filter(Point3::is_finite)
+        .map(FinitePoint3::get)
     })
     .collect()
 }
@@ -1468,7 +1468,7 @@ fn edge_range_matches_curve(
     let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
         return false;
     };
-    close(evaluated_start, start, tolerance) && close(evaluated_end, end, tolerance)
+    close(evaluated_start.get(), start, tolerance) && close(evaluated_end.get(), end, tolerance)
 }
 
 fn select_boundary_edge(

@@ -295,7 +295,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 uv.v,
             )
             .unwrap();
-            assert!(Point3::distance(expected, actual) < EPS_PCURVE_POINT_MATCH);
+            assert!(Point3::distance(expected.get(), actual) < EPS_PCURVE_POINT_MATCH);
         }
     }
 
@@ -424,7 +424,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
             curve,
-            point,
+            point.get(),
             parameter,
         )
         .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
@@ -1152,7 +1152,9 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     else {
         unreachable!();
     };
-    let mut point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.4, 0.6).unwrap();
+    let mut point = cadmpeg_ir::eval::nurbs_surface_point(&surface, 0.4, 0.6)
+        .unwrap()
+        .get();
     point.z += 0.001;
 
     let parameters =
@@ -1161,7 +1163,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
-    assert!(Point3::distance(mapped, point) <= 0.01);
+    assert!(Point3::distance(mapped.get(), point) <= 0.01);
 }
 
 #[test]
@@ -1658,6 +1660,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
             let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let expected = expected.as_raw();
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }
     }

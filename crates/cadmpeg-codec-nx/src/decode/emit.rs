@@ -1139,11 +1139,9 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         .note(&vertex, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_VERTEX");
     annotations.exactness(&vertex, Exactness::Inferred);
-    ir.model.points.push(Point::new(
-        point.clone(),
-        FinitePoint3::new(position)?,
-        None,
-    ));
+    ir.model
+        .points
+        .push(Point::new(point.clone(), position, None));
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,
@@ -1258,7 +1256,7 @@ const MAX_CURVE_POINT_CACHE_ENTRIES: usize = 131_072;
 
 #[derive(Default)]
 struct CurvePointCache {
-    entries: BTreeMap<(CurveId, u64), Option<Point3>>,
+    entries: BTreeMap<(CurveId, u64), Option<FinitePoint3>>,
 }
 
 impl CurvePointCache {
@@ -1268,7 +1266,7 @@ impl CurvePointCache {
         geometry: &CurveGeometry,
         parameter: f64,
         geometry_budget: &GeometryWorkBudget<'_>,
-    ) -> Option<Point3> {
+    ) -> Option<FinitePoint3> {
         let key = (curve.clone(), parameter.to_bits());
         if let Some(point) = self.entries.get(&key) {
             return *point;
@@ -1323,7 +1321,7 @@ fn orient_edge_range_for_geometry_with_budget(
         curve_point_cache.point_with_budget(curve, geometry, range[0], geometry_budget),
         curve_point_cache.point_with_budget(curve, geometry, range[1], geometry_budget),
     ) {
-        (Some(start), Some(end)) => [start, end],
+        (Some(start), Some(end)) => [start.get(), end.get()],
         _ if procedural_curve => {
             return Some((range, false));
         }

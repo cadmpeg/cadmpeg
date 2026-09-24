@@ -76,14 +76,16 @@ fn spatial_oriented_endpoints(
                     &control_points,
                     weights.as_deref(),
                     start,
-                )?,
+                )?
+                .get(),
                 crate::eval::nurbs_curve_point(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     end,
-                )?,
+                )?
+                .get(),
             )
         }
         _ => return None,

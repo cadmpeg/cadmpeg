@@ -1152,11 +1152,13 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
         });
         let knots = jet.knots();
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&geometry, knots[0]),
+            cadmpeg_ir::eval::curve_point(&geometry, knots[0])
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(expected[0])
         );
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(&geometry, knots[1]),
+            cadmpeg_ir::eval::curve_point(&geometry, knots[1])
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(expected[1])
         );
     }

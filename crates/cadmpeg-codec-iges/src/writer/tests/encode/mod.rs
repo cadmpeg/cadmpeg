@@ -1595,7 +1595,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                vec![start_uv, end_uv],
+                vec![start_uv.into(), end_uv.into()],
                 None,
                 false,
             )

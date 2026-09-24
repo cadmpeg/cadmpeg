@@ -478,6 +478,7 @@ mod tests {
             parameter,
         )
         .expect("evaluable curve")
+        .get()
     }
 
     #[test]

@@ -56,7 +56,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         let index = crate::index::ModelIndex::new(&ir);
         let expected = Point3::new(if sense { 3.0 } else { 4.0 }, 0.0, 0.0);
         assert_eq!(
-            model_curve_point_by_id(&index, &subset, 1.0),
+            model_curve_point_by_id(&index, &subset, 1.0).map(crate::features::FinitePoint3::get),
             Some(expected)
         );
         let differential = model_curve_differential_by_id(&index, &subset, 1.0).unwrap();

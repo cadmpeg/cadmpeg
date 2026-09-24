@@ -776,7 +776,8 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(distance) = coordinate(function_start, coordinate_index.get()) else {
+                let Some(distance) = coordinate(function_start.get(), coordinate_index.get())
+                else {
                     losses.push(entity_loss(entry, "offset function coordinate is invalid"));
                     continue;
                 };
@@ -886,16 +887,6 @@ pub(super) fn project(
                 }),
             });
         }
-        let (Some(start_position), Some(end_position)) = (
-            FinitePoint3::new(start_position),
-            FinitePoint3::new(end_position),
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "offset curve endpoint states a non-finite coordinate",
-            ));
-            continue;
-        };
         ir.model.points.extend([
             Point::new(start_point.clone(), start_position, None),
             Point::new(end_point.clone(), end_position, None),

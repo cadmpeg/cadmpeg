@@ -1844,7 +1844,7 @@ mod tests {
                     let actual =
                         curve_point_solved(&SolvedCurveGeometry::Nurbs(elevated.clone()), at)
                             .unwrap();
-                    assert!(actual.distance(expected) <= 64.0 * f64::EPSILON);
+                    assert!(actual.distance(expected.get()) <= 64.0 * f64::EPSILON);
                 }
             }
         }

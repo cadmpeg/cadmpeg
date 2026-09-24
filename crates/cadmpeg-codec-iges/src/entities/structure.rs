@@ -1440,7 +1440,7 @@ fn linear_nurbs_boundary_points(
             weights.as_deref(),
             parameter,
         )
-        .filter(Point3::is_finite)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
     })
     .collect()
 }

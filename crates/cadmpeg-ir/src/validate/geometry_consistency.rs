@@ -78,8 +78,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 });
                 continue;
             };
-            let mismatch =
-                Point3::distance(start, endpoints[0]).max(Point3::distance(end, endpoints[1]));
+            let mismatch = Point3::distance(start.get(), endpoints[0])
+                .max(Point3::distance(end.get(), endpoints[1]));
             if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -123,7 +123,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                     context,
                     None,
                     SupportEndpointContract::Offset {
-                        endpoints: [solved_start, solved_end],
+                        endpoints: [solved_start.get(), solved_end.get()],
                         distance: offset.abs(),
                     },
                     &index,
@@ -133,9 +133,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 );
                 continue;
             };
-            let offset_mismatch = (Point3::distance(solved_start, base_start) - offset.abs())
-                .abs()
-                .max((Point3::distance(solved_end, base_end) - offset.abs()).abs());
+            let offset_mismatch = (Point3::distance(solved_start.get(), base_start.get())
+                - offset.abs())
+            .abs()
+            .max((Point3::distance(solved_end.get(), base_end.get()) - offset.abs()).abs());
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -150,7 +151,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             check_support_sides(
                 context,
                 None,
-                SupportEndpointContract::Coincident([base_start, base_end]),
+                SupportEndpointContract::Coincident([base_start.get(), base_end.get()]),
                 &index,
                 bound,
                 procedural.id.as_str(),
@@ -216,7 +217,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         check_support_sides(
             &context,
             third,
-            SupportEndpointContract::Coincident([solved_start, solved_end]),
+            SupportEndpointContract::Coincident([solved_start.get(), solved_end.get()]),
             &index,
             bound,
             procedural.id.as_str(),
@@ -360,7 +361,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .flatten(),
             ],
         );
-        let mismatch = Point3::distance(at_start, *start).max(Point3::distance(at_end, *end));
+        let mismatch =
+            Point3::distance(at_start.get(), *start).max(Point3::distance(at_end.get(), *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -417,7 +419,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .flatten(),
             ],
         );
-        let mismatch = Point3::distance(at_start, *start).max(Point3::distance(at_end, *end));
+        let mismatch =
+            Point3::distance(at_start.get(), *start).max(Point3::distance(at_end.get(), *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,

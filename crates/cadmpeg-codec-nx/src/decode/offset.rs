@@ -284,7 +284,7 @@ fn offset_candidate_sample_error(
         support_partials.point.y + distance * normal.y,
         support_partials.point.z + distance * normal.z,
     );
-    Some(Point3::distance(expected, candidate_point))
+    Some(Point3::distance(expected, candidate_point.get()))
 }
 
 fn nurbs_active_domain(surface: &NurbsSurface) -> Option<[[u64; 2]; 2]> {
@@ -623,7 +623,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             support_point.y + distance * normal.y,
             support_point.z + distance * normal.z,
         );
-        let midpoint_error = Point3::distance(expected, candidate_point);
+        let midpoint_error = Point3::distance(expected, candidate_point.get());
         let bound = midpoint_error + u_lipschitz * half_u + v_lipschitz * half_v;
         if !bound.is_finite() {
             return None;
@@ -1336,7 +1336,9 @@ fn initial_surface_parameters_with_index_and_budget(
                 geometry_budget,
             )
         }
-        geometry @ SurfaceGeometry::Solved(_) => analytic_surface_parameters(geometry, point),
+        geometry @ SurfaceGeometry::Solved(_) => {
+            analytic_surface_parameters(geometry, point).map(Point2::from)
+        }
     }
 }
 
@@ -1612,7 +1614,9 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     )
                 })
             }
-            geometry @ SurfaceGeometry::Solved(_) => analytic_surface_parameters(geometry, point),
+            geometry @ SurfaceGeometry::Solved(_) => {
+                analytic_surface_parameters(geometry, point).map(Point2::from)
+            }
         }
     };
     let first = [

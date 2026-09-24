@@ -591,7 +591,8 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
             &nurbs.control_points(),
             nurbs.weights().as_deref(),
             0.5,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -856,7 +857,8 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
             &nurbs.control_points(),
             nurbs.weights().as_deref(),
             0.5,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
@@ -891,7 +893,8 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
             &nurbs.control_points(),
             nurbs.weights().as_deref(),
             0.5,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
