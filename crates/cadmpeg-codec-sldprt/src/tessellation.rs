@@ -7,11 +7,13 @@ use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::OrthonormalFrame3;
@@ -1132,16 +1134,16 @@ pub(crate) fn assign_persistent_owners(
 
 #[derive(Debug, Clone, Copy)]
 struct PlaneFrame {
-    origin: Point3,
+    origin: FinitePoint3,
     normal: Vector3,
     u_axis: Vector3,
 }
 
 impl PlaneFrame {
-    fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
+    fn new(origin: FinitePoint3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
         let normal = normal.unit()?;
         let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
-        origin.is_finite().then_some(Self {
+        Some(Self {
             origin,
             normal,
             u_axis,
@@ -1155,7 +1157,7 @@ impl PlaneFrame {
     }
 
     fn project(self, point: Point3) -> Point2 {
-        let delta = point.vector_from(self.origin);
+        let delta = point.vector_from(self.origin.get());
         Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis()))
     }
 }
@@ -1248,7 +1250,7 @@ struct ConicalTrim {
     origin: Point3,
     frame: OrthonormalFrame3,
     radius: f64,
-    ratio: f64,
+    ratio: PositiveReal,
     slope: f64,
     min_axial: f64,
     max_axial: f64,
@@ -1314,7 +1316,7 @@ impl ConicalTrim {
                             self.angular_span,
                             angular,
                             tolerance
-                                / (local_radius.abs() * self.ratio.min(1.0))
+                                / (local_radius.abs() * self.ratio.get().min(1.0))
                                     .max(EPS_DISPLAY_QUANTIZATION),
                         )
                 })
@@ -1978,7 +1980,7 @@ fn conical_trim(
     let frame = *cone_surface.frame();
     let axis = *frame.axis().as_raw();
     let radius = cone_surface.radius().get();
-    let ratio = cone_surface.ratio().get();
+    let ratio = cone_surface.ratio();
     let half_angle = cone_surface.half_angle().get();
     let slope = half_angle.tan();
     if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
@@ -2038,9 +2040,9 @@ fn conical_trim(
                 let transverse_aligned = major_direction.dot(transverse).abs();
                 let aligned_radii = if reference_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
                     (major_radius - expected_radius).abs() <= tolerance
-                        && (minor_radius - expected_radius * ratio).abs() <= tolerance
+                        && (minor_radius - expected_radius * ratio.get()).abs() <= tolerance
                 } else if transverse_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
-                    (major_radius - expected_radius * ratio).abs() <= tolerance
+                    (major_radius - expected_radius * ratio.get()).abs() <= tolerance
                         && (minor_radius - expected_radius).abs() <= tolerance
                 } else {
                     false
@@ -2058,7 +2060,7 @@ fn conical_trim(
                 let center = circle_curve.center().get();
                 let curve_axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
-                if (ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
+                if (ratio.get() - 1.0).abs() > EPS_AXIS_ALIGNMENT
                     || curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 {
                     return None;
@@ -2133,15 +2135,17 @@ fn cylinder_angle(point: Point3, origin: Point3, frame: &OrthonormalFrame3) -> O
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn cone_angle(point: Point3, origin: Point3, frame: &OrthonormalFrame3, ratio: f64) -> Option<f64> {
-    if !ratio.is_finite() || ratio <= 0.0 {
-        return None;
-    }
+fn cone_angle(
+    point: Point3,
+    origin: Point3,
+    frame: &OrthonormalFrame3,
+    ratio: PositiveReal,
+) -> Option<f64> {
     let (reference, transverse) = perpendicular_basis(frame);
     let delta = point.vector_from(origin);
     let major = delta.dot(reference);
     let minor = delta.dot(transverse);
-    let angle = (minor / ratio).atan2(major);
+    let angle = (minor / ratio.get()).atan2(major);
     angle
         .is_finite()
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
@@ -2220,7 +2224,7 @@ fn analytic_trim(
 fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
     let (origin, normal, u_axis) = match surface {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin().get();
+            let origin = plane_surface.origin();
             let normal = plane_surface.frame().axis().as_raw();
             let u_axis = plane_surface.frame().reference().as_raw();
             (origin, *normal, *u_axis)
@@ -2229,7 +2233,7 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
             let basis = plane_frame(placed.basis())?;
             let transform = placed.transform();
             (
-                transform.apply_point(basis.origin)?,
+                basis.origin.transformed(*transform)?,
                 transform.apply_vector(basis.normal)?,
                 transform.apply_vector(basis.u_axis)?,
             )

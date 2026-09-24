@@ -1152,7 +1152,7 @@ fn conical_trim_uses_scaled_angular_coordinate() {
         )
         .unwrap(),
         radius: 3.0,
-        ratio: 0.5,
+        ratio: cadmpeg_ir::scalar::PositiveReal::new(0.5).unwrap(),
         slope: 1.0,
         min_axial: 0.0,
         max_axial: 2.0,
@@ -1174,7 +1174,7 @@ fn conical_trim_uses_scaled_angular_coordinate() {
         let local_radius = 4.0;
         Point3::new(
             local_radius * angle.cos(),
-            local_radius * trim.ratio * angle.sin(),
+            local_radius * trim.ratio.get() * angle.sin(),
             1.0,
         )
     };
@@ -1361,7 +1361,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
 fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
-            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
@@ -1414,7 +1414,7 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
 fn polygonal_planar_hole_excludes_inner_face_mesh() {
     let trim = PlanarTrim {
         frame: PlaneFrame::new(
-            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
