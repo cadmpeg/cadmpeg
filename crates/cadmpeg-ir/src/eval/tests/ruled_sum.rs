@@ -86,11 +86,13 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         "ruled",
     );
     let index = crate::index::ModelIndex::new(&ir);
-    let point =
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).expect("cacheless ruled point");
+    let point = model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+        .expect("cacheless ruled point")
+        .get();
     assert_eq!(point, Point3::new(3.25, 6.375, 8.0));
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.25, 0.5),
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.25, 0.5)
+            .map(crate::features::FinitePoint3::get),
         Some(point)
     );
     let partials = model_surface_second_partials_by_id(&index, &surface_id, 0.25, 0.5)
@@ -118,8 +120,9 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
         "sum",
     );
     let index = crate::index::ModelIndex::new(&ir);
-    let point =
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).expect("cacheless sum point");
+    let point = model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+        .expect("cacheless sum point")
+        .get();
     assert_eq!(point, Point3::new(6.0, 12.5, 14.0));
     let partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
         .expect("cacheless sum partials");

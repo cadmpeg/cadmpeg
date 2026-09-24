@@ -222,10 +222,12 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             1.0,
             0.7,
         )
-        .expect("source line revolution evaluates");
+        .expect("source line revolution evaluates")
+        .get();
         let round_point =
             cadmpeg_ir::eval::model_surface_point_by_id(&round_index, &round_surface.id, 1.0, 0.7)
-                .expect("round-trip line revolution evaluates");
+                .expect("round-trip line revolution evaluates")
+                .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_REVOLUTION_ROUND_TRIP,
             "{version:?}"
@@ -338,14 +340,16 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             source_carrier_end * 0.5,
             0.25,
         )
-        .expect("source line extrusion evaluates");
+        .expect("source line extrusion evaluates")
+        .get();
         let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
             &round_index,
             &round_surface.id,
             round_carrier_end * 0.5,
             0.25,
         )
-        .expect("round-trip line extrusion evaluates");
+        .expect("round-trip line extrusion evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_LINE_EXTRUSION_ROUND_TRIP,
             "{version:?}"
@@ -671,14 +675,16 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 source_parameter,
                 1.0,
             )
-            .expect("source extrusion evaluates");
+            .expect("source extrusion evaluates")
+            .get();
             let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 &round_index,
                 &round_surface.id,
                 round_parameter,
                 1.0,
             )
-            .expect("round-trip extrusion evaluates");
+            .expect("round-trip extrusion evaluates")
+            .get();
             assert!(
                 source_point.distance(round_point) < EPS_EXTRUSION_ROUND_TRIP,
                 "{version:?}: source={source_point:?} round_trip={round_point:?}"
@@ -802,14 +808,16 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
                 source_parameter,
                 1.0,
             )
-            .expect("source placed extrusion evaluates");
+            .expect("source placed extrusion evaluates")
+            .get();
             let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
                 &round_index,
                 &round_surface.id,
                 round_parameter,
                 1.0,
             )
-            .expect("round-trip placed extrusion evaluates");
+            .expect("round-trip placed extrusion evaluates")
+            .get();
             assert!(
                 source_point.distance(round_point) < EPS_PLACED_EXTRUSION_ROUND_TRIP,
                 "{version:?}: source={source_point:?} round_trip={round_point:?}"
@@ -996,14 +1004,16 @@ fn assert_type120_round_trip(version: IgesVersion) {
             source_parameter,
             angle,
         )
-        .expect("source revolution evaluates");
+        .expect("source revolution evaluates")
+        .get();
         let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
             &round_index,
             &round_surface.id,
             round_parameter,
             angle,
         )
-        .expect("round-trip revolution evaluates");
+        .expect("round-trip revolution evaluates")
+        .get();
         assert!(
             source_point.distance(round_point) < EPS_REVOLUTION_ROUND_TRIP,
             "source={source_point:?} round_trip={round_point:?}"

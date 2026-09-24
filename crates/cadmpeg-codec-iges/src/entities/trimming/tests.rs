@@ -1012,8 +1012,12 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                 .expect("coedge pcurve resolves");
             (
-                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0).expect("start evaluates"),
-                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0).expect("end evaluates"),
+                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0)
+                    .expect("start evaluates")
+                    .get(),
+                cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 1.0)
+                    .expect("end evaluates")
+                    .get(),
             )
         })
         .collect::<Vec<_>>();

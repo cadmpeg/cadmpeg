@@ -326,7 +326,8 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
             0.25,
             0.75,
             &budget
-        ),
+        )
+        .map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.25, 0.75, 1.0))
     );
     assert_eq!(budget.consumed(), 13);
@@ -383,7 +384,8 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     assert!(budget.exhausted());
     let budget = WorkBudget::new(6);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget),
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.25, 0.0, 2.0))
     );
     assert_eq!(budget.consumed(), 6);
@@ -934,7 +936,8 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16),
+        model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     let budget = WorkBudget::new(2);
@@ -945,7 +948,8 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
     assert!(budget.exhausted());
     let budget = WorkBudget::new(3);
     assert_eq!(
-        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,),
+        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0e16, -1.0e16, -3.0))
     );
     assert_eq!(budget.consumed(), 3);
@@ -1005,8 +1009,9 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     });
     let index = crate::index::ModelIndex::new(&ir);
 
-    let point =
-        model_surface_point_by_id(&index, &offset_id, 0.25, 1.2).expect("linearly extended offset");
+    let point = model_surface_point_by_id(&index, &offset_id, 0.25, 1.2)
+        .expect("linearly extended offset")
+        .get();
 
     let epsilon = 64.0 * f64::EPSILON;
     assert!((point.x - 0.25).abs() <= epsilon);
@@ -1066,7 +1071,8 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
 
     let point =
         model_surface_point_by_id(&crate::index::ModelIndex::new(&ir), &offset_id, 0.2, 0.3)
-            .expect("oriented offset point");
+            .expect("oriented offset point")
+            .get();
 
     let expected = Point3::new(0.2, 0.3, -2.0);
     let epsilon = 64.0 * f64::EPSILON;
@@ -1135,7 +1141,8 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &offset_id, 0.25, 0.5),
+        model_surface_point_by_id(&index, &offset_id, 0.25, 0.5)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(-0.25, 0.5, -2.0))
     );
     let partials = model_surface_partials_by_id(&index, &offset_id, 0.25, 0.5)
@@ -1189,7 +1196,8 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75),
+        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.25, 2.75, 3.0))
     );
     let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
@@ -1250,8 +1258,9 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         .unwrap();
 
     let index = crate::index::ModelIndex::new(&ir);
-    let point =
-        model_surface_point_by_id(&index, &surface_id, 0.5, 4.0).expect("linear sweep point");
+    let point = model_surface_point_by_id(&index, &surface_id, 0.5, 4.0)
+        .expect("linear sweep point")
+        .get();
     assert_eq!(point, Point3::new(2.0, 2.0, 7.0));
     let partials =
         model_surface_partials_by_id(&index, &surface_id, 0.5, 4.0).expect("linear sweep partials");
@@ -1416,11 +1425,13 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     let index = crate::index::ModelIndex::new(&ir);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.5, 0.25),
+        model_surface_point_by_id(&index, &surface_id, 0.5, 0.25)
+            .map(crate::features::FinitePoint3::get),
         Some(expected)
     );
     assert_eq!(
-        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25),
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25)
+            .map(crate::features::FinitePoint3::get),
         Some(expected)
     );
     let partials = model_surface_partials_by_id(&index, &surface_id, 0.5, 0.25)
@@ -1478,7 +1489,8 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
 
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
-        .expect("axis revolution point");
+        .expect("axis revolution point")
+        .get();
     assert!(point.x.abs() < 1.0e-12);
     assert!((point.y - 2.0).abs() < 1.0e-12);
     assert!((point.z - 1.5).abs() < 1.0e-12);
@@ -1629,7 +1641,8 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
 
     let index = crate::index::ModelIndex::new(&ir);
     let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
-        .expect("normalized line domain maps to distance carrier");
+        .expect("normalized line domain maps to distance carrier")
+        .get();
     assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
     let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
         .expect("normalized line domain partials");

@@ -457,7 +457,8 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
             0.0,
             0.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -466,7 +467,8 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             &SurfaceId::mint("step:data:surface#10").expect("identity grammar"),
             1.0,
             1.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(4.0, 4.0, 0.0))
     );
 
@@ -823,7 +825,8 @@ fn replicas_retain_bounded_parent_relations() {
             &SurfaceId::mint("step:data:surface#13").expect("identity grammar"),
             0.0,
             0.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(3.0, 9.0, 0.0))
     );
 

@@ -4119,14 +4119,17 @@ fn intersection_support_pcurve(
         .zip(targets)
         .any(|(parameters, target)| {
             surface_point(surface, parameters.u, parameters.v)
-                .is_none_or(|point| squared_distance(point, target) > tolerance * tolerance)
+                .is_none_or(|point| squared_distance(point.get(), target) > tolerance * tolerance)
         })
     {
         return None;
     }
     let mapped_points = control_points
         .iter()
-        .map(|parameters| surface_point(surface, parameters.u, parameters.v))
+        .map(|parameters| {
+            surface_point(surface, parameters.u, parameters.v)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
+        })
         .collect::<Option<Vec<_>>>()?;
     let control_errors = mapped_points
         .iter()
@@ -6143,8 +6146,12 @@ mod tests {
                 .unwrap(),
             ));
         let endpoints = [
-            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("cylinder start"),
-            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("cylinder end"),
+            cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0)
+                .expect("cylinder start")
+                .get(),
+            cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0)
+                .expect("cylinder end")
+                .get(),
         ];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 1.0, 1.0], endpoints.to_vec(), None);
         let support_data = super::super::intersection::IntersectionSupportData {
@@ -6226,7 +6233,11 @@ mod tests {
                 .unwrap(),
             ));
         let model_points = [(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)]
-            .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("cylinder point"))
+            .map(|(u, v)| {
+                cadmpeg_ir::eval::surface_point(&surface, u, v)
+                    .expect("cylinder point")
+                    .get()
+            })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);
@@ -6288,7 +6299,11 @@ mod tests {
         ));
         let expected = [(3.0, 3.0), (3.2, 3.2), (3.4, 3.4)];
         let model_points = expected
-            .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("torus point"))
+            .map(|(u, v)| {
+                cadmpeg_ir::eval::surface_point(&surface, u, v)
+                    .expect("torus point")
+                    .get()
+            })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];
         let chart = test_nurbs_curve(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], model_points, None);

@@ -190,7 +190,10 @@ fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
     .unwrap();
     assert!((result.point.u / 1e200 - 1.5).abs() <= 8.0 * f64::EPSILON);
     assert!((result.tangent.unwrap().u / 1e200 - 1.0).abs() <= 8.0 * f64::EPSILON);
-    assert_eq!(result.acceleration, Some(Point2::new(0.0, 0.0)));
+    assert_eq!(
+        result.acceleration.map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 0.0))
+    );
 }
 
 #[test]
@@ -208,8 +211,14 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
     )
     .unwrap();
     assert_eq!(result.point, Point2::new(width / 2.0, 0.0));
-    assert_eq!(result.tangent, Some(Point2::new(1.0, 0.0)));
-    assert_eq!(result.acceleration, Some(Point2::new(0.0, 0.0)));
+    assert_eq!(
+        result.tangent.map(crate::units::FinitePoint2::get),
+        Some(Point2::new(1.0, 0.0))
+    );
+    assert_eq!(
+        result.acceleration.map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 0.0))
+    );
 
     let quadratic = nurbs_pcurve_differential(
         2,
@@ -224,8 +233,14 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
     )
     .unwrap();
     assert_eq!(quadratic.point, Point2::new(width / 2.0, 0.0));
-    assert_eq!(quadratic.tangent, Some(Point2::new(1.0, 0.0)));
-    assert_eq!(quadratic.acceleration, Some(Point2::new(0.0, 0.0)));
+    assert_eq!(
+        quadratic.tangent.map(crate::units::FinitePoint2::get),
+        Some(Point2::new(1.0, 0.0))
+    );
+    assert_eq!(
+        quadratic.acceleration.map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 0.0))
+    );
 }
 
 #[test]

@@ -3759,7 +3759,7 @@ fn surface_selection_point(
     v: f64,
 ) -> Option<Point3> {
     let [u, v] = surface_selection_parameters(index, surface_id, u, v);
-    model_surface_point_by_id(index, surface_id, u, v)
+    model_surface_point_by_id(index, surface_id, u, v).map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 #[cfg(test)]

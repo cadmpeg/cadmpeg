@@ -228,9 +228,12 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
     };
     assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, parameter).unwrap();
-        let point =
-            cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v).unwrap();
+        let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, parameter)
+            .unwrap()
+            .get();
+        let point = cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v)
+            .unwrap()
+            .get();
         let angle = std::f64::consts::TAU * parameter;
         assert!((point.x - 10.0 * angle.cos()).abs() < 0.01);
         assert!((point.y - 10.0 * angle.sin()).abs() < 0.01);
@@ -321,8 +324,12 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     let target_pcurve = context.sides()[1].pcurve.as_ref().unwrap();
     assert!(nurbs.control_points().len() > 2);
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter).unwrap();
-        let target_uv = cadmpeg_ir::eval::pcurve_uv(&target_pcurve.geometry, parameter).unwrap();
+        let source_uv = cadmpeg_ir::eval::pcurve_uv(&source_pcurve.geometry, parameter)
+            .unwrap()
+            .get();
+        let target_uv = cadmpeg_ir::eval::pcurve_uv(&target_pcurve.geometry, parameter)
+            .unwrap()
+            .get();
         assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
         assert_eq!(source_uv.v, target_uv.v);
     }
@@ -1072,15 +1079,18 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         .expect("charted tolerant intersection inverts");
         assert!((inverted - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {
-            let uv =
-                cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter).unwrap();
+            let uv = cadmpeg_ir::eval::pcurve_uv(&parameterization.pcurves[side], parameter)
+                .unwrap()
+                .get();
             let surface = ir
                 .model
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == supports[side])
                 .unwrap();
-            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).unwrap()
+            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v)
+                .unwrap()
+                .get()
         });
         assert!((points[0].x - 10.0 * parameter).abs() < 1.0e-8);
         assert_eq!(evaluated, points[0]);

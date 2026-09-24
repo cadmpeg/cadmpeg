@@ -258,16 +258,18 @@ pub(super) fn decoded_surface_point_inner_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
-    model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget).or_else(|| {
-        blend_surface_point_inner_with_index_and_budget(
-            index,
-            surface,
-            u,
-            v,
-            depth + 1,
-            geometry_budget,
-        )
-    })
+    model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
+        .or_else(|| {
+            blend_surface_point_inner_with_index_and_budget(
+                index,
+                surface,
+                u,
+                v,
+                depth + 1,
+                geometry_budget,
+            )
+        })
 }
 
 pub(super) fn decoded_surface_point_with_geometry_and_budget(
@@ -283,6 +285,7 @@ pub(super) fn decoded_surface_point_with_geometry_and_budget(
     let direct = surface_point_with_budget(geometry, u, v, geometry_budget);
     direct
         .or_else(|| model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget))
+        .map(cadmpeg_ir::features::FinitePoint3::get)
         .or_else(|| {
             blend_surface_point_inner_with_index_and_budget(
                 index,
@@ -1817,11 +1820,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
         return None;
     }
     let source_uv = pcurve_uv(source_pcurve, curve_parameter)?;
-    if !source_uv.is_finite()
-        || !target.point.is_finite()
-        || !target.tolerance.is_finite()
-        || target.tolerance < 0.0
-    {
+    if !target.point.is_finite() || !target.tolerance.is_finite() || target.tolerance < 0.0 {
         return None;
     }
 
@@ -1857,7 +1856,7 @@ pub(super) fn blend_support_parameter_from_source_pcurve_with_index_and_budget_a
             0,
             geometry_budget,
         )?;
-        (Point3::distance(candidate, target.point) <= target.tolerance).then_some(uv)
+        (Point3::distance(candidate, target.point) <= target.tolerance).then_some(uv.get())
     };
     if let Some(uv) = certify(source_uv.u) {
         return Some(uv);
@@ -2072,8 +2071,10 @@ fn blend_boundary_parameter_from_contact_pcurve_with_geometry_inner(
     let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
     let parameter = target
         .seed
-        .and_then(|seed| closest_pcurve_parameter_from_seed(contact_pcurve, support_uv, seed.u))
-        .or_else(|| closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv))?;
+        .and_then(|seed| {
+            closest_pcurve_parameter_from_seed(contact_pcurve, support_uv.get(), seed.u)
+        })
+        .or_else(|| closest_pcurve_parameter_from_coarse_grid(contact_pcurve, support_uv.get()))?;
     [parameter]
         .into_iter()
         .find(|parameter| {
@@ -2152,7 +2153,7 @@ fn closest_pcurve_parameter_from_seed(
         let candidate = pcurve_uv(pcurve, parameter)?;
         let tangent = pcurve_tangent(pcurve, parameter)?;
         let tangent_scale = tangent.u.abs().max(tangent.v.abs());
-        if !tangent_scale.is_finite() || tangent_scale == 0.0 {
+        if tangent_scale == 0.0 {
             return None;
         }
         let tangent = Point2::new(tangent.u / tangent_scale, tangent.v / tangent_scale);

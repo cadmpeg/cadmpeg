@@ -211,7 +211,8 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let index = crate::index::ModelIndex::new(&ir);
     let expected = Point3::new(-0.5, 0.5, 0.25);
     let point = model_surface_point_by_id(&index, &surface_id, -0.25, 0.25)
-        .expect("profile-frame sweep point");
+        .expect("profile-frame sweep point")
+        .get();
     assert!((point.x - expected.x).abs() <= f64::EPSILON * 64.0);
     assert!((point.y - expected.y).abs() <= f64::EPSILON * 64.0);
     assert!((point.z - expected.z).abs() <= f64::EPSILON * 64.0);
@@ -248,7 +249,8 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.25, 0.5, 0.0))
     );
     let cached_partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)

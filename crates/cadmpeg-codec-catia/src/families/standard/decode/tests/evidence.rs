@@ -369,7 +369,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid ConeSurface fixture"),
     ));
-    let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
+    let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point").get();
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
     assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
@@ -383,7 +383,9 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
+    let sphere_point = surface_point(&sphere, 0.5, 0.25)
+        .expect("sphere point")
+        .get();
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
     assert!(sphere_uv.u.is_finite());
     assert!((sphere_uv.v - 0.25).abs() < 1.0e-12);
@@ -397,8 +399,9 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid SphereSurface fixture"),
     ));
-    let signed_sphere_point =
-        surface_point(&signed_sphere, 0.5, 0.25).expect("signed sphere point");
+    let signed_sphere_point = surface_point(&signed_sphere, 0.5, 0.25)
+        .expect("signed sphere point")
+        .get();
     assert!(point_on_surface(signed_sphere_point, &signed_sphere));
 
     let torus = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -411,7 +414,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
         )
         .expect("valid TorusSurface fixture"),
     ));
-    let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point");
+    let torus_point = surface_point(&torus, 0.5, 0.25).expect("torus point").get();
     assert!(point_on_surface(torus_point, &torus));
 }
 

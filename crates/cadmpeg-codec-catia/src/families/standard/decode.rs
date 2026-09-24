@@ -5512,6 +5512,7 @@ fn standard_native_support_endpoint_pair(
             Some(support.parameter_range.map(|parameter| {
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
                 cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+                    .map(cadmpeg_ir::features::FinitePoint3::get)
             }))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -7959,6 +7960,7 @@ fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point
             };
             let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
             cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         })
         .collect::<Option<Vec<_>>>()?;
     let [first, second] = <[Point3; 2]>::try_from(lifted).ok()?;
@@ -9231,6 +9233,7 @@ fn native_support_circle_param_range(
             Some(parameters.map(|parameter| {
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
                 cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+                    .map(cadmpeg_ir::features::FinitePoint3::get)
             }))
         })
         .collect::<Option<Vec<_>>>()?;

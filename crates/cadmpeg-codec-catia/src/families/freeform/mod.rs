@@ -1184,8 +1184,8 @@ fn standard_carrier_endpoint_loci(
     let start = cadmpeg_ir::eval::pcurve_uv(pcurve, range[0])?;
     let end = cadmpeg_ir::eval::pcurve_uv(pcurve, range[1])?;
     Some([
-        cadmpeg_ir::eval::surface_point(surface, start.u, start.v)?,
-        cadmpeg_ir::eval::surface_point(surface, end.u, end.v)?,
+        cadmpeg_ir::eval::surface_point(surface, start.u, start.v)?.get(),
+        cadmpeg_ir::eval::surface_point(surface, end.u, end.v)?.get(),
     ])
 }
 
@@ -2759,6 +2759,7 @@ fn pcurve_lift_reaches_endpoints(
     let lift = |parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
         cadmpeg_ir::eval::surface_point_solved(surface, uv.u, uv.v)
+            .map(cadmpeg_ir::features::FinitePoint3::get)
     };
     let (Some(start), Some(end)) = (lift(range[0]), lift(range[1])) else {
         return false;
@@ -3987,7 +3988,9 @@ mod tests {
         let loci = target_sites
             .iter()
             .map(|[u, v]| {
-                cadmpeg_ir::eval::surface_point_solved(&target, *u, *v).expect("plane evaluates")
+                cadmpeg_ir::eval::surface_point_solved(&target, *u, *v)
+                    .expect("plane evaluates")
+                    .get()
             })
             .collect::<Vec<_>>();
         let (cosine, sine) = (angle.cos(), angle.sin());
@@ -4070,7 +4073,11 @@ mod tests {
         let collinear_sites = [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]];
         let collinear_loci = collinear_sites
             .iter()
-            .map(|[u, v]| cadmpeg_ir::eval::surface_point(&target, *u, *v).expect("plane"))
+            .map(|[u, v]| {
+                cadmpeg_ir::eval::surface_point(&target, *u, *v)
+                    .expect("plane")
+                    .get()
+            })
             .collect::<Vec<_>>();
         assert!(solve_planar_chart_rechart(&collinear_sites, &collinear_loci, &target).is_none());
     }

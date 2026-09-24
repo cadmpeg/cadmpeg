@@ -64,7 +64,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         expected.u,
         expected.v,
     )
-    .unwrap();
+    .unwrap()
+    .get();
 
     let actual = offset_surface_parameters(result.ir(), &surface, point, None).unwrap();
 
@@ -94,7 +95,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         expected.u,
         expected.v,
     )
-    .unwrap();
+    .unwrap()
+    .get();
     let translated_parameters = offset_surface_parameters_with_tolerance(
         &translated,
         &surface,
@@ -151,7 +153,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         expected.u,
         expected.v,
     )
-    .unwrap();
+    .unwrap()
+    .get();
     let nested_parameters = offset_surface_parameters_with_tolerance(
         &translated,
         &nested_surface,
@@ -182,7 +185,8 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
         seed.u,
         seed.v,
     )
-    .unwrap();
+    .unwrap()
+    .get();
     point.x += 0.01;
 
     let actual = offset_surface_parameters_with_tolerance(
@@ -291,7 +295,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         expected.u,
         expected.v,
     )
-    .expect("offset point");
+    .expect("offset point")
+    .get();
     let actual = offset_surface_parameters_with_tolerance(
         &ir,
         &offset,
@@ -341,7 +346,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         expected.u,
         expected.v,
     )
-    .expect("nested offset point");
+    .expect("nested offset point")
+    .get();
     let nested_actual = offset_surface_parameters_with_tolerance(
         &ir,
         &nested,
@@ -1087,6 +1093,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 parameter.v,
             )
             .expect("NURBS chart point")
+            .get()
         })
         .collect::<Vec<_>>();
     let pending = vec![(
@@ -1274,9 +1281,11 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 &context.sides()[side].pcurve.as_ref().unwrap().geometry,
                 *parameter,
             )
-            .unwrap();
-            let actual =
-                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface, uv.u, uv.v).unwrap();
+            .unwrap()
+            .get();
+            let actual = cadmpeg_ir::eval::model_surface_point_by_id(&index, surface, uv.u, uv.v)
+                .unwrap()
+                .get();
             assert!((actual.x - expected.x).abs() <= 1.0e-3);
             assert!((actual.y - expected.y).abs() <= 1.0e-3);
             assert!((actual.z - expected.z).abs() <= 1.0e-3);

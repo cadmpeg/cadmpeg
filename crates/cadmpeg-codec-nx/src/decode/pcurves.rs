@@ -858,16 +858,13 @@ fn reverse_pcurve_over_range(
                 first.u + half_span * derivative.u,
                 first.v + half_span * derivative.v,
             );
-            if ![first.u, first.v, middle.u, middle.v, last.u, last.v]
-                .into_iter()
-                .all(f64::is_finite)
-            {
+            if !middle.is_finite() {
                 return Ok(None);
             }
             let reversed = PcurveNurbs::from_lanes(
                 2,
                 vec![start, start, start, end, end, end],
-                vec![first, middle, last],
+                vec![first.get(), middle, last.get()],
                 None,
                 false,
             )?;

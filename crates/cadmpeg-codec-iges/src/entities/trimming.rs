@@ -759,9 +759,7 @@ fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Ve
     )?
     .into_iter()
     .map(|parameter| {
-        cadmpeg_ir::eval::pcurve_uv(geometry, parameter)
-            .map(|point| [point.u, point.v])
-            .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
+        cadmpeg_ir::eval::pcurve_uv(geometry, parameter).map(|point| [point.u, point.v])
     })
     .collect()
 }
@@ -1419,7 +1417,7 @@ fn pcurves_agree(
             let end = cadmpeg_ir::eval::pcurve_uv(geometry, range[1]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(index, surface_id, uv.u, uv.v)
             })?;
-            Some((start, end))
+            Some((start.get(), end.get()))
         })
         .collect::<Option<Vec<_>>>();
     let Some(mapped) = mapped else {

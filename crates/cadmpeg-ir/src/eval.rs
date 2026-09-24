@@ -2008,7 +2008,7 @@ pub fn nurbs_pcurve_uv(
     t: f64,
 ) -> Option<FinitePoint2> {
     nurbs_pcurve_differential(degree, knots, control_points, weights, t)
-        .and_then(|differential| FinitePoint2::new(differential.point))
+        .map(|differential| differential.point)
 }
 
 /// Return the signed endpoint-frame offset between two fitted sketch NURBS.
@@ -2160,9 +2160,9 @@ fn fitted_nurbs_offset_candidate(
 }
 
 struct PcurveDifferential {
-    point: Point2,
-    tangent: Option<Point2>,
-    acceleration: Option<Point2>,
+    point: FinitePoint2,
+    tangent: Option<FinitePoint2>,
+    acceleration: Option<FinitePoint2>,
 }
 
 /// The parameter-plane pole `(u, v)` as the model-space pole `(u, v, 0)`.
@@ -2208,7 +2208,11 @@ fn nurbs_pcurve_differential_with(
     let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
     let base = sum(&basis)?;
     let point = base.project(base, &[])?;
-    let uv = |p: [FiniteReal; 3]| Point2::new(p[0].get(), p[1].get());
+    let uv = |p: [FiniteReal; 3]| FinitePoint2::from_coordinates(p[0], p[1]);
+    let planar = |vector: FiniteVector3| {
+        let [x, y, _] = vector.components();
+        FinitePoint2::from_coordinates(x, y)
+    };
     let point_only = || PcurveDifferential {
         point: uv(point),
         tangent: None,
@@ -2254,8 +2258,8 @@ fn nurbs_pcurve_differential_with(
             );
             return Some(PcurveDifferential {
                 point: uv(point),
-                tangent: tangent.map(|vector| Point2::new(vector.x, vector.y)),
-                acceleration: acceleration.map(|vector| Point2::new(vector.x, vector.y)),
+                tangent: tangent.map(planar),
+                acceleration: acceleration.map(planar),
             });
         }
         let Some(scaled) = bspline_basis_scaled_derivatives(knots, degree, span, t, scale) else {
@@ -2274,13 +2278,13 @@ fn nurbs_pcurve_differential_with(
             &[(second_sum, point), (first_sum, first), (first_sum, first)],
         )
     });
-    let unscale = |value: f64, twice: bool| {
+    let unscale = |value: FiniteReal, twice: bool| {
         if scale == 1.0 {
             Some(value)
         } else {
-            let value = difference_quotient(value, 0.0, scale, 0.0)?.get();
+            let value = difference_quotient(value.get(), 0.0, scale, 0.0)?;
             if twice {
-                difference_quotient(value, 0.0, scale, 0.0).map(FiniteReal::get)
+                difference_quotient(value.get(), 0.0, scale, 0.0)
             } else {
                 Some(value)
             }
@@ -2289,15 +2293,15 @@ fn nurbs_pcurve_differential_with(
     Some(PcurveDifferential {
         point: uv(point),
         tangent: first.and_then(|value| {
-            Some(Point2::new(
-                unscale(value[0].get(), false)?,
-                unscale(value[1].get(), false)?,
+            Some(FinitePoint2::from_coordinates(
+                unscale(value[0], false)?,
+                unscale(value[1], false)?,
             ))
         }),
         acceleration: second.and_then(|value| {
-            Some(Point2::new(
-                unscale(value[0].get(), true)?,
-                unscale(value[1].get(), true)?,
+            Some(FinitePoint2::from_coordinates(
+                unscale(value[0], true)?,
+                unscale(value[1], true)?,
             ))
         }),
     })
@@ -3814,20 +3818,18 @@ fn model_curve_point_by_id_inner(
             }
             let points = std::array::from_fn(|side| {
                 let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
-                budget
-                    .map_or_else(
-                        || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
-                        |budget| {
-                            model_surface_point_by_id_with_budget(
-                                index,
-                                &supports[side],
-                                uv.u,
-                                uv.v,
-                                budget,
-                            )
-                        },
-                    )
-                    .and_then(FinitePoint3::new)
+                budget.map_or_else(
+                    || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
+                    |budget| {
+                        model_surface_point_by_id_with_budget(
+                            index,
+                            &supports[side],
+                            uv.u,
+                            uv.v,
+                            budget,
+                        )
+                    },
+                )
             });
             let [Some(first), Some(second)] = points else {
                 return None;
@@ -4523,8 +4525,13 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization: `u` is
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
-pub fn surface_point_solved(geometry: &SolvedSurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
-    surface_second_partials_solved(geometry, u, v).map(|partials| partials.point)
+pub fn surface_point_solved(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<FinitePoint3> {
+    surface_second_partials_solved(geometry, u, v)
+        .and_then(|partials| FinitePoint3::new(partials.point))
 }
 
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
@@ -4538,14 +4545,14 @@ pub fn surface_point_with_budget_solved(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
             let u_axis = plane_surface.frame().reference().as_raw();
             let v_axis = normal.cross(*u_axis);
-            Some(offset(origin, &[(u, *u_axis), (v, v_axis)]))
+            FinitePoint3::new(offset(origin, &[(u, *u_axis), (v, v_axis)]))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
@@ -4555,7 +4562,7 @@ pub fn surface_point_with_budget_solved(
             let transverse = axis.cross(*ref_direction);
             let cosine = u.cos();
             let sine = u.sin();
-            Some(offset(
+            FinitePoint3::new(offset(
                 origin,
                 &[
                     (radius * cosine, *ref_direction),
@@ -4576,7 +4583,7 @@ pub fn surface_point_with_budget_solved(
             let sine = u.sin();
             let radial_slope = half_angle.tan();
             let local_radius = radius + v * radial_slope;
-            Some(offset(
+            FinitePoint3::new(offset(
                 origin,
                 &[
                     (local_radius * cosine, *ref_direction),
@@ -4595,7 +4602,7 @@ pub fn surface_point_with_budget_solved(
             let u_sine = u.sin();
             let v_cosine = v.cos();
             let v_sine = v.sin();
-            Some(offset(
+            FinitePoint3::new(offset(
                 center,
                 &[
                     (radius * v_cosine * u_cosine, *ref_direction),
@@ -4616,7 +4623,7 @@ pub fn surface_point_with_budget_solved(
             let v_cosine = v.cos();
             let v_sine = v.sin();
             let ring = major_radius + minor_radius * v_cosine;
-            Some(offset(
+            FinitePoint3::new(offset(
                 center,
                 &[
                     (ring * u_cosine, *ref_direction),
@@ -4625,14 +4632,11 @@ pub fn surface_point_with_budget_solved(
                 ],
             ))
         }
-        SolvedSurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_surface_point_with_budget(nurbs, u, v, budget).map(FinitePoint3::get)
-        }
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
         SolvedSurfaceGeometry::Transformed(placed) => {
             budget.charge().then_some(())?;
             surface_point_with_budget_solved(placed.basis(), u, v, budget)
-                .and_then(|point| placed.transform().apply_point(point))
-                .map(FinitePoint3::get)
+                .and_then(|point| placed.transform().apply_point(point.get()))
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -5044,7 +5048,7 @@ pub fn model_surface_point(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     if let Some(cache) = geometry.solved_cache() {
         return surface_point_solved(cache, u, v);
     }
@@ -5058,7 +5062,7 @@ pub fn model_surface_point(
         .find(|procedural| procedural.id == *construction)?;
     let carrier_interval = record_u_interval(procedural.record_bounds());
     let index = crate::index::ModelIndex::new(ir);
-    match procedural.definition() {
+    let point = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             model_native_extrusion_partials(
                 &index,
@@ -5138,10 +5142,11 @@ pub fn model_surface_point(
             }
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
-            rolling_ball_jet_point(procedural.definition(), u, v).map(FinitePoint3::get)
+            return rolling_ball_jet_point(procedural.definition(), u, v);
         }
         _ => None,
-    }
+    };
+    point.and_then(FinitePoint3::new)
 }
 
 #[derive(Clone, Copy)]
@@ -6014,8 +6019,7 @@ fn variable_blend_radius(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let radius = pcurve_uv(function, parameter)?.u;
-            radius.is_finite().then_some(radius)
+            Some(pcurve_uv(function, parameter)?.u)
         }
         _ => None,
     }
@@ -6046,9 +6050,12 @@ fn variable_blend_radius_differential(
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let radius = pcurve_uv(function, parameter)?.u;
-            let derivative = pcurve_tangent(function, parameter)?.u;
-            finite_sweep_differential(radius, derivative)
+            let [radius, _] = pcurve_uv(function, parameter)?.coordinates();
+            let [derivative, _] = pcurve_tangent(function, parameter)?.coordinates();
+            Some(ScalarSweepDifferential {
+                value: radius.get(),
+                derivative: derivative.get(),
+            })
         }
         _ => None,
     }
@@ -6542,16 +6549,15 @@ fn model_surface_point_with_budget_solved(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     match (geometry, budget) {
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
-            nurbs_surface_point_with_budget(nurbs, u, v, budget).map(FinitePoint3::get)
+            nurbs_surface_point_with_budget(nurbs, u, v, budget)
         }
         (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
             budget.charge().then_some(())?;
             model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget))
-                .and_then(|point| placed.transform().apply_point(point))
-                .map(FinitePoint3::get)
+                .and_then(|point| placed.transform().apply_point(point.get()))
         }
         _ => surface_point_solved(geometry, u, v),
     }
@@ -6638,7 +6644,7 @@ pub fn model_surface_point_by_id(
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     model_surface_point_by_id_inner(index, surface, u, v, None)
 }
 
@@ -6651,7 +6657,7 @@ pub fn model_surface_point_by_id_with_budget(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     let _guard = budget.recursion_guard()?;
     model_surface_point_by_id_inner(index, surface, u, v, Some(budget))
 }
@@ -6662,7 +6668,7 @@ fn model_surface_point_by_id_inner(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     struct SurfaceEvaluation {
         point: Point3,
         oriented_normal: Option<Vector3>,
@@ -7038,7 +7044,7 @@ fn model_surface_point_by_id_inner(
             _ if procedural.is_some() => {
                 model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget).map(
                     |point| SurfaceEvaluation {
-                        point,
+                        point: point.get(),
                         oriented_normal: None,
                     },
                 )
@@ -7082,7 +7088,8 @@ fn model_surface_point_by_id_inner(
                 .and_then(|surface| surface_point_with_budget(&surface.geometry, u, v, budget));
         }
     }
-    evaluate(index, surface, u, v, &mut Vec::new(), budget).map(|evaluation| evaluation.point)
+    evaluate(index, surface, u, v, &mut Vec::new(), budget)
+        .and_then(|evaluation| FinitePoint3::new(evaluation.point))
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
@@ -7611,57 +7618,53 @@ fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
 /// depend on this: they seed and step outside the interval and use the
 /// evaluated point as the witness. A caller that wants the domain asks
 /// the carrier for it.
-pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<FinitePoint2> {
     pcurve_uv_differential(geometry, t).map(|differential| differential.point)
 }
 
-/// Evaluate the exact first derivative of a directly stored pcurve.
-pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
+/// Evaluate the exact first derivative of a directly stored pcurve. The
+/// derivative is absent when a coordinate is not finite.
+pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<FinitePoint2> {
     pcurve_uv_differential(geometry, t)?.tangent
 }
 
 // Differentiate atan2 without squaring coordinates in the finite f64 range.
 fn polar_angle_differential(
-    point: Point2,
-    tangent: Option<Point2>,
-    acceleration: Option<Point2>,
-) -> Option<(f64, Option<f64>, Option<f64>)> {
-    if !point.is_finite() {
-        return None;
-    }
+    point: FinitePoint2,
+    tangent: Option<FinitePoint2>,
+    acceleration: Option<FinitePoint2>,
+) -> Option<(FiniteReal, Option<FiniteReal>, Option<FiniteReal>)> {
     let mut radius = ExactSignedSum::default();
     radius.add_product(point.u, point.u);
     radius.add_product(point.v, point.v);
     let radius = radius.finish()?;
-    let first = tangent.filter(Point2::is_finite).and_then(|tangent| {
+    let first = tangent.and_then(|tangent| {
         let mut cross = ExactSignedSum::default();
         cross.add_product(point.u, tangent.v);
         cross.add_product(-point.v, tangent.u);
-        cross.finish().map_or(Some(0.0), |cross| {
-            cross.quotient(radius).map(FiniteReal::get)
-        })
+        cross
+            .finish()
+            .map_or(Some(FiniteReal::ZERO), |cross| cross.quotient(radius))
     });
     let second =
         tangent
             .zip(acceleration)
             .zip(first)
             .and_then(|((tangent, acceleration), first)| {
-                if !acceleration.is_finite() {
-                    return None;
-                }
                 let mut dot = ExactSignedSum::default();
                 dot.add_product(point.u, tangent.u);
                 dot.add_product(point.v, tangent.v);
                 let mut numerator = ExactSignedSum::default();
                 numerator.add_product(point.u, acceleration.v);
                 numerator.add_product(-point.v, acceleration.u);
-                numerator.add_scaled_product(dot.finish(), -first)?;
-                numerator.add_scaled_product(dot.finish(), -first)?;
-                numerator.finish().map_or(Some(0.0), |value| {
-                    value.quotient(radius).map(FiniteReal::get)
-                })
+                numerator.add_scaled_product(dot.finish(), first.negated().get())?;
+                numerator.add_scaled_product(dot.finish(), first.negated().get())?;
+                numerator
+                    .finish()
+                    .map_or(Some(FiniteReal::ZERO), |value| value.quotient(radius))
             });
-    Some((point.v.atan2(point.u), first, second))
+    let [u, v] = point.coordinates();
+    Some((v.atan2(u), first, second))
 }
 
 /// Evaluate a pcurve carrier's point and its first two derivatives at `t`.
@@ -7797,26 +7800,27 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
         PcurveGeometry::Hyperbolic(hyperbolic) => {
             let cosine = hyperbolic.cosine();
             let sine = hyperbolic.sine();
-            let coordinate = |center, cosine, sine| -> Option<[f64; 3]> {
+            let coordinate = |center, cosine, sine| {
                 let (cosine_sinh, cosine_cosh) = scaled_sinh_cosh(cosine, t)?;
                 let (cosine_sinh, cosine_cosh) = (cosine_sinh.get(), cosine_cosh.get());
                 let (sine_sinh, sine_cosh) = scaled_sinh_cosh(sine, t)?;
                 let (sine_sinh, sine_cosh) = (sine_sinh.get(), sine_cosh.get());
-                Some([
-                    crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?.get(),
-                    crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh])
-                        .map_or(f64::NAN, FiniteReal::get),
-                    crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh])
-                        .map_or(f64::NAN, FiniteReal::get),
-                ])
+                Some((
+                    crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?,
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh]),
+                    crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh]),
+                ))
             };
             let u = coordinate(hyperbolic.center().u, cosine.u, sine.u)?;
             let v = coordinate(hyperbolic.center().v, cosine.v, sine.v)?;
-            (
-                Point2::new(u[0], v[0]),
-                Point2::new(u[1], v[1]),
-                Point2::new(u[2], v[2]),
-            )
+            let point_on = |u: Option<FiniteReal>, v: Option<FiniteReal>| {
+                Some(FinitePoint2::from_coordinates(u?, v?))
+            };
+            return Some(PcurveDifferential {
+                point: FinitePoint2::from_coordinates(u.0, v.0),
+                tangent: point_on(u.1, v.1),
+                acceleration: point_on(u.2, v.2),
+            });
         }
         PcurveGeometry::PolarHarmonic(polar_harmonic_pcurve) => {
             let radial_center = polar_harmonic_pcurve.radial_center();
@@ -7834,19 +7838,23 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let ddx = -radial_cos.u * cosine - radial_sin.u * sine;
             let ddy = -radial_cos.v * cosine - radial_sin.v * sine;
             let (angle, first, second) = polar_angle_differential(
-                Point2::new(x, y),
-                Some(Point2::new(dx, dy)),
-                Some(Point2::new(ddx, ddy)),
+                FinitePoint2::new(Point2::new(x, y))?,
+                FinitePoint2::new(Point2::new(dx, dy)),
+                FinitePoint2::new(Point2::new(ddx, ddy)),
             )?;
-            let point = Point2::new(angle, axial_origin + axial_cos * cosine + axial_sin * sine);
-            return point.is_finite().then_some(PcurveDifferential {
-                point,
+            let axial = FiniteReal::new(axial_origin + axial_cos * cosine + axial_sin * sine)?;
+            let paired = |polar: FiniteReal, axial: f64| {
+                Some(FinitePoint2::from_coordinates(
+                    polar,
+                    FiniteReal::new(axial)?,
+                ))
+            };
+            return Some(PcurveDifferential {
+                point: FinitePoint2::from_coordinates(angle, axial),
                 tangent: first
-                    .map(|first| Point2::new(first, -axial_cos * sine + axial_sin * cosine))
-                    .filter(Point2::is_finite),
+                    .and_then(|first| paired(first, -axial_cos * sine + axial_sin * cosine)),
                 acceleration: second
-                    .map(|second| Point2::new(second, -axial_cos * cosine - axial_sin * sine))
-                    .filter(Point2::is_finite),
+                    .and_then(|second| paired(second, -axial_cos * cosine - axial_sin * sine)),
             });
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
@@ -7877,51 +7885,54 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             )?;
             let (angle, first, second) =
                 polar_angle_differential(radial.point, radial.tangent, radial.acceleration)?;
+            let paired = |polar: FiniteReal, axial: FinitePoint2| {
+                FinitePoint2::from_coordinates(polar, axial.coordinates()[0])
+            };
             return Some(PcurveDifferential {
-                point: Point2::new(angle, axial.point.u),
+                point: paired(angle, axial.point),
                 tangent: first
                     .zip(axial.tangent)
-                    .map(|(first, axial)| Point2::new(first, axial.u)),
+                    .map(|(first, axial)| paired(first, axial)),
                 acceleration: second
                     .zip(axial.acceleration)
-                    .map(|(second, axial)| Point2::new(second, axial.u)),
+                    .map(|(second, axial)| paired(second, axial)),
             });
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
             let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin().get();
-            let azimuth_rate = spherical_great_circle_pcurve.azimuth_rate().get();
+            let admitted_rate = spherical_great_circle_pcurve.azimuth_rate();
+            let azimuth_rate = admitted_rate.get();
             let plane_phase = spherical_great_circle_pcurve.plane_phase().get();
             let plane_slope = spherical_great_circle_pcurve.plane_slope().get();
-            let azimuth = azimuth_origin + azimuth_rate * t;
-            let phase = azimuth - plane_phase;
+            let azimuth = FiniteReal::new(azimuth_origin + azimuth_rate * t)?;
+            let phase = azimuth.get() - plane_phase;
             let cosine = phase.cos();
             let sine = phase.sin();
             let scale = plane_slope.abs().max(1.0);
             let slope = plane_slope / scale;
             let (latitude, first, second) = polar_angle_differential(
-                Point2::new(1.0 / scale, slope * cosine),
-                Some(Point2::new(0.0, -slope * sine)),
-                Some(Point2::new(0.0, -slope * cosine)),
+                FinitePoint2::new(Point2::new(1.0 / scale, slope * cosine))?,
+                FinitePoint2::new(Point2::new(0.0, -slope * sine)),
+                FinitePoint2::new(Point2::new(0.0, -slope * cosine)),
             )?;
-            let point = Point2::new(azimuth, latitude);
             let tangent = first
                 .and_then(|first| {
                     let mut sum = ExactSignedSum::default();
-                    sum.add_product(first, azimuth_rate);
+                    sum.add_product(first.get(), azimuth_rate);
                     sum.finish()
-                        .map_or(Some(0.0), |value| value.finite().map(FiniteReal::get))
+                        .map_or(Some(FiniteReal::ZERO), ScaledValue::finite)
                 })
-                .map(|value| Point2::new(azimuth_rate, value));
+                .map(|value| FinitePoint2::from_coordinates(admitted_rate, value));
             let acceleration = second
                 .and_then(|second| {
                     let mut sum = ExactSignedSum::default();
-                    sum.add_factors([second, azimuth_rate, azimuth_rate]);
+                    sum.add_factors([second.get(), azimuth_rate, azimuth_rate]);
                     sum.finish()
-                        .map_or(Some(0.0), |value| value.finite().map(FiniteReal::get))
+                        .map_or(Some(FiniteReal::ZERO), ScaledValue::finite)
                 })
-                .map(|value| Point2::new(0.0, value));
-            return point.is_finite().then_some(PcurveDifferential {
-                point,
+                .map(|value| FinitePoint2::from_coordinates(FiniteReal::ZERO, value));
+            return Some(PcurveDifferential {
+                point: FinitePoint2::from_coordinates(azimuth, latitude),
                 tangent,
                 acceleration,
             });
@@ -7940,15 +7951,18 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
         PcurveGeometry::Transformed(placed) => {
             let transform = placed.transform();
             let basis = pcurve_uv_differential(placed.basis(), t)?;
-            let point = transform.apply_point(basis.point);
-            let tangent = basis.tangent.map(|tangent| transform.apply_vector(tangent));
-            let acceleration = basis
-                .acceleration
-                .map(|acceleration| transform.apply_vector(acceleration));
-            return (point.is_finite()
-                && tangent.is_none_or(|tangent| tangent.is_finite())
-                && acceleration.is_none_or(|acceleration| acceleration.is_finite()))
-            .then_some(PcurveDifferential {
+            let point = FinitePoint2::new(transform.apply_point(basis.point.get()))?;
+            let tangent = match basis.tangent {
+                Some(tangent) => Some(FinitePoint2::new(transform.apply_vector(tangent.get()))?),
+                None => None,
+            };
+            let acceleration = match basis.acceleration {
+                Some(acceleration) => Some(FinitePoint2::new(
+                    transform.apply_vector(acceleration.get()),
+                )?),
+                None => None,
+            };
+            return Some(PcurveDifferential {
                 point,
                 tangent,
                 acceleration,
@@ -7968,10 +7982,10 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 return None;
             }
             let unit = Point2::new(tangent.u / speed, tangent.v / speed);
-            let point = Point2::new(
+            let point = FinitePoint2::new(Point2::new(
                 basis.point.u - distance.get() * unit.v,
                 basis.point.v + distance.get() * unit.u,
-            );
+            ))?;
             let tangent = basis.acceleration.map(|acceleration| {
                 let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
                 let unit_derivative = Point2::new(
@@ -7985,18 +7999,15 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             });
             return Some(PcurveDifferential {
                 point,
-                tangent: tangent.filter(Point2::is_finite),
+                tangent: tangent.and_then(FinitePoint2::new),
                 acceleration: None,
             });
         }
     };
-    if !pair.0.is_finite() {
-        return None;
-    }
     Some(PcurveDifferential {
-        point: pair.0,
-        tangent: pair.1.is_finite().then_some(pair.1),
-        acceleration: pair.2.is_finite().then_some(pair.2),
+        point: FinitePoint2::new(pair.0)?,
+        tangent: FinitePoint2::new(pair.1),
+        acceleration: FinitePoint2::new(pair.2),
     })
 }
 
@@ -8063,7 +8074,7 @@ pub fn curve_second_derivative_with_budget(
 }
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization.
-pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point3> {
+pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<FinitePoint3> {
     surface_point_solved(geometry.solved()?, u, v)
 }
 
@@ -8073,7 +8084,7 @@ pub fn surface_point_with_budget(
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     surface_point_with_budget_solved(geometry.solved()?, u, v, budget)
 }
 
@@ -8123,7 +8134,7 @@ fn model_surface_point_with_budget(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Point3> {
+) -> Option<FinitePoint3> {
     match geometry.solved() {
         Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget),
         None => model_surface_point(ir, geometry, u, v),
