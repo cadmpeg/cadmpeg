@@ -82,14 +82,6 @@ impl<const N: usize> IntoIterator for FiniteVector<N> {
     }
 }
 
-impl<'a, const N: usize> IntoIterator for &'a FiniteVector<N> {
-    type Item = &'a f64;
-    type IntoIter = std::slice::Iter<'a, f64>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
-    }
-}
-
 impl From<crate::topology::ParameterInterval> for FiniteVector<2> {
     /// Carry an interval's endpoints. The interval admits only finite
     /// endpoints, so nothing is checked.
@@ -392,7 +384,7 @@ impl UnitVector3 {
     pub fn to_unit_length_charted(self) -> Self {
         let value = self.0;
         let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
-        let exponent = if largest < 1.0 { 0 } else { 1 };
+        let exponent = i32::from(largest >= 1.0);
         let chart_scale = 2.0_f64.powi(-exponent);
         let chart = Vector3::new(
             value.x * chart_scale,

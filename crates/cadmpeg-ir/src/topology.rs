@@ -1479,10 +1479,7 @@ mod tests {
             .param_range()
             .expect("free endpoints state their range");
         assert_eq!(free.get(), [4.0, -4.0]);
-        assert_eq!(
-            (&free).into_iter().copied().collect::<Vec<_>>(),
-            [4.0, -4.0]
-        );
+        assert_eq!(free.iter().copied().collect::<Vec<_>>(), [4.0, -4.0]);
         assert_eq!(
             serde_json::to_value(&edge.carrier).unwrap(),
             serde_json::json!({"param_range": [4.0, -4.0]})
