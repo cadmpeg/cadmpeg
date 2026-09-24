@@ -10,11 +10,13 @@ use cadmpeg_ir::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinitio
 
 #[test]
 fn numerical_0922_identical_circle_planes_match_tight_tolerance() {
-    let normal = Vector3::new(2.0, 13.0, 1.0).unit_nonzero().unwrap();
-    let reference = normal
-        .cross(Vector3::new(1.0, 0.0, 0.0))
-        .unit_nonzero()
+    let normal = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(2.0, 13.0, 1.0))
+        .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
         .unwrap();
+    let reference =
+        cadmpeg_ir::features::FiniteVector3::new(normal.cross(Vector3::new(1.0, 0.0, 0.0)))
+            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+            .unwrap();
     let geometry = SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Circle {
         center: Point3::new(0.0, 0.0, 0.0),
         normal,

@@ -5647,11 +5647,14 @@ fn line_angle_matches(
     let first_dv = first_end.v - first_start.v;
     let second_du = second_end.u - second_start.u;
     let second_dv = second_end.v - second_start.v;
-    let Some(first) = cadmpeg_ir::math::Vector3::new(first_du, first_dv, 0.0).unit_nonzero() else {
+    let unit = |du, dv| {
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(du, dv, 0.0))
+            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    };
+    let Some(first) = unit(first_du, first_dv) else {
         return false;
     };
-    let Some(second) = cadmpeg_ir::math::Vector3::new(second_du, second_dv, 0.0).unit_nonzero()
-    else {
+    let Some(second) = unit(second_du, second_dv) else {
         return false;
     };
     let angle = first.cross(second).norm().atan2(first.dot(second));
@@ -5925,10 +5928,14 @@ fn parallel_line_offset(
     {
         return None;
     }
-    let source_direction =
-        cadmpeg_ir::math::Vector3::new(source_du, source_dv, 0.0).unit_nonzero()?;
-    let result_direction =
-        cadmpeg_ir::math::Vector3::new(result_du, result_dv, 0.0).unit_nonzero()?;
+    let source_direction = cadmpeg_ir::features::FiniteVector3::new(
+        cadmpeg_ir::math::Vector3::new(source_du, source_dv, 0.0),
+    )?
+    .unit_nonzero()?;
+    let result_direction = cadmpeg_ir::features::FiniteVector3::new(
+        cadmpeg_ir::math::Vector3::new(result_du, result_dv, 0.0),
+    )?
+    .unit_nonzero()?;
     let parallel_error = source_direction.cross(result_direction).norm();
     if parallel_error > EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E9 {
         return None;
@@ -6115,7 +6122,7 @@ fn reflect_point(point: Point2, axis_start: Point2, axis_end: Point2) -> Option<
     if direction.norm() <= EPS_REFLECTION_AXIS_LENGTH {
         return None;
     }
-    let unit = direction.unit_nonzero()?;
+    let unit = cadmpeg_ir::features::FiniteVector3::new(direction)?.unit_nonzero()?;
     let normal = Point2::new(-unit.y, unit.x);
     let distance = normal
         .u

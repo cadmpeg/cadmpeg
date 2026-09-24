@@ -4,6 +4,7 @@
 use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
@@ -7306,7 +7307,7 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
     let angular_tolerance = ir.tolerances.angular.get();
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
-        let Some(mut axis) = Vector3::unit_nonzero(axis) else {
+        let Some(mut axis) = FiniteVector3::new(axis).and_then(FiniteVector3::unit_nonzero) else {
             return Vec::new();
         };
         let Some(leading) = [axis.x, axis.y, axis.z]

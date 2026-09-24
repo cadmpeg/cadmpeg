@@ -1596,12 +1596,17 @@ fn line_carrier_matches(
     start: [f64; 2],
     end: [f64; 2],
 ) -> bool {
-    let Some(unit) = Vector3::new(direction[0], direction[1], 0.0).unit_nonzero() else {
+    let Some(unit) =
+        cadmpeg_ir::features::FiniteVector3::new(Vector3::new(direction[0], direction[1], 0.0))
+            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    else {
         return false;
     };
     let span = Vector3::new(end[0] - start[0], end[1] - start[1], 0.0);
     let span_scale = span.x.abs().max(span.y.abs());
-    let Some(span) = span.unit_nonzero() else {
+    let Some(span) = cadmpeg_ir::features::FiniteVector3::new(span)
+        .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    else {
         return false;
     };
     let parallel_error = (unit.x * span.y - unit.y * span.x).abs();

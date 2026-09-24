@@ -162,16 +162,15 @@ impl Vector3 {
         if self.norm() <= f64::EPSILON {
             return None;
         }
-        self.unit_nonzero()
+        crate::features::FiniteVector3::new(self)?.unit_nonzero()
     }
+}
 
-    /// Unit direction for every finite nonzero vector, including subnormals.
+impl crate::features::FiniteVector3 {
+    /// Unit direction for every nonzero vector, including subnormals.
     /// Callers that impose a geometric length threshold must check it separately.
     #[must_use]
     pub fn unit_nonzero(self) -> Option<Vector3> {
-        if !self.is_finite() {
-            return None;
-        }
         let scale = self.x.abs().max(self.y.abs()).max(self.z.abs());
         if scale == 0.0 {
             return None;
@@ -282,13 +281,14 @@ pub fn power_of_two_bound(value: f64) -> Option<i32> {
 }
 
 /// Compute `left * right / denominator` without intermediate range loss.
-/// Inputs must be finite and the denominator nonzero; the result must be finite.
-pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<FiniteReal> {
-    if ![left, right, denominator].into_iter().all(f64::is_finite) {
-        return None;
-    }
-    let denominator = sum::scaled_finite(denominator)?;
-    match sum::product_sum(std::iter::once(Some([left, right]))) {
+/// The denominator must be nonzero and the result finite.
+pub fn multiply_divide(
+    left: FiniteReal,
+    right: FiniteReal,
+    denominator: FiniteReal,
+) -> Option<FiniteReal> {
+    let denominator = sum::scaled_finite(denominator.get())?;
+    match sum::product_sum(std::iter::once(Some([left.get(), right.get()]))) {
         sum::ProductSum::Value(numerator) => numerator.quotient(denominator),
         sum::ProductSum::Zero => Some(FiniteReal::ZERO),
         sum::ProductSum::Undefined => None,
@@ -320,18 +320,20 @@ pub fn product_quotient<const N: usize, const D: usize>(
 /// Large parameters are exponentiated in thirds before the products are
 /// combined; a small scale can then retain otherwise overflowing values.
 pub fn scaled_sinh_cosh(scale: f64, parameter: f64) -> Option<(FiniteReal, FiniteReal)> {
-    if !scale.is_finite() || !parameter.is_finite() {
+    let finite_scale = FiniteReal::new(scale)?;
+    if !parameter.is_finite() {
         return None;
     }
     if scale == 0.0 {
         return Some((FiniteReal::ZERO, FiniteReal::ZERO));
     }
     let sinh = parameter.sinh();
-    let cosh = parameter.cosh();
-    if cosh.is_finite() {
+    if let Some(cosh) = FiniteReal::new(parameter.cosh()) {
+        // The sinh magnitude stays below cosh, but each is its own rounded
+        // library result, so the sinh is admitted where it is read.
         return Some((
-            multiply_divide(scale, sinh, 1.0)?,
-            multiply_divide(scale, cosh, 1.0)?,
+            multiply_divide(finite_scale, FiniteReal::new(sinh)?, FiniteReal::ONE)?,
+            multiply_divide(finite_scale, cosh, FiniteReal::ONE)?,
         ));
     }
     let third = parameter.abs() / 3.0;
@@ -424,9 +426,9 @@ pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<FiniteReal
     let period = end - start;
     if !period.is_finite() {
         return multiply_divide(
-            wrap_parameter(parameter * 0.5, start * 0.5, end * 0.5)?.get(),
-            2.0,
-            1.0,
+            wrap_parameter(parameter * 0.5, start * 0.5, end * 0.5)?,
+            FiniteReal::TWO,
+            FiniteReal::ONE,
         );
     }
     let relative = parameter - start;
@@ -444,17 +446,18 @@ pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<FiniteReal
     })
 }
 
-/// Reflect a finite parameter about the midpoint of two finite bounds.
+/// Reflect a parameter about the midpoint of two bounds.
 /// The exact sum avoids overflow and cancellation in `start + end - parameter`.
-/// Returns `None` when an input or the reflected result is non-finite.
-pub fn reflect_parameter(parameter: f64, start: f64, end: f64) -> Option<FiniteReal> {
-    if ![parameter, start, end].into_iter().all(f64::is_finite) {
-        return None;
-    }
+/// Returns `None` when the reflected result is non-finite.
+pub fn reflect_parameter(
+    parameter: FiniteReal,
+    start: FiniteReal,
+    end: FiniteReal,
+) -> Option<FiniteReal> {
     let mut sum = sum::ExactSignedSum::default();
-    sum.add_product(start, 1.0);
-    sum.add_product(end, 1.0);
-    sum.add_product(parameter, -1.0);
+    sum.add_product(start.get(), 1.0);
+    sum.add_product(end.get(), 1.0);
+    sum.add_product(parameter.get(), -1.0);
     sum.finish()
         .map_or(Some(FiniteReal::ZERO), sum::ScaledValue::finite)
 }

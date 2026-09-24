@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use std::ops::Range;
 
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point_at};
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
@@ -867,13 +868,13 @@ fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
     if !present {
         return None;
     }
-    let unit = value.unit_nonzero()?;
+    let unit = FiniteVector3::new(value)?.unit_nonzero()?;
     (unit.z > MITER_Z_MINIMUM).then_some(unit)
 }
 
 fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
-    value
-        .unit_nonzero()
+    FiniteVector3::new(value)
+        .and_then(FiniteVector3::unit_nonzero)
         .ok_or_else(|| error(offset, format!("{name} is invalid")))
 }
 

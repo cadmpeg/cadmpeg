@@ -695,11 +695,15 @@ fn line_arc_intersection_points(
     else {
         return Some(points);
     };
-    for (_, point) in parameters {
-        let point = point.get();
-        if cadmpeg_ir::math::planar::point_segment_distance(point, start, end)
-            <= 128.0 * f64::EPSILON * radius
-        {
+    // A segment end that is not finite has no distance to measure.
+    let segment =
+        cadmpeg_ir::units::FinitePoint2::new(start).zip(cadmpeg_ir::units::FinitePoint2::new(end));
+    for (_, finite_point) in parameters {
+        let point = finite_point.get();
+        if segment.is_some_and(|(start, end)| {
+            cadmpeg_ir::math::planar::point_segment_distance(finite_point, start, end)
+                <= 128.0 * f64::EPSILON * radius
+        }) {
             let radial = (point.u - center.u).hypot(point.v - center.v);
             if (radial - radius).abs() <= 128.0 * f64::EPSILON * radius
                 && directed_angle_parameter(

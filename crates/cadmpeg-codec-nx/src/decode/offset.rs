@@ -17,6 +17,7 @@ use cadmpeg_ir::eval::{
     model_surface_point_by_id_with_budget, nurbs_surface_closest_parameter_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, pcurve::PcurveGeometry, IntcurveSupportSide, ProceduralSurfaceDefinition,
     SolvedSurfaceGeometry, SurfaceGeometry,
@@ -810,7 +811,7 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
 }
 
 fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vector3> {
-    let normal = Vector3::unit_nonzero(normal)?;
+    let normal = FiniteVector3::new(normal).and_then(FiniteVector3::unit_nonzero)?;
     Some(if surface.normal_reversed() {
         Vector3::new(-normal.x, -normal.y, -normal.z)
     } else {
@@ -1937,7 +1938,7 @@ fn intersection_parameter_tangent(
     if let Some(tangent) = null_vector_3x4(jacobian) {
         return Some(tangent);
     }
-    let chord = Vector3::unit_nonzero(chord)?;
+    let chord = FiniteVector3::new(chord).and_then(FiniteVector3::unit_nonzero)?;
     let derivatives = [
         [
             Vector3::new(jacobian[0][0], jacobian[1][0], jacobian[2][0]),
@@ -1952,11 +1953,12 @@ fn intersection_parameter_tangent(
     for side in 0..2 {
         let (u, v) = least_squares_step(derivatives[side][0], derivatives[side][1], chord)?;
         let (u, v) = (u.get(), v.get());
-        let mapped = Vector3::unit_nonzero(Vector3::new(
+        let mapped = FiniteVector3::new(Vector3::new(
             derivatives[side][0].x * u + derivatives[side][1].x * v,
             derivatives[side][0].y * u + derivatives[side][1].y * v,
             derivatives[side][0].z * u + derivatives[side][1].z * v,
-        ))?;
+        ))
+        .and_then(FiniteVector3::unit_nonzero)?;
         if mapped.dot(chord) < 1.0 - EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8 {
             return None;
         }

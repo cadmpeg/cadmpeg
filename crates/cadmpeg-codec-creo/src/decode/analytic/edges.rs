@@ -5,6 +5,7 @@ use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
@@ -223,11 +224,14 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             return None;
         };
         reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
+        let [Some(first), Some(second), Some(start), Some(end)] =
+            [first, second, intrinsic_range[0], intrinsic_range[1]].map(FiniteReal::new)
+        else {
+            return None;
+        };
         return Some([
-            cadmpeg_ir::math::reflect_parameter(first, intrinsic_range[0], intrinsic_range[1])?
-                .get(),
-            cadmpeg_ir::math::reflect_parameter(second, intrinsic_range[0], intrinsic_range[1])?
-                .get(),
+            cadmpeg_ir::math::reflect_parameter(first, start, end)?.get(),
+            cadmpeg_ir::math::reflect_parameter(second, start, end)?.get(),
         ]);
     }
 
@@ -257,8 +261,13 @@ fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<
     reversed
         .edit_knots(|knots| {
             for knot in knots {
-                *knot = cadmpeg_ir::math::reflect_parameter(-*knot, range[0], range[1])
-                    .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
+                *knot = match [-*knot, range[0], range[1]].map(FiniteReal::new) {
+                    [Some(knot), Some(start), Some(end)] => {
+                        cadmpeg_ir::math::reflect_parameter(knot, start, end)
+                            .map_or(f64::NAN, FiniteReal::get)
+                    }
+                    _ => f64::NAN,
+                };
             }
         })
         .ok()?;

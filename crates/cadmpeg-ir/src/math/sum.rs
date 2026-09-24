@@ -281,11 +281,8 @@ impl ExactSignedSum {
     pub(crate) fn add_scaled_product(
         &mut self,
         value: Option<ScaledValue>,
-        factor: f64,
+        factor: FiniteReal,
     ) -> Option<()> {
-        if !factor.is_finite() {
-            return None;
-        }
         let Some(value) = value else {
             return Some(());
         };
@@ -295,7 +292,7 @@ impl ExactSignedSum {
             return Some(());
         };
         let Some((factor_negative, factor_significand, factor_exponent)) =
-            finite_significand(factor)
+            finite_significand(factor.get())
         else {
             return Some(());
         };

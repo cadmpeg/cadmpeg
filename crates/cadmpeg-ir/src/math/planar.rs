@@ -62,10 +62,8 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
 /// Distance to a closed segment, with projection from the nearer endpoint.
 /// Reversing that origin retains short offsets when the other endpoint is distant.
 /// Interior distances use the line determinant, without reconstructing a rounded point.
-pub fn point_segment_distance(point: Point2, mut start: Point2, mut end: Point2) -> f64 {
-    if !point.is_finite() || !start.is_finite() || !end.is_finite() {
-        return f64::NAN;
-    }
+pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: FinitePoint2) -> f64 {
+    let (point, mut start, mut end) = (point.get(), start.get(), end.get());
     let distance = |a: Point2, b: Point2| (a.u - b.u).hypot(a.v - b.v);
     let first_distance = distance(point, start);
     let last_distance = distance(point, end);
@@ -96,22 +94,24 @@ pub fn point_segment_distance(point: Point2, mut start: Point2, mut end: Point2)
 /// Intersection of closed segments, with a distance tolerance for endpoint contact.
 /// Proper crossings use exact orientation signs independent of segment length.
 pub fn segments_intersect(a: Point2, b: Point2, c: Point2, d: Point2, tolerance: f64) -> bool {
-    if !tolerance.is_finite()
-        || tolerance < 0.0
-        || [a, b, c, d].iter().any(|point| !point.is_finite())
-    {
+    if !tolerance.is_finite() || tolerance < 0.0 {
         return false;
     }
+    let [Some(finite_a), Some(finite_b), Some(finite_c), Some(finite_d)] =
+        [a, b, c, d].map(FinitePoint2::new)
+    else {
+        return false;
+    };
     let bounds_overlap = |a: f64, b: f64, c: f64, d: f64| {
         a.min(b) <= c.max(d) + tolerance && c.min(d) <= a.max(b) + tolerance
     };
     if !bounds_overlap(a.u, b.u, c.u, d.u) || !bounds_overlap(a.v, b.v, c.v, d.v) {
         return false;
     }
-    if point_segment_distance(a, c, d) <= tolerance
-        || point_segment_distance(b, c, d) <= tolerance
-        || point_segment_distance(c, a, b) <= tolerance
-        || point_segment_distance(d, a, b) <= tolerance
+    if point_segment_distance(finite_a, finite_c, finite_d) <= tolerance
+        || point_segment_distance(finite_b, finite_c, finite_d) <= tolerance
+        || point_segment_distance(finite_c, finite_a, finite_b) <= tolerance
+        || point_segment_distance(finite_d, finite_a, finite_b) <= tolerance
     {
         return true;
     }
@@ -469,12 +469,9 @@ mod tests {
 
     #[test]
     fn numerical_audit_collinear_interior_point_has_zero_segment_distance() {
+        let point = |u, v| FinitePoint2::new(Point2::new(u, v)).unwrap();
         assert_eq!(
-            super::point_segment_distance(
-                Point2::new(1e-200, 0.0),
-                Point2::new(0.0, 0.0),
-                Point2::new(1e-150, 0.0),
-            ),
+            super::point_segment_distance(point(1e-200, 0.0), point(0.0, 0.0), point(1e-150, 0.0)),
             0.0
         );
     }
@@ -751,28 +748,21 @@ mod tests {
     #[test]
     fn numerical_audit_segment_distance_keeps_near_endpoint_offsets() {
         use super::point_segment_distance;
+        let point = |u, v| FinitePoint2::new(Point2::new(u, v)).unwrap();
         for length in [1e-200, 1., 1e200] {
             assert_eq!(
-                point_segment_distance(
-                    Point2::new(length * 0.5, 0.),
-                    Point2::new(0., 0.),
-                    Point2::new(length, 0.)
-                ),
+                point_segment_distance(point(length * 0.5, 0.), point(0., 0.), point(length, 0.)),
                 0.
             );
         }
         assert_eq!(
-            point_segment_distance(
-                Point2::new(-0.001, 0.),
-                Point2::new(-1., 0.),
-                Point2::new(1., 0.)
-            ),
+            point_segment_distance(point(-0.001, 0.), point(-1., 0.), point(1., 0.)),
             0.
         );
-        let a = Point2::new(-1e20, 0.);
-        let b = Point2::new(0., 0.);
-        assert_eq!(point_segment_distance(Point2::new(-0.001, 0.), a, b), 0.);
-        assert_eq!(point_segment_distance(Point2::new(0.001, 0.), a, b), 0.001);
+        let a = point(-1e20, 0.);
+        let b = point(0., 0.);
+        assert_eq!(point_segment_distance(point(-0.001, 0.), a, b), 0.);
+        assert_eq!(point_segment_distance(point(0.001, 0.), a, b), 0.001);
     }
     #[test]
     fn numerical_audit_polygon_area_keeps_translation_and_orientation() {

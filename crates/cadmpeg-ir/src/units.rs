@@ -932,7 +932,9 @@ mod tests {
             Vector3::new(0.577_350_269_2, -0.577_350_269_2, 0.577_350_269_2),
         ] {
             let direction = UnitVector3::new(admitted).expect("admitted direction");
-            let expected = admitted.unit_nonzero().expect("finite nonzero direction");
+            let expected = crate::features::FiniteVector3::new(admitted)
+                .and_then(crate::features::FiniteVector3::unit_nonzero)
+                .expect("finite nonzero direction");
             let charted = *direction.to_unit_length_charted().as_raw();
             assert_eq!(
                 [charted.x, charted.y, charted.z].map(f64::to_bits),

@@ -19,6 +19,7 @@ use cadmpeg_ir::eval::{
     model_surface_partials_by_id_with_budget, model_surface_point_by_id_with_budget,
     pcurve_tangent, pcurve_uv, surface_point_with_budget, EvaluationFailure,
 };
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
@@ -533,11 +534,12 @@ fn blend_surface_parameters_inner(
             depth + 1,
             geometry_budget,
         )?;
-        let radial = Vector3::unit_nonzero(Vector3::new(
+        let radial = FiniteVector3::new(Vector3::new(
             point.x - center.x,
             point.y - center.y,
             point.z - center.z,
-        ))?;
+        ))
+        .and_then(FiniteVector3::unit_nonzero)?;
         let alpha = signed_angle(first, second, tangent);
         if !alpha.is_finite() || alpha.abs() <= EPS_BLEND_EXACT_GEOMETRY {
             return None;
@@ -1632,11 +1634,12 @@ fn spine_contact_direction_with_index_and_budget_and_options(
         contact_seeds,
         geometry_budget,
     )?;
-    Vector3::unit_nonzero(Vector3::new(
+    FiniteVector3::new(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
         contact.z - center.z,
     ))
+    .and_then(FiniteVector3::unit_nonzero)
 }
 
 fn blend_boundary_point_with_index_and_budget(
@@ -1910,11 +1913,12 @@ pub(super) fn blend_surface_parameters_from_point_with_index_and_budget(
             contact_seeds,
             geometry_budget,
         )?;
-    let radial = Vector3::unit_nonzero(Vector3::new(
+    let radial = FiniteVector3::new(Vector3::new(
         point.x - center.x,
         point.y - center.y,
         point.z - center.z,
-    ))?;
+    ))
+    .and_then(FiniteVector3::unit_nonzero)?;
     let alpha = signed_angle(first, second, tangent);
     if !alpha.is_finite() || alpha.abs() <= BLEND_INVERSE_MIN_SWEEP {
         return None;
@@ -2012,7 +2016,7 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
             partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
             partials.du.z * uv_tangent.u + partials.dv.z * uv_tangent.v,
         );
-        let Some(unit) = tangent.unit_nonzero() else {
+        let Some(unit) = FiniteVector3::new(tangent).and_then(FiniteVector3::unit_nonzero) else {
             break;
         };
         let scale = tangent.x.abs().max(tangent.y.abs()).max(tangent.z.abs());
@@ -2926,17 +2930,19 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
             if offset_error > contact_fit_tolerance {
                 continue;
             }
-            let radial = Vector3::new(
+            let Some(radial) = FiniteVector3::new(Vector3::new(
                 reproduced.x - center.x,
                 reproduced.y - center.y,
                 reproduced.z - center.z,
-            );
+            )) else {
+                continue;
+            };
             let radial_length = radial.norm();
             if !radial_length.is_finite() || (radial_length - radius).abs() > contact_fit_tolerance
             {
                 continue;
             }
-            let Some(radial) = Vector3::unit_nonzero(radial) else {
+            let Some(radial) = radial.unit_nonzero() else {
                 continue;
             };
             // The gate is the stated fit tolerance over the stated radius. A
@@ -3446,7 +3452,7 @@ fn surface_contact_direction_with_index_and_budget(
         contact.z - center.z,
     );
     (!requires_radius_certificate || (offset.norm() - radius).abs() <= tolerance)
-        .then(|| Vector3::unit_nonzero(offset))
+        .then(|| FiniteVector3::new(offset).and_then(FiniteVector3::unit_nonzero))
         .flatten()
 }
 
@@ -3463,11 +3469,12 @@ fn blend_surface_contact_direction_with_budget(
         closest_spine_parameter_with_index_and_budget(index, &spine, point, None, geometry_budget)?;
     let frame =
         blend_surface_frame_with_index_and_budget(index, surface, u, depth + 1, geometry_budget)?;
-    let radial = Vector3::unit_nonzero(Vector3::new(
+    let radial = FiniteVector3::new(Vector3::new(
         point.x - frame.0.x,
         point.y - frame.0.y,
         point.z - frame.0.z,
-    ))?;
+    ))
+    .and_then(FiniteVector3::unit_nonzero)?;
     let sweep = signed_angle(frame.2, frame.3, frame.1);
     if !sweep.is_finite() || sweep.abs() <= EPS_BLEND_EXACT_GEOMETRY {
         return None;
@@ -3484,11 +3491,12 @@ fn blend_surface_contact_direction_with_budget(
         .min_by(|first, second| {
             Point3::distance(*first, point).total_cmp(&Point3::distance(*second, point))
         })?;
-    Vector3::unit_nonzero(Vector3::new(
+    FiniteVector3::new(Vector3::new(
         candidate.x - point.x,
         candidate.y - point.y,
         candidate.z - point.z,
     ))
+    .and_then(FiniteVector3::unit_nonzero)
 }
 
 fn model_curve_point_with_index_and_budget(
@@ -3509,9 +3517,7 @@ fn model_curve_tangent_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
     let carrier = index.curves(curve.as_str())?;
-    Vector3::unit_nonzero(
-        curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)?.get(),
-    )
+    curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)?.unit_nonzero()
 }
 
 #[cfg(test)]

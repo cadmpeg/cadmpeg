@@ -5,6 +5,7 @@ use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -44,10 +45,18 @@ pub(in crate::decode) fn intersect_section_lines(
 ) -> Option<[f64; 2]> {
     let (first_origin, first_span) = section_line_origin_direction(first)?;
     let (second_origin, second_span) = section_line_origin_direction(second)?;
-    let first_direction =
-        cadmpeg_ir::math::Vector3::new(first_span.u, first_span.v, 0.0).unit_nonzero()?;
-    let second_direction =
-        cadmpeg_ir::math::Vector3::new(second_span.u, second_span.v, 0.0).unit_nonzero()?;
+    let first_direction = FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+        first_span.u,
+        first_span.v,
+        0.0,
+    ))?
+    .unit_nonzero()?;
+    let second_direction = FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+        second_span.u,
+        second_span.v,
+        0.0,
+    ))?
+    .unit_nonzero()?;
     let determinant = first_direction
         .x
         .mul_add(second_direction.y, -first_direction.y * second_direction.x);
@@ -99,8 +108,7 @@ pub(in crate::decode) fn intersect_section_line_arc(
     )?;
     let endpoint_tolerance = EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get();
     let mut inside = intersections.into_iter().filter(|(_, point)| {
-        cadmpeg_ir::math::planar::point_segment_distance(point.get(), start.get(), end.get())
-            <= endpoint_tolerance
+        cadmpeg_ir::math::planar::point_segment_distance(*point, *start, *end) <= endpoint_tolerance
     });
     let (_, point) = inside.next()?;
     if inside.next().is_some_and(|(_, other)| other != point) {

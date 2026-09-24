@@ -26,6 +26,7 @@ use crate::nurbs::reader::{
 use crate::nurbs::subtypes::subtype_span;
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveNurbs},
     BlendCrossSection, CurveGeometry, RollingBallSide, RollingBallSideExtension,
@@ -306,7 +307,8 @@ pub(super) fn decode_rolling_ball_curve(
                         origin[1] * LEN_TO_MM,
                         origin[2] * LEN_TO_MM,
                     ),
-                    Vector3::unit_nonzero(Vector3::new(direction[0], direction[1], direction[2]))?,
+                    FiniteVector3::new(Vector3::new(direction[0], direction[1], direction[2]))?
+                        .unit_nonzero()?,
                 )
                 .ok()?,
             ))
@@ -326,8 +328,9 @@ pub(super) fn decode_rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        Vector3::unit_nonzero(reference)?,
+                        FiniteVector3::new(Vector3::new(axis[0], axis[1], axis[2]))?
+                            .unit_nonzero()?,
+                        FiniteVector3::new(reference)?.unit_nonzero()?,
                         major_radius,
                     )
                     .ok()?,
@@ -340,8 +343,9 @@ pub(super) fn decode_rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        Vector3::unit_nonzero(reference)?,
+                        FiniteVector3::new(Vector3::new(axis[0], axis[1], axis[2]))?
+                            .unit_nonzero()?,
+                        FiniteVector3::new(reference)?.unit_nonzero()?,
                         major_radius,
                         major_radius * ratio.abs(),
                     )
@@ -547,7 +551,8 @@ pub(super) fn rolling_ball_curve(
                         origin[1] * LEN_TO_MM,
                         origin[2] * LEN_TO_MM,
                     ),
-                    Vector3::unit_nonzero(Vector3::new(direction[0], direction[1], direction[2]))?,
+                    FiniteVector3::new(Vector3::new(direction[0], direction[1], direction[2]))?
+                        .unit_nonzero()?,
                 )
                 .ok()?,
             ))
@@ -567,8 +572,9 @@ pub(super) fn rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        Vector3::unit_nonzero(reference)?,
+                        FiniteVector3::new(Vector3::new(axis[0], axis[1], axis[2]))?
+                            .unit_nonzero()?,
+                        FiniteVector3::new(reference)?.unit_nonzero()?,
                         major_radius,
                     )
                     .ok()?,
@@ -581,8 +587,9 @@ pub(super) fn rolling_ball_curve(
                             center[1] * LEN_TO_MM,
                             center[2] * LEN_TO_MM,
                         ),
-                        Vector3::unit_nonzero(Vector3::new(axis[0], axis[1], axis[2]))?,
-                        Vector3::unit_nonzero(reference)?,
+                        FiniteVector3::new(Vector3::new(axis[0], axis[1], axis[2]))?
+                            .unit_nonzero()?,
+                        FiniteVector3::new(reference)?.unit_nonzero()?,
                         major_radius,
                         major_radius * ratio.abs(),
                     )

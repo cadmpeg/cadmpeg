@@ -2,6 +2,7 @@
 //! `DisplayLists` descriptor tables.
 
 use cadmpeg_ir::math::planar::{point_segment_distance, segments_intersect};
+use cadmpeg_ir::units::FinitePoint2;
 
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
@@ -2365,8 +2366,14 @@ fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2
 }
 
 fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    // A point or edge end that is not finite has no distance to measure.
     if polygon.iter().enumerate().any(|(index, start)| {
-        point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+        match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) <= tolerance
+            }
+            _ => false,
+        }
     }) {
         return true;
     }
@@ -2387,7 +2394,12 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
 fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
     polygon_contains(polygon, point, tolerance)
         && !polygon.iter().enumerate().any(|(index, start)| {
-            point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+            match [point, *start, polygon[(index + 1) % polygon.len()]].map(FinitePoint2::new) {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) <= tolerance
+                }
+                _ => false,
+            }
         })
 }
 
@@ -2474,7 +2486,12 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
         let start = polygon[index];
         let end = polygon[(index + 1) % polygon.len()];
         let cross = signed_area_twice(start, end, point);
-        if point_segment_distance(point, start, end) <= tolerance {
+        if match [point, start, end].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) <= tolerance
+            }
+            _ => false,
+        } {
             continue;
         }
         if sign == 0.0 {
@@ -2489,11 +2506,18 @@ fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) ->
 fn circle_inside_polygon(polygon: &[Point2], hole: CircularHole, tolerance: f64) -> bool {
     polygon_contains(polygon, hole.center, tolerance)
         && (0..polygon.len()).all(|index| {
-            point_segment_distance(
+            match [
                 hole.center,
                 polygon[index],
                 polygon[(index + 1) % polygon.len()],
-            ) >= hole.radius - tolerance
+            ]
+            .map(FinitePoint2::new)
+            {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) >= hole.radius - tolerance
+                }
+                _ => false,
+            }
         })
 }
 
@@ -2594,10 +2618,15 @@ fn triangle_crosses_hole(
     (0..3).any(|index| {
         let start = triangle[index];
         let end = triangle[(index + 1) % 3];
-        point_segment_distance(exclusion.center, start, end) < exclusion.radius - tolerance
-            && ![start, end].iter().all(|point| {
-                (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
-            })
+        let near = match [exclusion.center, start, end].map(FinitePoint2::new) {
+            [Some(point), Some(start), Some(end)] => {
+                point_segment_distance(point, start, end) < exclusion.radius - tolerance
+            }
+            _ => false,
+        };
+        near && ![start, end].iter().all(|point| {
+            (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
+        })
     })
 }
 
@@ -2607,11 +2636,18 @@ fn circle_overlaps_polygon(circle: CircularHole, polygon: &[Point2], tolerance: 
             .iter()
             .any(|point| point_distance(*point, circle.center) < circle.radius + tolerance)
         || (0..polygon.len()).any(|index| {
-            point_segment_distance(
+            match [
                 circle.center,
                 polygon[index],
                 polygon[(index + 1) % polygon.len()],
-            ) < circle.radius + tolerance
+            ]
+            .map(FinitePoint2::new)
+            {
+                [Some(point), Some(start), Some(end)] => {
+                    point_segment_distance(point, start, end) < circle.radius + tolerance
+                }
+                _ => false,
+            }
         })
 }
 

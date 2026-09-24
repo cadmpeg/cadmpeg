@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
@@ -1038,20 +1038,20 @@ fn read_poles(
             .as_mut()
             .map(|target| reader.f64().map(|weight| (target, weight)))
             .transpose()?;
-        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+        let [Some(x), Some(y), Some(z)] = [x, y, z].map(FiniteReal::new) else {
             return Err(error(pole_offset, "NURBS pole is not finite"));
-        }
+        };
         let weight = if let Some((target, weight)) = weight {
-            if !weight.is_finite() || weight == 0.0 {
+            let Some(weight) = NonZeroReal::new(weight) else {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
-            }
-            target.push(weight);
-            weight
+            };
+            target.push(weight.get());
+            FiniteReal::from(weight)
         } else {
-            1.0
+            FiniteReal::ONE
         };
         let coordinate = |value| {
-            cadmpeg_ir::math::multiply_divide(value, scale.value(), weight)
+            cadmpeg_ir::math::multiply_divide(value, scale.real(), weight)
                 .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
         };
         points.push(Point3::new(

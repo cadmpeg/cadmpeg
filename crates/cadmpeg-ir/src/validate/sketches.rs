@@ -1559,10 +1559,18 @@ fn planar_parallel_lines(
     {
         return None;
     }
-    let first_unit =
-        crate::math::Vector3::new(first_direction.u, first_direction.v, 0.0).unit_nonzero()?;
-    let second_unit =
-        crate::math::Vector3::new(second_direction.u, second_direction.v, 0.0).unit_nonzero()?;
+    let first_unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+        first_direction.u,
+        first_direction.v,
+        0.0,
+    ))?
+    .unit_nonzero()?;
+    let second_unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+        second_direction.u,
+        second_direction.v,
+        0.0,
+    ))?
+    .unit_nonzero()?;
     if first_unit.cross(second_unit).norm() > EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9 {
         return None;
     }
@@ -1593,7 +1601,12 @@ fn planar_parallel_line_span_distance(
     let [second_start, second_end] = lines.second;
     let direction =
         crate::math::Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
-    let unit = crate::math::Vector3::new(direction.u, direction.v, 0.0).unit_nonzero()?;
+    let unit = crate::features::FiniteVector3::new(crate::math::Vector3::new(
+        direction.u,
+        direction.v,
+        0.0,
+    ))?
+    .unit_nonzero()?;
     let project = |point: crate::math::Point2| {
         crate::math::sum::finite_dot(
             [point.u, -first_start.u, point.v, -first_start.v],

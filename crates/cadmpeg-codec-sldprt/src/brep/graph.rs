@@ -3612,7 +3612,12 @@ fn derive_spherical_pcurves(
             // With equator = sphere_axis × circle_axis, increasing latitude
             // follows the circle's positive orientation. Its reference fixes
             // the initial latitude, including a reference at either pole.
-            let Some(equator) = v_reference.cross(axis).unit_nonzero() else {
+            let Some(equator) = sphere_surface
+                .frame()
+                .axis()
+                .finite_cross(*circle_curve.frame().axis())
+                .unit_nonzero()
+            else {
                 continue;
             };
             let longitude = equator.dot(tangent).atan2(equator.dot(u_reference));

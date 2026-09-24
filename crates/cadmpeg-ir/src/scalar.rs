@@ -361,6 +361,16 @@ impl Length {
     }
 }
 
+impl PositiveLength {
+    /// The length in canonical millimeters as a dimensionless real, for a
+    /// quotient of lengths. A positive length is finite, so nothing is
+    /// checked.
+    #[must_use]
+    pub const fn magnitude(self) -> FiniteReal {
+        FiniteReal(self.0)
+    }
+}
+
 impl NonZeroLength {
     /// The magnitude. The magnitude of a finite nonzero value is finite and
     /// positive.
@@ -401,6 +411,12 @@ impl FiniteReal {
     pub const ONE: Self = Self(1.0);
     /// Zero.
     pub const ZERO: Self = Self(0.0);
+    /// One half.
+    pub const HALF: Self = Self(0.5);
+    /// Two.
+    pub(crate) const TWO: Self = Self(2.0);
+    /// One full turn in radians.
+    pub(crate) const TAU: Self = Self(std::f64::consts::TAU);
 
     /// Reverse the sign.
     #[must_use]

@@ -3406,7 +3406,8 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
 fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
     let direction = Vector3::new(values[6], values[7], values[8]);
-    let displacement_direction = displacement.unit_nonzero()?;
+    let displacement_direction =
+        cadmpeg_ir::features::FiniteVector3::new(displacement)?.unit_nonzero()?;
     if (direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
         || (stored_normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
     {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{Point2, Point3, Vector3};
+use crate::features::FiniteVector3;
 use crate::scalar::FiniteReal;
 
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
@@ -30,7 +31,14 @@ fn numerical_audit_cross_of_parallel_large_vectors_is_zero() {
 fn numerical_audit_unit_preserves_representable_subnormal_component() {
     let tiny = f64::from_bits(1);
     let vector = Vector3::new(1.0, tiny, 0.0);
-    assert_eq!(vector.unit_nonzero().unwrap().y.to_bits(), tiny.to_bits());
+    assert_eq!(
+        FiniteVector3::new(vector)
+            .and_then(FiniteVector3::unit_nonzero)
+            .unwrap()
+            .y
+            .to_bits(),
+        tiny.to_bits()
+    );
     assert_eq!(vector.unit().unwrap().y.to_bits(), tiny.to_bits());
 }
 
@@ -135,52 +143,55 @@ fn numerical_audit_lengths_and_nonzero_directions_keep_the_finite_range() {
             Point3::new(magnitude, 0.0, 0.0).distance(Point3::new(0.0, 0.0, 0.0)),
             magnitude
         );
-        assert_eq!(vector.unit_nonzero(), Some(Vector3::new(1.0, 0.0, 0.0)));
+        assert_eq!(
+            FiniteVector3::new(vector).and_then(FiniteVector3::unit_nonzero),
+            Some(Vector3::new(1.0, 0.0, 0.0))
+        );
     }
-    let diagonal = Vector3::new(f64::MAX, f64::MAX, 0.0)
-        .unit_nonzero()
+    let diagonal = FiniteVector3::new(Vector3::new(f64::MAX, f64::MAX, 0.0))
+        .and_then(FiniteVector3::unit_nonzero)
         .unwrap();
     assert!((diagonal.norm() - 1.0).abs() <= EPS_UNIT_RESULT);
-    assert!(Vector3::new(0.0, 0.0, 0.0).unit_nonzero().is_none());
-    assert!(Vector3::new(f64::INFINITY, 0.0, 0.0)
-        .unit_nonzero()
+    assert!(FiniteVector3::ZERO.unit_nonzero().is_none());
+    assert!(FiniteVector3::new(Vector3::new(f64::INFINITY, 0.0, 0.0))
+        .and_then(FiniteVector3::unit_nonzero)
         .is_none());
 }
 
 #[test]
 fn numerical_audit_parameter_reflection_preserves_shifted_endpoints() {
+    let finite = |value: f64| FiniteReal::new(value).unwrap();
     for [start, end] in [
         [1.0e16, 1.0e16 + 2.0],
         [1.0e308, 1.1e308],
         [-f64::MAX, f64::MAX],
     ] {
-        assert_eq!(
-            super::reflect_parameter(start, start, end).map(FiniteReal::get),
-            Some(end)
-        );
-        assert_eq!(
-            super::reflect_parameter(end, start, end).map(FiniteReal::get),
-            Some(start)
-        );
+        let [start, end] = [finite(start), finite(end)];
+        assert_eq!(super::reflect_parameter(start, start, end), Some(end));
+        assert_eq!(super::reflect_parameter(end, start, end), Some(start));
     }
     assert_eq!(
-        super::reflect_parameter(0.0, -f64::MAX, f64::MAX).map(FiniteReal::get),
+        super::reflect_parameter(finite(0.0), finite(-f64::MAX), finite(f64::MAX))
+            .map(FiniteReal::get),
         Some(0.0)
     );
-    assert!(super::reflect_parameter(-f64::MAX, 0.0, f64::MAX).is_none());
+    assert!(super::reflect_parameter(finite(-f64::MAX), finite(0.0), finite(f64::MAX)).is_none());
 }
 
 #[test]
 fn numerical_audit_product_quotient_preserves_representable_results() {
+    let finite = |value: f64| FiniteReal::new(value).unwrap();
     assert_eq!(
-        super::multiply_divide(0.0, 1.0e200, 1.0e-200).map(FiniteReal::get),
+        super::multiply_divide(finite(0.0), finite(1.0e200), finite(1.0e-200)).map(FiniteReal::get),
         Some(0.0)
     );
     for value in [f64::from_bits(1), 1.0e-200, 1.0, 1.0e200, f64::MAX] {
-        let result = super::multiply_divide(value, value, value).unwrap().get();
+        let result = super::multiply_divide(finite(value), finite(value), finite(value))
+            .unwrap()
+            .get();
         assert!((result / value - 1.0).abs() <= 4.0 * f64::EPSILON);
     }
-    assert!(super::multiply_divide(1.0, 1.0, 0.0).is_none());
+    assert!(super::multiply_divide(FiniteReal::ONE, FiniteReal::ONE, FiniteReal::ZERO).is_none());
 }
 
 #[test]

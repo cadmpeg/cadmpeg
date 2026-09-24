@@ -1003,8 +1003,11 @@ fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> b
 }
 
 fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
-    let (Some(normal), Some(plane_normal)) = (normal.unit_nonzero(), plane_normal.unit_nonzero())
-    else {
+    let unit = |vector| {
+        cadmpeg_ir::features::FiniteVector3::new(vector)
+            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+    };
+    let (Some(normal), Some(plane_normal)) = (unit(normal), unit(plane_normal)) else {
         return false;
     };
     normal.cross(plane_normal).norm() <= CURVE_PLANE_NORMAL_EPSILON

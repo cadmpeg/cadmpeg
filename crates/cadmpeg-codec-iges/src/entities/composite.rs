@@ -18,6 +18,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
@@ -506,7 +507,14 @@ fn reverse_nurbs(
     }
     let domain_start = curve.knots()[degree];
     let domain_end = curve.knots()[control_count];
-    if !domain_start.is_finite() || !domain_end.is_finite() || domain_start >= domain_end {
+    let (Some(lower), Some(upper)) = (FiniteReal::new(domain_start), FiniteReal::new(domain_end))
+    else {
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
+            domain_start,
+            domain_end,
+        });
+    };
+    if domain_start >= domain_end {
         return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
             domain_start,
             domain_end,
@@ -521,8 +529,9 @@ fn reverse_nurbs(
         });
     }
     let reflect = |parameter| {
-        cadmpeg_ir::math::reflect_parameter(parameter, domain_start, domain_end)
-            .map(cadmpeg_ir::scalar::FiniteReal::get)
+        FiniteReal::new(parameter)
+            .and_then(|parameter| cadmpeg_ir::math::reflect_parameter(parameter, lower, upper))
+            .map(FiniteReal::get)
             .ok_or(CompositeCurveError::ReversedChildReflectionNonFinite {
                 domain_start,
                 domain_end,
@@ -1207,10 +1216,15 @@ fn concatenate_nurbs<T>(
             *weight = if scaled.is_finite() && scaled > 0.0 {
                 scaled
             } else {
-                cadmpeg_ir::math::multiply_divide(*weight, previous_weight, join_weight)
-                    .filter(|weight| weight.get() > 0.0)
-                    .ok_or(CompositeCurveError::JoinWeightScale { scale })?
-                    .get()
+                match [*weight, previous_weight, join_weight].map(FiniteReal::new) {
+                    [Some(weight), Some(previous_weight), Some(join_weight)] => {
+                        cadmpeg_ir::math::multiply_divide(weight, previous_weight, join_weight)
+                    }
+                    _ => None,
+                }
+                .filter(|weight| weight.get() > 0.0)
+                .ok_or(CompositeCurveError::JoinWeightScale { scale })?
+                .get()
             };
         }
         if degree_usize == 0 {

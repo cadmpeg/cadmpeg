@@ -573,11 +573,13 @@ fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
         planar::{orientation, point_segment_distance},
         Point2,
     };
+    use cadmpeg_ir::units::FinitePoint2;
     use std::cmp::Ordering;
     if polygon.len() < 3 {
         return false;
     }
     let point = Point2::new(point[0], point[1]);
+    let finite_point = FinitePoint2::new(point);
     let mut inside = false;
     for index in 0..polygon.len() {
         let first = polygon[index];
@@ -585,7 +587,18 @@ fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
         let first = Point2::new(first[0], first[1]);
         let second = Point2::new(second[0], second[1]);
         let length = (second.u - first.u).hypot(second.v - first.v);
-        if point_segment_distance(point, first, second) <= EPS_AGREE * length {
+        // A point or edge end that is not finite has no distance to measure.
+        let on_edge = match [
+            finite_point,
+            FinitePoint2::new(first),
+            FinitePoint2::new(second),
+        ] {
+            [Some(point), Some(first), Some(second)] => {
+                point_segment_distance(point, first, second) <= EPS_AGREE * length
+            }
+            _ => false,
+        };
+        if on_edge {
             return false;
         }
         if (first.v > point.v) != (second.v > point.v) {

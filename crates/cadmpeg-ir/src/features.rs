@@ -207,6 +207,43 @@ impl From<UnitVector3> for FiniteVector3 {
     }
 }
 
+impl UnitVector3 {
+    /// The cross product with another unit direction. Each component is a
+    /// difference of two products of components within rounding of one, so
+    /// it is finite and nothing is checked. The route lives beside
+    /// [`FiniteVector3`] because only this module constructs one.
+    #[must_use]
+    pub fn finite_cross(self, other: UnitVector3) -> FiniteVector3 {
+        FiniteVector3(self.as_raw().cross(*other.as_raw()))
+    }
+}
+
+impl Transform {
+    /// The translation column. The transform admits only finite entries, so
+    /// nothing is checked. The route lives beside [`FiniteVector3`] because
+    /// only this module constructs one.
+    #[must_use]
+    pub fn translation(self) -> FiniteVector3 {
+        let rows = self.affine_rows();
+        FiniteVector3(Vector3::new(rows[0][3], rows[1][3], rows[2][3]))
+    }
+
+    /// The columns of the linear part. The transform admits only finite
+    /// entries, so nothing is checked. The route lives beside
+    /// [`FiniteVector3`] because only this module constructs one.
+    #[must_use]
+    pub fn linear_columns(self) -> [FiniteVector3; 3] {
+        let rows = self.affine_rows();
+        std::array::from_fn(|column| {
+            FiniteVector3(Vector3::new(
+                rows[0][column],
+                rows[1][column],
+                rows[2][column],
+            ))
+        })
+    }
+}
+
 impl From<FeatureDirection3> for FiniteVector3 {
     /// Carry an admitted direction as a finite displacement. A finite squared
     /// norm states finite components, so no admission can refuse it.
