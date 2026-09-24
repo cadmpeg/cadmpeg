@@ -343,6 +343,26 @@ impl ExtrusionSurfaceConstruction {
             cache,
         })
     }
+    /// Build the construction with a legacy cache contract from admitted
+    /// parts. The interval, direction and position types state finiteness,
+    /// and a legacy cache contract has no condition of its own, so nothing is
+    /// checked.
+    #[must_use]
+    pub const fn legacy(
+        directrix: CurveId,
+        parameter_interval: Option<FiniteVector<2>>,
+        direction: FiniteVector3,
+        native_position: Option<FinitePoint3>,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            directrix,
+            parameter_interval,
+            direction,
+            native_position,
+            cache: CacheContract::Legacy { cache },
+        }
+    }
     /// Return the directrix.
     pub fn directrix(&self) -> &CurveId {
         &self.directrix

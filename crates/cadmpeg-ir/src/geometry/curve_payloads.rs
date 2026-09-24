@@ -403,6 +403,28 @@ struct OffsetCurveConstructionWire {
 }
 
 impl OffsetCurveConstruction {
+    /// Build a uniform offset along an explicit direction from admitted
+    /// parts. The distance type states finiteness, a unit direction is finite
+    /// and nonzero, which is the whole side condition of [`Self::try_new`],
+    /// and a uniform range has no law, so nothing is checked.
+    #[must_use]
+    pub fn along_direction(
+        source: CurveId,
+        distance: FiniteReal,
+        direction: crate::units::UnitVector3,
+        support: Option<SurfaceId>,
+        parameter_range: crate::topology::IncreasingParameterInterval,
+    ) -> Self {
+        Self {
+            source,
+            distance,
+            side: crate::geometry::OffsetSide::Direction {
+                direction: *direction.as_raw(),
+                support,
+            },
+            range: Some(crate::geometry::CurveOffsetRange::Uniform { parameter_range }),
+        }
+    }
     /// Admit the construction parameters. The range and law interval types
     /// state the interval contract; the side, the law distances and the
     /// distance are checked here.

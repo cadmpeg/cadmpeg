@@ -44,7 +44,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(translated)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
         [10.0, 20.0],
-        [0.0, 10.0],
+        crate::test_support::test_b5::increasing([0.0, 10.0]),
         &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -65,7 +65,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         curve_on_parameter_range(
             line,
             [10.0, 20.0],
-            [0.0, 10.0],
+            crate::test_support::test_b5::increasing([0.0, 10.0]),
             &"test record",
             &mut crate::nurbs::LaneRefusals::new()
         ),
@@ -81,7 +81,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
         curve_on_parameter_range(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone())),
             [10.0, 20.0],
-            [12.0, 18.0],
+            crate::test_support::test_b5::increasing([12.0, 18.0]),
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ),
@@ -92,7 +92,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(scaled)) = curve_on_parameter_range(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
         [10.0, 20.0],
-        [0.0, 2.0],
+        crate::test_support::test_b5::increasing([0.0, 2.0]),
         &"test record",
         &mut crate::nurbs::LaneRefusals::new(),
     )
@@ -110,7 +110,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
                 .expect("valid LineCurve fixture")
             )),
             [10.0, 20.0],
-            [0.0, 2.0],
+            crate::test_support::test_b5::increasing([0.0, 2.0]),
             &"test record",
             &mut crate::nurbs::LaneRefusals::new(),
         ),
@@ -165,7 +165,10 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             source_surface: 50,
             distance: crate::test_support::test_b5::finite(1.0),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 1.0]]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [0.0, 1.0],
+                [0.0, 1.0],
+            ]),
         },
     )]);
     let supported = BTreeMap::from([(
@@ -185,8 +188,11 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
         50,
         B5ExtrusionSurface {
             object_id: 50,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 2.0]]),
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [0.0, 1.0],
+                [0.0, 2.0],
+            ]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 80,
                 supports: [
@@ -202,7 +208,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                     ),
                 ],
                 parameter_range: [0.0, 1.0],
-                cache_fit_tolerance: 1.0e-6,
+                cache_fit_tolerance: crate::test_support::test_b5::positive(1.0e-6),
             },
         },
     )]);
@@ -223,7 +229,10 @@ fn surface_closure_follows_aliases_to_native_constructions() {
             source_surface: 40,
             distance: crate::test_support::test_b5::finite(2.0),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 2.0]]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+                [0.0, 1.0],
+                [0.0, 2.0],
+            ]),
         },
     )]);
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);

@@ -59,6 +59,14 @@ impl<const N: usize> FiniteVector<N> {
     }
 }
 
+impl From<crate::topology::IncreasingParameterInterval> for FiniteVector<2> {
+    /// Carry an increasing interval's endpoints. The interval admits only
+    /// finite endpoints, so nothing is checked.
+    fn from(value: crate::topology::IncreasingParameterInterval) -> Self {
+        Self(value.endpoints())
+    }
+}
+
 /// Finite coordinates whose squared norm exceeds machine epsilon.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NonzeroVector<const N: usize>([f64; N]);
@@ -1265,6 +1273,20 @@ mod tests {
             .expect("perpendicular to 1e-9")
             .binormal();
         assert_eq!(UnitVector3::new(*binormal.as_raw()), Some(binormal));
+    }
+
+    #[test]
+    fn increasing_intervals_and_unit_directions_carry_into_finite_vectors() {
+        use crate::features::FiniteVector3;
+        use crate::topology::IncreasingParameterInterval;
+
+        let interval = IncreasingParameterInterval::new([-2.0, 0.5]).expect("increasing");
+        assert_eq!(FiniteVector::<2>::from(interval).get(), [-2.0, 0.5]);
+        let direction = UnitVector3::new(Vector3::new(0.0, -0.6, 0.8)).expect("unit");
+        assert_eq!(
+            FiniteVector3::from(direction),
+            FiniteVector3::new(Vector3::new(0.0, -0.6, 0.8)).expect("finite")
+        );
     }
 
     #[test]

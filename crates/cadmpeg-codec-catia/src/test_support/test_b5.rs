@@ -82,11 +82,11 @@ pub(crate) fn increasing(endpoints: [f64; 2]) -> cadmpeg_ir::topology::Increasin
         .expect("increasing fixture interval")
 }
 
-/// Admit finite fixture parameter bounds.
-pub(crate) fn finite_bounds(bounds: [[f64; 2]; 2]) -> [[cadmpeg_ir::scalar::FiniteReal; 2]; 2] {
-    bounds.map(|pair| {
-        pair.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture bound"))
-    })
+/// Admit increasing fixture parameter bounds.
+pub(crate) fn increasing_bounds(
+    bounds: [[f64; 2]; 2],
+) -> [cadmpeg_ir::topology::IncreasingParameterInterval; 2] {
+    bounds.map(increasing)
 }
 
 pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {

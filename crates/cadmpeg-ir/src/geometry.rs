@@ -6620,6 +6620,22 @@ impl IntcurveSupportContext {
         })
     }
 
+    /// Build a support context over an increasing interval with no
+    /// discontinuities. The interval type states finite, ordered and nonzero
+    /// endpoints, which is the whole interval condition of [`Self::try_new`],
+    /// so nothing is checked.
+    #[must_use]
+    pub fn over_interval(
+        sides: [IntcurveSupportSide; 2],
+        parameter_range: crate::topology::IncreasingParameterInterval,
+    ) -> Self {
+        Self {
+            sides,
+            parameter_range: parameter_range.endpoints(),
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+
     /// Set a support surface without changing its pcurve mapping.
     pub fn set_surface(&mut self, side: usize, surface: Option<SurfaceId>) {
         self.sides[side].surface = surface;

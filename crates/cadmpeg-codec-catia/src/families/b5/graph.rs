@@ -444,8 +444,8 @@ pub(in crate::families) struct B5OffsetSurface {
     pub(super) distance: FiniteReal,
     /// Native carrier-kind discriminator.
     pub(super) carrier_kind: B5OffsetCarrierKind,
-    /// Ordered native U and V bounds.
-    pub(super) parameter_bounds: [[FiniteReal; 2]; 2],
+    /// Increasing native U and V bounds.
+    pub(super) parameter_bounds: [IncreasingParameterInterval; 2],
 }
 
 /// A `b5 03 2c` extrusion construction with a two-support directrix.
@@ -454,9 +454,9 @@ pub(in crate::families) struct B5ExtrusionSurface {
     /// This construction's result surface id.
     pub(super) object_id: u32,
     /// Unit world-space extrusion direction.
-    pub(super) direction: [f64; 3],
+    pub(super) direction: UnitVector3,
     /// Increasing native U and V intervals.
-    pub(super) parameter_bounds: [[FiniteReal; 2]; 2],
+    pub(super) parameter_bounds: [IncreasingParameterInterval; 2],
     /// Exact directrix construction.
     pub(super) directrix: B5ExtrusionDirectrix,
 }
@@ -473,7 +473,7 @@ pub(super) enum B5ExtrusionDirectrix {
         /// Increasing solved-curve parameter range.
         parameter_range: [f64; 2],
         /// Positive fit tolerance of the serialized sampled cache.
-        cache_fit_tolerance: f64,
+        cache_fit_tolerance: PositiveReal,
     },
     /// One-support curve carried by a `b5 03 24` wrapper.
     SurfaceCurve {
@@ -492,10 +492,10 @@ pub(super) enum B5ExtrusionDirectrix {
         source: Box<B5ExtrusionDirectrix>,
         /// Increasing interval on the source curve.
         source_parameter_range: [f64; 2],
-        /// Signed offset distance.
-        distance: f64,
+        /// Signed nonzero offset distance.
+        distance: FiniteReal,
         /// Unit direction defining the positive offset side.
-        direction: [f64; 3],
+        direction: UnitVector3,
         /// Increasing result-curve parameter range.
         parameter_range: [f64; 2],
     },
@@ -3120,15 +3120,19 @@ fn parse_offset_surface_fields(record: &B5Record) -> Option<B5OffsetSurface> {
     position += 8;
     let carrier_kind = B5OffsetCarrierKind::from_byte(*record.payload.get(position)?)?;
     position += 1;
-    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?;
+    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?.map(FiniteReal::get);
     position += 32;
-    (position == record.payload.len() && u0 < u1 && v0 < v1).then_some(B5OffsetSurface {
+    (position == record.payload.len()).then_some(())?;
+    Some(B5OffsetSurface {
         object_id: record.object_id,
         carrier_surface,
         source_surface,
         distance,
         carrier_kind,
-        parameter_bounds: [[u0, u1], [v0, v1]],
+        parameter_bounds: [
+            IncreasingParameterInterval::new([u0, u1])?,
+            IncreasingParameterInterval::new([v0, v1])?,
+        ],
     })
 }
 
@@ -3138,14 +3142,15 @@ fn parse_offset_surface(
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
     records: &HashMap<u32, &B5Record>,
 ) -> Option<B5OffsetSurface> {
+    let fields = parse_offset_surface_fields(record)?;
     let B5OffsetSurface {
-        object_id,
         carrier_surface,
         source_surface,
         distance,
         carrier_kind,
-        parameter_bounds: [[u0, u1], [v0, v1]],
-    } = parse_offset_surface_fields(record)?;
+        parameter_bounds: [u_bounds, v_bounds],
+        ..
+    } = fields;
     if carrier_kind == B5OffsetCarrierKind::Extrusion {
         if let (Some(source), Some(carrier)) = (
             extrusion_surfaces.get(&source_surface),
@@ -3155,16 +3160,9 @@ fn parse_offset_surface(
                 source,
                 carrier,
                 distance,
-                [[u0, u1], [v0, v1]],
+                [u_bounds, v_bounds],
             )
-            .then_some(B5OffsetSurface {
-                object_id,
-                carrier_surface,
-                source_surface,
-                distance,
-                carrier_kind,
-                parameter_bounds: [[u0, u1], [v0, v1]],
-            });
+            .then_some(fields);
         }
     }
     let expected_kind = match surfaces.get(&carrier_surface) {
@@ -3207,56 +3205,42 @@ fn parse_offset_surface(
                     .and_then(|record| extrusion_carrier(record)),
             ) {
                 if carrier.direction != source.direction
-                    || carrier.parameter_bounds != [[v0, v1], [u0, u1]]
+                    || carrier.u_bounds != v_bounds
+                    || carrier.v_bounds != Some(u_bounds)
                 {
                     return None;
                 }
-                return (carrier_kind == B5OffsetCarrierKind::Extrusion).then_some(
-                    B5OffsetSurface {
-                        object_id,
-                        carrier_surface,
-                        source_surface,
-                        distance,
-                        carrier_kind,
-                        parameter_bounds: [[u0, u1], [v0, v1]],
-                    },
-                );
+                return (carrier_kind == B5OffsetCarrierKind::Extrusion).then_some(fields);
             }
             let cache = parse_offset_cache(records.get(&carrier_surface)?)?;
             let source = surfaces.get(&source_surface)?;
             let cached_source = surfaces.get(&cache.source_surface)?;
+            let [u0, u1] = u_bounds.endpoints();
+            let [v0, v1] = v_bounds.endpoints();
             if source != cached_source
                 || distance.get().to_bits() != cache.distance.to_bits()
                 || [u0, v0, u1, v1]
                     .into_iter()
                     .zip(cache.interleaved_bounds)
-                    .any(|(left, right)| left.get().to_bits() != right.to_bits())
+                    .any(|(left, right)| left.to_bits() != right.to_bits())
             {
                 return None;
             }
             B5OffsetCarrierKind::Cache
         }
     };
-    (carrier_kind == expected_kind).then_some(B5OffsetSurface {
-        object_id,
-        carrier_surface,
-        source_surface,
-        distance,
-        carrier_kind,
-        parameter_bounds: [[u0, u1], [v0, v1]],
-    })
+    (carrier_kind == expected_kind).then_some(fields)
 }
 
 fn extrusion_offset_construction_agrees(
     source: &B5ExtrusionSurface,
     carrier: &B5ExtrusionSurface,
     distance: FiniteReal,
-    parameter_bounds: [[FiniteReal; 2]; 2],
+    [u_bounds, v_bounds]: [IncreasingParameterInterval; 2],
 ) -> bool {
     if carrier.direction != source.direction {
         return false;
     }
-    let [[u0, u1], [v0, v1]] = parameter_bounds;
     let B5ExtrusionDirectrix::Offset {
         source: offset_source,
         source_parameter_range,
@@ -3266,7 +3250,7 @@ fn extrusion_offset_construction_agrees(
         ..
     } = &carrier.directrix
     else {
-        return carrier.parameter_bounds == [[v0, v1], [u0, u1]];
+        return carrier.parameter_bounds == [v_bounds, u_bounds];
     };
     offset_source.object_id() == source.directrix.object_id()
         && offset_source.supports().first().is_some_and(|support| {
@@ -3276,17 +3260,18 @@ fn extrusion_offset_construction_agrees(
                 .zip(support.2)
                 .all(|(left, right)| left.to_bits() == right.get().to_bits())
         })
-        && curve_distance.to_bits() == distance.get().to_bits()
+        && curve_distance.get().to_bits() == distance.get().to_bits()
         && *direction == source.direction
         && carrier.parameter_bounds[0]
+            .endpoints()
             .into_iter()
-            .zip([v0, v1])
-            .all(|(left, right)| left.get().to_bits() == right.get().to_bits())
+            .zip(v_bounds.endpoints())
+            .all(|(left, right)| left.to_bits() == right.to_bits())
         && parameter_range
             .iter()
             .copied()
-            .zip([u0, u1])
-            .all(|(left, right)| left.to_bits() == right.get().to_bits())
+            .zip(u_bounds.endpoints())
+            .all(|(left, right)| left.to_bits() == right.to_bits())
 }
 
 fn analytic_offset_magnitude_agrees(
@@ -3485,7 +3470,27 @@ fn parse_extrusion_surface_with_context(
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Option<B5ExtrusionSurface> {
     let carrier = extrusion_carrier(record)?;
-    let active = carrier.parameter_bounds[1].map(FiniteReal::get);
+    let Some(active_bounds) = carrier.v_bounds else {
+        let directrix = parse_extrusion_directrix(
+            records.get(&carrier.directrix_id)?,
+            records,
+            object_stream_pcurves,
+        )?;
+        let parameter_bounds = contextual_offset_extrusion_bounds(
+            record.object_id,
+            &carrier,
+            &directrix,
+            offset_constructions,
+            extrusion_surfaces,
+        )?;
+        return Some(B5ExtrusionSurface {
+            object_id: record.object_id,
+            direction: carrier.direction,
+            parameter_bounds,
+            directrix,
+        });
+    };
+    let active = active_bounds.endpoints();
     let terminal_span_chart = matches!(carrier.controls, [0x05, 0x15 | 0x19]);
     let mut directrix = if terminal_span_chart {
         terminal_span_directrix(
@@ -3501,21 +3506,6 @@ fn parse_extrusion_surface_with_context(
             object_stream_pcurves,
         )?
     };
-    if matches!(carrier.controls, [0x01, 0x09 | 0x15]) {
-        let parameter_bounds = contextual_offset_extrusion_bounds(
-            record.object_id,
-            &carrier,
-            &directrix,
-            offset_constructions,
-            extrusion_surfaces,
-        )?;
-        return Some(B5ExtrusionSurface {
-            object_id: record.object_id,
-            direction: carrier.direction,
-            parameter_bounds,
-            directrix,
-        });
-    }
     let directrix_contains_active = active.into_iter().all(|value| {
         cadmpeg_ir::math::parameter_in_domain(
             value,
@@ -3554,7 +3544,7 @@ fn parse_extrusion_surface_with_context(
     Some(B5ExtrusionSurface {
         object_id: record.object_id,
         direction: carrier.direction,
-        parameter_bounds: carrier.parameter_bounds,
+        parameter_bounds: [carrier.u_bounds, active_bounds],
         directrix,
     })
 }
@@ -3565,7 +3555,7 @@ fn contextual_offset_extrusion_bounds(
     directrix: &B5ExtrusionDirectrix,
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
-) -> Option<[[FiniteReal; 2]; 2]> {
+) -> Option<[IncreasingParameterInterval; 2]> {
     let B5ExtrusionDirectrix::Offset {
         source,
         distance,
@@ -3589,9 +3579,9 @@ fn contextual_offset_extrusion_bounds(
         if source.object_id() != source_extrusion.directrix.object_id()
             || carrier.direction != source_extrusion.direction
             || *direction != source_extrusion.direction
-            || distance.to_bits() != construction.distance.get().to_bits()
-            || carrier.parameter_bounds[0] != bounds[0]
-            || *parameter_range != bounds[1].map(FiniteReal::get)
+            || distance.get().to_bits() != construction.distance.get().to_bits()
+            || carrier.u_bounds != bounds[0]
+            || *parameter_range != bounds[1].endpoints()
         {
             return None;
         }
@@ -3688,8 +3678,12 @@ fn parameter_spans_agree(left: f64, right: f64) -> bool {
 
 struct B5ExtrusionCarrier {
     directrix_id: u32,
-    direction: [f64; 3],
-    parameter_bounds: [[FiniteReal; 2]; 2],
+    direction: UnitVector3,
+    u_bounds: IncreasingParameterInterval,
+    /// The increasing V interval, absent on a contextual offset chart, which
+    /// stores its V bounds in decreasing order and takes its chart from the
+    /// offset construction.
+    v_bounds: Option<IncreasingParameterInterval>,
     controls: [u8; 2],
 }
 
@@ -3701,24 +3695,26 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     let values = read_f64_array::<9>(&record.payload, position)?;
     position += 72;
     let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
-    let direction = [values[0], values[1], values[2]].map(FiniteReal::get);
+    let values = values.map(FiniteReal::get);
     let contextual_offset_chart = matches!(controls, [0x01, 0x09 | 0x15]);
     ((matches!(controls, [0x05, 0x05 | 0x11 | 0x15 | 0x19])
         || contextual_offset_chart
         || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
-        && direction_is_unit(direction)
-        && values[3] < values[4]
-        && values[5].get().to_bits() == 1.0f64.to_bits()
-        && values[6].get().to_bits() == 0.0f64.to_bits()
-        && if contextual_offset_chart {
-            values[7] > values[8]
-        } else {
-            values[7] < values[8]
-        })
-    .then_some(B5ExtrusionCarrier {
+        && values[5].to_bits() == 1.0f64.to_bits()
+        && values[6].to_bits() == 0.0f64.to_bits())
+    .then_some(())?;
+    let direction = ExactUnitVector3::new([values[0], values[1], values[2]])?.into();
+    let u_bounds = IncreasingParameterInterval::new([values[3], values[4]])?;
+    let v_bounds = if contextual_offset_chart {
+        (values[7] > values[8]).then_some(None)?
+    } else {
+        Some(IncreasingParameterInterval::new([values[7], values[8]])?)
+    };
+    Some(B5ExtrusionCarrier {
         directrix_id,
         direction,
-        parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
+        u_bounds,
+        v_bounds,
         controls,
     })
 }
@@ -3742,11 +3738,8 @@ fn parse_extrusion_directrix(
     let tail = record.payload.len().checked_sub(25)?;
     (position < tail).then_some(())?;
     let parameter_range = read_f64_array::<2>(&record.payload, tail)?.map(FiniteReal::get);
-    let cache_fit_tolerance = f64_le(&record.payload, tail + 16)?.get();
-    if record.payload.get(tail + 24) != Some(&0x01)
-        || parameter_range[0] >= parameter_range[1]
-        || cache_fit_tolerance <= 0.0
-    {
+    let cache_fit_tolerance = PositiveReal::new(f64_le(&record.payload, tail + 16)?.get())?;
+    if record.payload.get(tail + 24) != Some(&0x01) || parameter_range[0] >= parameter_range[1] {
         return None;
     }
     let wrapper = records.get(&wrapper_id)?;
@@ -3849,10 +3842,9 @@ fn parse_offset_curve_directrix(
         return None;
     }
     position += 1;
-    let [distance, x, y, z, start, end] =
-        read_f64_array::<6>(&record.payload, position)?.map(FiniteReal::get);
+    let [distance, x, y, z, start, end] = read_f64_array::<6>(&record.payload, position)?;
+    let [x, y, z, start, end] = [x, y, z, start, end].map(FiniteReal::get);
     position += 48;
-    let direction = [x, y, z];
     let source_record = records.get(&source_id)?;
     if !((source_record.family == 0xb5 && source_record.class == 0x24)
         || (source_record.family == 0xa8 && source_record.class == 0x25))
@@ -3860,9 +3852,9 @@ fn parse_offset_curve_directrix(
         return None;
     }
     let source = parse_extrusion_directrix(source_record, records, object_stream_pcurves)?;
+    let direction = ExactUnitVector3::new([x, y, z])?.into();
     if position != record.payload.len()
-        || distance == 0.0
-        || !direction_is_unit(direction)
+        || distance.get() == 0.0
         || source_parameter_range[0] >= source_parameter_range[1]
         || start >= end
         || !source.supports().iter().any(|support| {

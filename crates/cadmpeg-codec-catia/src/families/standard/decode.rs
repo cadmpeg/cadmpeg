@@ -926,9 +926,9 @@ fn emit_standard_extrusion_definition(
     procedural_supports: &mut HashMap<u32, SurfaceId>,
     extrusion_definitions: &mut HashMap<u32, ProceduralSurfaceDefinition>,
     extrusion: crate::families::b5::transfer::ResolvedExtrusionSurface,
-) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
+) -> ProceduralSurfaceDefinition {
     if let Some(definition) = extrusion_definitions.get(&extrusion.surface_object_id) {
-        return Ok(definition.clone());
+        return definition.clone();
     }
     let surface_object_id = extrusion.surface_object_id;
     let directrix_id = CurveId::compose(
@@ -951,9 +951,10 @@ fn emit_standard_extrusion_definition(
                     )),
                     pcurve: Some(SupportPcurve::new(
                         side.pcurve,
-                        (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
-                            .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                            .flatten(),
+                        (side.pcurve_parameter_range
+                            != extrusion.directrix_parameter_range.endpoints())
+                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                        .flatten(),
                     )),
                 }
             };
@@ -990,17 +991,14 @@ fn emit_standard_extrusion_definition(
             let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext::try_new(
+                    context: IntcurveSupportContext::over_interval(
                         sides,
                         extrusion.directrix_parameter_range,
-                        std::array::from_fn(|_| Vec::new()),
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                    discontinuity_flag: false,
-                    cache: Some(
-                        cadmpeg_ir::geometry::LegacyCache::try_new(cache_fit_tolerance)
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    discontinuity_flag: false,
+                    cache: Some(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::scalar::NonNegativeReal::from(cache_fit_tolerance).into(),
+                    )),
                 },
             );
 
@@ -1079,48 +1077,36 @@ fn emit_standard_extrusion_definition(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
-            let side = cadmpeg_ir::geometry::OffsetSide::Direction {
-                direction,
-                support: Some(standard_extrusion_support_id(
-                    annotations,
-                    surfaces,
-                    procedural_supports,
-                    &support,
-                )),
-            };
+            let support =
+                standard_extrusion_support_id(annotations, surfaces, procedural_supports, &support);
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                cadmpeg_ir::geometry::CurveOffsetRange::uniform(source_parameter_range)
-                    .and_then(|range| {
-                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                ProceduralCurve::new(
+                    procedure_id,
+                    ProceduralCurveDefinition::Offset(
+                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
                             source_id,
                             distance,
-                            side,
-                            Some(range),
-                        )
-                    })
-                    .map(|admitted_payload| {
-                        ProceduralCurve::new(
-                            procedure_id,
-                            ProceduralCurveDefinition::Offset(admitted_payload),
-                        )
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                            direction,
+                            Some(support),
+                            source_parameter_range,
+                        ),
+                    ),
+                ),
             );
         }
     }
     let definition = ProceduralSurfaceDefinition::Extrusion(
-        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
             directrix_id,
-            Some(extrusion.directrix_parameter_range),
-            extrusion.direction,
+            Some(extrusion.directrix_parameter_range.into()),
+            extrusion.direction.into(),
             None,
-            cadmpeg_ir::geometry::CacheContract::from_form(None),
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+            None,
+        ),
     );
     extrusion_definitions.insert(surface_object_id, definition.clone());
-    Ok(definition)
+    definition
 }
 
 fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
@@ -1983,8 +1969,7 @@ fn try_decode_standard_population(
                             &mut procedural_supports,
                             &mut extrusion_definitions,
                             *extrusion,
-                        )
-                        .ok()?;
+                        );
                         let construction = ProceduralSurfaceId::compose(
                             &cadmpeg_ir::identity_namespace!(
                                 "catia",
@@ -2055,8 +2040,7 @@ fn try_decode_standard_population(
                     &mut procedural_supports,
                     &mut extrusion_definitions,
                     *extrusion,
-                )
-                .ok()?;
+                );
                 (
                     "object_stream_b5_03_2c",
                     carrier,
@@ -2696,7 +2680,7 @@ pub(super) enum StandardSurfaceProcedure {
         support_object_id: u32,
         support: crate::families::b5::transfer::ResolvedOffsetSupport,
         distance: FiniteReal,
-        parameter_bounds: [[FiniteReal; 2]; 2],
+        parameter_bounds: [cadmpeg_ir::topology::IncreasingParameterInterval; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
     Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),

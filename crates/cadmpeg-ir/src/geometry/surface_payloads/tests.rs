@@ -1902,3 +1902,53 @@ fn a_legacy_revolution_from_admitted_parts_matches_its_raw_admission() {
         );
     }
 }
+
+#[test]
+fn a_legacy_extrusion_from_admitted_parts_matches_its_raw_admission() {
+    use super::ExtrusionSurfaceConstruction;
+    use crate::features::{FinitePoint3, FiniteVector3};
+    use crate::geometry::{CacheContract, FitTolerance, LegacyCache};
+    use crate::ids::CurveId;
+    use crate::math::{Point3, Vector3};
+    use crate::topology::IncreasingParameterInterval;
+    use crate::units::{FiniteVector, UnitVector3};
+
+    let directrix = CurveId::mint("synthetic:test:curve#directrix").unwrap();
+    let interval = IncreasingParameterInterval::new([-1.5, 4.0]).unwrap();
+    let direction = UnitVector3::new(Vector3::new(0.6, 0.0, 0.8)).unwrap();
+    assert_eq!(
+        ExtrusionSurfaceConstruction::try_new(
+            directrix.clone(),
+            Some(interval.endpoints()),
+            *direction.as_raw(),
+            None,
+            CacheContract::from_form(None),
+        ),
+        Ok(ExtrusionSurfaceConstruction::legacy(
+            directrix.clone(),
+            Some(FiniteVector::from(interval)),
+            FiniteVector3::from(direction),
+            None,
+            None,
+        ))
+    );
+    let sweep = Vector3::new(0.0, 0.0, 2.0);
+    let position = Point3::new(1.0, 2.0, 3.0);
+    let cache = LegacyCache::new(FitTolerance::try_new(1.0e-6).unwrap());
+    assert_eq!(
+        ExtrusionSurfaceConstruction::try_new(
+            directrix.clone(),
+            None,
+            sweep,
+            Some(position),
+            CacheContract::Legacy { cache: Some(cache) },
+        ),
+        Ok(ExtrusionSurfaceConstruction::legacy(
+            directrix,
+            None,
+            FiniteVector3::new(sweep).unwrap(),
+            FinitePoint3::new(position),
+            Some(cache),
+        ))
+    );
+}
