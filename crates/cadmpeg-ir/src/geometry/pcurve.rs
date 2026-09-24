@@ -419,6 +419,23 @@ impl SphericalGreatCirclePcurve {
     pub const fn plane_slope(&self) -> f64 {
         self.plane_slope.get()
     }
+
+    /// The same great circle traversed as `reflection - t`. The azimuth
+    /// origin moves to `azimuth_origin + azimuth_rate * reflection` and the
+    /// rate changes sign. The negated rate stays finite and nonzero and the
+    /// plane is kept, so only the moved origin is checked. The result is
+    /// absent when the moved origin is not finite.
+    #[must_use]
+    pub fn reflected(&self, reflection: f64) -> Option<Self> {
+        let azimuth_origin =
+            FiniteReal::new(self.azimuth_origin.get() + self.azimuth_rate.get() * reflection)?;
+        Some(Self {
+            azimuth_origin,
+            azimuth_rate: self.azimuth_rate.negated(),
+            plane_phase: self.plane_phase,
+            plane_slope: self.plane_slope,
+        })
+    }
 }
 
 impl TryFrom<SphericalGreatCirclePcurveWire> for SphericalGreatCirclePcurve {

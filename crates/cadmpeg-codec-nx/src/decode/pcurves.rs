@@ -971,23 +971,9 @@ fn reverse_analytic_pcurve_over_range(
             ))
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
-            let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin();
-            let azimuth_rate = spherical_great_circle_pcurve.azimuth_rate();
-            let plane_phase = spherical_great_circle_pcurve.plane_phase();
-            let plane_slope = spherical_great_circle_pcurve.plane_slope();
-            let reversed_origin = azimuth_origin + azimuth_rate * reflection;
-            let reversed_rate = -azimuth_rate;
-            reversed_origin
-                .is_finite()
-                .then_some(PcurveGeometry::SphericalGreatCircle(
-                    cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
-                        reversed_origin,
-                        reversed_rate,
-                        plane_phase,
-                        plane_slope,
-                    )
-                    .ok()?,
-                ))
+            spherical_great_circle_pcurve
+                .reflected(reflection)
+                .map(PcurveGeometry::SphericalGreatCircle)
         }
         PcurveGeometry::Circle(circle_pcurve) => {
             let center = circle_pcurve.center();
