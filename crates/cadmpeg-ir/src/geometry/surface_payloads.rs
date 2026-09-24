@@ -375,9 +375,20 @@ impl ExtrusionSurfaceConstruction {
     pub fn direction(&self) -> &FiniteVector3 {
         &self.direction
     }
+    /// Replace the direction and keep every other admitted field. A finite
+    /// direction is the whole direction condition, so nothing is checked.
+    pub fn set_direction(&mut self, direction: FiniteVector3) {
+        self.direction = direction;
+    }
     /// Return the native position.
     pub fn native_position(&self) -> Option<FinitePoint3> {
         self.native_position
+    }
+    /// Replace the native position and keep every other admitted field. A
+    /// finite position is the whole position condition, so nothing is
+    /// checked.
+    pub fn set_native_position(&mut self, native_position: Option<FinitePoint3>) {
+        self.native_position = native_position;
     }
     /// Return the revision form.
     pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
@@ -1221,6 +1232,11 @@ impl SumSurfaceConstruction {
     /// Return the basepoint.
     pub fn basepoint(&self) -> &FiniteVector3 {
         &self.basepoint
+    }
+    /// Replace the basepoint and keep every other admitted field. A finite
+    /// basepoint is the whole basepoint condition, so nothing is checked.
+    pub fn set_basepoint(&mut self, basepoint: FiniteVector3) {
+        self.basepoint = basepoint;
     }
     /// Return the revision form.
     pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {

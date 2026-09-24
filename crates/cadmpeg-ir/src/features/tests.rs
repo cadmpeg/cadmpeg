@@ -1685,6 +1685,35 @@ fn feature_arcs_rebuild_from_checked_parts() {
 }
 
 #[test]
+fn with_translation_keeps_the_linear_rows_and_the_rigid_admission() {
+    use crate::features::{FeatureRigidPlacement, FiniteVector3};
+    use crate::transform::Transform;
+
+    let (sine, cosine) = 0.6_f64.sin_cos();
+    let transform = Transform::affine([
+        [cosine, -sine, 0.0, 4.0],
+        [sine, cosine, 0.0, -2.0],
+        [0.0, 0.0, 1.0, 1.0],
+    ])
+    .unwrap();
+    let translation = FiniteVector3::new(Vector3::new(-0.0, 5.0e-324, f64::MAX)).unwrap();
+    let moved = transform.with_translation(translation);
+    let mut expected = transform.affine_rows();
+    for (row, component) in expected.iter_mut().zip([-0.0, 5.0e-324, f64::MAX]) {
+        row[3] = component;
+    }
+    assert_eq!(
+        moved.affine_rows().map(|row| row.map(f64::to_bits)),
+        expected.map(|row| row.map(f64::to_bits))
+    );
+    assert_eq!(Transform::affine(expected), Some(moved));
+
+    let placement = FeatureRigidPlacement::new(transform).unwrap();
+    let placed = placement.with_translation(translation);
+    assert_eq!(FeatureRigidPlacement::new(moved), Some(placed));
+}
+
+#[test]
 fn apply_point_hands_back_an_admitted_point_bit_for_bit() {
     use crate::features::FinitePoint3;
     use crate::transform::Transform;

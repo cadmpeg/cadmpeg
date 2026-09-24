@@ -33,6 +33,28 @@ fn tolerant_intersection_rejects_equal_supports_and_invalid_numeric_bounds() {
 }
 
 #[test]
+fn tolerant_intersection_from_parts_refuses_only_equal_supports() {
+    let endpoints = [Point3::new(1.0, -0.0, 5.0e-324), Point3::new(2.0, 3.0, 4.0)]
+        .map(|point| crate::features::FinitePoint3::new(point).unwrap());
+    let tolerance = crate::scalar::NonNegativeReal::new(0.25).unwrap();
+    let built = TolerantIntersectionConstruction::from_parts(supports(), endpoints, tolerance)
+        .expect("distinct supports");
+    assert_eq!(
+        Ok(built),
+        TolerantIntersectionConstruction::try_new(
+            supports(),
+            endpoints.map(crate::features::FinitePoint3::get),
+            0.25
+        )
+    );
+    let [first, _] = supports();
+    assert_eq!(
+        TolerantIntersectionConstruction::from_parts([first.clone(), first], endpoints, tolerance),
+        Err("tolerant intersection supports must be distinct")
+    );
+}
+
+#[test]
 fn a_tolerant_parameterization_hands_back_its_admitted_interval() {
     let pcurves =
         std::array::from_fn(|_| PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::U_AXIS));

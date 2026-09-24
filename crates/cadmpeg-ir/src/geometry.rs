@@ -6720,6 +6720,24 @@ impl TolerantIntersectionConstruction {
         })
     }
 
+    /// Admit distinct supports with admitted endpoints and tolerance. The
+    /// endpoint and tolerance types state their conditions, so only the
+    /// distinctness of the supports is checked.
+    pub fn from_parts(
+        supports: [SurfaceId; 2],
+        endpoints: [FinitePoint3; 2],
+        tolerance: NonNegativeReal,
+    ) -> Result<Self, &'static str> {
+        if supports[0] == supports[1] {
+            return Err("tolerant intersection supports must be distinct");
+        }
+        Ok(Self {
+            supports,
+            endpoints,
+            tolerance,
+        })
+    }
+
     /// Return the supports.
     #[must_use]
     pub const fn supports(&self) -> &[SurfaceId; 2] {

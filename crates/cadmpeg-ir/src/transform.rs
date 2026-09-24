@@ -193,6 +193,18 @@ impl Transform {
         }
     }
 
+    /// Replace the translation and keep the linear rows. The linear rows are
+    /// held finite and every translation component is finite, so the result
+    /// keeps the admission of [`Self::affine`] without a check.
+    #[must_use]
+    pub fn with_translation(self, translation: FiniteVector3) -> Self {
+        let mut rows = self.rows;
+        for (row, component) in rows.iter_mut().zip(translation.components()) {
+            row[3] = component.get();
+        }
+        Self { rows }
+    }
+
     /// The affine rows, without the constant bottom row.
     #[must_use]
     pub fn affine_rows(self) -> [[f64; 4]; 3] {

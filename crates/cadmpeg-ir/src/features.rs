@@ -271,6 +271,14 @@ impl FeatureRigidPlacement {
     pub fn identity() -> Self {
         Self(Transform::identity())
     }
+
+    /// Replace the translation and keep the linear rows. Rigidity is a
+    /// condition on the linear rows alone, so the result keeps the admission
+    /// without a check.
+    #[must_use]
+    pub fn with_translation(self, translation: FiniteVector3) -> Self {
+        Self(self.0.with_translation(translation))
+    }
 }
 
 const EPS_FEATURE_UNIT_FRAME: f64 = 1.0e-9;

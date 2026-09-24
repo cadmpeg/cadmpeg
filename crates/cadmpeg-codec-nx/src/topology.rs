@@ -88,7 +88,7 @@ pub(crate) struct EdgeFields {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct CurveEdgeWitness {
     /// Ordered model-space edge endpoints in millimetres.
-    pub(crate) endpoints: [Point3; 2],
+    pub(crate) endpoints: [FinitePoint3; 2],
     /// Serialized edge tolerance in Parasolid metres.
     pub(crate) tolerance: f64,
 }
@@ -1168,10 +1168,7 @@ impl Graph {
                 .point_position()
         };
         Some(CurveEdgeWitness {
-            endpoints: [
-                position(first_fin.vertex)?.get(),
-                position(second_fin.vertex)?.get(),
-            ],
+            endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
             tolerance: edge.tolerance,
         })
     }
@@ -1505,7 +1502,7 @@ fn candidate_has_valid_family_framing(
             let point = vec3_be_at(bytes, at)?;
             point
                 .iter()
-                .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
+                .all(|value| (*value * 1000.0).is_finite())
                 .then_some(())?;
         }
         _ => {}

@@ -5,7 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_iter;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
@@ -202,7 +205,7 @@ pub(crate) struct IntersectionCurve {
     /// Paired chart points in millimetres and native parameters.
     pub(crate) samples: ChartSamples,
     /// Chart chordal error in millimetres.
-    pub(crate) fit_tolerance: f64,
+    pub(crate) fit_tolerance: FitTolerance,
     /// Ordered support UV values in native Parasolid parameter units.
     pub(crate) support_uv: SupportUv,
     /// Two ext11 UV lanes awaiting assignment to the ordered supports.
@@ -231,9 +234,9 @@ pub(crate) struct UnchartedIntersection {
     /// Two exact, distinct support-surface references.
     pub(crate) supports: DistinctSupports,
     /// Ordered endpoints of the unique topology edge in millimetres.
-    pub(crate) endpoints: [Point3; 2],
-    /// Edge tolerance in Parasolid metres.
-    pub(crate) tolerance: f64,
+    pub(crate) endpoints: [FinitePoint3; 2],
+    /// Edge tolerance in millimetres.
+    pub(crate) tolerance: PositiveReal,
 }
 
 /// Rejection census for structurally decoded intersection constructions whose
@@ -318,7 +321,7 @@ enum Rejection {
 #[derive(Debug, Clone)]
 struct Chart {
     samples: ChartSamples,
-    fit_tolerance: f64,
+    fit_tolerance: FitTolerance,
     ext_support_uv: SupportUv,
 }
 
@@ -455,23 +458,24 @@ fn scan_with_auxiliaries(
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
-                    if let (Some(supports), Some(witness)) = (
+                    if let (Some(supports), Some((endpoints, tolerance))) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
                             |(primary, secondary)| DistinctSupports::new(primary, secondary?),
                         ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
-                            .filter(|witness| {
-                                witness.tolerance.is_finite()
-                                    && witness.tolerance > 0.0
-                                    && (witness.tolerance * 1000.0).is_finite()
+                            .and_then(|witness| {
+                                Some((
+                                    witness.endpoints,
+                                    PositiveReal::new(witness.tolerance * 1000.0)?,
+                                ))
                             }),
                     ) {
                         result.uncharted.push(UnchartedIntersection {
                             xmt: construction.xmt,
                             supports,
-                            endpoints: witness.endpoints,
-                            tolerance: witness.tolerance,
+                            endpoints,
+                            tolerance,
                         });
                     }
                 }
@@ -511,7 +515,7 @@ fn enrich(
         .iter()
         .zip(chart_endpoints)
         .any(|(term, endpoint)| {
-            term.is_some_and(|term| Point3::distance(term, endpoint) > chart.fit_tolerance)
+            term.is_some_and(|term| Point3::distance(term, endpoint) > chart.fit_tolerance.get())
         })
     {
         return Err(Rejection::EndpointMismatch);
@@ -531,8 +535,10 @@ fn enrich(
             .into_iter()
             .filter(|permutation| {
                 permutation.iter().enumerate().all(|(ordinal, topology)| {
-                    Point3::distance(chart_endpoints[ordinal], topology_endpoints[*topology])
-                        <= chart.fit_tolerance
+                    Point3::distance(
+                        chart_endpoints[ordinal],
+                        topology_endpoints[*topology].get(),
+                    ) <= chart.fit_tolerance.get()
                 })
             })
             .count();
@@ -734,10 +740,10 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         if duplicates.contains(&source.xmt) {
             continue;
         }
-        let fit_tolerance = source.preamble.chordal_error() * 1000.0;
-        if !fit_tolerance.is_finite() {
+        let Ok(fit_tolerance) = FitTolerance::try_new(source.preamble.chordal_error() * 1000.0)
+        else {
             continue;
-        }
+        };
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
         let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
             continue;
@@ -762,7 +768,11 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                         .zip(candidate.samples.points().iter())
                         .all(|(first, second)| {
                             Point3::distance(*first, *second)
-                                <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
+                                <= entry
+                                    .get()
+                                    .fit_tolerance
+                                    .get()
+                                    .max(candidate.fit_tolerance.get())
                         })
                     && entry
                         .get_mut()

@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FinitePoint3, ParameterValue, WrapMode,
+    FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3, ParameterValue, WrapMode,
 };
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -248,19 +248,24 @@ fn scale_vector3(vector: &mut Vector3, scale: f64) {
     vector.z *= scale;
 }
 
+/// The translation of `transform` scaled by `scale`. The scale is any finite
+/// positive value the file states, so a finite translation component can
+/// overflow; the linear rows are not scaled and keep their admission.
+fn scaled_translation(transform: &Transform, scale: f64) -> Option<FiniteVector3> {
+    let [first, second, third] = transform.affine_rows().map(|row| row[3] * scale);
+    FiniteVector3::new(Vector3::new(first, second, third))
+}
+
 fn scale_transform_translation(transform: &mut Transform, scale: f64) -> Result<(), CodecError> {
-    let mut rows = transform.affine_rows();
-    for row in &mut rows {
-        row[3] *= scale;
-    }
     // `scale` is the length scale the file states and `transform` comes from
     // the document, so a scale that drives a translation non-finite is a
     // source the transform carrier refuses, not an impossible state.
-    *transform = Transform::affine(rows).ok_or_else(|| {
+    let translation = scaled_translation(transform, scale).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "Creo length scale {scale} drives a transform translation the carrier refuses"
         ))
     })?;
+    *transform = transform.with_translation(translation);
     Ok(())
 }
 
@@ -523,17 +528,12 @@ fn scale_feature_operation(
                 }
             }
             if let Some(placement) = placement {
-                let mut rows = placement.affine_rows();
-                for row in &mut rows {
-                    row[3] *= scale;
-                }
-                *placement = Transform::affine(rows)
-                    .and_then(cadmpeg_ir::features::FeatureRigidPlacement::new)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "Creo scaled block placement must remain finite and rigid".into(),
-                        )
-                    })?;
+                let translation = scaled_translation(placement, scale).ok_or_else(|| {
+                    CodecError::Malformed(
+                        "Creo scaled block placement must remain finite and rigid".into(),
+                    )
+                })?;
+                *placement = placement.with_translation(translation);
             }
         }
         FeatureOperation::ProjectOnSurface { height, offset, .. } => {
@@ -1579,6 +1579,25 @@ const SCALED_REVOLUTION_AXIS_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryEr
         "revolution axis_origin and axis_direction must be finite, with unit axis_direction",
     );
 
+/// Refusal of a scaled extrusion direction that is not finite. The text is
+/// the one the extrusion construction gives for a direction it does not
+/// admit.
+const SCALED_EXTRUSION_DIRECTION_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
+    cadmpeg_ir::geometry::ProceduralGeometryError::Payload("Extrusion.direction is not finite");
+
+/// Refusal of a scaled extrusion native position that is not finite. The
+/// text is the one the extrusion construction gives for a position it does
+/// not admit.
+const SCALED_EXTRUSION_POSITION_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
+    cadmpeg_ir::geometry::ProceduralGeometryError::Payload(
+        "Extrusion.native_position is not finite",
+    );
+
+/// Refusal of a scaled sum basepoint that is not finite. The text is the one
+/// the sum construction gives for a basepoint it does not admit.
+const SCALED_SUM_BASEPOINT_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryError =
+    cadmpeg_ir::geometry::ProceduralGeometryError::Payload("sum basepoint must be finite");
+
 trait ScaleProceduralLengths {
     fn scale_lengths(
         &mut self,
@@ -1593,31 +1612,18 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
     ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
-        // A rebuilt payload is minted fresh, so the solved-cache contract it
-        // states is carried across the rebuild.
-        let cache = self.legacy_cache();
         match self {
             ProceduralSurfaceDefinition::Extrusion(payload) => {
-                let mut direction = payload.direction().get();
-                let mut native_position = payload
+                let direction = FiniteVector3::new(payload.direction().scale(scale))
+                    .ok_or(SCALED_EXTRUSION_DIRECTION_REFUSAL)?;
+                let native_position = payload
                     .native_position()
-                    .map(cadmpeg_ir::features::FinitePoint3::get);
-                scale_vector3(&mut direction, scale);
-                if let Some(position) = &mut native_position {
-                    scale_point3(position, scale);
-                }
-                *payload =
-                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                        payload.directrix().clone(),
-                        payload
-                            .parameter_interval()
-                            .map(cadmpeg_ir::units::FiniteVector::get),
-                        direction,
-                        native_position,
-                        cadmpeg_ir::geometry::CacheContract::from_form(
-                            payload.revision_form().cloned(),
-                        ),
-                    )?;
+                    .map(|position| {
+                        scale_finite_point(position, scale).ok_or(SCALED_EXTRUSION_POSITION_REFUSAL)
+                    })
+                    .transpose()?;
+                payload.set_direction(direction);
+                payload.set_native_position(native_position);
             }
             ProceduralSurfaceDefinition::LinearSweep(payload) => {
                 let mut direction = payload.direction().get();
@@ -1645,20 +1651,13 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 );
             }
             ProceduralSurfaceDefinition::Sum(payload) => {
-                let mut basepoint = payload.basepoint().get();
-                scale_vector3(&mut basepoint, scale);
-                *payload = cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
-                    payload.first().clone(),
-                    payload.second().clone(),
-                    basepoint,
-                    cadmpeg_ir::geometry::CacheContract::from_form(
-                        payload.revision_form().cloned(),
-                    ),
-                )?;
+                payload.set_basepoint(
+                    FiniteVector3::new(payload.basepoint().scale(scale))
+                        .ok_or(SCALED_SUM_BASEPOINT_REFUSAL)?,
+                );
             }
             _ => {}
         }
-        self.set_legacy_cache(cache)?;
         Ok(())
     }
 }
@@ -2401,6 +2400,84 @@ mod tests {
                 .get(),
             330.2,
         );
+    }
+
+    /// The length scale is any finite positive value the file states, so a
+    /// finite extrusion direction or sum basepoint can overflow; the rebuilt
+    /// payload refuses it with the construction's own text.
+    #[test]
+    // These checked constructors must accept the explicit test fixtures.
+    #[allow(clippy::unwrap_used)]
+    fn scaled_procedural_vectors_that_overflow_are_refused() {
+        let directrix = cadmpeg_ir::ids::CurveId::mint("test:model:entity#directrix")
+            .expect("identity grammar");
+        let payloads = [
+            (
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        directrix.clone(),
+                        None,
+                        Vector3::new(f64::MAX, 0.0, 0.0),
+                        None,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .unwrap(),
+                ),
+                "Extrusion.direction is not finite",
+            ),
+            (
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(
+                    cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                        directrix.clone(),
+                        None,
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Some(Point3::new(0.0, f64::MAX, 0.0)),
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .unwrap(),
+                ),
+                "Extrusion.native_position is not finite",
+            ),
+            (
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Sum(
+                    cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                        directrix.clone(),
+                        directrix,
+                        Vector3::new(0.0, 0.0, -f64::MAX),
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .unwrap(),
+                ),
+                "sum basepoint must be finite",
+            ),
+        ];
+        for (definition, refusal) in payloads {
+            let mut ir = CadIr::empty();
+            let surface_id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#surface")
+                .expect("identity grammar");
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: surface_id.clone(),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Unknown { record: None },
+                ),
+                source_object: None,
+            });
+            let surface = cadmpeg_ir::geometry::ProceduralSurface::new(
+                cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                    "test:model:entity#surface-construction",
+                )
+                .expect("identity grammar"),
+                definition,
+                None,
+            );
+            ir.model
+                .add_procedural_surface(surface_id, surface)
+                .unwrap();
+            let error = normalize_model_lengths(&mut ir, 25.4)
+                .expect_err("an overflowing scaled vector has no payload")
+                .to_string();
+            assert!(error.contains(refusal), "{error}");
+        }
     }
 
     #[test]
