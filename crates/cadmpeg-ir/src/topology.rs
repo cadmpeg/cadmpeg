@@ -976,17 +976,6 @@ impl crate::geometry::nurbs::NurbsCurve {
     }
 }
 
-impl crate::geometry::pcurve::PcurveNurbs {
-    /// Endpoints of the full knot vector, with the guarantee of
-    /// [`crate::geometry::nurbs::NurbsCurve::full_knot_endpoints`]:
-    /// [`Self::new`] admits finite non-decreasing knots.
-    #[must_use]
-    pub fn full_knot_endpoints(&self) -> ParameterInterval {
-        let knots = self.knots();
-        ParameterInterval([knots[0], knots[knots.len() - 1]])
-    }
-}
-
 impl TryFrom<[f64; 2]> for ParameterInterval {
     type Error = &'static str;
     fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {

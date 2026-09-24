@@ -230,7 +230,6 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     let pcurve = pcurve();
     assert_eq!(pcurve.control_points(), pcurve.pole_rows().points());
     assert_eq!(pcurve.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
-    assert_eq!(pcurve.full_knot_endpoints().endpoints(), [2.0, 5.0]);
     assert_eq!(
         pcurve.weights().map(|weights| weights
             .into_iter()
@@ -245,7 +244,7 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
         polar.weights().map(|weights| weights
             .into_iter()
             .map(crate::scalar::NonZeroReal::get)
-            .collect()),
-        polar.pole_rows().weights()
+            .collect::<Vec<_>>()),
+        Some(vec![1.0, 2.0])
     );
 }
