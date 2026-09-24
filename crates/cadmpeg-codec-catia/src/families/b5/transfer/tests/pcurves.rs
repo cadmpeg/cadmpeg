@@ -409,9 +409,12 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     };
     assert_eq!(
         curve.weights(),
-        pcurve
-            .weights
-            .map(|weights| weights.into_iter().map(|weight| weight.get()).collect())
+        pcurve.weights.map(|weights| {
+            weights
+                .into_iter()
+                .map(cadmpeg_ir::scalar::PositiveReal::get)
+                .collect()
+        })
     );
     assert!(curve.control_points().iter().all(|point| point.z == 2.0));
 }

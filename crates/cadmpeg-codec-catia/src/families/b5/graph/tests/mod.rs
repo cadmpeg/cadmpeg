@@ -23,7 +23,10 @@ fn object_stream_pcurve(
     distinct_knots: Vec<f64>,
     suffix: Option<f64>,
 ) -> B5ObjectStreamPcurve {
-    let distinct_knots = crate::test_support::test_b5::finite_lane(&distinct_knots);
+    let distinct_knots = distinct_knots
+        .into_iter()
+        .map(crate::test_support::test_b5::finite)
+        .collect::<Vec<_>>();
     B5ObjectStreamPcurve {
         class: 0x21,
         surface,
