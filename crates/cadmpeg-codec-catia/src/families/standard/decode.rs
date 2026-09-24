@@ -6464,27 +6464,20 @@ fn standard_nurbs_line_pair_on_face(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
-    if surface.pole_weights().is_some_and(|weights| {
-        weights
-            .into_iter()
-            .any(|weight| !weight.is_finite() || weight <= 0.0)
-    }) {
+    if surface
+        .pole_weights()
+        .is_some_and(|weights| weights.into_iter().any(|weight| weight <= 0.0))
+    {
         return None;
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
     for point in surface.poles() {
         for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-            if !coordinate.is_finite() {
-                return None;
-            }
             bounds[axis][0] = bounds[axis][0].min(coordinate);
             bounds[axis][1] = bounds[axis][1].max(coordinate);
         }
     }
-    bounds
-        .iter()
-        .all(|[lower, upper]| lower.is_finite() && upper.is_finite() && lower <= upper)
-        .then_some(bounds)
+    Some(bounds)
 }
 
 fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
@@ -6504,15 +6497,12 @@ fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2
     ];
     domains
         .into_iter()
-        .all(|[lower, upper]| lower.is_finite() && upper.is_finite() && lower < upper)
+        .all(|[lower, upper]| lower < upper)
         .then_some(domains)
 }
 
 fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
-    left.is_finite()
-        && right.is_finite()
-        && (left - right).abs()
-            <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+    (left - right).abs() <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
 }
 
 fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
@@ -6772,9 +6762,6 @@ fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Opt
         let [lower, upper] = *pair else {
             continue;
         };
-        if !lower.is_finite() || !upper.is_finite() || lower >= upper {
-            continue;
-        }
         for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
             let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
             samples.push(cadmpeg_ir::math::interpolate(lower, upper, fraction)?);
@@ -7360,7 +7347,7 @@ fn standard_pcurve_geometry(
                 let origin = line_curve.origin().get();
                 let direction = *line_curve.direction().as_raw();
                 let offset = midpoint.vector_from(origin);
-                direction.unit_nonzero()?.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
+                direction.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
             }
             _ => false,
         },
@@ -7677,7 +7664,7 @@ fn standard_spline_circle(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             ) => {
                 let center = sphere_surface.center().get();
-                let radius = sphere_surface.radius().get();
+                let radius = sphere_surface.radius().abs();
                 let origin = plane_surface.origin().get();
                 let normal = plane_surface.frame().axis().as_raw();
                 (center, radius, origin, *normal)
@@ -7689,15 +7676,15 @@ fn standard_spline_circle(
                 let origin = plane_surface_2.origin();
                 let normal = plane_surface_2.frame().axis().as_raw();
                 let center = sphere_surface_2.center();
-                let radius = sphere_surface_2.radius().get();
+                let radius = sphere_surface_2.radius().abs();
                 (*center, radius, *origin, *normal)
             }
             _ => return None,
         };
-    let axis = unit_vector(plane_normal)?;
-    let sphere_radius = sphere_radius.abs();
+    let axis = plane_normal;
+    let sphere_radius = sphere_radius.get();
     let signed_distance = sphere_center.vector_from(plane_origin).dot(axis);
-    if !sphere_radius.is_finite() || sphere_radius <= 0.0 || !signed_distance.is_finite() {
+    if !signed_distance.is_finite() {
         return None;
     }
     let section_radius_squared = sphere_radius * sphere_radius - signed_distance * signed_distance;
@@ -7782,12 +7769,6 @@ fn standard_spline_cylinder_plane(
             }
             _ => return None,
         };
-    let cylinder_axis = unit_vector(cylinder_axis)?;
-    let plane_normal = unit_vector(plane_normal)?;
-    let cylinder_radius = cylinder_radius.abs();
-    if !cylinder_radius.is_finite() || cylinder_radius <= 0.0 {
-        return None;
-    }
     let axis_dot_normal = cylinder_axis.dot(plane_normal);
     if !axis_dot_normal.is_finite() || axis_dot_normal.abs() <= CYLINDER_PLANE_CONIC_TOLERANCE {
         return None;
@@ -7894,8 +7875,6 @@ fn standard_spline_perpendicular_cylinders(
             }
             _ => return None,
         };
-    let first_axis = unit_vector(first_axis)?;
-    let second_axis = unit_vector(second_axis)?;
     if (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
         return None;
     }
