@@ -433,9 +433,10 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
 }
 
 /// The streaming canonical serializer must render the byte-exact text of the
-/// `serde_json::to_value` route it replaced: recursively sorted object keys,
-/// non-finite floats as `null`, `f32` widened to `f64`, and externally tagged
-/// enum forms.
+/// `serde_json::to_value` route it replaced for a record of finite numbers:
+/// recursively sorted object keys, `f32` widened to `f64`, and externally
+/// tagged enum forms. A non-finite number, which that route wrote as `null`,
+/// is refused by its path.
 #[test]
 fn from_typed_matches_value_tree_canonical_text() {
     #[derive(Serialize)]
@@ -469,7 +470,7 @@ fn from_typed_matches_value_tree_canonical_text() {
     let record = CanonRecord {
         id: "f3d:test:canon#0-\"quotes\"-\u{1F980}".into(),
         zulu: -0.0,
-        alpha: vec![f64::NAN, f64::INFINITY, 0.1, -1.5e300, 3.0],
+        alpha: vec![f64::MIN_POSITIVE, f64::MAX, 0.1, -1.5e300, 3.0],
         nested: BTreeMap::from([(
             "b\nkey".to_owned(),
             vec![
@@ -477,7 +478,7 @@ fn from_typed_matches_value_tree_canonical_text() {
                 CanonShape::Newtype(7),
                 CanonShape::Tuple(-3, true),
                 CanonShape::Struct {
-                    zulu: f64::NEG_INFINITY,
+                    zulu: f64::MIN,
                     alpha: Some("s".into()),
                 },
             ],
@@ -506,4 +507,76 @@ fn from_typed_matches_value_tree_canonical_text() {
     let native = NativeRecord::from_typed(&record).unwrap();
     assert_eq!(native.id(), id);
     assert_eq!(serde_json::to_string(&native).unwrap(), expected);
+}
+
+/// The refusal message a typed record holding a non-finite number converts to.
+fn non_finite_refusal<T: Serialize>(record: &T) -> String {
+    let error = crate::native::NativeNamespace::default()
+        .set_arena("records", std::slice::from_ref(record))
+        .expect_err("a non-finite number has no native value");
+    match cadmpeg_core::CodecError::from(error) {
+        cadmpeg_core::CodecError::Malformed(message) => message,
+        other => panic!("expected a malformed-record refusal, got {other}"),
+    }
+}
+
+#[test]
+fn a_nan_record_field_is_refused_by_its_path() {
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        bounds: [f64; 3],
+    }
+
+    let message = non_finite_refusal(&Record {
+        id: "test:native:face#0",
+        bounds: [1.0, f64::NAN, 3.0],
+    });
+    assert!(
+        message.contains("field bounds[1] holds a non-finite number"),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_infinite_nested_record_field_is_refused_by_its_path() {
+    #[derive(Serialize)]
+    enum Carrier {
+        Bounds { corners: Vec<[f64; 2]> },
+    }
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        carrier: Carrier,
+    }
+
+    let message = non_finite_refusal(&Record {
+        id: "test:native:face#0",
+        carrier: Carrier::Bounds {
+            corners: vec![[0.0, 0.0], [f64::INFINITY, 1.0]],
+        },
+    });
+    assert!(
+        message.contains("field carrier.Bounds.corners[1][0] holds a non-finite number"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_non_finite_f32_record_field_is_refused_by_its_path() {
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        wide: f32,
+    }
+
+    let message = non_finite_refusal(&Record {
+        id: "test:native:face#0",
+        wide: f32::NEG_INFINITY,
+    });
+    assert!(
+        message.contains("field wide holds a non-finite number"),
+        "{message}"
+    );
 }

@@ -106,6 +106,14 @@ pub enum NativeConvertError {
         /// Name of the refused field.
         field: String,
     },
+    /// A typed record holds a NaN or infinite number, which a stored record
+    /// cannot state.
+    #[error("native record field {field} holds a non-finite number")]
+    NonFiniteNumber {
+        /// Member path of the refused number: keys joined by `.`, sequence
+        /// elements written `[index]`.
+        field: String,
+    },
     /// JSON conversion failed.
     #[error("native record conversion failed: {0}")]
     Serde(#[from] serde_json::Error),
@@ -258,11 +266,19 @@ impl NativeRecord {
     /// Build a record by serializing one codec-owned typed record.
     ///
     /// The canonical serializer admits what the plain value serializer does
-    /// not: object keys must be distinct, and a `RawValue` payload is read
-    /// through one-container replay rather than a recursion-limited parse.
+    /// not: a NaN or infinite number is refused by its member path, object
+    /// keys must be distinct, and a `RawValue` payload is read through
+    /// one-container replay rather than a recursion-limited parse.
     fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
-        let canon::Node::Object(mut fields) = record.serialize(canon::CanonValue::for_record())?
-        else {
+        let serialized = record
+            .serialize(canon::CanonValue::for_record())
+            .map_err(|error| match error {
+                canon::CanonError::NonFinite(steps) => NativeConvertError::NonFiniteNumber {
+                    field: canon::CanonError::field_path(&steps),
+                },
+                canon::CanonError::Json(error) => NativeConvertError::Serde(error),
+            })?;
+        let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
         let Some(Value::String(id)) = fields.remove("id") else {
