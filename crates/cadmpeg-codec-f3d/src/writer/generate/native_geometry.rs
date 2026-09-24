@@ -1994,7 +1994,7 @@ fn native_cacheless_procedural_surface_definition(
         }
         match profile {
             HelixSurfaceProfile::Circle(circle) => {
-                native_f64(bytes, circle.radius().get() / LEN_TO_MM)
+                native_f64(bytes, circle.radius().get() / LEN_TO_MM);
             }
             HelixSurfaceProfile::Line(line) => {
                 let direction = line.direction();
@@ -2092,8 +2092,8 @@ fn native_cacheless_procedural_surface_definition(
         native_surface_base(bytes, "spline")?;
         bytes.push(0x0f);
         native_ident(bytes, "sub_spl_sur")?;
-        for value in parameter_ranges.iter().flatten() {
-            native_f64(bytes, *value);
+        for value in parameter_ranges.into_iter().flatten() {
+            native_f64(bytes, value);
         }
         native_embedded_surface(bytes, &support.geometry)?;
         bytes.push(0x10);
@@ -5443,8 +5443,8 @@ pub(crate) fn native_procedural_curve(
         native_ident(bytes, "off_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
         bytes.push(native_bool(*discontinuity_flag));
-        for offset in offsets {
-            native_f64(bytes, *offset / LEN_TO_MM);
+        for offset in offsets.get() {
+            native_f64(bytes, offset / LEN_TO_MM);
         }
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);

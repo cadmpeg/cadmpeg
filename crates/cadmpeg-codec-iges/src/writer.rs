@@ -5175,7 +5175,7 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<FinitePoint3> {
         .points
         .iter()
         .find(|point| point.id == point_id)
-        .map(|point| point.position())
+        .map(cadmpeg_ir::topology::Point::position)
 }
 
 #[derive(Clone, Copy)]

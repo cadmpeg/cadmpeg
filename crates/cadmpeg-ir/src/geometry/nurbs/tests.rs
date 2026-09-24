@@ -209,13 +209,16 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     assert_eq!(surface.control_grid(), surface.pole_grid().points());
     assert_eq!(surface.poles(), surface.pole_grid().points().concat());
     assert_eq!(
-        surface.pole(1, 0).map(|pole| pole.get()),
+        surface.pole(1, 0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(surface.pole(2, 0), None);
     assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.v_knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
-    assert_eq!(surface.weight(1, 1).map(|weight| weight.get()), Some(-2.0));
+    assert_eq!(
+        surface.weight(1, 1).map(crate::scalar::NonZeroReal::get),
+        Some(-2.0)
+    );
     assert_eq!(
         surface.pole_weights().map(|weights| weights
             .into_iter()
