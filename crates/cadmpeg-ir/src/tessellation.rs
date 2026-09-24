@@ -1284,6 +1284,23 @@ impl Tessellation {
         Ok(())
     }
 
+    /// Scale the source chordal deflection in place.
+    ///
+    /// A positive scale keeps the deflection non-negative, so the scaled
+    /// deflection is refused only when it overflows, with the admission's own
+    /// error.
+    pub fn scale_chordal_deflection(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), TessellationError> {
+        if let Some(value) = self.chordal_deflection {
+            self.chordal_deflection = Some(value.scaled(scale).ok_or_else(|| {
+                tessellation_error("chordal_deflection must be finite and non-negative")
+            })?);
+        }
+        Ok(())
+    }
+
     /// Set a finite, non-negative source chordal deflection.
     pub fn with_chordal_deflection(
         mut self,

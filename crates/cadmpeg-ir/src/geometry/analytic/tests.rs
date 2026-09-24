@@ -501,3 +501,44 @@ fn an_admitted_sphere_radius_builds_the_sphere_that_the_raw_radius_admits() {
         );
     }
 }
+
+/// The order is read from the source radii: a source minor radius above the
+/// major one is refused although both round to one millimetre value, and the
+/// equal scaled radii of an ordered source pair are admitted.
+#[test]
+fn an_ellipse_from_source_radii_reads_the_order_before_scaling() {
+    use crate::features::FinitePoint3;
+    use crate::scalar::PositiveReal;
+    use crate::units::OrthonormalFrame3;
+
+    let center = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("a finite center");
+    let frame = OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0))
+        .expect("an orthonormal frame");
+    let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
+    let low = 0.010_000_000_000_000_045_f64;
+    let high = f64::from_bits(low.to_bits() + 1);
+    assert_eq!(low * 1000.0, high * 1000.0);
+
+    let equal = EllipseCurve::from_source_radii(center, frame, [high, low], scale(1000.0))
+        .expect("an ordered source pair");
+    assert_eq!(equal.major_radius(), equal.minor_radius());
+    assert_eq!(equal.center(), center);
+    for radii in [
+        [low, high],
+        [1.0, f64::NAN],
+        [f64::NAN, 1.0],
+        [1.0, 0.0],
+        [1.0, -1.0],
+        [0.0, 0.0],
+        [f64::INFINITY, 1.0],
+    ] {
+        assert!(
+            EllipseCurve::from_source_radii(center, frame, radii, scale(1000.0)).is_none(),
+            "{radii:?}"
+        );
+    }
+    assert!(EllipseCurve::from_source_radii(center, frame, [f64::MAX, 1.0], scale(2.0)).is_none());
+    assert!(
+        EllipseCurve::from_source_radii(center, frame, [1.0, 1.0e-320], scale(1.0e-10)).is_none()
+    );
+}

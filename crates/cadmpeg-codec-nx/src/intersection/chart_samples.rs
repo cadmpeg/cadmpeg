@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
+use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::{Magnification, NonNegativeReal, PositiveReal};
 
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,7 +64,7 @@ pub(crate) const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 pub(crate) struct ChartPreamble {
     base_parameter: f64,
     base_scale: f64,
-    chordal_error: f64,
+    chordal_error: PositiveReal,
     angular_error: f64,
 }
 impl ChartPreamble {
@@ -78,9 +80,8 @@ impl ChartPreamble {
         if !base_scale.is_finite() || base_scale == 0.0 {
             return Err("base_scale: must be finite and nonzero");
         }
-        if !chordal_error.is_finite() || chordal_error <= 0.0 {
-            return Err("chordal_error: must be finite and positive");
-        }
+        let chordal_error =
+            PositiveReal::new(chordal_error).ok_or("chordal_error: must be finite and positive")?;
         if !angular_error.is_finite() {
             return Err("angular_error: must be finite");
         }
@@ -97,8 +98,15 @@ impl ChartPreamble {
     pub(crate) fn base_scale(self) -> f64 {
         self.base_scale
     }
-    pub(crate) fn chordal_error(self) -> f64 {
+    pub(crate) fn chordal_error(self) -> PositiveReal {
         self.chordal_error
+    }
+    /// The metre chordal error in millimetres, as the fit tolerance of the
+    /// solved chart. A positive error stays non-negative after the
+    /// conversion, so only an error that overflows has no tolerance.
+    pub(crate) fn fit_tolerance(self) -> Option<FitTolerance> {
+        FitTolerance::from(NonNegativeReal::from(self.chordal_error))
+            .scaled(PositiveReal::from(Magnification::MILLIMETERS_PER_METER))
     }
     pub(crate) fn angular_error(self) -> f64 {
         self.angular_error
@@ -239,6 +247,32 @@ impl SourceChartData {
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
     use cadmpeg_ir::math::Point3;
+
+    /// The chordal error is admitted positive once; its millimetre fit
+    /// tolerance is refused only when the conversion overflows.
+    #[test]
+    fn a_chart_fit_tolerance_is_the_millimetre_chordal_error() {
+        for value in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                ChartPreamble::new(0.0, 1.0, value, 0.0),
+                Err("chordal_error: must be finite and positive")
+            );
+        }
+        let preamble = ChartPreamble::new(0.0, 1.0, 1.0e-5, 0.0).unwrap();
+        assert_eq!(preamble.chordal_error().get(), 1.0e-5);
+        assert_eq!(
+            preamble
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(1.0e-5 * 1000.0)
+        );
+        let tiny = ChartPreamble::new(0.0, 1.0, f64::from_bits(1), 0.0).unwrap();
+        assert!(tiny
+            .fit_tolerance()
+            .is_some_and(|tolerance| tolerance.get() > 0.0));
+        let huge = ChartPreamble::new(0.0, 1.0, f64::MAX, 0.0).unwrap();
+        assert_eq!(huge.fit_tolerance(), None);
+    }
 
     #[test]
     fn chart_sample_constructor_rejects_truncation_in_both_directions() {

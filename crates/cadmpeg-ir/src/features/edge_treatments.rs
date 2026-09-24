@@ -238,6 +238,34 @@ impl VariableRadii {
     pub fn as_slice(&self) -> &[VariableRadius<Fraction, NonNegativeLength>] {
         &self.0
     }
+
+    /// The law with every radius replaced by `map` of it, keeping the
+    /// parameters.
+    ///
+    /// The sample count and the parameter order are kept, and each mapped
+    /// radius is nonnegative by type, so only the one positive radius is
+    /// tested again. A refusal of `map` is the outer error and discards the
+    /// whole map; the inner error is the admission's own text.
+    pub fn try_map_radii<E>(
+        &self,
+        mut map: impl FnMut(NonNegativeLength) -> Result<NonNegativeLength, E>,
+    ) -> Result<Result<Self, &'static str>, E> {
+        let points = self
+            .0
+            .iter()
+            .map(|point| {
+                Ok(VariableRadius {
+                    parameter: point.parameter,
+                    radius: map(point.radius)?,
+                })
+            })
+            .collect::<Result<Vec<_>, E>>()?;
+        Ok(points
+            .iter()
+            .any(|point| point.radius.get() > 0.0)
+            .then_some(Self(points))
+            .ok_or(INVALID_VARIABLE_RADII))
+    }
 }
 
 impl TryFrom<Vec<VariableRadius>> for VariableRadii {

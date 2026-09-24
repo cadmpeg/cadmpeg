@@ -217,6 +217,12 @@ checked_scalar!(
     /// A finite fraction in the closed interval from zero to one.
     Fraction, value, value >= 0.0 && value <= 1.0, "Fraction must be between zero and one"
 );
+checked_scalar!(
+    /// A finite dimensionless scale of at least one. The product of a nonzero
+    /// value and this scale has a magnitude not below the value's, so it is
+    /// not zero.
+    Magnification, value, value >= 1.0, "Magnification must be finite and at least one"
+);
 
 impl Length {
     /// Zero in canonical units.
@@ -262,11 +268,40 @@ impl NonNegativeLength {
     pub const fn from_assigned_real(value: NonNegativeReal) -> Self {
         Self(value.0)
     }
+
+    /// The length times `scale`.
+    ///
+    /// A positive scale keeps the sign of a nonnegative value: zero stays
+    /// zero, and rounding does not change a sign. The product is refused only
+    /// when it overflows.
+    #[must_use]
+    pub fn scaled(self, scale: PositiveReal) -> Option<Self> {
+        let value = self.0 * scale.0;
+        value.is_finite().then_some(Self(value))
+    }
 }
 
 impl PositiveReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
+}
+
+impl NonNegativeReal {
+    /// The value times `scale`.
+    ///
+    /// A positive scale keeps the sign of a nonnegative value: zero stays
+    /// zero, and rounding does not change a sign. The product is refused only
+    /// when it overflows.
+    #[must_use]
+    pub fn scaled(self, scale: PositiveReal) -> Option<Self> {
+        let value = self.0 * scale.0;
+        value.is_finite().then_some(Self(value))
+    }
+}
+
+impl Magnification {
+    /// Millimeters per meter.
+    pub const MILLIMETERS_PER_METER: Self = Self(1000.0);
 }
 
 impl SlopeAngle {
@@ -333,6 +368,7 @@ scalar_subset!(NonZeroReal => FiniteReal, "value must be nonzero");
 scalar_subset!(NonNegativeReal => FiniteReal, "value must be nonnegative");
 scalar_subset!(Fraction => NonNegativeReal, "value must be between zero and one");
 scalar_subset!(Fraction => FiniteReal, "value must be between zero and one");
+scalar_subset!(Magnification => PositiveReal, "value must be at least one");
 
 impl Length {
     /// Reverse the sign.
@@ -369,6 +405,28 @@ impl PositiveLength {
     pub const fn magnitude(self) -> FiniteReal {
         FiniteReal(self.0)
     }
+
+    /// Two values, the first not below the second, each times `scale`, as
+    /// positive lengths. The caller establishes that order.
+    ///
+    /// Rounding is monotone, so the products keep the order; they can round
+    /// to one value, which the order admits. The first product is admitted
+    /// positive and finite. The second is not above the first, so it is
+    /// finite when the first is, and only its sign is tested. A refusal gives
+    /// the index of the refused value.
+    pub(crate) fn scale_ordered_pair(
+        values: [f64; 2],
+        scale: PositiveReal,
+    ) -> Result<[Self; 2], usize> {
+        let [first, second] = values.map(|value| value * scale.0);
+        if !first.is_finite() || first <= 0.0 {
+            return Err(0);
+        }
+        if second <= 0.0 {
+            return Err(1);
+        }
+        Ok([Self(first), Self(second)])
+    }
 }
 
 impl NonZeroLength {
@@ -377,6 +435,17 @@ impl NonZeroLength {
     #[must_use]
     pub const fn abs(self) -> PositiveLength {
         PositiveLength(self.0.abs())
+    }
+
+    /// The length times `factor`.
+    ///
+    /// The exact product has a magnitude not below the length's, and rounding
+    /// is monotone, so the rounded product is not zero. The product is refused
+    /// only when it overflows.
+    #[must_use]
+    pub fn magnified(self, factor: Magnification) -> Option<Self> {
+        let value = self.0 * factor.0;
+        value.is_finite().then_some(Self(value))
     }
 }
 

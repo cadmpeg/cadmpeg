@@ -36,7 +36,7 @@ impl From<ParasolidChartRecord> for ChartWire {
             base_parameter: value.preamble.base_parameter(),
             base_scale: value.preamble.base_scale(),
             chart_count: value.data.count(),
-            chordal_error: value.preamble.chordal_error(),
+            chordal_error: value.preamble.chordal_error().get(),
             angular_error: value.preamble.angular_error(),
             parameter_errors: [MISSING_PARAMETER, MISSING_PARAMETER],
             points: value

@@ -674,3 +674,26 @@ fn a_tessellation_holds_its_admitted_mesh_and_takes_an_admitted_replacement() {
         )
         .is_err());
 }
+
+/// A positive scale keeps a zero deflection at zero and an absent one absent;
+/// only a deflection that overflows is refused, and it keeps its prior value.
+#[test]
+fn a_scaled_deflection_is_refused_only_when_it_overflows() {
+    use crate::scalar::PositiveReal;
+    let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
+    for (deflection, factor, scaled) in [
+        (Some(0.0), 1.0e-300, Some(0.0)),
+        (Some(0.5), 25.4, Some(0.5 * 25.4)),
+        (None, 25.4, None),
+    ] {
+        let mut value = mesh().with_chordal_deflection(deflection).unwrap();
+        value.scale_chordal_deflection(scale(factor)).unwrap();
+        assert_eq!(value.chordal_deflection().map(NonNegativeReal::get), scaled);
+    }
+    let mut value = mesh().with_chordal_deflection(Some(2.0)).unwrap();
+    assert!(value.scale_chordal_deflection(scale(f64::MAX)).is_err());
+    assert_eq!(
+        value.chordal_deflection().map(NonNegativeReal::get),
+        Some(2.0)
+    );
+}

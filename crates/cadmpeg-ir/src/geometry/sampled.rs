@@ -3,7 +3,7 @@
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::{FiniteReal, NonNegativeReal};
+use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -125,6 +125,36 @@ impl PolygonalSurface {
         self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
     }
+
+    /// The surface with every vertex and the chordal deviation times `scale`.
+    ///
+    /// The vertex count and the triangles are kept, and a positive scale
+    /// keeps the deviation non-negative, so a scaled vertex or deviation is
+    /// refused only when it overflows, vertices first.
+    pub(crate) fn scaled(&self, scale: PositiveReal) -> Result<Self, GeometryLayoutError> {
+        let vertices = self
+            .vertices
+            .iter()
+            .map(|vertex| vertex.scaled(scale))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| geometry_layout_error("vertices must be finite"))?;
+        Ok(Self {
+            vertices,
+            triangles: self.triangles.clone(),
+            chordal_deflection: scaled_chordal_deflection(self.chordal_deflection, scale)?,
+        })
+    }
+}
+
+/// A recorded chordal deviation times `scale`, refused only when it
+/// overflows.
+fn scaled_chordal_deflection(
+    chordal_deflection: NonNegativeReal,
+    scale: PositiveReal,
+) -> Result<NonNegativeReal, GeometryLayoutError> {
+    chordal_deflection
+        .scaled(scale)
+        .ok_or_else(|| geometry_layout_error("chordal_deflection must be finite and non-negative"))
 }
 
 impl<'de> Deserialize<'de> for PolygonalSurface {
@@ -433,6 +463,34 @@ impl PolylineCurve {
     ) -> Result<(), GeometryLayoutError> {
         self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
+    }
+
+    /// The polyline with every sample point and the chordal deviation times
+    /// `scale`.
+    ///
+    /// The sample count and the source parameters are kept, and a positive
+    /// scale keeps the deviation non-negative, so a scaled point or deviation
+    /// is refused only when it overflows, points first.
+    pub(crate) fn scaled(&self, scale: PositiveReal) -> Result<Self, GeometryLayoutError> {
+        let point = |point: FinitePoint3| point.scaled(scale);
+        let samples = match self.samples.clone() {
+            PolylineSamples::Unparameterized { points } => points
+                .try_map(point)
+                .map(|points| PolylineSamples::Unparameterized { points }),
+            PolylineSamples::Parameterized { vertices } => vertices
+                .try_map(|vertex| {
+                    Some(PolylineVertex {
+                        parameter: vertex.parameter,
+                        point: point(vertex.point)?,
+                    })
+                })
+                .map(|vertices| PolylineSamples::Parameterized { vertices }),
+        }
+        .ok_or_else(|| geometry_layout_error("points must be finite"))?;
+        Ok(Self {
+            samples,
+            chordal_deflection: scaled_chordal_deflection(self.chordal_deflection, scale)?,
+        })
     }
 }
 
