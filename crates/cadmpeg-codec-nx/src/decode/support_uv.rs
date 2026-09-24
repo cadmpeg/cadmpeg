@@ -425,15 +425,10 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
         return None;
     };
     nurbs
-        .pole_rows()
-        .points()
+        .control_points()
         .get(index)
-        .copied()
-        .filter(|point| {
-            point.is_finite()
-                && !missing_support_parameter(point.u)
-                && !missing_support_parameter(point.v)
-        })
+        .map(|point| point.get())
+        .filter(|point| !missing_support_parameter(point.u) && !missing_support_parameter(point.v))
 }
 
 fn serialized_support_uv_seed_candidates(

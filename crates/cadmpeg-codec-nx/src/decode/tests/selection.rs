@@ -104,11 +104,11 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
         panic!("completed second support NURBS pcurve");
     };
     assert_eq!(
-        nurbs.pole_rows().points().first(),
+        nurbs.pole_rows().raw_points().first(),
         Some(&Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        nurbs.pole_rows().points().last(),
+        nurbs.pole_rows().raw_points().last(),
         Some(&Point2::new(0.0, 10.0))
     );
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));

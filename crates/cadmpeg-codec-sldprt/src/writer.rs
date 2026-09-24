@@ -3292,7 +3292,7 @@ fn write_nurbs_curve(
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let control_points = nurbs.pole_rows().points();
+    let control_points = nurbs.pole_rows().raw_points();
     let curve_weights = nurbs.pole_rows().weights();
     let poles = homogeneous_poles(&control_points, curve_weights.as_deref(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
@@ -3353,7 +3353,7 @@ fn write_nurbs_surface(
     })?;
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
-    let points = nurbs.pole_grid().points().concat();
+    let points = nurbs.pole_grid().raw_points().concat();
     let weights = nurbs.pole_grid().weights().map(|rows| rows.concat());
     let poles = homogeneous_poles(&points, weights.as_deref(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };

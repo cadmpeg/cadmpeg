@@ -886,11 +886,11 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         unreachable!()
     };
     assert_eq!(
-        nurbs.pole_rows().points().first(),
+        nurbs.pole_rows().raw_points().first(),
         Some(&Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        nurbs.pole_rows().points().last(),
+        nurbs.pole_rows().raw_points().last(),
         Some(&Point2::new(1.0, 0.0))
     );
 }

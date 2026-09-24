@@ -15,8 +15,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
@@ -1788,15 +1788,18 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                 model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: PcurveGeometry::Nurbs {
-                        nurbs: PcurveNurbs::from_lanes(
+                        nurbs: PcurveNurbs::from_checked_lanes(
                             trim.pcurve.degree(),
                             trim.pcurve.knots().to_vec(),
                             trim.pcurve
                                 .control_points()
                                 .iter()
-                                .map(|point| Point2::new(point.x, point.y))
+                                .map(|point| {
+                                    let [x, y, _] = point.coordinates();
+                                    cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y)
+                                })
                                 .collect(),
-                            trim.pcurve.pole_rows().weights(),
+                            trim.pcurve.weights(),
                             trim.pcurve.periodic(),
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,

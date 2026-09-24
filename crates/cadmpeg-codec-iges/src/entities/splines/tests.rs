@@ -141,7 +141,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.pole_rows().points(),
+            &nurbs.pole_rows().raw_points(),
             None,
             1.5,
         )
@@ -178,7 +178,7 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
     let point = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        &nurbs.pole_rows().points(),
+        &nurbs.pole_rows().raw_points(),
         None,
         3.25,
     )

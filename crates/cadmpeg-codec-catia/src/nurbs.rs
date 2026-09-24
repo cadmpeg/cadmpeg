@@ -186,16 +186,9 @@ pub(crate) fn reverse_pcurve_geometry(
                 return None;
             }
             let reversed_knots = reverse_knots(nurbs.knots(), range);
-            match PcurveNurbs::from_lanes(
-                nurbs.degree(),
-                reversed_knots,
-                nurbs.pole_rows().points().into_iter().rev().collect(),
-                nurbs
-                    .pole_rows()
-                    .weights()
-                    .map(|weights| weights.into_iter().rev().collect()),
-                nurbs.periodic(),
-            ) {
+            let mut poles = nurbs.pole_rows().clone();
+            poles.reverse();
+            match PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic()) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
                 Err(error) => note_refusal(Err(error), refusal, record),
             }
@@ -297,14 +290,12 @@ pub(crate) fn reverse_nurbs_curve(
             "reversal range must be finite and ordered".into(),
         ));
     }
-    NurbsCurve::from_lanes(
+    let mut poles = curve.pole_rows().clone();
+    poles.reverse();
+    NurbsCurve::new(
         curve.degree(),
         reverse_knots(curve.knots(), range),
-        curve.pole_rows().points().into_iter().rev().collect(),
-        curve
-            .pole_rows()
-            .weights()
-            .map(|weights| weights.into_iter().rev().collect()),
+        poles,
         curve.periodic(),
     )
 }

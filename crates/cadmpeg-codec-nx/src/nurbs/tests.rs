@@ -70,8 +70,8 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
         assert_same_f64s(actual.u_knots(), expected.u_knots());
         assert_same_f64s(actual.v_knots(), expected.v_knots());
         assert_same_points3(
-            &actual.pole_grid().points().concat(),
-            &expected.pole_grid().points().concat(),
+            &actual.pole_grid().raw_points().concat(),
+            &expected.pole_grid().raw_points().concat(),
         );
         assert_same_weights(
             actual
@@ -102,7 +102,10 @@ fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
         assert_eq!(actual.degree(), expected.degree());
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
-        assert_same_points3(&actual.pole_rows().points(), &expected.pole_rows().points());
+        assert_same_points3(
+            &actual.pole_rows().raw_points(),
+            &expected.pole_rows().raw_points(),
+        );
         assert_same_weights(
             actual.pole_rows().weights().as_deref(),
             expected.pole_rows().weights().as_deref(),
@@ -122,7 +125,10 @@ fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
         assert_eq!(actual.degree(), expected.degree());
         assert_eq!(actual.periodic(), expected.periodic());
         assert_same_f64s(actual.knots(), expected.knots());
-        assert_same_points2(&actual.pole_rows().points(), &expected.pole_rows().points());
+        assert_same_points2(
+            &actual.pole_rows().raw_points(),
+            &expected.pole_rows().raw_points(),
+        );
         assert_same_weights(
             actual.pole_rows().weights().as_deref(),
             expected.pole_rows().weights().as_deref(),

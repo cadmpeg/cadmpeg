@@ -66,12 +66,14 @@ impl<'a> IntoIterator for &'a KnotVector {
 }
 
 /// One rational pole in model space: its position and its weight.
+// A source states a raw position; a NURBS store holds the admitted row, whose
+// position is a `FinitePoint3`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct WeightedPole3 {
+pub struct WeightedPole3<P = Point3> {
     /// Pole position in model space.
-    pub point: Point3,
+    pub point: P,
     /// Rational weight at this pole.
     pub weight: NonZeroReal,
 }
@@ -81,109 +83,70 @@ pub struct WeightedPole3 {
 /// A rational pole carries its weight in its own row, so a weight list that
 /// does not cover the poles has no spelling, and "the curve is polynomial" has
 /// exactly one spelling.
+// A source states raw positions; a `NurbsCurve` holds the admitted poles,
+// whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "form", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum NurbsPoles3 {
+pub enum NurbsPoles3<P = Point3> {
     /// A polynomial curve: its poles carry no weight.
     Polynomial {
         /// Poles in parameter order.
-        points: Vec<Point3>,
+        points: Vec<P>,
     },
     /// A rational curve: every pole carries its weight.
     Rational {
         /// Pole rows in parameter order.
-        points: Vec<WeightedPole3>,
+        points: Vec<WeightedPole3<P>>,
     },
 }
 
-impl NurbsPoles3 {
-    /// Pair a source's pole lane with its weight lane.
-    ///
-    /// A source that states poles and weights as two arrays pairs them here,
-    /// once, at the decode boundary.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a weight lane that does not cover the poles, naming both counts,
-    /// and a weight that is zero or non-finite, naming its index.
-    pub fn from_lanes(points: Vec<Point3>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { points });
-        };
-        if weights.len() != points.len() {
-            return Err(NurbsError::WeightLaneLength {
-                field: "poles".to_owned(),
-                poles: points.len(),
-                weights: weights.len(),
-            });
-        }
-        Ok(Self::Rational {
-            points: points
-                .into_iter()
-                .zip(weights)
-                .enumerate()
-                .map(|(index, (point, weight))| {
-                    Ok(WeightedPole3 {
-                        point,
-                        weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
-                            field: "poles".to_owned(),
-                            index,
-                            weight,
-                        })?,
-                    })
-                })
-                .collect::<Result<Vec<_>, NurbsError>>()?,
+/// The refusal of a pole position with a non-finite coordinate.
+pub(super) fn non_finite_control_point() -> NurbsError {
+    NurbsError::Structure("control_points contains a non-finite point".into())
+}
+
+/// A pole value a producer hands a NURBS store: a raw value, which the store
+/// admits in its own refusal order, or an admitted value, which it keeps.
+pub trait PoleValue<T>: Copy {
+    /// The admitted value, absent when a raw value is not finite.
+    fn admit(self) -> Option<T>;
+}
+
+impl PoleValue<FinitePoint3> for Point3 {
+    fn admit(self) -> Option<FinitePoint3> {
+        FinitePoint3::new(self)
+    }
+}
+
+impl PoleValue<FinitePoint3> for FinitePoint3 {
+    fn admit(self) -> Option<FinitePoint3> {
+        Some(self)
+    }
+}
+
+/// Pair each pole of a lane with its weight, after the weight lane has been
+/// found to cover the poles.
+fn weighted_poles<P, W>(
+    points: Vec<P>,
+    weights: Vec<W>,
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
+) -> Result<Vec<WeightedPole3<P>>, NurbsError> {
+    points
+        .into_iter()
+        .zip(weights)
+        .enumerate()
+        .map(|(index, (point, value))| {
+            Ok(WeightedPole3 {
+                point,
+                weight: weight(index, value)?,
+            })
         })
-    }
+        .collect()
+}
 
-    /// Count poles.
-    #[must_use]
-    pub fn count(&self) -> usize {
-        match self {
-            Self::Polynomial { points } => points.len(),
-            Self::Rational { points } => points.len(),
-        }
-    }
-
-    /// Pole positions in parameter order.
-    #[must_use]
-    pub fn points(&self) -> Vec<Point3> {
-        match self {
-            Self::Polynomial { points } => points.clone(),
-            Self::Rational { points } => points.iter().map(|pole| pole.point).collect(),
-        }
-    }
-
-    fn require_finite_points(&self) -> Result<(), NurbsError> {
-        match self {
-            Self::Polynomial { points } => require_finite_points_3("control_points", points),
-            Self::Rational { points } => {
-                require_finite_points_3("control_points", points.iter().map(|pole| &pole.point))
-            }
-        }
-    }
-
-    /// Rational weights in pole order, absent on a polynomial curve.
-    #[must_use]
-    pub fn weights(&self) -> Option<Vec<f64>> {
-        match self {
-            Self::Polynomial { .. } => None,
-            Self::Rational { points } => {
-                Some(points.iter().map(|pole| pole.weight.get()).collect())
-            }
-        }
-    }
-
-    /// Reverse the pole order.
-    pub fn reverse(&mut self) {
-        match self {
-            Self::Polynomial { points } => points.reverse(),
-            Self::Rational { points } => points.reverse(),
-        }
-    }
-
+impl NurbsPoles3 {
     /// Edit every pole position in place, keeping every accepted edit.
     ///
     /// A refusal leaves the lane partly edited, so the caller owns the copy
@@ -208,6 +171,141 @@ impl NurbsPoles3 {
     }
 }
 
+impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
+    /// The poles with admitted positions.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole position with a non-finite coordinate.
+    fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
+        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
+}
+
+impl NurbsPoles3<FinitePoint3> {
+    /// The poles with raw positions, for a reader that edits or writes them.
+    #[must_use]
+    pub fn to_raw(&self) -> NurbsPoles3 {
+        let Ok(raw) = self
+            .clone()
+            .try_map_points(|point| Ok::<_, std::convert::Infallible>(point.get()));
+        raw
+    }
+
+    /// Raw pole positions in parameter order, for a reader that computes with
+    /// or writes them.
+    #[must_use]
+    pub fn raw_points(&self) -> Vec<Point3> {
+        self.points().into_iter().map(FinitePoint3::get).collect()
+    }
+}
+
+impl<P> NurbsPoles3<P> {
+    /// Pair a source's pole lane with its weight lane. A store admits the
+    /// positions it is handed.
+    ///
+    /// A source that states poles and weights as two arrays pairs them here,
+    /// once, at the decode boundary.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both counts,
+    /// and a weight that is zero or non-finite, naming its index.
+    pub fn from_lanes(points: Vec<P>, weights: Option<Vec<f64>>) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { points });
+        };
+        require_weight_lane("poles", points.len(), weights.len())?;
+        Ok(Self::Rational {
+            points: weighted_poles(points, weights, |index, weight| {
+                admit_weight("poles", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair a pole lane with an admitted weight lane. The weight type states
+    /// the weight contract; a store admits the positions it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles, naming both
+    /// counts.
+    pub fn from_checked_lanes(
+        points: Vec<P>,
+        weights: Option<Vec<NonZeroReal>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { points });
+        };
+        require_weight_lane("poles", points.len(), weights.len())?;
+        Ok(Self::Rational {
+            points: weighted_poles(points, weights, |_, weight| Ok(weight))?,
+        })
+    }
+
+    /// Count poles.
+    #[must_use]
+    pub fn count(&self) -> usize {
+        match self {
+            Self::Polynomial { points } => points.len(),
+            Self::Rational { points } => points.len(),
+        }
+    }
+
+    /// Rational weights in pole order, absent on a polynomial curve.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<f64>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight.get()).collect())
+            }
+        }
+    }
+
+    /// Reverse the pole order.
+    pub fn reverse(&mut self) {
+        match self {
+            Self::Polynomial { points } => points.reverse(),
+            Self::Rational { points } => points.reverse(),
+        }
+    }
+
+    /// Map every pole position in parameter order, keeping the weights.
+    fn try_map_points<Q, E>(
+        self,
+        mut point: impl FnMut(P) -> Result<Q, E>,
+    ) -> Result<NurbsPoles3<Q>, E> {
+        Ok(match self {
+            Self::Polynomial { points } => NurbsPoles3::Polynomial {
+                points: points.into_iter().map(point).collect::<Result<_, E>>()?,
+            },
+            Self::Rational { points } => NurbsPoles3::Rational {
+                points: points
+                    .into_iter()
+                    .map(|pole| {
+                        Ok(WeightedPole3 {
+                            point: point(pole.point)?,
+                            weight: pole.weight,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+        })
+    }
+}
+
+impl<P: Copy> NurbsPoles3<P> {
+    /// Pole positions in parameter order.
+    #[must_use]
+    pub fn points(&self) -> Vec<P> {
+        match self {
+            Self::Polynomial { points } => points.clone(),
+            Self::Rational { points } => points.iter().map(|pole| pole.point).collect(),
+        }
+    }
+}
+
 /// The control grid of a NURBS surface, stating the surface's rational form.
 ///
 /// A rational pole carries its weight in its own row, so a weight grid that
@@ -220,130 +318,43 @@ impl NurbsPoles3 {
 /// let mut grid = NurbsPoleGrid::Polynomial { rows: Vec::new() };
 /// grid.transpose();
 /// ```
+// A source states raw positions; a `NurbsSurface` holds the admitted grid,
+// whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "form", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum NurbsPoleGrid {
+pub enum NurbsPoleGrid<P = Point3> {
     /// A polynomial surface: its poles carry no weight.
     Polynomial {
         /// Control grid rows: `rows[i][j]` is pole `(i, j)`.
-        rows: Vec<Vec<Point3>>,
+        rows: Vec<Vec<P>>,
     },
     /// A rational surface: every pole carries its weight.
     Rational {
         /// Control grid rows: `rows[i][j]` is pole `(i, j)`.
-        rows: Vec<Vec<WeightedPole3>>,
+        rows: Vec<Vec<WeightedPole3<P>>>,
     },
 }
 
+/// Pair each row of a pole grid with its weight row, refusing a weight grid
+/// that does not cover the pole grid, row count or row width.
+fn weighted_rows<P, W>(
+    rows: Vec<Vec<P>>,
+    weights: Vec<Vec<W>>,
+    mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
+) -> Result<Vec<Vec<WeightedPole3<P>>>, NurbsError> {
+    require_weight_lane("pole grid", rows.len(), weights.len())?;
+    rows.into_iter()
+        .zip(weights)
+        .map(|(row, weight_row)| {
+            require_weight_lane("pole grid row", row.len(), weight_row.len())?;
+            weighted_poles(row, weight_row, &mut weight)
+        })
+        .collect()
+}
+
 impl NurbsPoleGrid {
-    /// Pair a source's pole grid with its weight grid.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a weight grid that does not cover the pole grid, row count or
-    /// row width, naming both counts, and a weight that is zero or non-finite,
-    /// naming its index within its row.
-    pub fn from_lanes(
-        rows: Vec<Vec<Point3>>,
-        weights: Option<Vec<Vec<f64>>>,
-    ) -> Result<Self, NurbsError> {
-        let Some(weights) = weights else {
-            return Ok(Self::Polynomial { rows });
-        };
-        if weights.len() != rows.len() {
-            return Err(NurbsError::WeightLaneLength {
-                field: "pole grid".to_owned(),
-                poles: rows.len(),
-                weights: weights.len(),
-            });
-        }
-        let paired = rows
-            .into_iter()
-            .zip(weights)
-            .map(|(row, weight_row)| {
-                if weight_row.len() != row.len() {
-                    return Err(NurbsError::WeightLaneLength {
-                        field: "pole grid row".to_owned(),
-                        poles: row.len(),
-                        weights: weight_row.len(),
-                    });
-                }
-                row.into_iter()
-                    .zip(weight_row)
-                    .enumerate()
-                    .map(|(index, (point, weight))| {
-                        Ok(WeightedPole3 {
-                            point,
-                            weight: NonZeroReal::new(weight).ok_or(NurbsError::UnusableWeight {
-                                field: "pole grid row".to_owned(),
-                                index,
-                                weight,
-                            })?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, NurbsError>>()
-            })
-            .collect::<Result<Vec<_>, NurbsError>>()?;
-        Ok(Self::Rational { rows: paired })
-    }
-
-    /// Number of grid rows, the pole count along u.
-    #[must_use]
-    pub fn u_count(&self) -> usize {
-        match self {
-            Self::Polynomial { rows } => rows.len(),
-            Self::Rational { rows } => rows.len(),
-        }
-    }
-
-    /// Length of the first grid row, the pole count along v.
-    #[must_use]
-    pub fn v_count(&self) -> usize {
-        match self {
-            Self::Polynomial { rows } => rows.first().map_or(0, Vec::len),
-            Self::Rational { rows } => rows.first().map_or(0, Vec::len),
-        }
-    }
-
-    /// Pole positions as grid rows.
-    #[must_use]
-    pub fn points(&self) -> Vec<Vec<Point3>> {
-        match self {
-            Self::Polynomial { rows } => rows.clone(),
-            Self::Rational { rows } => rows
-                .iter()
-                .map(|row| row.iter().map(|pole| pole.point).collect())
-                .collect(),
-        }
-    }
-
-    fn require_finite_points(&self) -> Result<(), NurbsError> {
-        match self {
-            Self::Polynomial { rows } => {
-                require_finite_points_3("control_points", rows.iter().flatten())
-            }
-            Self::Rational { rows } => require_finite_points_3(
-                "control_points",
-                rows.iter().flatten().map(|pole| &pole.point),
-            ),
-        }
-    }
-
-    /// Rational weight rows, absent on a polynomial surface.
-    #[must_use]
-    pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
-        match self {
-            Self::Polynomial { .. } => None,
-            Self::Rational { rows } => Some(
-                rows.iter()
-                    .map(|row| row.iter().map(|pole| pole.weight.get()).collect())
-                    .collect(),
-            ),
-        }
-    }
-
     /// Edit every pole position in place, keeping every accepted edit.
     ///
     /// A refusal leaves the grid partly edited, so the caller owns the copy
@@ -368,6 +379,156 @@ impl NurbsPoleGrid {
     }
 }
 
+impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
+    /// The grid with admitted positions.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole position with a non-finite coordinate.
+    fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
+        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+    }
+}
+
+impl NurbsPoleGrid<FinitePoint3> {
+    /// The grid with raw positions, for a reader that edits or writes them.
+    #[must_use]
+    pub fn to_raw(&self) -> NurbsPoleGrid {
+        let Ok(raw) = self
+            .clone()
+            .try_map_points(|point| Ok::<_, std::convert::Infallible>(point.get()));
+        raw
+    }
+
+    /// Raw pole positions as grid rows, for a reader that computes with or
+    /// writes them.
+    #[must_use]
+    pub fn raw_points(&self) -> Vec<Vec<Point3>> {
+        self.points()
+            .into_iter()
+            .map(|row| row.into_iter().map(FinitePoint3::get).collect())
+            .collect()
+    }
+}
+
+impl<P> NurbsPoleGrid<P> {
+    /// Pair a source's pole grid with its weight grid. A store admits the
+    /// positions it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight grid that does not cover the pole grid, row count or
+    /// row width, naming both counts, and a weight that is zero or non-finite,
+    /// naming its index within its row.
+    pub fn from_lanes(
+        rows: Vec<Vec<P>>,
+        weights: Option<Vec<Vec<f64>>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { rows });
+        };
+        Ok(Self::Rational {
+            rows: weighted_rows(rows, weights, |index, weight| {
+                admit_weight("pole grid row", index, weight)
+            })?,
+        })
+    }
+
+    /// Pair a pole grid with an admitted weight grid. The weight type states
+    /// the weight contract; a store admits the positions it is handed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight grid that does not cover the pole grid, row count or
+    /// row width, naming both counts.
+    pub fn from_checked_lanes(
+        rows: Vec<Vec<P>>,
+        weights: Option<Vec<Vec<NonZeroReal>>>,
+    ) -> Result<Self, NurbsError> {
+        let Some(weights) = weights else {
+            return Ok(Self::Polynomial { rows });
+        };
+        Ok(Self::Rational {
+            rows: weighted_rows(rows, weights, |_, weight| Ok(weight))?,
+        })
+    }
+
+    /// Number of grid rows, the pole count along u.
+    #[must_use]
+    pub fn u_count(&self) -> usize {
+        match self {
+            Self::Polynomial { rows } => rows.len(),
+            Self::Rational { rows } => rows.len(),
+        }
+    }
+
+    /// Length of the first grid row, the pole count along v.
+    #[must_use]
+    pub fn v_count(&self) -> usize {
+        match self {
+            Self::Polynomial { rows } => rows.first().map_or(0, Vec::len),
+            Self::Rational { rows } => rows.first().map_or(0, Vec::len),
+        }
+    }
+
+    /// Rational weight rows, absent on a polynomial surface.
+    #[must_use]
+    pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
+        match self {
+            Self::Polynomial { .. } => None,
+            Self::Rational { rows } => Some(
+                rows.iter()
+                    .map(|row| row.iter().map(|pole| pole.weight.get()).collect())
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Map every pole position in grid order, keeping the weights.
+    fn try_map_points<Q, E>(
+        self,
+        mut point: impl FnMut(P) -> Result<Q, E>,
+    ) -> Result<NurbsPoleGrid<Q>, E> {
+        Ok(match self {
+            Self::Polynomial { rows } => NurbsPoleGrid::Polynomial {
+                rows: rows
+                    .into_iter()
+                    .map(|row| row.into_iter().map(&mut point).collect())
+                    .collect::<Result<_, E>>()?,
+            },
+            Self::Rational { rows } => NurbsPoleGrid::Rational {
+                rows: rows
+                    .into_iter()
+                    .map(|row| {
+                        row.into_iter()
+                            .map(|pole| {
+                                Ok(WeightedPole3 {
+                                    point: point(pole.point)?,
+                                    weight: pole.weight,
+                                })
+                            })
+                            .collect()
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+        })
+    }
+}
+
+impl<P: Copy> NurbsPoleGrid<P> {
+    /// Pole positions as grid rows.
+    #[must_use]
+    pub fn points(&self) -> Vec<Vec<P>> {
+        match self {
+            Self::Polynomial { rows } => rows.clone(),
+            Self::Rational { rows } => rows
+                .iter()
+                .map(|row| row.iter().map(|pole| pole.point).collect())
+                .collect(),
+        }
+    }
+}
+
 /// A tensor-product NURBS surface.
 ///
 /// The control grid is stored as rows: the outer index is u, the inner index
@@ -387,7 +548,8 @@ pub struct NurbsSurface {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
     v_knots: KnotVector,
     /// Control grid rows, with the surface's rational form.
-    poles: NurbsPoleGrid,
+    #[cfg_attr(feature = "schema", schemars(with = "NurbsPoleGrid"))]
+    poles: NurbsPoleGrid<FinitePoint3>,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     normal_reversed: bool,
@@ -589,17 +751,34 @@ fn require_length(field: &str, actual: usize, expected: usize) -> Result<(), Nur
     }
 }
 
-fn require_finite_points_3<'a>(
+/// A weight lane covers the pole lane it belongs to.
+pub(super) fn require_weight_lane(
     field: &str,
-    points: impl IntoIterator<Item = &'a Point3>,
+    poles: usize,
+    weights: usize,
 ) -> Result<(), NurbsError> {
-    if points.into_iter().all(Point3::is_finite) {
+    if poles == weights {
         Ok(())
     } else {
-        Err(NurbsError::Structure(format!(
-            "{field} contains a non-finite point"
-        )))
+        Err(NurbsError::WeightLaneLength {
+            field: field.to_owned(),
+            poles,
+            weights,
+        })
     }
+}
+
+/// Admit one weight a source states, naming its index within its lane.
+pub(super) fn admit_weight(
+    field: &str,
+    index: usize,
+    weight: f64,
+) -> Result<NonZeroReal, NurbsError> {
+    NonZeroReal::new(weight).ok_or_else(|| NurbsError::UnusableWeight {
+        field: field.to_owned(),
+        index,
+        weight,
+    })
 }
 
 fn require_finite_scalars(field: &str, values: &[f64]) -> Result<(), NurbsError> {
@@ -666,18 +845,20 @@ impl NurbsSurfaceAxis {
 /// The pole grid and weight grid a source states for one NURBS surface.
 ///
 /// A weight grid covers the pole grid it belongs to, so the two are one
-/// statement and are paired once, at the decode boundary.
+/// statement and are paired once, at the decode boundary. A source states raw
+/// lanes; a producer that holds admitted positions and weights states the
+/// `FinitePoint3` and `NonZeroReal` lanes.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NurbsSurfaceLanes {
-    control_points: Vec<Vec<Point3>>,
-    weights: Option<Vec<Vec<f64>>>,
+pub struct NurbsSurfaceLanes<P = Point3, W = f64> {
+    control_points: Vec<Vec<P>>,
+    weights: Option<Vec<Vec<W>>>,
 }
 
-impl NurbsSurfaceLanes {
+impl<P, W> NurbsSurfaceLanes<P, W> {
     /// The pole grid a source states, with its weight grid when it is
     /// rational.
     #[must_use]
-    pub const fn new(control_points: Vec<Vec<Point3>>, weights: Option<Vec<Vec<f64>>>) -> Self {
+    pub const fn new(control_points: Vec<Vec<P>>, weights: Option<Vec<Vec<W>>>) -> Self {
         Self {
             control_points,
             weights,
@@ -687,10 +868,20 @@ impl NurbsSurfaceLanes {
 
 impl NurbsSurface {
     /// Build a tensor-product NURBS surface with consistent cardinalities.
-    pub fn new(
+    ///
+    /// Raw pole positions are admitted; admitted positions are kept, so a
+    /// producer that holds them tests only the grid's cross-field conditions.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole count that does not exceed its degree, a knot count that
+    /// does not follow from the degree and the pole count, a ragged grid, a
+    /// non-finite raw pole coordinate and then a non-finite or decreasing
+    /// knot.
+    pub fn new<P: PoleValue<FinitePoint3>>(
         u: NurbsSurfaceAxis,
         v: NurbsSurfaceAxis,
-        poles: NurbsPoleGrid,
+        poles: NurbsPoleGrid<P>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
         let NurbsSurfaceAxis {
@@ -729,7 +920,7 @@ impl NurbsSurface {
             NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
             NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
-        poles.require_finite_points()?;
+        let poles = poles.admit()?;
         let u_knots = KnotVector::new(u_knots)
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
         let v_knots = KnotVector::new(v_knots)
@@ -786,10 +977,10 @@ impl NurbsSurface {
     /// Refuses lanes the carrier cannot state: a weight grid that does not
     /// cover its pole grid, an unusable weight, a knot count that does not
     /// follow from the degree and the pole count, or a non-finite coordinate.
-    pub fn from_lanes(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
         u: NurbsSurfaceAxis,
         v: NurbsSurfaceAxis,
-        lanes: NurbsSurfaceLanes,
+        lanes: NurbsSurfaceLanes<P>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
         let NurbsSurfaceLanes {
@@ -800,9 +991,51 @@ impl NurbsSurface {
         Self::new(u, v, poles, normal_reversed)
     }
 
-    /// Control grid rows, with the surface's rational form.
-    pub const fn pole_grid(&self) -> &NurbsPoleGrid {
+    /// Build a NURBS surface from a pole grid and an admitted weight grid.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight grid that does not cover its pole grid and what
+    /// [`Self::new`] refuses.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
+        u: NurbsSurfaceAxis,
+        v: NurbsSurfaceAxis,
+        lanes: NurbsSurfaceLanes<P, NonZeroReal>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        let NurbsSurfaceLanes {
+            control_points,
+            weights,
+        } = lanes;
+        let poles = NurbsPoleGrid::from_checked_lanes(control_points, weights)?;
+        Self::new(u, v, poles, normal_reversed)
+    }
+
+    /// Control grid rows, with the surface's rational form and admitted
+    /// positions.
+    pub const fn pole_grid(&self) -> &NurbsPoleGrid<FinitePoint3> {
         &self.poles
+    }
+
+    /// Control-point rows, outer index u and inner index v.
+    #[must_use]
+    pub fn control_grid(&self) -> Vec<Vec<FinitePoint3>> {
+        self.poles.points()
+    }
+
+    /// Control points in u-major order.
+    #[must_use]
+    pub fn poles(&self) -> Vec<FinitePoint3> {
+        self.control_grid().into_iter().flatten().collect()
+    }
+
+    /// Pole at grid position `(u, v)`.
+    #[must_use]
+    pub fn pole(&self, u: usize, v: usize) -> Option<FinitePoint3> {
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { rows } => rows.get(u)?.get(v).copied(),
+            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.point),
+        }
     }
 
     /// Rational weight at grid position `(u, v)`, absent when non-rational.
@@ -820,10 +1053,20 @@ impl NurbsSurface {
         &mut self,
         edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.clone();
+        let mut poles = self.poles.to_raw();
         poles.apply_points(edit)?;
-        poles.require_finite_points()?;
-        self.poles = poles;
+        self.poles = poles.admit()?;
+        Ok(())
+    }
+
+    /// Atomically map every admitted pole position. The closure states its
+    /// own refusal, which discards the whole map; the positions it returns are
+    /// admitted, so nothing is checked.
+    pub fn map_control_points(
+        &mut self,
+        map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, NurbsError>,
+    ) -> Result<(), NurbsError> {
+        self.poles = self.poles.clone().try_map_points(map)?;
         Ok(())
     }
 
@@ -933,21 +1176,31 @@ pub struct NurbsCurve {
     #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
     knots: KnotVector,
     /// Poles in parameter order, with the curve's rational form.
-    poles: NurbsPoles3,
+    #[cfg_attr(feature = "schema", schemars(with = "NurbsPoles3"))]
+    poles: NurbsPoles3<FinitePoint3>,
     /// Whether the curve is periodic.
     periodic: bool,
 }
 
 impl NurbsCurve {
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
-    pub fn new(
+    ///
+    /// Raw pole positions are admitted; admitted positions are kept, so a
+    /// producer that holds them tests only the cardinalities and the knots.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a pole or knot count that does not follow from the degree, a
+    /// non-finite raw pole coordinate and then a non-finite or decreasing
+    /// knot.
+    pub fn new<P: PoleValue<FinitePoint3>>(
         degree: u32,
         knots: Vec<f64>,
-        poles: NurbsPoles3,
+        poles: NurbsPoles3<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
-        poles.require_finite_points()?;
+        let poles = poles.admit()?;
         let knots = KnotVector::new(knots)?;
         Ok(Self {
             degree,
@@ -979,10 +1232,10 @@ impl NurbsCurve {
     ///
     /// A source that states poles and weights as two arrays pairs them here,
     /// once, at the decode boundary; the curve itself carries pole rows.
-    pub fn from_lanes(
+    pub fn from_lanes<P: PoleValue<FinitePoint3>>(
         degree: u32,
         knots: Vec<f64>,
-        control_points: Vec<Point3>,
+        control_points: Vec<P>,
         weights: Option<Vec<f64>>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
@@ -990,9 +1243,33 @@ impl NurbsCurve {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Poles in parameter order, with the curve's rational form.
-    pub const fn pole_rows(&self) -> &NurbsPoles3 {
+    /// Build a NURBS curve from a pole lane and an admitted weight lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a weight lane that does not cover the poles and what
+    /// [`Self::new`] refuses.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
+        degree: u32,
+        knots: Vec<f64>,
+        control_points: Vec<P>,
+        weights: Option<Vec<NonZeroReal>>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        let poles = NurbsPoles3::from_checked_lanes(control_points, weights)?;
+        Self::new(degree, knots, poles, periodic)
+    }
+
+    /// Poles in parameter order, with the curve's rational form and admitted
+    /// positions.
+    pub const fn pole_rows(&self) -> &NurbsPoles3<FinitePoint3> {
         &self.poles
+    }
+
+    /// Control points in parameter order.
+    #[must_use]
+    pub fn control_points(&self) -> Vec<FinitePoint3> {
+        self.poles.points()
     }
 
     /// Number of poles.
@@ -1007,10 +1284,20 @@ impl NurbsCurve {
         &mut self,
         edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
-        let mut poles = self.poles.clone();
+        let mut poles = self.poles.to_raw();
         poles.apply_points(edit)?;
-        poles.require_finite_points()?;
-        self.poles = poles;
+        self.poles = poles.admit()?;
+        Ok(())
+    }
+
+    /// Atomically map every admitted pole position. The closure states its
+    /// own refusal, which discards the whole map; the positions it returns are
+    /// admitted, so nothing is checked.
+    pub fn map_control_points(
+        &mut self,
+        map: impl FnMut(FinitePoint3) -> Result<FinitePoint3, NurbsError>,
+    ) -> Result<(), NurbsError> {
+        self.poles = self.poles.clone().try_map_points(map)?;
         Ok(())
     }
 

@@ -107,7 +107,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     )
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let control_points = nurbs.pole_rows().points();
+    let control_points = nurbs.pole_rows().raw_points();
     let start_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 0.0)
         .expect("start point");
     let end_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 1.0)

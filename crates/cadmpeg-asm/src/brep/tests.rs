@@ -171,7 +171,7 @@ fn exact_circle_recognition_is_projective_and_degree_invariant() {
     });
     {
         let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
-            scaled.pole_rows().points(),
+            scaled.pole_rows().raw_points(),
             scaled_weights,
         )
         .expect("scaled weights are finite and non-zero");
@@ -1178,7 +1178,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 curve.degree(),
                 curve.knots().to_vec(),
-                curve.pole_rows().points(),
+                curve.pole_rows().raw_points(),
                 Some(
                     curve
                         .weights()
@@ -1198,7 +1198,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
         let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             curve.degree(),
             curve.knots().to_vec(),
-            curve.pole_rows().points(),
+            curve.pole_rows().raw_points(),
             Some(vec![scale; 9]),
             false,
         )

@@ -595,7 +595,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
         return false;
     }
     let shared = nodes[shared_nodes[0]];
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     let first_shared = point_distance(control_points[0], shared) <= tolerance;
     let last_shared = control_points
         .last()
@@ -1200,7 +1200,7 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().points();
+            let control_points = curve.pole_rows().raw_points();
             let weights = curve.pole_rows().weights();
             cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),
@@ -1764,7 +1764,7 @@ fn certified_nurbs_tubes(
     let speed = nurbs_speed_bound(curve)?;
     let degree = curve.degree() as usize;
     let knots = curve.knots();
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let count = control_points.len();
     let mut tubes = Vec::new();
@@ -2523,7 +2523,7 @@ pub(super) fn point_on_sketch_entity(
             }
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().points();
+            let control_points = curve.pole_rows().raw_points();
             let weights = curve.pole_rows().weights();
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
                 curve.degree(),
@@ -3076,7 +3076,7 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().points();
+            let control_points = curve.pole_rows().raw_points();
             let weights = curve.pole_rows().weights();
             let start_parameter = curve.knots()[curve.degree() as usize];
             let end_parameter = curve.knots()[control_points.len()];

@@ -123,7 +123,9 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         .expect("finite fixture geometry preserves NURBS invariants");
     let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;
-    assert!(NurbsPoleGrid::from_lanes(coplanar.pole_grid().points(), Some(zero_weights)).is_err());
+    assert!(
+        NurbsPoleGrid::from_lanes(coplanar.pole_grid().raw_points(), Some(zero_weights)).is_err()
+    );
 }
 
 #[test]
@@ -176,7 +178,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     assert_eq!(shared.pole_rows().weights(), Some(vec![3.0, 4.0]));
 
     let mut reversed = second.clone();
-    let mut reversed_grid = reversed.pole_grid().points();
+    let mut reversed_grid = reversed.pole_grid().raw_points();
     reversed_grid[0].swap(0, 1);
     reversed_grid[1].swap(0, 1);
     let mut reversed_weights = reversed.pole_grid().weights();
@@ -215,7 +217,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .is_some());
 
     let mut same_side = second.clone();
-    let mut same_side_grid = same_side.pole_grid().points();
+    let mut same_side_grid = same_side.pole_grid().raw_points();
     same_side_grid[1][0] = Point3::new(-2.0, 0.0, 0.0);
     same_side_grid[1][1] = Point3::new(-2.0, 0.0, 1.0);
     let same_side_weights = same_side.pole_grid().weights();
@@ -280,7 +282,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .is_none());
 
     let mut different_boundary = second;
-    let mut different_grid = different_boundary.pole_grid().points();
+    let mut different_grid = different_boundary.pole_grid().raw_points();
     different_grid[0][1].x = 0.1;
     let different_weights = different_boundary.pole_grid().weights();
     {

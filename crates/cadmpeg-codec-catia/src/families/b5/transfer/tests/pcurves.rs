@@ -1427,7 +1427,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance.get() <= 1e-4);
     assert_eq!(
-        plan.cache.pole_rows().points().first(),
+        plan.cache.pole_rows().raw_points().first(),
         Some(&Point3::new(2.0, 0.0, 3.0))
     );
 

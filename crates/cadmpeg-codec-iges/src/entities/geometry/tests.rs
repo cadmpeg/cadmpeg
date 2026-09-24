@@ -588,7 +588,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.pole_rows().points(),
+            &nurbs.pole_rows().raw_points(),
             nurbs.pole_rows().weights().as_deref(),
             0.5,
         )
@@ -854,7 +854,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.pole_rows().points(),
+            &nurbs.pole_rows().raw_points(),
             nurbs.pole_rows().weights().as_deref(),
             0.5,
         )
@@ -895,7 +895,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.pole_rows().points(),
+            &nurbs.pole_rows().raw_points(),
             nurbs.pole_rows().weights().as_deref(),
             0.5,
         )

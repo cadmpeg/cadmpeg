@@ -804,7 +804,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
                 IsolineDirection::ConstantV => (sample, at),
             };
             let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
-            let control_points = curve.pole_rows().points();
+            let control_points = curve.pole_rows().raw_points();
             let weights = curve.pole_rows().weights();
             let actual = nurbs_curve_point(
                 curve.degree(),

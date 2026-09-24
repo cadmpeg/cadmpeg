@@ -2385,7 +2385,7 @@ fn transform_sketch_block_geometry(
             let mut curve = curve.clone();
             let transformed = curve
                 .pole_rows()
-                .points()
+                .raw_points()
                 .into_iter()
                 .map(point)
                 .collect::<Option<Vec<_>>>()?;

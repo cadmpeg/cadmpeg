@@ -225,7 +225,7 @@ pub(super) fn swept_nurbs(
         return None;
     }
     let n = profile.pole_count();
-    let profile_weights = profile.pole_rows().weights();
+    let profile_weights = profile.weights();
     let mut control = Vec::with_capacity(n * 2);
     let mut weights = profile_weights.as_ref().map(|_| Vec::with_capacity(n * 2));
     for (i, pole) in profile.control_points().iter().enumerate() {
@@ -240,7 +240,7 @@ pub(super) fn swept_nurbs(
             }
         }
     }
-    match NurbsSurface::from_lanes(
+    match NurbsSurface::from_checked_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             profile.degree(),
             profile.knots().to_vec(),
@@ -469,7 +469,7 @@ mod tests {
     }
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
-        let control_points = curve.pole_rows().points();
+        let control_points = curve.pole_rows().raw_points();
         let weights = curve.pole_rows().weights();
         nurbs_curve_point(
             curve.degree(),

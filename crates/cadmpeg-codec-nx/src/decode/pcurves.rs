@@ -46,6 +46,7 @@ use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -747,26 +748,10 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            let mut poles = nurbs.poles();
+            let mut poles = nurbs.pole_rows().clone();
             poles.reverse();
-            let mut weights = nurbs.pole_rows().weights();
-            if let Some(weights) = &mut weights {
-                weights.reverse();
-            }
-            let finite = poles
-                .iter()
-                .flat_map(|pole| [pole.radial.u, pole.radial.v, pole.axial])
-                .all(f64::is_finite);
-            if !finite {
-                return Ok(None);
-            }
-            let reversed = PolarPcurveNurbs::from_lanes(
-                nurbs.degree(),
-                reversed_knots,
-                poles,
-                weights,
-                nurbs.periodic(),
-            )?;
+            let reversed =
+                PolarPcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
             Ok(Some(PcurveGeometry::PolarNurbs { nurbs: reversed }))
         }
         PcurveGeometry::Nurbs { nurbs } => {
@@ -782,26 +767,10 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            let mut control_points = nurbs.pole_rows().points();
-            control_points.reverse();
-            let mut weights = nurbs.pole_rows().weights();
-            if let Some(weights) = &mut weights {
-                weights.reverse();
-            }
-            let finite = control_points
-                .iter()
-                .flat_map(|point| [point.u, point.v])
-                .all(f64::is_finite);
-            if !finite {
-                return Ok(None);
-            }
-            let reversed = PcurveNurbs::from_lanes(
-                nurbs.degree(),
-                reversed_knots,
-                control_points,
-                weights,
-                nurbs.periodic(),
-            )?;
+            let mut poles = nurbs.pole_rows().clone();
+            poles.reverse();
+            let reversed =
+                PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic())?;
             Ok(Some(PcurveGeometry::Nurbs { nurbs: reversed }))
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
@@ -854,17 +823,16 @@ fn reverse_pcurve_over_range(
             };
             let derivative = Point2::new(-tangent.u, -tangent.v);
             let half_span = end * 0.5 - start * 0.5;
-            let middle = Point2::new(
+            let Some(middle) = FinitePoint2::new(Point2::new(
                 first.u + half_span * derivative.u,
                 first.v + half_span * derivative.v,
-            );
-            if !middle.is_finite() {
+            )) else {
                 return Ok(None);
-            }
+            };
             let reversed = PcurveNurbs::from_lanes(
                 2,
                 vec![start, start, start, end, end, end],
-                vec![first.get(), middle, last.get()],
+                vec![first, middle, last],
                 None,
                 false,
             )?;
@@ -3257,9 +3225,6 @@ fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f6
     let mut maximum = [f64::NEG_INFINITY; 3];
     for point in surface.poles() {
         let coordinates = [point.x, point.y, point.z];
-        if coordinates.iter().any(|coordinate| !coordinate.is_finite()) {
-            return None;
-        }
         for axis in 0..3 {
             minimum[axis] = minimum[axis].min(coordinates[axis]);
             maximum[axis] = maximum[axis].max(coordinates[axis]);

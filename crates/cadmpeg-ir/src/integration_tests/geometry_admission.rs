@@ -27,7 +27,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(NurbsCurve::from_lanes(
             1,
             knots.clone(),
-            curve().pole_rows().points(),
+            curve().pole_rows().raw_points(),
             None,
             false
         )
@@ -35,7 +35,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         assert!(PcurveNurbs::from_lanes(
             1,
             knots.clone(),
-            pcurve().pole_rows().points(),
+            pcurve().pole_rows().raw_points(),
             None,
             false
         )
@@ -55,7 +55,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         )
         .is_err());
 
-        let mut points = curve().pole_rows().points();
+        let mut points = curve().pole_rows().raw_points();
         points[1].z = invalid;
         assert!(NurbsCurve::from_lanes(1, curve().knots().to_vec(), points, None, false).is_err());
         assert!(PcurveNurbs::from_lanes(
@@ -82,7 +82,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         .is_err());
 
         let source = surface();
-        let mut points = source.pole_grid().points();
+        let mut points = source.pole_grid().raw_points();
         points[0][1].x = invalid;
         assert!(NurbsSurface::from_lanes(
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.u_knots().to_vec(), false),
@@ -107,28 +107,28 @@ fn curve_weights(
     curve: &NurbsCurve,
     weights: Vec<f64>,
 ) -> Result<NurbsPoles3, crate::geometry::nurbs::NurbsError> {
-    NurbsPoles3::from_lanes(curve.pole_rows().points(), Some(weights))
+    NurbsPoles3::from_lanes(curve.pole_rows().raw_points(), Some(weights))
 }
 
 fn surface_weights(
     surface: &NurbsSurface,
     weights: Vec<Vec<f64>>,
 ) -> Result<NurbsPoleGrid, crate::geometry::nurbs::NurbsError> {
-    NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weights))
+    NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weights))
 }
 
 fn pcurve_weights(
     pcurve: &PcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PcurveNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PcurveNurbsPoles::from_lanes(pcurve.pole_rows().points(), Some(weights))
+    PcurveNurbsPoles::from_lanes(pcurve.pole_rows().raw_points(), Some(weights))
 }
 
 fn polar_weights(
     polar: &PolarPcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PolarNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PolarNurbsPoles::from_lanes(polar.poles(), Some(weights))
+    PolarNurbsPoles::from_lanes(polar.pole_rows().to_raw().poles(), Some(weights))
 }
 
 #[test]
@@ -337,14 +337,14 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
         crate::geometry::pcurve::PolarPcurveNurbs::from_lanes(
             previous.degree(),
             knots,
-            previous.poles(),
+            previous.pole_rows().to_raw().poles(),
             previous.pole_rows().weights(),
             previous.periodic(),
         )
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
-        let mut poles = previous.poles();
+        let mut poles = previous.pole_rows().to_raw().poles();
         for pole in &mut poles {
             pole.radial.v = f64::INFINITY;
         }
@@ -358,7 +358,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
     })
     .is_err());
     assert!(edit::replace(&mut polar, |previous| {
-        let mut poles = previous.poles();
+        let mut poles = previous.pole_rows().to_raw().poles();
         for pole in &mut poles {
             pole.axial = f64::NAN;
         }

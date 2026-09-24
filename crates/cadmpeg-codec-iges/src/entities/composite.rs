@@ -536,16 +536,9 @@ fn reverse_nurbs(
         .copied()
         .map(reflect)
         .collect::<Result<Vec<_>, _>>()?;
-    let reversed = NurbsCurve::from_lanes(
-        curve.degree(),
-        knots,
-        curve.pole_rows().points().into_iter().rev().collect(),
-        curve
-            .pole_rows()
-            .weights()
-            .map(|weights| weights.into_iter().rev().collect()),
-        curve.periodic(),
-    )?;
+    let mut poles = curve.pole_rows().clone();
+    poles.reverse();
+    let reversed = NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())?;
     Ok((reversed, reversed_range))
 }
 
@@ -1087,11 +1080,10 @@ fn elevate_nurbs_to_degree(
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let elevated = NurbsCurve::from_lanes(
+    let elevated = NurbsCurve::new(
         elevated_degree,
         elevated_knots,
-        concatenated.nurbs.pole_rows().points(),
-        concatenated.nurbs.pole_rows().weights(),
+        concatenated.nurbs.pole_rows().clone(),
         false,
     )?;
     *curve = elevated;
@@ -1164,7 +1156,7 @@ fn concatenate_nurbs<T>(
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let child_control_points = curve.pole_rows().points();
+        let child_control_points = curve.pole_rows().raw_points();
         let child_weights = match curve.pole_rows().weights() {
             Some(weights) => weights,
             None => alloc_filled(
@@ -1245,20 +1237,12 @@ fn concatenate_nurbs<T>(
         rational.then_some(weights),
         false,
     )?;
-    let nurbs_points = nurbs.pole_rows().points();
-    let nurbs_weights = nurbs.pole_rows().weights();
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        cadmpeg_ir::eval::nurbs_curve_point(
-            degree,
-            nurbs.knots(),
-            &nurbs_points,
-            nurbs_weights.as_deref(),
-            t,
-        )
-        .ok_or(CompositeCurveError::EndpointEvaluation { t })
+        cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t)
+            .ok_or(CompositeCurveError::EndpointEvaluation { t })
     };
     endpoint(0.0)?;
     endpoint(cursor)?;
@@ -1383,13 +1367,7 @@ fn bounded_nurbs_for_id(
                 return Ok(None);
             };
             Some((
-                NurbsCurve::from_lanes(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    vec![start.get(), end.get()],
-                    None,
-                    false,
-                )?,
+                NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false)?,
                 [0.0, 1.0],
             ))
         }
@@ -1587,41 +1565,28 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let Some(tolerance) = tolerance else {
         return Some(());
     };
-    let start = point_for_vertex(ir, &edge.start, index)?.get();
-    let end = point_for_vertex(ir, &edge.end, index)?.get();
-    let control_points = nurbs.pole_rows().points();
-    let weights = nurbs.pole_rows().weights();
-    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree(),
-        nurbs.knots(),
-        &control_points,
-        weights.as_deref(),
-        interval[0],
-    )?;
-    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree(),
-        nurbs.knots(),
-        &control_points,
-        weights.as_deref(),
-        interval[1],
-    )?;
-    if !close_with_tolerance(evaluated_start.get(), start, Some(tolerance))
-        || !close_with_tolerance(evaluated_end.get(), end, Some(tolerance))
+    let start = point_for_vertex(ir, &edge.start, index)?;
+    let end = point_for_vertex(ir, &edge.end, index)?;
+    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0])?;
+    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1])?;
+    if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
+        || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
     {
         return None;
     }
     let last = nurbs.pole_count().checked_sub(1)?;
     let mut visited = 0usize;
     nurbs
-        .edit_control_points(|point| {
-            if visited == 0 {
-                *point = start;
-            }
-            if visited == last {
-                *point = end;
-            }
+        .map_control_points(|point| {
+            let mapped = if visited == last {
+                end
+            } else if visited == 0 {
+                start
+            } else {
+                point
+            };
             visited += 1;
-            Ok(())
+            Ok(mapped)
         })
         .ok()?;
     Some(())
@@ -2063,17 +2028,8 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let degree = nurbs.degree();
         let cursor = segments.end();
-        let nurbs_points = nurbs.pole_rows().points();
-        let nurbs_weights = nurbs.pole_rows().weights();
-        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            degree,
-            nurbs.knots(),
-            &nurbs_points,
-            nurbs_weights.as_deref(),
-            0.0,
-        ) else {
+        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0) else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
@@ -2091,13 +2047,7 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
-            degree,
-            nurbs.knots(),
-            &nurbs_points,
-            nurbs_weights.as_deref(),
-            cursor,
-        ) else {
+        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor) else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,

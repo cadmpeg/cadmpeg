@@ -9,7 +9,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
@@ -979,21 +979,20 @@ fn elevate_to_degree(
     let mut output_weights = Vec::with_capacity(elevated.len());
     let mut control_points = Vec::with_capacity(elevated.len());
     for point in elevated {
-        let weight = point.0[3];
-        if weight == 0.0 || !weight.is_finite() {
+        let Some(weight) = NonZeroReal::new(point.0[3]) else {
             return Err(error(
                 offset,
                 "polycurve degree elevation produced an invalid weight",
             ));
-        }
+        };
         control_points.push(Point3::new(
-            point.0[0] / weight,
-            point.0[1] / weight,
-            point.0[2] / weight,
+            point.0[0] / weight.get(),
+            point.0[1] / weight.get(),
+            point.0[2] / weight.get(),
         ));
         output_weights.push(weight);
     }
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_checked_lanes(
         target as u32,
         elevated_knots,
         control_points,
@@ -1113,22 +1112,23 @@ pub(crate) fn join_nurbs_segments(
         }
         // Unequal endpoint weights are different homogeneous poles. Keep both
         // with a full-multiplicity knot so neither segment's rational shape changes.
+        let unit = NonZeroReal::from(PositiveReal::ONE);
         let previous_weight = weights
             .as_ref()
             .and_then(|weights| weights.last())
             .copied()
-            .unwrap_or(1.0);
-        let segment_weights = segment.pole_rows().weights();
+            .unwrap_or(unit);
+        let segment_weights = segment.weights();
         let next_weight = segment_weights
             .as_ref()
             .and_then(|weights| weights.first().copied())
-            .unwrap_or(1.0);
-        let skip = usize::from(index > 0 && previous_weight == next_weight);
-        let segment_points = segment.pole_rows().points();
+            .unwrap_or(unit);
+        let skip = usize::from(index > 0 && previous_weight.get() == next_weight.get());
+        let segment_points = segment.pole_rows().raw_points();
         if let Some(target) = &mut weights {
             match segment_weights {
                 Some(values) => target.extend(values.into_iter().skip(skip)),
-                None => target.extend(std::iter::repeat_n(1.0, segment_points.len() - skip)),
+                None => target.extend(std::iter::repeat_n(unit, segment_points.len() - skip)),
             }
         }
         control_points.extend(segment_points.iter().copied().skip(skip));
@@ -1151,7 +1151,7 @@ pub(crate) fn join_nurbs_segments(
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::from_lanes(degree, knots, control_points, weights, false)
+        curve: NurbsCurve::from_checked_lanes(degree, knots, control_points, weights, false)
             .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
@@ -1428,8 +1428,7 @@ fn read_polyline(
         let point = native_point(reader)?;
         points.push(
             crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?
-                .get(),
+                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
         );
     }
     let parameter_count = crate::wire::element_count(reader, 8)?;
@@ -2032,11 +2031,11 @@ mod tests {
         let arc = arc_nurbs(&circle, [0.0, PI], [10.0, 20.0], PI, 0).expect("valid arc");
         assert_eq!(arc.degree(), 2);
         assert_eq!(
-            arc.pole_rows().points().first(),
+            arc.pole_rows().raw_points().first(),
             Some(&circle_point(&circle, 0.0))
         );
         assert_eq!(
-            arc.pole_rows().points().last(),
+            arc.pole_rows().raw_points().last(),
             Some(&circle_point(&circle, PI))
         );
         assert_eq!(

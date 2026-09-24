@@ -2361,26 +2361,23 @@ fn e5_boundary_curve(
             .control_points()
             .iter()
             .map(|point| {
-                origin
-                    .translated(*u_axis, point.u)
-                    .translated(v_axis, point.v)
+                FinitePoint3::new(
+                    origin
+                        .translated(*u_axis, point.u)
+                        .translated(v_axis, point.v),
+                )
             })
-            .collect::<Vec<_>>();
-        if !v_axis.is_finite()
-            || !control_points
-                .iter()
-                .copied()
-                .all(|point| point.is_finite())
-        {
+            .collect::<Option<Vec<_>>>()?;
+        if !v_axis.is_finite() {
             return None;
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.pole_rows().weights(),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 ),
                 refusal,
@@ -2406,26 +2403,23 @@ fn e5_boundary_curve(
             .control_points()
             .iter()
             .map(|point| {
-                origin
-                    .translated(*u_axis, point.u)
-                    .translated(v_axis, point.v)
+                FinitePoint3::new(
+                    origin
+                        .translated(*u_axis, point.u)
+                        .translated(v_axis, point.v),
+                )
             })
-            .collect::<Vec<_>>();
-        if !v_axis.is_finite()
-            || !control_points
-                .iter()
-                .copied()
-                .all(|point| point.is_finite())
-        {
+            .collect::<Option<Vec<_>>>()?;
+        if !v_axis.is_finite() {
             return None;
         }
         return Some((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
-                NurbsCurve::from_lanes(
+                NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.pole_rows().weights(),
+                    nurbs.weights(),
                     nurbs.periodic(),
                 ),
                 refusal,
@@ -4255,11 +4249,11 @@ mod route_tests {
             panic!("expected NURBS curve");
         };
         assert_eq!(
-            nurbs.pole_rows().points().first(),
+            nurbs.pole_rows().raw_points().first(),
             Some(&Point3::new(1.0, 2.0, 3.0))
         );
         assert_eq!(
-            nurbs.pole_rows().points().last(),
+            nurbs.pole_rows().raw_points().last(),
             Some(&Point3::new(2.0, 4.0, 3.0))
         );
     }
@@ -4426,7 +4420,7 @@ mod route_tests {
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
-        let control_points = nurbs.pole_rows().points();
+        let control_points = nurbs.pole_rows().raw_points();
         assert_eq!(
             control_points.first(),
             Some(&cadmpeg_ir::math::Point2::new(0.0, 3.0))
@@ -4536,7 +4530,7 @@ mod route_tests {
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
-        let control_points = nurbs.pole_rows().points();
+        let control_points = nurbs.pole_rows().raw_points();
         assert_eq!(
             control_points.first(),
             Some(&Point2::new(0.0, half_angle.cos()))

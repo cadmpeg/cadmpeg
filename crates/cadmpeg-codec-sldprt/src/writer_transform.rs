@@ -332,12 +332,10 @@ fn transform_surface(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             nurbs
-                .edit_control_points(|point| {
-                    *point = transform
-                        .apply_point(*point)
-                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?
-                        .get();
-                    Ok(())
+                .map_control_points(|point| {
+                    transform
+                        .apply_point(point.get())
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),
@@ -418,12 +416,10 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
-                .edit_control_points(|point| {
-                    *point = transform
-                        .apply_point(*point)
-                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?
-                        .get();
-                    Ok(())
+                .map_control_points(|point| {
+                    transform
+                        .apply_point(point.get())
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => CodecError::NotImplemented(message),

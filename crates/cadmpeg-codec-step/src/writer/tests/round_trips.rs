@@ -112,7 +112,12 @@ fn curve_geometry_for_sheet_pcurve(
             NurbsCurve::from_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
-                nurbs.pole_rows().points().into_iter().map(point).collect(),
+                nurbs
+                    .pole_rows()
+                    .raw_points()
+                    .into_iter()
+                    .map(point)
+                    .collect(),
                 nurbs.pole_rows().weights(),
                 nurbs.periodic(),
             )?,

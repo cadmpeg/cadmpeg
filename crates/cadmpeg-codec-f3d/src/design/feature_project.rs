@@ -8672,27 +8672,11 @@ fn spatial_sketch_entity_endpoints(
             Some([at(start_angle.get()), at(end_angle.get())])
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().points();
-            let weights = curve.pole_rows().weights();
             let start = curve.knots()[curve.degree() as usize];
-            let end = curve.knots()[control_points.len()];
+            let end = curve.knots()[curve.pole_count()];
             Some([
-                cadmpeg_ir::eval::nurbs_curve_point(
-                    curve.degree(),
-                    curve.knots(),
-                    &control_points,
-                    weights.as_deref(),
-                    start,
-                )?
-                .get(),
-                cadmpeg_ir::eval::nurbs_curve_point(
-                    curve.degree(),
-                    curve.knots(),
-                    &control_points,
-                    weights.as_deref(),
-                    end,
-                )?
-                .get(),
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start)?.get(),
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end)?.get(),
             ])
         }
         _ => None,

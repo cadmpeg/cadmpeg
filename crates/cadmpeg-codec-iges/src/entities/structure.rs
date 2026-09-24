@@ -1412,31 +1412,23 @@ fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
 ) -> Option<Vec<Point3>> {
-    let control_points = nurbs.pole_rows().points();
-    let weights = nurbs.pole_rows().weights();
-    if weights
-        .as_ref()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+    if nurbs
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
     {
         return None;
     }
     linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
-        control_points.len(),
+        nurbs.pole_count(),
         nurbs.periodic(),
         parameter_range,
     )?
     .into_iter()
     .map(|parameter| {
-        cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree(),
-            nurbs.knots(),
-            &control_points,
-            weights.as_deref(),
-            parameter,
-        )
-        .map(cadmpeg_ir::features::FinitePoint3::get)
+        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter)
+            .map(cadmpeg_ir::features::FinitePoint3::get)
     })
     .collect()
 }

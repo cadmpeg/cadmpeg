@@ -75,17 +75,17 @@ fn nurbs_surface_boundaries(
                     nurbs.u_periodic(),
                 )
             };
-            let curve = match NurbsCurve::from_lanes(
+            let curve = match NurbsCurve::from_checked_lanes(
                 degree,
                 knots,
                 control_indices
                     .iter()
-                    .map(|index| poles[*index].get())
-                    .collect(),
+                    .map(|index| poles[*index])
+                    .collect::<Vec<_>>(),
                 pole_weights.as_ref().map(|weights| {
                     control_indices
                         .iter()
-                        .map(|index| weights[*index].get())
+                        .map(|index| weights[*index])
                         .collect()
                 }),
                 periodic,

@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::NonZeroReal;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
@@ -673,10 +674,9 @@ fn sum_nurbs(
             .iter()
             .zip(second_weights.iter().copied())
         {
-            let product = first_weight * second_weight;
-            if !product.is_finite() || product == 0.0 {
+            let Some(product) = NonZeroReal::new(first_weight * second_weight) else {
                 return Err(error(offset, "sum surface weight is invalid"));
-            }
+            };
             control_points.push(Point3::new(
                 first_point.x + second_point.x + basepoint.x,
                 first_point.y + second_point.y + basepoint.y,
@@ -688,7 +688,7 @@ fn sum_nurbs(
         }
     }
     let row_len = v_count;
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(first.degree(), first.knots().to_vec(), first.periodic()),
         NurbsSurfaceAxis::new(second.degree(), second.knots().to_vec(), second.periodic()),
         NurbsSurfaceLanes::new(
@@ -722,9 +722,9 @@ pub(crate) fn extrusion_nurbs(
     profile_count
         .checked_mul(2)
         .ok_or_else(|| error(offset, "extrusion surface control count overflow"))?;
-    let start_points = start.pole_rows().points();
-    let end_points = end.pole_rows().points();
-    let start_weights = start.pole_rows().weights();
+    let start_points = start.control_points();
+    let end_points = end.control_points();
+    let start_weights = start.weights();
     let mut control_points = Vec::with_capacity(profile_count * 2);
     let mut weights = start_weights
         .as_ref()
@@ -737,7 +737,7 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurface::from_lanes(
+    let mut surface = NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(start.degree(), start.knots().to_vec(), start.periodic()),
         NurbsSurfaceAxis::new(
             1,

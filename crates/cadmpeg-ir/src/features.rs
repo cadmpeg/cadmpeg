@@ -131,54 +131,6 @@ impl FinitePoint3 {
     }
 }
 
-impl crate::geometry::nurbs::NurbsCurve {
-    /// Control points in parameter order. [`Self::new`] and
-    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
-    /// carried without a check. The route lives beside [`FinitePoint3`]
-    /// because only this module constructs one.
-    #[must_use]
-    pub fn control_points(&self) -> Vec<FinitePoint3> {
-        self.pole_rows()
-            .points()
-            .into_iter()
-            .map(FinitePoint3)
-            .collect()
-    }
-}
-
-impl crate::geometry::nurbs::NurbsSurface {
-    /// Control-point rows, outer index u and inner index v. [`Self::new`] and
-    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
-    /// carried without a check. The route lives beside [`FinitePoint3`]
-    /// because only this module constructs one.
-    #[must_use]
-    pub fn control_grid(&self) -> Vec<Vec<FinitePoint3>> {
-        self.pole_grid()
-            .points()
-            .into_iter()
-            .map(|row| row.into_iter().map(FinitePoint3).collect())
-            .collect()
-    }
-
-    /// Control points in u-major order, with the guarantee of
-    /// [`Self::control_grid`].
-    #[must_use]
-    pub fn poles(&self) -> Vec<FinitePoint3> {
-        self.control_grid().into_iter().flatten().collect()
-    }
-
-    /// Pole at grid position `(u, v)`, with the guarantee of
-    /// [`Self::control_grid`].
-    #[must_use]
-    pub fn pole(&self, u: usize, v: usize) -> Option<FinitePoint3> {
-        let point = match self.pole_grid() {
-            crate::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => *rows.get(u)?.get(v)?,
-            crate::geometry::nurbs::NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v)?.point,
-        };
-        Some(FinitePoint3(point))
-    }
-}
-
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,

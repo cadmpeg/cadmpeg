@@ -895,7 +895,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     let weights = curve.pole_rows().weights();
     let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
         curve.degree(),

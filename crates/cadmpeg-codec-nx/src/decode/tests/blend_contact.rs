@@ -655,7 +655,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
-        nurbs.pole_rows().points(),
+        nurbs.pole_rows().raw_points(),
         Some(vec![1.0; 3]),
         nurbs.periodic(),
     )
@@ -1612,11 +1612,11 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         unreachable!()
     };
     assert_eq!(
-        nurbs.pole_rows().points().first(),
+        nurbs.pole_rows().raw_points().first(),
         Some(&Point2::new(0.0, 0.0))
     );
     assert_eq!(
-        nurbs.pole_rows().points().last(),
+        nurbs.pole_rows().raw_points().last(),
         Some(&Point2::new(1.0, 0.0))
     );
     assert_eq!(

@@ -27,7 +27,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength};
+use cadmpeg_ir::scalar::{
+    NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -159,9 +161,7 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
                 && curve.control_points()[0].distance(curve.control_points()[1].get()) > 0.0
                 && curve.knots()[0] == curve.knots()[1]
                 && curve.knots()[2] == curve.knots()[3]
-                && curve.knots()[1].is_finite()
                 && curve.knots()[1] < curve.knots()[2]
-                && curve.knots()[2].is_finite()
         }
         _ => false,
     }
@@ -194,20 +194,13 @@ fn interval_certified_linear_bezier(
     let Some(upper) = geometry.knots().last().copied() else {
         return false;
     };
-    if !lower.is_finite()
-        || !upper.is_finite()
-        || lower >= upper
+    if lower >= upper
         || geometry.knots()[..control_count]
             .iter()
             .any(|knot| *knot != lower)
         || geometry.knots()[control_count..]
             .iter()
             .any(|knot| *knot != upper)
-        || geometry.control_points().iter().any(|point| {
-            [point.x, point.y, point.z]
-                .into_iter()
-                .any(|value| !value.is_finite())
-        })
         || geometry
             .control_points()
             .first()
@@ -396,7 +389,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
             cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok()?
         }
     };
-    let controls = positive_controls(&curve.pole_rows().points(), &weights)?;
+    let controls = positive_controls(&curve.control_points(), &weights)?;
     homogeneous_spans(degree, curve.knots(), controls)
 }
 
@@ -581,29 +574,35 @@ fn aligned_homogeneous_spans(
         .then(|| first_spans.into_iter().zip(second_spans).collect())
 }
 
-fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
+/// Positive weights in pole order, unit weights for a polynomial curve.
+fn curve_weights(curve: &NurbsCurve) -> Option<Vec<NonZeroReal>> {
     match curve.weights() {
         Some(weights) => weights
             .iter()
             .all(|weight| weight.get() > 0.0)
-            .then(|| weights.into_iter().map(NonZeroReal::get).collect()),
-        None => Some(std::iter::repeat_n(1.0, curve.pole_count()).collect()),
+            .then_some(weights),
+        None => Some(
+            std::iter::repeat_n(NonZeroReal::from(PositiveReal::ONE), curve.pole_count()).collect(),
+        ),
     }
 }
 
-fn projectively_shared_weights(first: &NurbsCurve, second: &NurbsCurve) -> Option<Vec<f64>> {
+fn projectively_shared_weights(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+) -> Option<Vec<NonZeroReal>> {
     let first_weights = curve_weights(first)?;
     let second_weights = curve_weights(second)?;
     if first_weights.len() != second_weights.len() {
         return None;
     }
-    let scale = *second_weights.first()? / *first_weights.first()?;
+    let scale = second_weights.first()?.get() / first_weights.first()?.get();
     if !scale.is_finite()
         || scale <= 0.0
         || first_weights
             .iter()
             .zip(&second_weights)
-            .any(|(first, second)| *first * scale != *second)
+            .any(|(first, second)| first.get() * scale != second.get())
     {
         return None;
     }
@@ -613,19 +612,19 @@ fn projectively_shared_weights(first: &NurbsCurve, second: &NurbsCurve) -> Optio
 fn same_basis_ruled_surface(
     first: &NurbsCurve,
     second: &NurbsCurve,
-    weights: &[f64],
+    weights: &[NonZeroReal],
 ) -> Result<NurbsSurface, cadmpeg_ir::geometry::nurbs::NurbsError> {
     let surface_weights = weights
         .iter()
         .copied()
         .flat_map(|weight| [weight, weight])
         .collect::<Vec<_>>();
-    let weights = if surface_weights.iter().all(|weight| *weight == 1.0) {
+    let weights = if surface_weights.iter().all(|weight| weight.get() == 1.0) {
         None
     } else {
         Some(surface_weights)
     };
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(
             first.degree(),
             first.knots().to_vec(),
@@ -634,10 +633,9 @@ fn same_basis_ruled_surface(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
             first
-                .pole_rows()
-                .points()
+                .control_points()
                 .into_iter()
-                .zip(second.pole_rows().points())
+                .zip(second.control_points())
                 .map(|(first, second)| vec![first, second])
                 .collect(),
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
@@ -1525,16 +1523,12 @@ pub(super) fn project(
         let mut placed_directrix = directrix;
         if entry.transform != 0
             && placed_directrix
-                .edit_control_points(|point| {
-                    *point = transform
-                        .apply_point(*point)
-                        .ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                                "placement produces a non-finite pole".into(),
-                            )
-                        })?
-                        .get();
-                    Ok(())
+                .map_control_points(|point| {
+                    transform.apply_point(point.get()).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                            "placement produces a non-finite pole".into(),
+                        )
+                    })
                 })
                 .is_err()
         {
@@ -1545,15 +1539,9 @@ pub(super) fn project(
             );
             continue;
         }
-        let directrix_points = placed_directrix.pole_rows().points();
-        let directrix_weights = placed_directrix.pole_rows().weights();
-        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            placed_directrix.degree(),
-            placed_directrix.knots(),
-            &directrix_points,
-            directrix_weights.as_deref(),
-            cached_interval[0],
-        ) else {
+        let Some(start) =
+            cadmpeg_ir::eval::nurbs_curve_point_at(&placed_directrix, cached_interval[0])
+        else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
         };
@@ -1574,7 +1562,7 @@ pub(super) fn project(
         }
         let control_points = placed_directrix
             .pole_rows()
-            .points()
+            .raw_points()
             .into_iter()
             .flat_map(|point| [point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
@@ -1582,13 +1570,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights: Option<Vec<Vec<f64>>> =
-            placed_directrix.pole_rows().weights().map(|weights| {
-                weights
-                    .iter()
-                    .map(|weight| vec![*weight, *weight])
-                    .collect()
-            });
+        let weights: Option<Vec<Vec<NonZeroReal>>> = placed_directrix.weights().map(|weights| {
+            weights
+                .iter()
+                .map(|weight| vec![*weight, *weight])
+                .collect()
+        });
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
@@ -1607,7 +1594,7 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let surface = match NurbsSurface::from_lanes(
+        let surface = match NurbsSurface::from_checked_lanes(
             NurbsSurfaceAxis::new(
                 placed_directrix.degree(),
                 placed_directrix.knots().to_vec(),
@@ -1925,8 +1912,7 @@ pub(super) fn project(
                         .apply_point(axis_point.translated(radial_control, 1.0))
                         .ok_or_else(|| {
                             CodecError::malformed("placement produces a non-finite revolution pole")
-                        })?
-                        .get(),
+                        })?,
                 );
                 weights.push(u_weight * angular_weight);
             }
@@ -1983,16 +1969,12 @@ pub(super) fn project(
             // here rather than carried past the untransformed one.
             let mut placed_generatrix = generatrix.clone();
             if placed_generatrix
-                .edit_control_points(|point| {
-                    *point = transform
-                        .apply_point(*point)
-                        .ok_or_else(|| {
-                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                                "placement produces a non-finite pole".into(),
-                            )
-                        })?
-                        .get();
-                    Ok(())
+                .map_control_points(|point| {
+                    transform.apply_point(point.get()).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                            "placement produces a non-finite pole".into(),
+                        )
+                    })
                 })
                 .is_err()
             {
@@ -2350,8 +2332,7 @@ pub(super) fn project(
                         .apply_point(native_points[native_index])
                         .ok_or_else(|| {
                             CodecError::malformed("placement produces a non-finite surface pole")
-                        })?
-                        .get(),
+                        })?,
                 );
                 if let Some(weights) = &mut weights {
                     weights.push(native_weights[native_index]);

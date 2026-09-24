@@ -564,7 +564,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                 if let Some(mut weights) = curve.pole_rows().weights() {
                     weights[1] = 0.75;
                     let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
-                        curve.pole_rows().points(),
+                        curve.pole_rows().raw_points(),
                         Some(weights),
                     );
                     {

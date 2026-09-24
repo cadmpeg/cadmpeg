@@ -3299,8 +3299,8 @@ mod tests {
                 ..
             }] if first.degree() == 5
                 && second.degree() == 5
-                && first.pole_rows().points().first() == Some(&Point3::new(1.0, 0.0, 0.0))
-                && second.pole_rows().points().first() == Some(&Point3::new(0.0, 1.0, 0.0))
+                && first.pole_rows().raw_points().first() == Some(&Point3::new(1.0, 0.0, 0.0))
+                && second.pole_rows().raw_points().first() == Some(&Point3::new(0.0, 1.0, 0.0))
         ));
     }
 

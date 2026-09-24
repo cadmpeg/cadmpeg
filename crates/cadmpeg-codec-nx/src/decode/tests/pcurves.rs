@@ -1068,7 +1068,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weight_grid));
+    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
         edit::replace(surface, |previous| {
@@ -1121,7 +1121,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weight_grid));
+    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().raw_points(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
         edit::replace(surface, |previous| {
