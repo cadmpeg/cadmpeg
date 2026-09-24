@@ -21,7 +21,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
-use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::{BodyKind, IncreasingParameterInterval};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -878,7 +878,7 @@ pub(in crate::families) enum ResolvedExtrusionDirectrix {
         /// Ordered exact support sides.
         supports: Box<[ResolvedExtrusionSupport; 2]>,
         /// Positive fit tolerance of the retained sampled cache.
-        cache_fit_tolerance: f64,
+        cache_fit_tolerance: PositiveReal,
     },
     /// One pcurve lifted through its exact support surface.
     SurfaceCurve {
@@ -896,11 +896,11 @@ pub(in crate::families) enum ResolvedExtrusionDirectrix {
         /// Exact model-space source curve lifted through the support.
         source_curve: CurveGeometry,
         /// Increasing source-curve interval.
-        source_parameter_range: [f64; 2],
+        source_parameter_range: IncreasingParameterInterval,
         /// Signed offset distance.
-        distance: f64,
+        distance: FiniteReal,
         /// Unit direction defining the positive offset side.
-        direction: Vector3,
+        direction: UnitVector3,
     },
 }
 
@@ -912,11 +912,11 @@ pub(in crate::families) struct ResolvedExtrusionSurface {
     /// Persistent directrix identity.
     pub(in crate::families) directrix_object_id: u32,
     /// Solved directrix interval shared by the support mappings.
-    pub(in crate::families) directrix_parameter_range: [f64; 2],
+    pub(in crate::families) directrix_parameter_range: IncreasingParameterInterval,
     /// Unit world-space extrusion direction.
-    pub(in crate::families) direction: Vector3,
-    /// Ordered native U and V chart bounds.
-    pub(in crate::families) parameter_bounds: [[FiniteReal; 2]; 2],
+    pub(in crate::families) direction: UnitVector3,
+    /// Increasing native U and V chart bounds.
+    pub(in crate::families) parameter_bounds: [IncreasingParameterInterval; 2],
     /// Exact directrix construction.
     pub(in crate::families) directrix: ResolvedExtrusionDirectrix,
 }
@@ -951,15 +951,17 @@ pub(in crate::families) struct ResolvedOffsetSurface {
     pub(in crate::families) support: ResolvedOffsetSupport,
     /// Signed offset distance.
     pub(in crate::families) distance: FiniteReal,
-    /// Ordered native U and V chart bounds.
-    pub(in crate::families) parameter_bounds: [[FiniteReal; 2]; 2],
+    /// Increasing native U and V chart bounds.
+    pub(in crate::families) parameter_bounds: [IncreasingParameterInterval; 2],
 }
 
 /// Record bounds of a native U and V chart pair, in the native field order
 /// `[u_lower, u_upper, v_lower, v_upper]`.
 pub(in crate::families) fn parameter_record_bounds(
-    [[u0, u1], [v0, v1]]: [[FiniteReal; 2]; 2],
+    [u_bounds, v_bounds]: [IncreasingParameterInterval; 2],
 ) -> RecordBounds {
+    let [u0, u1] = u_bounds.finite_endpoints();
+    let [v0, v1] = v_bounds.finite_endpoints();
     RecordBounds::from_finite([u0, u1, v0, v1])
 }
 
@@ -970,7 +972,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
 ) -> Option<ResolvedExtrusionSurface> {
     let construction_id = graph.canonical_surface_id(surface_id)?;
     let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
-    let active = extrusion.parameter_bounds[1].map(FiniteReal::get);
+    let active = extrusion.parameter_bounds[1];
     let mut resolve_support = |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
         u32,
         u32,
@@ -1076,7 +1078,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 source_curve,
                 source_parameter_range: active,
                 distance: *distance,
-                direction: vector(*direction),
+                direction: *direction,
             }
         }
     };
@@ -1084,7 +1086,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
         surface_object_id: surface_id,
         directrix_object_id: extrusion.directrix.object_id(),
         directrix_parameter_range: active,
-        direction: vector(extrusion.direction),
+        direction: extrusion.direction,
         parameter_bounds: extrusion.parameter_bounds,
         directrix,
     })
@@ -1093,10 +1095,11 @@ pub(in crate::families) fn resolved_extrusion_surface(
 fn curve_on_parameter_range(
     curve: CurveGeometry,
     source: [f64; 2],
-    target: [f64; 2],
+    target: IncreasingParameterInterval,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
+    let target = target.endpoints();
     if target
         .into_iter()
         .all(|value| cadmpeg_ir::math::parameter_in_domain(value, source, 64.0 * f64::EPSILON))
@@ -1105,11 +1108,7 @@ fn curve_on_parameter_range(
     }
     let source_span = source[1] - source[0];
     let target_span = target[1] - target[0];
-    if !source_span.is_finite()
-        || source_span <= 0.0
-        || !target_span.is_finite()
-        || target_span <= 0.0
-    {
+    if !source_span.is_finite() || source_span <= 0.0 || !target_span.is_finite() {
         return None;
     }
     let target_per_source = target_span / source_span;

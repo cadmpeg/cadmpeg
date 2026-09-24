@@ -590,7 +590,7 @@ fn targeted_geometry_graph_closes_a_four_span_extrusion_without_topology() {
             .extrusion_surfaces
             .get(&8)
             .map(|surface| surface.parameter_bounds),
-        Some(crate::test_support::test_b5::finite_bounds([
+        Some(crate::test_support::test_b5::increasing_bounds([
             [-2.0, 6.0],
             [0.0, 10.0]
         ]))
@@ -634,8 +634,8 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
         parse_extrusion_surface(&record, &records, &pcurves),
         Some(B5ExtrusionSurface {
             object_id: 8,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 6.0],
                 [0.0, 10.0]
             ]),
@@ -680,8 +680,8 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
         ),
         Some(B5ExtrusionSurface {
             object_id: 8,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 6.0],
                 [0.0, 10.0]
             ]),
@@ -768,8 +768,8 @@ fn extrusion_selects_the_terminal_span_of_a_direct_class20_pcurve() {
             parse_extrusion_surface(&record, &records, &pcurves),
             Some(B5ExtrusionSurface {
                 object_id: 8,
-                direction: [0.0, 0.0, 1.0],
-                parameter_bounds: crate::test_support::test_b5::finite_bounds([
+                direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+                parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                     [-2.0, 6.0],
                     [0.0, 2.5]
                 ]),
@@ -853,8 +853,8 @@ fn offset_curve_directrix_binds_source_support_and_exact_ranges() {
                 parameter_range: [-3.0, 4.0],
             }),
             source_parameter_range: [-3.0, 4.0],
-            distance: -1.5,
-            direction: [0.0, 0.0, 1.0],
+            distance: crate::test_support::test_b5::finite(-1.5),
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
             parameter_range: [-5.0, 6.0],
         })
     );
@@ -913,8 +913,8 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
     let pcurves = BTreeMap::from([(3, object_stream_pcurve(7, vec![-3.0, 4.0], None))]);
     let source_extrusion = B5ExtrusionSurface {
         object_id: 10,
-        direction: [0.0, 0.0, 1.0],
-        parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 7.0]]),
+        direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+        parameter_bounds: crate::test_support::test_b5::increasing_bounds([[0.0, 1.0], [0.0, 7.0]]),
         directrix: B5ExtrusionDirectrix::SurfaceCurve {
             object_id: 2,
             support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
@@ -928,7 +928,10 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         source_surface: 10,
         distance: crate::test_support::test_b5::finite(-1.5),
         carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
-        parameter_bounds: crate::test_support::test_b5::finite_bounds([[-5.0, 6.0], [2.0, 9.0]]),
+        parameter_bounds: crate::test_support::test_b5::increasing_bounds([
+            [-5.0, 6.0],
+            [2.0, 9.0],
+        ]),
     };
     let mut carrier_payload = vec![0x81, 0x84];
     for value in [0.0f64, 0.0, 1.0, 2.0, 9.0, 1.0, 0.0, 35.0, 7.0] {
@@ -953,8 +956,8 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         ),
         Some(B5ExtrusionSurface {
             object_id: 8,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [2.0, 9.0],
                 [-5.0, 6.0]
             ]),
@@ -966,8 +969,8 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
                     parameter_range: [-3.0, 4.0],
                 }),
                 source_parameter_range: [-3.0, 4.0],
-                distance: -1.5,
-                direction: [0.0, 0.0, 1.0],
+                distance: crate::test_support::test_b5::finite(-1.5),
+                direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
                 parameter_range: [-5.0, 6.0],
             },
         })
@@ -987,8 +990,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
     );
 
     let mut wrong_bounds = offset_construction.clone();
-    wrong_bounds.parameter_bounds[0][1] =
-        cadmpeg_ir::scalar::FiniteReal::new(7.0).expect("finite fixture bound");
+    wrong_bounds.parameter_bounds[0] = crate::test_support::test_b5::increasing([-5.0, 7.0]);
     assert_eq!(
         parse_extrusion_surface_with_context(
             &carrier,

@@ -161,6 +161,14 @@ checked_feature_geometry!(
     "FeatureDirection3 norm must be finite and nonzero", get
 );
 
+impl From<UnitVector3> for FiniteVector3 {
+    /// Carry an admitted unit direction as a finite displacement. Its
+    /// components are finite, so no admission can refuse it.
+    fn from(value: UnitVector3) -> Self {
+        Self(*value.as_raw())
+    }
+}
+
 impl From<UnitVector3> for FeatureDirection3 {
     /// Carry an admitted unit direction. Its components are finite and its
     /// squared norm is within rounding of one, so no admission can refuse it.

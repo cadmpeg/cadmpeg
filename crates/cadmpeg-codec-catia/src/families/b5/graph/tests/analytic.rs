@@ -1114,7 +1114,7 @@ fn offset_surface_separates_result_carrier_source_and_bounds() {
             source_surface: 3,
             distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 3.0],
                 [-4.0, 5.0]
             ]),
@@ -1167,7 +1167,7 @@ fn offset_surface_accepts_a_sphere_result_carrier() {
             source_surface: 3,
             distance: crate::test_support::test_b5::finite(-6.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Sphere,
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [0.0, 2.0],
                 [-2.0, 4.0]
             ]),
@@ -1450,7 +1450,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
             source_surface: 3,
             distance: crate::test_support::test_b5::finite(-0.5),
             carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Cache,
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 3.0],
                 [-4.0, 5.0]
             ]),
@@ -1514,8 +1514,8 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
         parse_extrusion_surface(&record, &records, &pcurves),
         Some(B5ExtrusionSurface {
             object_id: 8,
-            direction: [0.0, 0.0, 1.0],
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 6.0],
                 [-3.0, 4.0]
             ]),
@@ -1530,7 +1530,7 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
                     )
                 ],
                 parameter_range: [-3.0, 4.0],
-                cache_fit_tolerance: 0.01,
+                cache_fit_tolerance: crate::test_support::test_b5::positive(0.01),
             },
         })
     );

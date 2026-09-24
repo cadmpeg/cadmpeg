@@ -299,3 +299,41 @@ fn the_cache_first_curve_admissions_refuse_every_non_finite_form_scalar() {
         }
     }
 }
+
+#[test]
+fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
+    use super::OffsetCurveConstruction;
+    use crate::geometry::{CurveOffsetRange, OffsetSide};
+    use crate::ids::{CurveId, SurfaceId};
+    use crate::math::Vector3;
+    use crate::scalar::FiniteReal;
+    use crate::topology::IncreasingParameterInterval;
+    use crate::units::UnitVector3;
+
+    let source = CurveId::mint("synthetic:test:curve#source").unwrap();
+    let direction = UnitVector3::new(Vector3::new(0.0, 0.6, 0.8)).unwrap();
+    let range = IncreasingParameterInterval::new([2.0, 5.0]).unwrap();
+    for support in [
+        None,
+        Some(SurfaceId::mint("synthetic:test:surface#support").unwrap()),
+    ] {
+        assert_eq!(
+            OffsetCurveConstruction::try_new(
+                source.clone(),
+                -1.25,
+                OffsetSide::Direction {
+                    direction: *direction.as_raw(),
+                    support: support.clone(),
+                },
+                Some(CurveOffsetRange::uniform(range.endpoints()).unwrap()),
+            ),
+            Ok(OffsetCurveConstruction::along_direction(
+                source.clone(),
+                FiniteReal::new(-1.25).unwrap(),
+                direction,
+                support,
+                range,
+            ))
+        );
+    }
+}

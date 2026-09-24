@@ -73,3 +73,30 @@ fn support_mapping_preserves_endpoints_despite_subtraction_cancellation() {
     assert_eq!(side.pcurve_parameter([0.0, 1.0], 0.0), Some(1e16));
     assert_eq!(side.pcurve_parameter([0.0, 1.0], 1.0), Some(1.0));
 }
+
+#[test]
+fn a_support_context_over_an_increasing_interval_matches_its_raw_admission() {
+    use crate::geometry::IntcurveSupportContext;
+    use crate::topology::IncreasingParameterInterval;
+
+    let side = |range| IntcurveSupportSide {
+        surface: None,
+        pcurve: Some(SupportPcurve::new(
+            PcurveGeometry::Nurbs { nurbs: pcurve() },
+            range,
+        )),
+    };
+    let sides = [
+        side(Some(DirectedParameterRange::new([1.0, 0.0]).unwrap())),
+        side(None),
+    ];
+    let interval = IncreasingParameterInterval::new([0.25, 3.0]).unwrap();
+    assert_eq!(
+        IntcurveSupportContext::try_new(
+            sides.clone(),
+            interval.endpoints(),
+            std::array::from_fn(|_| Vec::new()),
+        ),
+        Ok(IntcurveSupportContext::over_interval(sides, interval))
+    );
+}

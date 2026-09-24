@@ -569,7 +569,7 @@ pub(super) fn emit_surfaces(
         });
         match plan.procedure {
             Some(SurfaceProcedure::Extrusion(extrusion)) => {
-                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion)?;
+                emit_extrusion_procedure(ir, annotations, &surface_ids, id, object_id, *extrusion);
             }
             Some(SurfaceProcedure::Revolution(revolution)) => {
                 let directrix_id = CurveId::compose(
@@ -706,7 +706,7 @@ fn emit_extrusion_procedure(
     surface_id: SurfaceId,
     surface_object_id: u32,
     extrusion: super::ResolvedExtrusionSurface,
-) -> Result<(), cadmpeg_core::CodecError> {
+) {
     let directrix_id = CurveId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "b5", "extrusion-directrix"),
         extrusion.directrix_object_id,
@@ -720,9 +720,10 @@ fn emit_extrusion_procedure(
                 surface: Some(surface_ids[&side.surface_object_id].clone()),
                 pcurve: Some(SupportPcurve::new(
                     side.pcurve,
-                    (side.pcurve_parameter_range != extrusion.directrix_parameter_range)
-                        .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
-                        .flatten(),
+                    (side.pcurve_parameter_range
+                        != extrusion.directrix_parameter_range.endpoints())
+                    .then(|| DirectedParameterRange::new(side.pcurve_parameter_range).ok())
+                    .flatten(),
                 )),
             });
             annotate(
@@ -751,17 +752,14 @@ fn emit_extrusion_procedure(
             let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext::try_new(
+                    context: IntcurveSupportContext::over_interval(
                         sides,
                         extrusion.directrix_parameter_range,
-                        std::array::from_fn(|_| Vec::new()),
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-                    discontinuity_flag: false,
-                    cache: Some(
-                        cadmpeg_ir::geometry::LegacyCache::try_new(cache_fit_tolerance)
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    discontinuity_flag: false,
+                    cache: Some(cadmpeg_ir::geometry::LegacyCache::new(
+                        cadmpeg_ir::scalar::NonNegativeReal::from(cache_fit_tolerance).into(),
+                    )),
                 },
             );
 
@@ -830,28 +828,20 @@ fn emit_extrusion_procedure(
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
             );
-            let side = cadmpeg_ir::geometry::OffsetSide::Direction {
-                direction,
-                support: Some(surface_ids[&support.surface_object_id].clone()),
-            };
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
-                cadmpeg_ir::geometry::CurveOffsetRange::uniform(source_parameter_range)
-                    .and_then(|range| {
-                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                ProceduralCurve::new(
+                    procedure_id,
+                    ProceduralCurveDefinition::Offset(
+                        cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::along_direction(
                             source_id,
                             distance,
-                            side,
-                            Some(range),
-                        )
-                    })
-                    .map(|admitted_payload| {
-                        ProceduralCurve::new(
-                            procedure_id,
-                            ProceduralCurveDefinition::Offset(admitted_payload),
-                        )
-                    })
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                            direction,
+                            Some(surface_ids[&support.surface_object_id].clone()),
+                            source_parameter_range,
+                        ),
+                    ),
+                ),
             );
         }
     }
@@ -869,23 +859,20 @@ fn emit_extrusion_procedure(
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     let _attached = ir.model.add_procedural_surface(
         surface_id,
-        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-            directrix_id,
-            Some(extrusion.directrix_parameter_range),
-            extrusion.direction,
-            None,
-            cadmpeg_ir::geometry::CacheContract::from_form(None),
-        )
-        .map(|admitted_payload| {
-            ProceduralSurface::new(
-                procedure_id,
-                ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                Some(record_bounds),
-            )
-        })
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+        ProceduralSurface::new(
+            procedure_id,
+            ProceduralSurfaceDefinition::Extrusion(
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
+                    directrix_id,
+                    Some(extrusion.directrix_parameter_range.into()),
+                    extrusion.direction.into(),
+                    None,
+                    None,
+                ),
+            ),
+            Some(record_bounds),
+        ),
     );
-    Ok(())
 }
 
 #[cfg(test)]
@@ -937,14 +924,14 @@ mod tests {
         let extrusion = ResolvedExtrusionSurface {
             surface_object_id: 30,
             directrix_object_id: 40,
-            directrix_parameter_range: [0.0, 1.0],
-            direction: Vector3::new(0.0, 0.0, 1.0),
-            parameter_bounds: crate::test_support::test_b5::finite_bounds([
+            directrix_parameter_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+            direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
+            parameter_bounds: crate::test_support::test_b5::increasing_bounds([
                 [-2.0, 3.0],
                 [0.0, 1.0],
             ]),
             directrix: ResolvedExtrusionDirectrix::Intersection {
-                cache_fit_tolerance: 1e-5,
+                cache_fit_tolerance: crate::test_support::test_b5::positive(1e-5),
                 supports: Box::new([
                     ResolvedExtrusionSupport {
                         surface_object_id: 10,
@@ -992,8 +979,7 @@ mod tests {
             surface_id,
             30,
             extrusion,
-        )
-        .expect("valid source object identity");
+        );
 
         assert!(matches!(
             &ir.model.curves[0].geometry,
