@@ -516,7 +516,7 @@ fn the_law_curve_admission_refuses_every_non_finite_formula_constant() {
                 FiniteLawFormula::try_new(formula.clone()).is_err(),
                 "{formula:?}"
             );
-            assert!(!formula.values_are_finite(), "{formula:?}");
+            assert!(formula.clone().admit().is_none(), "{formula:?}");
         }
     }
 
@@ -573,7 +573,7 @@ fn numerical_audit_finite_law_checks_edge_curve_endpoints() {
                 },
                 parameters: [0.0, 1.0],
             });
-            assert!(!formula.values_are_finite());
+            assert!(formula.clone().admit().is_none());
             assert!(FiniteLawFormula::try_new(formula).is_err());
         }
     }

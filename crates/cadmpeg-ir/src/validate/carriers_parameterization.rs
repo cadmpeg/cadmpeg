@@ -18,8 +18,8 @@ use super::pcurve_parameter_domain;
 const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
 const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
-fn collect_law_curves<'a>(
-    expression: &'a crate::geometry::LawExpression,
+fn collect_law_curves<'a, R, V, P>(
+    expression: &'a crate::geometry::LawExpression<R, V, P>,
     curves: &mut HashSet<&'a str>,
 ) {
     match expression {

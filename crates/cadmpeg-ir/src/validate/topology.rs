@@ -61,8 +61,8 @@ fn ref_error(findings: &mut Vec<Finding>, owner: &str, target_kind: &str, target
     });
 }
 
-fn check_law_curves(
-    expression: &crate::geometry::LawExpression,
+fn check_law_curves<R, V, P>(
+    expression: &crate::geometry::LawExpression<R, V, P>,
     ids: &ModelIndex<'_>,
     procedural: &crate::geometry::ProceduralSurface,
     findings: &mut Vec<Finding>,
@@ -1204,8 +1204,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 additional,
                 ..
             } => {
-                fn check(
-                    expression: &crate::geometry::LawExpression,
+                fn check<R, V, P>(
+                    expression: &crate::geometry::LawExpression<R, V, P>,
                     ids: &ModelIndex<'_>,
                     procedural: &crate::geometry::ProceduralCurve,
                     findings: &mut Vec<Finding>,

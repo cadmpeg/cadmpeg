@@ -466,6 +466,82 @@ impl FiniteReal {
             .then(|| values.map(Self))
     }
 
+    /// Admit every value of the lane, or none of them.
+    pub(crate) fn lane(values: Vec<f64>) -> Option<Vec<Self>> {
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then(|| values.into_iter().map(Self).collect())
+    }
+
+    /// Admit every value of each row, or none of them.
+    pub(crate) fn rows<const N: usize>(rows: Vec<[f64; N]>) -> Option<Vec<[Self; N]>> {
+        rows.iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then(|| rows.into_iter().map(|row| row.map(Self)).collect())
+    }
+
+    /// Admit every value of the grid, or none of them.
+    pub(crate) fn grid<const N: usize, const M: usize>(
+        grid: [[f64; M]; N],
+    ) -> Option<[[Self; M]; N]> {
+        grid.iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then(|| grid.map(|row| row.map(Self)))
+    }
+
+    /// Admit every present value of the grid, or none of them.
+    pub(crate) fn optional_grid<const N: usize, const M: usize>(
+        grid: [[Option<f64>; M]; N],
+    ) -> Option<[[Option<Self>; M]; N]> {
+        grid.iter()
+            .flatten()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then(|| grid.map(|row| row.map(|value| value.map(Self))))
+    }
+
+    /// The raw values of the array, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_array<const N: usize>(values: [Self; N]) -> [f64; N] {
+        values.map(Self::get)
+    }
+
+    /// The raw present values, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_optional<const N: usize>(values: [Option<Self>; N]) -> [Option<f64>; N] {
+        values.map(|value| value.map(Self::get))
+    }
+
+    /// The raw values of the lane, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_lane(values: &[Self]) -> Vec<f64> {
+        values.iter().map(|value| value.0).collect()
+    }
+
+    /// The raw values of each row, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_rows<const N: usize>(rows: &[[Self; N]]) -> Vec<[f64; N]> {
+        rows.iter().map(|row| row.map(Self::get)).collect()
+    }
+
+    /// The raw values of the grid, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_grid<const N: usize, const M: usize>(grid: [[Self; M]; N]) -> [[f64; M]; N] {
+        grid.map(|row| row.map(Self::get))
+    }
+
+    /// The raw present values of the grid, for a reader that writes or edits
+    /// them.
+    #[must_use]
+    pub fn raw_optional_grid<const N: usize, const M: usize>(
+        grid: [[Option<Self>; M]; N],
+    ) -> [[Option<f64>; M]; N] {
+        grid.map(Self::raw_optional)
+    }
+
     /// The raw values of each lane, for a reader that writes or edits them.
     #[must_use]
     pub fn raw_lanes<const N: usize>(lanes: &[Vec<Self>; N]) -> [Vec<f64>; N] {

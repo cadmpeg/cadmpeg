@@ -342,7 +342,9 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                     [None, None],
                 ),
                 crate::geometry::CacheContract::from_form(
-                    definition_payload.cache_first().cloned(),
+                    definition_payload
+                        .cache_first()
+                        .map(crate::geometry::CacheFirstCurveForm::to_raw),
                 ),
                 definition_payload.distance().get(),
                 [

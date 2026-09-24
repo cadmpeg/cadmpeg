@@ -37,7 +37,8 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
             },
         ],
     };
-    let differential = scalar_sweep_law_differential(&law, 3.0).expect("law differential");
+    let differential = scalar_sweep_law_differential(&law.admit().expect("finite law"), 3.0)
+        .expect("law differential");
     assert_eq!(differential.value, 6.0);
     assert_eq!(differential.derivative, 2.0);
 }
@@ -57,7 +58,8 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operator: "SIN".into(),
         operands: vec![inner.clone()],
     };
-    let differential = scalar_sweep_law_differential(&law, 0.75).expect("sine law");
+    let differential =
+        scalar_sweep_law_differential(&law.admit().expect("finite law"), 0.75).expect("sine law");
     assert!((differential.value - 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
     assert!((differential.derivative - 2.0 * 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
 
@@ -74,7 +76,8 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         ],
     };
     let differential =
-        scalar_sweep_law_differential(&composition, 0.75).expect("composed cosine law");
+        scalar_sweep_law_differential(&composition.admit().expect("finite law"), 0.75)
+            .expect("composed cosine law");
     assert!((differential.value - 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
     assert!((differential.derivative + 2.0 * 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
 }
@@ -231,7 +234,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             unreachable!()
         };
-        let (Some(mut native),) = (definition_payload.native().clone(),) else {
+        let (Some(mut native),) = (definition_payload
+            .native()
+            .as_deref()
+            .map(|native| Box::new(native.to_raw())),)
+        else {
             unreachable!()
         };
 
@@ -263,7 +270,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             unreachable!()
         };
-        let (Some(mut native),) = (definition_payload.native().clone(),) else {
+        let (Some(mut native),) = (definition_payload
+            .native()
+            .as_deref()
+            .map(|native| Box::new(native.to_raw())),)
+        else {
             unreachable!()
         };
 
@@ -307,7 +318,8 @@ fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
             flags: [true, false, false],
         }],
     };
-    let transform = crate::eval::sweep_rail_transform(&formula).unwrap();
+    let transform =
+        crate::eval::sweep_rail_transform(&formula.admit().expect("finite formula")).unwrap();
     let point = transform
         .apply_point(Point3::new(f64::MAX, f64::MAX, f64::MAX))
         .unwrap();

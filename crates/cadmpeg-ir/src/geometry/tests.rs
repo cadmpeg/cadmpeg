@@ -847,6 +847,7 @@ mod loft_scale_prefix;
 
 mod helix_payloads;
 
+mod admitted_records;
 mod procedural_surface_payloads;
 
 mod procedural_curve_payloads;
@@ -928,11 +929,11 @@ fn every_payload_free_law_surface_tail_refuses_an_unknown_key() {
         );
     }
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::Historical {}).unwrap(),
+        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Historical {}).unwrap(),
         serde_json::json!({"kind": "historical"})
     );
     assert_eq!(
-        serde_json::to_value(crate::geometry::LawSurfaceTail::Optimal {}).unwrap(),
+        serde_json::to_value(crate::geometry::LawSurfaceTail::<f64>::Optimal {}).unwrap(),
         serde_json::json!({"kind": "optimal"})
     );
 }

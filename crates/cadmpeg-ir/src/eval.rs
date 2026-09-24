@@ -3684,7 +3684,7 @@ fn model_native_extrusion_partials(
 }
 
 fn extrusion_directrix_reversed(
-    revision_form: Option<&crate::geometry::RevisionSurfaceForm>,
+    revision_form: Option<&crate::geometry::RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 ) -> bool {
     revision_form
         .and_then(|form| form.flags.first())
@@ -4694,11 +4694,11 @@ pub fn rolling_ball_jet_point(
     let radius = stations[0]
         .site
         .first_limit
-        .distance(stations[0].site.center);
+        .distance(stations[0].site.center.get());
     if stations.iter().any(|station| {
         let site = &station.site;
-        let first_radius = site.first_limit.distance(site.center);
-        let second_radius = site.second_limit.distance(site.center);
+        let first_radius = site.first_limit.distance(site.center.get());
+        let second_radius = site.second_limit.distance(site.center.get());
         second_radius <= 0.0
             || (first_radius - radius).abs()
                 > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
@@ -4707,59 +4707,62 @@ pub fn rolling_ball_jet_point(
     }
     let span = stations
         .windows(2)
-        .position(|pair| t >= pair[0].knot && t <= pair[1].knot)?;
-    let span_width = stations[span + 1].knot - stations[span].knot;
+        .position(|pair| t >= pair[0].knot.get() && t <= pair[1].knot.get())?;
+    let span_width = stations[span + 1].knot.get() - stations[span].knot.get();
     if !span_width.is_finite() {
         return None;
     }
-    let fraction = ((t - stations[span].knot) / span_width).clamp(0.0, 1.0);
+    let fraction = ((t - stations[span].knot.get()) / span_width).clamp(0.0, 1.0);
     let first = &stations[span].site;
     let second = &stations[span + 1].site;
     let first_limit = rolling_ball_jet_interpolate_point(
-        [first.first_limit, second.first_limit],
+        [first.first_limit.get(), second.first_limit.get()],
         [
-            first.first_derivative.first_limit,
-            second.first_derivative.first_limit,
+            first.first_derivative.first_limit.get(),
+            second.first_derivative.first_limit.get(),
         ],
         [
-            first.second_derivative.first_limit,
-            second.second_derivative.first_limit,
+            first.second_derivative.first_limit.get(),
+            second.second_derivative.first_limit.get(),
         ],
         fraction,
         span_width,
     );
     let second_limit = rolling_ball_jet_interpolate_point(
-        [first.second_limit, second.second_limit],
+        [first.second_limit.get(), second.second_limit.get()],
         [
-            first.first_derivative.second_limit,
-            second.first_derivative.second_limit,
+            first.first_derivative.second_limit.get(),
+            second.first_derivative.second_limit.get(),
         ],
         [
-            first.second_derivative.second_limit,
-            second.second_derivative.second_limit,
+            first.second_derivative.second_limit.get(),
+            second.second_derivative.second_limit.get(),
         ],
         fraction,
         span_width,
     );
     let center = rolling_ball_jet_interpolate_point(
-        [first.center, second.center],
+        [first.center.get(), second.center.get()],
         [
-            first.first_derivative.center,
-            second.first_derivative.center,
+            first.first_derivative.center.get(),
+            second.first_derivative.center.get(),
         ],
         [
-            first.second_derivative.center,
-            second.second_derivative.center,
+            first.second_derivative.center.get(),
+            second.second_derivative.center.get(),
         ],
         fraction,
         span_width,
     );
     let angle = rolling_ball_jet_interpolate_scalar(
-        [first.angle, second.angle],
-        [first.first_derivative.angle, second.first_derivative.angle],
+        [first.angle.get(), second.angle.get()],
         [
-            first.second_derivative.angle,
-            second.second_derivative.angle,
+            first.first_derivative.angle.get(),
+            second.first_derivative.angle.get(),
+        ],
+        [
+            first.second_derivative.angle.get(),
+            second.second_derivative.angle.get(),
         ],
         fraction,
         span_width,
@@ -5187,7 +5190,7 @@ fn sweep_differential_of(value: f64, derivative: FiniteReal) -> Option<ScalarSwe
 }
 
 fn scalar_sweep_law_differential(
-    expression: &LawExpression,
+    expression: &LawExpression<FiniteReal, FiniteVector3, FinitePoint3>,
     parameter: f64,
 ) -> Option<ScalarSweepDifferential> {
     if !parameter.is_finite() {
@@ -5196,7 +5199,7 @@ fn scalar_sweep_law_differential(
     match expression {
         LawExpression::Null {} => finite_sweep_differential(0.0, 0.0),
         LawExpression::Integer { value } => finite_sweep_differential(*value as f64, 0.0),
-        LawExpression::Double { value } => finite_sweep_differential(*value, 0.0),
+        LawExpression::Double { value } => finite_sweep_differential(value.get(), 0.0),
         LawExpression::Text { value } => {
             let value = value.as_str().trim();
             if value == "X" {
@@ -5523,7 +5526,9 @@ fn scalar_unary_sweep_law_differential(
     )
 }
 
-fn sweep_scale(expression: &LawExpression) -> Option<Vector3> {
+fn sweep_scale(
+    expression: &LawExpression<FiniteReal, FiniteVector3, FinitePoint3>,
+) -> Option<Vector3> {
     match expression {
         LawExpression::Null {} => Some(Vector3::new(1.0, 1.0, 1.0)),
         LawExpression::Text { value } => {
@@ -5544,7 +5549,7 @@ fn sweep_scale(expression: &LawExpression) -> Option<Vector3> {
             };
             Some(Vector3::new(*x, *y, *z))
         }
-        LawExpression::Vector { value } => Some(*value),
+        LawExpression::Vector { value } => Some(value.get()),
         _ => None,
     }
 }
@@ -5601,7 +5606,9 @@ fn unit_domain_sweep_formula(name: &str) -> bool {
     bounds.next().is_none() && lower.is_finite() && upper.is_finite() && lower < upper
 }
 
-fn sweep_rail_transform(formula: &LawFormula) -> Option<Transform> {
+fn sweep_rail_transform(
+    formula: &LawFormula<FiniteReal, FiniteVector3, FinitePoint3>,
+) -> Option<Transform> {
     match formula {
         LawFormula::Null {} => {
             return Some(Transform::identity());
@@ -5638,7 +5645,9 @@ fn sweep_rail_transform(formula: &LawFormula) -> Option<Transform> {
     else {
         return None;
     };
-    if *scale != 1.0 || *flags != [true, false, false] || vectors[3] != Vector3::new(0.0, 0.0, 0.0)
+    if scale.get() != 1.0
+        || *flags != [true, false, false]
+        || vectors[3].get() != Vector3::new(0.0, 0.0, 0.0)
     {
         return None;
     }
@@ -5673,10 +5682,10 @@ fn point_displacement(point: Point3, origin: Point3) -> Vector3 {
     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
 }
 
-fn sweep_tail_interval_contains(interval: [Option<f64>; 2], parameter: f64) -> bool {
+fn sweep_tail_interval_contains(interval: [Option<FiniteReal>; 2], parameter: f64) -> bool {
     parameter.is_finite()
-        && interval[0].is_none_or(|lower| parameter >= lower)
-        && interval[1].is_none_or(|upper| parameter <= upper)
+        && interval[0].is_none_or(|lower| parameter >= lower.get())
+        && interval[1].is_none_or(|upper| parameter <= upper.get())
 }
 
 fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(Vector3, Vector3)> {
@@ -5718,13 +5727,13 @@ fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(
 }
 
 fn sweep_profile_reversed(
-    profile_frame: Option<(Point3, Vector3)>,
+    profile_frame: Option<(FinitePoint3, FiniteVector3)>,
     spine_tangent: Vector3,
 ) -> Option<bool> {
     let Some((_, frame_vector)) = profile_frame else {
         return Some(false);
     };
-    let frame_vector = unit_axis(frame_vector)?;
+    let frame_vector = unit_axis(frame_vector.get())?;
     let spine_tangent = unit_axis(spine_tangent)?;
     let alignment = frame_vector.dot(spine_tangent);
     ((alignment.abs() - 1.0).abs() <= EPS_EVAL_SWEEP_PROFILE_FRAME_ALIGNMENT_E9)
@@ -5734,14 +5743,15 @@ fn sweep_profile_reversed(
 fn sweep_profile_differential(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
-    profile_range: [f64; 2],
+    profile_range: [FiniteReal; 2],
     reversed: bool,
     parameter: f64,
 ) -> Option<ModelCurveDifferential> {
     if !sweep_tail_interval_contains([Some(profile_range[0]), Some(profile_range[1])], parameter) {
         return None;
     }
-    let profile_span = profile_range[1] - profile_range[0];
+    let [profile_start, profile_end] = FiniteReal::raw_array(profile_range);
+    let profile_span = profile_end - profile_start;
     if !profile_span.is_finite() || profile_span <= 0.0 {
         return None;
     }
@@ -5750,7 +5760,7 @@ fn sweep_profile_differential(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?.endpoints();
             let native_span = native_end - native_start;
-            let fraction = (parameter - profile_range[0]) / profile_span;
+            let fraction = (parameter - profile_start) / profile_span;
             let fraction = if reversed { 1.0 - fraction } else { fraction };
             let native_parameter = native_start + fraction * native_span;
             let parameter_scale = native_span / profile_span * if reversed { -1.0 } else { 1.0 };
@@ -5770,7 +5780,11 @@ fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction,
+    construction: &crate::geometry::SweepSurfaceConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<(
@@ -5812,7 +5826,7 @@ fn cacheless_law_sweep_differentials(
     let spine = model_curve_differential_by_id(index, spine, v)?;
     let reversed = sweep_profile_reversed(*profile_frame, spine.tangent)?;
     let profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
-    let frame_point = profile_frame.map_or(*origin, |(point, _)| point);
+    let frame_point = profile_frame.map_or(*origin, |(point, _)| point).get();
     let mut profile = scale_sweep_profile(profile, frame_point, scale)?;
     profile.point = rail_transform.apply_point(profile.point.get())?;
     profile.tangent = rail_transform.apply_vector(profile.tangent)?.get();
@@ -5825,7 +5839,11 @@ fn cacheless_law_sweep_point(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction,
+    construction: &crate::geometry::SweepSurfaceConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<Point3> {
@@ -5847,7 +5865,11 @@ fn cacheless_law_sweep_partials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
-    construction: &crate::geometry::SweepSurfaceConstruction,
+    construction: &crate::geometry::SweepSurfaceConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
@@ -5883,7 +5905,13 @@ struct ContactTrackDifferential {
 
 fn variable_blend_contact_track_differential(
     index: &crate::index::ModelIndex<'_>,
-    side: &crate::geometry::RollingBallSide,
+    side: &crate::geometry::RollingBallSide<
+        crate::ids::SurfaceId,
+        crate::ids::CurveId,
+        PcurveGeometry,
+        FiniteReal,
+        FinitePoint3,
+    >,
     parameter: f64,
 ) -> Option<ContactTrackDifferential> {
     let surface = &side.surface.as_ref()?.surface;
@@ -5908,7 +5936,11 @@ fn variable_blend_contact_track_differential(
 }
 
 fn cacheless_variable_blend_domain_contains(
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> bool {
@@ -5927,7 +5959,11 @@ fn cacheless_variable_blend_domain_contains(
 }
 
 fn variable_blend_has_current_cache(
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
 ) -> bool {
     construction.cache.shape_prefix() > 0
         && matches!(
@@ -5936,7 +5972,13 @@ fn variable_blend_has_current_cache(
         )
 }
 
-fn sweep_has_current_cache(construction: &crate::geometry::SweepSurfaceConstruction) -> bool {
+fn sweep_has_current_cache(
+    construction: &crate::geometry::SweepSurfaceConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+) -> bool {
     construction
         .cache
         .form()
@@ -5961,21 +6003,21 @@ fn surface_cache_evaluation(
     Some((partials.point, partials.du.cross(partials.dv).unit()))
 }
 
-fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) -> bool {
+fn variable_blend_is_zero_radius(
+    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
+) -> bool {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
             radii: [first_radius, second_radius],
             ..
         } => {
-            first_parameter.is_finite()
-                && second_parameter.is_finite()
-                && first_parameter != second_parameter
-                && *first_radius == 0.0
-                && *second_radius == 0.0
+            first_parameter != second_parameter
+                && first_radius.get() == 0.0
+                && second_radius.get() == 0.0
         }
         crate::geometry::VariableBlendValuePayload::Constant { radius, nested, .. } => {
-            *radius == 0.0 && variable_blend_is_zero_radius(nested)
+            radius.get() == 0.0 && variable_blend_is_zero_radius(nested)
         }
         _ => false,
     }
@@ -5983,7 +6025,11 @@ fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) ->
 
 fn cacheless_ruled_variable_blend_partials(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
@@ -6014,15 +6060,15 @@ fn cacheless_ruled_variable_blend_partials(
 }
 
 fn variable_blend_radius(
-    value: &crate::geometry::VariableBlendValue,
+    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
     parameter: f64,
 ) -> Option<FiniteReal> {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters: [first_parameter, second_parameter],
-            radii: [first_radius, second_radius],
-            ..
+            parameters, radii, ..
         } => {
+            let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
+            let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
             let width = second_parameter - first_parameter;
             if width == 0.0 {
                 return None;
@@ -6043,15 +6089,15 @@ fn variable_blend_radius(
 }
 
 fn variable_blend_radius_differential(
-    value: &crate::geometry::VariableBlendValue,
+    value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
     parameter: f64,
 ) -> Option<ScalarSweepDifferential> {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
-            parameters: [first_parameter, second_parameter],
-            radii: [first_radius, second_radius],
-            ..
+            parameters, radii, ..
         } => {
+            let [first_parameter, second_parameter] = FiniteReal::raw_array(*parameters);
+            let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
             let width = second_parameter - first_parameter;
             if width == 0.0 {
                 return None;
@@ -6114,7 +6160,11 @@ fn minor_circular_arc_point(
 
 fn cacheless_circular_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<Point3> {
@@ -6157,7 +6207,11 @@ struct CircularVariableBlendSection {
 
 fn cacheless_circular_variable_blend_section(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<CircularVariableBlendSection> {
@@ -6242,7 +6296,7 @@ fn cacheless_constant_rolling_ball_point(
     supports: &[Option<crate::geometry::BlendSupport>; 2],
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction,
+    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
     u: f64,
     v: f64,
 ) -> Option<Point3> {
@@ -6277,7 +6331,7 @@ fn cacheless_constant_rolling_ball_section(
     supports: &[Option<crate::geometry::BlendSupport>; 2],
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction,
+    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
     u: f64,
     v: f64,
 ) -> Option<ConstantRollingBallSection> {
@@ -6338,7 +6392,7 @@ fn cacheless_constant_rolling_ball_section(
     if native
         .offsets
         .iter()
-        .any(|offset| !offset.is_finite() || (*offset - signed_radius).abs() > tolerance)
+        .any(|offset| (offset.get() - signed_radius).abs() > tolerance)
         || radius_error(first.point) > tolerance
         || radius_error(second.point) > tolerance
     {
@@ -6355,7 +6409,11 @@ fn cacheless_constant_rolling_ball_section(
 
 fn cacheless_circular_variable_blend_partials(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
@@ -6398,7 +6456,7 @@ fn cacheless_constant_rolling_ball_partials(
     supports: &[Option<crate::geometry::BlendSupport>; 2],
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction,
+    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
@@ -6488,7 +6546,11 @@ fn circular_arc_partials(
 
 fn cacheless_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
     u: f64,
     v: f64,
 ) -> Option<Point3> {

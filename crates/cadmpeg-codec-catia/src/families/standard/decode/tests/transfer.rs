@@ -925,7 +925,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     };
     let degree = jet.degree();
     let stations = jet.stations();
-    let knots: Vec<_> = stations.iter().map(|station| station.knot).collect();
+    let knots: Vec<_> = stations.iter().map(|station| station.knot.get()).collect();
     let multiplicities: Vec<_> = stations
         .iter()
         .map(|station| station.multiplicity)
@@ -937,7 +937,7 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     assert_eq!(sites.len(), 2);
     assert_eq!(sites[0].first_limit, Point3::new(1.0, 0.0, 0.0));
     assert_eq!(sites[1].second_limit, Point3::new(0.0, 2.0, 0.0));
-    assert_eq!(sites[0].angle, std::f64::consts::FRAC_PI_2);
+    assert_eq!(sites[0].angle.get(), std::f64::consts::FRAC_PI_2);
     assert_eq!(
         sites[0].first_derivative.center,
         Vector3::new(0.0, 0.0, 0.0)

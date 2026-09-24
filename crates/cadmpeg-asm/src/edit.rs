@@ -1137,7 +1137,7 @@ fn patch_compound_definition(
     stream_width: RefWidth,
     record: &sab::Record,
     parameters: &[FiniteReal],
-    components: &[CompoundComponent<CurveId>],
+    components: &[CompoundComponent<CurveId, FiniteReal>],
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "compound")?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
@@ -1165,7 +1165,7 @@ fn patch_compound_definition(
                 parameters
                     .iter()
                     .map(|value| value.get())
-                    .chain(components.iter().map(|item| item.parameter)),
+                    .chain(components.iter().map(|item| item.parameter.get())),
             ),
     )?;
     Ok(())
@@ -1336,7 +1336,7 @@ fn patch_spring_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    layout: &SpringLayout,
+    layout: &SpringLayout<FiniteReal, cadmpeg_ir::topology::ParameterInterval>,
     direction: i64,
 ) -> Result<(), CodecError> {
     let context = layout.support_context().map_err(CodecError::malformed)?;
@@ -1374,7 +1374,7 @@ fn patch_projection_definition(
     record: &sab::Record,
     context: &IntcurveSupportContext,
     discontinuity_flag: bool,
-    tail: &ProjectionTail,
+    tail: &ProjectionTail<FiniteReal>,
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "projection")?;
     let layout = crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_width)
@@ -1406,11 +1406,6 @@ fn patch_projection_definition(
                 role,
             },
         ) => {
-            if !parameter_range.iter().copied().all(f64::is_finite) {
-                return Err(CodecError::Malformed(
-                    "projection tail range must be finite".into(),
-                ));
-            }
             AsmEditSet::patch_native_bool(bytes, record.offset + flag_offset, *flag)?;
             AsmEditSet::patch_f64_payloads(
                 bytes,
@@ -1418,7 +1413,7 @@ fn patch_projection_definition(
                 range_offsets
                     .iter()
                     .zip(parameter_range)
-                    .map(|(offset, value)| (*offset, *value)),
+                    .map(|(offset, value)| (*offset, value.get())),
             )?;
             role_range.write(&mut bytes[record.offset..], *role)?;
         }
@@ -2092,7 +2087,8 @@ mod tests {
                 let tail = if early_close {
                     ProjectionTail::Ranged {
                         flag: true,
-                        parameter_range: [0.0, 2.0],
+                        parameter_range: [0.0, 2.0]
+                            .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
                         role: ProjectionRole::Surf2,
                     }
                 } else {
@@ -2127,7 +2123,8 @@ mod tests {
             .unwrap();
             let tail = ProjectionTail::Ranged {
                 flag: true,
-                parameter_range: [7.0, 8.0],
+                parameter_range: [7.0, 8.0]
+                    .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
                 role: ProjectionRole::Surf2,
             };
             let before = bytes.clone();

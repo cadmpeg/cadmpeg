@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked procedural curve payloads.
 
-use super::{CacheContract, IntcurveSupportSide, LegacyCache, ProjectionTail, SpringLayout};
+use super::{
+    CacheContract, CurveOffsetDistanceLaw, IntcurveSupportSide, LegacyCache, ProjectionTail,
+    SpringLayout, SpringPcurve, SpringSupport,
+};
 use super::{
     CacheFirstCurveForm, CurveOffsetRange, DeformableCurveData, DeformableCurveSource,
     IntcurveSupportContext, OffsetSide, ProceduralGeometryError, SilhouetteKind, VectorOffsetRoles,
 };
-use crate::features::FiniteVector3;
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
 use crate::scalar::FiniteReal;
@@ -57,7 +60,7 @@ pub struct SurfaceOffsetCurveConstruction {
     /// Cache contract: the cache-first shared-context fields, or the legacy
     /// solved-cache tolerance the context-first layout states instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<CacheFirstCurveForm>,
+    cache: CacheContract<CacheFirstCurveForm<FiniteReal>>,
     /// Signed model-space offset distance.
     distance: FiniteReal,
     /// Native unscaled parameter shift.
@@ -121,14 +124,9 @@ impl SurfaceOffsetCurveConstruction {
         distance: f64,
         [shift, scale]: [f64; 2],
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache
-            .form()
-            .is_none_or(super::CacheFirstCurveForm::values_are_finite)
-        {
-            return Err(ProceduralGeometryError::Payload(
-                "SurfaceOffset cache-first form is not finite",
-            ));
-        }
+        let cache = cache.admit_form(CacheFirstCurveForm::admit).ok_or(
+            ProceduralGeometryError::Payload("SurfaceOffset cache-first form is not finite"),
+        )?;
         Ok(Self {
             context,
             discontinuity_flag,
@@ -184,7 +182,7 @@ impl SurfaceOffsetCurveConstruction {
         self.base_endpoints
     }
     /// Return the cache first.
-    pub const fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
+    pub const fn cache_first(&self) -> Option<&CacheFirstCurveForm<FiniteReal>> {
         self.cache.form()
     }
     /// Return the distance.
@@ -225,13 +223,13 @@ pub struct DeformableCurveConstruction {
     /// Shared cache-first support context.
     context: IntcurveSupportContext,
     /// Cache-first serializer fields surrounding the solved curve cache.
-    cache_first: CacheFirstCurveForm,
+    cache_first: CacheFirstCurveForm<FiniteReal>,
     /// Curve being deformed or its unresolved native reference.
     source: DeformableCurveSource,
     /// Optional native bounds following the source curve.
     source_parameter_range: [Option<FiniteReal>; 2],
     /// Discriminator-specific deformation payload.
-    data: DeformableCurveData,
+    data: DeformableCurveData<FiniteReal, FiniteVector3, FinitePoint3>,
 }
 
 #[derive(Deserialize)]
@@ -267,41 +265,11 @@ impl DeformableCurveConstruction {
         source_parameter_range: [Option<f64>; 2],
         data: DeformableCurveData,
     ) -> Result<Self, ProceduralGeometryError> {
-        let payload_finite = match &data {
-            crate::geometry::DeformableCurveData::VectorField {
-                vectors,
-                parameter_pairs,
-            } => {
-                vectors.iter().all(crate::math::Vector3::is_finite)
-                    && parameter_pairs
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-            }
-            crate::geometry::DeformableCurveData::Mode3 {
-                leading_vectors,
-                leading_parameter,
-                trailing_point,
-                trailing_vectors,
-                frame_parameter,
-                parameters,
-                trailing_parameter,
-                ..
-            } => {
-                leading_vectors.iter().all(crate::math::Vector3::is_finite)
-                    && leading_parameter.is_finite()
-                    && trailing_point.is_finite()
-                    && trailing_vectors.iter().all(crate::math::Vector3::is_finite)
-                    && frame_parameter.is_finite()
-                    && parameters.iter().all(|value| value.is_finite())
-                    && trailing_parameter.is_finite()
-            }
-        };
-        if !payload_finite || !cache_first.values_are_finite() {
+        let (Some(data), Some(cache_first)) = (data.admit(), cache_first.admit()) else {
             return Err(ProceduralGeometryError::Payload(
                 "deformable curve payload is not finite",
             ));
-        }
+        };
 
         Ok(Self {
             context,
@@ -331,7 +299,7 @@ impl DeformableCurveConstruction {
         &self.context
     }
     /// Return the cache first.
-    pub fn cache_first(&self) -> &CacheFirstCurveForm {
+    pub fn cache_first(&self) -> &CacheFirstCurveForm<FiniteReal> {
         &self.cache_first
     }
     /// Return the source.
@@ -343,7 +311,7 @@ impl DeformableCurveConstruction {
         self.source_parameter_range
     }
     /// Return the data.
-    pub fn data(&self) -> &DeformableCurveData {
+    pub fn data(&self) -> &DeformableCurveData<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.data
     }
 }
@@ -372,14 +340,10 @@ pub struct OffsetCurveConstruction {
     /// Signed offset distance, in document length units.
     distance: FiniteReal,
     /// Exclusive plane-normal or explicit-direction carrier.
-    side: OffsetSide,
+    side: OffsetSide<FiniteVector3>,
     /// Retained parameter range, with its distance law when variable.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_range"
-    )]
-    range: Option<CurveOffsetRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    range: Option<CurveOffsetRange<FiniteReal>>,
 }
 
 #[derive(Deserialize)]
@@ -418,7 +382,7 @@ impl OffsetCurveConstruction {
             source,
             distance,
             side: crate::geometry::OffsetSide::Direction {
-                direction: *direction.as_raw(),
+                direction: FiniteVector3::from(direction),
                 support,
             },
             range: Some(crate::geometry::CurveOffsetRange::Uniform { parameter_range }),
@@ -433,38 +397,34 @@ impl OffsetCurveConstruction {
         side: OffsetSide,
         range: Option<CurveOffsetRange>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let side_valid = match &side {
-            crate::geometry::OffsetSide::PlaneNormal { normal } => {
-                normal.is_finite() && (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
+        let side = side.admit().filter(|side| match side {
+            OffsetSide::PlaneNormal { normal } => {
+                (normal.norm() - 1.0).abs() <= EPS_OFFSET_PLANE_NORMAL
             }
-            crate::geometry::OffsetSide::Direction { direction, .. } => {
-                direction.is_finite() && direction.norm() > 0.0
-            }
-        };
-        let law_valid = match &range {
-            Some(crate::geometry::CurveOffsetRange::Variable { distance_law, .. }) => {
-                match distance_law {
-                    crate::geometry::CurveOffsetDistanceLaw::Linear { distances, .. } => {
-                        distances.iter().all(|value| value.is_finite())
-                    }
-                    crate::geometry::CurveOffsetDistanceLaw::Coordinate {
-                        function_parameter_offset,
-                        function_parameter_scale,
+            OffsetSide::Direction { direction, .. } => direction.norm() > 0.0,
+        });
+        let range = match range {
+            None => Some(None),
+            Some(range) => range
+                .admit()
+                .filter(|range| match range {
+                    CurveOffsetRange::Variable {
+                        distance_law:
+                            CurveOffsetDistanceLaw::Coordinate {
+                                function_parameter_scale,
+                                ..
+                            },
                         ..
-                    } => {
-                        function_parameter_offset.is_finite()
-                            && function_parameter_scale.is_finite()
-                            && *function_parameter_scale != 0.0
-                    }
-                }
-            }
-            None | Some(crate::geometry::CurveOffsetRange::Uniform { .. }) => true,
+                    } => function_parameter_scale.get() != 0.0,
+                    CurveOffsetRange::Variable { .. } | CurveOffsetRange::Uniform { .. } => true,
+                })
+                .map(Some),
         };
-        if !side_valid || !law_valid {
+        let (Some(side), Some(range)) = (side, range) else {
             return Err(ProceduralGeometryError::Payload(
                 crate::geometry::INVALID_CURVE_OFFSET,
             ));
-        }
+        };
 
         Ok(Self {
             source,
@@ -480,11 +440,11 @@ impl OffsetCurveConstruction {
         &self.source
     }
     /// Return the side.
-    pub fn side(&self) -> &OffsetSide {
+    pub fn side(&self) -> &OffsetSide<FiniteVector3> {
         &self.side
     }
     /// Return the range.
-    pub fn range(&self) -> &Option<CurveOffsetRange> {
+    pub fn range(&self) -> &Option<CurveOffsetRange<FiniteReal>> {
         &self.range
     }
 }
@@ -916,7 +876,7 @@ impl TryFrom<SilhouetteCurveConstructionWire> for SilhouetteCurveConstruction {
 #[cfg_attr(feature = "schema", schemars(with = "SpringCurvePayloadWire"))]
 #[serde(try_from = "SpringCurvePayloadWire")]
 pub struct SpringCurvePayload {
-    layout: SpringLayout,
+    layout: SpringLayout<FiniteReal, ParameterInterval>,
 
     direction: i64,
 }
@@ -933,36 +893,34 @@ struct SpringCurvePayloadWire {
 impl SpringCurvePayload {
     /// Admit the construction parameters.
     pub fn try_new(layout: SpringLayout, direction: i64) -> Result<Self, ProceduralGeometryError> {
-        let context = layout.support_context();
-        let layout_values_finite = match &layout {
-            crate::geometry::SpringLayout::ContextFirst {
-                supports,
-                first_pcurve,
-                ..
-            } => {
-                supports.iter().all(|support| match support {
-                    crate::geometry::SpringSupport::Surface(_) => true,
-                    crate::geometry::SpringSupport::Ranges(ranges) => ranges.iter().all(|range| {
-                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
-                    }),
-                }) && match first_pcurve {
-                    crate::geometry::SpringPcurve::Pcurve(_) => true,
-                    crate::geometry::SpringPcurve::Range(range) => {
-                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+        let layout = layout
+            .admit()
+            .filter(|layout| {
+                layout.support_context().is_ok()
+                    && match layout {
+                        SpringLayout::ContextFirst {
+                            supports,
+                            first_pcurve,
+                            ..
+                        } => {
+                            supports.iter().all(|support| match support {
+                                SpringSupport::Surface(_) => true,
+                                SpringSupport::Ranges(ranges) => ranges.iter().all(ordered),
+                            }) && match first_pcurve {
+                                SpringPcurve::Pcurve(_) => true,
+                                SpringPcurve::Range(range) => ordered(range),
+                            }
+                        }
+                        SpringLayout::CacheFirst { .. } => true,
                     }
-                }
-            }
-            crate::geometry::SpringLayout::CacheFirst { form, .. } => form.values_are_finite(),
-        };
-        if context.is_err() || !layout_values_finite {
-            return Err(ProceduralGeometryError::Payload(
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "spring context, null-support ranges, or cache-first form are invalid",
-            ));
-        }
+            ))?;
         Ok(Self { layout, direction })
     }
     /// Return the layout.
-    pub fn layout(&self) -> &SpringLayout {
+    pub fn layout(&self) -> &SpringLayout<FiniteReal, ParameterInterval> {
         &self.layout
     }
     /// Return the direction.
@@ -1060,7 +1018,7 @@ pub struct ProjectionCurvePayload {
 
     source: CurveId,
 
-    tail: ProjectionTail,
+    tail: ProjectionTail<FiniteReal>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1086,20 +1044,17 @@ impl ProjectionCurvePayload {
         source: CurveId,
         tail: ProjectionTail,
     ) -> Result<Self, ProceduralGeometryError> {
-        let tail_finite = match &tail {
-            crate::geometry::ProjectionTail::EarlyClose { .. } => true,
-            crate::geometry::ProjectionTail::Ranged {
-                parameter_range, ..
-            } => {
-                parameter_range.iter().all(|value| value.is_finite())
-                    && parameter_range[0] <= parameter_range[1]
-            }
-        };
-        if !tail_finite {
-            return Err(ProceduralGeometryError::Payload(
+        let tail = tail
+            .admit()
+            .filter(|tail| match tail {
+                ProjectionTail::EarlyClose { .. } => true,
+                ProjectionTail::Ranged {
+                    parameter_range, ..
+                } => ordered(parameter_range),
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "projection fields are not finite and ordered",
-            ));
-        }
+            ))?;
         Ok(Self {
             context,
             discontinuity_flag,
@@ -1120,7 +1075,7 @@ impl ProjectionCurvePayload {
         &self.source
     }
     /// Return the tail.
-    pub fn tail(&self) -> &ProjectionTail {
+    pub fn tail(&self) -> &ProjectionTail<FiniteReal> {
         &self.tail
     }
 }
@@ -1220,6 +1175,11 @@ impl SurfaceOffsetCurveConstruction {
     pub(super) fn legacy_cache_slot_mut(&mut self) -> Option<&mut Option<LegacyCache>> {
         self.cache.legacy_cache_mut()
     }
+}
+
+/// Whether an admitted pair is ordered.
+fn ordered(range: &[FiniteReal; 2]) -> bool {
+    range[0] <= range[1]
 }
 
 #[cfg(test)]

@@ -88,7 +88,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
                     *previous.u_sense(),
                     *previous.v_sense(),
                     previous.linear_support_extension(),
-                    previous.extension().clone(),
+                    previous.extension().to_raw(),
                 )
             })
         }
@@ -104,7 +104,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
                 *previous.u_sense(),
                 *previous.v_sense(),
                 previous.linear_support_extension(),
-                previous.extension().clone(),
+                previous.extension().to_raw(),
             )
         })
     }

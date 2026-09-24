@@ -36,12 +36,12 @@ fn document(revision: bool) -> CadIr {
     ir
 }
 
-fn layout(ir: &CadIr) -> &SweepSurfaceLayout {
+fn layout(ir: &CadIr) -> SweepSurfaceLayout {
     let ProceduralSurfaceDefinition::Sweep(payload) = ir.model.procedural_surfaces[0].definition()
     else {
         panic!("sweep construction")
     };
-    &payload.native().as_ref().unwrap().layout
+    payload.native().as_ref().unwrap().layout.to_raw()
 }
 
 fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
@@ -49,12 +49,16 @@ fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
     let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {
         panic!("sweep construction")
     };
-    let mut native = payload.native().clone().unwrap();
+    let mut native = payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw)
+        .unwrap();
     edit(&mut native.layout);
     let replacement = SweepSurfacePayload::try_new(
         payload.profile().clone(),
         payload.spine().clone(),
-        Some(native),
+        Some(Box::new(native)),
     )
     .expect("the neutral construction admits the law values");
     procedural.edit_definition(|definition| {

@@ -211,7 +211,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
             unreachable!()
         };
-        let mut construction = definition_payload.construction().clone();
+        let mut construction = definition_payload.construction().to_raw();
 
         let first = construction.radii.first().clone();
         construction.radii = VariableBlendRadii::Two {
@@ -244,7 +244,7 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
             unreachable!()
         };
-        let mut construction = definition_payload.construction().clone();
+        let mut construction = definition_payload.construction().to_raw();
 
         construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
             radius: Some(Box::new(zero_radius.clone())),
@@ -261,18 +261,22 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
             .map(crate::features::FinitePoint3::get),
         Some(Point3::new(4.0, 4.375, 2.125))
     );
-    assert!(variable_blend_is_zero_radius(&VariableBlendValue {
-        modern_flag: false,
-        calibrated: 0,
-        payload: VariableBlendValuePayload::Constant {
-            discriminator: 0,
-            parameters: [0.0, 0.0],
-            radius: 0.0,
-            variable_chamfer: 0,
-            chamfer_type: 0,
-            nested: Box::new(zero_radius),
-        },
-    }));
+    assert!(variable_blend_is_zero_radius(
+        &VariableBlendValue {
+            modern_flag: false,
+            calibrated: 0,
+            payload: VariableBlendValuePayload::Constant {
+                discriminator: 0,
+                parameters: [0.0, 0.0],
+                radius: 0.0,
+                variable_chamfer: 0,
+                chamfer_type: 0,
+                nested: Box::new(zero_radius),
+            },
+        }
+        .admit()
+        .expect("finite value")
+    ));
 }
 
 #[test]
@@ -296,7 +300,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
             unreachable!()
         };
-        let mut construction = definition_payload.construction().clone();
+        let mut construction = definition_payload.construction().to_raw();
 
         construction.cache = crate::geometry::VariableBlendCache::Current {
             shape_prefix: std::num::NonZeroI64::new(1).unwrap(),
@@ -325,7 +329,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
             unreachable!()
         };
-        let mut construction = definition_payload.construction().clone();
+        let mut construction = definition_payload.construction().to_raw();
 
         construction.cache = crate::geometry::VariableBlendCache::Stale {};
         *definition_payload =
@@ -403,7 +407,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
         let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
             unreachable!()
         };
-        let mut construction = definition_payload.construction().clone();
+        let mut construction = definition_payload.construction().to_raw();
 
         construction.sides[0].pcurve = Some(crate::geometry::pcurve::PcurveGeometry::Line(
             crate::geometry::pcurve::LinePcurve::try_new(
@@ -460,7 +464,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     else {
         unreachable!()
     };
-    let construction = definition_payload.construction();
+    let construction = definition_payload.construction().to_raw();
 
     let sides = construction.sides.clone();
     let slice = construction.slice.clone();
@@ -601,7 +605,10 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
             unreachable!()
         };
-        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+        let (Some(mut native),) = (definition_payload
+            .native()
+            .map(RollingBallConstruction::to_raw),)
+        else {
             unreachable!()
         };
 
@@ -633,7 +640,10 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
             unreachable!()
         };
-        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+        let (Some(mut native),) = (definition_payload
+            .native()
+            .map(RollingBallConstruction::to_raw),)
+        else {
             unreachable!()
         };
 
@@ -670,7 +680,10 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
             unreachable!()
         };
-        let (Some(mut native),) = (definition_payload.native().cloned(),) else {
+        let (Some(mut native),) = (definition_payload
+            .native()
+            .map(RollingBallConstruction::to_raw),)
+        else {
             unreachable!()
         };
 
@@ -751,7 +764,9 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
             parameters: [2.0, 4.0],
             radii: [5.0, 9.0],
         },
-    };
+    }
+    .admit()
+    .expect("finite value");
     assert_eq!(
         variable_blend_radius(&value, 2.0).map(FiniteReal::get),
         Some(5.0)
@@ -784,7 +799,9 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
             ),
             terminal: crate::geometry::VariableBlendTerminal::Double(0.0),
         },
-    };
+    }
+    .admit()
+    .expect("finite value");
     assert_eq!(
         variable_blend_radius(&value, 0.5).map(FiniteReal::get),
         Some(3.5)

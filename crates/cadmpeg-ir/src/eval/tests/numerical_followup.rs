@@ -145,7 +145,7 @@ fn numerical_followup_sweep_quotient_retains_finite_derivatives() {
                 LawExpression::Double { value: denominator },
             ],
         };
-        let value = scalar_sweep_law_differential(&expression, 1.).unwrap();
+        let value = scalar_sweep_law_differential(&expression.admit().unwrap(), 1.).unwrap();
         assert_eq!(value.value, 1. / denominator);
         assert_eq!(value.derivative, 1. / denominator);
     }

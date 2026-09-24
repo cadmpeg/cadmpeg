@@ -47,7 +47,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     let context = definition_payload.context();
     let discontinuity_flag = definition_payload.discontinuity_flag();
     let source = definition_payload.source();
-    let tail = definition_payload.tail();
+    let tail = &definition_payload.tail().to_raw();
 
     assert!(context.sides().iter().all(|side| side.surface.is_some()));
     assert!(*discontinuity_flag);
@@ -73,7 +73,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         };
         let mut edited_context = definition_payload.context().clone();
         let mut edited_discontinuity_flag = *definition_payload.discontinuity_flag();
-        let mut edited_tail = definition_payload.tail().clone();
+        let mut edited_tail = definition_payload.tail().to_raw();
         let context = &mut edited_context;
         let discontinuity_flag = &mut edited_discontinuity_flag;
         let tail = &mut edited_tail;
@@ -121,9 +121,11 @@ fn generated_projection_decodes_and_writes_source_less() {
     assert!(matches!(
         regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.context(), definition_payload.discontinuity_flag(), definition_payload.tail(),), (context, false, ProjectionTail::Ranged {
                 flag: false,
-                parameter_range: [-4.0, 5.0],
+                parameter_range,
                 role,
-            },) if context.parameter_range().endpoints() == [-1.0, 2.0] && *role == ProjectionRole::Surf1)));
+            },) if context.parameter_range().endpoints() == [-1.0, 2.0]
+                && cadmpeg_ir::scalar::FiniteReal::raw_array(*parameter_range) == [-4.0, 5.0]
+                && *role == ProjectionRole::Surf1)));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -142,7 +144,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         panic!("expected round-trip projection")
     };
     let discontinuity_flag = definition_payload.discontinuity_flag();
-    let tail = definition_payload.tail();
+    let tail = &definition_payload.tail().to_raw();
 
     assert!(*discontinuity_flag);
     assert_eq!(
@@ -177,7 +179,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
             unreachable!()
         };
-        let mut edited_tail = definition_payload.tail().clone();
+        let mut edited_tail = definition_payload.tail().to_raw();
         let (ProjectionTail::EarlyClose { flag },) = (&mut edited_tail,) else {
             unreachable!()
         };

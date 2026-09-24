@@ -643,7 +643,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
     assert_eq!(
         components
             .iter()
-            .map(|item| item.parameter)
+            .map(|item| item.parameter.get())
             .collect::<Vec<_>>(),
         [-0.5, 1.5]
     );
@@ -685,7 +685,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less compound surface round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Compound(definition_payload) if matches!((definition_payload.components(),), (components,) if components.iter().map(|item| item.parameter).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2)));
+        round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::Compound(definition_payload) if matches!((definition_payload.components(),), (components,) if components.iter().map(|item| item.parameter.get()).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2)));
 }
 
 #[test]
@@ -721,7 +721,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         let reference = definition_payload.reference();
         let pcurve = definition_payload.pcurve();
         let parameter = definition_payload.parameter();
-        let taper = definition_payload.taper();
+        let taper = &definition_payload.taper().to_raw();
         assert_eq!(parameter.get(), 0.35);
         assert!(pcurve.is_some());
         assert!(result
@@ -822,13 +822,20 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             panic!("expected loft surface")
         };
         let (sections, _, parameters, closures, singularities, mode, bridge) = (
-            definition_payload.sections(),
+            &definition_payload
+                .sections()
+                .each_ref()
+                .map(cadmpeg_ir::geometry::LoftSection::to_raw),
             definition_payload.revision_form(),
-            definition_payload.parameters(),
+            &definition_payload.parameters().to_raw(),
             definition_payload.closures(),
             definition_payload.singularities(),
             definition_payload.mode(),
-            definition_payload.bridge(),
+            &definition_payload
+                .bridge()
+                .iter()
+                .map(LoftBridgeToken::to_raw)
+                .collect::<Vec<_>>(),
         );
 
         assert_eq!(
@@ -902,13 +909,20 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             panic!("expected round-trip loft surface")
         };
         let (sections, _, parameters, closures, singularities, mode, bridge) = (
-            definition_payload.sections(),
+            &definition_payload
+                .sections()
+                .each_ref()
+                .map(cadmpeg_ir::geometry::LoftSection::to_raw),
             definition_payload.revision_form(),
-            definition_payload.parameters(),
+            &definition_payload.parameters().to_raw(),
             definition_payload.closures(),
             definition_payload.singularities(),
             definition_payload.mode(),
-            definition_payload.bridge(),
+            &definition_payload
+                .bridge()
+                .iter()
+                .map(LoftBridgeToken::to_raw)
+                .collect::<Vec<_>>(),
         );
 
         assert_eq!(
@@ -964,7 +978,7 @@ fn generated_net_surface_decodes_and_writes_full_graph() {
     else {
         panic!("expected net surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(construction
         .sections
@@ -1011,7 +1025,11 @@ fn generated_profile_first_sweep_decodes_and_writes_full_graph() {
     else {
         panic!("expected native sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected native sweep")
     };
 

@@ -3790,8 +3790,14 @@ fn definition_without_legacy_cache(
 }
 
 fn spring_patch_shape_agrees(
-    before: &cadmpeg_ir::geometry::SpringLayout,
-    after: &cadmpeg_ir::geometry::SpringLayout,
+    before: &cadmpeg_ir::geometry::SpringLayout<
+        cadmpeg_ir::scalar::FiniteReal,
+        cadmpeg_ir::topology::ParameterInterval,
+    >,
+    after: &cadmpeg_ir::geometry::SpringLayout<
+        cadmpeg_ir::scalar::FiniteReal,
+        cadmpeg_ir::topology::ParameterInterval,
+    >,
 ) -> bool {
     match (before, after) {
         (

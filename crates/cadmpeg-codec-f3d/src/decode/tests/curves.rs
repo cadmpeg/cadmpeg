@@ -377,7 +377,8 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     );
     assert!(matches!(
         primary.formula().variables()[0],
-        LawExpression::Edge { parameters, .. } if parameters == [-0.5, 1.5]
+        LawExpression::Edge { parameters, .. }
+            if cadmpeg_ir::scalar::FiniteReal::raw_array(parameters) == [-0.5, 1.5]
     ));
     assert_eq!(additional.len(), 2);
 
@@ -1034,7 +1035,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     assert_eq!(
         components
             .iter()
-            .map(|item| item.parameter)
+            .map(|item| item.parameter.get())
             .collect::<Vec<_>>(),
         [-2.0, 4.0]
     );
@@ -1061,7 +1062,11 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         let ProceduralCurveDefinition::Compound(compound) = definition else {
             unreachable!()
         };
-        let mut components = compound.components().to_vec();
+        let mut components = compound
+            .components()
+            .iter()
+            .map(cadmpeg_ir::geometry::CompoundComponent::to_raw)
+            .collect::<Vec<_>>();
         for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
             component.parameter = parameter;
         }
@@ -1137,7 +1142,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     assert_eq!(
         components
             .iter()
-            .map(|item| item.parameter)
+            .map(|item| item.parameter.get())
             .collect::<Vec<_>>(),
         [-2.0, 4.0]
     );
