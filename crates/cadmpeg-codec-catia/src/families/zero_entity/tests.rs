@@ -188,7 +188,7 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     else {
         panic!("parametric surface-curve construction")
     };
-    assert_eq!(context.parameter_range(), [0.0, 1.0]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
     assert_eq!(
         context.sides()[0].surface.as_ref(),
         Some(&result.ir().model.surfaces[0].id)

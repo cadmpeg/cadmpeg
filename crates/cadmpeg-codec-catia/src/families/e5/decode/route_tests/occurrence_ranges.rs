@@ -51,7 +51,7 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     ];
     let context = e5_support_occurrence_intersection_context([10.0, 20.0], [10.0, 20.0], &sides)
         .expect("support intersection context");
-    assert_eq!(context.parameter_range(), [10.0, 20.0]);
+    assert_eq!(context.parameter_range().endpoints(), [10.0, 20.0]);
     assert_eq!(
         context.sides()[0]
             .pcurve_parameter_range()
@@ -68,14 +68,20 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     );
     assert_eq!(
         context.sides()[0]
-            .pcurve_parameter([10.0, 20.0], 15.0)
+            .pcurve_parameter(
+                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0]).unwrap(),
+                15.0,
+            )
             .expect("left mapped parameter")
             .get(),
         150.0
     );
     assert_eq!(
         context.sides()[1]
-            .pcurve_parameter([10.0, 20.0], 15.0)
+            .pcurve_parameter(
+                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0]).unwrap(),
+                15.0,
+            )
             .expect("right mapped parameter")
             .get(),
         0.0

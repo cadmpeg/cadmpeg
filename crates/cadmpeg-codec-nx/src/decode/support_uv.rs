@@ -377,7 +377,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
             continue;
         };
         let expected_range = samples.parameter_range();
-        if context.parameter_range() != expected_range {
+        if context.parameter_range().endpoints() != expected_range {
             continue;
         }
         for (side, support) in context.sides().iter().enumerate() {
@@ -399,7 +399,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
                 .or_default()
                 .push((
                     pcurve.geometry,
-                    context.parameter_range(),
+                    context.parameter_range().endpoints(),
                     samples.endpoints(),
                 ));
         }
@@ -869,7 +869,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                             .or_default()
                             .push((
                                 pcurve.geometry.clone(),
-                                context.parameter_range(),
+                                context.parameter_range().endpoints(),
                                 [first, last],
                             ));
                     }
@@ -2102,7 +2102,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let values = candidates.entry(key).or_default();
             let candidate = (
                 pcurve.geometry.clone(),
-                context.parameter_range(),
+                context.parameter_range().endpoints(),
                 procedural
                     .cache_fit_tolerance()
                     .map(cadmpeg_ir::geometry::FitTolerance::get),

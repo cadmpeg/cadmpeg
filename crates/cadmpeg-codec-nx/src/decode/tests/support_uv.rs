@@ -67,8 +67,9 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
                 };
                 edit::replace(context, |previous| {
                     let mut sides = previous.sides().clone();
-                    let range = previous.parameter_range();
-                    let discontinuities = previous.discontinuities().clone();
+                    let range = previous.parameter_range().endpoints();
+                    let discontinuities =
+                        cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
                         let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                             &mut sides;
@@ -169,9 +170,9 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
         .map(|(side, side_data)| (side, side_data.surface.clone().unwrap()))
         .expect("charted support lane");
     let points = vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
-    let parameters = context.parameter_range().to_vec();
+    let parameters = context.parameter_range().endpoints().to_vec();
     let pcurve = context.sides()[side.0].pcurve.clone().unwrap();
-    let parameter_range = context.parameter_range();
+    let parameter_range = context.parameter_range().endpoints();
     let pending = vec![(
         procedural.id.clone(),
         crate::intersection::chart_samples::ChartSamples::from_test_values(
@@ -248,7 +249,7 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
                 .clone(),
             side.surface.clone().unwrap(),
             side.pcurve.clone().unwrap(),
-            context.parameter_range(),
+            context.parameter_range().endpoints(),
         )
     };
     let points = {

@@ -1452,8 +1452,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;

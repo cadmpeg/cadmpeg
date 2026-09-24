@@ -132,7 +132,7 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         .surface
         .as_ref()
         .is_some_and(|id| id.as_str() == "catia:test:surface#surface-1"));
-    assert_eq!(context.parameter_range(), [0.0, 3.0]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 3.0]);
 }
 
 #[test]

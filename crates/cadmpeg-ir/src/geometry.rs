@@ -6402,13 +6402,14 @@ impl IntcurveSupportSide {
 
     /// Map one solved-curve parameter into this side's pcurve parameter.
     ///
-    /// Returns `None` when this side has no pcurve, an explicit map has an invalid
-    /// solved interval, or the mapped parameter cannot be represented as finite.
-    /// Each branch admits the parameter it returns where it computes it.
+    /// Returns `None` when this side has no pcurve, an explicit map has a
+    /// zero-width solved interval, or the mapped parameter cannot be
+    /// represented as finite. Each branch admits the parameter it returns
+    /// where it computes it.
     #[must_use]
     pub fn pcurve_parameter(
         &self,
-        solved_parameter_range: [f64; 2],
+        solved_parameter_range: crate::topology::ParameterInterval,
         parameter: f64,
     ) -> Option<FiniteReal> {
         let admitted_parameter = FiniteReal::new(parameter)?;
@@ -6417,12 +6418,9 @@ impl IntcurveSupportSide {
         };
         let [pcurve_start, pcurve_end] = pcurve_interval.finite_endpoints();
         let pcurve_range = pcurve_interval.endpoints();
+        let solved_parameter_range = solved_parameter_range.endpoints();
         let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
-        if solved_span == 0.0
-            || solved_parameter_range
-                .iter()
-                .any(|value| !value.is_finite())
-        {
+        if solved_span == 0.0 {
             return None;
         }
         if parameter == solved_parameter_range[0] {
@@ -6543,8 +6541,8 @@ impl LawCurveVersionForm {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct IntcurveSupportContext {
     sides: [IntcurveSupportSide; 2],
-    parameter_range: [f64; 2],
-    discontinuities: [Vec<f64>; 3],
+    parameter_range: crate::topology::ParameterInterval,
+    discontinuities: [Vec<FiniteReal>; 3],
 }
 
 #[derive(Deserialize)]
@@ -6574,12 +6572,10 @@ impl IntcurveSupportContext {
         parameter_range: [f64; 2],
         discontinuities: [Vec<f64>; 3],
     ) -> Result<Self, &'static str> {
-        if !parameter_range.iter().all(|value| value.is_finite())
-            || parameter_range[0] > parameter_range[1]
-        {
-            return Err("support context parameter_range must be finite and ordered");
-        }
-        if parameter_range[0] == parameter_range[1]
+        let parameter_range = crate::topology::ParameterInterval::new(parameter_range)
+            .map_err(|_| "support context parameter_range must be finite and ordered")?;
+        let [start, end] = parameter_range.endpoints();
+        if start == end
             && sides.iter().any(|side| {
                 side.pcurve
                     .as_ref()
@@ -6590,13 +6586,8 @@ impl IntcurveSupportContext {
                 "support context parameter_range must be nonzero for an explicit pcurve mapping",
             );
         }
-        if !discontinuities
-            .iter()
-            .flatten()
-            .all(|value| value.is_finite())
-        {
-            return Err("support context discontinuities must be finite");
-        }
+        let discontinuities = FiniteReal::lanes(discontinuities)
+            .ok_or("support context discontinuities must be finite")?;
         Ok(Self {
             sides,
             parameter_range,
@@ -6615,7 +6606,7 @@ impl IntcurveSupportContext {
     ) -> Self {
         Self {
             sides,
-            parameter_range: parameter_range.endpoints(),
+            parameter_range: parameter_range.into(),
             discontinuities: std::array::from_fn(|_| Vec::new()),
         }
     }
@@ -6654,13 +6645,13 @@ impl IntcurveSupportContext {
 
     /// Return the solved-curve interval.
     #[must_use]
-    pub const fn parameter_range(&self) -> [f64; 2] {
+    pub const fn parameter_range(&self) -> crate::topology::ParameterInterval {
         self.parameter_range
     }
 
     /// Return the ordered discontinuity arrays.
     #[must_use]
-    pub const fn discontinuities(&self) -> &[Vec<f64>; 3] {
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 3] {
         &self.discontinuities
     }
 }

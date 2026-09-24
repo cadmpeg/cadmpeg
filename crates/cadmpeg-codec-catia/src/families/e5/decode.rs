@@ -4798,7 +4798,7 @@ mod route_tests {
             ),
         ];
         let context = e5_occurrence_intersection_context(&sides).expect("intersection context");
-        assert_eq!(context.parameter_range(), [-2.0, 3.0]);
+        assert_eq!(context.parameter_range().endpoints(), [-2.0, 3.0]);
         assert_eq!(
             context.sides()[0]
                 .surface

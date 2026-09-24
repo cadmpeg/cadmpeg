@@ -745,8 +745,8 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     );
     assert!(edit::replace(&mut context, |previous| {
         let sides = previous.sides().clone();
-        let mut range = previous.parameter_range();
-        let discontinuities = previous.discontinuities().clone();
+        let mut range = previous.parameter_range().endpoints();
+        let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 1.0];
@@ -757,8 +757,8 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     assert_eq!(context, original);
     assert!(edit::replace(&mut context, |previous| {
         let sides = previous.sides().clone();
-        let range = previous.parameter_range();
-        let mut discontinuities = previous.discontinuities().clone();
+        let range = previous.parameter_range().endpoints();
+        let mut discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
             let discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
 
@@ -777,8 +777,8 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     assert!(serde_json::from_value::<IntcurveSupportContext>(wire).is_err());
     edit::replace(&mut context, |previous| {
         let mut sides = previous.sides().clone();
-        let mut range = previous.parameter_range();
-        let discontinuities = previous.discontinuities().clone();
+        let mut range = previous.parameter_range().endpoints();
+        let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
             let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
             let range: &mut [f64; 2] = &mut range;
@@ -792,8 +792,8 @@ fn support_context_admission_preserves_mapping_and_numeric_invariants() {
     let unchanged = context.clone();
     assert!(edit::replace(&mut context, |previous| {
         let mut sides = previous.sides().clone();
-        let range = previous.parameter_range();
-        let discontinuities = previous.discontinuities().clone();
+        let range = previous.parameter_range().endpoints();
+        let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
             let sides: &mut [crate::geometry::IntcurveSupportSide; 2] = &mut sides;
 

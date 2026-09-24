@@ -727,7 +727,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     assert_eq!(form.solved_range, [Some(-1.0), Some(2.0)]);
     assert_eq!(form.extension, 7);
     assert_eq!(*direction, 4);
-    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -780,7 +780,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     assert!(tail.flags.flag);
     assert_eq!(tail.flags.second_flag, Some(false));
     assert_eq!(*tail.form.solved_range(), [Some(-1.0), Some(2.0)]);
-    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;

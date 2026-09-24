@@ -889,8 +889,9 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -949,8 +950,9 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -1409,8 +1411,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         };
         edit::replace(context, |previous| {
             let mut sides = previous.sides().clone();
-            let range = previous.parameter_range();
-            let discontinuities = previous.discontinuities().clone();
+            let range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] = &mut sides;
 
@@ -1432,8 +1435,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -1510,8 +1514,9 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -1637,8 +1642,9 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -1719,8 +1725,9 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
             };
             edit::replace(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;

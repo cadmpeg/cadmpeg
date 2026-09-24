@@ -413,6 +413,21 @@ impl FiniteReal {
     pub const fn abs(self) -> Self {
         Self(self.0.abs())
     }
+
+    /// Admit every value of each lane, or none of them.
+    pub(crate) fn lanes<const N: usize>(lanes: [Vec<f64>; N]) -> Option<[Vec<Self>; N]> {
+        lanes
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then(|| lanes.map(|lane| lane.into_iter().map(Self).collect()))
+    }
+
+    /// The raw values of each lane, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_lanes<const N: usize>(lanes: &[Vec<Self>; N]) -> [Vec<f64>; N] {
+        std::array::from_fn(|index| lanes[index].iter().map(|value| value.0).collect())
+    }
 }
 
 impl crate::topology::IncreasingParameterInterval {

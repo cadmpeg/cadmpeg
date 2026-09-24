@@ -4898,11 +4898,11 @@ pub(crate) fn native_procedural_curve(
                     })?;
                 let source_range = [
                     source_parameter_range[0].map_or(
-                        context.parameter_range()[0],
+                        context.parameter_range().endpoints()[0],
                         cadmpeg_ir::scalar::FiniteReal::get,
                     ),
                     source_parameter_range[1].map_or(
-                        context.parameter_range()[1],
+                        context.parameter_range().endpoints()[1],
                         cadmpeg_ir::scalar::FiniteReal::get,
                     ),
                 ];
@@ -5017,7 +5017,7 @@ pub(crate) fn native_procedural_curve(
             source.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
-            context.parameter_range(),
+            context.parameter_range().endpoints(),
         )?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
@@ -6081,7 +6081,7 @@ fn native_intcurve_support_context(
             native_ident(bytes, "nullbs")?;
         }
     }
-    for value in context.parameter_range() {
+    for value in context.parameter_range().endpoints() {
         native_f64(bytes, value);
     }
     for discontinuities in context.discontinuities() {
@@ -6092,7 +6092,7 @@ fn native_intcurve_support_context(
             })?,
         );
         for value in discontinuities {
-            native_f64(bytes, *value);
+            native_f64(bytes, value.get());
         }
     }
     Ok(())
@@ -6167,7 +6167,7 @@ fn native_law_version_context(
             })?,
         );
         for value in discontinuities {
-            native_f64(bytes, *value);
+            native_f64(bytes, value.get());
         }
     }
     Ok(())
@@ -6573,7 +6573,7 @@ fn native_cache_first_curve_context(
             })?,
         );
         for value in discontinuities {
-            native_f64(bytes, *value);
+            native_f64(bytes, value.get());
         }
     }
     native_i64(bytes, form.extension);

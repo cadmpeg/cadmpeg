@@ -80,8 +80,9 @@ fn generated_projection_decodes_and_writes_source_less() {
 
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
 
@@ -122,7 +123,7 @@ fn generated_projection_decodes_and_writes_source_less() {
                 flag: false,
                 parameter_range: [-4.0, 5.0],
                 role,
-            },) if context.parameter_range() == [-1.0, 2.0] && *role == ProjectionRole::Surf1)));
+            },) if context.parameter_range().endpoints() == [-1.0, 2.0] && *role == ProjectionRole::Surf1)));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -264,8 +265,9 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
 
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
 
@@ -290,7 +292,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated three-surface intersection decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) if matches!((definition_payload.context(), definition_payload.selector(),), (context, -4,) if context.parameter_range() == [-1.0, 2.0])));
+        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) if matches!((definition_payload.context(), definition_payload.selector(),), (context, -4,) if context.parameter_range().endpoints() == [-1.0, 2.0])));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -370,8 +372,9 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
                 }),
                 |previous| {
                     let sides = previous.sides().clone();
-                    let mut range = previous.parameter_range();
-                    let discontinuities = previous.discontinuities().clone();
+                    let mut range = previous.parameter_range().endpoints();
+                    let discontinuities =
+                        cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                     {
                         let range: &mut [f64; 2] = &mut range;
 
@@ -399,7 +402,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         assert!(matches!(
             regenerated.ir().model.procedural_curves[0].definition(),
             ProceduralCurveDefinition::SurfaceCurve { ref family }
-                if family.context().parameter_range() == [-1.0, 2.0]
+                if family.context().parameter_range().endpoints() == [-1.0, 2.0]
         ));
 
         let (mut source_less, _, _) = result.into_parts();

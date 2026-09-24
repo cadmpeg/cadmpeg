@@ -355,7 +355,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             panic!("cache-first spring")
         };
 
-        assert_eq!(context.parameter_range(), [2.0, 5.0]);
+        assert_eq!(context.parameter_range().endpoints(), [2.0, 5.0]);
     }
 }
 

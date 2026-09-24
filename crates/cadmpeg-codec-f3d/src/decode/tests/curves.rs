@@ -370,7 +370,7 @@ fn generated_law_intcurve_decodes_and_writes_recursive_formulas() {
     else {
         unreachable!()
     };
-    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
     assert_eq!(*extension, 0);
     assert!(
         matches!(primary.formula(), cadmpeg_ir::geometry::LawFormula::Named { name, .. } if name.as_str() == "primary_law")
@@ -1172,10 +1172,10 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
     let context = definition_payload.context();
     let discontinuity_flag = definition_payload.discontinuity_flag();
     let offsets = definition_payload.offsets();
-    assert_eq!(context.parameter_range(), [-1.0, 2.0]);
+    assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
     assert!(*discontinuity_flag);
     assert_eq!(
-        *context.discontinuities(),
+        cadmpeg_ir::scalar::FiniteReal::raw_lanes(context.discontinuities()),
         [vec![0.25, 0.75], vec![], vec![0.5]]
     );
     assert!(context
@@ -1197,8 +1197,9 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         let offsets = &mut offsets_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let mut discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
                 let context_discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
@@ -1312,8 +1313,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         let offsets = &mut offsets_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let mut discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let mut discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
                 let context_discontinuities: &mut [Vec<f64>; 3] = &mut discontinuities;
@@ -1439,8 +1441,9 @@ fn generated_mixed_offset_supports_write_source_less() {
         let edit_result = {
             edit::with_output(context, |previous| {
                 let mut sides = previous.sides().clone();
-                let range = previous.parameter_range();
-                let discontinuities = previous.discontinuities().clone();
+                let range = previous.parameter_range().endpoints();
+                let discontinuities =
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
                 let output = {
                     let context_sides: &mut [cadmpeg_ir::geometry::IntcurveSupportSide; 2] =
                         &mut sides;
@@ -1673,8 +1676,9 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
         };
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
 
@@ -1697,7 +1701,7 @@ fn generated_surface_intersection_decodes_and_writes_source_less() {
             ref context,
             discontinuity_flag: false,
         ..
-    } if context.parameter_range() == [-1.0, 2.0]
+    } if context.parameter_range().endpoints() == [-1.0, 2.0]
     ));
 
     let (mut source_less, _, _) = result.into_parts();

@@ -992,7 +992,7 @@ mod tests {
         else {
             panic!("expected intersection directrix");
         };
-        assert_eq!(context.parameter_range(), [0.0, 1.0]);
+        assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
         assert_eq!(context.sides()[0].surface, Some(support_ids[&10].clone()));
         assert_eq!(
             context.sides()[0]
