@@ -119,7 +119,7 @@ pub(super) fn surface_carrier(surface: &B5Surface) -> B5SurfaceCarrier<'_> {
             axis_origin: *axis_origin,
             axis_direction: *axis_direction,
             angular_scale: *angular_scale,
-            bounds: [*profile_range, *angular_range],
+            bounds: [profile_range.endpoints(), angular_range.endpoints()],
         }),
     }
 }
@@ -247,6 +247,7 @@ fn profile_nurbs(
 ) -> Option<NurbsCurve> {
     (profile
         .parameter_range()
+        .endpoints()
         .into_iter()
         .zip(interval)
         .all(|(profile, surface)| profile.to_bits() == surface.to_bits()))
@@ -259,7 +260,9 @@ fn profile_nurbs(
                 1,
                 vec![interval[0], interval[0], interval[1], interval[1]],
                 interval
-                    .map(|parameter| point3(add(*point, scale(*direction, parameter))))
+                    .map(|parameter| {
+                        point3(add(coordinates(*point), scale(direction.get(), parameter)))
+                    })
                     .to_vec(),
                 None,
                 false,
@@ -274,10 +277,10 @@ fn profile_nurbs(
             radius,
             ..
         } => rational_arc(
-            *center,
-            *direction_x,
-            *direction_y,
-            *radius,
+            coordinates(*center),
+            direction_x.get(),
+            direction_y.get(),
+            radius.get(),
             interval,
             record,
             refusal,

@@ -12,6 +12,7 @@ use crate::solve::missing_edge::{
 };
 use crate::solve::union_find::UnionFind;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::{features::NonEmptyMembers, topology::BodyKind};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -400,7 +401,7 @@ pub(crate) struct CoedgeUse {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) packet: TrimPacket,
-    pub(super) frame_vector: Option<[f64; 3]>,
+    pub(super) frame_vector: Option<FiniteVector<3>>,
     pub(crate) kind: u8,
 }
 

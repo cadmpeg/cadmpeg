@@ -64,10 +64,10 @@ use std::collections::HashSet;
 #[test]
 fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
     let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
-        aabb_center: center,
-        aabb_half_extents: half_extents,
-        sphere_center: center,
-        sphere_radius: 10.0,
+        aabb_center: crate::test_support::test_b5::finite_array(center),
+        aabb_half_extents: half_extents.map(crate::test_support::test_b5::nonnegative_length),
+        sphere_center: crate::test_support::test_b5::finite_array(center),
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(10.0),
     };
     let edge_faces = [[0, 0]];
     let face_bounds = [
@@ -120,10 +120,10 @@ fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
 #[test]
 fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
     let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
-        aabb_center: center,
-        aabb_half_extents: half_extents,
-        sphere_center: center,
-        sphere_radius: 10.0,
+        aabb_center: crate::test_support::test_b5::finite_array(center),
+        aabb_half_extents: half_extents.map(crate::test_support::test_b5::nonnegative_length),
+        sphere_center: crate::test_support::test_b5::finite_array(center),
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(10.0),
     };
     let plane = |origin: Point3| {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -247,8 +247,8 @@ fn targeted_surface_evidence_retains_revolution_construction() {
                 profile_curve: 11,
                 axis_origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 axis_direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-                profile_range: [-1.0, 1.0],
-                angular_range,
+                profile_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                angular_range: crate::test_support::test_b5::increasing(angular_range),
                 angular_scale: crate::test_support::test_b5::positive(1.0),
             },
         )]),
@@ -270,9 +270,9 @@ fn targeted_surface_evidence_retains_revolution_construction() {
         profiles: BTreeMap::from([(
             11,
             B5Profile::Line {
-                point: [2.0, 0.0, 0.0],
-                direction: [0.0, 0.0, 1.0],
-                parameter_range: [-1.0, 1.0],
+                point: crate::test_support::test_b5::point([2.0, 0.0, 0.0]),
+                direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
+                parameter_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
             },
         )]),
     };
@@ -836,15 +836,35 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
     assert_eq!(
         standard_plane_normals_from_face_frames(
             &records,
-            &[Some([0.0, 0.0, 1.0]), None, Some([0.0, 0.0, -1.0])],
+            &[
+                Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
+                None,
+                Some(crate::test_support::test_b5::finite_vector([
+                    0.0, 0.0, -1.0
+                ]))
+            ],
         ),
-        HashMap::from([(10, [0.0, 0.0, 1.0]), (30, [0.0, 0.0, -1.0])]),
+        HashMap::from([
+            (
+                10,
+                crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])
+            ),
+            (
+                30,
+                crate::test_support::test_b5::finite_vector([0.0, 0.0, -1.0])
+            ),
+        ]),
     );
 
     let conflicting = vec![plane(10), plane(10)];
     assert!(standard_plane_normals_from_face_frames(
         &conflicting,
-        &[Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, -1.0])],
+        &[
+            Some(crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0])),
+            Some(crate::test_support::test_b5::finite_vector([
+                0.0, 0.0, -1.0
+            ]))
+        ],
     )
     .is_empty());
 }

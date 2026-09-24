@@ -13,6 +13,7 @@ use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;
 use crate::settings::{self, DocumentMetadata, SourceRange, Xform};
 use crate::wire::{finite, read_finite, uuid, Uuid};
+use cadmpeg_ir::scalar::FiniteReal;
 
 const OBJECT_RECORD_TYPE: u32 = 0x8200_0071;
 const OBJECT_RECORD_ATTRIBUTES: u32 = 0x0200_8072;
@@ -192,9 +193,9 @@ pub(crate) struct ObjectAttributes {
     /// Obsolete line style index.
     obsolete_line_style_index: i16,
     /// Obsolete thickness.
-    obsolete_thickness: f64,
+    obsolete_thickness: FiniteReal,
     /// Obsolete scale.
-    obsolete_scale: f64,
+    obsolete_scale: FiniteReal,
     /// Raw visibility.
     pub(crate) visible: bool,
     /// Color source selector.
@@ -211,8 +212,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) linetype_index: i32,
     /// Raw plot color.
     pub(crate) plot_color: [u8; 4],
-    /// Raw plot weight in millimeters.
-    pub(crate) plot_weight: f64,
+    /// Plot weight in millimeters.
+    pub(crate) plot_weight: FiniteReal,
     /// Raw object mode.
     pub(crate) object_mode: u8,
     /// Raw decoration flags.
@@ -246,11 +247,11 @@ pub(crate) struct ObjectAttributes {
     /// Hatch-pattern archive index.
     pub(crate) hatch_pattern_index: i32,
     /// Section-hatch scale.
-    pub(crate) section_hatch_scale: f64,
+    pub(crate) section_hatch_scale: FiniteReal,
     /// Section-hatch rotation.
-    pub(crate) section_hatch_rotation: f64,
+    pub(crate) section_hatch_rotation: FiniteReal,
     /// Linetype-pattern scale.
-    pub(crate) linetype_pattern_scale: f64,
+    pub(crate) linetype_pattern_scale: FiniteReal,
     /// Hatch background color.
     pub(crate) hatch_background: [u8; 4],
     /// Whether hatch boundaries are visible.
@@ -994,7 +995,7 @@ pub(crate) fn parse_attributes(
                     read_finite(&mut reader, "plot weight")?,
                 )
             } else {
-                (0, 0, [0; 4], 0, 0.0)
+                (0, 0, [0; 4], 0, FiniteReal::ZERO)
             };
         let linetype_index = if version.1 >= 5 { reader.i32()? } else { -1 };
         let (active_space, viewport_id, explicit_display_materials) = if version.1 >= 6 {
@@ -1069,9 +1070,9 @@ pub(crate) fn parse_attributes(
             clipping_plane_ids: Vec::new(),
             section_attributes_source: 0,
             hatch_pattern_index: -1,
-            section_hatch_scale: 1.0,
-            section_hatch_rotation: 0.0,
-            linetype_pattern_scale: 1.0,
+            section_hatch_scale: FiniteReal::ONE,
+            section_hatch_rotation: FiniteReal::ZERO,
+            linetype_pattern_scale: FiniteReal::ONE,
             hatch_background: [0; 4],
             hatch_boundary_visible: false,
             detail_background_visible: false,
@@ -1108,8 +1109,8 @@ pub(crate) fn parse_attributes(
         color: [0; 4],
         obsolete_line_style: 0,
         obsolete_line_style_index: 0,
-        obsolete_thickness: 0.0,
-        obsolete_scale: 1.0,
+        obsolete_thickness: FiniteReal::ZERO,
+        obsolete_scale: FiniteReal::ONE,
         visible: true,
         color_source: ColorSource::Layer,
         linetype_source: 0,
@@ -1118,7 +1119,7 @@ pub(crate) fn parse_attributes(
         plot_weight_source: 0,
         linetype_index: -1,
         plot_color: [0; 4],
-        plot_weight: 0.0,
+        plot_weight: FiniteReal::ZERO,
         object_mode: 0,
         decoration: 0,
         wire_density: 1,
@@ -1135,9 +1136,9 @@ pub(crate) fn parse_attributes(
         clipping_plane_ids: Vec::new(),
         section_attributes_source: 0,
         hatch_pattern_index: -1,
-        section_hatch_scale: 1.0,
-        section_hatch_rotation: 0.0,
-        linetype_pattern_scale: 1.0,
+        section_hatch_scale: FiniteReal::ONE,
+        section_hatch_rotation: FiniteReal::ZERO,
+        linetype_pattern_scale: FiniteReal::ONE,
         hatch_background: [0; 4],
         hatch_boundary_visible: false,
         detail_background_visible: false,

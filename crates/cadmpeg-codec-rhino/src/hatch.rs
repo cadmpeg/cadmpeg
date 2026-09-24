@@ -15,6 +15,7 @@ use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
+use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
     0x05, 0x59, 0x73, 0x3b, 0x53, 0x32, 0x49, 0xd1, 0xa9, 0x36, 0x05, 0x32, 0xac, 0x76, 0xad, 0xe5,
@@ -44,7 +45,7 @@ pub(crate) struct HatchLoop {
 #[derive(Debug, Clone, PartialEq)]
 struct GradientColorStop {
     color: [u8; 4],
-    position: f64,
+    position: FiniteReal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,9 +93,9 @@ impl GradientKind {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Gradient {
     kind: GradientKind,
-    start: [f64; 3],
-    end: [f64; 3],
-    repeat: f64,
+    start: [FiniteReal; 3],
+    end: [FiniteReal; 3],
+    repeat: FiniteReal,
     colors: Vec<GradientColorStop>,
 }
 
@@ -106,7 +107,7 @@ pub(crate) struct Hatch {
     pub(crate) pattern_rotation: f64,
     pub(crate) pattern_index: i32,
     pub(crate) loops: Vec<HatchLoop>,
-    pub(crate) basepoint: [f64; 2],
+    pub(crate) basepoint: [FiniteReal; 2],
     pub(crate) gradient: Option<Gradient>,
     pub(crate) warnings: Diagnostics,
 }
@@ -284,7 +285,7 @@ pub(crate) fn decode(
             })?,
         ]
     } else {
-        [0.0, 0.0]
+        [FiniteReal::ZERO; 2]
     };
     body.skip(body.remaining())
         .ok_or_else(|| GeometryError::malformed(body.position(), "hatch suffix is out of range"))?;
@@ -390,13 +391,8 @@ fn parse_gradient_userdata(
     let start = gradient_point(&mut reader, scale, "gradient start point")?;
     let end = gradient_point(&mut reader, scale, "gradient end point")?;
     let repeat_offset = reader.position();
-    let repeat = reader.f64()?;
-    if !repeat.is_finite() {
-        return Err(GeometryError::malformed(
-            repeat_offset,
-            "gradient repeat is not finite",
-        ));
-    }
+    let repeat = FiniteReal::new(reader.f64()?)
+        .ok_or_else(|| GeometryError::malformed(repeat_offset, "gradient repeat is not finite"))?;
     let count_offset = reader.position();
     let count = reader.i32()?;
     checked_count_bytes(
@@ -435,13 +431,12 @@ fn parse_gradient_userdata(
         }
         let color = stop_reader.array::<4>()?;
         let position_offset = stop_reader.position();
-        let position = stop_reader.f64()?;
-        if !position.is_finite() {
-            return Err(GeometryError::malformed(
+        let position = FiniteReal::new(stop_reader.f64()?).ok_or_else(|| {
+            GeometryError::malformed(
                 position_offset,
                 "gradient color stop position is not finite",
-            ));
-        }
+            )
+        })?;
         stop_reader.skip_remaining()?;
         reader.skip(stop.next_offset() - reader.position())?;
         colors.push(GradientColorStop { color, position });
@@ -460,16 +455,18 @@ fn gradient_point(
     reader: &mut crate::chunks::BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
-) -> Result<[f64; 3], GeometryError> {
+) -> Result<[FiniteReal; 3], GeometryError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    let values = values
-        .into_iter()
-        .map(|value| crate::wire::scaled_coordinate(value, scale))
-        .collect::<Option<Vec<_>>>()
-        .and_then(|values| values.try_into().ok())
-        .ok_or_else(|| GeometryError::malformed(offset, format!("{label} is invalid")))?;
-    Ok(values)
+    let [Some(x), Some(y), Some(z)] =
+        values.map(|value| crate::wire::scaled_coordinate(value, scale))
+    else {
+        return Err(GeometryError::malformed(
+            offset,
+            format!("{label} is invalid"),
+        ));
+    };
+    Ok([x, y, z])
 }
 
 pub(crate) fn gradient_json(gradient: &Gradient) -> String {
@@ -492,7 +489,7 @@ fn parse_userdata(
     extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: MillimeterScale,
-) -> Result<[f64; 2], GeometryError> {
+) -> Result<[FiniteReal; 2], GeometryError> {
     let payload = chunk_at(
         data,
         extra.payload_range.start,
@@ -541,6 +538,7 @@ pub(crate) mod tests {
     use crate::test_support::test_archive::{class_wrapper, polyline_payload, POLYLINE_CLASS};
     use crate::wire::Uuid;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    use cadmpeg_ir::scalar::FiniteReal;
 
     fn plane_bytes() -> Vec<u8> {
         [
@@ -660,7 +658,7 @@ pub(crate) mod tests {
                 &mut hatch,
             )
             .expect("hatch extra");
-            assert_eq!(hatch.basepoint, [20.0, 30.0]);
+            assert_eq!(hatch.basepoint.map(FiniteReal::get), [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
             let UserdataDescriptor::Known(ClassUserdata { item_uuid, .. }) =
@@ -684,7 +682,7 @@ pub(crate) mod tests {
                 &mut wrong_item_hatch,
             )
             .expect("wrong hatch-extra item UUID is ignored");
-            assert_eq!(wrong_item_hatch.basepoint, [0.0, 0.0]);
+            assert_eq!(wrong_item_hatch.basepoint.map(FiniteReal::get), [0.0, 0.0]);
 
             let mut second_body = Vec::new();
             second_body.extend([0; 16]);
@@ -717,7 +715,7 @@ pub(crate) mod tests {
                 &mut hatch,
             )
             .expect("duplicate hatch extensions");
-            assert_eq!(hatch.basepoint, [40.0, 50.0]);
+            assert_eq!(hatch.basepoint.map(FiniteReal::get), [40.0, 50.0]);
         });
     }
 
@@ -736,7 +734,7 @@ pub(crate) mod tests {
         assert_eq!(hatch.pattern_index, 7);
         assert_eq!(hatch.pattern_scale, 2.5);
         assert_eq!(hatch.pattern_rotation, 0.25);
-        assert_eq!(hatch.basepoint, [30.0, 40.0]);
+        assert_eq!(hatch.basepoint.map(FiniteReal::get), [30.0, 40.0]);
         assert_eq!(hatch.loops.len(), 1);
         assert_eq!(hatch.loops[0].kind, LoopKind::Outer);
         assert!(matches!(
@@ -767,14 +765,20 @@ pub(crate) mod tests {
             .expect("gradient userdata");
             let gradient = hatch.gradient.expect("gradient");
             assert_eq!(gradient.kind, GradientKind::Linear);
-            assert_eq!(gradient.start, [2.0, 4.0, 6.0]);
-            assert_eq!(gradient.end, [8.0, 10.0, 12.0]);
-            assert_eq!(gradient.repeat, 1.5);
+            assert_eq!(gradient.start.map(FiniteReal::get), [2.0, 4.0, 6.0]);
+            assert_eq!(gradient.end.map(FiniteReal::get), [8.0, 10.0, 12.0]);
+            assert_eq!(gradient.repeat, crate::test_support::finite(1.5));
             assert_eq!(gradient.colors.len(), 2);
             assert_eq!(gradient.colors[0].color, [255, 0, 0, 0]);
-            assert_eq!(gradient.colors[0].position, 0.0);
+            assert_eq!(
+                gradient.colors[0].position,
+                crate::test_support::finite(0.0)
+            );
             assert_eq!(gradient.colors[1].color, [0, 0, 255, 0]);
-            assert_eq!(gradient.colors[1].position, 1.0);
+            assert_eq!(
+                gradient.colors[1].position,
+                crate::test_support::finite(1.0)
+            );
             let semantic: serde_json::Value =
                 serde_json::from_str(&gradient_json(&gradient)).expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");

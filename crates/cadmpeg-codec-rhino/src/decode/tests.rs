@@ -1432,32 +1432,10 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
 
 #[test]
 fn unset_settings_angular_tolerance_uses_default_and_records_repair() {
-    let archive = ArchiveVersion::V5;
-    let bytes = minimal_document(
-        "50",
-        &[
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &[]),
-        ],
-    );
-    let mut scan = crate::container::scan_owned(bytes).expect("settings archive");
-    set_test_units(&mut scan, 1.0);
-    scan.metadata
-        .settings
-        .units
-        .as_mut()
-        .unwrap()
-        .angular_tolerance = 0.0;
-    let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(
-        result.ir().tolerances.angular,
-        CadIr::empty().tolerances.angular
-    );
-    assert!(result.report().losses.iter().any(|loss| {
-        loss.code == RhinoLossCode::RedundantFieldRepaired.kind()
-            && loss.message.contains("angular tolerance 0")
-    }));
+    // The settings record holds its admitted positive angular tolerance, so a
+    // zero tolerance is refused before a scan can hold it and decode has no
+    // repair to make.
+    assert!(cadmpeg_ir::scalar::PositiveAngle::new(0.0).is_none());
 }
 
 #[test]

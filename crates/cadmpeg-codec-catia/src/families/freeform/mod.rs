@@ -10,17 +10,16 @@ use cadmpeg_ir::geometry::{
     surface_payloads::RevolutionSurfaceConstruction,
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
-    RollingBallJetDerivative, RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceCurveFamily, SurfaceGeometry,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
     ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{NonZeroLength, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroLength, PositiveLength};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
-use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -634,7 +633,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 "header_token:{:08x}:range:{:?}:chart_shift:{}",
                 circle.header_token,
                 circle.range.endpoints(),
-                circle.chart_shift
+                circle.chart_shift.get()
             ),
             Exactness::ByteExact,
         );
@@ -1353,7 +1352,7 @@ pub(super) fn append_freeform_surface_pools(
         let points = guide
             .sites
             .iter()
-            .map(|site| site.point)
+            .map(|site| site.point.get())
             .collect::<Vec<_>>();
         let first = guide
             .sites
@@ -1443,26 +1442,11 @@ pub(super) fn append_freeform_surface_pools(
             .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
                 knot: sample.knot,
                 multiplicity: crate::families::a5a8::records::A5FreeformCurve::DEGREE + 1,
-                site: RollingBallJetSite {
-                    first_limit: Point3::new(
-                        sample.site.limit1[0],
-                        sample.site.limit1[1],
-                        sample.site.limit1[2],
-                    ),
-                    second_limit: Point3::new(
-                        sample.site.limit2[0],
-                        sample.site.limit2[1],
-                        sample.site.limit2[2],
-                    ),
-                    center: Point3::new(
-                        sample.site.center[0],
-                        sample.site.center[1],
-                        sample.site.center[2],
-                    ),
-                    angle: sample.site.theta,
-                    first_derivative: rolling_ball_derivative(sample.first_derivatives),
-                    second_derivative: rolling_ball_derivative(sample.second_derivatives),
-                },
+                site: crate::families::a5a8::records::rolling_ball_jet_site(
+                    &sample.site,
+                    sample.first_derivatives,
+                    sample.second_derivatives,
+                ),
             })
             .collect::<Vec<_>>();
         let surface_index = ir.model.surfaces.len();
@@ -1502,7 +1486,7 @@ pub(super) fn append_freeform_surface_pools(
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
-                cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+                cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
                     crate::families::a5a8::records::A5FreeformCurve::DEGREE,
                     stations,
                 )
@@ -1611,19 +1595,19 @@ fn consolidated_jet_pcurve(
     let points = pcurve
         .sites
         .iter()
-        .map(|site| chart.point(site.point))
+        .map(|site| chart.point(site.point.get()))
         .collect::<Vec<_>>();
     let first = pcurve
         .sites
         .iter()
-        .map(|site| chart.derivative(site.first_derivatives))
+        .map(|site| chart.derivative(site.first_derivatives.get()))
         .collect::<Vec<_>>();
     let second = pcurve
         .sites
         .iter()
-        .map(|site| chart.derivative(site.second_derivatives))
+        .map(|site| chart.derivative(site.second_derivatives.get()))
         .collect::<Vec<_>>();
-    let knots = pcurve.knots();
+    let knots = FiniteReal::raw_lane(&pcurve.knots());
     let record = format!(
         "consolidated quintic-jet pcurve record at byte {}",
         pcurve.pos
@@ -2276,7 +2260,11 @@ fn append_resolved_consolidated_surface_curves(
                             // chart, which is not the standard partner face's
                             // chart. Recover the isometry between them from the
                             // block's shared 3D loci.
-                            let partner_points = resolved.block.pcurves[partner].points();
+                            let partner_points = resolved.block.pcurves[partner]
+                                .points()
+                                .into_iter()
+                                .map(FiniteVector::get)
+                                .collect::<Vec<_>>();
                             let Some(chart) = resolved.shared_loci.as_deref().and_then(|loci| {
                                 solve_planar_chart_rechart(
                                     &partner_points,
@@ -2991,15 +2979,6 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
         ir.model
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));
-    }
-}
-
-pub(super) fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
-    RollingBallJetDerivative {
-        first_limit: Vector3::new(values[0], values[1], values[2]),
-        second_limit: Vector3::new(values[3], values[4], values[5]),
-        center: Vector3::new(values[6], values[7], values[8]),
-        angle: values[9],
     }
 }
 

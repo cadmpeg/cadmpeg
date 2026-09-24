@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -88,9 +88,10 @@ fn closed_wire_loop_members<'a>(
             let support = *supports_by_ordinal.get(record_ordinal)?;
             let curve = support_curve_ids.get(record_ordinal)?.clone();
             support.model_endpoints?;
-            let parameter_range = support.model_parameters.filter(|parameters| {
-                parameters.iter().all(|value| value.is_finite()) && parameters[0] != parameters[1]
-            });
+            let parameter_range = support
+                .model_parameters
+                .map(|parameters| parameters.map(FiniteReal::get))
+                .filter(|parameters| parameters[0] != parameters[1]);
             Some(ClosedWireMember {
                 support,
                 curve,
@@ -1062,7 +1063,7 @@ mod tests {
             pcurve: None,
             model_curve: None,
             model_curve_construction: None,
-            model_parameters,
+            model_parameters: model_parameters.map(crate::test_support::test_b5::finite_pair),
             model_midpoint: None,
             model_endpoints: Some(finite_pair(endpoints)),
         }

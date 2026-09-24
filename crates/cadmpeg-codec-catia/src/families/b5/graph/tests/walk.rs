@@ -38,7 +38,10 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
         pcurve.parameter_range,
         Some(crate::test_support::test_b5::finite_pair([10.0, 20.0]))
     );
-    assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+    assert_eq!(
+        pcurve.class_21_suffix_scalar,
+        Some(crate::test_support::test_b5::positive(10.0))
+    );
 
     payload[6] = 0x0d;
     assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
@@ -646,7 +649,7 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
                     3,
                     crate::test_support::test_b5::finite_pair([10.0, 20.0])
                 ),
-                parameter_range: [0.0, 10.0],
+                parameter_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
             },
         })
     );
@@ -692,7 +695,7 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
                     3,
                     crate::test_support::test_b5::finite_pair([10.0, 50.0])
                 ),
-                parameter_range: [0.0, 10.0],
+                parameter_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
             },
         })
     );
@@ -780,7 +783,7 @@ fn extrusion_selects_the_terminal_span_of_a_direct_class20_pcurve() {
                         3,
                         crate::test_support::test_b5::finite_pair(source_range)
                     ),
-                    parameter_range: [0.0, 2.5],
+                    parameter_range: crate::test_support::test_b5::increasing([0.0, 2.5]),
                 },
             })
         );
@@ -850,12 +853,12 @@ fn offset_curve_directrix_binds_source_support_and_exact_ranges() {
             source: Box::new(B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 2,
                 support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
-                parameter_range: [-3.0, 4.0],
+                parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
             }),
-            source_parameter_range: [-3.0, 4.0],
+            source_parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
             distance: crate::test_support::test_b5::finite(-1.5),
             direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-            parameter_range: [-5.0, 6.0],
+            parameter_range: crate::test_support::test_b5::increasing([-5.0, 6.0]),
         })
     );
 
@@ -918,7 +921,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         directrix: B5ExtrusionDirectrix::SurfaceCurve {
             object_id: 2,
             support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
-            parameter_range: [0.0, 7.0],
+            parameter_range: crate::test_support::test_b5::increasing([0.0, 7.0]),
         },
     };
     let source_extrusions = BTreeMap::from([(10, source_extrusion)]);
@@ -966,12 +969,12 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
                 source: Box::new(B5ExtrusionDirectrix::SurfaceCurve {
                     object_id: 2,
                     support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
-                    parameter_range: [-3.0, 4.0],
+                    parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
                 }),
-                source_parameter_range: [-3.0, 4.0],
+                source_parameter_range: crate::test_support::test_b5::increasing([-3.0, 4.0]),
                 distance: crate::test_support::test_b5::finite(-1.5),
                 direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-                parameter_range: [-5.0, 6.0],
+                parameter_range: crate::test_support::test_b5::increasing([-5.0, 6.0]),
             },
         })
     );
@@ -1049,7 +1052,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
             support_pcurves: [5, 6],
             parameters: B5SupportedSurfaceParameters::Radius {
                 controls: [0x09, 0x05, 0x03, 0x05, 0x01, 0x05],
-                construction_radius: 2.5,
+                construction_radius: crate::test_support::test_b5::positive_length(2.5),
             },
         })
     );
@@ -1071,7 +1074,10 @@ fn supported_surface_preserves_ordered_support_pcurves() {
             support_pcurves: [5, 6],
             parameters: B5SupportedSurfaceParameters::ScalarPair {
                 controls: [0x09, 0x01, 0x01, 0x05, 0x05, 0x0d],
-                scalars: [101.6, 20.0],
+                scalars: [
+                    crate::test_support::test_b5::positive(101.6),
+                    crate::test_support::test_b5::positive(20.0)
+                ],
             },
         })
     );
@@ -1079,9 +1085,9 @@ fn supported_surface_preserves_ordered_support_pcurves() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     assert!(supported_surface_parameters_match_carrier(
         &scalar_pair.parameters,
@@ -1089,18 +1095,21 @@ fn supported_surface_preserves_ordered_support_pcurves() {
     ));
     let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
         controls: [0x05, 0x05, 0x01, 0x03, 0x05, 0x11],
-        scalars: [0.76, std::f64::consts::FRAC_PI_4],
+        scalars: [
+            crate::test_support::test_b5::positive(0.76),
+            crate::test_support::test_b5::positive(std::f64::consts::FRAC_PI_4),
+        ],
     };
     let cone = B5Surface::Cone {
         apex: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: std::f64::consts::FRAC_PI_4,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [0.0, 1.0],
+        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     assert!(supported_surface_parameters_match_carrier(
@@ -1111,12 +1120,12 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         apex: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: std::f64::consts::FRAC_PI_6,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [0.0, 1.0],
+        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     assert!(!supported_surface_parameters_match_carrier(
@@ -1157,42 +1166,55 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     let radius = 1e-200_f64;
     let parameters = B5SupportedSurfaceParameters::Radius {
         controls: [0; 6],
-        construction_radius: radius,
+        construction_radius: crate::test_support::test_b5::positive_length(radius),
     };
     let cylinder = |carrier_radius| B5Surface::Cylinder {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(carrier_radius),
-        u_range: [0.0, std::f64::consts::TAU * carrier_radius],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU * carrier_radius,
+        ]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(carrier_radius),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let torus = |carrier_radius| B5Surface::Torus {
         center: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
         major_radius: crate::test_support::test_b5::positive_length(1.0),
         minor_radius: crate::test_support::test_b5::positive_length(carrier_radius),
-        major_angular_range: [0.0, std::f64::consts::TAU],
-        major_angular_domain: [0.0, std::f64::consts::TAU],
-        minor_angular_range: [0.0, std::f64::consts::TAU],
-        minor_angular_domain: [0.0, std::f64::consts::TAU],
+        major_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        major_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
+        minor_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        minor_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
         major_scale: crate::test_support::test_b5::positive(1.0),
         minor_scale: crate::test_support::test_b5::positive(carrier_radius),
     };
     let sphere = |carrier_radius| B5Surface::Sphere {
         center: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(1.0),
-        azimuth_range: [0.0, 1.0],
-        latitude_range: [-1.0, 1.0],
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         construction_radius: carrier_radius,
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
 
-    for carrier in [cylinder(radius), torus(radius), sphere(radius)] {
+    for carrier in [
+        cylinder(radius),
+        torus(radius),
+        sphere(crate::test_support::test_b5::positive_length(radius)),
+    ] {
         assert!(supported_surface_parameters_match_carrier(
             &parameters,
             &carrier
@@ -1201,7 +1223,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     for carrier in [
         cylinder(2.0 * radius),
         torus(2.0 * radius),
-        sphere(2.0 * radius),
+        sphere(crate::test_support::test_b5::positive_length(2.0 * radius)),
     ] {
         assert!(!supported_surface_parameters_match_carrier(
             &parameters,
@@ -1212,27 +1234,32 @@ fn supported_surface_parameter_matching_is_scale_independent() {
     let half_angle = 1e-200_f64;
     let cone_parameters = B5SupportedSurfaceParameters::ScalarPair {
         controls: [0; 6],
-        scalars: [1.0, half_angle],
+        scalars: [
+            crate::test_support::test_b5::positive(1.0),
+            crate::test_support::test_b5::positive(half_angle),
+        ],
     };
     let cone = |carrier_half_angle| B5Surface::Cone {
         apex: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: carrier_half_angle,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [0.0, 1.0],
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     assert!(supported_surface_parameters_match_carrier(
         &cone_parameters,
-        &cone(half_angle)
+        &cone(crate::test_support::test_b5::positive_angle(half_angle))
     ));
     assert!(!supported_surface_parameters_match_carrier(
         &cone_parameters,
-        &cone(2.0 * half_angle)
+        &cone(crate::test_support::test_b5::positive_angle(
+            2.0 * half_angle
+        ))
     ));
 }
 

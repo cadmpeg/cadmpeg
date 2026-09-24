@@ -2107,7 +2107,7 @@ fn e5_stored_pcurve_reversed(
     native_range: [f64; 2],
 ) -> Option<bool> {
     let parameters = topology.edge_representation_parameters(edge_ref, pcurve_ref)?;
-    parameter_ranges_reversed(parameters, native_range)
+    parameter_ranges_reversed(parameters.map(FiniteReal::get), native_range)
 }
 
 fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<bool> {
@@ -3311,7 +3311,7 @@ mod route_tests {
                     E5Bounds {
                         entries: vec![E5BoundEntry {
                             representation: 20,
-                            parameter: 1.0,
+                            parameter: crate::test_support::test_b5::finite(1.0),
                             code: 0,
                         }],
                     },
@@ -3321,7 +3321,7 @@ mod route_tests {
                     E5Bounds {
                         entries: vec![E5BoundEntry {
                             representation: 20,
-                            parameter: 1.0,
+                            parameter: crate::test_support::test_b5::finite(1.0),
                             code: 0,
                         }],
                     },
@@ -3396,7 +3396,7 @@ mod route_tests {
                     E5Bounds {
                         entries: vec![E5BoundEntry {
                             representation: 20,
-                            parameter: 0.0,
+                            parameter: crate::test_support::test_b5::finite(0.0),
                             code: 0,
                         }],
                     },
@@ -3406,7 +3406,7 @@ mod route_tests {
                     E5Bounds {
                         entries: vec![E5BoundEntry {
                             representation: 20,
-                            parameter: 0.0,
+                            parameter: crate::test_support::test_b5::finite(0.0),
                             code: 0,
                         }],
                     },

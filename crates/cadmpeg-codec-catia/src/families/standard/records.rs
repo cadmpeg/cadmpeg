@@ -5,8 +5,11 @@
 //! inline big-endian curved-surface parameter block.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeLength};
+use cadmpeg_ir::units::FiniteVector;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::families::standard::fbb::FbbPopulationLayout;
@@ -31,9 +34,10 @@ pub(super) struct PlaneParams {
     /// The little-endian u24 carrier tag.
     pub(super) target: u32,
     /// Bounding-sphere center, which lies on the plane and fixes its origin.
-    pub(super) origin: Point3,
-    /// Unit plane normal from the positionally paired trim packet.
-    pub(super) normal: Vector3,
+    pub(super) origin: FinitePoint3,
+    /// Plane normal from the positionally paired trim packet: finite, with a
+    /// squared length within `1e-6` of one.
+    pub(super) normal: FiniteVector<3>,
 }
 
 /// An analytic surface marker kind.
@@ -142,25 +146,26 @@ pub(super) enum StandardSurfaceRecord {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct StandardFaceBounds {
     /// Axis-aligned bounding-box centre.
-    pub(super) aabb_center: [f64; 3],
+    pub(super) aabb_center: [FiniteReal; 3],
     /// Non-negative axis-aligned bounding-box half-extents.
-    pub(super) aabb_half_extents: [f64; 3],
+    pub(super) aabb_half_extents: [NonNegativeLength; 3],
     /// Bounding-sphere centre.
-    pub(super) sphere_center: [f64; 3],
+    pub(super) sphere_center: [FiniteReal; 3],
     /// Non-negative bounding-sphere radius.
-    pub(super) sphere_radius: f64,
+    pub(super) sphere_radius: NonNegativeLength,
 }
 
 fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
     let values = (0..10)
         .map(|index| f32_le(brep, position + 4 * index))
         .collect::<Option<Vec<_>>>()?;
-    if values.iter().any(|value| !value.is_finite())
-        || values[3..6].iter().any(|extent| *extent < 0.0)
-        || values[9] < 0.0
-    {
-        return None;
-    }
+    let finite = values
+        .iter()
+        .map(|value| FiniteReal::new(f64::from(*value)))
+        .collect::<Option<Vec<_>>>()?;
+    let extent = |index: usize| NonNegativeLength::new(finite[index].get());
+    let aabb_half_extents = [extent(3)?, extent(4)?, extent(5)?];
+    let sphere_radius = extent(9)?;
     if (0..3).any(|axis| {
         let containment_error = (f64::from(values[axis]) - f64::from(values[6 + axis])).abs()
             + f64::from(values[3 + axis])
@@ -175,22 +180,10 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
         return None;
     }
     Some(StandardFaceBounds {
-        aabb_center: [
-            f64::from(values[0]),
-            f64::from(values[1]),
-            f64::from(values[2]),
-        ],
-        aabb_half_extents: [
-            f64::from(values[3]),
-            f64::from(values[4]),
-            f64::from(values[5]),
-        ],
-        sphere_center: [
-            f64::from(values[6]),
-            f64::from(values[7]),
-            f64::from(values[8]),
-        ],
-        sphere_radius: f64::from(values[9]),
+        aabb_center: [finite[0], finite[1], finite[2]],
+        aabb_half_extents,
+        sphere_center: [finite[6], finite[7], finite[8]],
+        sphere_radius,
     })
 }
 
@@ -218,7 +211,8 @@ pub(super) fn standard_face_bounds(
         StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
         StandardSurfaceRecord::Analytic(prefix) => {
             let relative = prefix.kind.bounds_offset();
-            face_bounds_at(brep, prefix.pos + relative).filter(|bounds| bounds.sphere_radius > 0.0)
+            face_bounds_at(brep, prefix.pos + relative)
+                .filter(|bounds| bounds.sphere_radius.get() > 0.0)
         }
     }
 }
@@ -571,7 +565,7 @@ pub(crate) fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
 /// valid bounds record carries it.
 pub(super) fn plane_params<S: std::hash::BuildHasher>(
     brep: &[u8],
-    normals: &HashMap<u32, [f64; 3], S>,
+    normals: &HashMap<u32, FiniteVector<3>, S>,
 ) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
 
@@ -588,8 +582,8 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
         if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
             continue;
         }
-        let Some(bounds) =
-            face_bounds_at(brep, pos + MARKER.len()).filter(|bounds| bounds.sphere_radius > 0.0)
+        let Some(bounds) = face_bounds_at(brep, pos + MARKER.len())
+            .filter(|bounds| bounds.sphere_radius.get() > 0.0)
         else {
             continue;
         };
@@ -600,14 +594,11 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
         let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
+        let [x, y, z] = bounds.sphere_center;
         out.push(PlaneParams {
             target,
-            origin: Point3::new(
-                bounds.sphere_center[0],
-                bounds.sphere_center[1],
-                bounds.sphere_center[2],
-            ),
-            normal: Vector3::new(normal[0], normal[1], normal[2]),
+            origin: FinitePoint3::from_coordinates(x, y, z),
+            normal,
         });
     }
     out.retain(|plane| !duplicate_targets.contains(&plane.target));
@@ -616,10 +607,10 @@ pub(super) fn plane_params<S: std::hash::BuildHasher>(
 
 /// Decode a plane carrier from its bridged bounds and trim-frame records.
 pub(super) fn decode_plane(params: &PlaneParams) -> Option<SurfaceGeometry> {
-    let normal = unit_vector(params.normal)?;
+    let normal = unit_vector(Vector3::from(params.normal.get()))?;
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            params.origin,
+            params.origin.get(),
             normal,
             cadmpeg_ir::geometry::derive_reference_direction(normal),
         )

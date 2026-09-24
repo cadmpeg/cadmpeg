@@ -130,3 +130,40 @@ fn rolling_ball_jet_admits_only_clamped_finite_station_payloads() {
     malformed["stations"][0]["site"]["first_limit"]["x"] = json!(2.0);
     assert!(serde_json::from_value::<ProceduralSurfaceDefinition>(malformed).is_err());
 }
+
+#[test]
+fn admitted_rolling_ball_stations_keep_the_refusals_of_raw_stations() {
+    use crate::geometry::RollingBallJetStations;
+    use crate::scalar::FiniteReal;
+
+    let admit = |stations: Vec<RollingBallJetStation>| {
+        stations
+            .into_iter()
+            .map(|station| RollingBallJetStation {
+                knot: FiniteReal::new(station.knot).unwrap(),
+                multiplicity: station.multiplicity,
+                site: station.site.admit().unwrap(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut collapsed_radius = vec![station(2.0, 6), station(8.0, 6)];
+    collapsed_radius[0].site.first_limit = collapsed_radius[0].site.center;
+    let mut unequal_radii = vec![station(2.0, 6), station(8.0, 6)];
+    unequal_radii[0].site.first_limit.x = 2.0;
+    for (degree, stations) in [
+        (5, vec![station(2.0, 6), station(4.0, 3), station(8.0, 6)]),
+        (0, vec![station(2.0, 6), station(8.0, 6)]),
+        (5, vec![station(2.0, 6)]),
+        (5, vec![station(8.0, 6), station(2.0, 6)]),
+        (5, vec![station(2.0, 6), station(2.0, 6)]),
+        (5, vec![station(2.0, 5), station(8.0, 6)]),
+        (5, vec![station(2.0, 6), station(4.0, 7), station(8.0, 6)]),
+        (5, collapsed_radius),
+        (5, unequal_radii),
+    ] {
+        assert_eq!(
+            RollingBallJetStations::from_admitted(degree, admit(stations.clone())),
+            RollingBallJetStations::try_new(degree, stations)
+        );
+    }
+}

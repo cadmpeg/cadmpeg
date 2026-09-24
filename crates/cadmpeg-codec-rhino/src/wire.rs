@@ -8,6 +8,7 @@ use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
 use crate::curves::GeometryError;
@@ -166,19 +167,19 @@ pub(crate) fn flag_i32(reader: &mut BoundedReader<'_>) -> Result<bool, FramingEr
     Ok(reader.i32()? != 0)
 }
 
-/// Refuses a non-finite `f64` at `offset`, the first byte of the value.
-pub(crate) fn finite(offset: usize, value: f64, label: &str) -> Result<f64, FramingError> {
-    value
-        .is_finite()
-        .then_some(value)
+/// Admits a finite `f64` and refuses a non-finite one at `offset`, the first
+/// byte of the value.
+pub(crate) fn finite(offset: usize, value: f64, label: &str) -> Result<FiniteReal, FramingError> {
+    FiniteReal::new(value)
         .ok_or_else(|| FramingError::structural(offset, format!("{label} is not finite")))
 }
 
-/// Reads one `f64` and refuses a non-finite value at the value's first byte.
+/// Reads one `f64` and admits it finite, refusing a non-finite value at the
+/// value's first byte.
 pub(crate) fn read_finite(
     reader: &mut BoundedReader<'_>,
     label: &str,
-) -> Result<f64, FramingError> {
+) -> Result<FiniteReal, FramingError> {
     let offset = reader.position();
     let value = reader.f64()?;
     finite(offset, value, label)
@@ -189,14 +190,14 @@ pub(crate) fn vector(value: [f64; 3]) -> Vector3 {
     Vector3::new(value[0], value[1], value[2])
 }
 
-/// Multiplies an archive coordinate by a unit scale.
+/// Multiplies an archive coordinate by a unit scale and admits the product
+/// when it is finite.
 ///
 /// The product is the only defect the caller can observe. A `MillimeterScale`
 /// is finite and greater than zero, so a non-finite input value always makes a
 /// non-finite product: `NaN` propagates and an infinity stays infinite.
-pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<f64> {
-    let result = value * scale.value();
-    result.is_finite().then_some(result)
+pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<FiniteReal> {
+    FiniteReal::new(value * scale.value())
 }
 
 /// Multiplies the three archive coordinates of a point by a unit scale and

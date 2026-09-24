@@ -273,8 +273,8 @@ impl<'a> DecodeContext<'a> {
                     .push(source_order);
             }
         }
-        let mut report = ReportBuckets::default();
-        let ir = build_ir(scan, &mut report.typed_losses);
+        let report = ReportBuckets::default();
+        let ir = build_ir(scan);
         let mut context = Self {
             scan,
             expand,
@@ -985,7 +985,7 @@ impl<'a> DecodeContext<'a> {
             ),
             (
                 "basepoint".to_string(),
-                format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
+                format!("{},{}", hatch.basepoint[0].get(), hatch.basepoint[1].get()),
             ),
         ]);
         if let Some(gradient) = hatch.gradient.as_ref().map(crate::hatch::gradient_json) {
@@ -4980,7 +4980,7 @@ fn scaled_tolerance(
     let scaled = crate::wire::scaled_coordinate(value, scale)
         .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
     Ok(Some(
-        cadmpeg_ir::scalar::PositiveReal::new(scaled).ok_or_else(|| {
+        cadmpeg_ir::scalar::PositiveReal::new(scaled.get()).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(
                 "scaled tolerance must be positive and finite",
             )
@@ -5735,25 +5735,13 @@ pub(crate) fn admitted_tolerance<T: Copy + Into<f64>>(
     })
 }
 
-fn build_ir(scan: &Scan<'_>, losses: &mut Vec<LossNote>) -> CadIr {
+fn build_ir(scan: &Scan<'_>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
-            ir.tolerances.linear = admitted_tolerance(
-                cadmpeg_ir::scalar::PositiveLength::new(linear),
-                linear,
-                ir.tolerances.linear,
-                "linear",
-                losses,
-            );
+            ir.tolerances.linear = linear;
         }
-        ir.tolerances.angular = admitted_tolerance(
-            cadmpeg_ir::scalar::PositiveAngle::new(source_units.angular_tolerance),
-            source_units.angular_tolerance,
-            ir.tolerances.angular,
-            "angular",
-            losses,
-        );
+        ir.tolerances.angular = source_units.angular_tolerance;
     }
     ir
 }
@@ -5779,7 +5767,7 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
             attributes.insert("custom_unit_name".to_string(), unit.name().to_string());
             attributes.insert(
                 "custom_meters_per_unit".to_string(),
-                unit.meters_per_unit().to_string(),
+                unit.meters_per_unit().get().to_string(),
             );
         }
         if let Some(scale) = units.millimeters_per_unit() {
@@ -5787,21 +5775,21 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
         }
         attributes.insert(
             "absolute_tolerance_native".to_string(),
-            units.absolute_tolerance.to_string(),
+            units.absolute_tolerance.get().to_string(),
         );
         attributes.insert(
             "absolute_tolerance_millimeters".to_string(),
             units
                 .absolute_tolerance_millimeters()
-                .map_or_else(|| "unresolved".to_string(), |value| value.to_string()),
+                .map_or_else(|| "unresolved".to_string(), |value| value.get().to_string()),
         );
         attributes.insert(
             "angular_tolerance".to_string(),
-            units.angular_tolerance.to_string(),
+            units.angular_tolerance.get().to_string(),
         );
         attributes.insert(
             "relative_tolerance".to_string(),
-            units.relative_tolerance.to_string(),
+            units.relative_tolerance.get().to_string(),
         );
         if let Some(display) = units.distance_display {
             attributes.insert(

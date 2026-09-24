@@ -15,7 +15,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
@@ -49,22 +49,26 @@ pub(super) fn sphere_great_circle_geometry(
         return None;
     };
     let chart_scale = pcurve.chart_scale.get();
-    if chart_scale != *construction_radius {
+    if chart_scale != construction_radius.get() {
         return None;
     }
-    let (sphere_axis, direction_x) = (components(frame.axis()), components(frame.reference()));
+    let (sphere_axis, direction_x, direction_y) = (
+        components(frame.axis()),
+        components(frame.reference()),
+        components(direction_y),
+    );
     let phase = pcurve.chart_shift.get() / chart_scale + pcurve.phase.get();
     let slope = pcurve.slope.get();
     let plane_axis = unit_vector(add(
         scale(sphere_axis, 1.0),
         add(
             scale(direction_x, -slope * phase.cos()),
-            scale(*direction_y, -slope * phase.sin()),
+            scale(direction_y, -slope * phase.sin()),
         ),
     ))?;
     let ref_direction = add(
         scale(direction_x, -phase.sin()),
-        scale(*direction_y, phase.cos()),
+        scale(direction_y, phase.cos()),
     );
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -317,18 +321,14 @@ pub(super) fn isocurve_endpoint_parameters(
     {
         return None;
     }
-    if pcurve
+    if !pcurve
         .control_points
-        .iter()
-        .any(|point| !point[varying_dimension].is_finite())
-        || (!pcurve
+        .windows(2)
+        .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
+        && !pcurve
             .control_points
             .windows(2)
-            .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
-            && !pcurve
-                .control_points
-                .windows(2)
-                .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension]))
+            .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension])
     {
         return None;
     }
@@ -361,7 +361,7 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             .signum()
                 * point[0]
                 / angular_scale.get(),
-            (point[1] - slant_range[0]) * half_angle.cos(),
+            (point[1] - slant_range.lower()) * half_angle.get().cos(),
         ),
         B5Surface::Torus {
             major_scale,
@@ -402,7 +402,7 @@ pub(super) fn lifted_curve_geometry(
                         .map(|uv| {
                             point3(add(
                                 origin,
-                                add(scale(direction_u, uv[0]), scale(*direction_v, uv[1])),
+                                add(scale(direction_u, uv[0]), scale(direction_v.get(), uv[1])),
                             ))
                         })
                         .collect(),
@@ -429,7 +429,7 @@ pub(super) fn lifted_curve_geometry(
                 components(frame.axis()),
                 radius.get(),
                 angular_scale.get(),
-                *first,
+                first.get(),
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -446,7 +446,7 @@ pub(super) fn lifted_curve_geometry(
             angular_scale,
             ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
-            let [u, _] = *pcurve.control_points.first()?;
+            let [u, _] = pcurve.control_points.first()?.get();
             let angle = u / angular_scale.get();
             let radial = add(
                 scale(components(frame.reference()), angle.cos()),
@@ -456,8 +456,8 @@ pub(super) fn lifted_curve_geometry(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     *apex,
                     UnitVector3::new(vector(add(
-                        scale(components(frame.axis()), half_angle.cos()),
-                        scale(radial, half_angle.sin()),
+                        scale(components(frame.axis()), half_angle.get().cos()),
+                        scale(radial, half_angle.get().sin()),
                     )))?,
                 ),
             )))
@@ -475,7 +475,7 @@ pub(super) fn lifted_curve_geometry(
             let angle = u / major_scale.get();
             let radial = add(
                 scale(components(frame.reference()), angle.cos()),
-                scale(*direction_y, angle.sin()),
+                scale(direction_y.get(), angle.sin()),
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
@@ -516,12 +516,12 @@ pub(super) fn lifted_curve_geometry(
             ..
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
-            let radius = slant * half_angle.sin();
+            let radius = slant * half_angle.get().sin();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     FinitePoint3::new(point3(add(
                         coordinates(*apex),
-                        scale(components(frame.axis()), slant * half_angle.cos()),
+                        scale(components(frame.axis()), slant * half_angle.get().cos()),
                     )))?,
                     signed_reference_frame(*frame, radius),
                     PositiveLength::new(radius.abs())?,
@@ -571,7 +571,7 @@ pub(super) fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Optio
     }
 }
 
-fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
+fn constant_coordinate(points: &[FiniteVector<2>], dimension: usize) -> Option<f64> {
     let value = points.first()?[dimension];
     points
         .iter()

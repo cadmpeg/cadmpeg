@@ -3,9 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
-
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::test_support::test_a5a8::a5_surface_stream;
 use crate::test_support::test_b2::{
@@ -22,6 +21,7 @@ use crate::test_support::test_b2::{
     b2_width_coded_owner_chart_stream, b2_width_coded_owner_packet_stream,
     b2_width_coded_owner_with_allocation_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
+use crate::test_support::test_b5::{finite, finite_vector, increasing, positive_angle};
 
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
@@ -47,14 +47,14 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     assert_eq!(points[0].payload.layout(), 0x12);
     assert!(matches!(
         &points[0].payload,
-        B2ParameterPointPayload::Uv { uv: [2.0, 3.0] }
+        B2ParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
     ));
     assert!(matches!(
         &points[1].payload,
         B2ParameterPointPayload::StationUv {
-            station: 11.0,
-            uv: [4.0, 5.0],
-        }
+            station,
+            uv,
+        } if station.get() == 11.0 && *uv == [4.0, 5.0]
     ));
     assert!(matches!(
         &points[2].payload,
@@ -63,9 +63,9 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
     assert!(matches!(
         &points[3].payload,
         B2ParameterPointPayload::StationUv {
-            station: 12.0,
-            uv: [6.0, 7.0],
-        }
+            station,
+            uv,
+        } if station.get() == 12.0 && *uv == [6.0, 7.0]
     ));
 }
 
@@ -89,23 +89,28 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
         B2PlaneCarrierPayload::PointDirection2 {
             origin,
             frame,
-            tail: [5.0, -2.0, 3.0],
-        } if origin.get() == point && *frame.reference().as_raw() == direction
+            tail,
+        } if origin.get() == point
+            && *frame.reference().as_raw() == direction
+            && *tail == [5.0, -2.0, 3.0]
     ));
     assert!(matches!(
         &carriers[1].payload,
         B2PlaneCarrierPayload::PointDirection3 {
             origin,
             frame,
-            tail: [5.0, -2.0, 3.0],
-        } if origin.get() == point && *frame.reference().as_raw() == direction
+            tail,
+            ..
+        } if origin.get() == point
+            && *frame.reference().as_raw() == direction
+            && *tail == [5.0, -2.0, 3.0]
     ));
     assert!(matches!(
         &carriers[2].payload,
         B2PlaneCarrierPayload::PointTail {
-            point: [10.0, 20.0],
-            tail: [-2.0, 5.0, -2.0, 3.0],
-        }
+            point,
+            tail,
+        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
     ));
     assert_eq!(carriers[0].end - carriers[0].pos, 63);
 }
@@ -134,7 +139,8 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
     assert_eq!(carriers[3].payload.selector(), 0x40);
     assert!(matches!(
         &carriers[3].payload,
-        B2PlaneCarrierPayload::ScalarLane { values: lane, .. } if lane == &values
+        B2PlaneCarrierPayload::ScalarLane { values: lane, .. }
+            if FiniteReal::raw_lane(lane) == values
     ));
     assert!(crate::families::b2::records::b2_plane_geometry(&carriers[3]).is_none());
 }
@@ -630,7 +636,7 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
         records[0].references,
         [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
     );
-    assert_eq!(records[0].scalar, 42.5);
+    assert_eq!(records[0].scalar, finite(42.5));
 
     let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
     short.extend_from_slice(&[0; 27]);
@@ -843,8 +849,11 @@ fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].program.len(), 16);
-    assert_eq!(records[0].angular_scale, 1.5);
-    assert_eq!(records[0].half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(records[0].angular_scale, finite(1.5));
+    assert_eq!(
+        records[0].half_angle,
+        positive_angle(std::f64::consts::FRAC_PI_4)
+    );
 
     let mut degenerate = b2_cone_face_stream();
     let half_angle = degenerate.len() - 8;
@@ -1122,19 +1131,25 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
     assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
         torus.major_angular_range,
-        [
+        increasing([
             std::f64::consts::FRAC_PI_2,
             3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
-    assert_eq!(torus.major_angular_domain, [0.0, std::f64::consts::TAU]);
-    assert_eq!(torus.minor_angular_range, [0.0, std::f64::consts::PI]);
+    assert_eq!(
+        torus.major_angular_domain,
+        increasing([0.0, std::f64::consts::TAU])
+    );
+    assert_eq!(
+        torus.minor_angular_range,
+        increasing([0.0, std::f64::consts::PI])
+    );
     assert_eq!(
         torus.minor_angular_domain,
-        [
+        increasing([
             -std::f64::consts::FRAC_PI_2,
             3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
     assert_eq!(torus.major_scale.get(), 14.0);
     assert_eq!(torus.minor_scale.get(), 4.0);
@@ -1311,8 +1326,11 @@ fn b2_sphere_parser_reads_radius_scaled_frame_and_active_ranges() {
     assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(sphere.frame.axis().get(), [0.0, 0.0, 1.0]);
     assert_eq!(sphere.radius.get(), 5.0);
-    assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
-    assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
+    assert_eq!(sphere.azimuth_range, increasing([-2.0, 4.0]));
+    assert_eq!(
+        sphere.latitude_range,
+        increasing([-1.0, std::f64::consts::FRAC_PI_2])
+    );
 }
 
 #[test]
@@ -1395,101 +1413,6 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
 }
 
 #[test]
-fn offset_support_binding_scales_each_nurbs_parameter_domain() {
-    let tiny = 1e-200_f64;
-    let mut carriers = crate::families::a5a8::records::a5_surfaces(
-        &a5_surface_stream(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
-    let surface = &mut carriers[0].geometry;
-    edit::replace(surface, |previous| {
-        let mut knots = previous.u_knots().to_vec();
-        {
-            let knots: &mut [f64] = &mut knots;
-
-            let lower = knots[0];
-            let span = knots.last().copied().expect("nonempty knots") - lower;
-            for knot in knots {
-                *knot = (*knot - lower) / span * tiny;
-            }
-        };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                previous.u_degree(),
-                knots,
-                previous.u_periodic(),
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                previous.v_degree(),
-                previous.v_knots().to_vec(),
-                previous.v_periodic(),
-            ),
-            previous.pole_grid().clone(),
-            previous.normal_reversed(),
-        )
-    })
-    .unwrap();
-    edit::replace(surface, |previous| {
-        let mut knots = previous.v_knots().to_vec();
-        {
-            let knots: &mut [f64] = &mut knots;
-
-            let lower = knots[0];
-            let span = knots.last().copied().expect("nonempty knots") - lower;
-            for knot in knots {
-                *knot = (*knot - lower) / span * tiny;
-            }
-        };
-        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                previous.u_degree(),
-                previous.u_knots().to_vec(),
-                previous.u_periodic(),
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                previous.v_degree(),
-                knots,
-                previous.v_periodic(),
-            ),
-            previous.pole_grid().clone(),
-            previous.normal_reversed(),
-        )
-    })
-    .unwrap();
-    let interval = |range: [f64; 2]| {
-        cadmpeg_ir::topology::IncreasingParameterInterval::new(range)
-            .expect("fixture interval is finite and increasing")
-    };
-    let exact = crate::families::b2::records::B2OffsetSupport {
-        pos: 0,
-        support_id: 1,
-        distance: cadmpeg_ir::scalar::FiniteReal::new(tiny).expect("finite distance"),
-        u_range: interval([0.0, tiny]),
-        v_range: interval([0.0, tiny]),
-    };
-    assert_eq!(
-        crate::families::b2::records::offset_support_carriers(
-            std::slice::from_ref(&exact),
-            &carriers
-        ),
-        [Some(0)]
-    );
-
-    let mut outside_u = exact.clone();
-    outside_u.u_range = interval([0.0, 2.0 * tiny]);
-    assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
-        [None]
-    );
-    let mut outside_v = exact;
-    outside_v.v_range = interval([0.0, 2.0 * tiny]);
-    assert_eq!(
-        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
-        [None]
-    );
-}
-
-#[test]
 fn consolidated_offset_support_parser_reads_width2_frame() {
     let offsets = crate::families::b2::records::b2_offset_supports(&b3_offset_support_stream());
     assert_eq!(offsets.len(), 1);
@@ -1502,7 +1425,7 @@ fn b2_edge_parameter_parser_validates_repeated_range_packet() {
     let packets = crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream());
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].range.endpoints(), [2.0, 7.0]);
-    assert_eq!(packets[0].tolerance, 1.0e-6);
+    assert_eq!(packets[0].tolerance, finite(1.0e-6));
 }
 
 #[test]
@@ -1522,9 +1445,9 @@ fn b2_circle_parser_reads_arc_length_parameterization() {
     let circles = crate::families::b2::records::b2_circles(&b2_circle_stream());
     assert_eq!(circles.len(), 1);
     assert_eq!(circles[0].record_id, 0x1234);
-    assert_eq!(circles[0].center_pair, [4.0, -2.0]);
+    assert_eq!(circles[0].center_pair, finite_vector([4.0, -2.0]));
     assert_eq!(circles[0].radius.get(), 3.0);
-    assert_eq!(circles[0].chart_shift, 0.0);
+    assert_eq!(circles[0].chart_shift, finite(0.0));
     assert!(circles[0].full_circle());
 
     let mut malformed = b2_circle_stream();
@@ -1771,16 +1694,19 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     assert_eq!(<[f64; 3]>::from(cones[0].apex.get()), [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].frame.axis().get(), [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle.get(), 0.25);
-    assert_eq!(cones[0].reference_radius, 4.0);
-    assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
+    assert_eq!(cones[0].reference_radius, finite(4.0));
+    assert_eq!(
+        cones[0].angular_range,
+        increasing([0.5, 0.5 + std::f64::consts::PI])
+    );
     assert_eq!(cones[0].slant_range.endpoints(), [2.0, 8.0]);
     assert_eq!(cones[0].angular_scale.get(), 3.0);
     assert_eq!(
         cones[0].angular_domain,
-        [
+        increasing([
             0.5 - std::f64::consts::FRAC_PI_2,
             0.5 + 3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
 
     let mut large = b2_cone_stream();

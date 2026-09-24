@@ -80,9 +80,10 @@ fn maps_standard_units_to_millimeters() {
 fn unit_binding_keeps_native_and_unavailable_distinct_from_physical_scale() {
     let physical = settings::UnitsAndTolerances {
         unit: settings::UnitSystem::Standard(settings::StandardUnit::Inches),
-        absolute_tolerance: 0.01,
-        angular_tolerance: 0.1,
-        relative_tolerance: 0.01,
+        absolute_tolerance: crate::test_support::positive(0.01),
+        absolute_tolerance_millimeters: cadmpeg_ir::scalar::PositiveLength::new(0.01 * 25.4),
+        angular_tolerance: crate::test_support::positive_angle(0.1),
+        relative_tolerance: crate::test_support::positive(0.01),
         distance_display: None,
     };
     let native = settings::UnitsAndTolerances {
@@ -131,10 +132,21 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     let (data, record) = metadata_record(0x2000_8031, body);
     let units = settings::parse_units(&data, &record).expect("required invariant");
     assert_eq!(units.millimeters_per_unit(), Some(25.4));
-    assert_eq!(units.absolute_tolerance, 0.5);
-    assert_eq!(units.absolute_tolerance_millimeters(), Some(12.7));
-    assert_eq!(units.angular_tolerance, 0.01);
-    assert_eq!(units.relative_tolerance, 0.001);
+    assert_eq!(units.absolute_tolerance, crate::test_support::positive(0.5));
+    assert_eq!(
+        units
+            .absolute_tolerance_millimeters()
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
+        Some(12.7)
+    );
+    assert_eq!(
+        units.angular_tolerance,
+        crate::test_support::positive_angle(0.01)
+    );
+    assert_eq!(
+        units.relative_tolerance,
+        crate::test_support::positive(0.001)
+    );
 
     let mut legacy = Vec::new();
     legacy.extend(1_i32.to_le_bytes());
@@ -144,8 +156,14 @@ pub(crate) fn parses_units_with_single_scale_transfer_and_legacy_order() {
     legacy.extend(0.01_f64.to_le_bytes());
     let (data, record) = metadata_record(0x2000_8031, legacy);
     let units = settings::parse_units(&data, &record).expect("required invariant");
-    assert_eq!(units.relative_tolerance, 0.002);
-    assert_eq!(units.angular_tolerance, 0.01);
+    assert_eq!(
+        units.relative_tolerance,
+        crate::test_support::positive(0.002)
+    );
+    assert_eq!(
+        units.angular_tolerance,
+        crate::test_support::positive_angle(0.01)
+    );
 }
 
 #[test]
@@ -1167,7 +1185,10 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     assert_eq!(values[0].color, Some([90, 100, 110, 120]));
     assert_eq!(values[1].viewport_id, second_viewport);
     assert_eq!(values[1].settings_mask(), 63);
-    assert_eq!(values[1].plot_weight_mm, Some(1.25));
+    assert_eq!(
+        values[1].plot_weight_mm,
+        Some(crate::test_support::finite(1.25))
+    );
     assert_eq!(
         values[1].visible.map(settings::LayerVisibility::as_u8),
         Some(2)

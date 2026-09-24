@@ -295,7 +295,10 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
     assert_eq!(support.tag, [0x21, 0x71]);
     assert_eq!(support.record_ordinal, 2);
     assert_eq!(support.face_local_slot, 1);
-    assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+    assert_eq!(
+        support.uv_endpoints,
+        Some([[-2.0, 4.0], [6.0, 8.0]].map(crate::test_support::test_b5::finite_pair))
+    );
     assert!(matches!(
         support.pcurve,
         Some(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { ref nurbs })
@@ -313,17 +316,20 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 && !nurbs.periodic()
     ));
     assert!(support.model_curve_construction.is_none());
-    assert_eq!(support.model_parameters, Some([0.0, 1.0]));
+    assert_eq!(
+        support.model_parameters,
+        Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
+    );
     assert_eq!(
         support.model_midpoint,
-        Some(cadmpeg_ir::math::Point3::new(3.0, 8.0, 3.0))
+        Some(crate::test_support::test_b5::point([3.0, 8.0, 3.0]))
     );
     assert_eq!(
         support.model_endpoints,
-        Some([
-            cadmpeg_ir::math::Point3::new(-1.0, 6.0, 3.0),
-            cadmpeg_ir::math::Point3::new(7.0, 10.0, 3.0),
-        ])
+        Some(crate::test_support::test_b5::points([
+            [-1.0, 6.0, 3.0],
+            [7.0, 10.0, 3.0]
+        ]))
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -485,7 +491,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
 
     let mut invalid_model_parameters = native.clone();
     invalid_model_parameters.zero_entity_support_runs[0].supports[0].model_parameters =
-        Some([1.0, 1.0]);
+        Some(crate::test_support::test_b5::finite_pair([1.0, 1.0]));
     let mut invalid_model_parameters_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_model_parameters
         .store(&mut invalid_model_parameters_namespace)
@@ -530,10 +536,10 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("face")
         .loops[0]
         .oriented_model_endpoints
-        .push([
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-        ]);
+        .push(crate::test_support::test_b5::points([
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ]));
     let mut invalid_oriented_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_oriented_endpoints
         .store(&mut invalid_oriented_endpoint_namespace)
@@ -553,11 +559,11 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                 "catia:zero-entity:record#2".to_string(),
                 "catia:zero-entity:record#2".to_string(),
             ],
-            model_endpoints: [
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            ],
-            model_midpoint: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            model_endpoints: crate::test_support::test_b5::points([
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+            ]),
+            model_midpoint: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         });
     let mut invalid_endpoint_pair_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_endpoint_pair
@@ -576,7 +582,7 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
                     endpoint_index: crate::families::zero_entity::topology::EdgeEnd::Start,
                 },
             ],
-            representative_point: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            representative_point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             maximum_deviation: 0.0,
         });
     let mut invalid_endpoint_locus_namespace = cadmpeg_ir::NativeNamespace::default();
@@ -585,17 +591,12 @@ fn native_namespace_retains_zero_entity_surface_support_runs() {
         .expect("store invalid CATIA zero-entity endpoint-locus candidate");
     assert!(crate::native::CatiaNative::load(&invalid_endpoint_locus_namespace).is_err());
 
-    let mut invalid_model_endpoint = native.clone();
-    invalid_model_endpoint.zero_entity_support_runs[0].supports[0]
-        .model_endpoints
-        .as_mut()
-        .expect("model endpoints")[0]
-        .x = f64::NAN;
-    let mut invalid_model_endpoint_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid_model_endpoint
-        .store(&mut invalid_model_endpoint_namespace)
-        .expect("store invalid CATIA zero-entity model endpoint");
-    assert!(crate::native::CatiaNative::load(&invalid_model_endpoint_namespace).is_err());
+    // A support model endpoint holds an admitted point, so a non-finite
+    // coordinate is refused before a native record can hold it.
+    assert!(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::NAN, 6.0, 3.0))
+            .is_none()
+    );
 
     let mut invalid = native;
     invalid.zero_entity_support_runs[0].supports[0].uv_endpoints = None;

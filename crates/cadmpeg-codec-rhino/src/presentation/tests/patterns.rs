@@ -165,7 +165,7 @@ fn absent_component_index_does_not_alias_system_index_minus_one() {
         segments: Vec::new(),
         line_cap: 0,
         line_join: 0,
-        width: 0.0,
+        width: crate::test_support::finite(0.0),
         width_units: 0,
         taper_points: Vec::new(),
         always_model_distance: false,
@@ -196,9 +196,15 @@ fn legacy_linetype_preserves_print_lengths_and_wire_segment_tags() {
     )
     .expect("required invariant");
     assert_eq!(value.name, "dash");
-    assert_eq!(value.segments[0].length_millimeters, 2.0);
+    assert_eq!(
+        value.segments[0].length_millimeters,
+        crate::test_support::finite(2.0)
+    );
     assert_eq!(value.segments[0].segment_type, 0);
-    assert_eq!(value.segments[1].length_millimeters, 1.0);
+    assert_eq!(
+        value.segments[1].length_millimeters,
+        crate::test_support::finite(1.0)
+    );
     assert_eq!(value.segments[1].segment_type, 1);
 }
 
@@ -262,17 +268,26 @@ fn modern_linetype_scales_only_model_distance_segments() {
     .expect("model-distance linetype");
     assert_eq!(model_distance.name, "modern dash");
     assert_eq!(model_distance.archive_index, Some(9));
-    assert_eq!(model_distance.segments[0].length_millimeters, 63.5);
+    assert_eq!(
+        model_distance.segments[0].length_millimeters,
+        crate::test_support::finite(63.5)
+    );
     assert_eq!(model_distance.segments[0].segment_type, 0);
-    assert_eq!(model_distance.segments[1].length_millimeters, 31.75);
+    assert_eq!(
+        model_distance.segments[1].length_millimeters,
+        crate::test_support::finite(31.75)
+    );
     assert_eq!(model_distance.segments[1].segment_type, 1);
     assert_eq!(model_distance.line_cap, 1);
     assert_eq!(model_distance.line_join, 2);
-    assert_eq!(model_distance.width, 2.75);
+    assert_eq!(model_distance.width, crate::test_support::finite(2.75));
     assert_eq!(model_distance.width_units, 2);
     assert_eq!(
         model_distance.taper_points,
         vec![[0.0, 0.5], [0.35, 1.25], [1.0, 2.5]]
+            .into_iter()
+            .map(crate::test_support::finite_array)
+            .collect::<Vec<_>>()
     );
     assert!(model_distance.always_model_distance);
 
@@ -297,8 +312,14 @@ fn modern_linetype_scales_only_model_distance_segments() {
         0,
     )
     .expect("print-distance linetype");
-    assert_eq!(print_distance.segments[0].length_millimeters, 2.5);
-    assert_eq!(print_distance.segments[1].length_millimeters, 1.25);
+    assert_eq!(
+        print_distance.segments[0].length_millimeters,
+        crate::test_support::finite(2.5)
+    );
+    assert_eq!(
+        print_distance.segments[1].length_millimeters,
+        crate::test_support::finite(1.25)
+    );
     assert!(!print_distance.always_model_distance);
     assert_eq!(print_distance.taper_points, model_distance.taper_points);
 }
@@ -560,10 +581,22 @@ fn legacy_hatch_pattern_scales_line_offsets_and_dashes() {
         0,
     )
     .expect("required invariant");
-    assert_eq!(value.lines[0].base_millimeters, [10.0, 20.0]);
-    assert_eq!(value.lines[0].offset_millimeters, [30.0, 40.0]);
-    assert_eq!(value.lines[0].dashes_millimeters, [50.0, -20.0]);
-    assert_eq!(value.lines[0].angle_radians, 0.5);
+    assert_eq!(
+        value.lines[0].base_millimeters,
+        crate::test_support::finite_array([10.0, 20.0])
+    );
+    assert_eq!(
+        value.lines[0].offset_millimeters,
+        crate::test_support::finite_array([30.0, 40.0])
+    );
+    assert_eq!(
+        value.lines[0].dashes_millimeters,
+        crate::test_support::finite_array([50.0, -20.0])
+    );
+    assert_eq!(
+        value.lines[0].angle_radians,
+        crate::test_support::finite(0.5)
+    );
 
     let unbound = parse_hatch_pattern(
         &bytes,
@@ -632,10 +665,22 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     );
     assert_eq!(value.name, "modern hatch");
     assert_eq!(value.description, "modern description");
-    assert_eq!(value.lines[0].angle_radians, 0.375);
-    assert_eq!(value.lines[0].base_millimeters, [12.5, -25.0]);
-    assert_eq!(value.lines[0].offset_millimeters, [35.0, 47.5]);
-    assert_eq!(value.lines[0].dashes_millimeters, [12.5, -7.5, 5.0]);
+    assert_eq!(
+        value.lines[0].angle_radians,
+        crate::test_support::finite(0.375)
+    );
+    assert_eq!(
+        value.lines[0].base_millimeters,
+        crate::test_support::finite_array([12.5, -25.0])
+    );
+    assert_eq!(
+        value.lines[0].offset_millimeters,
+        crate::test_support::finite_array([35.0, 47.5])
+    );
+    assert_eq!(
+        value.lines[0].dashes_millimeters,
+        crate::test_support::finite_array([12.5, -7.5, 5.0])
+    );
     assert_eq!(
         value
             .distance_settings

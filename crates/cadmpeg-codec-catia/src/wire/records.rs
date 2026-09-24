@@ -16,6 +16,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::topology::IncreasingParameterInterval;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 
 use crate::layout::a_family_frame as a_frame;
@@ -27,13 +30,13 @@ use super::bytes::{compact_int, f64_le};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ConsolidatedPcurveSite {
     /// Global parameter at this site.
-    pub(crate) knot: f64,
+    pub(crate) knot: FiniteReal,
     /// UV position.
-    pub(crate) point: [f64; 2],
+    pub(crate) point: FiniteVector<2>,
     /// UV first derivative.
-    pub(crate) first_derivatives: [f64; 2],
+    pub(crate) first_derivatives: FiniteVector<2>,
     /// UV second derivative.
-    pub(crate) second_derivatives: [f64; 2],
+    pub(crate) second_derivatives: FiniteVector<2>,
 }
 
 /// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
@@ -48,7 +51,7 @@ pub(crate) struct ConsolidatedPcurve {
     /// Knot-aligned UV jet samples.
     pub(crate) sites: Vec<ConsolidatedPcurveSite>,
     /// Native parameter range.
-    pub(crate) range: [f64; 2],
+    pub(crate) range: IncreasingParameterInterval,
     /// Bytes following the native range inside the framed record.
     pub(crate) tail: Vec<u8>,
 }
@@ -68,22 +71,22 @@ pub(crate) fn family_pcurves_from_records(
 impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 
-    pub(crate) fn knots(&self) -> Vec<f64> {
+    pub(crate) fn knots(&self) -> Vec<FiniteReal> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
-    pub(crate) fn points(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn points(&self) -> Vec<FiniteVector<2>> {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub(crate) fn first_derivatives(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn first_derivatives(&self) -> Vec<FiniteVector<2>> {
         self.sites
             .iter()
             .map(|site| site.first_derivatives)
             .collect()
     }
 
-    pub(crate) fn second_derivatives(&self) -> Vec<[f64; 2]> {
+    pub(crate) fn second_derivatives(&self) -> Vec<FiniteVector<2>> {
         self.sites
             .iter()
             .map(|site| site.second_derivatives)
@@ -123,10 +126,10 @@ fn parse_consolidated_pcurve(
     if at.checked_add(knot_bytes.checked_add(20)?)? > end {
         return None;
     }
-    let read = |at: &mut usize| -> Option<Vec<f64>> {
+    let read = |at: &mut usize| -> Option<Vec<FiniteReal>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
-            values.push(f64_le(data, *at)?.get());
+            values.push(f64_le(data, *at)?);
             *at += 8;
         }
         Some(values)
@@ -153,12 +156,12 @@ fn parse_consolidated_pcurve(
     at += 1;
     let ddu = read(&mut at)?;
     let ddv = read(&mut at)?;
-    let range = [f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()];
+    let range =
+        IncreasingParameterInterval::new([f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()])?;
     at += 16;
     if at > end
         || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
-        || !knots_strictly_increasing(&knots)
-        || range[0] >= range[1]
+        || !knots_strictly_increasing(&FiniteReal::raw_lane(&knots))
     {
         return None;
     }
@@ -174,9 +177,9 @@ fn parse_consolidated_pcurve(
             .map(
                 |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
                     knot,
-                    point: [u, v],
-                    first_derivatives: [du, dv],
-                    second_derivatives: [ddu, ddv],
+                    point: [u, v].into(),
+                    first_derivatives: [du, dv].into(),
+                    second_derivatives: [ddu, ddv].into(),
                 },
             )
             .collect(),

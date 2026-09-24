@@ -72,7 +72,10 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
         crate::families::consolidated::records::consolidated_edge_blocks(&a5_edge_block_stream());
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
-    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
+    assert_eq!(
+        blocks[0].pcurves[1].range,
+        crate::test_support::test_b5::increasing([0.0, 1.0])
+    );
     assert_eq!(blocks[0].parameters.range.endpoints(), [0.0, 1.0]);
 }
 
@@ -82,7 +85,10 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
         crate::families::consolidated::records::consolidated_edge_blocks(&b2_edge_block_stream());
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
-    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
+    assert_eq!(
+        blocks[0].pcurves[1].range,
+        crate::test_support::test_b5::increasing([0.0, 1.0])
+    );
 }
 
 #[test]
@@ -141,7 +147,16 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
         crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
         Some(ConsolidatedEdgeDefinitionData::Scalar {
             operands: [1, 2, 3463],
-            values: vec![0.0, 2.0, 1.0e-6, 0.5, 1.5, 1.0, -0.5, 1.0e-6],
+            values: vec![
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(2.0),
+                crate::test_support::test_b5::finite(1.0e-6),
+                crate::test_support::test_b5::finite(0.5),
+                crate::test_support::test_b5::finite(1.5),
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(-0.5),
+                crate::test_support::test_b5::finite(1.0e-6)
+            ],
         })
     );
     let mut class24_nine_scalars = payload.clone();
@@ -172,7 +187,17 @@ fn class23_nine_scalar_definition_requires_three_equal_triples() {
         crate::families::consolidated::records::consolidated_edge_definition_data(0x23, &payload),
         Some(ConsolidatedEdgeDefinitionData::Scalar {
             operands: [1, 2, 3463],
-            values: vec![0.0, 2.0, 1.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0],
+            values: vec![
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(2.0),
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(2.0),
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(2.0),
+                crate::test_support::test_b5::finite(1.0)
+            ],
         })
     );
 
@@ -848,7 +873,16 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             operands: [1, 57, 3463],
             persistent_lead: Class25PersistentLead::Lead0a,
-            values: vec![1.0, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6],
+            values: vec![
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(2.0),
+                crate::test_support::test_b5::finite(1.0e-6),
+                crate::test_support::test_b5::finite(3.0),
+                crate::test_support::test_b5::finite(4.0),
+                crate::test_support::test_b5::finite(1.0),
+                crate::test_support::test_b5::finite(5.0),
+                crate::test_support::test_b5::finite(1.0e-6)
+            ],
         })
     );
 
@@ -932,7 +966,10 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         panic!("one described class-25 edge run");
     };
     assert_eq!(run.descriptor.record_id, 0x1234);
-    assert_eq!(run.descriptor.values, [3.0, 7.0]);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(&run.descriptor.values),
+        [3.0, 7.0]
+    );
     let native = crate::native::CatiaNative::decode(&described);
     assert_eq!(
         native.consolidated_edge_nodes[0]
@@ -975,7 +1012,10 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     let [run] = runs.as_slice() else {
         panic!("one analytic-circle edge run");
     };
-    assert_eq!(run.circle.center_pair, [12.0, 34.0]);
+    assert_eq!(
+        run.circle.center_pair,
+        crate::test_support::test_b5::finite_vector([12.0, 34.0])
+    );
     assert_eq!(run.circle.radius.get(), 5.0);
     assert_eq!(run.descriptor.header_token, 0x15);
     assert_eq!(
@@ -989,7 +1029,10 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         .as_ref()
         .expect("native analytic circle");
     assert_eq!(binding.circle, "catia:consolidated:circle#0");
-    assert_eq!(native.consolidated_circles[0].center_pair, [12.0, 34.0]);
+    assert_eq!(
+        native.consolidated_circles[0].center_pair,
+        crate::test_support::test_b5::finite_vector([12.0, 34.0])
+    );
     assert_eq!(
         native.consolidated_circles[0].range.endpoints(),
         [0.0, 10.0]

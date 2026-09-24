@@ -122,13 +122,29 @@ fn owner_face_candidate_requires_complete_trimmed_bounds_containment() {
         [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
     );
     let contained = StandardFaceBounds {
-        aabb_center: [0.0, 0.0, 0.0],
-        aabb_half_extents: [0.5, 1.5, 2.5],
-        sphere_center: [0.0, 0.0, 0.0],
-        sphere_radius: 3.0,
+        aabb_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.0),
     };
     let protruding = StandardFaceBounds {
-        aabb_half_extents: [1.5, 1.5, 2.5],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
         ..contained
     };
 
@@ -152,10 +168,22 @@ fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
         [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
     );
     let face = StandardFaceBounds {
-        aabb_center: [0.0, 0.0, 0.0],
-        aabb_half_extents: [0.5, 1.5, 2.5],
-        sphere_center: [0.0, 0.0, 0.0],
-        sphere_radius: 3.0,
+        aabb_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.5),
+            crate::test_support::test_b5::nonnegative_length(1.5),
+            crate::test_support::test_b5::nonnegative_length(2.5),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.0),
     };
 
     for encoding in [
@@ -395,10 +423,22 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
     ];
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let bounds = crate::families::standard::records::StandardFaceBounds {
-        aabb_center: [3.0, 4.0, 0.0],
-        aabb_half_extents: [0.1, 0.1, 0.1],
-        sphere_center: [3.0, 4.0, 0.0],
-        sphere_radius: 0.2,
+        aabb_center: [
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(0.1),
+            crate::test_support::test_b5::nonnegative_length(0.1),
+            crate::test_support::test_b5::nonnegative_length(0.1),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+            crate::test_support::test_b5::finite(0.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(0.2),
     };
 
     assert_eq!(
@@ -659,10 +699,22 @@ fn standard_freeform_face_uses_exact_e5_surface_wrapper_identity() {
         pos: 0,
         tag: 7,
         bounds: StandardFaceBounds {
-            aabb_center: [0.0, 0.0, 0.0],
-            aabb_half_extents: [1.0, 1.0, 1.0],
-            sphere_center: [0.0, 0.0, 0.0],
-            sphere_radius: 1.0,
+            aabb_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            aabb_half_extents: [
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+            ],
+            sphere_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            sphere_radius: crate::test_support::test_b5::nonnegative_length(1.0),
         },
         forward: true,
     }];
@@ -690,10 +742,22 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         pos: 0,
         tag: 7,
         bounds: StandardFaceBounds {
-            aabb_center: [0.0, 0.0, 0.0],
-            aabb_half_extents: [1.0, 1.0, 1.0],
-            sphere_center: [0.0, 0.0, 0.0],
-            sphere_radius: 1.0,
+            aabb_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            aabb_half_extents: [
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+                crate::test_support::test_b5::nonnegative_length(1.0),
+            ],
+            sphere_center: [
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+                crate::test_support::test_b5::finite(0.0),
+            ],
+            sphere_radius: crate::test_support::test_b5::nonnegative_length(1.0),
         },
         forward: true,
     }];
@@ -789,10 +853,22 @@ fn cached_face_point_membership_matches_the_source_predicate() {
 #[test]
 fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     let bounds = StandardFaceBounds {
-        aabb_center: [2.0, 3.0, 4.0],
-        aabb_half_extents: [1.0, 2.0, 3.0],
-        sphere_center: [2.0, 3.0, 4.0],
-        sphere_radius: 3.5,
+        aabb_center: [
+            crate::test_support::test_b5::finite(2.0),
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+        ],
+        aabb_half_extents: [
+            crate::test_support::test_b5::nonnegative_length(1.0),
+            crate::test_support::test_b5::nonnegative_length(2.0),
+            crate::test_support::test_b5::nonnegative_length(3.0),
+        ],
+        sphere_center: [
+            crate::test_support::test_b5::finite(2.0),
+            crate::test_support::test_b5::finite(3.0),
+            crate::test_support::test_b5::finite(4.0),
+        ],
+        sphere_radius: crate::test_support::test_b5::nonnegative_length(3.5),
     };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert!(point_on_standard_face(

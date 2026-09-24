@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::units::FinitePoint2;
 
 use crate::analytic::signed_reference_frame;
@@ -48,7 +49,7 @@ pub(crate) struct ZeroEntitySupportOccurrence {
     /// Face-local support slot stored by the framed token at record offset 12.
     pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when this support family carries them inline.
-    pub(crate) uv_endpoints: Option<[[f64; 2]; 2]>,
+    pub(crate) uv_endpoints: Option<[[FiniteReal; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
     pub(crate) pcurve: Option<PcurveGeometry>,
     /// Exact model-space carrier derived from the pcurve and owning surface.
@@ -56,7 +57,7 @@ pub(crate) struct ZeroEntitySupportOccurrence {
     /// Exact procedural model-space carrier derived from the pcurve and owning surface.
     pub(crate) model_curve_construction: Option<ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
-    pub(crate) model_parameters: Option<[f64; 2]>,
+    pub(crate) model_parameters: Option<[FiniteReal; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
     pub(crate) model_midpoint: Option<FinitePoint3>,
     /// UV endpoints lifted through the owning surface carrier.
@@ -406,11 +407,11 @@ struct ZeroEntityRecord {
 }
 
 struct ZeroEntityNurbsLayout {
-    u_distinct: Vec<f64>,
+    u_distinct: Vec<FiniteReal>,
     u_mults: Vec<u32>,
     u_degree: u32,
     u_count: u32,
-    v_distinct: Vec<f64>,
+    v_distinct: Vec<FiniteReal>,
     v_mults: Vec<u32>,
     v_degree: u32,
     v_count: u32,
@@ -628,11 +629,11 @@ fn zero_entity_nurbs_knot_lane(
     start: usize,
     distinct_count: usize,
     expected_control_count: usize,
-) -> Option<(Vec<f64>, Vec<u32>, u32, u32)> {
+) -> Option<(Vec<FiniteReal>, Vec<u32>, u32, u32)> {
     let distinct_end = start.checked_add(distinct_count.checked_mul(8)?)?;
     let mut distinct = Vec::with_capacity(distinct_count);
     for index in 0..distinct_count {
-        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?.get();
+        let value = f64_le(data, start.checked_add(index.checked_mul(8)?)?)?;
         if distinct.last().is_some_and(|last| value <= *last) {
             return None;
         }
@@ -815,7 +816,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     zero_entity_model_curve(
                         &carrier_geometry,
                         pcurve,
-                        support.uv_endpoints?,
+                        support.uv_endpoints?.map(|uv| uv.map(FiniteReal::get)),
                         &format_args!("zero-entity support record at byte {}", record.pos),
                         refusal,
                     )
@@ -844,8 +845,9 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
                 });
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
-                    let [first, second] =
-                        endpoints.map(|uv| zero_entity_surface_point(&carrier_geometry, uv));
+                    let [first, second] = endpoints.map(|uv| {
+                        zero_entity_surface_point(&carrier_geometry, uv.map(FiniteReal::get))
+                    });
                     Some([first?, second?])
                 });
                 supports.push(support);
@@ -1180,15 +1182,15 @@ fn zero_entity_support_occurrence(
         _ => None,
     };
     let uv_endpoints = if let Some(offsets) = uv_offsets {
-        let mut values = [[0.0; 2]; 2];
+        let mut values = [[FiniteReal::ZERO; 2]; 2];
         for (index, offset) in offsets.into_iter().enumerate() {
             let absolute = record.pos.checked_add(offset)?;
             if absolute.checked_add(16)? > record.end {
                 return None;
             }
             values[index] = [
-                f64_le(data, absolute)?.get(),
-                f64_le(data, absolute.checked_add(8)?)?.get(),
+                f64_le(data, absolute)?,
+                f64_le(data, absolute.checked_add(8)?)?,
             ];
         }
         Some(values)
@@ -1331,9 +1333,9 @@ fn zero_entity_support_pcurve(
             let at = record
                 .pos
                 .checked_add(pole_start + index.checked_mul(16)?)?;
-            Some(Point2::new(
-                f64_le(data, at)?.get(),
-                f64_le(data, at.checked_add(8)?)?.get(),
+            Some(FinitePoint2::from_coordinates(
+                f64_le(data, at)?,
+                f64_le(data, at.checked_add(8)?)?,
             ))
         })
         .collect::<Option<Vec<_>>>()?;
@@ -1346,9 +1348,8 @@ fn zero_entity_support_pcurve(
                         record
                             .pos
                             .checked_add(weight_start + index.checked_mul(8)?)?,
-                    )?
-                    .get();
-                    (weight > 0.0).then_some(weight)
+                    )?;
+                    PositiveReal::new(weight.get()).map(NonZeroReal::from)
                 })
                 .collect::<Option<Vec<_>>>()?,
         )
@@ -1357,7 +1358,7 @@ fn zero_entity_support_pcurve(
     };
     Some(PcurveGeometry::Nurbs {
         nurbs: crate::nurbs::note_refusal(
-            PcurveNurbs::from_lanes(degree, knots, control_points, weights, false),
+            PcurveNurbs::from_checked_lanes(degree, knots, control_points, weights, false),
             refusal,
             format_args!("zero-entity NURBS pcurve record at byte {}", record.pos),
         )?,
@@ -1424,7 +1425,7 @@ fn zero_entity_model_curve(
     uv_endpoints: [[f64; 2]; 2],
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Option<(CurveGeometry, [FiniteReal; 2])> {
     let PcurveGeometry::Nurbs { nurbs } = pcurve else {
         return None;
     };
@@ -1653,10 +1654,13 @@ fn zero_entity_model_curve(
         }
         _ => None,
     }?;
-    parameters
-        .iter()
-        .all(|parameter| parameter.is_finite())
-        .then_some((curve, parameters))
+    Some((
+        curve,
+        [
+            FiniteReal::new(parameters[0])?,
+            FiniteReal::new(parameters[1])?,
+        ],
+    ))
 }
 
 fn zero_entity_model_curve_construction(
@@ -2077,12 +2081,12 @@ fn zero_entity_nurbs_surface(
             NurbsSurface::from_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     layout.u_degree,
-                    expand_knots(&layout.u_distinct, &layout.u_mults)?,
+                    expand_knots(&FiniteReal::raw_lane(&layout.u_distinct), &layout.u_mults)?,
                     false,
                 ),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     layout.v_degree,
-                    expand_knots(&layout.v_distinct, &layout.v_mults)?,
+                    expand_knots(&FiniteReal::raw_lane(&layout.v_distinct), &layout.v_mults)?,
                     false,
                 ),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -2179,6 +2183,7 @@ mod tests {
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::FiniteReal;
     use std::num::NonZeroUsize;
 
     #[test]
@@ -2289,8 +2294,8 @@ mod tests {
             let bytes = nurbs_carrier(tag, &u_knots, &u_mults, &v_knots, &v_mults);
             let layout = zero_entity_nurbs_layout(&bytes, 0).expect("bounded NURBS layout");
             assert_eq!(layout.end, expected_end);
-            assert_eq!(layout.u_distinct, u_knots);
-            assert_eq!(layout.v_distinct, v_knots);
+            assert_eq!(FiniteReal::raw_lane(&layout.u_distinct), u_knots);
+            assert_eq!(FiniteReal::raw_lane(&layout.v_distinct), v_knots);
             assert!(matches!(
                 zero_entity_surface_at(&bytes, 0, &mut crate::nurbs::LaneRefusals::new()),
                 Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -2442,7 +2447,10 @@ mod tests {
         };
         assert_eq!(support.tag, [0x21, 0x71]);
         assert_eq!(support.face_local_slot, 42);
-        assert_eq!(support.uv_endpoints, Some([[-2.0, 4.0], [6.0, 8.0]]));
+        assert_eq!(
+            support.uv_endpoints,
+            Some([[-2.0, 4.0], [6.0, 8.0]].map(crate::test_support::test_b5::finite_pair))
+        );
         assert_eq!(
             support.pcurve,
             Some(test_pcurve(vec![
@@ -2459,7 +2467,10 @@ mod tests {
                     && curve.control_points()
                 == [Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
-        assert_eq!(support.model_parameters, Some([0.0, 1.0]));
+        assert_eq!(
+            support.model_parameters,
+            Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
+        );
         assert_eq!(
             support.model_midpoint.map(FinitePoint3::get),
             Some(Point3::new(3.0, 8.0, 3.0))
@@ -2496,7 +2507,10 @@ mod tests {
                 &mut crate::nurbs::LaneRefusals::new(),
             )
             .expect("complete support pcurve");
-            assert_eq!(support.uv_endpoints, Some([[0.0, 0.0], [1.0, 0.0]]));
+            assert_eq!(
+                support.uv_endpoints,
+                Some([[0.0, 0.0], [1.0, 0.0]].map(crate::test_support::test_b5::finite_pair))
+            );
             let Some(PcurveGeometry::Nurbs { nurbs }) = support.pcurve else {
                 panic!("NURBS support pcurve")
             };
@@ -2653,7 +2667,7 @@ mod tests {
         )
         .expect("cone latitude");
         for index in 0..2 {
-            let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
+            let curve_point = curve_point(&curve, parameters[index].get()).expect("circle point");
             let surface_point =
                 zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
             assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);

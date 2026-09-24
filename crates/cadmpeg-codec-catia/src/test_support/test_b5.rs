@@ -76,6 +76,35 @@ pub(crate) fn finite_lane(values: &[f64]) -> Vec<cadmpeg_ir::scalar::FiniteReal>
     values.iter().copied().map(finite).collect()
 }
 
+/// Admit a finite fixture array.
+pub(crate) fn finite_array<const N: usize>(
+    values: [f64; N],
+) -> [cadmpeg_ir::scalar::FiniteReal; N] {
+    values.map(finite)
+}
+
+/// Admit finite fixture coordinates.
+pub(crate) fn finite_vector<const N: usize>(
+    values: [f64; N],
+) -> cadmpeg_ir::units::FiniteVector<N> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite fixture coordinates")
+}
+
+/// Admit a fixture direction whose squared length is one to `1e-12`.
+pub(crate) fn exact_unit(direction: [f64; 3]) -> crate::checked::ExactUnitVector3 {
+    crate::checked::ExactUnitVector3::new(direction).expect("exact unit fixture direction")
+}
+
+/// Admit a positive fixture angle.
+pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
+    cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")
+}
+
+/// Admit a nonnegative fixture length.
+pub(crate) fn nonnegative_length(value: f64) -> cadmpeg_ir::scalar::NonNegativeLength {
+    cadmpeg_ir::scalar::NonNegativeLength::new(value).expect("nonnegative fixture length")
+}
+
 /// Admit an increasing fixture interval.
 pub(crate) fn increasing(endpoints: [f64; 2]) -> cadmpeg_ir::topology::IncreasingParameterInterval {
     cadmpeg_ir::topology::IncreasingParameterInterval::new(endpoints)

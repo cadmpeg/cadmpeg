@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense,
     Shell, Vertex,
@@ -209,7 +209,9 @@ pub(super) fn transfer_closed_face_topology(
                     support_record_ordinal,
                     raw_endpoints,
                     oriented_endpoints,
-                    model_parameters: support.model_parameters,
+                    model_parameters: support
+                        .model_parameters
+                        .map(|parameters| parameters.map(FiniteReal::get)),
                     curve,
                     oriented_curve: None,
                     pcurve,
@@ -963,7 +965,10 @@ mod tests {
                 .expect("valid LineCurve fixture"),
             ))),
             model_curve_construction: None,
-            model_parameters: Some([0.0, end.distance(start)]),
+            model_parameters: Some(crate::test_support::test_b5::finite_pair([
+                0.0,
+                end.distance(start),
+            ])),
             model_midpoint: Some(finite(Point3::new(
                 (start.x + end.x) * 0.5,
                 (start.y + end.y) * 0.5,
@@ -1172,7 +1177,10 @@ mod tests {
             Point3::new(0.0, 1.0, 0.0),
         ];
         let mut runs = vec![run(10, 1, points, false), run(11, 4, points, true)];
-        runs[1].supports[1].model_parameters = Some([0.0, std::f64::consts::FRAC_PI_2]);
+        runs[1].supports[1].model_parameters = Some(crate::test_support::test_b5::finite_pair([
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+        ]));
         let curve_ids = runs
             .iter()
             .flat_map(|run| run.supports.iter())

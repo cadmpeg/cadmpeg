@@ -19,7 +19,10 @@ fn read_finite_refuses_a_nonfinite_value_at_its_first_byte() {
     );
 
     let mut reader = BoundedReader::new(&bytes, 11, bytes.len()).expect("bounded reader");
-    assert_eq!(read_finite(&mut reader, "witness"), Ok(1.5));
+    assert_eq!(
+        read_finite(&mut reader, "witness"),
+        Ok(crate::test_support::finite(1.5))
+    );
 }
 
 /// `to_wire` inverts `from_wire` on the mixed-endian group transposition.
@@ -78,7 +81,10 @@ fn scaled_coordinate_refuses_nonfinite_inputs_and_overflowing_products() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert_eq!(super::scaled_coordinate(value, scale), None, "{value}");
     }
-    assert_eq!(super::scaled_coordinate(2.0, scale), Some(50.8));
+    assert_eq!(
+        super::scaled_coordinate(2.0, scale),
+        Some(crate::test_support::finite(50.8))
+    );
 
     let huge = crate::test_support::millimeter_scale(f64::MAX);
     assert_eq!(super::scaled_coordinate(f64::MAX, huge), None);

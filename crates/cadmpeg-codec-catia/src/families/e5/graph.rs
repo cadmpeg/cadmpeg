@@ -49,7 +49,7 @@ impl E5Topology {
         &self,
         edge_ref: u32,
         representation: u32,
-    ) -> Option<[f64; 2]> {
+    ) -> Option<[FiniteReal; 2]> {
         let edge = self.edges.get(&edge_ref)?;
         [edge.parameter_start, edge.parameter_end]
             .map(|bound_ref| {
@@ -134,7 +134,7 @@ pub(super) struct E5BoundEntry {
     /// Referenced representation's `record_id`.
     pub(super) representation: u32,
     /// Finite LE-f64 bound parameter for this representation.
-    pub(super) parameter: f64,
+    pub(super) parameter: FiniteReal,
     /// Raw trailing `u32` code following the parameter; meaning not decoded
     /// further.
     pub(super) code: u32,
@@ -694,7 +694,7 @@ fn bound_representation_parameter(
     bounds: &BTreeMap<u32, E5Bounds>,
     bound_ref: u32,
     representation: u32,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let bounds = bounds.get(&bound_ref)?;
     let mut entries = bounds
         .entries
@@ -743,9 +743,7 @@ fn parse_bounds(record: &Record<'_>) -> Option<E5Bounds> {
     for representation in representations {
         let parameter = view.f64_le()?;
         let code = view.u32_le()?;
-        if !parameter.is_finite() {
-            return None;
-        }
+        let parameter = FiniteReal::new(parameter)?;
         entries.push(E5BoundEntry {
             representation,
             parameter,
@@ -1099,7 +1097,7 @@ fn plane_digon_orientation_hint(
             .collect::<Option<Vec<_>>>()?
             .try_into()
             .ok()?;
-        let bound_span = end - start;
+        let bound_span = end.get() - start.get();
         let native_span = native_range[1] - native_range[0];
         if !bound_span.is_finite()
             || !native_span.is_finite()
@@ -1927,7 +1925,7 @@ mod tests {
                 E5Bounds {
                     entries: vec![E5BoundEntry {
                         representation: 10,
-                        parameter: 0.0,
+                        parameter: crate::test_support::test_b5::finite(0.0),
                         code: 0,
                     }],
                 },
@@ -1937,7 +1935,7 @@ mod tests {
                 E5Bounds {
                     entries: vec![E5BoundEntry {
                         representation: 10,
-                        parameter: 1.0,
+                        parameter: crate::test_support::test_b5::finite(1.0),
                         code: 0,
                     }],
                 },
@@ -1947,7 +1945,7 @@ mod tests {
                 E5Bounds {
                     entries: vec![E5BoundEntry {
                         representation: 11,
-                        parameter: 0.0,
+                        parameter: crate::test_support::test_b5::finite(0.0),
                         code: 0,
                     }],
                 },
@@ -1957,7 +1955,7 @@ mod tests {
                 E5Bounds {
                     entries: vec![E5BoundEntry {
                         representation: 11,
-                        parameter: 1.0,
+                        parameter: crate::test_support::test_b5::finite(1.0),
                         code: 0,
                     }],
                 },
@@ -2022,7 +2020,7 @@ mod tests {
         let bound = |parameter| E5Bounds {
             entries: vec![E5BoundEntry {
                 representation: 20,
-                parameter,
+                parameter: crate::test_support::test_b5::finite(parameter),
                 code: 7,
             }],
         };
@@ -2038,7 +2036,7 @@ mod tests {
 
         assert_eq!(
             topology.edge_representation_parameters(1, 20),
-            Some([0.25, 0.75])
+            Some(crate::test_support::test_b5::finite_pair([0.25, 0.75]))
         );
         topology
             .bounds
@@ -2047,7 +2045,7 @@ mod tests {
             .entries
             .push(E5BoundEntry {
                 representation: 20,
-                parameter: 1.0,
+                parameter: crate::test_support::test_b5::finite(1.0),
                 code: 8,
             });
         assert_eq!(topology.edge_representation_parameters(1, 20), None);

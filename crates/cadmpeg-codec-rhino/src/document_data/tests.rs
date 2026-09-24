@@ -190,18 +190,30 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         .expect("annotation settings packed version");
 
         assert_eq!(value.source_offset, 19);
-        assert_eq!(value.dimension_scale, 1.0);
-        assert_eq!(value.text_height_mm, 5.0);
-        assert_eq!(value.extension_line_extension_mm, 7.0);
-        assert_eq!(value.extension_line_offset_mm, 9.0);
-        assert_eq!(value.arrow_length_mm, 11.0);
-        assert_eq!(value.arrow_width_mm, 13.0);
-        assert_eq!(value.center_mark_mm, 15.0);
+        assert_eq!(value.dimension_scale, crate::test_support::finite(1.0));
+        assert_eq!(value.text_height_mm, crate::test_support::finite(5.0));
+        assert_eq!(
+            value.extension_line_extension_mm,
+            crate::test_support::finite(7.0)
+        );
+        assert_eq!(
+            value.extension_line_offset_mm,
+            crate::test_support::finite(9.0)
+        );
+        assert_eq!(value.arrow_length_mm, crate::test_support::finite(11.0));
+        assert_eq!(value.arrow_width_mm, crate::test_support::finite(13.0));
+        assert_eq!(value.center_mark_mm, crate::test_support::finite(15.0));
         assert_eq!(value.dimension_units, 2);
         assert_eq!(value.font_face, "WitnessFace");
-        assert_eq!(value.world_view_text_scale, (minor >= 1).then_some(1.25));
+        assert_eq!(
+            value.world_view_text_scale,
+            (minor >= 1).then(|| crate::test_support::finite(1.25))
+        );
         assert_eq!(value.annotation_scaling, (minor >= 1).then_some(false));
-        assert_eq!(value.world_view_hatch_scale, (minor >= 2).then_some(2.5));
+        assert_eq!(
+            value.world_view_hatch_scale,
+            (minor >= 2).then(|| crate::test_support::finite(2.5))
+        );
         assert_eq!(value.hatch_scaling, (minor >= 2).then_some(false));
         assert_eq!(
             value.model_space_annotation_scaling,
@@ -265,8 +277,8 @@ fn grid_defaults_accept_future_minor_and_scale_lengths() {
     .expect("grid defaults");
 
     assert_eq!(value.source_offset, 23);
-    assert_eq!(value.grid_spacing_mm, 5.0);
-    assert_eq!(value.snap_spacing_mm, 1.5);
+    assert_eq!(value.grid_spacing_mm, crate::test_support::finite(5.0));
+    assert_eq!(value.snap_spacing_mm, crate::test_support::finite(1.5));
     assert_eq!(value.grid_line_count, 42);
     assert_eq!(value.thick_line_frequency, 3);
     assert!(!value.show_grid && value.show_grid_axes && !value.show_world_axes);

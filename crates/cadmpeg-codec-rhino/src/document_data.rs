@@ -4,6 +4,7 @@
 use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::Serialize;
 use std::ops::Range;
 
@@ -104,13 +105,13 @@ struct SettingRecord {
 struct AnnotationSettingsRecord {
     id: String,
     source_offset: u64,
-    dimension_scale: f64,
-    text_height_mm: f64,
-    extension_line_extension_mm: f64,
-    extension_line_offset_mm: f64,
-    arrow_length_mm: f64,
-    arrow_width_mm: f64,
-    center_mark_mm: f64,
+    dimension_scale: FiniteReal,
+    text_height_mm: FiniteReal,
+    extension_line_extension_mm: FiniteReal,
+    extension_line_offset_mm: FiniteReal,
+    arrow_length_mm: FiniteReal,
+    arrow_width_mm: FiniteReal,
+    center_mark_mm: FiniteReal,
     dimension_units: u32,
     arrow_type: i32,
     angular_units: i32,
@@ -119,9 +120,9 @@ struct AnnotationSettingsRecord {
     obsolete_text_alignment: u32,
     resolution: i32,
     font_face: String,
-    world_view_text_scale: Option<f64>,
+    world_view_text_scale: Option<FiniteReal>,
     annotation_scaling: Option<bool>,
-    world_view_hatch_scale: Option<f64>,
+    world_view_hatch_scale: Option<FiniteReal>,
     hatch_scaling: Option<bool>,
     model_space_annotation_scaling: Option<bool>,
     layout_space_annotation_scaling: Option<bool>,
@@ -133,8 +134,8 @@ struct AnnotationSettingsRecord {
 struct GridDefaultsRecord {
     id: String,
     source_offset: u64,
-    grid_spacing_mm: f64,
-    snap_spacing_mm: f64,
+    grid_spacing_mm: FiniteReal,
+    snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
     thick_line_frequency: i32,
     show_grid: bool,
@@ -174,7 +175,7 @@ struct RenderSettingsRecord {
     antialias_style: i32,
     shadowmap_style: i32,
     shadowmap_size_pixels: [i32; 2],
-    shadowmap_offset_mm: f64,
+    shadowmap_offset_mm: FiniteReal,
     obsolete_focal_blur: Option<[f64; 5]>,
     rendering_source: Option<i32>,
     specific_viewport: String,
@@ -183,21 +184,20 @@ struct RenderSettingsRecord {
     force_viewport_aspect_ratio: Option<bool>,
 }
 
-fn length(reader: &mut BoundedReader<'_>, scale: MillimeterScale) -> Result<f64, FramingError> {
+fn length(
+    reader: &mut BoundedReader<'_>,
+    scale: MillimeterScale,
+) -> Result<FiniteReal, FramingError> {
     scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
         FramingError::structural(reader.position(), "scaled setting length is invalid")
     })
 }
 
-fn annotation_scale(reader: &mut BoundedReader<'_>) -> Result<f64, FramingError> {
+fn annotation_scale(reader: &mut BoundedReader<'_>) -> Result<FiniteReal, FramingError> {
     let value = reader.f64()?;
-    if !value.is_finite() {
-        return Err(FramingError::structural(
-            reader.position(),
-            "annotation scale is non-finite",
-        ));
-    }
-    Ok(value)
+    FiniteReal::new(value).ok_or_else(|| {
+        FramingError::structural(reader.position(), "annotation scale is non-finite")
+    })
 }
 
 fn annotation_settings(

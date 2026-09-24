@@ -237,7 +237,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         crate::families::e5::graph::E5Pcurve::Line { direction, .. }
             if direction == finite_pair([1.0, 0.0])
     ));
-    assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
+    assert_eq!(topology.bounds[&900].entries[0].parameter.get(), 0.25);
     assert_eq!(topology.bounds[&900].entries[1].representation, 200);
     assert_eq!(topology.curve_supports[&200].pcurves(), &[400, 410]);
     assert_eq!(

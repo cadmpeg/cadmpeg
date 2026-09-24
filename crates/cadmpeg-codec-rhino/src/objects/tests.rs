@@ -757,7 +757,7 @@ fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
         assert!(!mesh.compute_curvature);
         assert!(mesh.simple_planes);
         assert_eq!(mesh.obsolete_weld, -17);
-        assert_eq!(mesh.tolerance, 0.125);
+        assert_eq!(mesh.tolerance, crate::test_support::finite(0.125));
         assert_eq!(mesh.custom_settings, Some(true));
         assert_eq!(mesh.custom_settings_enabled, Some(true));
         assert_eq!(
@@ -869,7 +869,7 @@ fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
         assert_eq!(mesh.custom_settings, Some(true));
         assert_eq!(mesh.custom_settings_enabled, Some(false));
         assert_eq!(mesh.obsolete_weld, -17);
-        assert_eq!(mesh.tolerance, 0.125);
+        assert_eq!(mesh.tolerance, crate::test_support::finite(0.125));
         assert_eq!(
             mesh.subd.as_ref().map(|value| value.display_density),
             Some(5)

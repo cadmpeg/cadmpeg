@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
@@ -89,7 +90,7 @@ fn trim_frame_vectors(
     bytes: &[u8],
     face_start: usize,
     face_count: usize,
-) -> Option<Vec<Option<[f64; 3]>>> {
+) -> Option<Vec<Option<FiniteVector<3>>>> {
     let solutions = [1, 2, 3]
         .into_iter()
         .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
@@ -114,7 +115,7 @@ fn trim_frame_vectors(
 pub(super) fn standard_face_frame_vectors(
     bytes: &[u8],
     expected_face_count: usize,
-) -> Vec<Option<[f64; 3]>> {
+) -> Vec<Option<FiniteVector<3>>> {
     let runs = crate::container::fbb_run_ranges(bytes);
     if runs.len() > 1 {
         let combined = runs
@@ -1171,7 +1172,7 @@ pub(in crate::families::standard) struct TrimRecordLayout {
     independent_count: usize,
     strip_count: usize,
     lane: TrimLengthLane,
-    frame_vector: Option<[f64; 3]>,
+    frame_vector: Option<FiniteVector<3>>,
     pub(super) handle_offset: usize,
     pub(super) handle_count: usize,
     pub(super) end: usize,
@@ -1244,9 +1245,8 @@ fn parse_trim_record_layout_with_length_encoding(
         ];
         position += 12;
         let norm2 = components.iter().map(|value| value * value).sum::<f64>();
-        if !components.iter().all(|value| value.is_finite())
-            || (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE
-        {
+        let components = FiniteVector::new(components)?;
+        if (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE {
             return None;
         }
         Some(components)

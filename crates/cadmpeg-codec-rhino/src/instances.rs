@@ -1297,7 +1297,7 @@ pub(crate) fn parse_reference(
 pub(crate) fn scale_translation(transform: Transform, scale: MillimeterScale) -> Option<Transform> {
     let mut rows = transform.affine_rows();
     for row in &mut rows {
-        row[3] = crate::wire::scaled_coordinate(row[3], scale)?;
+        row[3] = crate::wire::scaled_coordinate(row[3], scale)?.get();
     }
     Transform::affine(rows)
 }

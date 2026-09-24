@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -639,7 +639,7 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     points: &[[f64; N]],
     first: &[[f64; N]],
     second: &[[f64; N]],
-) -> Option<(Vec<f64>, Vec<[f64; N]>)> {
+) -> Option<(Vec<f64>, Vec<FiniteVector<N>>)> {
     if degree != 5
         || knots.len() < 2
         || points.len() != knots.len()
@@ -697,11 +697,13 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         ]);
         full_knots.extend([knots[index + 1]; 6]);
     }
-    if !full_knots.iter().copied().all(f64::is_finite)
-        || !controls.iter().flatten().copied().all(f64::is_finite)
-    {
+    if !full_knots.iter().copied().all(f64::is_finite) {
         return None;
     }
+    let controls = controls
+        .into_iter()
+        .map(FiniteVector::new)
+        .collect::<Option<Vec<_>>>()?;
     Some((full_knots, controls))
 }
 

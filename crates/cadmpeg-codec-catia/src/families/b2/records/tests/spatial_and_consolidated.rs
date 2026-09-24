@@ -26,7 +26,10 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
     assert!((circle.frame.axis().as_raw().z - 1.0).abs() < 1.0e-12);
     assert_eq!(circle.radius.get(), 7.0);
     assert_eq!(circle.range.endpoints(), [0.0, 11.2]);
-    assert_eq!(circle.chart_shift, -16.391_148_575_128_55);
+    assert_eq!(
+        circle.chart_shift,
+        crate::test_support::test_b5::finite(-16.391_148_575_128_55)
+    );
 }
 
 #[test]
@@ -148,6 +151,101 @@ fn offset_support_binds_by_native_domain_knot_limits() {
     assert_eq!(
         crate::families::b2::records::offset_support_carriers(&[offset], &carriers),
         [Some(0)]
+    );
+}
+
+#[test]
+fn offset_support_binding_scales_each_nurbs_parameter_domain() {
+    let tiny = 1e-200_f64;
+    let mut carriers = crate::families::a5a8::records::a5_surfaces(
+        &a5_surface_stream(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
+    let surface = &mut carriers[0].geometry;
+    edit::replace(surface, |previous| {
+        let mut knots = previous.u_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                knots,
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                previous.v_knots().to_vec(),
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    edit::replace(surface, |previous| {
+        let mut knots = previous.v_knots().to_vec();
+        {
+            let knots: &mut [f64] = &mut knots;
+
+            let lower = knots[0];
+            let span = knots.last().copied().expect("nonempty knots") - lower;
+            for knot in knots {
+                *knot = (*knot - lower) / span * tiny;
+            }
+        };
+        cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.u_degree(),
+                previous.u_knots().to_vec(),
+                previous.u_periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                previous.v_degree(),
+                knots,
+                previous.v_periodic(),
+            ),
+            previous.pole_grid().clone(),
+            previous.normal_reversed(),
+        )
+    })
+    .unwrap();
+    let interval = |range: [f64; 2]| {
+        cadmpeg_ir::topology::IncreasingParameterInterval::new(range)
+            .expect("fixture interval is finite and increasing")
+    };
+    let exact = crate::families::b2::records::B2OffsetSupport {
+        pos: 0,
+        support_id: 1,
+        distance: cadmpeg_ir::scalar::FiniteReal::new(tiny).expect("finite distance"),
+        u_range: interval([0.0, tiny]),
+        v_range: interval([0.0, tiny]),
+    };
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(
+            std::slice::from_ref(&exact),
+            &carriers
+        ),
+        [Some(0)]
+    );
+
+    let mut outside_u = exact.clone();
+    outside_u.u_range = interval([0.0, 2.0 * tiny]);
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(&[outside_u], &carriers),
+        [None]
+    );
+    let mut outside_v = exact;
+    outside_v.v_range = interval([0.0, 2.0 * tiny]);
+    assert_eq!(
+        crate::families::b2::records::offset_support_carriers(&[outside_v], &carriers),
+        [None]
     );
 }
 

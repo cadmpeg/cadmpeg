@@ -1178,15 +1178,21 @@ fn materialize(
             })?;
             SubdVertex::new(
                 Point3::new(
-                    crate::wire::scaled_coordinate(vertex.point.x, scale).ok_or_else(|| {
-                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                    })?,
-                    crate::wire::scaled_coordinate(vertex.point.y, scale).ok_or_else(|| {
-                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                    })?,
-                    crate::wire::scaled_coordinate(vertex.point.z, scale).ok_or_else(|| {
-                        malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
-                    })?,
+                    crate::wire::scaled_coordinate(vertex.point.x, scale)
+                        .ok_or_else(|| {
+                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                        })?
+                        .get(),
+                    crate::wire::scaled_coordinate(vertex.point.y, scale)
+                        .ok_or_else(|| {
+                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                        })?
+                        .get(),
+                    crate::wire::scaled_coordinate(vertex.point.z, scale)
+                        .ok_or_else(|| {
+                            malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                        })?
+                        .get(),
                 ),
                 tag,
                 None,

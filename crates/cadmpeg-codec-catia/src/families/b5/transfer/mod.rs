@@ -450,7 +450,7 @@ fn build_plan(
                         pcurve
                             .control_points
                             .iter()
-                            .map(|point| neutral_pcurve_point(*point, surface))
+                            .map(|point| neutral_pcurve_point(point.get(), surface))
                             .collect(),
                         pcurve.weights.as_ref().map(|weights| {
                             weights.iter().copied().map(PositiveReal::get).collect()
@@ -823,7 +823,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
                     knots,
                     control_points
                         .into_iter()
-                        .map(|point| pcurves::neutral_pcurve_point(point, surface))
+                        .map(|point| pcurves::neutral_pcurve_point(point.get(), surface))
                         .collect(),
                     None,
                     false,
@@ -995,7 +995,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                     pcurve
                         .control_points
                         .iter()
-                        .map(|point| neutral_pcurve_point(*point, source_surface))
+                        .map(|point| neutral_pcurve_point(point.get(), source_surface))
                         .collect(),
                     pcurve
                         .weights
@@ -1064,7 +1064,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
             let support = resolve_support(*support)?;
             let source_curve = curve_on_parameter_range(
                 support.curve.clone()?,
-                *source_parameter_range,
+                source_parameter_range.endpoints(),
                 active,
                 &format_args!(
                     "b5 offset extrusion source curve on surface record #{}",

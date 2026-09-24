@@ -135,7 +135,10 @@ fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 10.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
         weights: None,
         parameter_range: Some(crate::test_support::test_b5::finite_pair([2.0, 8.0])),
         parameterization: B5PcurveParameterization::Native,
@@ -180,7 +183,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             support_pcurves: [60, 70],
             parameters: B5SupportedSurfaceParameters::Radius {
                 controls: [1; 6],
-                construction_radius: 2.0,
+                construction_radius: crate::test_support::test_b5::positive_length(2.0),
             },
         },
     )]);
@@ -207,7 +210,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                         crate::test_support::test_b5::finite_pair([0.0, 1.0]),
                     ),
                 ],
-                parameter_range: [0.0, 1.0],
+                parameter_range: crate::test_support::test_b5::increasing([0.0, 1.0]),
                 cache_fit_tolerance: crate::test_support::test_b5::positive(1.0e-6),
             },
         },
@@ -377,9 +380,9 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
     let plane = |v_offset: f64| B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0, v_offset, 0.0]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let line_pcurve = |object_id: u32, surface: u32| B5Pcurve {
         object_id,
@@ -387,7 +390,10 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -543,7 +549,10 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 degree: 1,
                 distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
                 multiplicities: vec![2, 2],
-                control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+                control_points: vec![
+                    crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                    crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+                ],
                 weights: None,
                 parameter_range: None,
                 parameterization: B5PcurveParameterization::Native,
@@ -558,9 +567,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             B5Surface::Plane {
                 origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-                direction_v: [0.0, 1.0, 0.0],
-                u_range: [-1.0, 1.0],
-                v_range: [-1.0, 1.0],
+                direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+                u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
             },
         )]),
         surface_aliases: BTreeMap::new(),

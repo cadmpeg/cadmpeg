@@ -23,7 +23,7 @@ use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use serde::{de::DeserializeOwned, Serialize};
@@ -6232,9 +6232,9 @@ fn same_cone_generator_pair(
 /// unresolved.
 fn standard_plane_normals_from_face_frames(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
-    face_frame_vectors: &[Option<[f64; 3]>],
-) -> HashMap<u32, [f64; 3]> {
-    let mut candidates = HashMap::<u32, Option<[f64; 3]>>::new();
+    face_frame_vectors: &[Option<FiniteVector<3>>],
+) -> HashMap<u32, FiniteVector<3>> {
+    let mut candidates = HashMap::<u32, Option<FiniteVector<3>>>::new();
     for (face, record) in records.iter().enumerate() {
         let crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix) = record
         else {
@@ -6318,15 +6318,16 @@ fn point_inside_standard_face_bounds(
 ) -> bool {
     let coordinates = [point.x, point.y, point.z];
     let inside_aabb = coordinates.iter().enumerate().all(|(axis, coordinate)| {
-        (*coordinate - bounds.aabb_center[axis]).abs()
-            <= bounds.aabb_half_extents[axis] + STANDARD_FACE_BOUNDS_TOLERANCE
+        (*coordinate - bounds.aabb_center[axis].get()).abs()
+            <= bounds.aabb_half_extents[axis].get() + STANDARD_FACE_BOUNDS_TOLERANCE
     });
     let distance_squared = coordinates
         .iter()
         .enumerate()
-        .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis]).powi(2))
+        .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis].get()).powi(2))
         .sum::<f64>();
-    inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + STANDARD_FACE_BOUNDS_TOLERANCE
+    inside_aabb
+        && distance_squared.sqrt() <= bounds.sphere_radius.get() + STANDARD_FACE_BOUNDS_TOLERANCE
 }
 
 /// Narrow a repeated-face domain only when one alternate has a strictly larger
@@ -6406,14 +6407,14 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
                         .map_or(0, |candidate| {
                             (0..3)
                                 .filter(|axis| {
-                                    let left = serialized_bounds.aabb_center[*axis]
-                                        - serialized_bounds.aabb_half_extents[*axis];
-                                    let right = serialized_bounds.aabb_center[*axis]
-                                        + serialized_bounds.aabb_half_extents[*axis];
-                                    let candidate_left = candidate.aabb_center[*axis]
-                                        - candidate.aabb_half_extents[*axis];
-                                    let candidate_right = candidate.aabb_center[*axis]
-                                        + candidate.aabb_half_extents[*axis];
+                                    let left = serialized_bounds.aabb_center[*axis].get()
+                                        - serialized_bounds.aabb_half_extents[*axis].get();
+                                    let right = serialized_bounds.aabb_center[*axis].get()
+                                        + serialized_bounds.aabb_half_extents[*axis].get();
+                                    let candidate_left = candidate.aabb_center[*axis].get()
+                                        - candidate.aabb_half_extents[*axis].get();
+                                    let candidate_right = candidate.aabb_center[*axis].get()
+                                        + candidate.aabb_half_extents[*axis].get();
                                     right.min(candidate_right) - left.max(candidate_left)
                                         > STANDARD_FACE_BOUNDS_TOLERANCE
                                 })
@@ -6983,8 +6984,8 @@ fn owner_contains_face_bounds(
         return false;
     }
     (0..3).all(|axis| {
-        let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
-        let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
+        let lower = bounds.aabb_center[axis].get() - bounds.aabb_half_extents[axis].get();
+        let upper = bounds.aabb_center[axis].get() + bounds.aabb_half_extents[axis].get();
         lower >= f64::from(tail.bounds()[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
             && upper <= f64::from(tail.bounds()[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
     })
