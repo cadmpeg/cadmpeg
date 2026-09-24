@@ -4258,6 +4258,54 @@ mod tests {
     }
 
     #[test]
+    fn a_torus_reference_tilted_off_the_axis_by_rounding_keeps_the_perpendicularity_refusal() {
+        // The record admits an axis whose squared length is 1 + 9.8e-13, a
+        // frame whose second direction crosses the axis to the first within
+        // 4.9e-13, and an axis origin 1e5 along the axis. The torus
+        // reference is the radial part of the profile-center offset over
+        // its length: the axial part leaves 2·4.9e-13·1e5 ≈ 9.8e-8 of radial
+        // length along the axis, so the reference meets the axis at about
+        // 2.45e-8, above the 1e-9 of OrthonormalFrame3::from_units. Every
+        // other condition of the conversion holds. With an exact unit axis
+        // the same revolution converts.
+        let deviation = 4.9e-13;
+        let convert = |axis_z: f64| {
+            let mut bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+            let frame_start = bytes.len() - 0xae + 3;
+            let frame = [
+                [0.0, 0.0, 1.0e5],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, axis_z],
+            ]
+            .concat();
+            for (index, value) in frame.into_iter().enumerate() {
+                let at = frame_start + 8 * index;
+                bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let resolved = crate::families::b2::records::b2_resolved_revolutions_from_records(
+                &bytes, &records,
+            );
+            assert_eq!(resolved.len(), 1);
+            super::append_consolidated_revolutions(
+                &mut CadIr::empty(),
+                &mut AnnotationBuilder::default(),
+                &resolved,
+            )
+        };
+        assert!(convert(1.0 + deviation).is_empty());
+        let bindings = convert(1.0);
+        let [binding] = bindings.as_slice() else {
+            panic!("the exact unit axis converts to one torus");
+        };
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &binding.geometry else {
+            panic!("the conversion is a torus");
+        };
+        assert_eq!(torus.major_radius().get(), 4.0);
+    }
+
+    #[test]
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
         let bytes = crate::test_support::test_b2::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
