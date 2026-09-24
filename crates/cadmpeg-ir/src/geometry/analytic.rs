@@ -1046,6 +1046,81 @@ impl EllipseCurve {
         })
     }
 
+    /// Build an ellipse from radii stated in a source unit, major then
+    /// minor, and the positive scale that converts them.
+    ///
+    /// The order is read from the source radii, so a source minor radius
+    /// above the major one is refused even where the scaled radii round to
+    /// one value. Rounding is monotone, so the scaled radii keep the order.
+    /// The scaled major radius is admitted positive and finite; the scaled
+    /// minor radius is not above it, so only its sign is tested.
+    ///
+    /// ```
+    /// use cadmpeg_ir::features::FinitePoint3;
+    /// use cadmpeg_ir::geometry::analytic::EllipseCurve;
+    /// use cadmpeg_ir::math::{Point3, Vector3};
+    /// use cadmpeg_ir::scalar::PositiveReal;
+    /// use cadmpeg_ir::units::OrthonormalFrame3;
+    ///
+    /// let center = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
+    /// let frame =
+    ///     OrthonormalFrame3::new(Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0))
+    ///         .unwrap();
+    /// let scale = PositiveReal::new(1000.0).unwrap();
+    /// let ellipse = EllipseCurve::from_source_radii(center, frame, [0.004, 0.002], scale).unwrap();
+    /// assert_eq!(ellipse.major_radius().get(), 4.0);
+    /// assert!(EllipseCurve::from_source_radii(center, frame, [0.002, 0.004], scale).is_none());
+    /// ```
+    #[must_use]
+    pub fn from_source_radii(
+        center: FinitePoint3,
+        frame: OrthonormalFrame3,
+        radii: [f64; 2],
+        scale: PositiveReal,
+    ) -> Option<Self> {
+        let [major, minor] = radii;
+        (minor <= major).then_some(())?;
+        let [major_radius, minor_radius] = PositiveLength::scale_ordered_pair(radii, scale).ok()?;
+        Some(Self {
+            center,
+            major_radius,
+            minor_radius,
+            frame,
+        })
+    }
+
+    /// The ellipse with its center and radii times `scale`.
+    ///
+    /// Rounding is monotone, so a positive scale keeps the radius order; the
+    /// radii can round to one value, which the order admits. The scaled
+    /// center is refused when a coordinate overflows, then the scaled major
+    /// radius when it overflows or rounds to zero, then the scaled minor
+    /// radius, which is not above it, when it rounds to zero, each with the
+    /// field's own text.
+    pub(crate) fn scaled(&self, scale: PositiveReal) -> Result<Self, &'static str> {
+        let center = self
+            .center
+            .scaled(scale)
+            .ok_or("EllipseCurve.center must be finite")?;
+        let [major_radius, minor_radius] = PositiveLength::scale_ordered_pair(
+            [self.major_radius.get(), self.minor_radius.get()],
+            scale,
+        )
+        .map_err(|index| {
+            if index == 0 {
+                "EllipseCurve.major_radius must be positive and finite"
+            } else {
+                "EllipseCurve.minor_radius must be positive and finite"
+            }
+        })?;
+        Ok(Self {
+            center,
+            major_radius,
+            minor_radius,
+            frame: self.frame,
+        })
+    }
+
     /// Admit finite parameters that satisfy the carrier's numeric contract.
     pub fn try_new(
         center: Point3,

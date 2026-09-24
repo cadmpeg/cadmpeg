@@ -129,3 +129,39 @@ fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
         assert!(VariableRadii::from_parts(points).is_err());
     }
 }
+
+/// A radius map keeps the sample count and the parameters, so only the one
+/// positive radius is tested again; a refusal of the map discards it.
+#[test]
+fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
+    use crate::scalar::{NonNegativeLength, PositiveReal};
+    let law = VariableRadii::new(vec![point(0.0, 0.0), point(0.5, 1.0e-320), point(1.0, 2.0)])
+        .expect("an admitted law");
+    let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
+    let scaled =
+        |value: f64| move |radius: NonNegativeLength| radius.scaled(scale(value)).ok_or("overflow");
+
+    let doubled = law
+        .try_map_radii(scaled(2.0))
+        .expect("finite radii")
+        .expect("one positive radius");
+    assert_eq!(
+        doubled
+            .as_slice()
+            .iter()
+            .map(|sample| (sample.parameter.get(), sample.radius.get()))
+            .collect::<Vec<_>>(),
+        vec![(0.0, 0.0), (0.5, 2.0e-320), (1.0, 4.0)]
+    );
+
+    let tiny =
+        VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 1.0e-320)]).expect("an admitted law");
+    assert!(tiny
+        .try_map_radii(scaled(1.0e-10))
+        .expect("finite radii")
+        .is_err());
+    assert_eq!(
+        law.try_map_radii(scaled(f64::MAX)).map(|law| law.is_ok()),
+        Err("overflow")
+    );
+}

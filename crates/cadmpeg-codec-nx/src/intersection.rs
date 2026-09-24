@@ -740,8 +740,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
         if duplicates.contains(&source.xmt) {
             continue;
         }
-        let Ok(fit_tolerance) = FitTolerance::try_new(source.preamble.chordal_error() * 1000.0)
-        else {
+        let Some(fit_tolerance) = source.preamble.fit_tolerance() else {
             continue;
         };
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;

@@ -24,7 +24,9 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, Magnification, NonNegativeLength, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::framing::{
@@ -362,20 +364,21 @@ fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
     let minor = View::f64_be_at(s, b + 99)?;
     let frame = frame(normal, x_axis)?;
     let center = mm_position(center)?;
-    let (major_radius, minor_radius) = (mm_radius(major)?, mm_radius(minor)?);
-    // The order is tested on the metre radii. Scaling can round a minor
+    // The order is read from the metre radii. Scaling can round a minor
     // radius above the major one onto it, which the millimetre order admits.
-    if minor > major {
-        return None;
-    }
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        EllipseCurve::try_from_parts(center, frame, major_radius, minor_radius).ok()?,
+        EllipseCurve::from_source_radii(
+            center,
+            frame,
+            [major, minor],
+            PositiveReal::from(Magnification::MILLIMETERS_PER_METER),
+        )?,
     )))
 }
 
 // --- Primitives and gates ---
 
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
+const MILLIMETRES_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
 /// Admit the serialized analytic axis/reference frame. The admission refuses
 /// every non-finite component, since a non-finite component has no norm

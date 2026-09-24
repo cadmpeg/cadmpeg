@@ -2,27 +2,30 @@
 //! Checked rolling-ball supports and source-admitted offset pairs.
 
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
-use cadmpeg_ir::scalar::NonZeroLength;
+use cadmpeg_ir::scalar::{Magnification, NonZeroLength};
 use serde::{Deserialize, Serialize};
 
 const EPS_SOURCE_OFFSET_METRES: f64 = 1.0e-9;
-const METRES_TO_MM: f64 = 1000.0;
+const METRES_TO_MM: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 struct BlendOffsets([NonZeroLength; 2]);
 
 impl BlendOffsets {
+    /// Admit the metre offsets as nonzero lengths in the source unit, then
+    /// convert them. A factor of at least one cannot round a nonzero offset to
+    /// zero, so the conversion refuses only an offset that overflows.
     fn from_metres(offsets: [f64; 2]) -> Result<Self, &'static str> {
-        if offsets
-            .iter()
-            .any(|value| !value.is_finite() || *value == 0.0)
-            || (offsets[0].abs() - offsets[1].abs()).abs() > EPS_SOURCE_OFFSET_METRES
-        {
-            return Err("offsets: require finite nonzero offsets with equal source magnitudes");
+        const SOURCE: &str = "offsets: require finite nonzero offsets with equal source magnitudes";
+        let [Some(first), Some(second)] = offsets.map(NonZeroLength::new) else {
+            return Err(SOURCE);
+        };
+        if (first.get().abs() - second.get().abs()).abs() > EPS_SOURCE_OFFSET_METRES {
+            return Err(SOURCE);
         }
         let [Some(first), Some(second)] =
-            offsets.map(|value| NonZeroLength::new(value * METRES_TO_MM))
+            [first, second].map(|offset| offset.magnified(Magnification::MILLIMETERS_PER_METER))
         else {
             return Err("offsets: model distances must be finite");
         };
@@ -196,6 +199,35 @@ mod tests {
     use super::{
         source_interval, BlendOffsets, BlendSurfaceState, EPS_SOURCE_OFFSET_METRES, METRES_TO_MM,
     };
+
+    /// The metre gate refuses a non-finite, zero or unequal offset with the
+    /// source text before the conversion; the conversion refuses only an
+    /// offset that overflows, and a subnormal offset stays nonzero.
+    #[test]
+    fn blend_offsets_refuse_source_conditions_before_model_overflow() {
+        const SOURCE: &str = "offsets: require finite nonzero offsets with equal source magnitudes";
+        for offsets in [
+            [0.0, 0.003],
+            [-0.0, 0.0],
+            [f64::NAN, 0.003],
+            [f64::INFINITY, f64::INFINITY],
+            [0.003, 0.004],
+            [f64::MAX, 0.0],
+        ] {
+            assert_eq!(
+                BlendOffsets::from_metres(offsets),
+                Err(SOURCE),
+                "{offsets:?}"
+            );
+        }
+        assert_eq!(
+            BlendOffsets::from_metres([f64::MAX, -f64::MAX]),
+            Err("offsets: model distances must be finite")
+        );
+        let smallest = BlendOffsets::from_metres([f64::from_bits(1), -f64::from_bits(1)]).unwrap();
+        let model: [f64; 2] = smallest.into();
+        assert!(model.iter().all(|value| *value != 0.0));
+    }
 
     #[test]
     fn model_offsets_retain_source_tolerance_after_rounding() {

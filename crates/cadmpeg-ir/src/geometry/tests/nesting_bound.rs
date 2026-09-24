@@ -142,3 +142,17 @@ fn deserialization_refuses_a_surface_placement_past_the_bound() {
         "PlacedSurface.basis nests past the admitted inline basis depth"
     );
 }
+
+/// Coordinate scaling keeps every trimmed, offset and placed layer, so a
+/// chain at the bound stays at it and one more layer is still refused.
+#[test]
+fn a_scaled_pcurve_chain_at_the_bound_keeps_its_depth() {
+    let mut chain = nested_pcurve(MAX_GEOMETRY_NESTING).expect("admitted nesting");
+    chain
+        .try_scale_coordinates([25.4, 25.4])
+        .expect("finite scaled chain");
+    assert_eq!(
+        PlacedPcurve::try_new(Box::new(chain), Transform2::identity()).err(),
+        Some("PlacedPcurve.basis nests past the admitted inline basis depth")
+    );
+}

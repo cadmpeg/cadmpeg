@@ -437,7 +437,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(charts[0].preamble.base_parameter(), 0.0);
     assert_eq!(charts[0].preamble.base_scale(), 1.0);
     assert_eq!(serde_json::to_value(&charts[0]).unwrap()["chart_count"], 2);
-    assert_eq!(charts[0].preamble.chordal_error(), 0.000_01);
+    assert_eq!(charts[0].preamble.chordal_error().get(), 0.000_01);
     assert_eq!(charts[0].preamble.angular_error(), 0.001);
     assert_eq!(
         charts[0]

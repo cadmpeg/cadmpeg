@@ -25,6 +25,7 @@ pub mod analytic;
 pub mod nurbs;
 pub mod pcurve;
 pub mod sampled;
+pub mod scaling;
 use analytic::{
     CircleCurve, ConeSurface, CylinderSurface, DegenerateCurve, EllipseCurve, HyperbolaCurve,
     LineCurve, ParabolaCurve, PlaneSurface, SphereSurface, TorusSurface,
@@ -1316,6 +1317,17 @@ impl FitTolerance {
     pub const fn get(self) -> f64 {
         self.0
     }
+
+    /// The tolerance times `scale`.
+    ///
+    /// A positive scale keeps the sign of a non-negative tolerance: zero
+    /// stays zero, and rounding does not change a sign. The product is
+    /// refused only when it overflows.
+    #[must_use]
+    pub fn scaled(self, scale: crate::scalar::PositiveReal) -> Option<Self> {
+        let value = self.0 * scale.get();
+        value.is_finite().then_some(Self(value))
+    }
 }
 
 impl TryFrom<f64> for FitTolerance {
@@ -1901,9 +1913,21 @@ impl ProceduralSurface {
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
+    ///
+    /// A positive scale keeps the tolerance non-negative, so the scaled
+    /// tolerance is refused only when it overflows, with the admission's own
+    /// error.
+    pub fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
-            self.set_cache_fit_tolerance(Some(value.get() * scale))?;
+            let scaled = value
+                .scaled(scale)
+                .ok_or_else(|| CacheContractError::InvalidValue {
+                    value: value.get() * scale.get(),
+                })?;
+            self.definition.set_cache_fit_tolerance(Some(scaled))?;
         }
         Ok(())
     }
@@ -7932,9 +7956,21 @@ impl ProceduralCurve {
     }
 
     /// Scale the effective cache-fit tolerance in place.
-    pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
+    ///
+    /// A positive scale keeps the tolerance non-negative, so the scaled
+    /// tolerance is refused only when it overflows, with the admission's own
+    /// error.
+    pub fn scale_cache_fit_tolerance(
+        &mut self,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
-            self.set_cache_fit_tolerance(Some(value.get() * scale))?;
+            let scaled = value
+                .scaled(scale)
+                .ok_or_else(|| CacheContractError::InvalidValue {
+                    value: value.get() * scale.get(),
+                })?;
+            self.definition.set_cache_fit_tolerance(Some(scaled))?;
         }
         Ok(())
     }

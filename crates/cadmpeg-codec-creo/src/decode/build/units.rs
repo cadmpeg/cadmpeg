@@ -12,18 +12,20 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3, ParameterValue, WrapMode,
+    FeatureDefinition, FeatureOperation, FiniteVector3, ParameterValue, WrapMode,
 };
+use cadmpeg_ir::geometry::scaling::ScaleRefusal;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
+use cadmpeg_ir::scalar::{Length, PositiveReal};
 use cadmpeg_ir::sketches::{
     SketchGeometry, SketchGeometryDefinition, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
+use cadmpeg_ir::topology::EdgeCarrier;
 use cadmpeg_ir::transform::Transform;
 
 /// Scale all neutral model lengths from the source unit into millimeters.
@@ -31,11 +33,11 @@ pub(super) fn normalize_model_lengths(
     ir: &mut CadIr,
     length_scale_mm: f64,
 ) -> Result<(), CodecError> {
-    if !length_scale_mm.is_finite() || length_scale_mm <= 0.0 || length_scale_mm == 1.0 {
+    let Some(scale) = PositiveReal::new(length_scale_mm).filter(|scale| scale.get() != 1.0) else {
         return Ok(());
-    }
+    };
 
-    let pcurve_scales = pcurve_scales(ir, length_scale_mm);
+    let pcurve_scales = pcurve_scales(ir, scale.get());
     for pcurve in &mut ir.model.pcurves {
         if let Some(scales) = pcurve_scales.get(&pcurve.id) {
             if pcurve.geometry.try_scale_coordinates(*scales).is_err() {
@@ -48,40 +50,42 @@ pub(super) fn normalize_model_lengths(
 
     for surface in &mut ir.model.surfaces {
         if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
-            scale_surface_geometry(geometry, length_scale_mm)?;
+            scale_surface_geometry(geometry, scale)?;
         }
     }
     for curve in &mut ir.model.curves {
         if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
-            scale_curve_geometry(geometry, length_scale_mm)?;
+            scale_curve_geometry(geometry, scale)?;
         }
     }
     for procedural in &mut ir.model.procedural_surfaces {
         procedural
-            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
+            .edit_definition(|definition| definition.scale_lengths(scale))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
-            .scale_cache_fit_tolerance(length_scale_mm)
+            .scale_cache_fit_tolerance(scale)
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for procedural in &mut ir.model.procedural_curves {
         procedural
-            .edit_definition(|definition| definition.scale_lengths(length_scale_mm))
+            .edit_definition(|definition| definition.scale_lengths(scale))
             .map_err(cadmpeg_core::CodecError::malformed)?;
         procedural
-            .scale_cache_fit_tolerance(length_scale_mm)
+            .scale_cache_fit_tolerance(scale)
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
-        let position = scale_finite_point(point.position(), length_scale_mm)
+        let position = point
+            .position()
+            .scaled(scale)
             .ok_or_else(|| CodecError::malformed("Creo scaled model point must be finite"))?;
         point.set_position(position);
     }
     for face in &mut ir.model.faces {
-        scale_tolerance(&mut face.tolerance, length_scale_mm)?;
+        scale_tolerance(&mut face.tolerance, scale)?;
     }
     for vertex in &mut ir.model.vertices {
-        scale_tolerance(&mut vertex.tolerance, length_scale_mm)?;
+        scale_tolerance(&mut vertex.tolerance, scale)?;
     }
 
     let curve_parameter_scales = ir
@@ -89,116 +93,109 @@ pub(super) fn normalize_model_lengths(
         .curves
         .iter()
         .filter_map(|curve| {
-            curve_parameter_scale(curve.geometry.solved()?, length_scale_mm)
+            curve_parameter_scale(curve.geometry.solved()?, scale)
                 .map(|scale| (curve.id.clone(), scale))
         })
         .collect::<BTreeMap<_, _>>();
     for edge in &mut ir.model.edges {
-        scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
-        if let (Some(mut range), Some(scale)) = (
-            edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
-            edge.curve().and_then(|id| curve_parameter_scales.get(id)),
-        ) {
-            scale_pair(&mut range, *scale);
-            edge.carrier =
-                cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range))
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+        scale_tolerance(&mut edge.tolerance, scale)?;
+        if let EdgeCarrier::Bounded(curve, interval) = &mut edge.carrier {
+            if let Some(scale) = curve_parameter_scales.get(curve) {
+                *interval = interval.scaled(*scale).ok_or_else(|| {
+                    CodecError::malformed("edge param_range must be finite and ordered")
+                })?;
+            }
         }
     }
     for coedge in &mut ir.model.coedges {
         if let Some(use_curve) = &mut coedge.use_curve {
             if let Some(scale) = curve_parameter_scales.get(&use_curve.curve) {
-                let mut range = use_curve.parameter_range.endpoints();
-                scale_pair(&mut range, *scale);
-                use_curve.parameter_range = cadmpeg_ir::topology::ParameterInterval::new(range)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                use_curve.parameter_range =
+                    use_curve.parameter_range.scaled(*scale).ok_or_else(|| {
+                        CodecError::malformed("parameter_range must be finite and ordered")
+                    })?;
             }
         }
     }
 
     for body in &mut ir.model.bodies {
         if let Some(transform) = body.transform.as_mut() {
-            scale_transform_translation(transform, length_scale_mm)?;
+            scale_transform_translation(transform, scale)?;
         }
     }
     for occurrence in &mut ir.model.occurrences {
-        scale_transform_translation(&mut occurrence.transform, length_scale_mm)?;
+        scale_transform_translation(&mut occurrence.transform, scale)?;
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
-            scale_transform_translation(transform, length_scale_mm)?;
+            scale_transform_translation(transform, scale)?;
         }
     }
     for tessellation in &mut ir.model.tessellations {
         tessellation
             .edit_vertices(|vertex| {
-                scale_point3(vertex, length_scale_mm);
+                scale_point3(vertex, scale);
                 Ok(())
             })
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
             })?;
         tessellation
-            .set_chordal_deflection(
-                tessellation
-                    .chordal_deflection()
-                    .map(|value| value.get() * length_scale_mm),
-            )
+            .scale_chordal_deflection(scale)
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
             })?;
     }
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();
-        scale_feature_definition(&mut definition, length_scale_mm)?;
+        scale_feature_definition(&mut definition, scale)?;
         feature.evaluation.set_definition(definition);
     }
 
     for parameter in &mut ir.model.parameters {
         if let Some(ParameterValue::Length(length)) = parameter.value.as_mut() {
-            scale_length(length, length_scale_mm)?;
+            scale_length(length, scale)?;
         }
     }
     for configuration in &mut ir.model.configurations {
         for value in configuration.parameter_values.values_mut() {
             if let ParameterValue::Length(length) = value {
-                scale_length(length, length_scale_mm)?;
+                scale_length(length, scale)?;
             }
         }
         for state in configuration.feature_states.values_mut() {
-            scale_feature_definition(&mut state.definition, length_scale_mm)?;
+            scale_feature_definition(&mut state.definition, scale)?;
         }
     }
     for sketch in &mut ir.model.sketches {
         if let Some((origin, _, _)) = sketch.resolved_placement() {
-            let mut origin = origin.get();
-            scale_point3(&mut origin, length_scale_mm);
-            let origin = cadmpeg_ir::features::FinitePoint3::new(origin)
+            let origin = origin
+                .scaled(scale)
                 .ok_or_else(|| CodecError::malformed("sketch origin must be finite"))?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
     }
     for entity in &mut ir.model.sketch_entities {
-        scale_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
+        scale_sketch_geometry(&mut entity.geometry, scale)?;
     }
     for sketch in &mut ir.model.spatial_sketches {
         for profile in &mut sketch.profiles {
             let mut origin = profile.origin().get();
-            scale_point3(&mut origin, length_scale_mm);
+            scale_point3(&mut origin, scale);
             profile.set_origin(origin).map_err(CodecError::malformed)?;
         }
     }
     for entity in &mut ir.model.spatial_sketch_entities {
-        scale_spatial_sketch_geometry(&mut entity.geometry, length_scale_mm)?;
+        scale_spatial_sketch_geometry(&mut entity.geometry, scale)?;
     }
     for constraint in &mut ir.model.sketch_constraints {
         constraint
             .definition
-            .edit(|kind| scale_sketch_constraint_definition(kind, length_scale_mm))
+            .edit(|kind| scale_sketch_constraint_definition(kind, scale))
             .map_err(cadmpeg_core::CodecError::malformed)??;
     }
     for constraint in &mut ir.model.spatial_sketch_constraints {
         constraint
             .definition
-            .edit(|kind| scale_spatial_sketch_constraint_definition(kind, length_scale_mm))
+            .edit(|kind| scale_spatial_sketch_constraint_definition(kind, scale))
             .map_err(cadmpeg_core::CodecError::malformed)??;
     }
     Ok(())
@@ -206,110 +203,107 @@ pub(super) fn normalize_model_lengths(
 
 fn scale_tolerance(
     value: &mut Option<cadmpeg_ir::scalar::PositiveReal>,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let Some(current) = value {
-        *current =
-            cadmpeg_ir::scalar::PositiveReal::new(current.get() * scale).ok_or_else(|| {
-                CodecError::malformed("scaled topology tolerance must be positive and finite")
-            })?;
+        *current = cadmpeg_ir::scalar::PositiveReal::new(current.get() * scale.get()).ok_or_else(
+            || CodecError::malformed("scaled topology tolerance must be positive and finite"),
+        )?;
     }
     Ok(())
 }
 
-fn scale_pair(values: &mut [f64; 2], scale: f64) {
-    values[0] *= scale;
-    values[1] *= scale;
+fn scale_point2(point: &mut Point2, scale: PositiveReal) {
+    point.u *= scale.get();
+    point.v *= scale.get();
 }
 
-fn scale_point2(point: &mut Point2, scale: f64) {
-    point.u *= scale;
-    point.v *= scale;
-}
-
-fn scale_point3(point: &mut Point3, scale: f64) {
-    point.x *= scale;
-    point.y *= scale;
-    point.z *= scale;
+fn scale_point3(point: &mut Point3, scale: PositiveReal) {
+    point.x *= scale.get();
+    point.y *= scale.get();
+    point.z *= scale.get();
 }
 
 fn scale_finite_point3(
     point: &mut cadmpeg_ir::features::FinitePoint3,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    let mut scaled = point.get();
-    scale_point3(&mut scaled, scale);
-    *point = cadmpeg_ir::features::FinitePoint3::new(scaled)
+    *point = point
+        .scaled(scale)
         .ok_or_else(|| CodecError::Malformed("Creo scaled feature point must be finite".into()))?;
     Ok(())
 }
 
-fn scale_vector3(vector: &mut Vector3, scale: f64) {
-    vector.x *= scale;
-    vector.y *= scale;
-    vector.z *= scale;
+fn scale_vector3(vector: &mut Vector3, scale: PositiveReal) {
+    vector.x *= scale.get();
+    vector.y *= scale.get();
+    vector.z *= scale.get();
 }
 
 /// The translation of `transform` scaled by `scale`. The scale is any finite
 /// positive value the file states, so a finite translation component can
 /// overflow; the linear rows are not scaled and keep their admission.
-fn scaled_translation(transform: &Transform, scale: f64) -> Option<FiniteVector3> {
-    let [first, second, third] = transform.affine_rows().map(|row| row[3] * scale);
+fn scaled_translation(transform: &Transform, scale: PositiveReal) -> Option<FiniteVector3> {
+    let [first, second, third] = transform.affine_rows().map(|row| row[3] * scale.get());
     FiniteVector3::new(Vector3::new(first, second, third))
 }
 
-fn scale_transform_translation(transform: &mut Transform, scale: f64) -> Result<(), CodecError> {
+fn scale_transform_translation(
+    transform: &mut Transform,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     // `scale` is the length scale the file states and `transform` comes from
     // the document, so a scale that drives a translation non-finite is a
     // source the transform carrier refuses, not an impossible state.
     let translation = scaled_translation(transform, scale).ok_or_else(|| {
         CodecError::malformed(format_args!(
-            "Creo length scale {scale} drives a transform translation the carrier refuses"
+            "Creo length scale {} drives a transform translation the carrier refuses",
+            scale.get()
         ))
     })?;
     *transform = transform.with_translation(translation);
     Ok(())
 }
 
-fn scale_length(length: &mut Length, scale: f64) -> Result<(), CodecError> {
-    *length = Length::new(length.get() * scale)
+fn scale_length(length: &mut Length, scale: PositiveReal) -> Result<(), CodecError> {
+    *length = Length::new(length.get() * scale.get())
         .ok_or_else(|| CodecError::Malformed("Creo scaled length must be finite".into()))?;
     Ok(())
 }
 
 fn scale_positive_length(
     length: &mut cadmpeg_ir::scalar::PositiveLength,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale).ok_or_else(|| {
-        CodecError::Malformed("Creo scaled length must be positive and finite".into())
-    })?;
+    *length =
+        cadmpeg_ir::scalar::PositiveLength::new(length.get() * scale.get()).ok_or_else(|| {
+            CodecError::Malformed("Creo scaled length must be positive and finite".into())
+        })?;
     Ok(())
 }
 
 fn scale_nonzero_length(
     length: &mut cadmpeg_ir::scalar::NonZeroLength,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale)
+    *length = cadmpeg_ir::scalar::NonZeroLength::new(length.get() * scale.get())
         .ok_or_else(|| CodecError::malformed("Creo scaled length must be finite and nonzero"))?;
     Ok(())
 }
 
 fn scale_nonnegative_length(
     length: &mut cadmpeg_ir::scalar::NonNegativeLength,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    *length =
-        cadmpeg_ir::scalar::NonNegativeLength::new(length.get() * scale).ok_or_else(|| {
-            CodecError::malformed("Creo scaled length must be nonnegative and finite")
-        })?;
+    *length = length.scaled(scale).ok_or_else(|| {
+        CodecError::malformed("Creo scaled length must be nonnegative and finite")
+    })?;
     Ok(())
 }
 
 fn scale_optional_positive_length(
     length: &mut Option<cadmpeg_ir::scalar::PositiveLength>,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let Some(length) = length {
         scale_positive_length(length, scale)?;
@@ -319,7 +313,7 @@ fn scale_optional_positive_length(
 
 fn scale_optional_length(
     length: &mut Option<Length>,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let Some(length) = length.as_mut() {
         scale_length(length, scale)?;
@@ -329,7 +323,7 @@ fn scale_optional_length(
 
 fn scale_datum_plane_reference(
     reference: &mut cadmpeg_ir::features::DatumPlaneReference,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } = reference {
         let mut origin = frame.origin().get();
@@ -344,7 +338,7 @@ fn scale_datum_plane_reference(
 
 fn scale_datum_point_construction(
     construction: &mut cadmpeg_ir::features::DatumPointConstruction,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     match construction {
         cadmpeg_ir::features::DatumPointConstruction::ThreePlaneIntersection { planes } => {
@@ -366,7 +360,7 @@ fn scale_datum_point_construction(
 
 fn scale_feature_definition(
     definition: &mut FeatureDefinition,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match definition {
         FeatureDefinition::PostProcess {
@@ -383,7 +377,7 @@ fn scale_feature_definition(
 
 fn scale_feature_operation(
     definition: &mut FeatureOperation,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match definition {
         FeatureOperation::CosmeticThread {
@@ -481,19 +475,16 @@ fn scale_feature_operation(
             );
         }
         FeatureOperation::EllipticArc { arc } => {
-            let mut center = arc.center().get();
-            let mut radii = arc.radii();
-            scale_point3(&mut center, scale);
-            for radius in &mut radii {
-                scale_positive_length(radius, scale)?;
-            }
-            *arc = cadmpeg_ir::features::FinitePoint3::new(center)
-                .and_then(|center| arc.with_center_and_radii(center, radii))
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "Creo scaled elliptic arc must have finite ordered geometry".into(),
-                    )
-                })?;
+            let center = arc.center().scaled(scale);
+            let scaled = arc.with_scaled_radii(scale).ok_or_else(|| {
+                CodecError::Malformed("Creo scaled length must be positive and finite".into())
+            })?;
+            let center = center.ok_or_else(|| {
+                CodecError::Malformed(
+                    "Creo scaled elliptic arc must have finite ordered geometry".into(),
+                )
+            })?;
+            *arc = scaled.with_center(center);
         }
         FeatureOperation::Polyline { chain } => {
             let points = chain
@@ -713,7 +704,7 @@ fn scale_feature_operation(
             rotation,
             ..
         } => {
-            *translation = cadmpeg_ir::features::FiniteVector3::new(translation.scale(scale))
+            *translation = cadmpeg_ir::features::FiniteVector3::new(translation.scale(scale.get()))
                 .ok_or_else(|| {
                     CodecError::Malformed("Creo scaled body translation must be finite".into())
                 })?;
@@ -737,16 +728,7 @@ fn scale_feature_operation(
             for placement in placements.iter_mut().flatten() {
                 scale_hole_placement(placement, scale)?;
             }
-            let mut construction = shape.construction().clone();
-            let mut exit_kind = *shape.exit_kind();
-            let mut diameter = shape.diameter();
-            scale_hole_construction(&mut construction, scale)?;
-            if let Some(exit_kind) = &mut exit_kind {
-                scale_hole_kind(exit_kind, scale)?;
-            }
-            scale_optional_positive_length(&mut diameter, scale)?;
-            *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
-                .map_err(CodecError::malformed)?;
+            scale_hole_shape(shape, scale)?;
             if let Some(extent) = extent {
                 scale_linear_termination(extent, scale)?;
             }
@@ -759,7 +741,7 @@ fn scale_feature_operation(
 
 fn scale_fuzzy_tolerance(
     tolerance: &mut cadmpeg_ir::features::FuzzyTolerance,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     if let cadmpeg_ir::features::FuzzyTolerance::Explicit(value) = tolerance {
         scale_positive_length(value, scale)?;
@@ -769,90 +751,18 @@ fn scale_fuzzy_tolerance(
 
 fn scale_primitive_solid(
     solid: &mut cadmpeg_ir::features::PrimitiveSolid,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{PrimitiveSolid, PrimitiveSolidKind};
-
-    let mut candidate = solid.kind().clone();
-
-    match &mut candidate {
-        PrimitiveSolidKind::Box {
-            length,
-            width,
-            height,
-        } => {
-            scale_length(length, scale)?;
-            scale_length(width, scale)?;
-            scale_length(height, scale)?;
-        }
-        PrimitiveSolidKind::Cylinder { radius, height, .. } => {
-            scale_length(radius, scale)?;
-            scale_length(height, scale)?;
-        }
-        PrimitiveSolidKind::Cone {
-            radius1,
-            radius2,
-            height,
-            ..
-        } => {
-            scale_length(radius1, scale)?;
-            scale_length(radius2, scale)?;
-            scale_length(height, scale)?;
-        }
-        PrimitiveSolidKind::Sphere { radius, .. } => scale_length(radius, scale)?,
-        PrimitiveSolidKind::Ellipsoid {
-            x_radius,
-            y_radius,
-            z_radius,
-            ..
-        } => {
-            scale_length(x_radius, scale)?;
-            scale_length(y_radius, scale)?;
-            scale_length(z_radius, scale)?;
-        }
-        PrimitiveSolidKind::Torus {
-            major_radius,
-            minor_radius,
-            ..
-        } => {
-            scale_length(major_radius, scale)?;
-            scale_length(minor_radius, scale)?;
-        }
-        PrimitiveSolidKind::Prism {
-            circumradius,
-            height,
-            ..
-        } => {
-            scale_length(circumradius, scale)?;
-            scale_length(height, scale)?;
-        }
-        PrimitiveSolidKind::Wedge {
-            xmin,
-            ymin,
-            zmin,
-            x2min,
-            z2min,
-            xmax,
-            ymax,
-            zmax,
-            x2max,
-            z2max,
-        } => {
-            for length in [
-                xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max,
-            ] {
-                scale_length(length, scale)?;
-            }
-        }
-    }
-    *solid =
-        PrimitiveSolid::new(candidate).map_err(|message| CodecError::Malformed(message.into()))?;
+    *solid = solid
+        .scaled(scale)
+        .ok_or_else(|| CodecError::Malformed("Creo scaled length must be finite".into()))?
+        .map_err(|message| CodecError::Malformed(message.into()))?;
     Ok(())
 }
 
 fn scale_sweep_section(
     section: &mut cadmpeg_ir::features::GeneratedSweepSection,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region } = section;
     let mut outer_radius = region.outer_radius();
@@ -866,7 +776,7 @@ fn scale_sweep_section(
 
 fn scale_unit_plane_frame(
     frame: &mut cadmpeg_ir::features::FeatureUnitPlaneFrame,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     let mut origin = frame.origin().get();
     scale_point3(&mut origin, scale);
@@ -879,7 +789,7 @@ fn scale_unit_plane_frame(
 
 fn scale_coil_construction(
     construction: &mut cadmpeg_ir::features::CoilConstruction,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let cadmpeg_ir::features::CoilPlacement::Explicit { frame } = &mut construction.placement {
         scale_unit_plane_frame(frame, scale)?;
@@ -913,7 +823,7 @@ fn scale_coil_construction(
 
 fn scale_extrude_start(
     start: &mut cadmpeg_ir::features::ExtrudeStart,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ExtrudeStart;
 
@@ -927,7 +837,7 @@ fn scale_extrude_start(
 
 fn scale_extrude_side(
     side: &mut cadmpeg_ir::features::ExtrudeSide,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     scale_linear_termination(&mut side.termination, scale)?;
     Ok(())
@@ -935,7 +845,7 @@ fn scale_extrude_side(
 
 fn scale_extrude_extent(
     extent: &mut cadmpeg_ir::features::ExtrudeExtent,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::ExtrudeExtent;
 
@@ -953,7 +863,7 @@ fn scale_extrude_extent(
 
 fn scale_revolve_extent(
     extent: &mut cadmpeg_ir::features::RevolveExtent,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::RevolveExtent;
 
@@ -971,7 +881,7 @@ fn scale_revolve_extent(
 
 fn scale_linear_termination(
     termination: &mut cadmpeg_ir::features::LinearTermination,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::LinearTermination;
 
@@ -992,7 +902,7 @@ fn scale_linear_termination(
 
 fn scale_angular_termination(
     termination: &mut cadmpeg_ir::features::AngularTermination,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::AngularTermination;
 
@@ -1013,7 +923,7 @@ fn scale_angular_termination(
 
 fn scale_sheet_metal_flange_height(
     height: &mut cadmpeg_ir::features::SheetMetalFlangeHeight,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::SheetMetalFlangeHeight;
 
@@ -1026,7 +936,7 @@ fn scale_sheet_metal_flange_height(
 
 fn scale_sheet_metal_flange_width(
     width: &mut cadmpeg_ir::features::SheetMetalFlangeWidth,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::SheetMetalFlangeWidth;
 
@@ -1049,7 +959,7 @@ fn scale_sheet_metal_flange_width(
 
 fn scale_sheet_metal_hem_form(
     form: &mut cadmpeg_ir::features::SheetMetalHemForm,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::SheetMetalHemForm;
 
@@ -1076,7 +986,7 @@ fn scale_sheet_metal_hem_form(
 
 fn scale_radius_spec(
     radius: &mut cadmpeg_ir::features::edge_treatments::RadiusSpec,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 
@@ -1093,24 +1003,12 @@ fn scale_radius_spec(
             scale_positive_length(offset_two, scale)?;
         }
         RadiusSpec::Variable { points } => {
-            // `scale` is finite and positive, so a scaled nonnegative radius
-            // stays nonnegative and is refused only when it is not finite.
-            let scaled = points
-                .as_slice()
-                .iter()
-                .map(|point| {
-                    Ok(cadmpeg_ir::features::edge_treatments::VariableRadius {
-                        parameter: point.parameter,
-                        radius: cadmpeg_ir::scalar::NonNegativeLength::new(
-                            point.radius.get() * scale,
-                        )
-                        .ok_or_else(|| {
-                            CodecError::Malformed("Creo scaled length must be finite".into())
-                        })?,
+            *points = points
+                .try_map_radii(|radius| {
+                    radius.scaled(scale).ok_or_else(|| {
+                        CodecError::Malformed("Creo scaled length must be finite".into())
                     })
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
-            *points = cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(scaled)
+                })?
                 .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         RadiusSpec::Unresolved { .. } => {}
@@ -1120,7 +1018,7 @@ fn scale_radius_spec(
 
 fn scale_chamfer_spec(
     spec: &mut cadmpeg_ir::features::edge_treatments::ChamferSpec,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::edge_treatments::ChamferSpec;
 
@@ -1139,7 +1037,7 @@ fn scale_chamfer_spec(
 
 fn scale_ruled_surface_mode(
     mode: &mut cadmpeg_ir::features::RuledSurfaceMode,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::RuledSurfaceMode;
 
@@ -1153,7 +1051,7 @@ fn scale_ruled_surface_mode(
 
 fn scale_face_motion(
     motion: &mut cadmpeg_ir::features::FaceMotion,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match motion {
         cadmpeg_ir::features::FaceMotion::Offset { distance }
@@ -1169,7 +1067,7 @@ fn scale_face_motion(
 
 fn scale_flex_mode(
     mode: &mut cadmpeg_ir::features::FlexMode,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FlexMode;
 
@@ -1183,7 +1081,7 @@ fn scale_flex_mode(
 
 fn scale_hole_placement(
     placement: &mut cadmpeg_ir::features::holes::HolePlacement,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     match placement {
         cadmpeg_ir::features::holes::HolePlacement::Directed { position, .. }
@@ -1193,9 +1091,29 @@ fn scale_hole_placement(
     }
 }
 
+/// Scale the bore and treatment dimensions of a hole. The treatment
+/// diameters exceed the bore diameter strictly, and two scaled diameters can
+/// round to one value, so the relation is admitted again.
+fn scale_hole_shape(
+    shape: &mut cadmpeg_ir::features::holes::HoleShape,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    let mut construction = shape.construction().clone();
+    let mut exit_kind = *shape.exit_kind();
+    let mut diameter = shape.diameter();
+    scale_hole_construction(&mut construction, scale)?;
+    if let Some(exit_kind) = &mut exit_kind {
+        scale_hole_kind(exit_kind, scale)?;
+    }
+    scale_optional_positive_length(&mut diameter, scale)?;
+    *shape = cadmpeg_ir::features::holes::HoleShape::new(construction, exit_kind, diameter)
+        .map_err(CodecError::malformed)?;
+    Ok(())
+}
+
 fn scale_hole_kind(
     kind: &mut cadmpeg_ir::features::holes::HoleKind,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::holes::HoleKind;
 
@@ -1243,7 +1161,7 @@ fn scale_hole_kind(
 
 fn scale_hole_construction(
     construction: &mut cadmpeg_ir::features::holes::HoleConstruction,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     match construction {
         cadmpeg_ir::features::holes::HoleConstruction::Form {
@@ -1271,7 +1189,7 @@ fn scale_hole_construction(
 
 fn scale_hole_specification(
     specification: &mut cadmpeg_ir::features::holes::HoleSpecification,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let (pitch, major_diameter, clearance, depth) = match specification {
         cadmpeg_ir::features::holes::HoleSpecification::Clearance {
@@ -1300,7 +1218,7 @@ fn scale_hole_specification(
 
 fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone>(
     pattern: &mut cadmpeg_ir::features::patterns::PatternKind<C>,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::patterns::PatternTransform;
 
@@ -1348,243 +1266,40 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
     Ok(())
 }
 
-fn scale_finite_point(point: FinitePoint3, scale: f64) -> Option<FinitePoint3> {
-    let mut point = point.get();
-    scale_point3(&mut point, scale);
-    FinitePoint3::new(point)
-}
-
 fn scale_surface_geometry(
     geometry: &mut SolvedSurfaceGeometry,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
-    match geometry {
-        SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = scale_finite_point(plane_surface.origin(), scale)
-                .ok_or_else(|| CodecError::malformed("PlaneSurface.origin must be finite"))?;
-            *plane_surface =
-                cadmpeg_ir::geometry::analytic::PlaneSurface::new(origin, *plane_surface.frame());
-        }
-        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let radius = cylinder_surface.radius().get();
-            let origin = scale_finite_point(cylinder_surface.origin(), scale)
-                .ok_or_else(|| CodecError::malformed("CylinderSurface.origin must be finite"))?;
-            let radius = PositiveLength::new(radius * scale).ok_or_else(|| {
-                CodecError::malformed("CylinderSurface.radius must be positive and finite")
-            })?;
-            *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
-                origin,
-                *cylinder_surface.frame(),
-                radius,
-            );
-        }
-        SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let radius = cone_surface.radius().get();
-            let origin = scale_finite_point(cone_surface.origin(), scale)
-                .ok_or_else(|| CodecError::malformed("ConeSurface.origin must be finite"))?;
-            let radius = NonNegativeLength::new(radius * scale).ok_or_else(|| {
-                CodecError::malformed("ConeSurface.radius must be nonnegative and finite")
-            })?;
-            *cone_surface = cadmpeg_ir::geometry::analytic::ConeSurface::new(
-                origin,
-                *cone_surface.frame(),
-                radius,
-                cone_surface.ratio(),
-                cone_surface.half_angle(),
-            );
-        }
-        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let radius = sphere_surface.radius().get();
-            let center = scale_finite_point(sphere_surface.center(), scale)
-                .ok_or_else(|| CodecError::malformed("SphereSurface.center must be finite"))?;
-            let radius = NonZeroLength::new(radius * scale).ok_or_else(|| {
-                CodecError::malformed("SphereSurface.radius must be finite and nonzero")
-            })?;
-            *sphere_surface = cadmpeg_ir::geometry::analytic::SphereSurface::new(
-                center,
-                *sphere_surface.frame(),
-                radius,
-            );
-        }
-        SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            let center = scale_finite_point(torus_surface.center(), scale)
-                .ok_or_else(|| CodecError::malformed("TorusSurface.center must be finite"))?;
-            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
-                CodecError::malformed("TorusSurface.major_radius must be positive and finite")
-            })?;
-            let minor_radius = NonZeroLength::new(minor_radius * scale).ok_or_else(|| {
-                CodecError::malformed("TorusSurface.minor_radius must be finite and nonzero")
-            })?;
-            *torus_surface = cadmpeg_ir::geometry::analytic::TorusSurface::new(
-                center,
-                *torus_surface.frame(),
-                major_radius,
-                minor_radius,
-            );
-        }
-        SolvedSurfaceGeometry::Nurbs(surface) => {
-            surface
-                .edit_control_points(|point| {
-                    scale_point3(point, scale);
-                    Ok(())
-                })
-                .map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "Creo surface unit normalization produced invalid NURBS control points: {error}"
-                    ))
-                })?;
-        }
-        SolvedSurfaceGeometry::Polygonal(surface) => {
-            let mut scaled = surface.clone();
-            scaled
-                .edit_vertices(|points| {
-                    for point in points {
-                        scale_point3(point, scale);
-                    }
-                    Ok(())
-                })
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            scaled
-                .set_chordal_deflection(scaled.chordal_deflection().get() * scale)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            *surface = scaled;
-        }
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            let mut basis = placed.basis().clone();
-            scale_surface_geometry(&mut basis, scale)?;
-            let mut transform = *placed.transform();
-            scale_transform_translation(&mut transform, scale)?;
-            *placed = cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), transform)
-                .map_err(CodecError::malformed)?;
-        }
-        SolvedSurfaceGeometry::Unknown { .. } => {}
-    }
+    *geometry = geometry
+        .scaled(scale)
+        .map_err(|refusal| scale_refusal(refusal, "surface", scale))?;
     Ok(())
 }
 
-fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Result<(), CodecError> {
-    match geometry {
-        SolvedCurveGeometry::Line(line_curve) => {
-            let origin = line_curve.origin().get();
-            let direction = line_curve.direction();
-            let origin = FinitePoint3::new(Point3::new(
-                origin.x * scale,
-                origin.y * scale,
-                origin.z * scale,
-            ))
-            .ok_or_else(|| CodecError::malformed("scaled LineCurve.origin must be finite"))?;
-            *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
-        }
-        SolvedCurveGeometry::Circle(circle_curve) => {
-            let radius = circle_curve.radius().get();
-            let center = scale_finite_point(circle_curve.center(), scale)
-                .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
-            let radius = PositiveLength::new(radius * scale).ok_or_else(|| {
-                CodecError::malformed("CircleCurve.radius must be positive and finite")
-            })?;
-            *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                center,
-                *circle_curve.frame(),
-                radius,
-            );
-        }
-        SolvedCurveGeometry::Ellipse(ellipse_curve) => {
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            let center = scale_finite_point(ellipse_curve.center(), scale)
-                .ok_or_else(|| CodecError::malformed("EllipseCurve.center must be finite"))?;
-            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
-                CodecError::malformed("EllipseCurve.major_radius must be positive and finite")
-            })?;
-            let minor_radius = PositiveLength::new(minor_radius * scale).ok_or_else(|| {
-                CodecError::malformed("EllipseCurve.minor_radius must be positive and finite")
-            })?;
-            *ellipse_curve = cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-                center,
-                *ellipse_curve.frame(),
-                major_radius,
-                minor_radius,
-            )
-            .map_err(CodecError::malformed)?;
-        }
-        SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let focal_distance = parabola_curve.focal_distance().get();
-            let vertex = scale_finite_point(parabola_curve.vertex(), scale)
-                .ok_or_else(|| CodecError::malformed("ParabolaCurve.vertex must be finite"))?;
-            let focal_distance = PositiveLength::new(focal_distance * scale).ok_or_else(|| {
-                CodecError::malformed("ParabolaCurve.focal_distance must be positive and finite")
-            })?;
-            *parabola_curve = cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
-                vertex,
-                *parabola_curve.frame(),
-                focal_distance,
-            );
-        }
-        SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
-            let major_radius = hyperbola_curve.major_radius().get();
-            let minor_radius = hyperbola_curve.minor_radius().get();
-            let center = scale_finite_point(hyperbola_curve.center(), scale)
-                .ok_or_else(|| CodecError::malformed("HyperbolaCurve.center must be finite"))?;
-            let major_radius = PositiveLength::new(major_radius * scale).ok_or_else(|| {
-                CodecError::malformed("HyperbolaCurve.major_radius must be positive and finite")
-            })?;
-            let minor_radius = PositiveLength::new(minor_radius * scale).ok_or_else(|| {
-                CodecError::malformed("HyperbolaCurve.minor_radius must be positive and finite")
-            })?;
-            *hyperbola_curve = cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
-                center,
-                *hyperbola_curve.frame(),
-                major_radius,
-                minor_radius,
-            );
-        }
-        SolvedCurveGeometry::Degenerate(degenerate_curve) => {
-            let point = degenerate_curve.point().get();
-            *degenerate_curve = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
-                Point3::new(point.x * scale, point.y * scale, point.z * scale),
-            )
-            .map_err(CodecError::malformed)?;
-        }
-        SolvedCurveGeometry::Nurbs(curve) => {
-            curve
-                .edit_control_points(|point| {
-                    scale_point3(point, scale);
-                    Ok(())
-                })
-                .map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "Creo curve unit normalization produced invalid NURBS control points: {error}"
-                    ))
-                })?;
-        }
-        SolvedCurveGeometry::Polyline(polyline) => {
-            let mut scaled = polyline.clone();
-            scaled
-                .edit_samples(|samples| {
-                    samples.edit_points(|point| {
-                        scale_point3(point, scale);
-                        Ok(())
-                    })
-                })
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            scaled
-                .set_chordal_deflection(scaled.chordal_deflection().get() * scale)
-                .map_err(|error| CodecError::malformed(error.to_string()))?;
-            *polyline = scaled;
-        }
-        SolvedCurveGeometry::Transformed(placed) => {
-            let mut basis = placed.basis().clone();
-            scale_curve_geometry(&mut basis, scale)?;
-            let mut transform = *placed.transform();
-            scale_transform_translation(&mut transform, scale)?;
-            *placed = cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(basis), transform)
-                .map_err(CodecError::malformed)?;
-        }
-        SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => {}
-    }
+fn scale_curve_geometry(
+    geometry: &mut SolvedCurveGeometry,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    *geometry = geometry
+        .scaled(scale)
+        .map_err(|refusal| scale_refusal(refusal, "curve", scale))?;
     Ok(())
+}
+
+/// The codec error for a solved carrier's refusal of the unit scaling.
+/// `carrier` names the carrier family in a control-point refusal.
+fn scale_refusal(refusal: ScaleRefusal, carrier: &str, scale: PositiveReal) -> CodecError {
+    match refusal {
+        ScaleRefusal::Field(message) => CodecError::malformed(message),
+        ScaleRefusal::ControlPoints(error) => CodecError::malformed(format_args!(
+            "Creo {carrier} unit normalization produced invalid NURBS control points: {error}"
+        )),
+        ScaleRefusal::Samples(error) => CodecError::malformed(error),
+        ScaleRefusal::Translation => CodecError::malformed(format_args!(
+            "Creo length scale {} drives a transform translation the carrier refuses",
+            scale.get()
+        )),
+    }
 }
 
 /// Refusal of a scaled revolution-axis origin that is not finite. The text is
@@ -1616,25 +1331,27 @@ const SCALED_SUM_BASEPOINT_REFUSAL: cadmpeg_ir::geometry::ProceduralGeometryErro
 trait ScaleProceduralLengths {
     fn scale_lengths(
         &mut self,
-        scale: f64,
+        scale: PositiveReal,
     ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError>;
 }
 
 impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
     fn scale_lengths(
         &mut self,
-        scale: f64,
+        scale: PositiveReal,
     ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
         use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
         match self {
             ProceduralSurfaceDefinition::Extrusion(payload) => {
-                let direction = FiniteVector3::new(payload.direction().scale(scale))
+                let direction = FiniteVector3::new(payload.direction().scale(scale.get()))
                     .ok_or(SCALED_EXTRUSION_DIRECTION_REFUSAL)?;
                 let native_position = payload
                     .native_position()
                     .map(|position| {
-                        scale_finite_point(position, scale).ok_or(SCALED_EXTRUSION_POSITION_REFUSAL)
+                        position
+                            .scaled(scale)
+                            .ok_or(SCALED_EXTRUSION_POSITION_REFUSAL)
                     })
                     .transpose()?;
                 payload.set_direction(direction);
@@ -1667,7 +1384,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
             }
             ProceduralSurfaceDefinition::Sum(payload) => {
                 payload.set_basepoint(
-                    FiniteVector3::new(payload.basepoint().scale(scale))
+                    FiniteVector3::new(payload.basepoint().scale(scale.get()))
                         .ok_or(SCALED_SUM_BASEPOINT_REFUSAL)?,
                 );
             }
@@ -1680,32 +1397,38 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
 impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition {
     fn scale_lengths(
         &mut self,
-        scale: f64,
+        scale: PositiveReal,
     ) -> Result<(), cadmpeg_ir::geometry::ProceduralGeometryError> {
         if let Self::Helix(helix) = self {
             helix
-                .try_scale_lengths(scale)
+                .try_scale_lengths(scale.get())
                 .map_err(cadmpeg_ir::geometry::ProceduralGeometryError::Payload)?;
         }
         Ok(())
     }
 }
 
-fn curve_parameter_scale(geometry: &SolvedCurveGeometry, length_scale_mm: f64) -> Option<f64> {
+/// The scale of a curve's parameter under the unit scaling. A line is
+/// parameterized by length. A conic's parameter is dimensionless, so the
+/// scaling keeps it, and the other carriers state no parameter scale.
+fn curve_parameter_scale(
+    geometry: &SolvedCurveGeometry,
+    length_scale_mm: PositiveReal,
+) -> Option<PositiveReal> {
     match geometry {
         SolvedCurveGeometry::Line(_) => Some(length_scale_mm),
-        SolvedCurveGeometry::Circle(_) => Some(1.0),
-        SolvedCurveGeometry::Ellipse(_) => Some(1.0),
-        SolvedCurveGeometry::Parabola(_) => Some(1.0),
-        SolvedCurveGeometry::Hyperbola(_) => Some(1.0),
         SolvedCurveGeometry::Transformed(placed) => {
             curve_parameter_scale(placed.basis(), length_scale_mm)
         }
-        SolvedCurveGeometry::Nurbs { .. } => None,
-        SolvedCurveGeometry::Degenerate(_) => None,
-        SolvedCurveGeometry::Composite { .. } => None,
-        SolvedCurveGeometry::Polyline(_) => None,
-        SolvedCurveGeometry::Unknown { .. } => None,
+        SolvedCurveGeometry::Circle(_)
+        | SolvedCurveGeometry::Ellipse(_)
+        | SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Nurbs { .. }
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Polyline(_)
+        | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -1808,7 +1531,10 @@ fn observe_pcurve_scale(
     }
 }
 
-fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<(), CodecError> {
+fn scale_sketch_geometry(
+    geometry: &mut SketchGeometry,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
     let mut definition = geometry.definition().to_raw();
     match &mut definition {
         SketchGeometryDefinition::Point { position } => scale_point2(position, scale),
@@ -1851,7 +1577,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
             scale_length(focal_length, scale)?;
             if let Some(bounds) = bounds {
                 for parameter in bounds {
-                    *parameter *= scale;
+                    *parameter *= scale.get();
                 }
             }
         }
@@ -1886,7 +1612,7 @@ fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<()
 
 fn scale_spatial_sketch_geometry(
     geometry: &mut SpatialSketchGeometry,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), CodecError> {
     let mut definition = geometry.definition().to_raw();
     match &mut definition {
@@ -1934,7 +1660,7 @@ fn scale_spatial_sketch_geometry(
 
 fn scale_sketch_constraint_definition(
     definition: &mut cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 
@@ -1961,7 +1687,7 @@ fn scale_sketch_constraint_definition(
 
 fn scale_spatial_sketch_constraint_definition(
     definition: &mut cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Offset {
         distance, ..
@@ -1986,7 +1712,8 @@ mod tests {
             bounds: Some([1., 2.]),
         })
         .expect("valid finite regression fixture");
-        super::scale_sketch_geometry(&mut geometry, 10.).expect("valid finite regression fixture");
+        super::scale_sketch_geometry(&mut geometry, positive(10.))
+            .expect("valid finite regression fixture");
         assert!(
             matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)
         );
@@ -2009,6 +1736,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     const EPS_UNIT_SCALE: f64 = f64::EPSILON * 4096.0;
+
+    fn positive(scale: f64) -> cadmpeg_ir::scalar::PositiveReal {
+        cadmpeg_ir::scalar::PositiveReal::new(scale).expect("a positive scale fixture")
+    }
 
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternScaleCenter, PatternTransform},
@@ -2213,7 +1944,7 @@ mod tests {
             .expect("valid direction fixture"),
             distance: Length::new(2.0).expect("finite length fixture"),
         };
-        scale_face_motion(&mut translate, 25.4).expect("valid test fixture");
+        scale_face_motion(&mut translate, positive(25.4)).expect("valid test fixture");
         let FaceMotion::Translate {
             direction,
             distance,
@@ -2233,7 +1964,7 @@ mod tests {
             .expect("valid direction fixture"),
             angle: cadmpeg_ir::scalar::Angle::new(0.5).expect("finite angle fixture"),
         };
-        scale_face_motion(&mut rotate, 25.4).expect("valid test fixture");
+        scale_face_motion(&mut rotate, positive(25.4)).expect("valid test fixture");
         let FaceMotion::Rotate {
             axis_origin,
             axis_dir,
@@ -2261,7 +1992,7 @@ mod tests {
             },
         )
         .expect("valid test fixture");
-        scale_pattern_kind(&mut pattern, 25.4).expect("valid test fixture");
+        scale_pattern_kind(&mut pattern, positive(25.4)).expect("valid test fixture");
         let PatternTransform::Scale {
             center,
             final_factor,
@@ -2291,7 +2022,7 @@ mod tests {
             ),
         };
 
-        scale_feature_definition(&mut definition, 25.4).expect("valid test fixture");
+        scale_feature_definition(&mut definition, positive(25.4)).expect("valid test fixture");
 
         let FeatureDefinition::PostProcess {
             fuzzy_tolerance, ..
@@ -2568,11 +2299,11 @@ mod tests {
         let SurfaceGeometry::Solved(surface_solved) = &mut surface else {
             panic!("test surface changed family");
         };
-        scale_surface_geometry(surface_solved, 25.4).expect("finite surface scaling");
+        scale_surface_geometry(surface_solved, positive(25.4)).expect("finite surface scaling");
         let CurveGeometry::Solved(curve_solved) = &mut curve else {
             panic!("test curve changed family");
         };
-        scale_curve_geometry(curve_solved, 25.4).expect("finite curve scaling");
+        scale_curve_geometry(curve_solved, positive(25.4)).expect("finite curve scaling");
 
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface
         else {
@@ -2614,5 +2345,189 @@ mod tests {
         assert_close(actual.x, expected[0]);
         assert_close(actual.y, expected[1]);
         assert_close(actual.z, expected[2]);
+    }
+
+    fn positive_length(value: f64) -> cadmpeg_ir::scalar::PositiveLength {
+        cadmpeg_ir::scalar::PositiveLength::new(value).expect("a positive length fixture")
+    }
+
+    /// 1.9 and its successor, which both scale to 48.26 at the inch scale.
+    fn collapsing_pair() -> [f64; 2] {
+        let low = 1.9;
+        [low, f64::from_bits(low.to_bits() + 1)]
+    }
+
+    fn elliptic_arc(center: Point3, radii: [f64; 2]) -> FeatureDefinition {
+        FeatureDefinition::Operation(FeatureOperation::EllipticArc {
+            arc: cadmpeg_ir::features::FeatureEllipticArc::new(
+                center,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                radii.map(positive_length),
+                cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, 1.0])
+                    .expect("a nonzero interval"),
+            )
+            .expect("an ordered arc fixture"),
+        })
+    }
+
+    /// The radius order of an elliptic arc is not strict, so radii that
+    /// round to one value stay admitted; a radius is refused before the
+    /// center, each with its own text.
+    #[test]
+    fn an_elliptic_arc_keeps_radii_that_round_to_one_value() {
+        let [low, high] = collapsing_pair();
+        let mut definition = elliptic_arc(Point3::new(1.0, 2.0, 3.0), [high, low]);
+        scale_feature_definition(&mut definition, positive(25.4)).expect("ordered radii");
+        let FeatureDefinition::Operation(FeatureOperation::EllipticArc { arc }) = definition else {
+            panic!("test feature changed family");
+        };
+        assert_eq!(
+            arc.radii().map(cadmpeg_ir::scalar::PositiveLength::get),
+            [48.26, 48.26]
+        );
+        assert_point3(arc.center().get(), [25.4, 50.8, 76.2]);
+
+        let far = Point3::new(f64::MAX, 0.0, 0.0);
+        for (definition, text) in [
+            (
+                elliptic_arc(far, [f64::MAX, 1.0]),
+                "Creo scaled length must be positive and finite",
+            ),
+            (
+                elliptic_arc(far, [2.0, 1.0]),
+                "Creo scaled elliptic arc must have finite ordered geometry",
+            ),
+        ] {
+            let mut definition = definition;
+            let error = scale_feature_definition(&mut definition, positive(25.4))
+                .expect_err("an overflowing arc")
+                .to_string();
+            assert!(error.contains(text), "{error}");
+        }
+    }
+
+    /// A counterdrill entry diameter exceeds the bore strictly; the two can
+    /// round to one value, so the scaled pair is admitted again.
+    #[test]
+    fn a_counterdrill_whose_diameters_round_to_one_value_is_refused() {
+        let [low, high] = collapsing_pair();
+        let mut kind = cadmpeg_ir::features::holes::HoleKind::Counterdrill {
+            diameters: cadmpeg_ir::features::holes::CounterdrillDiameters::new(
+                positive_length(low),
+                Some(positive_length(high)),
+            )
+            .expect("an entry above the bore"),
+            depth: positive_length(1.0),
+            angle: cadmpeg_ir::scalar::InteriorAngle::new(1.0).expect("an interior angle"),
+        };
+        let error = super::scale_hole_kind(&mut kind, positive(25.4))
+            .expect_err("the diameters collapse")
+            .to_string();
+        assert!(
+            error.contains("entry_diameter must exceed diameter"),
+            "{error}"
+        );
+    }
+
+    /// A counterbore diameter exceeds the bore strictly; the two can round to
+    /// one value, so the scaled hole shape is admitted again.
+    #[test]
+    fn a_hole_whose_treatment_rounds_onto_its_bore_is_refused() {
+        let [low, high] = collapsing_pair();
+        let mut shape = cadmpeg_ir::features::holes::HoleShape::new(
+            cadmpeg_ir::features::holes::HoleConstruction::Form {
+                kind: cadmpeg_ir::features::holes::HoleKind::Counterbore {
+                    diameter: positive_length(high),
+                    depth: positive_length(1.0),
+                },
+                specification: None,
+            },
+            None,
+            Some(positive_length(low)),
+        )
+        .expect("a counterbore above the bore");
+        let error = super::scale_hole_shape(&mut shape, positive(25.4))
+            .expect_err("the diameters collapse")
+            .to_string();
+        assert!(
+            error.contains("treatment diameters must exceed the bore diameter"),
+            "{error}"
+        );
+    }
+
+    /// A sweep wall is strictly thinner than the outer radius; the two can
+    /// round to one value, so the scaled region is admitted again.
+    #[test]
+    fn a_sweep_wall_that_rounds_onto_its_radius_is_refused() {
+        let [low, high] = collapsing_pair();
+        let mut section = cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
+            region: cadmpeg_ir::features::SweepCircularRegion::new(
+                positive_length(high),
+                Some(positive_length(low)),
+            )
+            .expect("a wall below the radius"),
+        };
+        let error = super::scale_sweep_section(&mut section, positive(25.4))
+            .expect_err("the wall collapses")
+            .to_string();
+        assert!(
+            error.contains("wall_thickness must be less than outer_radius"),
+            "{error}"
+        );
+    }
+
+    /// Pattern offsets increase strictly; two can round to one value, so the
+    /// scaled offsets are admitted again.
+    #[test]
+    fn pattern_offsets_that_round_to_one_value_are_refused() {
+        let [low, high] = collapsing_pair();
+        let mut pattern = PatternKind::<cadmpeg_ir::features::patterns::CompositePattern>::new(
+            PatternTransform::LinearOffsets {
+                direction: None,
+                offsets: [0.0, low, high]
+                    .into_iter()
+                    .map(|offset| Length::new(offset).expect("a finite offset"))
+                    .collect(),
+            },
+        )
+        .expect("strictly increasing offsets");
+        let error = scale_pattern_kind(&mut pattern, positive(25.4))
+            .expect_err("the offsets collapse")
+            .to_string();
+        assert!(
+            error.contains("pattern offsets must start at zero and strictly increase"),
+            "{error}"
+        );
+    }
+
+    /// A wedge extent is strictly ordered; its bounds can round to one value,
+    /// so the scaled wedge is admitted again.
+    #[test]
+    fn a_wedge_whose_extent_rounds_to_one_value_is_refused() {
+        let [low, high] = collapsing_pair();
+        let length = |value: f64| Length::new(value).expect("a finite length");
+        let mut solid = cadmpeg_ir::features::PrimitiveSolid::new(
+            cadmpeg_ir::features::PrimitiveSolidKind::Wedge {
+                xmin: length(low),
+                ymin: length(0.0),
+                zmin: length(0.0),
+                x2min: length(0.0),
+                z2min: length(0.0),
+                xmax: length(high),
+                ymax: length(1.0),
+                zmax: length(1.0),
+                x2max: length(0.0),
+                z2max: length(0.0),
+            },
+        )
+        .expect("a wedge fixture");
+        let error = super::scale_primitive_solid(&mut solid, positive(25.4))
+            .expect_err("the extent collapses")
+            .to_string();
+        assert!(
+            error.contains("primitive dimensions are invalid"),
+            "{error}"
+        );
     }
 }

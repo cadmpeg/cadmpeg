@@ -2030,10 +2030,15 @@ impl PcurveGeometry {
                 }
                 let mut basis = offset.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Offset(OffsetPcurve::try_new(
-                    offset.distance().get() * u_scale,
+                let distance = FiniteReal::new(offset.distance().get() * u_scale)
+                    .ok_or("OffsetPcurve.distance must be finite")?;
+                // Scaling keeps every layer of the basis, so its nesting
+                // depth stays admitted.
+                Self::Offset(OffsetPcurve {
+                    distance,
                     basis,
-                )?)
+                    depth: offset.depth,
+                })
             }
             Self::Transformed(placed) => {
                 if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0
@@ -2051,7 +2056,13 @@ impl PcurveGeometry {
                     Transform2::affine(rows).ok_or("scaled pcurve transform is invalid")?;
                 let mut basis = placed.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Transformed(PlacedPcurve::try_new(basis, transform)?)
+                // Scaling keeps every layer of the basis, so its nesting
+                // depth stays admitted.
+                Self::Transformed(PlacedPcurve {
+                    basis,
+                    transform,
+                    depth: placed.depth,
+                })
             }
             Self::PolarHarmonic(_) | Self::PolarNurbs { .. } | Self::SphericalGreatCircle(_) => {
                 return if isotropic && u_scale == 1.0 {

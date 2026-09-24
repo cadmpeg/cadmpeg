@@ -1368,6 +1368,7 @@ mod local_admission;
 
 mod configurations;
 mod finite_vectors;
+mod unit_scaling;
 mod wire_forms;
 
 #[test]

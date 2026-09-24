@@ -94,8 +94,20 @@ fn a_fit_tolerance_is_finite_and_non_negative() {
     for value in [-1.0, f64::NAN, f64::INFINITY] {
         let mut surface = ProceduralSurface::new(surface_id(), definition.clone(), None);
         assert!(surface.set_cache_fit_tolerance(Some(value)).is_err());
-        assert!(surface.scale_cache_fit_tolerance(value).is_err());
     }
+    // The scale is positive by type, so a scaled tolerance is refused only
+    // when it overflows.
+    let mut surface = ProceduralSurface::new(surface_id(), law(full_tail(4.0)), None);
+    assert!(matches!(
+        surface.scale_cache_fit_tolerance(
+            crate::scalar::PositiveReal::new(f64::MAX).expect("a positive scale")
+        ),
+        Err(CacheContractError::InvalidValue { .. })
+    ));
+    assert_eq!(
+        surface.cache_fit_tolerance(),
+        Some(FitTolerance::try_new(4.0).expect("admissible fit tolerance"))
+    );
     definition
         .set_legacy_cache(Some(
             LegacyCache::try_new(0.5).expect("admissible fit tolerance"),
@@ -305,4 +317,59 @@ fn a_non_negative_real_widens_to_the_fit_tolerance_it_admits() {
 fn the_zero_fit_tolerance_is_the_admitted_literal() {
     assert_eq!(FitTolerance::try_new(0.0), Ok(FitTolerance::ZERO));
     assert_eq!(FitTolerance::ZERO.get().to_bits(), 0.0_f64.to_bits());
+}
+
+/// A positive scale keeps a fit tolerance non-negative, so a scaled
+/// tolerance is refused only when it overflows; the cache contract that
+/// states it keeps its layout.
+#[test]
+fn a_scaled_fit_tolerance_is_refused_only_when_it_overflows() {
+    let scale = |value: f64| crate::scalar::PositiveReal::new(value).expect("a positive scale");
+    assert_eq!(
+        FitTolerance::ZERO.scaled(scale(1.0e-300)),
+        Some(FitTolerance::ZERO)
+    );
+    let quarter = FitTolerance::try_new(0.25).expect("admissible fit tolerance");
+    assert_eq!(
+        quarter.scaled(scale(25.4)).map(FitTolerance::get),
+        Some(0.25 * 25.4)
+    );
+    let four = FitTolerance::try_new(4.0).expect("admissible fit tolerance");
+    assert_eq!(four.scaled(scale(f64::MAX)), None);
+
+    let mut surface = ProceduralSurface::new(surface_id(), law(full_tail(0.25)), None);
+    surface
+        .scale_cache_fit_tolerance(scale(25.4))
+        .expect("a finite scaled tolerance");
+    assert_eq!(
+        surface.cache_fit_tolerance().map(FitTolerance::get),
+        Some(0.25 * 25.4)
+    );
+    let mut stateless =
+        ProceduralSurface::new(surface_id(), law(LawSurfaceTail::Historical {}), None);
+    stateless
+        .scale_cache_fit_tolerance(scale(f64::MAX))
+        .expect("no tolerance to scale");
+    assert_eq!(stateless.cache_fit_tolerance(), None);
+
+    let mut definition = ProceduralCurveDefinition::Exact { cache: None };
+    definition
+        .set_legacy_cache(LegacyCache::try_new(0.5).expect("admissible fit tolerance"))
+        .expect("an exact curve states its own cache tolerance");
+    let mut curve = ProceduralCurve::new(curve_id(), definition);
+    curve
+        .scale_cache_fit_tolerance(scale(25.4))
+        .expect("a finite scaled tolerance");
+    assert_eq!(
+        curve.cache_fit_tolerance().map(FitTolerance::get),
+        Some(0.5 * 25.4)
+    );
+    assert!(matches!(
+        curve.scale_cache_fit_tolerance(scale(f64::MAX)),
+        Err(CacheContractError::InvalidValue { .. })
+    ));
+    assert_eq!(
+        curve.cache_fit_tolerance().map(FitTolerance::get),
+        Some(0.5 * 25.4)
+    );
 }

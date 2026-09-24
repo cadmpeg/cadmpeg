@@ -970,6 +970,21 @@ impl ParameterInterval {
             Err("parameter_range must be finite and ordered")
         }
     }
+
+    /// The interval with both endpoints times `scale`.
+    ///
+    /// Rounding is monotone, so a positive scale keeps the endpoint order;
+    /// the endpoints can round to one value, which the order admits. The
+    /// interval is refused only when an endpoint overflows.
+    #[must_use]
+    pub fn scaled(self, scale: crate::scalar::PositiveReal) -> Option<Self> {
+        let endpoints = self.0.map(|value| value * scale.get());
+        endpoints
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some(Self(endpoints))
+    }
+
     /// Return the interval endpoints.
     pub const fn endpoints(self) -> [f64; 2] {
         self.0
@@ -2233,6 +2248,30 @@ mod tests {
         point.set_position(moved);
         assert_eq!(point.position(), moved);
         assert_eq!(point.position().get(), Point3::new(1.0, -2.0, 3.5));
+    }
+
+    /// A positive scale keeps the endpoint order; endpoints that round to
+    /// one value stay admitted, and only an endpoint that overflows is
+    /// refused.
+    #[test]
+    fn a_scaled_interval_keeps_its_order_and_refuses_only_overflow() {
+        use super::ParameterInterval;
+        use crate::scalar::PositiveReal;
+
+        let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
+        let low = 1.9_f64;
+        let high = f64::from_bits(low.to_bits() + 1);
+        let interval = ParameterInterval::new([low, high]).expect("an ordered interval");
+        assert_eq!(
+            interval
+                .scaled(scale(25.4))
+                .map(ParameterInterval::endpoints),
+            Some([48.26, 48.26])
+        );
+        let wide = ParameterInterval::new([-f64::MAX, 1.0]).expect("an ordered interval");
+        assert!(wide.scaled(scale(2.0)).is_none());
+        let high_end = ParameterInterval::new([0.0, f64::MAX]).expect("an ordered interval");
+        assert!(high_end.scaled(scale(2.0)).is_none());
     }
 }
 

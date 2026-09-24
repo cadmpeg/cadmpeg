@@ -438,3 +438,94 @@ fn a_positive_length_reads_as_its_magnitude_and_half_is_one_half() {
     assert_eq!(PositiveLength::new(2.5).unwrap().magnitude().get(), 2.5);
     assert_eq!(FiniteReal::HALF.get(), 0.5);
 }
+
+#[test]
+fn a_magnification_is_a_finite_scale_of_at_least_one() {
+    use crate::scalar::{Magnification, PositiveReal};
+
+    for value in [0.5, 0.0, -2.0, f64::NAN, f64::INFINITY] {
+        assert!(Magnification::new(value).is_none());
+    }
+    let one = Magnification::new(1.0).expect("one is a magnification");
+    assert_eq!(PositiveReal::from(one).get(), 1.0);
+    assert_eq!(Magnification::MILLIMETERS_PER_METER.get(), 1000.0);
+    let half = PositiveReal::new(0.5).expect("a positive fixture");
+    assert!(Magnification::try_from(half).is_err());
+}
+
+/// A positive scale keeps a nonnegative value nonnegative, a signed zero
+/// included; only a product that overflows is refused.
+#[test]
+fn scaled_nonnegative_values_are_refused_only_on_overflow() {
+    use crate::scalar::{NonNegativeLength, NonNegativeReal, PositiveReal};
+
+    let tiny = PositiveReal::new(1.0e-300).expect("a positive scale");
+    let huge = PositiveReal::new(f64::MAX).expect("a positive scale");
+    for value in [-0.0, 0.0, 5.0e-324] {
+        let length = NonNegativeLength::new(value).expect("a nonnegative fixture");
+        let scaled = length
+            .scaled(tiny)
+            .expect("a product that does not overflow");
+        assert_eq!(scaled.get().to_bits(), (value * 1.0e-300).to_bits());
+        let real = NonNegativeReal::new(value).expect("a nonnegative fixture");
+        assert_eq!(
+            real.scaled(tiny).map(|scaled| scaled.get().to_bits()),
+            Some((value * 1.0e-300).to_bits())
+        );
+    }
+    let two = NonNegativeLength::new(2.0).expect("a nonnegative fixture");
+    assert!(two.scaled(huge).is_none());
+    assert!(NonNegativeReal::new(2.0)
+        .expect("a nonnegative fixture")
+        .scaled(huge)
+        .is_none());
+}
+
+/// A factor of at least one cannot round a nonzero length to zero, the
+/// smallest subnormal included; only a product that overflows is refused.
+#[test]
+fn a_magnified_nonzero_length_is_refused_only_on_overflow() {
+    use crate::scalar::{Magnification, NonZeroLength};
+
+    let factor = Magnification::MILLIMETERS_PER_METER;
+    for value in [5.0e-324, -5.0e-324, 0.003, -0.003] {
+        let length = NonZeroLength::new(value).expect("a nonzero fixture");
+        let magnified = length.magnified(factor).expect("a nonzero finite product");
+        assert_eq!(magnified.get(), value * 1000.0);
+    }
+    let one = Magnification::new(1.0).expect("one is a magnification");
+    let smallest = NonZeroLength::new(5.0e-324).expect("a nonzero fixture");
+    assert_eq!(smallest.magnified(one), Some(smallest));
+    let large = NonZeroLength::new(-f64::MAX).expect("a nonzero fixture");
+    assert!(large.magnified(factor).is_none());
+}
+
+/// The first of two ordered values is admitted positive and finite, the
+/// second only positive; both can round to one value.
+#[test]
+fn an_ordered_pair_scales_and_refuses_the_first_failing_value() {
+    use crate::scalar::{PositiveLength, PositiveReal};
+
+    let scale = |value: f64| PositiveReal::new(value).expect("a positive scale");
+    let minor = 1.9_f64;
+    let major = f64::from_bits(minor.to_bits() + 1);
+    let pair = PositiveLength::scale_ordered_pair([major, minor], scale(25.4))
+        .expect("the pair keeps its order");
+    assert_eq!(pair.map(PositiveLength::get), [48.26, 48.26]);
+    assert_eq!(
+        PositiveLength::scale_ordered_pair([f64::MAX, 1.0], scale(2.0)),
+        Err(0)
+    );
+    assert_eq!(
+        PositiveLength::scale_ordered_pair([1.0e-320, 1.0e-320], scale(1.0e-10)),
+        Err(0)
+    );
+    assert_eq!(
+        PositiveLength::scale_ordered_pair([1.0, 1.0e-320], scale(1.0e-10)),
+        Err(1)
+    );
+    assert_eq!(
+        PositiveLength::scale_ordered_pair([1.0, f64::NEG_INFINITY], scale(2.0)),
+        Err(1)
+    );
+}
