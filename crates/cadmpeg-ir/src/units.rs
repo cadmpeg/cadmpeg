@@ -695,6 +695,12 @@ impl FinitePoint2 {
     pub const fn as_raw(&self) -> &Point2 {
         &self.0
     }
+    /// Reflect through the parameter-space origin. Negation keeps every
+    /// coordinate finite, so the result stays admitted.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Point2::new(-self.0.u, -self.0.v))
+    }
 }
 impl TryFrom<Point2> for FinitePoint2 {
     type Error = &'static str;

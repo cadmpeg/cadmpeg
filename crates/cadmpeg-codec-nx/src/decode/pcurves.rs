@@ -1000,23 +1000,9 @@ fn reverse_analytic_pcurve_over_range(
                     .ok()?,
                 ))
         }
-        PcurveGeometry::Ellipse(ellipse_pcurve) if { reflection == 0.0 } => {
-            let center = ellipse_pcurve.center();
-            let x_axis = ellipse_pcurve.x_axis();
-            let y_axis = ellipse_pcurve.y_axis();
-            let major_radius = ellipse_pcurve.major_radius();
-            let minor_radius = ellipse_pcurve.minor_radius();
-            Some(PcurveGeometry::Ellipse(
-                cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
-                    *center,
-                    *x_axis,
-                    Point2::new(-y_axis.u, -y_axis.v),
-                    major_radius,
-                    minor_radius,
-                )
-                .ok()?,
-            ))
-        }
+        PcurveGeometry::Ellipse(ellipse_pcurve) if { reflection == 0.0 } => Some(
+            PcurveGeometry::Ellipse(ellipse_pcurve.reversed_about_zero()),
+        ),
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
             let center = ellipse_pcurve.center();
             let x_axis = ellipse_pcurve.x_axis();
@@ -1039,38 +1025,12 @@ fn reverse_analytic_pcurve_over_range(
                 .ok()?,
             ))
         }
-        PcurveGeometry::Parabola(parabola_pcurve) if { reflection == 0.0 } => {
-            let vertex = parabola_pcurve.vertex();
-            let x_axis = parabola_pcurve.x_axis();
-            let y_axis = parabola_pcurve.y_axis();
-            let focal_distance = parabola_pcurve.focal_distance();
-            Some(PcurveGeometry::Parabola(
-                cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
-                    *vertex,
-                    *x_axis,
-                    Point2::new(-y_axis.u, -y_axis.v),
-                    focal_distance,
-                )
-                .ok()?,
-            ))
-        }
-        PcurveGeometry::Hyperbola(hyperbola_pcurve) if { reflection == 0.0 } => {
-            let center = hyperbola_pcurve.center();
-            let x_axis = hyperbola_pcurve.x_axis();
-            let y_axis = hyperbola_pcurve.y_axis();
-            let major_radius = hyperbola_pcurve.major_radius();
-            let minor_radius = hyperbola_pcurve.minor_radius();
-            Some(PcurveGeometry::Hyperbola(
-                cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
-                    *center,
-                    *x_axis,
-                    Point2::new(-y_axis.u, -y_axis.v),
-                    major_radius,
-                    minor_radius,
-                )
-                .ok()?,
-            ))
-        }
+        PcurveGeometry::Parabola(parabola_pcurve) if { reflection == 0.0 } => Some(
+            PcurveGeometry::Parabola(parabola_pcurve.reversed_about_zero()),
+        ),
+        PcurveGeometry::Hyperbola(hyperbola_pcurve) if { reflection == 0.0 } => Some(
+            PcurveGeometry::Hyperbola(hyperbola_pcurve.reversed_about_zero()),
+        ),
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
             let center = hyperbola_pcurve.center();
             let x_axis = hyperbola_pcurve.x_axis();

@@ -371,3 +371,36 @@ fn a_reflected_great_circle_moves_its_origin_and_negates_its_rate() {
     assert!(pcurve.reflected(f64::MAX).is_none());
     assert!(pcurve.reflected(f64::NAN).is_none());
 }
+
+#[test]
+fn a_conic_pcurve_reversed_about_zero_negates_only_its_second_axis() {
+    use crate::geometry::pcurve::{EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
+
+    let center = Point2::new(1.0, -2.0);
+    let x_axis = Point2::new(0.6, 0.8);
+    let y_axis = Point2::new(-0.8, 0.6);
+    let negated = Point2::new(0.8, -0.6);
+    assert_eq!(
+        EllipsePcurve::try_new(center, x_axis, y_axis, 3.0, 2.0)
+            .unwrap()
+            .reversed_about_zero(),
+        EllipsePcurve::try_new(center, x_axis, negated, 3.0, 2.0).unwrap()
+    );
+    assert_eq!(
+        ParabolaPcurve::try_new(center, x_axis, y_axis, 0.5)
+            .unwrap()
+            .reversed_about_zero(),
+        ParabolaPcurve::try_new(center, x_axis, negated, 0.5).unwrap()
+    );
+    assert_eq!(
+        HyperbolaPcurve::try_new(center, x_axis, y_axis, 3.0, 2.0)
+            .unwrap()
+            .reversed_about_zero(),
+        HyperbolaPcurve::try_new(center, x_axis, negated, 3.0, 2.0).unwrap()
+    );
+    let point = crate::units::FinitePoint2::new(Point2::new(-0.0, 5.0e-324)).unwrap();
+    assert_eq!(
+        [point.negated().as_raw().u, point.negated().as_raw().v].map(f64::to_bits),
+        [0.0_f64, -5.0e-324].map(f64::to_bits)
+    );
+}
