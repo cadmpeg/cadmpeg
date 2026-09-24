@@ -9,6 +9,7 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 
@@ -1138,7 +1139,7 @@ fn patch_compound_definition(
     bytes: &mut [u8],
     stream_width: RefWidth,
     record: &sab::Record,
-    parameters: &[f64],
+    parameters: &[FiniteReal],
     components: &[CompoundComponent<CurveId>],
 ) -> Result<(), CodecError> {
     let record_bytes = record_slice(bytes, record, "compound")?;
@@ -1166,7 +1167,7 @@ fn patch_compound_definition(
             .zip(
                 parameters
                     .iter()
-                    .copied()
+                    .map(|value| value.get())
                     .chain(components.iter().map(|item| item.parameter)),
             ),
     )?;

@@ -149,3 +149,30 @@ fn compound_curve_requires_components_and_finite_parameters() {
         unordered
     );
 }
+
+#[test]
+fn a_compound_curve_holds_its_admitted_parameters() {
+    use crate::geometry::CompoundCurveConstruction;
+    use crate::scalar::FiniteReal;
+
+    let construction = CompoundCurveConstruction::try_new(
+        vec![2.0, -1.0],
+        vec![CompoundComponent {
+            parameter: 0.5,
+            component: "test:model:curve#0".try_into().unwrap(),
+        }],
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        construction.parameters(),
+        [
+            FiniteReal::new(2.0).unwrap(),
+            FiniteReal::new(-1.0).unwrap()
+        ]
+    );
+    assert_eq!(
+        serde_json::to_value(&construction).unwrap()["parameters"],
+        serde_json::json!([2.0, -1.0])
+    );
+}

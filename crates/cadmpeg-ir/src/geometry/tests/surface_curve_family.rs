@@ -225,3 +225,35 @@ fn an_admitted_revision_builds_the_tail_that_the_raw_revision_admits() {
     )
     .is_err());
 }
+
+#[test]
+fn a_surface_curve_tail_holds_its_admitted_bounds() {
+    use crate::geometry::RecordBounds;
+    use crate::scalar::FiniteReal;
+
+    let tail = SurfaceCurveTail::try_new(
+        7,
+        crate::scalar::PositiveI64::new(23_100).expect("positive revision"),
+        RevisionCacheForm::Parameterization(CacheFirstCurveParameterization {
+            interval: [Some(0.0), Some(1.0)],
+            closed_form: 0,
+        }),
+        [[Some(0.5), None, None, Some(2.0)], [None; 4]],
+        [Some(-1.0), None],
+    )
+    .expect("finite surface curve tail");
+    assert_eq!(
+        *tail.support_bounds(),
+        [
+            RecordBounds::try_new([Some(0.5), None, None, Some(2.0)]).unwrap(),
+            RecordBounds::try_new([None; 4]).unwrap(),
+        ]
+    );
+    assert_eq!(*tail.solved_range(), [FiniteReal::new(-1.0), None]);
+    let wire = serde_json::to_value(&tail).expect("serialize the tail");
+    assert_eq!(
+        wire["support_bounds"],
+        serde_json::json!([[0.5, null, null, 2.0], [null, null, null, null]])
+    );
+    assert_eq!(wire["solved_range"], serde_json::json!([-1.0, null]));
+}

@@ -1187,6 +1187,10 @@ fn feature_unit_plane_and_image_bounds_reject_degenerate_geometry() {
     ] {
         let bounds = FeatureImageBounds::new(corners).unwrap();
         assert_eq!(bounds.corners(), corners);
+        assert_eq!(
+            bounds.corners(),
+            corners.map(|corner| crate::units::FinitePoint2::new(corner).unwrap())
+        );
         let wire = serde_json::to_value(corners).unwrap();
         assert_eq!(serde_json::to_value(bounds).unwrap(), wire);
         assert_eq!(

@@ -779,7 +779,13 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
     assert_eq!(tail.form.extension(), 7);
     assert!(tail.flags.flag);
     assert_eq!(tail.flags.second_flag, Some(false));
-    assert_eq!(*tail.form.solved_range(), [Some(-1.0), Some(2.0)]);
+    assert_eq!(
+        *tail.form.solved_range(),
+        [
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0),
+            cadmpeg_ir::scalar::FiniteReal::new(2.0)
+        ]
+    );
     assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
 
     let (mut source_less, _, _) = result.into_parts();

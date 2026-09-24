@@ -248,3 +248,29 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
         Some(vec![1.0, 2.0])
     );
 }
+
+#[test]
+fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{BsplineSurface, KnotVector};
+    use crate::math::Point3;
+
+    let points = vec![
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 2.0)],
+    ];
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let surface = BsplineSurface::new(1, 1, knots.clone(), knots.clone(), points.clone()).unwrap();
+    assert_eq!(surface.u_knots, KnotVector::new(knots.clone()).unwrap());
+    assert_eq!(
+        surface.control_points[1][1],
+        FinitePoint3::new(Point3::new(1.0, 1.0, 2.0)).unwrap()
+    );
+    let wire = serde_json::to_value(&surface).unwrap();
+    assert_eq!(wire["u_knots"], serde_json::json!(knots));
+    assert_eq!(wire["control_points"], serde_json::json!(points));
+    assert_eq!(
+        serde_json::from_value::<BsplineSurface>(wire).unwrap(),
+        surface
+    );
+}

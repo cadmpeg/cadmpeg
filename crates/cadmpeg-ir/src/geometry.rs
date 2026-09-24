@@ -803,7 +803,7 @@ pub struct CompoundComponent<T> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "CompoundCurveConstructionWire")]
 pub struct CompoundCurveConstruction {
-    parameters: Vec<f64>,
+    parameters: Vec<FiniteReal>,
     components: Vec<CompoundComponent<CurveId>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
@@ -841,7 +841,7 @@ impl TryFrom<CompoundCurveConstructionWire> for CompoundCurveConstruction {
 impl Serialize for CompoundCurveConstruction {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         CompoundCurveConstructionWire {
-            parameters: self.parameters.clone(),
+            parameters: self.parameters.iter().map(|value| value.get()).collect(),
             components: self.components.clone(),
             cache: self.cache,
         }
@@ -859,12 +859,10 @@ impl CompoundCurveConstruction {
         if components.is_empty() {
             return Err("compound curve components must not be empty");
         }
-        if parameters
-            .iter()
-            .chain(components.iter().map(|item| &item.parameter))
-            .any(|value| !value.is_finite())
-        {
-            return Err("compound curve parameters must be finite");
+        const INVALID: &str = "compound curve parameters must be finite";
+        let [parameters] = FiniteReal::lanes([parameters]).ok_or(INVALID)?;
+        if components.iter().any(|item| !item.parameter.is_finite()) {
+            return Err(INVALID);
         }
         Ok(Self {
             parameters,
@@ -875,7 +873,7 @@ impl CompoundCurveConstruction {
 
     /// Return the parameters.
     #[must_use]
-    pub fn parameters(&self) -> &[f64] {
+    pub fn parameters(&self) -> &[FiniteReal] {
         &self.parameters
     }
 
@@ -2497,7 +2495,7 @@ impl TryFrom<HelixCircleProfileWire> for HelixCircleProfile {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "HelixLineProfileWire")]
 pub struct HelixLineProfile {
-    direction: Vector3,
+    direction: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -2511,16 +2509,16 @@ struct HelixLineProfileWire {
 impl HelixLineProfile {
     /// Admit parameters that satisfy the helix payload contract.
     pub fn try_new(direction: Vector3) -> Result<Self, &'static str> {
-        if !direction.is_finite()
-            || (direction.x == 0.0 && direction.y == 0.0 && direction.z == 0.0)
-        {
-            return Err("helix line profile direction must be finite and non-degenerate");
+        const INVALID: &str = "helix line profile direction must be finite and non-degenerate";
+        let direction = FiniteVector3::new(direction).ok_or(INVALID)?;
+        if direction.x == 0.0 && direction.y == 0.0 && direction.z == 0.0 {
+            return Err(INVALID);
         }
         Ok(Self { direction })
     }
     /// Finite non-degenerate profile direction.
     #[must_use]
-    pub const fn direction(&self) -> Vector3 {
+    pub const fn direction(&self) -> FiniteVector3 {
         self.direction
     }
 }
@@ -2830,7 +2828,7 @@ pub struct TSplineSurfaceConstruction {
     /// Native trailing integer.
     trailing_value: i64,
     /// Six ordered solved-surface discontinuity arrays.
-    discontinuities: [Vec<f64>; 6],
+    discontinuities: [Vec<FiniteReal>; 6],
     /// Native discontinuity tail flag.
     discontinuity_flag: bool,
     /// Cache contract: the revision-gated form, or the legacy solved-cache
@@ -2860,15 +2858,9 @@ impl TSplineSurfaceConstruction {
             crate::topology::ParameterInterval::new(parameter_ranges[1])
                 .map_err(ProceduralGeometryError::Payload)?,
         ];
-        if !discontinuities
-            .iter()
-            .flatten()
-            .all(|value| value.is_finite())
-        {
-            return Err(ProceduralGeometryError::Payload(
-                "T-spline discontinuities must be finite",
-            ));
-        }
+        let discontinuities = FiniteReal::lanes(discontinuities).ok_or(
+            ProceduralGeometryError::Payload("T-spline discontinuities must be finite"),
+        )?;
         if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
             return Err(ProceduralGeometryError::Payload(
                 "T-spline revision cache form is invalid",
@@ -2906,7 +2898,7 @@ impl TSplineSurfaceConstruction {
     }
 
     /// Return the native discontinuities value.
-    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
         &self.discontinuities
     }
 
@@ -2956,7 +2948,7 @@ impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
             type_code: construction.type_code,
             subtransform: construction.subtransform,
             trailing_value: construction.trailing_value,
-            discontinuities: construction.discontinuities,
+            discontinuities: FiniteReal::raw_lanes(&construction.discontinuities),
             discontinuity_flag: construction.discontinuity_flag,
             cache: construction.cache,
         }
@@ -4742,22 +4734,22 @@ pub struct VariableBlendConstruction {
 #[serde(try_from = "RevisionG2BlendConstructionWire")]
 pub struct RevisionG2BlendConstruction {
     revision: PositiveI64,
-    leading_parameters: [f64; 2],
+    leading_parameters: [FiniteReal; 2],
     sides: Box<[RollingBallSide; 2]>,
     center: CurveId,
     #[serde(default)]
-    center_range: [Option<f64>; 2],
-    radii: [f64; 2],
+    center_range: [Option<FiniteReal>; 2],
+    radii: [FiniteReal; 2],
     radius_selector: RollingBallRadiusSelector<PositiveI64>,
-    u_range: [Option<f64>; 2],
-    v_range: [Option<f64>; 2],
+    u_range: [Option<FiniteReal>; 2],
+    v_range: [Option<FiniteReal>; 2],
     shape_prefix: i64,
-    shape_parameter: f64,
-    shape_length: f64,
+    shape_parameter: FiniteReal,
+    shape_length: FiniteReal,
     shape_tail: i64,
     cache: RevisionCacheForm,
     #[serde(default)]
-    discontinuities: [Vec<f64>; 6],
+    discontinuities: [Vec<FiniteReal>; 6],
     tail_flag: bool,
     tail_extensions: [i64; 3],
 }
@@ -4815,31 +4807,52 @@ impl RevisionG2BlendConstruction {
     /// same walk. The fields are private, so this and the deserializer are
     /// the only routes to a value.
     pub fn admit(wire: RevisionG2BlendConstructionWire) -> Result<Self, ProceduralGeometryError> {
+        let invalid = || {
+            ProceduralGeometryError::Payload("revision g2 blend construction payload is invalid")
+        };
+        let (
+            Some(leading_parameters),
+            Some(center_range),
+            Some(radii),
+            Some(u_range),
+            Some(v_range),
+            Some([shape_parameter, shape_length]),
+            Some(discontinuities),
+        ) = (
+            FiniteReal::array(wire.leading_parameters),
+            FiniteReal::optional(wire.center_range),
+            FiniteReal::array(wire.radii),
+            FiniteReal::optional(wire.u_range),
+            FiniteReal::optional(wire.v_range),
+            FiniteReal::array([wire.shape_parameter, wire.shape_length]),
+            FiniteReal::lanes(wire.discontinuities),
+        )
+        else {
+            return Err(invalid());
+        };
         let construction = Self {
             revision: wire.revision,
-            leading_parameters: wire.leading_parameters,
+            leading_parameters,
             sides: wire.sides,
             center: wire.center,
-            center_range: wire.center_range,
-            radii: wire.radii,
+            center_range,
+            radii,
             radius_selector: wire.radius_selector,
-            u_range: wire.u_range,
-            v_range: wire.v_range,
+            u_range,
+            v_range,
             shape_prefix: wire.shape_prefix,
-            shape_parameter: wire.shape_parameter,
-            shape_length: wire.shape_length,
+            shape_parameter,
+            shape_length,
             shape_tail: wire.shape_tail,
             cache: wire.cache,
-            discontinuities: wire.discontinuities,
+            discontinuities,
             tail_flag: wire.tail_flag,
             tail_extensions: wire.tail_extensions,
         };
         if construction.values_are_finite() {
             Ok(construction)
         } else {
-            Err(ProceduralGeometryError::Payload(
-                "revision g2 blend construction payload is invalid",
-            ))
+            Err(invalid())
         }
     }
 
@@ -4851,7 +4864,7 @@ impl RevisionG2BlendConstruction {
 
     /// Return the two native scalars following the revision integer.
     #[must_use]
-    pub const fn leading_parameters(&self) -> [f64; 2] {
+    pub const fn leading_parameters(&self) -> [FiniteReal; 2] {
         self.leading_parameters
     }
 
@@ -4869,13 +4882,13 @@ impl RevisionG2BlendConstruction {
 
     /// Return the optional center-curve parameter endpoints.
     #[must_use]
-    pub const fn center_range(&self) -> [Option<f64>; 2] {
+    pub const fn center_range(&self) -> [Option<FiniteReal>; 2] {
         self.center_range
     }
 
     /// Return the two signed blend radii.
     #[must_use]
-    pub const fn radii(&self) -> [f64; 2] {
+    pub const fn radii(&self) -> [FiniteReal; 2] {
         self.radii
     }
 
@@ -4887,13 +4900,13 @@ impl RevisionG2BlendConstruction {
 
     /// Return the optional U interval endpoints.
     #[must_use]
-    pub const fn u_range(&self) -> [Option<f64>; 2] {
+    pub const fn u_range(&self) -> [Option<FiniteReal>; 2] {
         self.u_range
     }
 
     /// Return the optional V interval endpoints.
     #[must_use]
-    pub const fn v_range(&self) -> [Option<f64>; 2] {
+    pub const fn v_range(&self) -> [Option<FiniteReal>; 2] {
         self.v_range
     }
 
@@ -4905,13 +4918,13 @@ impl RevisionG2BlendConstruction {
 
     /// Return the scalar before the solved shape.
     #[must_use]
-    pub const fn shape_parameter(&self) -> f64 {
+    pub const fn shape_parameter(&self) -> FiniteReal {
         self.shape_parameter
     }
 
     /// Return the length before the solved shape.
     #[must_use]
-    pub const fn shape_length(&self) -> f64 {
+    pub const fn shape_length(&self) -> FiniteReal {
         self.shape_length
     }
 
@@ -4929,7 +4942,7 @@ impl RevisionG2BlendConstruction {
 
     /// Return the six ordered discontinuity arrays.
     #[must_use]
-    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
         &self.discontinuities
     }
 
@@ -4945,25 +4958,11 @@ impl RevisionG2BlendConstruction {
         self.tail_extensions
     }
 
-    /// Whether every scalar this construction carries is finite.
+    /// Whether every scalar of the raw fields this construction carries is
+    /// finite. The scalars, ranges and discontinuities hold admitted values.
     #[must_use]
     fn values_are_finite(&self) -> bool {
-        self.leading_parameters
-            .iter()
-            .chain(self.radii.iter())
-            .chain(std::iter::once(&self.shape_parameter))
-            .chain(std::iter::once(&self.shape_length))
-            .chain(self.discontinuities.iter().flatten())
-            .all(|value| value.is_finite())
-            && self
-                .center_range
-                .iter()
-                .chain(self.u_range.iter())
-                .chain(self.v_range.iter())
-                .flatten()
-                .all(|value| value.is_finite())
-            && self.sides.iter().all(RollingBallSide::values_are_finite)
-            && self.cache.values_are_finite()
+        self.sides.iter().all(RollingBallSide::values_are_finite) && self.cache.values_are_finite()
     }
 }
 
@@ -6674,7 +6673,7 @@ impl IntcurveSupportContext {
 #[serde(try_from = "TolerantIntersectionConstructionWire")]
 pub struct TolerantIntersectionConstruction {
     supports: [SurfaceId; 2],
-    endpoints: [Point3; 2],
+    endpoints: [FinitePoint3; 2],
     tolerance: NonNegativeReal,
 }
 
@@ -6707,9 +6706,11 @@ impl TolerantIntersectionConstruction {
         if supports[0] == supports[1] {
             return Err("tolerant intersection supports must be distinct");
         }
-        if !endpoints.iter().all(Point3::is_finite) {
+        let [start, end] = endpoints.map(FinitePoint3::new);
+        let (Some(start), Some(end)) = (start, end) else {
             return Err("tolerant intersection endpoints must be finite");
-        }
+        };
+        let endpoints = [start, end];
         let tolerance = NonNegativeReal::new(tolerance)
             .ok_or("tolerant intersection tolerance must be finite and non-negative")?;
         Ok(Self {
@@ -6727,7 +6728,7 @@ impl TolerantIntersectionConstruction {
 
     /// Return the endpoints.
     #[must_use]
-    pub const fn endpoints(&self) -> &[Point3; 2] {
+    pub const fn endpoints(&self) -> &[FinitePoint3; 2] {
         &self.endpoints
     }
 
@@ -7012,12 +7013,11 @@ pub struct SurfaceCurveTail {
     /// Approximation-cache form selected by the shared context enum.
     cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
-    #[serde(default)]
-    support_bounds: [[Option<f64>; 4]; 2],
+    support_bounds: [RecordBounds; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
     #[serde(default)]
-    solved_range: [Option<f64>; 2],
+    solved_range: [Option<FiniteReal>; 2],
 }
 
 #[derive(Deserialize)]
@@ -7064,31 +7064,23 @@ impl SurfaceCurveTail {
         support_bounds: [[Option<f64>; 4]; 2],
         solved_range: [Option<f64>; 2],
     ) -> Result<Self, &'static str> {
-        let tail = Self {
+        const INVALID: &str = "surface curve tail bounds must be finite";
+        let [first, second] = support_bounds.map(|bounds| RecordBounds::try_new(bounds).ok());
+        let (Some(first), Some(second), Some(solved_range)) =
+            (first, second, FiniteReal::optional(solved_range))
+        else {
+            return Err(INVALID);
+        };
+        if !cache.values_are_finite() {
+            return Err(INVALID);
+        }
+        Ok(Self {
             extension,
             revision,
             cache,
-            support_bounds,
+            support_bounds: [first, second],
             solved_range,
-        };
-        if tail.values_are_finite() {
-            Ok(tail)
-        } else {
-            Err("surface curve tail bounds must be finite")
-        }
-    }
-
-    /// Whether every scalar this tail carries is finite. A solved cache states
-    /// its tolerance as a `FitTolerance`, which is finite by type.
-    #[must_use]
-    fn values_are_finite(&self) -> bool {
-        self.support_bounds
-            .iter()
-            .flatten()
-            .chain(self.solved_range.iter())
-            .flatten()
-            .all(|value| value.is_finite())
-            && self.cache.values_are_finite()
+        })
     }
 
     /// Native integer following the discontinuity arrays.
@@ -7111,13 +7103,13 @@ impl SurfaceCurveTail {
 
     /// Optional U/V bound fields following each ordered support surface.
     #[must_use]
-    pub const fn support_bounds(&self) -> &[[Option<f64>; 4]; 2] {
+    pub const fn support_bounds(&self) -> &[RecordBounds; 2] {
         &self.support_bounds
     }
 
     /// Optional solved-curve interval endpoints.
     #[must_use]
-    pub const fn solved_range(&self) -> &[Option<f64>; 2] {
+    pub const fn solved_range(&self) -> &[Option<FiniteReal>; 2] {
         &self.solved_range
     }
 }

@@ -387,7 +387,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let endpoints = intersection.endpoints();
         *intersection = cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
             supports.clone(),
-            *endpoints,
+            (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
             10.0,
         )
         .unwrap();

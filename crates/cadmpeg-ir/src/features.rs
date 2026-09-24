@@ -16,7 +16,7 @@ use crate::scalar::{
     NonZeroReal, PositiveAngle, PositiveLength, PositiveReal, SlopeAngle,
 };
 use crate::transform::Transform;
-use crate::units::UnitVector3;
+use crate::units::{FinitePoint2, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -424,20 +424,19 @@ impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "[Point2; 2]", into = "[Point2; 2]")]
-pub struct FeatureImageBounds([Point2; 2]);
+pub struct FeatureImageBounds([FinitePoint2; 2]);
 impl FeatureImageBounds {
     /// Admit finite corners with nonzero width and height, in either order.
     pub fn new(corners: [Point2; 2]) -> Option<Self> {
         let [first, second] = corners;
-        ([first.u, first.v, second.u, second.v]
-            .into_iter()
-            .all(f64::is_finite)
-            && first.u != second.u
-            && first.v != second.v)
-            .then_some(Self(corners))
+        let (Some(first), Some(second)) = (FinitePoint2::new(first), FinitePoint2::new(second))
+        else {
+            return None;
+        };
+        (first.u != second.u && first.v != second.v).then_some(Self([first, second]))
     }
     /// Return the opposite corners.
-    pub fn corners(self) -> [Point2; 2] {
+    pub fn corners(self) -> [FinitePoint2; 2] {
         self.0
     }
 }
@@ -449,7 +448,7 @@ impl TryFrom<[Point2; 2]> for FeatureImageBounds {
 }
 impl From<FeatureImageBounds> for [Point2; 2] {
     fn from(bounds: FeatureImageBounds) -> Self {
-        bounds.0
+        bounds.0.map(FinitePoint2::get)
     }
 }
 

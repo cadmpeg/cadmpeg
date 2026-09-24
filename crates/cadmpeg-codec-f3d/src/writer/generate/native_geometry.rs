@@ -442,8 +442,10 @@ fn native_procedural_surface_definition(
                         .cache_fit_tolerance()
                         .map(cadmpeg_ir::geometry::FitTolerance::get),
                 )?;
-                for values in construction.discontinuities() {
-                    native_compound_loft_float_array(bytes, values)?;
+                for values in
+                    cadmpeg_ir::scalar::FiniteReal::raw_lanes(construction.discontinuities())
+                {
+                    native_compound_loft_float_array(bytes, &values)?;
                 }
                 bytes.push(native_bool(construction.discontinuity_flag()));
                 for range in construction.parameter_ranges() {
@@ -3813,22 +3815,22 @@ fn encode_native_revision_g2_blend(
     native_ident(bytes, "g2_blend_spl_sur")?;
     native_i64(bytes, construction.revision().get());
     for parameter in construction.leading_parameters() {
-        native_f64(bytes, parameter);
+        native_f64(bytes, parameter.get());
     }
     for side in construction.sides() {
         native_rolling_ball_side(bytes, target, side)?;
     }
     let center_range = match construction.center_range() {
-        [Some(lower), Some(upper)] => Some([lower, upper]),
+        [Some(lower), Some(upper)] => Some([lower.get(), upper.get()]),
         _ => None,
     };
     let center = native_loft_curve(target, construction.center(), center_range)?;
     native_nurbs_curve(bytes, &center)?;
     for endpoint in construction.center_range() {
-        native_optional_f64(bytes, endpoint);
+        native_optional_f64(bytes, endpoint.map(cadmpeg_ir::scalar::FiniteReal::get));
     }
     for radius in construction.radii() {
-        native_f64(bytes, radius / LEN_TO_MM);
+        native_f64(bytes, radius.get() / LEN_TO_MM);
     }
     match construction.radius_selector() {
         cadmpeg_ir::geometry::RollingBallRadiusSelector::None {} => native_enum(bytes, -1),
@@ -3838,15 +3840,18 @@ fn encode_native_revision_g2_blend(
     }
     for range in [construction.u_range(), construction.v_range()] {
         for endpoint in range {
-            native_optional_f64(bytes, endpoint);
+            native_optional_f64(bytes, endpoint.map(cadmpeg_ir::scalar::FiniteReal::get));
         }
     }
     native_i64(bytes, construction.shape_prefix());
-    native_f64(bytes, construction.shape_parameter());
-    native_f64(bytes, construction.shape_length() / LEN_TO_MM);
+    native_f64(bytes, construction.shape_parameter().get());
+    native_f64(bytes, construction.shape_length().get() / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail());
     native_revision_tail_head(bytes, "G2 blend", construction.cache(), solved_cache)?;
-    native_revision_tail_discontinuities(bytes, construction.discontinuities())?;
+    native_revision_tail_discontinuities(
+        bytes,
+        &cadmpeg_ir::scalar::FiniteReal::raw_lanes(construction.discontinuities()),
+    )?;
     bytes.push(native_bool(construction.tail_flag()));
     for extension in construction.tail_extensions() {
         native_i64(bytes, extension);
@@ -5068,7 +5073,7 @@ pub(crate) fn native_procedural_curve(
             })?,
         );
         for value in parameters {
-            native_f64(bytes, *value);
+            native_f64(bytes, value.get());
         }
         native_i64(
             bytes,
@@ -5101,7 +5106,7 @@ pub(crate) fn native_procedural_curve(
                 let range = parameters.get(ordinal..ordinal + 2).ok_or_else(|| {
                     CodecError::Malformed("compound component has no construction interval".into())
                 })?;
-                Some([range[0], range[1]])
+                Some([range[0].get(), range[1].get()])
             };
             let component = native_spline_field_curve(
                 component.geometry.solved().ok_or_else(|| {
@@ -5171,8 +5176,12 @@ pub(crate) fn native_procedural_curve(
                 &cadmpeg_ir::geometry::CacheFirstCurveForm {
                     revision: tail.revision(),
                     cache: tail.cache().clone(),
-                    support_bounds: *tail.support_bounds(),
-                    solved_range: *tail.solved_range(),
+                    support_bounds: tail
+                        .support_bounds()
+                        .map(cadmpeg_ir::geometry::RecordBounds::get),
+                    solved_range: tail
+                        .solved_range()
+                        .map(|value| value.map(cadmpeg_ir::scalar::FiniteReal::get)),
                     extension: tail.extension(),
                 },
                 Some(solved_cache),
