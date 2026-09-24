@@ -313,7 +313,7 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    for coordinate in &mut plane.origin.0 {
+    for coordinate in &mut plane.origin {
         *coordinate = scaled_coordinate(*coordinate, scale).ok_or_else(|| {
             FramingError::structural(offset, "scaled annotation plane is invalid")
         })?;
@@ -684,10 +684,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                         AnnotationKind::Text
                     },
                     rich_text: value.rich_text,
-                    plane_origin: value.plane.origin.0,
-                    plane_x_axis: value.plane.xaxis.0,
-                    plane_y_axis: value.plane.yaxis.0,
-                    plane_z_axis: value.plane.zaxis.0,
+                    plane_origin: value.plane.origin,
+                    plane_x_axis: value.plane.xaxis,
+                    plane_y_axis: value.plane.yaxis,
+                    plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: (!value.dimstyle_id.is_nil())
                         .then(|| value.dimstyle_id.to_string()),
@@ -741,10 +741,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                         AnnotationKind::Text
                     },
                     rich_text: value.rich_text,
-                    plane_origin: value.plane.origin.0,
-                    plane_x_axis: value.plane.xaxis.0,
-                    plane_y_axis: value.plane.yaxis.0,
-                    plane_z_axis: value.plane.zaxis.0,
+                    plane_origin: value.plane.origin,
+                    plane_x_axis: value.plane.xaxis,
+                    plane_y_axis: value.plane.yaxis,
+                    plane_z_axis: value.plane.zaxis,
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.kind,
@@ -753,7 +753,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [value.plane.xaxis.0[0], value.plane.yaxis.0[0]],
+                    horizontal_direction: [value.plane.xaxis[0], value.plane.yaxis[0]],
                     allow_text_scaling: value.allow_text_scaling,
                     legacy_text_display_mode: Some(value.text_display_mode),
                     legacy_user_text: Some(value.user_text),
@@ -812,10 +812,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     source_uuid,
                     kind,
                     rich_text,
-                    plane_origin: value.base.plane.origin.0,
-                    plane_x_axis: value.base.plane.xaxis.0,
-                    plane_y_axis: value.base.plane.yaxis.0,
-                    plane_z_axis: value.base.plane.zaxis.0,
+                    plane_origin: value.base.plane.origin,
+                    plane_x_axis: value.base.plane.xaxis,
+                    plane_y_axis: value.base.plane.yaxis,
+                    plane_z_axis: value.base.plane.zaxis,
                     plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.base.kind,
@@ -824,10 +824,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
-                    horizontal_direction: [
-                        value.base.plane.xaxis.0[0],
-                        value.base.plane.yaxis.0[0],
-                    ],
+                    horizontal_direction: [value.base.plane.xaxis[0], value.base.plane.yaxis[0]],
                     allow_text_scaling: false,
                     legacy_text_display_mode: None,
                     legacy_user_text: Some(value.base.user_text),
@@ -1223,7 +1220,7 @@ mod tests {
         assert_eq!(text.face_name, "Witness Sans");
         assert_eq!(text.font_weight, 700);
         assert_eq!(text.text_height, 125.0);
-        assert_eq!(value.base.plane.origin.0, [10.0, 20.0, 30.0]);
+        assert_eq!(value.base.plane.origin, [10.0, 20.0, 30.0]);
 
         let mut leader = v2_annotation_payload(
             6,
@@ -1616,7 +1613,7 @@ mod tests {
         .expect("valid legacy leader");
         assert_eq!(value.rich_text, "leader");
         assert_eq!(value.user_text, "formula");
-        assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);
+        assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
         assert_eq!(value.text_height, 15.0);
         assert_eq!(value.dimstyle_index, 12);
@@ -1646,7 +1643,7 @@ mod tests {
         .expect("valid direct legacy text");
         assert_eq!(value.rich_text, "legacy");
         assert_eq!(value.user_text, "legacy");
-        assert_eq!(value.plane.origin.0, [10.0, 35.0, 30.0]);
+        assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
         assert_eq!(value.text_height, 15.0);
         assert_eq!(value.dimstyle_index, -1);

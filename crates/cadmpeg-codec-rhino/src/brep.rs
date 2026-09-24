@@ -111,8 +111,11 @@ pub(crate) struct RawBrepChildren {
 pub(crate) struct RawBrepVertex {
     /// Positional record index.
     pub(crate) index: i32,
-    /// Vertex point.
-    pub(crate) point: Point3,
+    /// Vertex point. A modern Brep reads it as an admitted finite point; a
+    /// legacy Brep computes it as the mean of the curve endpoints merged into
+    /// the vertex, and a non-finite coordinate carries through to the point,
+    /// where the Brep validator owns it.
+    pub(crate) point: [f64; 3],
     /// Incident edge indexes.
     pub(crate) edges: Vec<i32>,
     /// Vertex tolerance.
@@ -992,7 +995,7 @@ pub(crate) fn parse(
 struct LegacyCurveMeta {
     range: Range<usize>,
     domain: Interval,
-    endpoints: [Point3; 2],
+    endpoints: [[f64; 3]; 2],
 }
 
 impl LegacyCurveMeta {
@@ -1022,15 +1025,15 @@ impl LegacyVertex {
                 *coordinate =
                     scaled_mean(self.point_sum[axis], self.point_count)? * self.point_scale[axis];
             }
-            self.vertex.point = Point3(point);
+            self.vertex.point = point;
         }
         Some(self.vertex)
     }
 
     // Sum relative coordinates before dividing by the endpoint count. Finite
     // equal endpoints can have an unrepresentable sum but a finite mean.
-    fn add_point(&mut self, point: Point3) {
-        for (axis, value) in point.0.into_iter().enumerate() {
+    fn add_point(&mut self, point: [f64; 3]) {
+        for (axis, value) in point.into_iter().enumerate() {
             let scale = self.point_scale[axis].max(value.abs());
             if scale > 0.0 {
                 self.point_sum[axis] =
@@ -1346,7 +1349,7 @@ fn parse_legacy_major2(
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
                         index,
-                        point: Point3([0.0, 0.0, 0.0]),
+                        point: [0.0; 3],
                         edges: Vec::new(),
                         tolerance: 0.0,
                         source_range: 0..0,
@@ -1473,9 +1476,9 @@ fn parse_legacy_major2(
             let curve = slot(edge.curve, c3_meta.len(), "legacy Brep edge curve")?;
             let expected = c3_meta[curve].endpoints[endpoint];
             let delta = [
-                vertex.point.0[0] - expected.0[0],
-                vertex.point.0[1] - expected.0[1],
-                vertex.point.0[2] - expected.0[2],
+                vertex.point[0] - expected[0],
+                vertex.point[1] - expected[1],
+                vertex.point[2] - expected[2],
             ];
             tolerance = tolerance.max(delta[0].hypot(delta[1]).hypot(delta[2]));
         }
@@ -1546,7 +1549,7 @@ fn parse_legacy_major2(
 fn legacy_curve_shape(
     decoded: &crate::curves::DecodedGeometry,
     offset: usize,
-) -> Result<(Interval, [Point3; 2]), GeometryError> {
+) -> Result<(Interval, [[f64; 3]; 2]), GeometryError> {
     let crate::curves::DecodedGeometry::Curve { curve } = decoded else {
         return Err(error(offset, "legacy Brep polycurve is not a curve"));
     };
@@ -1575,7 +1578,7 @@ fn legacy_curve_shape(
 fn legacy_decoded_curve_endpoints(
     curve: &crate::curves::DecodedCurve,
     offset: usize,
-) -> Result<[Point3; 2], GeometryError> {
+) -> Result<[[f64; 3]; 2], GeometryError> {
     let geometry = match curve {
         crate::curves::DecodedCurve::Compound { children, .. } => {
             let first = children
@@ -1600,25 +1603,22 @@ fn legacy_decoded_curve_endpoints(
             let last = control_points
                 .last()
                 .ok_or_else(|| error(offset, "legacy Brep curve has no last pole"))?;
-            Ok([
-                Point3([first.x, first.y, first.z]),
-                Point3([last.x, last.y, last.z]),
-            ])
+            Ok([[first.x, first.y, first.z], [last.x, last.y, last.z]])
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            let endpoint = Point3([
+            let endpoint = [
                 center.x + ref_direction.x * radius,
                 center.y + ref_direction.y * radius,
                 center.z + ref_direction.z * radius,
-            ]);
+            ];
             Ok([endpoint, endpoint])
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate_curve)) => {
             let point = degenerate_curve.point().get();
-            let point = Point3([point.x, point.y, point.z]);
+            let point = [point.x, point.y, point.z];
             Ok([point, point])
         }
         _ => Err(error(offset, "legacy Brep curve has no finite endpoints")),
@@ -1669,7 +1669,7 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
 /// because the vertex list alone does not carry it.
 fn legacy_vertex(
     vertices: &mut Vec<LegacyVertex>,
-    point: Point3,
+    point: [f64; 3],
     position: usize,
 ) -> Result<usize, GeometryError> {
     if let Some((index, _)) = vertices
@@ -1868,7 +1868,7 @@ fn read_vertices(
         let tolerance = child.f64()?;
         result.push(RawBrepVertex {
             index,
-            point,
+            point: point.0.get(),
             edges,
             tolerance,
             source_range: start..child.position(),
@@ -2784,11 +2784,10 @@ fn finite_tolerance(value: f64, label: &str) -> Result<(), GeometryError> {
 }
 
 fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, GeometryError> {
-    let point = Point3([reader.f64()?, reader.f64()?, reader.f64()?]);
-    if point.0.iter().any(|value| !value.is_finite()) {
-        return Err(error(reader.position() - 24, "Brep point is not finite"));
-    }
-    Ok(point)
+    let point = [reader.f64()?, reader.f64()?, reader.f64()?];
+    FiniteVector::new(point)
+        .map(Point3)
+        .ok_or_else(|| error(reader.position() - 24, "Brep point is not finite"))
 }
 
 fn supported_mesh(uuid: Uuid) -> bool {
@@ -2908,13 +2907,13 @@ mod tests {
     fn numerical_followup_legacy_vertex_mean_stays_finite() {
         for endpoints in [[1e308, 1e308], [-1e308, 1e308]] {
             let mut vertices = Vec::new();
-            super::legacy_vertex(&mut vertices, Point3([endpoints[0], 0., 0.]), 0).unwrap();
+            super::legacy_vertex(&mut vertices, [endpoints[0], 0., 0.], 0).unwrap();
             for x in endpoints {
-                vertices[0].add_point(Point3([x, 0., 0.]));
+                vertices[0].add_point([x, 0., 0.]);
             }
             let vertex = vertices.pop().unwrap().into_vertex().unwrap();
             assert_eq!(
-                vertex.point.0,
+                vertex.point,
                 [(endpoints[0] / 2.0 + endpoints[1] / 2.0), 0., 0.]
             );
         }
@@ -2937,7 +2936,7 @@ mod tests {
     use crate::curves::GeometryError;
     use crate::loss::Diagnostics;
     use crate::objects::ClassUserdata;
-    use crate::settings::{BoundingBox, Interval, Point3};
+    use crate::settings::{BoundingBox, Interval};
     use crate::wire::Uuid;
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::units::FiniteVector;
@@ -3087,8 +3086,14 @@ mod tests {
         assert_eq!(regions.len(), 1);
         assert_eq!(regions[0].region_type, 0);
         assert_eq!(regions[0].sides, vec![0, 1]);
-        assert_eq!(regions[0].bounds.minimum, Point3([-1.0, -1.0, 0.0]));
-        assert_eq!(regions[0].bounds.maximum, Point3([2.0, 2.0, 1.0]));
+        assert_eq!(
+            regions[0].bounds.minimum,
+            crate::test_support::point3([-1.0, -1.0, 0.0])
+        );
+        assert_eq!(
+            regions[0].bounds.maximum,
+            crate::test_support::point3([2.0, 2.0, 1.0])
+        );
     }
 
     #[test]
@@ -3236,11 +3241,11 @@ mod tests {
             .enumerate()
             .map(|(index, edges)| RawBrepVertex {
                 index: i32::try_from(index).expect("index"),
-                point: Point3([
+                point: [
                     f64::from((index == 1) as u8),
                     f64::from((index == 2) as u8),
                     0.0,
-                ]),
+                ],
                 edges: edges.into_iter().collect(),
                 tolerance: 0.0,
                 source_range: 0..0,
@@ -3322,8 +3327,8 @@ mod tests {
                 source_range: 0..0,
             }],
             bounds: BoundingBox {
-                minimum: Point3([0.0, 0.0, 0.0]),
-                maximum: Point3([1.0, 1.0, 0.0]),
+                minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+                maximum: crate::test_support::point3([1.0, 1.0, 0.0]),
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
@@ -3471,7 +3476,7 @@ mod tests {
             },
             vertices: vec![RawBrepVertex {
                 index: 0,
-                point: Point3([0.0, 0.0, 0.0]),
+                point: [0.0, 0.0, 0.0],
                 edges: Vec::new(),
                 tolerance: 0.0,
                 source_range: 0..0,
@@ -3512,8 +3517,8 @@ mod tests {
                 source_range: 0..0,
             }],
             bounds: BoundingBox {
-                minimum: Point3([0.0, 0.0, 0.0]),
-                maximum: Point3([0.0, 0.0, 0.0]),
+                minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+                maximum: crate::test_support::point3([0.0, 0.0, 0.0]),
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
@@ -3547,7 +3552,7 @@ mod tests {
         );
         assert_eq!(
             legacy_decoded_curve_endpoints(&circle, 0).expect("circle endpoints"),
-            [Point3([3.0, 2.0, 3.0]); 2]
+            [[3.0, 2.0, 3.0]; 2]
         );
         let point = cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0);
         let degenerate = crate::curves::DecodedCurve::leaf(
@@ -3558,7 +3563,7 @@ mod tests {
         );
         assert_eq!(
             legacy_decoded_curve_endpoints(&degenerate, 0).expect("degenerate endpoints"),
-            [Point3([4.0, 5.0, 6.0]); 2]
+            [[4.0, 5.0, 6.0]; 2]
         );
     }
 
@@ -3584,10 +3589,7 @@ mod tests {
         let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };
         let (domain, endpoints) = legacy_curve_shape(&polycurve, 0).expect("polycurve shape");
         assert_eq!(domain, finite_interval([-1.5, 6.25]));
-        assert_eq!(
-            endpoints,
-            [Point3([1.0, 0.0, 0.0]), Point3([2.0, 0.0, 0.0])]
-        );
+        assert_eq!(endpoints, [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
     }
 
     #[test]

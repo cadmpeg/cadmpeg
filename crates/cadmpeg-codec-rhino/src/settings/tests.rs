@@ -442,6 +442,43 @@ fn an_interval_holds_its_admitted_finite_endpoints() {
     );
 }
 
+/// The point, vector and transform readers hand back the finite values they
+/// admitted, and the plane reader keeps the admitted coordinates of its parts.
+#[test]
+fn point_vector_plane_and_transform_readers_hold_their_admitted_values() {
+    let mut bytes = vec![0xa5];
+    for value in [1.0_f64, -2.0, 3.0, 0.0, 1.0, 0.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("point reader");
+    let point = settings::point(&mut reader).expect("finite point");
+    let vector = settings::vector(&mut reader).expect("finite vector");
+    assert_eq!(point.0.get(), [1.0, -2.0, 3.0]);
+    assert_eq!(vector.0.get(), [0.0, 1.0, 0.0]);
+
+    let mut bytes = vec![0xa5];
+    for value in [
+        1.0_f64, 2.0, 3.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, -3.0,
+    ] {
+        bytes.extend(value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("plane reader");
+    let plane = settings::plane(&mut reader).expect("finite plane");
+    assert_eq!(plane.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(plane.zaxis, [0.0, 0.0, 1.0]);
+    assert_eq!(plane.equation, [0.0, 0.0, 1.0, -3.0]);
+    let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("transform reader");
+    let transform = settings::xform(&mut reader).expect("finite transform");
+    assert_eq!(transform.0.get()[15], -3.0);
+    let mut refused = bytes.clone();
+    refused[1 + 8 * 15..].copy_from_slice(&f64::NAN.to_le_bytes());
+    let mut reader = BoundedReader::new(&refused, 1, refused.len()).expect("transform reader");
+    assert_eq!(
+        settings::xform(&mut reader).expect_err("nonfinite transform"),
+        crate::chunks::FramingError::structural(1, "transform contains a nonfinite value")
+    );
+}
+
 /// The mesh-parameters route reads each value through the shared reader, so its
 /// refusal names the value's first byte.
 #[test]

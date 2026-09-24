@@ -809,7 +809,7 @@ pub(crate) fn scan_decodes_history_identity_dependencies_and_typed_values() {
                 && values[0].object_id.to_string() == "0000002d-002e-002f-3031-323334353637"
                 && values[0].component == [7, 8]
                 && values[0].geometry_type == 4
-                && values[0].point.0 == [1.0, 2.0, 3.0]
+                && values[0].point.0.get() == [1.0, 2.0, 3.0]
                 && values[0].evaluation.parameter_type == 9
                 && values[0].evaluation.component == [10, 11]
                 && values[0].evaluation.parameters == [0.1, 0.2, 0.3, 0.4]

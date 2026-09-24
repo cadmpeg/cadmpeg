@@ -100,10 +100,10 @@ fn rejected_expansion_discards_every_report_bucket() {
 #[test]
 fn hatch_plane_places_and_scales_plane_space_loops_once() {
     let plane = crate::settings::Plane {
-        origin: crate::settings::Point3([10.0, 20.0, 30.0]),
-        xaxis: crate::settings::Vector3([0.0, 1.0, 0.0]),
-        yaxis: crate::settings::Vector3([-1.0, 0.0, 0.0]),
-        zaxis: crate::settings::Vector3([0.0, 0.0, 1.0]),
+        origin: [10.0, 20.0, 30.0],
+        xaxis: [0.0, 1.0, 0.0],
+        yaxis: [-1.0, 0.0, 0.0],
+        zaxis: [0.0, 0.0, 1.0],
         equation: [0.0, 0.0, 1.0, -30.0],
     };
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
@@ -177,8 +177,8 @@ fn region_raw(
             source_range: 0..0,
         }],
         bounds: crate::settings::BoundingBox {
-            minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
-            maximum: crate::settings::Point3([1.0, 1.0, 1.0]),
+            minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+            maximum: crate::test_support::point3([1.0, 1.0, 1.0]),
         },
         render_meshes: Vec::new(),
         analysis_meshes: Vec::new(),
@@ -194,8 +194,8 @@ fn region(region_type: i32) -> crate::brep::RawBrepRegion {
         region_type,
         sides: Vec::new(),
         bounds: crate::settings::BoundingBox {
-            minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
-            maximum: crate::settings::Point3([1.0, 1.0, 1.0]),
+            minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+            maximum: crate::test_support::point3([1.0, 1.0, 1.0]),
         },
         source_range: 0..0,
     }
@@ -282,11 +282,11 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         .enumerate()
         .map(|(index, edges)| crate::brep::RawBrepVertex {
             index: i32::try_from(index).expect("index"),
-            point: crate::settings::Point3([
+            point: [
                 f64::from((index == 1) as u8),
                 f64::from((index == 2) as u8),
                 0.0,
-            ]),
+            ],
             edges: edges.into_iter().collect(),
             tolerance: 0.01,
             source_range: 0..0,
@@ -375,8 +375,8 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
                 source_range: 0..0,
             }],
             bounds: crate::settings::BoundingBox {
-                minimum: crate::settings::Point3([0.0, 0.0, 0.0]),
-                maximum: crate::settings::Point3([1.0, 1.0, 0.0]),
+                minimum: crate::test_support::point3([0.0, 0.0, 0.0]),
+                maximum: crate::test_support::point3([1.0, 1.0, 0.0]),
             },
             render_meshes: Vec::new(),
             analysis_meshes: Vec::new(),
@@ -603,7 +603,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let (data, mut raw) = source_shaped_plane_brep();
     raw.vertices.push(crate::brep::RawBrepVertex {
         index: 3,
-        point: crate::settings::Point3([2.0, 2.0, 0.0]),
+        point: [2.0, 2.0, 0.0],
         edges: Vec::new(),
         tolerance: 0.0,
         source_range: 0..0,

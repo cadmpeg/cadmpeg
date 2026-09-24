@@ -13,7 +13,7 @@ use crate::mesh::MeshExpand;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
 use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
-use crate::settings::{MillimeterScale, Plane, Point3, Vector3};
+use crate::settings::{MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
 pub(crate) const CLASS: Uuid = Uuid::from_canonical([
@@ -129,10 +129,10 @@ fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryErr
 }
 
 fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
-    let origin = Point3(coordinate3(view, "point")?);
-    let xaxis = Vector3(coordinate3(view, "vector")?);
-    let yaxis = Vector3(coordinate3(view, "vector")?);
-    let zaxis = Vector3(coordinate3(view, "vector")?);
+    let origin = coordinate3(view, "point")?;
+    let xaxis = coordinate3(view, "vector")?;
+    let yaxis = coordinate3(view, "vector")?;
+    let zaxis = coordinate3(view, "vector")?;
     let equation_offset = view.position();
     let equation = [
         view.req_f64_le()?,

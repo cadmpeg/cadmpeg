@@ -123,10 +123,10 @@ pub(crate) fn decode(
     let profile_start = reader.position();
     let profile = decode_embedded_curve_2d(data, &mut reader, scale, archive, 1)?;
     let profile_range = profile_start..reader.position();
-    let path_from = crate::wire::scaled_point(point(&mut reader)?, scale)
+    let path_from = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
-    let path_to = crate::wire::scaled_point(point(&mut reader)?, scale)
+    let path_to = crate::wire::scaled_point(point(&mut reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?
         .get();
     let trim = increasing_interval(interval(&mut reader)?.0, reader.position(), "path trim")?;
@@ -136,14 +136,14 @@ pub(crate) fn decode(
             "extrusion path trim is outside the line interval",
         ));
     }
-    let up = crate::wire::vector(vector(&mut reader)?);
+    let up = crate::wire::vector(vector(&mut reader)?.0.get());
     let miter_present = [
         reader.bool_with_writer_version(writer_version)?,
         reader.bool_with_writer_version(writer_version)?,
     ];
     let miter_normals = [
-        crate::wire::vector(vector(&mut reader)?),
-        crate::wire::vector(vector(&mut reader)?),
+        crate::wire::vector(vector(&mut reader)?.0.get()),
+        crate::wire::vector(vector(&mut reader)?.0.get()),
     ];
     let path_domain =
         increasing_interval(interval(&mut reader)?.0, reader.position(), "path domain")?;
@@ -864,7 +864,7 @@ fn increasing_interval(
 
 fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), GeometryError> {
     let length = value.norm();
-    if value.is_finite() && (length - 1.0).abs() <= UNIT_TOLERANCE {
+    if (length - 1.0).abs() <= UNIT_TOLERANCE {
         Ok(())
     } else {
         Err(error(offset, format!("{name} is not unit")))
