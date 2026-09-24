@@ -3006,7 +3006,7 @@ mod route_tests {
     use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
 
-    use crate::test_support::test_b5::{finite_lane, finite_pair, point, positive};
+    use crate::test_support::test_b5::{finite, finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
 
     fn jet_pcurve(
@@ -3021,7 +3021,7 @@ mod route_tests {
         E5Pcurve::Jet {
             surface,
             sites: E5PcurveJetSite::zip(
-                finite_lane(&knots),
+                knots.into_iter().map(finite).collect(),
                 multiplicities,
                 points.into_iter().map(finite_pair).collect(),
                 first_derivatives.into_iter().map(finite_pair).collect(),
