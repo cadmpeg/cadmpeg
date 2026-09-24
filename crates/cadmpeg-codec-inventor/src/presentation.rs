@@ -8,6 +8,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
@@ -73,7 +74,7 @@ pub(crate) struct PmGraphicsFace {
     pub(crate) state: u32,
     pub(crate) edge_references: PmDcPairedReferenceList<[u32; 2]>,
     pub(crate) visibility_state: u8,
-    pub(crate) bounds: [f64; 6],
+    pub(crate) bounds: [FiniteReal; 6],
     pub(crate) key: u32,
     pub(crate) values: [u32; 2],
 }
@@ -648,9 +649,9 @@ fn parse_graphics_face(
         legacy_block_len(version) * 2,
         "graphics-face legacy visibility padding",
     )?;
-    let mut bounds = [0.0; 6];
+    let mut bounds = [FiniteReal::ZERO; 6];
     for value in &mut bounds {
-        *value = cursor.f64("graphics-face bound")?;
+        *value = cursor.finite_f64("graphics-face bound")?;
     }
     cursor.skip(
         legacy_block_len(version),
@@ -875,11 +876,14 @@ impl<'a> Cursor<'a> {
         crate::reader::u32(&mut self.source, field)
     }
 
-    fn f64(&mut self, field: &'static str) -> Result<f64, CodecError> {
-        Ok(self
+    fn finite_f64(&mut self, field: &'static str) -> Result<FiniteReal, CodecError> {
+        let value = self
             .source
             .req_f64_le()
-            .map_err(|error| error.during(field))?)
+            .map_err(|error| error.during(field))?;
+        FiniteReal::new(value).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor presentation {field} is not finite"))
+        })
     }
 
     fn f32(&mut self, field: &'static str) -> Result<f32, CodecError> {
@@ -1020,6 +1024,7 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::scalar::FiniteReal;
 
     use super::{
         parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
@@ -1167,8 +1172,8 @@ mod tests {
         bytes
     }
 
-    #[test]
-    fn parses_current_graphics_face_with_qualified_references() {
+    /// A current graphics-face record with qualified references and `bounds`.
+    fn graphics_face_fixture(bounds: [f64; 6]) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(4_u32.to_le_bytes());
         bytes.extend(5_u16.to_le_bytes());
@@ -1185,12 +1190,18 @@ mod tests {
         bytes.extend(0x8000_000d_u32.to_le_bytes());
         bytes.extend(0x8000_000e_u32.to_le_bytes());
         bytes.push(1);
-        for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        for value in bounds {
             bytes.extend(value.to_le_bytes());
         }
         bytes.extend(15_u32.to_le_bytes());
         bytes.extend(16_u32.to_le_bytes());
         bytes.extend(17_u32.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn parses_current_graphics_face_with_qualified_references() {
+        let bytes = graphics_face_fixture([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic graphics face fits policy");
@@ -1217,9 +1228,26 @@ mod tests {
             ]
         );
         assert_eq!(face.edge_references.metadata().copied(), Some([11, 12]));
-        assert_eq!(face.bounds, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        assert_eq!(
+            FiniteReal::raw_array(face.bounds),
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        );
         assert_eq!(face.key, 15);
         assert_eq!(face.values, [16, 17]);
+    }
+
+    #[test]
+    fn a_non_finite_graphics_face_bound_is_refused() {
+        let bytes = graphics_face_fixture([1.0, 2.0, f64::NAN, 4.0, 5.0, 6.0]);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic graphics face fits policy");
+
+        let error = parse_graphics_face(&ctx, root, 26).expect_err("a NaN bound is refused");
+        assert_eq!(
+            error.to_string(),
+            "malformed container: Inventor presentation graphics-face bound is not finite"
+        );
     }
 
     #[test]
@@ -1298,7 +1326,7 @@ mod tests {
                 state: 0,
                 edge_references: PmDcPairedReferenceList::default(),
                 visibility_state: 0,
-                bounds: [0.0; 6],
+                bounds: [FiniteReal::ZERO; 6],
                 key: 42,
                 values: [0; 2],
             },
@@ -1453,7 +1481,7 @@ mod tests {
             (
                 "graphics-face bound",
                 displayed_truncation(
-                    Cursor::new(View::over_retained(empty)).f64("graphics-face bound"),
+                    Cursor::new(View::over_retained(empty)).finite_f64("graphics-face bound"),
                 ),
             ),
             (

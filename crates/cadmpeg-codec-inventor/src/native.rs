@@ -644,7 +644,7 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) state: u32,
     pub(crate) edge_references: PmDcPairedReferenceList<[u32; 2]>,
     pub(crate) visibility_state: u8,
-    pub(crate) bounds: [f64; 6],
+    pub(crate) bounds: [cadmpeg_ir::scalar::FiniteReal; 6],
     pub(crate) key: u32,
     pub(crate) values: [u32; 2],
 }
@@ -669,7 +669,7 @@ struct PmGraphicsFaceRecordWire {
     edge_reference_qualifiers: Vec<bool>,
     edge_list_metadata: Option<[u32; 2]>,
     visibility_state: u8,
-    bounds: [f64; 6],
+    bounds: [cadmpeg_ir::scalar::FiniteReal; 6],
     key: u32,
     values: [u32; 2],
 }
