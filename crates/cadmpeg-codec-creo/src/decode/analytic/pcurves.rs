@@ -2,6 +2,7 @@
 //! Analytic pcurve carrier transfer and native pcurve helpers.
 
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -1099,13 +1100,11 @@ fn linear_pcurve_carrier(
                 origin.y + radius * radial[1] + start[1] * axis.y,
                 origin.z + radius * radial[2] + start[1] * axis.z,
             ];
-            let direction = normalize([axis.x, axis.y, axis.z])?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::from(point),
-                    Vector3::from(direction),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::from(point))?,
+                    cylinder_surface.frame().axis().to_unit_length(),
+                ),
             )))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
@@ -1699,11 +1698,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let u_axis = plane_surface.frame().reference().as_raw();
     let origin = [origin.x, origin.y, origin.z];
-    let normal = normalize([normal.x, normal.y, normal.z])?;
-    let u_axis = normalize([u_axis.x, u_axis.y, u_axis.z])?;
+    let normal = unit_length(*plane_surface.frame().axis());
+    let u_axis = unit_length(*plane_surface.frame().reference());
     (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
     let v_axis = normalize(cross(normal, u_axis))?;
     let project_point = |point: [f64; 3], tolerance: f64| {
@@ -1716,9 +1713,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
         (length.is_finite() && length > 0.0 && dot(direction, normal).abs() <= EPS_ORTHO * length)
             .then_some(Point2::new(dot(direction, u_axis), dot(direction, v_axis)))
     };
-    let conic_frame = |center: [f64; 3], axis: [f64; 3], x_axis: [f64; 3], scale: f64| {
-        let axis = normalize(axis)?;
-        let x_axis = normalize(x_axis)?;
+    let conic_frame = |center: [f64; 3], frame: &OrthonormalFrame3, scale: f64| {
+        let axis = unit_length(*frame.axis());
+        let x_axis = unit_length(*frame.reference());
         ((dot(axis, normal).abs() - 1.0).abs() <= EPS_ORTHO
             && dot(axis, x_axis).abs() <= EPS_ORTHO)
             .then_some(())?;
@@ -1745,15 +1742,9 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            let (center, x_axis, y_axis) = conic_frame(
-                [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [ref_direction.x, ref_direction.y, ref_direction.z],
-                radius,
-            )?;
+            let (center, x_axis, y_axis) =
+                conic_frame([center.x, center.y, center.z], circle_curve.frame(), radius)?;
             Some(PcurveGeometry::Circle(
                 cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(center, x_axis, y_axis, radius)
                     .ok()?,
@@ -1761,14 +1752,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                ellipse_curve.frame(),
                 major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Ellipse(
@@ -1784,13 +1772,10 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.frame().axis().as_raw();
-            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             let (vertex, x_axis, y_axis) = conic_frame(
                 [vertex.x, vertex.y, vertex.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                parabola_curve.frame(),
                 focal_distance,
             )?;
             Some(PcurveGeometry::Parabola(
@@ -1805,14 +1790,11 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.frame().axis().as_raw();
-            let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             let (center, x_axis, y_axis) = conic_frame(
                 [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                hyperbola_curve.frame(),
                 major_radius.max(minor_radius),
             )?;
             Some(PcurveGeometry::Hyperbola(

@@ -4,6 +4,7 @@
 use crate::decode::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
@@ -1767,18 +1768,16 @@ pub(super) fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEqua
     let (origin, normal) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
             (
                 [center.x, center.y, center.z],
-                normalize([axis.x, axis.y, axis.z])?,
+                unit_length(*circle_curve.frame().axis()),
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
             (
                 [center.x, center.y, center.z],
-                normalize([axis.x, axis.y, axis.z])?,
+                unit_length(*ellipse_curve.frame().axis()),
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -1806,10 +1805,9 @@ pub(super) fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<Boundar
     let (origin, direction) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
             (
                 [origin.x, origin.y, origin.z],
-                normalize([direction.x, direction.y, direction.z])?,
+                unit_length(line_curve.direction()),
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {

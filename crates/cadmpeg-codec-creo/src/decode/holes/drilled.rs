@@ -2,7 +2,7 @@
 //! Simple drilled-hole recipes, envelopes, and dimension matching.
 
 use crate::decode::axis::Axis;
-use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::holes::HoleForm;
@@ -437,7 +437,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     diameter: f64,
 ) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
     let first = *frames.first()?;
-    let axis = normalize(first.frame().axis())?;
+    let axis = unit_length(*first.frame().orthonormal_frame().axis());
     let coordinate_scale = frames
         .iter()
         .flat_map(|frame| frame.frame().origin())
@@ -448,9 +448,7 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
     frames
         .iter()
         .all(|frame| {
-            let Some(candidate_axis) = normalize(frame.frame().axis()) else {
-                return false;
-            };
+            let candidate_axis = unit_length(*frame.frame().orthonormal_frame().axis());
             let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);
             if (frame.radius() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
                 return false;

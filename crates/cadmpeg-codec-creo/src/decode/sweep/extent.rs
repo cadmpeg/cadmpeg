@@ -11,6 +11,7 @@ use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::vecmath::dot;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -277,15 +278,15 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                         ..
                     }] => {
                         let origin = cylinder_surface.origin().get();
-                        let axis = cylinder_surface.frame().axis().as_raw();
+                        let axis = *cylinder_surface.frame().axis();
                         let parameters = crate::surface::unique_surface_parameter(
                             &scan.surfaces.parameters,
                             row.id,
                         )?;
                         let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
-                        let transferred_axis = normalize([axis.x, axis.y, axis.z])?;
-                        let frame_axis = normalize(frame.frame().axis())?;
+                        let transferred_axis = unit_length(axis);
+                        let frame_axis = unit_length(*frame.frame().orthonormal_frame().axis());
                         let scale = transferred_origin
                             .into_iter()
                             .chain(frame.frame().origin())
@@ -319,7 +320,7 @@ pub(in super::super) fn bounded_cylinder_span(
     frame: crate::surface::PositionalCylinderFrame,
     planes: &[([f64; 3], [f64; 3])],
 ) -> Option<ExtrusionCarrierSpan> {
-    let axis = normalize(frame.frame().axis())?;
+    let axis = unit_length(*frame.frame().orthonormal_frame().axis());
     let vector = match frame.length() {
         Some(length) => axis.map(|component| component * length.get()),
         None => {

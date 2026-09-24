@@ -3,6 +3,7 @@
 
 use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use cadmpeg_ir::features::LinearTermination;
 use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -221,8 +222,7 @@ pub(in crate::decode) fn cylinder_from_complementary_outline_bounds(
         return None;
     };
     let origin = plane_surface.origin().get();
-    let normal = plane_surface.frame().axis().as_raw();
-    let axis = normalize([normal.x, normal.y, normal.z])?;
+    let axis = unit_length(*plane_surface.frame().axis());
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
     let radial = aligned_axis.complement().map(Axis::index);
     let scale = bounds

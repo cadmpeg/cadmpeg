@@ -3,6 +3,7 @@
 
 use crate::decode::axis::Axis;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -838,10 +839,9 @@ fn counterbore_source_boundary_circle(
                     return None;
                 };
                 let center = circle_curve.center().get();
-                let axis = circle_curve.frame().axis().as_raw();
                 let candidate = circle_curve.radius().get();
                 ((candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
-                let axis = normalize([axis.x, axis.y, axis.z])?;
+                let axis = unit_length(*circle_curve.frame().axis());
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
                 let normal = normalize(plane.normal)?;
                 let alignment = axis

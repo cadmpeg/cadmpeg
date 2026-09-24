@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Multi-component intersection candidates and FC14 axis selection.
 
-use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
 use crate::decode::analytic::edges::{
@@ -76,11 +76,8 @@ pub(in super::super) fn curve_contains_points(
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
             let origin = [origin.x, origin.y, origin.z];
-            let Some(direction) = normalize([direction.x, direction.y, direction.z]) else {
-                return false;
-            };
+            let direction = unit_length(line_curve.direction());
             points.into_iter().all(|point| {
                 let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
                 let residual = cross(relative, direction);

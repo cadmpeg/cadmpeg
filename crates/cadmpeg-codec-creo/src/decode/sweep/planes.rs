@@ -7,7 +7,7 @@ use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::analytic::planes::{canonical_plane, placed_planes, reconciled_model_plane};
 use crate::surface::SurfaceParameterRecord;
 use crate::vecmath::dot;
-use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -241,17 +241,11 @@ fn cylinder_frame_agrees_with_model(
         );
     };
     let origin = cylinder_surface.origin().get();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
     let radius = cylinder_surface.radius().get();
-    let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
-        normalize(frame.frame().axis()),
-        normalize([axis.x, axis.y, axis.z]),
-        normalize(frame.frame().ref_direction()),
-        normalize([ref_direction.x, ref_direction.y, ref_direction.z]),
-    ) else {
-        return false;
-    };
+    let frame_axis = unit_length(*frame.frame().orthonormal_frame().axis());
+    let model_axis = unit_length(*cylinder_surface.frame().axis());
+    let frame_ref = unit_length(*frame.frame().orthonormal_frame().reference());
+    let model_ref = unit_length(*cylinder_surface.frame().reference());
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_CYLINDER_CARRIER * left.abs().max(right.abs()).max(1.0)
     };
@@ -386,7 +380,7 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
     let normal = transform.normal();
     let first = *frames.first()?;
     let length = first.length()?;
-    let direction = normalize(first.frame().axis())?;
+    let direction = unit_length(*first.frame().orthonormal_frame().axis());
     let close = |left: f64, right: f64| {
         (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
@@ -396,11 +390,10 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
             frame
                 .length()
                 .is_some_and(|candidate| close(candidate.get(), length.get()))
-                && normalize(frame.frame().axis()).is_some_and(|axis| {
-                    axis.iter()
-                        .zip(direction)
-                        .all(|(left, right)| close(*left, right))
-                })
+                && unit_length(*frame.frame().orthonormal_frame().axis())
+                    .iter()
+                    .zip(direction)
+                    .all(|(left, right)| close(*left, right))
                 && close(
                     dot(
                         std::array::from_fn(|index| {
