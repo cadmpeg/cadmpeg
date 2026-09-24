@@ -38,7 +38,6 @@ const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
 const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
-const EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 
@@ -1356,20 +1355,15 @@ fn common_generated_surface_axis(
     let axes = surfaces
         .iter()
         .filter_map(|surface| match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let origin = cylinder_surface.origin().get();
-                let axis = cylinder_surface.frame().axis().as_raw();
-                Some((origin, *axis))
-            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => Some((
+                cylinder_surface.origin().get(),
+                *cylinder_surface.frame().axis(),
+            )),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let origin = cone_surface.origin().get();
-                let axis = cone_surface.frame().axis().as_raw();
-                Some((origin, *axis))
+                Some((cone_surface.origin().get(), *cone_surface.frame().axis()))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let center = torus_surface.center().get();
-                let axis = torus_surface.frame().axis().as_raw();
-                Some((center, *axis))
+                Some((torus_surface.center().get(), *torus_surface.frame().axis()))
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => None,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => None,
@@ -1386,55 +1380,36 @@ fn common_generated_surface_axis(
     if axes.len() < 2 {
         return None;
     }
-    let length = direction.norm();
-    if !length.is_finite() || length <= EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9 {
-        return None;
-    }
-    let mut direction = Vector3::new(
-        direction.x / length,
-        direction.y / length,
-        direction.z / length,
-    );
+    let mut direction = *direction;
     for (candidate_origin, candidate_direction) in &axes[1..] {
-        let candidate_length = candidate_direction.norm();
-        if !candidate_length.is_finite()
-            || candidate_length <= EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9
-        {
-            return None;
-        }
-        let candidate_direction = Vector3::new(
-            candidate_direction.x / candidate_length,
-            candidate_direction.y / candidate_length,
-            candidate_direction.z / candidate_length,
-        );
         let origin_delta = Vector3::new(
             candidate_origin.x - origin.x,
             candidate_origin.y - origin.y,
             candidate_origin.z - origin.z,
         );
-        let direction_cross = direction.cross(candidate_direction);
-        let line_offset = origin_delta.cross(direction);
+        let direction_cross = direction.as_raw().cross(*candidate_direction.as_raw());
+        let line_offset = origin_delta.cross(*direction.as_raw());
         if direction_cross.norm() > DIRECTION_TOLERANCE || line_offset.norm() > LINE_TOLERANCE {
             return None;
         }
     }
-    if direction.x < -DIRECTION_TOLERANCE
-        || (direction.x.abs() <= DIRECTION_TOLERANCE && direction.y < -DIRECTION_TOLERANCE)
-        || (direction.x.abs() <= DIRECTION_TOLERANCE
-            && direction.y.abs() <= DIRECTION_TOLERANCE
-            && direction.z < 0.0)
+    let raw = *direction.as_raw();
+    if raw.x < -DIRECTION_TOLERANCE
+        || (raw.x.abs() <= DIRECTION_TOLERANCE && raw.y < -DIRECTION_TOLERANCE)
+        || (raw.x.abs() <= DIRECTION_TOLERANCE && raw.y.abs() <= DIRECTION_TOLERANCE && raw.z < 0.0)
     {
-        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        direction = direction.reversed();
     }
-    let origin_projection = Vector3::new(origin.x, origin.y, origin.z).dot(direction);
+    let direction_raw = *direction.as_raw();
+    let origin_projection = Vector3::new(origin.x, origin.y, origin.z).dot(direction_raw);
     let origin = Point3::new(
-        origin.x - origin_projection * direction.x,
-        origin.y - origin_projection * direction.y,
-        origin.z - origin_projection * direction.z,
+        origin.x - origin_projection * direction_raw.x,
+        origin.y - origin_projection * direction_raw.y,
+        origin.z - origin_projection * direction_raw.z,
     );
     Some(cadmpeg_ir::features::RevolutionAxis {
         origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
+        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
         reference: None,
     })
 }

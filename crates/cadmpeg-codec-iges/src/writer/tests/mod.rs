@@ -19,7 +19,6 @@ use super::surface_entities;
 use super::validate_arc_sweep;
 use super::CurveSpan;
 use super::RevolutionSweep;
-use super::FRAME_REPAIR_DOT_LIMIT;
 use super::WRITER_ENDPOINT_RELATIVE_TOLERANCE;
 use super::WRITER_NATIVE_FILE_NAME;
 use super::WRITER_SENDER_PRODUCT;
@@ -782,36 +781,29 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
 }
 
 #[test]
-fn orthonormal_pair_repairs_float32_scale_frame_noise() {
-    let (axis, reference) = orthonormal_pair(
+fn orthonormal_pair_repairs_skew_within_the_frame_tolerance() {
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 0.03),
-        "test frame",
+        Vector3::new(1.0, 0.0, 5.0e-10),
     )
-    .expect("float32-scale skew is representation noise");
+    .expect("a skew within the frame tolerance is admitted");
+    let (axis, reference) = orthonormal_pair(&frame);
     assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(reference, Vector3::new(1.0, 0.0, 0.0));
 }
 
 #[test]
-fn orthonormal_pair_accepts_the_declared_repair_bound() {
-    orthonormal_pair(
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT),
-        "test frame",
+fn orthonormal_pair_normalizes_an_admitted_axis_off_unit_length() {
+    // The frame admits an axis within 1e-9 of unit length; a Type 124 matrix
+    // is read at 17 significant digits.
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+        Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
+        Vector3::new(1.0, 0.0, 0.0),
     )
-    .expect("the declared frame policy bound is admissible");
-}
-
-#[test]
-fn orthonormal_pair_refuses_skew_beyond_the_repair_bound() {
-    let error = orthonormal_pair(
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, FRAME_REPAIR_DOT_LIMIT * 1.1),
-        "test frame",
-    )
-    .expect_err("material skew must not be silently changed");
-    assert!(error.to_string().contains("exceeds the frame repair bound"));
+    .expect("a length within the unit tolerance is admitted");
+    let (axis, reference) = orthonormal_pair(&frame);
+    assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(reference, Vector3::new(1.0, 0.0, 0.0));
 }
 
 #[test]

@@ -627,13 +627,11 @@ fn analytic_rolling_ball_surface(
     ) = (first, second)
     {
         let first_origin = plane_surface.origin();
-        let first_normal = plane_surface.frame().axis().as_raw();
+        let first_normal = *plane_surface.frame().axis().as_raw();
         let second_origin = plane_surface_2.origin();
-        let second_normal = plane_surface_2.frame().axis().as_raw();
+        let second_normal = *plane_surface_2.frame().axis().as_raw();
         let (origin, axis) = linear_nurbs_spine(spine)?;
         let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * radius;
-        let first_normal = first_normal.unit()?;
-        let second_normal = second_normal.unit()?;
         let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
         if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
@@ -713,8 +711,6 @@ fn analytic_rolling_ball_surface(
             }
         };
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
-    let plane_normal = plane_normal.unit()?;
-    let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius);
     let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
     let center_offset = point_vector(cylinder_origin, center);

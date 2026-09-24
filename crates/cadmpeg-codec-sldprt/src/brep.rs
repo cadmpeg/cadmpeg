@@ -193,39 +193,6 @@ pub(crate) struct SurfaceCarrier {
     orientation_reversed: bool,
 }
 
-impl SurfaceCarrier {
-    fn frame(&self) -> Option<(Vector3, Vector3)> {
-        match &self.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let normal = plane_surface.frame().axis().as_raw();
-                let u_axis = plane_surface.frame().reference().as_raw();
-                Some((*u_axis, cross(*normal, *u_axis)))
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
-                let axis = cylinder_surface.frame().axis().as_raw();
-                let ref_direction = cylinder_surface.frame().reference().as_raw();
-                Some((*ref_direction, *axis))
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
-                let axis = cone_surface.frame().axis().as_raw();
-                let ref_direction = cone_surface.frame().reference().as_raw();
-                Some((*ref_direction, *axis))
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
-                let axis = sphere_surface.frame().axis().as_raw();
-                let ref_direction = sphere_surface.frame().reference().as_raw();
-                Some((*ref_direction, *axis))
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
-                let axis = torus_surface.frame().axis().as_raw();
-                let ref_direction = torus_surface.frame().reference().as_raw();
-                Some((*ref_direction, *axis))
-            }
-            _ => None,
-        }
-    }
-}
-
 fn analytic_marker_candidates(body: &[u8], hdr: usize) -> Option<Vec<usize>> {
     let mut candidates = Vec::with_capacity(2);
 
@@ -297,11 +264,6 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
         .filter_map(|marker_at| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
     let carrier = candidates.next()?;
     candidates.next().is_none().then_some(carrier)
-}
-
-fn cross(a: Vector3, b: Vector3) -> Vector3 {
-    let c = a.cross(b);
-    c.unit().unwrap_or(c)
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
@@ -535,7 +497,26 @@ mod tests {
             let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).unwrap() else {
                 panic!("expected surface carrier");
             };
-            assert_eq!(carrier.frame(), Some((reference, expected_v)));
+            let frame = match carrier.geometry.solved() {
+                Some(SolvedSurfaceGeometry::Plane(plane)) => {
+                    let (normal, u_axis) = (plane.frame().axis(), plane.frame().reference());
+                    Some((*u_axis.as_raw(), normal.as_raw().cross(*u_axis.as_raw())))
+                }
+                Some(SolvedSurfaceGeometry::Cylinder(cylinder)) => Some((
+                    *cylinder.frame().reference().as_raw(),
+                    *cylinder.frame().axis().as_raw(),
+                )),
+                Some(SolvedSurfaceGeometry::Sphere(sphere)) => Some((
+                    *sphere.frame().reference().as_raw(),
+                    *sphere.frame().axis().as_raw(),
+                )),
+                Some(SolvedSurfaceGeometry::Torus(torus)) => Some((
+                    *torus.frame().reference().as_raw(),
+                    *torus.frame().axis().as_raw(),
+                )),
+                _ => None,
+            };
+            assert_eq!(frame, Some((reference, expected_v)));
         }
     }
 

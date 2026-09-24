@@ -926,7 +926,7 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             let directrix = definition_payload.directrix();
             let axis_origin = definition_payload.axis_origin();
-            let axis_direction = definition_payload.axis_direction();
+            let axis_direction = *definition_payload.axis_direction().as_raw();
             let angular_interval = definition_payload.angular_interval().endpoints();
             let angular_parameter_interval = definition_payload
                 .angular_parameter_interval()

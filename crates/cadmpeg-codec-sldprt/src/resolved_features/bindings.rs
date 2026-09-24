@@ -42,6 +42,7 @@ use cadmpeg_ir::{
         FeatureDefinition, FeatureOperation, PathRef,
     },
     scalar::{PositiveAngle, PositiveLength},
+    units::UnitVector3,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -739,19 +740,17 @@ fn admitted_direction(
 
 fn mirror_plane_from_surface(
     geometry: &SolvedSurfaceGeometry,
-) -> Option<(cadmpeg_ir::features::FinitePoint3, Vector3)> {
+) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin();
-            let normal = plane_surface.frame().axis().as_raw();
-            Some((origin, normal.unit()?))
+            Some((plane_surface.origin(), *plane_surface.frame().axis()))
         }
         SolvedSurfaceGeometry::Transformed(placed) if placed.transform().is_proper_rigid() => {
             let (origin, normal) = mirror_plane_from_surface(placed.basis())?;
             let transform = placed.transform();
             Some((
                 origin.transformed(*transform)?,
-                transform.apply_normal(normal)?,
+                transform.apply_unit_normal(normal)?,
             ))
         }
         _ => None,
@@ -855,13 +854,11 @@ pub(crate) fn bind_mirror_surface_planes(
             let [(origin, normal)] = candidates.as_slice() else {
                 break 'feature_edit;
             };
-            if let Some(plane_normal) = cadmpeg_ir::features::FeatureDirection3::new(*normal) {
-                if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: *origin,
-                    plane_normal,
-                }) {
-                    *pattern = admitted;
-                }
+            if let Ok(admitted) = PatternKind::new(PatternTransform::Mirror {
+                plane_origin: *origin,
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::from(*normal),
+            }) {
+                *pattern = admitted;
             }
         }
         feature.evaluation.set_definition(definition);

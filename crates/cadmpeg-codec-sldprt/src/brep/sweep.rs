@@ -25,7 +25,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use super::LEN_TO_MM;
 
 const EPS_SWEEP_UNIT3_E9: f64 = 1.0e-9;
-const EPS_SWEEP_PROFILE_NURBS_E9: f64 = 1.0e-9;
 
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
@@ -145,31 +144,27 @@ pub(super) fn profile_nurbs(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsCurve> {
-    let (center, axis, major, major_radius, minor_radius) = match geometry {
+    let (center, frame, major_radius, minor_radius) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => return Some(curve.clone()),
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            (center, *axis, *ref_direction, radius, radius)
+            (
+                circle_curve.center().get(),
+                *circle_curve.frame(),
+                radius,
+                radius,
+            )
         }
-        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
-            let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
-            let major_radius = ellipse_curve.major_radius().get();
-            let minor_radius = ellipse_curve.minor_radius().get();
-            (center, *axis, *major_direction, major_radius, minor_radius)
-        }
+        CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => (
+            ellipse_curve.center().get(),
+            *ellipse_curve.frame(),
+            ellipse_curve.major_radius().get(),
+            ellipse_curve.minor_radius().get(),
+        ),
         _ => return None,
     };
-    let axis = axis.unit()?;
-    let major = major.unit()?;
-    if axis.dot(major).abs() > EPS_SWEEP_PROFILE_NURBS_E9 {
-        return None;
-    }
-    let minor = axis.cross(major).unit()?;
+    let major = *frame.reference().as_raw();
+    let minor = *frame.binormal().as_raw();
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control_points = Vec::with_capacity(9);
     let mut weights = Vec::with_capacity(9);

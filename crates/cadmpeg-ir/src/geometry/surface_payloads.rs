@@ -596,9 +596,10 @@ impl RevolutionSurfaceConstruction {
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
         self.axis_origin = axis_origin;
     }
-    /// Return the axis direction.
-    pub fn axis_direction(&self) -> &Vector3 {
-        self.axis_direction.as_raw()
+    /// Return the admitted unit axis direction. A caller that passes it on
+    /// keeps the unit-length guarantee and performs no new admission.
+    pub const fn axis_direction(&self) -> UnitVector3 {
+        self.axis_direction
     }
     /// Return the admitted angular interval. A caller that passes it on
     /// keeps the finite strictly increasing guarantee and performs no new
@@ -1123,9 +1124,10 @@ impl AxisRevolutionSurfaceConstruction {
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
         self.axis_origin = axis_origin;
     }
-    /// Return the axis direction.
-    pub fn axis_direction(&self) -> &Vector3 {
-        self.axis_direction.as_raw()
+    /// Return the admitted unit axis direction. A caller that passes it on
+    /// keeps the unit-length guarantee and performs no new admission.
+    pub const fn axis_direction(&self) -> UnitVector3 {
+        self.axis_direction
     }
 }
 

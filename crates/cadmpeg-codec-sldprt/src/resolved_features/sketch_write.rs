@@ -1016,8 +1016,7 @@ fn patch_direct_ellipse(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let axis = match crate::brep::curve_by_attr(body, request.carrier_attr) {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))) => {
-            let axis = *ellipse_curve.frame().axis().as_raw();
-            axis
+            *ellipse_curve.frame().axis()
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))) => {
             return Err(cadmpeg_core::CodecError::Malformed(
@@ -1043,13 +1042,35 @@ fn patch_direct_ellipse(
         request.u_axis.y * major_angle.cos() + request.v_axis.y * major_angle.sin(),
         request.u_axis.z * major_angle.cos() + request.v_axis.z * major_angle.sin(),
     );
+    let frame = cadmpeg_ir::units::UnitVector3::new(major_direction)
+        .and_then(|major_direction| {
+            cadmpeg_ir::units::OrthonormalFrame3::from_units(axis, major_direction)
+        })
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "EllipseCurve.axis/major_direction must form an orthonormal frame",
+            )
+        })?;
+    let center_3d = cadmpeg_ir::features::FinitePoint3::new(center_3d)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
+    let admitted_major_radius =
+        cadmpeg_ir::scalar::PositiveLength::new(major_radius).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "EllipseCurve.major_radius must be positive and finite",
+            )
+        })?;
+    let admitted_minor_radius =
+        cadmpeg_ir::scalar::PositiveLength::new(minor_radius).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "EllipseCurve.minor_radius must be positive and finite",
+            )
+        })?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
+        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
             center_3d,
-            axis,
-            major_direction,
-            major_radius,
-            minor_radius,
+            frame,
+            admitted_major_radius,
+            admitted_minor_radius,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ));
