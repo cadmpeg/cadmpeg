@@ -4,6 +4,7 @@
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -42,9 +43,9 @@ pub(crate) enum DesignWorkAxisSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignWorkAxisConstruction {
     /// First construction point in model centimetres.
-    pub(crate) origin: [f64; 3],
+    pub(crate) origin: [FiniteReal; 3],
     /// Displacement from the first construction point to the second, in centimetres.
-    pub(crate) displacement: [f64; 3],
+    pub(crate) displacement: [FiniteReal; 3],
     /// Byte offset of the first origin coordinate.
     pub(crate) origin_offset: u64,
     /// Byte offset of the first displacement component.
@@ -1113,7 +1114,7 @@ pub(crate) struct DesignWorkPointConstruction {
     /// Byte offset of the point-data record header.
     pub(crate) point_record_byte_offset: u64,
     /// Solved point in source model centimetres.
-    pub(crate) position: [f64; 3],
+    pub(crate) position: [FiniteReal; 3],
     /// Byte offset of the first position coordinate.
     pub(crate) position_offset: u64,
     /// Typed construction rule and its source inputs.

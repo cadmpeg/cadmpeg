@@ -57,7 +57,7 @@ pub(super) fn exact_draft_operation_with_owners(
             Some((
                 *record_index,
                 owner.local_ordinal(),
-                owner.evaluated_value().get(),
+                owner.evaluated_value(),
                 owner.evaluated_value_offset(),
             ))
         })
@@ -68,11 +68,11 @@ pub(super) fn exact_draft_operation_with_owners(
     else {
         return None;
     };
-    if *angle_ordinal != 0 || *opposite_ordinal != 1 || !angle.is_finite() || *opposite != 0.0 {
+    if *angle_ordinal != 0 || *opposite_ordinal != 1 || opposite.get() != 0.0 {
         return None;
     }
     Some(DesignDraftOperation {
-        angle: cadmpeg_ir::scalar::Angle::new(*angle)?,
+        angle: cadmpeg_ir::scalar::Angle::from_assigned_real(*angle),
         angle_record_index: *angle_record_index,
         angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,

@@ -13,6 +13,7 @@ use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// Read a signed little-endian integer with a four- or eight-byte width.
 pub(crate) fn int_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -50,6 +51,19 @@ pub(crate) fn f64s_at(bytes: &[u8], offset: usize, count: usize) -> Option<Vec<f
     let mut view = View::over_retained(bytes);
     view.seek(offset)?;
     view.read_counted(u64::try_from(count).ok()?, 8, View::f64_le)
+}
+
+/// Read `N` consecutive little-endian `f64` values at `offset`, or `None`
+/// when one is not finite.
+pub(crate) fn finite_reals_at<const N: usize>(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<[FiniteReal; N]> {
+    let mut admitted = [FiniteReal::ZERO; N];
+    for (slot, value) in admitted.iter_mut().zip(f64s_at(bytes, offset, N)?) {
+        *slot = FiniteReal::new(value)?;
+    }
+    Some(admitted)
 }
 
 /// Read a u32-length-prefixed ASCII string whose length lies in `bounds`,

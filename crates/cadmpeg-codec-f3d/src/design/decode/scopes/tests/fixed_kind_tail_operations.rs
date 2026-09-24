@@ -253,12 +253,12 @@ pub(super) fn fixed_kind_tail_operations(
         ),
         Some(DesignSolidPrimitive::Sphere(
             crate::records::feature::primitives::DesignSpherePrimitive {
-                diameter: 8.0,
+                diameter,
                 diameter_record_index: 70,
                 operation: DesignExtrudeOperation::NewBody,
                 ..
             }
-        ))
+        )) if diameter.get() == 8.0
     ));
 
     let torus_at = bytes.len();
@@ -313,12 +313,12 @@ pub(super) fn fixed_kind_tail_operations(
         ),
         Some(DesignSolidPrimitive::Torus(
             crate::records::feature::primitives::DesignTorusPrimitive {
-                major_diameter: 15.0,
-                minor_diameter: 4.0,
+                major_diameter,
+                minor_diameter,
                 operation: DesignExtrudeOperation::NewBody,
                 ..
             }
-        ))
+        )) if major_diameter.get() == 15.0 && minor_diameter.get() == 4.0
     ));
 
     let offset_at = bytes.len();
@@ -355,11 +355,11 @@ pub(super) fn fixed_kind_tail_operations(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
-                distance: -0.5,
+                distance,
                 distance_record_index: 73,
                 ..
             }
-        ))
+        )) if distance.get() == -0.5
     ));
 
     let compact_offset_at = bytes.len();
@@ -394,11 +394,11 @@ pub(super) fn fixed_kind_tail_operations(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &offset_scope),
         Some(DesignDirectFaceOperation::OffsetFaces(
             crate::records::feature::direct_face::DesignOffsetFacesOperation {
-                distance: 0.254,
+                distance,
                 distance_record_index: 1_777,
                 ..
             }
-        ))
+        )) if distance.get() == 0.254
     ));
 
     let thicken_at = bytes.len();
@@ -435,11 +435,11 @@ pub(super) fn fixed_kind_tail_operations(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: -1.0,
+                signed_thickness,
                 thickness_record_index: 74,
                 ..
             }
-        ))
+        )) if signed_thickness.get() == -1.0
     ));
     thicken_scope
         .try_edit(|draft| {
@@ -473,11 +473,11 @@ pub(super) fn fixed_kind_tail_operations(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &thicken_scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: -1.0,
+                signed_thickness,
                 thickness_record_index: 74,
                 ..
             }
-        ))
+        )) if signed_thickness.get() == -1.0
     ));
     let shifted_thicken_at = bytes.len();
     let mut shifted_thicken = vec![0; 312];
@@ -507,11 +507,11 @@ pub(super) fn fixed_kind_tail_operations(
         ),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: -1.0,
+                signed_thickness,
                 thickness_record_index: 74,
                 ..
             }
-        ))
+        )) if signed_thickness.get() == -1.0
     ));
     {
         let construction = exact_direct_face_operation(
@@ -959,13 +959,13 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
-                    value: -2.0,
+                    value: crate::test_support::real(-2.0),
                     record_index: 75,
                     value_offset: (bytes.len() - 2 * 115 + 40) as u64,
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
-                value: 0.0,
+                value: crate::test_support::real(0.0),
                 record_index: 76,
                 value_offset: (bytes.len() - 115 + 40) as u64,
             }),
@@ -992,7 +992,7 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
-                    value: -2.0,
+                    value: crate::test_support::real(-2.0),
                     record_index: 75,
                     value_offset: (bytes.len() - 2 * 115 + 40) as u64,
                 },
@@ -1121,7 +1121,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         operation,
         DesignSurfaceExtendOperation {
-            distance: 0.04,
+            distance: crate::test_support::real(0.04),
             distance_offset: (extend_distance_at + 40) as u64,
             distance_record_index: extend_distance_record_index,
             method: DesignSurfaceExtendMethod::Tangent,
@@ -1183,7 +1183,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         operation,
         DesignSurfaceOffsetOperation {
-            distance: -0.4,
+            distance: crate::test_support::real(-0.4),
             distance_offset: (extend_distance_at + 40) as u64,
             distance_record_index: extend_distance_record_index,
             support: DesignSurfaceOffsetSupport::BoundaryCarrier {
@@ -1279,7 +1279,7 @@ pub(super) fn fixed_kind_tail_operations(
     assert_eq!(
         grouped_operation,
         DesignSurfaceOffsetOperation {
-            distance: -0.4,
+            distance: crate::test_support::real(-0.4),
             distance_offset: (extend_distance_at + 40) as u64,
             distance_record_index: extend_distance_record_index,
             support: DesignSurfaceOffsetSupport::FaceGroups {
@@ -1360,13 +1360,13 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
                 DesignFixedExtrudeScalar {
-                    value: 0.25,
+                    value: crate::test_support::real(0.25),
                     record_index: embedded_distance_record_index,
                     value_offset: (embedded_distance_at + 51) as u64,
                 },
             )),
             taper_angle: Some(DesignFixedExtrudeScalar {
-                value: 0.0,
+                value: crate::test_support::real(0.0),
                 record_index: 274,
                 value_offset: (embedded_default_at + 115 + 40) as u64,
             }),

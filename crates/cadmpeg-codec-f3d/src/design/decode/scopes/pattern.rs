@@ -3,9 +3,9 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::f64s_at;
 use crate::bytes::lp_ascii_filtered;
 use crate::bytes::lp_utf16_bounded;
+use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
@@ -18,6 +18,7 @@ use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
@@ -398,7 +399,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     (scalar.owner_record_index == Some(scope.record_index) && scalar.ordinal == 1)
                         .then_some(())?;
                     Some((
-                        cadmpeg_ir::scalar::PositiveAngle::new(scalar.value)?,
+                        cadmpeg_ir::scalar::PositiveAngle::new(scalar.value.get())?,
                         *record_index,
                         scalar.value_offset,
                     ))
@@ -640,7 +641,7 @@ fn exact_circular_pattern_axis(
     record_index: u32,
     selection_record_index: u32,
     scope_record_index: u32,
-) -> Option<([f64; 3], [f64; 3])> {
+) -> Option<([FiniteReal; 3], [FiniteReal; 3])> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -685,26 +686,22 @@ fn exact_circular_pattern_axis(
     {
         return None;
     }
-    let origin: [f64; 3] = f64s_at(bytes, start + 25, 3)?.try_into().ok()?;
-    let displacement: [f64; 3] = f64s_at(bytes, start + 49, 3)?.try_into().ok()?;
+    let origin = finite_reals_at(bytes, start + 25)?;
+    let displacement: [FiniteReal; 3] = finite_reals_at(bytes, start + 49)?;
     let displacement_length = displacement[0]
-        .hypot(displacement[1])
-        .hypot(displacement[2]);
-    if origin.iter().any(|coordinate| !coordinate.is_finite())
-        || displacement
-            .iter()
-            .any(|coordinate| !coordinate.is_finite())
-        || !displacement_length.is_finite()
-        || displacement_length <= f64::EPSILON
-    {
+        .get()
+        .hypot(displacement[1].get())
+        .hypot(displacement[2].get());
+    if !displacement_length.is_finite() || displacement_length <= f64::EPSILON {
         return None;
     }
-    let direction =
-        if (displacement_length - 1.0).abs() <= EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12 {
-            displacement
-        } else {
-            displacement.map(|component| component / displacement_length)
-        };
+    if (displacement_length - 1.0).abs() <= EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12 {
+        return Some((origin, displacement));
+    }
+    let mut direction = [FiniteReal::ZERO; 3];
+    for (slot, component) in direction.iter_mut().zip(displacement) {
+        *slot = FiniteReal::new(component.get() / displacement_length)?;
+    }
     Some((origin, direction))
 }
 

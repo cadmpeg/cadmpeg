@@ -128,21 +128,13 @@ pub(crate) struct DesignAssemblyLegacyOperands {
 }
 
 impl DesignAssemblyLegacyOperands {
-    /// Admit legacy operand carriers with finite solved positions.
-    pub(crate) fn try_new(
+    /// Pair the point and hole operand carriers. Their solved positions are
+    /// finite reals.
+    pub(crate) fn new(
         point: DesignAssemblyLegacyOperand<Box<DesignWorkPointConstruction>>,
         hole: DesignAssemblyLegacyOperand<Box<DesignHoleConstruction>>,
-    ) -> Result<Self, String> {
-        if !point
-            .construction
-            .position
-            .iter()
-            .chain(hole.construction.position.iter())
-            .all(|value| value.is_finite())
-        {
-            return Err("legacy_operand_carriers position must be finite".into());
-        }
-        Ok(Self { point, hole })
+    ) -> Self {
+        Self { point, hole }
     }
 
     pub(crate) fn references(&self) -> [Located<u32>; 2] {
@@ -174,7 +166,7 @@ impl DesignAssemblyLegacyOperands {
         let frames: [Result<DesignAssemblyOperandFrame, String>; 2] = [0, 1].map(|index| {
             let mut transform = solved.transform.rows();
             for (row, value) in positions[index].into_iter().enumerate() {
-                transform[row][3] = value;
+                transform[row][3] = value.get();
             }
             Ok(DesignAssemblyOperandFrame {
                 reference_record_index: references[index].value,
@@ -214,7 +206,7 @@ impl DesignAssemblyLegacyOperands {
                     .into(),
             );
         }
-        let carriers = Self::try_new(
+        let carriers = Self::new(
             DesignAssemblyLegacyOperand {
                 construction_class_tag: point
                     .construction_class_tag
@@ -233,7 +225,7 @@ impl DesignAssemblyLegacyOperands {
                 selection: hole.selection,
                 reference_offset: hole.frame.reference_offset,
             },
-        )?;
+        );
         if [point.frame, hole.frame] != carriers.frames(solved)? {
             return Err(
                 "legacy_operand_carriers frame disagrees with construction and solved_frame".into(),

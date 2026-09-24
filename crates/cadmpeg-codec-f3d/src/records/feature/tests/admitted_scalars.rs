@@ -98,7 +98,7 @@ fn chamfer_distance_refuses_a_nonpositive_value() {
 fn surface_extend_operation_refuses_a_nonpositive_tolerance() {
     refuses_zero(
         &DesignSurfaceExtendOperation {
-            distance: 1.0,
+            distance: crate::test_support::real(1.0),
             distance_offset: 10,
             distance_record_index: 3,
             method: DesignSurfaceExtendMethod::Tangent,
@@ -149,9 +149,9 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
             angle_record_index: 12,
             angle_offset: 80,
             axis: DesignCircularPatternAxis::Inline {
-                origin: [1.0, 2.0, 3.0],
+                origin: crate::test_support::reals([1.0, 2.0, 3.0]),
                 origin_offset: 100,
-                direction: [-1.0, 0.0, 0.0],
+                direction: crate::test_support::reals([-1.0, 0.0, 0.0]),
                 direction_offset: 124,
             },
             axis_record_index: 13,

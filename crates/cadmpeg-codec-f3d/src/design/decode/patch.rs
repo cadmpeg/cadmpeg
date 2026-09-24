@@ -53,10 +53,7 @@ fn exact_surface_patch_boundary(bytes: &[u8], at: usize) -> Option<DesignSurface
         1 => true,
         _ => return None,
     };
-    let scale = View::f64_le_at(bytes, payload + 11)?;
-    if !scale.is_finite() {
-        return None;
-    }
+    let scale = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, payload + 11)?)?;
     let model_reference = marked_record_reference(bytes, payload + 19)?;
     Some(DesignSurfacePatchBoundary {
         scope_reference_ordinal: 0,

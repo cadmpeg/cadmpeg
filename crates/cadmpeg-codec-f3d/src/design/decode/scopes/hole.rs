@@ -2,7 +2,7 @@
 //! Exact hole constructions and hole face selections.
 
 use super::parameter_scope::payload_prologue;
-use crate::bytes::f64s_at;
+use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_entity_selection_frame;
@@ -14,6 +14,7 @@ use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
 
 /// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
@@ -183,8 +184,7 @@ fn hole_construction_frame_at(
         cursor = cursor.checked_add(1)?;
         let tangent_point_data_at = cursor;
         cursor = cursor.checked_add(24)?;
-        let tangent_point_data: [f64; 3] =
-            f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
+        let tangent_point_data = finite_reals_at(body, tangent_point_data_at)?;
         Some(hole::DesignHoleTangentPoint {
             prefix,
             data: crate::records::identity::Located {
@@ -202,25 +202,14 @@ fn hole_construction_frame_at(
     if input_count == 0 || input_count > paired_at.checked_sub(cursor)? {
         return None;
     }
-    let position: [f64; 3] = f64s_at(body, position_at, 3)?.try_into().ok()?;
-    let direction: [f64; 3] = f64s_at(body, direction_at, 3)?.try_into().ok()?;
-    let point_parameters: [f64; 2] = f64s_at(body, point_parameters_at, 2)?.try_into().ok()?;
+    let position = finite_reals_at(body, position_at)?;
+    let direction: [FiniteReal; 3] = finite_reals_at(body, direction_at)?;
+    let point_parameters = finite_reals_at(body, point_parameters_at)?;
     let direction_norm = direction
         .iter()
-        .map(|component| component * component)
+        .map(|component| component.get() * component.get())
         .sum::<f64>();
-    if position
-        .iter()
-        .chain(direction.iter())
-        .chain(point_parameters.iter())
-        .chain(
-            tangent_point_data
-                .iter()
-                .flat_map(|tangent| tangent.data.value.iter()),
-        )
-        .any(|value| !value.is_finite())
-        || (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM
-    {
+    if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
         return None;
     }
     let mut input_records = Vec::with_capacity(input_count);

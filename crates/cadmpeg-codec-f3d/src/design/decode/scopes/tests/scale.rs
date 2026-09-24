@@ -26,7 +26,7 @@ fn legacy_scale_resolves_explicit_point_data_center() {
 
         let position = operation.center_position.expect("point-data center").value;
         for (actual, expected) in position.into_iter().zip([1.25, -2.5, 3.75]) {
-            assert!((actual - expected).abs() < EPS_SCALE_VALUE);
+            assert!((actual.get() - expected).abs() < EPS_SCALE_VALUE);
         }
     }
 }
@@ -49,7 +49,7 @@ fn modern_localized_scale_resolves_explicit_point_data_center() {
 
     let position = operation.center_position.expect("point-data center").value;
     for (actual, expected) in position.into_iter().zip([1.25, -2.5, 3.75]) {
-        assert!((actual - expected).abs() < EPS_SCALE_VALUE);
+        assert!((actual.get() - expected).abs() < EPS_SCALE_VALUE);
     }
 }
 

@@ -73,16 +73,16 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
         Some(DesignSolidPrimitive::Box(
             crate::records::feature::primitives::DesignBoxPrimitive {
-                length: 3.0,
-                width: 4.0,
-                height: 2.0,
-                offset_x: 0.5,
-                offset_y: -0.25,
+                length,
+                width,
+                height,
+                offset_x,
+                offset_y,
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 20,
                 ..
             }
-        ))
+        )) if length.get() == 3.0 && width.get() == 4.0 && height.get() == 2.0 && offset_x.get() == 0.5 && offset_y.get() == -0.25
     ));
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
@@ -110,13 +110,13 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
         Some(DesignSolidPrimitive::Cylinder(
             crate::records::feature::primitives::DesignCylinderPrimitive {
-                height: 0.7,
-                diameter: 3.0,
+                height,
+                diameter,
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 20,
                 ..
             }
-        ))
+        )) if height.get() == 0.7 && diameter.get() == 3.0
     ));
 }
 
@@ -260,14 +260,14 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         ),
         Some(DesignSolidPrimitive::Cylinder(
             crate::records::feature::primitives::DesignCylinderPrimitive {
-                height: 0.7,
-                diameter: 3.0,
+                height,
+                diameter,
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 22,
                 transform: None,
                 ..
             }
-        ))
+        )) if height.get() == 0.7 && diameter.get() == 3.0
     ));
 
     for (class_tag, paired_class_tag) in [("297", "258"), ("375", "258"), ("414", "272")] {
@@ -309,14 +309,14 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             ),
             Some(DesignSolidPrimitive::Cylinder(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
-                    height: 0.7,
-                    diameter: 3.0,
+                    height,
+                    diameter,
                     operation: DesignExtrudeOperation::Join,
                     operation_offset: 22,
                     transform: Some(crate::records::identity::Located { offset: 72, .. }),
                     ..
                 }
-            ))
+            )) if height.get() == 0.7 && diameter.get() == 3.0
         ));
 
         let mut translated = expanded;

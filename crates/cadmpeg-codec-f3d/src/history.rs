@@ -27,6 +27,7 @@ use crate::records::{
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
@@ -2871,9 +2872,9 @@ pub(crate) fn bind_vertex_recipe_history(
             continue;
         };
         let solved_position = cadmpeg_ir::math::Point3::new(
-            construction.position[0] * 10.0,
-            construction.position[1] * 10.0,
-            construction.position[2] * 10.0,
+            construction.position[0].get() * 10.0,
+            construction.position[1].get() * 10.0,
+            construction.position[2].get() * 10.0,
         );
         for recipe in construction.rule.vertex_recipes_mut() {
             recipe.resolution = None;
@@ -5961,12 +5962,12 @@ pub(crate) fn bind_edge_operand_history_candidates(
                     &operand.recipe_selectors,
                     reference_edge_sets.iter().map(Vec::as_slice),
                 );
-            if let Some((origin, direction)) = operand
+            if let Some(axis) = operand
                 .resolved_edge_slot
                 .and_then(|edge| historical_edge_axis(edge, topology))
+                .and_then(|(origin, direction)| design_axis(origin, direction))
             {
-                operand.resolved_axis =
-                    Some(crate::records::feature::patterns::DesignAxis { origin, direction });
+                operand.resolved_axis = Some(axis);
             }
             continue;
         }
@@ -5986,6 +5987,18 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.preceding_boundary_edge_slots,
         );
     }
+}
+
+/// A resolved axis as the design record holds it, or `None` when a
+/// coordinate is not finite.
+fn design_axis(
+    origin: cadmpeg_ir::math::Point3,
+    direction: cadmpeg_ir::math::Vector3,
+) -> Option<crate::records::feature::patterns::DesignAxis> {
+    Some(crate::records::feature::patterns::DesignAxis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::FiniteVector3::new(direction)?,
+    })
 }
 
 fn historical_edge_axis(
@@ -6060,13 +6073,13 @@ fn bind_active_edge_operand_for_scope(
                 .find(|(candidate, _)| *candidate == state_id)
                 .map(|(_, topology)| *topology)
         });
-        if let Some((origin, direction)) = operand
+        if let Some(axis) = operand
             .resolved_edge_slot
             .zip(topology)
             .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
+            .and_then(|(origin, direction)| design_axis(origin, direction))
         {
-            operand.resolved_axis =
-                Some(crate::records::feature::patterns::DesignAxis { origin, direction });
+            operand.resolved_axis = Some(axis);
         }
     }
 }
@@ -7196,8 +7209,8 @@ pub(crate) fn bind_hole_selection_history(
                 selection
                     .secondary
                     .map(|secondary| secondary.identity.value),
-                construction.position,
-                construction.direction,
+                construction.position.map(FiniteReal::get),
+                construction.direction.map(FiniteReal::get),
                 history_state_id,
                 previous_history_state_id,
                 histories,
@@ -7406,7 +7419,9 @@ pub(crate) fn bind_circular_pattern_axes(
         if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
             continue;
         }
-        *resolved = Some(crate::records::feature::patterns::DesignAxis { origin, direction });
+        if let Some(axis) = design_axis(origin, direction) {
+            *resolved = Some(axis);
+        }
     }
 }
 
@@ -7693,10 +7708,14 @@ pub(crate) fn bind_mirror_selection_planes(
         if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9 {
             continue;
         }
-        construction.plane = Some(crate::records::feature::patterns::DesignPlane {
-            origin: plane.origin,
-            normal: plane.normal,
-        });
+        let (Some(origin), Some(normal)) = (
+            cadmpeg_ir::features::FinitePoint3::new(plane.origin),
+            cadmpeg_ir::features::FiniteVector3::new(plane.normal),
+        ) else {
+            continue;
+        };
+        construction.plane =
+            Some(crate::records::feature::patterns::DesignPlane { origin, normal });
     }
 }
 

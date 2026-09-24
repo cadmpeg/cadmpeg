@@ -203,29 +203,29 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::feature::fixed_parameters::DesignFixedFilletGroup::try_new(
                 Some(crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                    value: 1.0,
+                    value: crate::test_support::real(1.0),
                     record_index: 77,
                     value_offset: (fillet_start + 40) as u64,
                 }),
                 crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
                     start: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                        value: 0.0,
+                        value: crate::test_support::real(0.0),
                         record_index: 78,
                         value_offset: (fillet_start + 115 + 40) as u64
                     },
                     end: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                        value: 0.65,
+                        value: crate::test_support::real(0.65),
                         record_index: 79,
                         value_offset: (fillet_start + 230 + 40) as u64
                     },
                     intermediate: vec![crate::records::feature::fixed_parameters::DesignFixedFilletIntermediate {
                         radius: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                            value: 0.4,
+                            value: crate::test_support::real(0.4),
                             record_index: 87,
                             value_offset: (fillet_start + 345 + 40) as u64
                         },
                         parameter: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                            value: 0.2,
+                            value: crate::test_support::real(0.2),
                             record_index: 88,
                             value_offset: (fillet_start + 460 + 40) as u64
                         },
@@ -253,7 +253,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     None,
                     crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(
                         crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                            value: 1.0,
+                            value: crate::test_support::real(1.0),
                             record_index: 77,
                             value_offset: (fillet_start + 40) as u64
                         }
@@ -302,7 +302,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     None,
                     crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(
                         crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
-                            value: 0.5,
+                            value: crate::test_support::real(0.5),
                             record_index: 89,
                             value_offset: (dynamic_scalar_at + 40) as u64
                         }
@@ -351,7 +351,7 @@ fn fixed_kind_edge_and_revolve_operations(
         fixed.groups[0]
             .law()
             .radii()
-            .map(|scalar| scalar.value)
+            .map(|scalar| scalar.value.get())
             .collect::<Vec<_>>(),
         [0.5]
     );
@@ -359,14 +359,14 @@ fn fixed_kind_edge_and_revolve_operations(
         fixed.groups[1]
             .law()
             .radii()
-            .map(|scalar| scalar.value)
+            .map(|scalar| scalar.value.get())
             .collect::<Vec<_>>(),
         [0.25]
     );
     assert_eq!(
         fixed.groups[1]
             .tangency_weight()
-            .map(|weight| (weight.value, weight.value_offset)),
+            .map(|weight| (weight.value.get(), weight.value_offset)),
         Some((0.75, (second_group_at + 2 * 115 + 40) as u64))
     );
 

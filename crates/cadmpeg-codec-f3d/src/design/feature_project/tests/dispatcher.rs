@@ -51,7 +51,7 @@ fn dispatcher_projects_datum_feature_scopes() {
             crate::records::feature::work_geometry::DesignWorkPointConstruction {
                 point_record_index: 4,
                 point_record_byte_offset: 0,
-                position: [4.0, 5.0, 6.0],
+                position: crate::test_support::reals([4.0, 5.0, 6.0]),
                 position_offset: 0,
                 rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                     crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
@@ -100,7 +100,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
             body_group_record_index: 5,
             center_record_index: 6,
             center_position: Some(crate::records::identity::Located {
-                value: [1.25, -2.5, 3.75],
+                value: crate::test_support::reals([1.25, -2.5, 3.75]),
                 offset: 40,
             }),
             uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
@@ -292,7 +292,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 41,
             point_record_byte_offset: 0,
-            position: [1.0, 2.0, 3.0],
+            position: crate::test_support::reals([1.0, 2.0, 3.0]),
             position_offset: 0,
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::ThreePlaneIntersection {
@@ -393,7 +393,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 21,
             point_record_byte_offset: 0,
-            position: [4.0, 3.0, 0.0],
+            position: crate::test_support::reals([4.0, 3.0, 0.0]),
             position_offset: 0,
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed extrude, fillet and chamfer parameter payloads.
 
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -23,7 +23,7 @@ cadmpeg_core::named_optional_field!(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedExtrudeScalar {
     /// Scalar value in source centimetres for a distance or radians for an angle.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Referenced record carrying the scalar.
     pub(crate) record_index: u32,
     /// Byte offset of the scalar.
@@ -85,23 +85,20 @@ impl DesignFixedFilletGroup {
     ) -> Result<Self, String> {
         if tangency_weight
             .as_ref()
-            .is_some_and(|weight| PositiveReal::new(weight.value).is_none())
+            .is_some_and(|weight| PositiveReal::new(weight.value.get()).is_none())
         {
             return Err("tangency_weight must be positive and finite".into());
         }
-        if !law
-            .radii()
-            .all(|radius| radius.value.is_finite() && radius.value >= 0.0)
-        {
+        if !law.radii().all(|radius| radius.value.get() >= 0.0) {
             return Err("radii must be finite and non-negative".into());
         }
-        if !law.radii().any(|radius| radius.value > 0.0) {
+        if !law.radii().any(|radius| radius.value.get() > 0.0) {
             return Err("radii must contain a positive radius".into());
         }
         if !law
             .intermediate()
             .iter()
-            .all(|row| row.parameter.value.is_finite() && (0.0..1.0).contains(&row.parameter.value))
+            .all(|row| (0.0..1.0).contains(&row.parameter.value.get()))
         {
             return Err("intermediate_parameters must be finite and in [0, 1)".into());
         }
@@ -180,14 +177,14 @@ struct DesignFixedFilletGroupWire {
     tangency_weight: Option<DesignFixedFilletScalar>,
     /// One constant radius, or endpoint radii followed by intermediate radii,
     /// in source centimetres.
-    radii: Vec<f64>,
+    radii: Vec<FiniteReal>,
     /// Referenced radius scalar records in semantic radius order.
     radius_record_indexes: Vec<u32>,
     /// Byte offsets of the radius scalars in semantic radius order.
     radius_offsets: Vec<u64>,
     /// Normalized edge-chain positions paired with the intermediate radii.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    intermediate_parameters: Vec<f64>,
+    intermediate_parameters: Vec<FiniteReal>,
     /// Referenced intermediate-position scalar records in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     intermediate_parameter_record_indexes: Vec<u32>,
@@ -306,7 +303,7 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignFixedFilletScalar {
     /// Radius, normalized position, or tangency weight.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Referenced scalar record.
     pub(crate) record_index: u32,
     /// Byte offset of the scalar.

@@ -77,7 +77,7 @@ pub(super) fn exact_legacy_thicken_class_347(
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken(
+    (scalar.value.get() != 0.0).then_some(DesignDirectFaceOperation::Thicken(
         direct_face::DesignThickenOperation {
             signed_thickness: scalar.value,
             thickness_record_index,
@@ -172,7 +172,7 @@ pub(super) fn exact_shell_class_369_261(
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
     Some(DesignDirectFaceOperation::Shell(
         direct_face::DesignShellOperation {
-            thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?,
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
             thickness_record_index,
             thickness_offset: scalar.value_offset,
             outward,

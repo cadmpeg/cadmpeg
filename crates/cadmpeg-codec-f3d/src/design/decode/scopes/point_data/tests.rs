@@ -124,7 +124,10 @@ fn work_point_reads_the_class_version_its_type_table_stores() {
         &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
     )
     .expect("work point frame");
-    assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+    assert_eq!(
+        frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [4.0, 5.0, 6.0]
+    );
     assert_eq!(frame.position_offset, position_at as u64);
     // The stored version drives the read: a version that describes a
     // different member sequence does not yield this frame's coordinate.
@@ -167,7 +170,11 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
             &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
         )
         .unwrap_or_else(|| panic!("class tag {class_tag}"));
-        assert_eq!(frame.position, [7.5, 8.5, 9.5], "class tag {class_tag}");
+        assert_eq!(
+            frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+            [7.5, 8.5, 9.5],
+            "class tag {class_tag}"
+        );
         assert_eq!(
             frame.position_offset, position_at as u64,
             "class tag {class_tag}"
@@ -187,7 +194,10 @@ fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
         &HashMap::new(),
     )
     .expect("work point frame");
-    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(
+        frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75]
+    );
     assert_eq!(frame.position_offset, position_at as u64);
     assert_eq!(work_point_input_indices(&frame.rule), [70]);
 }
@@ -205,7 +215,11 @@ fn work_point_position_reads_every_class_version_that_stores_one() {
             &HashMap::new(),
         )
         .unwrap_or_else(|| panic!("class version {version}"));
-        assert_eq!(frame.position, [4.0, 5.0, 6.0], "class version {version}");
+        assert_eq!(
+            frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+            [4.0, 5.0, 6.0],
+            "class version {version}"
+        );
         assert_eq!(
             frame.position_offset, position_at as u64,
             "class version {version}"
@@ -418,7 +432,10 @@ fn work_point_direct_record_carries_model_space_position() {
         &HashMap::new(),
     )
     .expect("work point frame");
-    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(
+        frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75]
+    );
     assert_eq!(frame.position_offset, position_at as u64);
     assert_eq!(frame.rule.reference_type(), 7);
     assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
@@ -432,7 +449,10 @@ fn work_point_direct_record_carries_model_space_position() {
         &HashMap::new(),
     )
     .expect("work point frame");
-    assert_eq!(frame.position, [1.25, -2.5, 3.75]);
+    assert_eq!(
+        frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75]
+    );
     assert_eq!(frame.position_offset, position_at as u64);
     assert_eq!(frame.rule.reference_type(), 1);
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
@@ -521,7 +541,10 @@ fn work_point_input_count_frames_the_rule_inputs() {
     let records = IndexedRecordOffsets::build(&bytes);
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
-    assert_eq!(frame.position, [4.0, 5.0, 6.0]);
+    assert_eq!(
+        frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [4.0, 5.0, 6.0]
+    );
     assert_eq!(frame.rule.reference_type(), 64);
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }

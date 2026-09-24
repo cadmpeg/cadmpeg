@@ -571,8 +571,16 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         &axis_scope,
     )
     .expect("exact two-point WorkAxis construction");
-    assert_eq!(construction.origin, [1.0, 2.0, 3.0]);
-    assert_eq!(construction.displacement, [0.0, -3.0, 4.0]);
+    assert_eq!(
+        construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.0, 2.0, 3.0]
+    );
+    assert_eq!(
+        construction
+            .displacement
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, -3.0, 4.0]
+    );
     assert_eq!(construction.origin_offset, 25);
     assert_eq!(construction.displacement_offset, 49);
     assert!(matches!(

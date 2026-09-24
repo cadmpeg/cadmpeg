@@ -4,7 +4,8 @@
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -44,15 +45,15 @@ pub(crate) struct DesignCircularPatternConstruction {
 /// Proven origin and unit direction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignAxis {
-    pub(crate) origin: Point3,
-    pub(crate) direction: Vector3,
+    pub(crate) origin: FinitePoint3,
+    pub(crate) direction: FiniteVector3,
 }
 
 /// Proven origin and unit normal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignPlane {
-    pub(crate) origin: Point3,
-    pub(crate) normal: Vector3,
+    pub(crate) origin: FinitePoint3,
+    pub(crate) normal: FiniteVector3,
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
@@ -65,12 +66,12 @@ pub(crate) enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
     Inline {
         /// Axis origin in source centimetres.
-        origin: [f64; 3],
+        origin: [FiniteReal; 3],
         /// Byte offset of the first origin coordinate.
         origin_offset: u64,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
-        direction: [f64; 3],
+        direction: [FiniteReal; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
     },
@@ -99,12 +100,12 @@ enum DesignCircularPatternAxisWire {
     /// Axis coordinates stored directly in the Design record.
     Inline {
         /// Axis origin in source centimetres.
-        origin: [f64; 3],
+        origin: [FiniteReal; 3],
         /// Byte offset of the first origin coordinate.
         origin_offset: u64,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
-        direction: [f64; 3],
+        direction: [FiniteReal; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
     },
@@ -118,9 +119,9 @@ enum DesignCircularPatternAxisWire {
         identity_offsets: Vec<u64>,
         /// Resolved model-space axis, when exact.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved_origin: Option<Point3>,
+        resolved_origin: Option<FinitePoint3>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        resolved_direction: Option<Vector3>,
+        resolved_direction: Option<FiniteVector3>,
     },
 }
 

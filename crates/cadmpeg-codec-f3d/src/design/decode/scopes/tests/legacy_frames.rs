@@ -589,17 +589,17 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
     assert!(matches!(
         fixed.along_distance,
         Some(DesignFixedExtrudeDistance::FixedScalar(DesignFixedExtrudeScalar {
-            value: -2.5,
+            value,
             record_index: 82,
             value_offset,
-        })) if value_offset == (along_start + 40) as u64
+        })) if value.get() == -2.5 && value_offset == (along_start + 40) as u64
     ));
     assert!(matches!(
         fixed.taper_angle,
         Some(DesignFixedExtrudeScalar {
-            value: -0.013_962_634_015_954_637,
+            value,
             record_index: 80,
             value_offset,
-        }) if value_offset == (taper_start + 40) as u64
+        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == (taper_start + 40) as u64
     ));
 }

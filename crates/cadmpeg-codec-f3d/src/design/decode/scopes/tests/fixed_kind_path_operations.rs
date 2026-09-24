@@ -397,7 +397,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
-                values: sweep_values,
+                values: crate::test_support::reals(sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
                     (sweep_scalar_start + ordinal * 111 + 40) as u64
@@ -458,7 +458,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
-                values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+                values: crate::test_support::reals([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
                     (sweep_scalar_start + ordinal * 111 + 40) as u64
@@ -503,7 +503,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: (sweep_start + 25) as u64,
-                values: complete_sweep_values,
+                values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
                     (sweep_scalar_start + ordinal * 111 + 40) as u64
@@ -661,7 +661,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: (sweep_start + 25) as u64,
-                values: complete_sweep_values,
+                values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
                     (sweep_scalar_start + ordinal * 111 + 40) as u64
@@ -746,7 +746,7 @@ pub(super) fn fixed_kind_path_operations(
                 section_shape_offset: (pipe_start + 29) as u64,
                 filled: true,
                 filled_offset: (pipe_start + 30) as u64,
-                values: pipe_values,
+                values: crate::test_support::reals(pipe_values),
                 record_indexes: [170, 171, 172, 173],
                 value_offsets: std::array::from_fn(|ordinal| {
                     (pipe_scalar_start + ordinal * 111 + 40) as u64
@@ -840,7 +840,7 @@ pub(super) fn fixed_kind_path_operations(
                 section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
                 filled: true,
                 filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
-                values: owner_pipe_values,
+                values: crate::test_support::reals(owner_pipe_values),
                 record_indexes: owner_pipe_record_indexes,
                 value_offsets: [10_000, 10_001, 10_002, 10_003],
             }
@@ -945,7 +945,7 @@ pub(super) fn fixed_kind_path_operations(
                         as u64,
                     filled: true,
                     filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
-                    values: legacy_values,
+                    values: crate::test_support::reals(legacy_values),
                     record_indexes: [
                         first_record_index,
                         first_record_index + 1,

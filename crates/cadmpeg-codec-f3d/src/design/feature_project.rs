@@ -816,7 +816,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 })),
                 Some(DesignFeatureFamily::SurfaceExtend) => {
                     scope.surface_extend_operation().and_then(|operation| {
-                        cadmpeg_ir::scalar::PositiveLength::new(operation.distance * 10.0).map(|distance| (operation, distance))
+                        cadmpeg_ir::scalar::PositiveLength::new(operation.distance.get() * 10.0).map(|distance| (operation, distance))
                     }).map_or_else(
                         || FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
@@ -946,7 +946,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 },
                             ),
                             center: Some(operation.center_position.and_then(|center| cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                                center.value[0] * 10.0, center.value[1] * 10.0, center.value[2] * 10.0,
+                                center.value[0].get() * 10.0, center.value[1].get() * 10.0, center.value[2].get() * 10.0,
                             ))).map_or_else(
                                 || cadmpeg_ir::features::ScaleCenter::Native(format!("{native_scope}:design-record#{}", operation.center_record_index)),
                                 cadmpeg_ir::features::ScaleCenter::Point,
@@ -1072,15 +1072,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             .work_axis_construction()
                             .and_then(|construction| {
                                 let displacement = Vector3::new(
-                                    construction.displacement[0],
-                                    construction.displacement[1],
-                                    construction.displacement[2],
+                                    construction.displacement[0].get(),
+                                    construction.displacement[1].get(),
+                                    construction.displacement[2].get(),
                                 );
                                 Some((
                                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                                        construction.origin[0] * 10.0,
-                                        construction.origin[1] * 10.0,
-                                        construction.origin[2] * 10.0,
+                                        construction.origin[0].get() * 10.0,
+                                        construction.origin[1].get() * 10.0,
+                                        construction.origin[2].get() * 10.0,
                                     ))?,
                                     cadmpeg_ir::features::FeatureDirection3::from(cadmpeg_ir::units::UnitVector3::normalized(displacement)?),
                                 ))
@@ -1093,9 +1093,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         scope.work_point_construction().and_then(|construction| Some((
                             construction,
                             cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                                construction.position[0] * 10.0,
-                                construction.position[1] * 10.0,
-                                construction.position[2] * 10.0,
+                                construction.position[0].get() * 10.0,
+                                construction.position[1].get() * 10.0,
+                                construction.position[2].get() * 10.0,
                             ))?,
                         ))).map_or_else(
                             || native_scope_definition(scope, &parameters),
@@ -1595,15 +1595,15 @@ fn project_solid_primitive(
             },
         )) => {
             let placement = cadmpeg_ir::transform::Transform::affine([
-                [1.0, 0.0, 0.0, *offset_x * 10.0],
-                [0.0, 1.0, 0.0, *offset_y * 10.0],
+                [1.0, 0.0, 0.0, offset_x.get() * 10.0],
+                [0.0, 1.0, 0.0, offset_y.get() * 10.0],
                 [0.0, 0.0, 1.0, 0.0],
             ])?;
             FeatureDefinition::Operation(FeatureOperation::Block {
                 dimensions: Some([
-                    cadmpeg_ir::scalar::PositiveLength::new(*length * 10.0)?,
-                    cadmpeg_ir::scalar::PositiveLength::new(*width * 10.0)?,
-                    cadmpeg_ir::scalar::PositiveLength::new(*height * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(length.get() * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(width.get() * 10.0)?,
+                    cadmpeg_ir::scalar::PositiveLength::new(height.get() * 10.0)?,
                 ]),
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::new(placement)?),
                 op: operation(*result),
@@ -1618,8 +1618,8 @@ fn project_solid_primitive(
             },
         )) => FeatureDefinition::Operation(FeatureOperation::Primitive {
             solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
-                radius: Length::new(*diameter * 5.0)?,
-                height: Length::new(*height * 10.0)?,
+                radius: Length::new(diameter.get() * 5.0)?,
+                height: Length::new(height.get() * 10.0)?,
                 angle: Angle::FULL_TURN,
             })
             .ok()?,
@@ -1638,7 +1638,7 @@ fn project_solid_primitive(
                 transform[1][3] * 10.0,
                 transform[2][3] * 10.0,
             ))?,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(*diameter * 5.0)?,
+            radius: cadmpeg_ir::scalar::PositiveLength::new(diameter.get() * 5.0)?,
             op: operation(*result),
         }),
         crate::records::feature::scope::DesignScopePayload::TorusPrimitive(Some(
@@ -1660,8 +1660,8 @@ fn project_solid_primitive(
                 transform[1][2],
                 transform[2][2],
             ))?,
-            major_radius: cadmpeg_ir::scalar::PositiveLength::new(*major_diameter * 5.0)?,
-            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(*minor_diameter * 5.0)?,
+            major_radius: cadmpeg_ir::scalar::PositiveLength::new(major_diameter.get() * 5.0)?,
+            minor_radius: cadmpeg_ir::scalar::PositiveLength::new(minor_diameter.get() * 5.0)?,
             op: operation(*result),
         }),
         _ => return None,
@@ -2743,7 +2743,7 @@ fn project_surface_offset(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let stream = native_stream(&scope.id)?;
-    let distance = cadmpeg_ir::scalar::Length::new(operation.distance * 10.0)?;
+    let distance = cadmpeg_ir::scalar::Length::new(operation.distance.get() * 10.0)?;
     let DesignSurfaceOffsetSupport::FaceGroups {
         group_record_indices,
     } = &operation.support
@@ -3253,7 +3253,7 @@ pub(super) fn project_offset_faces(
         crate::records::feature::scope::DesignScopePayload::OffsetFaces(value)
         | crate::records::feature::scope::DesignScopePayload::DecalerLesFaces(value) => {
             match value.as_ref() {
-                Some(value) => Some(Length::new(value.distance * 10.0)?),
+                Some(value) => Some(Length::new(value.distance.get() * 10.0)?),
                 None => None,
             }
         }
@@ -3315,9 +3315,9 @@ pub(super) fn project_thicken(
     Some(FeatureDefinition::Operation(FeatureOperation::Thicken {
         faces,
         thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
-            signed_thickness.abs() * 10.0,
+            signed_thickness.get().abs() * 10.0,
         )?),
-        side: Some(if *signed_thickness > 0.0 {
+        side: Some(if signed_thickness.get() > 0.0 {
             ThickenSide::Forward
         } else {
             ThickenSide::Reverse
@@ -5867,9 +5867,9 @@ pub(super) fn project_fixed_revolve_with_entities(
         .collect::<Vec<_>>();
     let axis = if let [axis_operand] = matches.as_slice() {
         Some(RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(axis_operand.resolved_axis?.origin)?,
+            origin: axis_operand.resolved_axis?.origin,
             direction: cadmpeg_ir::features::FeatureDirection3::new(
-                axis_operand.resolved_axis?.direction,
+                axis_operand.resolved_axis?.direction.get(),
             )?,
             reference: None,
         })
@@ -6641,13 +6641,17 @@ fn circular_pattern_axis(
         DesignCircularPatternAxis::Inline {
             origin, direction, ..
         } => Some((
-            Point3::new(origin[0] * 10.0, origin[1] * 10.0, origin[2] * 10.0),
-            Vector3::new(direction[0], direction[1], direction[2]),
+            Point3::new(
+                origin[0].get() * 10.0,
+                origin[1].get() * 10.0,
+                origin[2].get() * 10.0,
+            ),
+            Vector3::new(direction[0].get(), direction[1].get(), direction[2].get()),
         )),
         DesignCircularPatternAxis::HistoricalEdge {
             resolved: Some(axis),
             ..
-        } => Some((axis.origin, axis.direction)),
+        } => Some((axis.origin.get(), axis.direction.get())),
         DesignCircularPatternAxis::HistoricalEdge { .. } => None,
     }
 }
@@ -6860,7 +6864,7 @@ fn project_mirror(
         )
     };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
-        Some(plane) => (plane.origin, plane.normal, false),
+        Some(plane) => (plane.origin.get(), plane.normal.get(), false),
         None => {
             let plane_scope_record_index = construction.plane_scope_record_index?.value;
             let matching_planes = scopes
@@ -6927,6 +6931,7 @@ pub(super) fn project_fixed_sweep(
     else {
         return None;
     };
+    let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
         .iter()
@@ -7015,8 +7020,6 @@ pub(super) fn project_fixed_sweep(
         || (guide_surface_form && paths.len() != 1)
         || values[..4].iter().any(|value| !(0.0..=1.0).contains(value))
         || (paths.len() == 1 && values[2..4] != [1.0; 2])
-        || !values[4].is_finite()
-        || !values[5].is_finite()
     {
         return None;
     }
@@ -7108,6 +7111,7 @@ fn project_fixed_pipe(
     else {
         return None;
     };
+    let values = values.map(cadmpeg_ir::scalar::FiniteReal::get);
     if *operation != DesignExtrudeOperation::NewBody
         || *section_shape != crate::records::feature::surface_ops::DesignPipeSectionShape::Circular
         || values[0..2] != [1.0, 1.0]
@@ -7589,14 +7593,14 @@ fn project_hole(
     let placements = if let Some(construction) = scope.hole_construction() {
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Directed {
             position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
-                construction.position[0] * 10.0,
-                construction.position[1] * 10.0,
-                construction.position[2] * 10.0,
+                construction.position[0].get() * 10.0,
+                construction.position[1].get() * 10.0,
+                construction.position[2].get() * 10.0,
             ))?,
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                construction.direction[0],
-                construction.direction[1],
-                construction.direction[2],
+                construction.direction[0].get(),
+                construction.direction[1].get(),
+                construction.direction[2].get(),
             ))?,
         }])
     } else {
@@ -8244,11 +8248,13 @@ fn project_extrude(
         .as_ref()
         .and_then(|fixed| fixed.along_distance.as_ref())
         .map(|fixed| match fixed {
-            DesignFixedExtrudeDistance::FixedScalar(scalar) => Length::new(scalar.value * 10.0)
-                .map(|length| (length, AlongDirection::SignedDistance))
-                .ok_or(()),
+            DesignFixedExtrudeDistance::FixedScalar(scalar) => {
+                Length::new(scalar.value.get() * 10.0)
+                    .map(|length| (length, AlongDirection::SignedDistance))
+                    .ok_or(())
+            }
             DesignFixedExtrudeDistance::DistanceConstruction(scalar) => {
-                Length::new(scalar.value * 10.0)
+                Length::new(scalar.value.get() * 10.0)
                     .map(|length| (length, AlongDirection::PrologueReversal))
                     .ok_or(())
             }
@@ -8575,9 +8581,7 @@ fn project_extrude(
         .fixed_extrude_parameters()
         .as_ref()
         .and_then(|fixed| fixed.taper_angle.as_ref())
-        .map(|fixed| Angle::new(fixed.value).ok_or(()))
-        .transpose()
-        .ok()?;
+        .map(|fixed| Angle::from_assigned_real(fixed.value));
     let draft = match (parameter_draft, fixed_draft) {
         (Some(parameter), Some(fixed))
             if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12 =>

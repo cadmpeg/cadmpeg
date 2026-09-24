@@ -3,10 +3,14 @@
 
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
-cadmpeg_core::named_optional_field!(deserialize_center_position, [f64; 3], "center_position");
+cadmpeg_core::named_optional_field!(
+    deserialize_center_position,
+    [FiniteReal; 3],
+    "center_position"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_center_position_offset,
     u64,
@@ -25,7 +29,7 @@ pub(crate) struct DesignScaleOperation {
     pub(crate) center_record_index: u32,
     /// Explicit center position carried by legacy point-data centers, in source
     /// model centimetres.
-    pub(crate) center_position: Option<Located<[f64; 3]>>,
+    pub(crate) center_position: Option<Located<[FiniteReal; 3]>>,
     /// Uniform scale factor.
     pub(crate) uniform_factor: PositiveReal,
     /// Byte offset of `uniform_factor`.
@@ -45,7 +49,7 @@ struct DesignScaleOperationWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_center_position"
     )]
-    center_position: Option<[f64; 3]>,
+    center_position: Option<[FiniteReal; 3]>,
     /// Byte offset of the explicit center position.
     #[serde(
         default,

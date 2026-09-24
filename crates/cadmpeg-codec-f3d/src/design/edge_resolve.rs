@@ -2327,8 +2327,8 @@ pub(super) fn project_fixed_fillet_with_corners(
             .law()
         {
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
-                (radius.value > 0.0).then_some(RadiusSpec::Constant {
-                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value * 10.0)?,
+                (radius.value.get() > 0.0).then_some(RadiusSpec::Constant {
+                    radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value.get() * 10.0)?,
                 })
             }
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
@@ -2339,17 +2339,17 @@ pub(super) fn project_fixed_fillet_with_corners(
                 let mut points = Vec::with_capacity(intermediate.len() + 2);
                 points.push(VariableRadius {
                     parameter: 0.0,
-                    radius: Length::new(start.value * 10.0)?,
+                    radius: Length::new(start.value.get() * 10.0)?,
                 });
                 for row in intermediate {
                     points.push(VariableRadius {
-                        parameter: row.parameter.value,
-                        radius: Length::new(row.radius.value * 10.0)?,
+                        parameter: row.parameter.value.get(),
+                        radius: Length::new(row.radius.value.get() * 10.0)?,
                     });
                 }
                 points.push(VariableRadius {
                     parameter: 1.0,
-                    radius: Length::new(end.value * 10.0)?,
+                    radius: Length::new(end.value.get() * 10.0)?,
                 });
                 Some(RadiusSpec::Variable {
                     points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(points)
@@ -2453,11 +2453,7 @@ pub(super) fn project_fixed_fillet_with_corners(
             Some(FilletGroup {
                 edges,
                 radius,
-                tangency_weight: fixed_group
-                    .tangency_weight()
-                    .map(|tangency| cadmpeg_ir::scalar::FiniteReal::try_from(tangency.value))
-                    .transpose()
-                    .ok()?,
+                tangency_weight: fixed_group.tangency_weight().map(|tangency| tangency.value),
             })
         })
         .collect::<Option<Vec<_>>>()?;

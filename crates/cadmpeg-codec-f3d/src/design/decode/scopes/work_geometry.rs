@@ -3,7 +3,7 @@
 
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
-use crate::bytes::f64s_at;
+use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
@@ -21,6 +21,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkAxisConstruction;
 use crate::records::feature::work_geometry::DesignWorkAxisSource;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ScopePlacementFrame {
@@ -242,15 +243,16 @@ fn exact_two_point_work_axis_construction(
     {
         return None;
     }
-    let values = f64s_at(bytes, axis_start + 25, 8)?;
-    if values.iter().any(|value| !value.is_finite()) || values[6..] != [0.0, 0.0] {
+    let values: [FiniteReal; 8] = finite_reals_at(bytes, axis_start + 25)?;
+    if values[6].get() != 0.0 || values[7].get() != 0.0 {
         return None;
     }
-    let origin: [f64; 3] = values[..3].try_into().ok()?;
-    let displacement: [f64; 3] = values[3..6].try_into().ok()?;
+    let origin = [values[0], values[1], values[2]];
+    let displacement = [values[3], values[4], values[5]];
     let displacement_length = displacement[0]
-        .hypot(displacement[1])
-        .hypot(displacement[2]);
+        .get()
+        .hypot(displacement[1].get())
+        .hypot(displacement[2].get());
     if displacement_length <= f64::EPSILON {
         return None;
     }
@@ -282,8 +284,8 @@ fn exact_two_point_work_axis_construction(
         points[ordinal] = point.try_into().ok()?;
         point_offsets[ordinal] = u64::try_from(start + 42).ok()?;
     }
-    let endpoint = std::array::from_fn(|axis| origin[axis] + displacement[axis]);
-    if points != [origin, endpoint] {
+    let endpoint = std::array::from_fn(|axis| origin[axis].get() + displacement[axis].get());
+    if points != [origin.map(FiniteReal::get), endpoint] {
         return None;
     }
     Some(DesignWorkAxisConstruction {
@@ -378,15 +380,17 @@ fn exact_direct_work_axis_construction(
     {
         return None;
     }
-    let values = f64s_at(bytes, (*carrier_start).checked_add(axis_values_offset)?, 8)?;
-    if values.iter().any(|value| !value.is_finite()) || values[6..] != [0.0, 0.0] {
+    let values: [FiniteReal; 8] =
+        finite_reals_at(bytes, (*carrier_start).checked_add(axis_values_offset)?)?;
+    if values[6].get() != 0.0 || values[7].get() != 0.0 {
         return None;
     }
-    let origin: [f64; 3] = values[..3].try_into().ok()?;
-    let displacement: [f64; 3] = values[3..6].try_into().ok()?;
+    let origin = [values[0], values[1], values[2]];
+    let displacement = [values[3], values[4], values[5]];
     let displacement_length = displacement[0]
-        .hypot(displacement[1])
-        .hypot(displacement[2]);
+        .get()
+        .hypot(displacement[1].get())
+        .hypot(displacement[2].get());
     if displacement_length <= f64::EPSILON {
         return None;
     }

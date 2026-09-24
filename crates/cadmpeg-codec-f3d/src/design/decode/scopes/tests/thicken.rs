@@ -68,11 +68,11 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
-                signed_thickness: -1.0,
+                signed_thickness,
                 thickness_record_index: 74,
                 ..
             }
-        ))
+        )) if signed_thickness.get() == -1.0
     ));
 
     scope.paired_class_tag =

@@ -61,9 +61,9 @@ fn circular_pattern_axis_prefers_one_inline_carrier() {
         resolved: None,
     };
     let inline = DesignCircularPatternAxis::Inline {
-        origin: [1.0, 2.0, 3.0],
+        origin: crate::test_support::reals([1.0, 2.0, 3.0]),
         origin_offset: 29,
-        direction: [0.0, 0.0, 1.0],
+        direction: crate::test_support::reals([0.0, 0.0, 1.0]),
         direction_offset: 53,
     };
 
@@ -307,9 +307,9 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
             axis: crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
-                origin: [1.0, 2.0, 3.0],
+                origin: crate::test_support::reals([1.0, 2.0, 3.0]),
                 origin_offset: (axis_start + 25) as u64,
-                direction: [-1.0, 0.0, 0.0],
+                direction: crate::test_support::reals([-1.0, 0.0, 0.0]),
                 direction_offset: (axis_start + 49) as u64,
             },
             axis_record_index,
@@ -333,7 +333,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     else {
         panic!("inline axis expected");
     };
-    assert_eq!(direction, [0.0, 0.0, 1.0]);
+    assert_eq!(
+        direction.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0]
+    );
 
     let mut zero_displacement = bytes.clone();
     zero_displacement[axis_start + 49..axis_start + 73].fill(0);

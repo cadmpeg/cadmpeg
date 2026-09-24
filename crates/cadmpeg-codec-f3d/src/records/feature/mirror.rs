@@ -3,12 +3,12 @@
 
 use super::patterns::DesignPlane;
 use crate::records::identity::Located;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::PositiveReal;
 use serde::{Deserialize, Serialize};
 
-cadmpeg_core::named_optional_field!(deserialize_plane_normal, Vector3, "plane_normal");
-cadmpeg_core::named_optional_field!(deserialize_plane_origin, Point3, "plane_origin");
+cadmpeg_core::named_optional_field!(deserialize_plane_normal, FiniteVector3, "plane_normal");
+cadmpeg_core::named_optional_field!(deserialize_plane_origin, FinitePoint3, "plane_origin");
 cadmpeg_core::named_optional_field!(
     deserialize_plane_reference_offset,
     u64,
@@ -162,13 +162,13 @@ struct DesignMirrorConstructionWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_plane_origin"
     )]
-    plane_origin: Option<Point3>,
+    plane_origin: Option<FinitePoint3>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_plane_normal"
     )]
-    plane_normal: Option<Vector3>,
+    plane_normal: Option<FiniteVector3>,
 }
 
 impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
