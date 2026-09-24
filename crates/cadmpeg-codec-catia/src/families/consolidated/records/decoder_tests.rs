@@ -73,7 +73,7 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
     assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
-    assert_eq!(blocks[0].parameters.range, [0.0, 1.0]);
+    assert_eq!(blocks[0].parameters.range.endpoints(), [0.0, 1.0]);
 }
 
 #[test]

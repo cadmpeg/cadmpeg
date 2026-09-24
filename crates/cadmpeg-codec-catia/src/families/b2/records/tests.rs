@@ -1501,7 +1501,7 @@ fn consolidated_offset_support_parser_reads_width2_frame() {
 fn b2_edge_parameter_parser_validates_repeated_range_packet() {
     let packets = crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream());
     assert_eq!(packets.len(), 1);
-    assert_eq!(packets[0].range, [2.0, 7.0]);
+    assert_eq!(packets[0].range.endpoints(), [2.0, 7.0]);
     assert_eq!(packets[0].tolerance, 1.0e-6);
 }
 
