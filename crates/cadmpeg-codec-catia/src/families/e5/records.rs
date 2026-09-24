@@ -7,6 +7,7 @@
 use crate::families::freeform::rolling_ball_derivative;
 use crate::math::distance;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -36,7 +37,7 @@ pub(in crate::families::e5) struct E5Plane {
     /// Stream-assigned record identifier.
     pub(super) record_id: u32,
     /// Stored plane origin.
-    pub(super) origin: [f64; 3],
+    pub(super) origin: FinitePoint3,
     /// Natural U-coordinate bounds.
     #[cfg(test)]
     pub(super) u_range: [f64; 2],
@@ -55,7 +56,7 @@ pub(in crate::families) struct E5Surface {
     /// The complete analytic surface carrier.
     pub(in crate::families) geometry: SurfaceGeometry,
     /// Component-wise scale from native E5 UV coordinates to neutral UV.
-    pub(super) uv_scale: [f64; 2],
+    pub(super) uv_scale: [FiniteReal; 2],
 }
 
 /// A class-`0xd8` E5 rolling-ball surface carrier.
@@ -221,19 +222,16 @@ pub(super) fn e5_circles(data: &[u8]) -> Vec<E5Circle> {
                 (origin, frame_u, frame_v, radius)
             {
                 let (frame_u, frame_v) = (frame_u.get(), frame_v.get());
-                if radius.get() > 0.0 {
+                if let Some(radius) = PositiveLength::new(radius.get()) {
                     if let Some(axis) = UnitVector3::normalized(frame_u.cross(frame_v)) {
                         let reference = UnitVector3::normalized(frame_u).or_else(|| {
                             UnitVector3::new(cadmpeg_ir::geometry::derive_reference_direction(
                                 *axis.as_raw(),
                             ))
                         });
-                        let (Some(frame), Some(radius)) = (
-                            reference.and_then(|reference| {
-                                OrthonormalFrame3::from_units(axis, reference)
-                            }),
-                            PositiveLength::new(radius.get()),
-                        ) else {
+                        let Some(frame) = reference
+                            .and_then(|reference| OrthonormalFrame3::from_units(axis, reference))
+                        else {
                             continue;
                         };
                         let payload =
@@ -262,7 +260,7 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         if record.class != 0xc8 || record.size < 90 || (record.size - 90) % 8 != 0 {
             continue;
         }
-        let Some(origin) = read_f64_array::<3>(data, pos + 14) else {
+        let Some(origin) = f64_point(data, pos + 14) else {
             continue;
         };
         let scalar_count = (record.size - 58) / 8;
@@ -280,7 +278,7 @@ pub(super) fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
         out.push(E5Plane {
             pos,
             record_id: View::u32_le_at(data, pos + 9).unwrap_or(0),
-            origin: origin.map(FiniteReal::get),
+            origin,
             #[cfg(test)]
             u_range: [bounds[0].get(), bounds[1].get()],
             #[cfg(test)]
@@ -333,29 +331,33 @@ pub(in crate::families) fn e5_surfaces(
         let pos = record.pos;
         let decoded = match record.class {
             0xc9 => e5_cylinder(data, pos).and_then(|(geometry, radius)| {
-                let parameter_scale = [1.0 / radius, 1.0];
-                parameter_scale
-                    .into_iter()
-                    .all(f64::is_finite)
-                    .then_some((geometry, parameter_scale))
+                Some((geometry, [FiniteReal::new(1.0 / radius)?, FiniteReal::ONE]))
             }),
             0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
                 let u_scale = f64_le(data, pos + 158)?.get();
                 let v_scale = f64_le(data, pos + 166)?.get();
-                let parameter_scale = [1.0 / u_scale, half_angle.cos() / v_scale];
-                (u_scale != 0.0
-                    && v_scale != 0.0
-                    && parameter_scale.into_iter().all(f64::is_finite))
-                .then_some((geometry, parameter_scale))
+                if u_scale == 0.0 || v_scale == 0.0 {
+                    return None;
+                }
+                Some((
+                    geometry,
+                    [
+                        FiniteReal::new(1.0 / u_scale)?,
+                        FiniteReal::new(half_angle.cos() / v_scale)?,
+                    ],
+                ))
             }),
             0xcc => e5_torus(data, pos).and_then(|(geometry, major_radius, minor_radius)| {
-                let parameter_scale = [1.0 / major_radius, 1.0 / minor_radius];
-                parameter_scale
-                    .into_iter()
-                    .all(f64::is_finite)
-                    .then_some((geometry, parameter_scale))
+                Some((
+                    geometry,
+                    [
+                        FiniteReal::new(1.0 / major_radius)?,
+                        FiniteReal::new(1.0 / minor_radius)?,
+                    ],
+                ))
             }),
-            0xe7 => e5_nurbs_surface(data, record, refusal).map(|geometry| (geometry, [1.0, 1.0])),
+            0xe7 => e5_nurbs_surface(data, record, refusal)
+                .map(|geometry| (geometry, [FiniteReal::ONE, FiniteReal::ONE])),
             _ => None,
         };
         if let Some((geometry, uv_scale)) = decoded {
@@ -453,8 +455,6 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         || parameter_max.to_bits() != knots.last()?.to_bits()
         || tail_zero0.to_bits() != 0
         || tail_zero1.to_bits() != 0
-        || !parameter_min.is_finite()
-        || !parameter_max.is_finite()
         || !tail_radius0.is_finite()
         || tail_radius0 <= 0.0
         || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
