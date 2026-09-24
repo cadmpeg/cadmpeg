@@ -353,3 +353,21 @@ fn a_reversed_nonzero_direction_is_the_admitted_negation() {
         );
     }
 }
+
+#[test]
+fn a_reflected_great_circle_moves_its_origin_and_negates_its_rate() {
+    use crate::geometry::pcurve::SphericalGreatCirclePcurve;
+
+    let pcurve = SphericalGreatCirclePcurve::try_new(0.25, -1.5, 0.5, 2.0).unwrap();
+    let reflected = pcurve.reflected(3.0).unwrap();
+    assert_eq!(reflected.azimuth_origin(), 0.25 + -1.5 * 3.0);
+    assert_eq!(reflected.azimuth_rate().to_bits(), 1.5_f64.to_bits());
+    assert_eq!(reflected.plane_phase(), 0.5);
+    assert_eq!(reflected.plane_slope(), 2.0);
+    assert_eq!(
+        Some(reflected),
+        SphericalGreatCirclePcurve::try_new(0.25 + -1.5 * 3.0, 1.5, 0.5, 2.0).ok()
+    );
+    assert!(pcurve.reflected(f64::MAX).is_none());
+    assert!(pcurve.reflected(f64::NAN).is_none());
+}
