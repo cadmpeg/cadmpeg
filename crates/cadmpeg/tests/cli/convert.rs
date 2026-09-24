@@ -129,14 +129,12 @@ fn source_less_ir_exports_to_decodable_sldprt() {
 fn source_less_ir_exports_to_decodable_rhino() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#cli").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let output = dir.path().join("point.3dm");
     Command::cargo_bin("cadmpeg")
@@ -173,14 +171,12 @@ fn source_less_ir_exports_to_decodable_rhino() {
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#version").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     for (index, spelling) in [
         "rhino:archive-60",
@@ -628,14 +624,12 @@ fn convert_refuses_binary_output_to_stdout() {
     // With -o the write succeeds (Rhino is the binary writer that accepts a
     // source-less IR; the guard question is the destination, not the codec).
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#guard").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let point = fixture(dir.path(), "point.cadir.json", &point_ir);
     let out = dir.path().join("point.3dm");
     Command::cargo_bin("cadmpeg")
@@ -722,14 +716,12 @@ fn from_and_to_aliases_match_input_format_and_format() {
 fn a_same_format_convert_replays_a_non_default_iges_version() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#iges").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let original = dir.path().join("v51.igs");
     Command::cargo_bin("cadmpeg")
@@ -793,14 +785,12 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
 fn a_to_that_names_only_the_format_still_inherits() {
     let dir = tempdir().unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#bare").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let input = fixture(dir.path(), "point.cadir.json", &ir);
     let original = dir.path().join("v51.igs");
     Command::cargo_bin("cadmpeg")

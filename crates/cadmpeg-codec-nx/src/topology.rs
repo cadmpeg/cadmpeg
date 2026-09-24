@@ -11,6 +11,7 @@
 use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::XmtTarget;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
@@ -330,14 +331,16 @@ impl Node {
     }
 
     /// Decode a fully framed POINT position into model millimeters.
-    pub(crate) fn point_position(&self) -> Option<Point3> {
+    pub(crate) fn point_position(&self) -> Option<FinitePoint3> {
         (self.kind == NodeKind::Point).then_some(())?;
         let mut at = 8 + self.shift;
         skip_sequence_at(&self.bytes, &mut at, 4)?;
         let xyz = vec3_be_at(&self.bytes, at)?;
-        xyz.iter()
-            .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
-            .then(|| Point3::new(xyz[0] * 1000.0, xyz[1] * 1000.0, xyz[2] * 1000.0))
+        FinitePoint3::new(Point3::new(
+            xyz[0] * 1000.0,
+            xyz[1] * 1000.0,
+            xyz[2] * 1000.0,
+        ))
     }
 
     /// Decode this graph-owned fixed analytic surface carrier.
@@ -1165,7 +1168,10 @@ impl Graph {
                 .point_position()
         };
         Some(CurveEdgeWitness {
-            endpoints: [position(first_fin.vertex)?, position(second_fin.vertex)?],
+            endpoints: [
+                position(first_fin.vertex)?.get(),
+                position(second_fin.vertex)?.get(),
+            ],
             tolerance: edge.tolerance,
         })
     }

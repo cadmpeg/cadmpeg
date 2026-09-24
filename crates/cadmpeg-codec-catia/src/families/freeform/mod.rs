@@ -1010,13 +1010,13 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
-        let (Ok(end_point), Ok(start_point)) = (
-            Point::new(point_ids[1].clone(), end, None),
-            Point::new(point_ids[0].clone(), start, None),
-        ) else {
+        let (Some(end), Some(start)) = (FinitePoint3::new(end), FinitePoint3::new(start)) else {
             return false;
         };
-        ir.model.points.extend([end_point, start_point]);
+        ir.model.points.extend([
+            Point::new(point_ids[1].clone(), end, None),
+            Point::new(point_ids[0].clone(), start, None),
+        ]);
         ir.model.vertices.extend([
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -3514,15 +3514,13 @@ mod tests {
             .surface_geometry();
 
         for (index, position) in points.into_iter().enumerate() {
-            ir.model.points.push(
-                Point::new(
-                    PointId::mint(format!("catia:test:point#point%23{index}"))
-                        .expect("identity grammar"),
-                    position,
-                    None,
-                )
-                .expect("a finite position is a point"),
-            );
+            ir.model.points.push(Point::new(
+                PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
+                None,
+            ));
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),
@@ -3849,15 +3847,13 @@ mod tests {
 
         let mut ir = CadIr::empty();
         for (index, position) in points.into_iter().enumerate() {
-            ir.model.points.push(
-                Point::new(
-                    PointId::mint(format!("catia:test:point#point%23{index}"))
-                        .expect("identity grammar"),
-                    position,
-                    None,
-                )
-                .expect("a finite position is a point"),
-            );
+            ir.model.points.push(Point::new(
+                PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
+                None,
+            ));
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),

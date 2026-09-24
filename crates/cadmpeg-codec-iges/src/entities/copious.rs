@@ -8,6 +8,7 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -308,10 +309,10 @@ pub(super) fn project(
                 Point3::new(tuple[0] * factor, tuple[1] * factor, z * factor)
             })
             .collect::<Vec<_>>();
-        let Some(points) = definition_points
+        let Some(positions) = definition_points
             .iter()
             .copied()
-            .map(|point| transform.apply_point(point))
+            .map(|point| FinitePoint3::new(point).and_then(|point| point.transformed(transform)))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -332,7 +333,7 @@ pub(super) fn project(
                 && tuple_count == 1
                 && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
-            for (index, position) in points.into_iter().enumerate() {
+            for (index, position) in positions.into_iter().enumerate() {
                 let point = crate::ids::point(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
@@ -340,10 +341,9 @@ pub(super) fn project(
                 let vertex = crate::ids::vertex(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
-                ir.model.points.push(
-                    Point::new(point.clone(), position, None)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                );
+                ir.model
+                    .points
+                    .push(Point::new(point.clone(), position, None));
                 ir.model.vertices.push(Vertex {
                     id: vertex.clone(),
                     point,
@@ -354,6 +354,10 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             continue;
         }
+        let points = positions
+            .iter()
+            .map(|position| position.get())
+            .collect::<Vec<_>>();
         let resolution = global.minimum_resolution_mm();
         if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
             losses.push(entity_loss(
@@ -393,8 +397,8 @@ pub(super) fn project(
         let mut knots = vec![0.0, 0.0];
         knots.extend((1..points.len() - 1).map(|value| value as f64));
         knots.extend([parameter_end, parameter_end]);
-        let start = points[0];
-        let end = points[points.len() - 1];
+        let start = positions[0];
+        let end = positions[positions.len() - 1];
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
         sequences.record_point(&start_point, &stem);
@@ -408,20 +412,18 @@ pub(super) fn project(
         };
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
-        ir.model.points.push(
-            Point::new(start_point.clone(), start, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model
+            .points
+            .push(Point::new(start_point.clone(), start, None));
         ir.model.vertices.push(Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
-            ir.model.points.push(
-                Point::new(end_point.clone(), end, None)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            ir.model
+                .points
+                .push(Point::new(end_point.clone(), end, None));
             ir.model.vertices.push(Vertex {
                 id: end_vertex.clone(),
                 point: end_point,

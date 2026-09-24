@@ -1419,7 +1419,11 @@ fn native_vertex_graph_rejects_inconsistent_ordered_loci() {
     ];
     let constraints = [([10, 11], [0, 1]), ([11, 12], [2, 3]), ([12, 10], [3, 0])];
     let adjacency = HashMap::from([(10, vec![0, 2]), (11, vec![0, 1]), (12, vec![1, 2])]);
-    let mapping = propagate_vertex_points(&constraints, &adjacency, &points);
+    let mapping = propagate_vertex_points(
+        &constraints,
+        &adjacency,
+        &points.map(crate::test_support::test_b5::point),
+    );
     assert!(mapping.is_empty());
 }
 

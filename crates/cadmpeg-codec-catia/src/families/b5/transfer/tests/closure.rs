@@ -347,7 +347,7 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
             Vec::new(),
             vec![B5LogicalVertex {
                 object_id: 50,
-                point: [0.0, 0.0, 0.0],
+                point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             }],
             BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
         )
@@ -459,15 +459,15 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
             vec![
                 B5LogicalVertex {
                     object_id: 50,
-                    point: [0.0, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 },
                 B5LogicalVertex {
                     object_id: 51,
-                    point: [0.5, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
                 },
                 B5LogicalVertex {
                     object_id: 52,
-                    point: [1.0, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
                 },
             ],
             BTreeMap::from([
@@ -609,15 +609,15 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
             vec![
                 B5LogicalVertex {
                     object_id: 50,
-                    point: [0.0, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 },
                 B5LogicalVertex {
                     object_id: 51,
-                    point: [0.5, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([0.5, 0.0, 0.0]),
                 },
                 B5LogicalVertex {
                     object_id: 52,
-                    point: [1.0, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
                 },
             ],
             BTreeMap::from([
@@ -1090,7 +1090,10 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            vec![[0.0; 3], [1.0, 0.0, 0.0]],
+            vec![[0.0; 3], [1.0, 0.0, 0.0]]
+                .into_iter()
+                .map(crate::test_support::test_b5::point)
+                .collect(),
             Vec::new(),
             BTreeMap::from([(3, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)])]),
         )
@@ -1330,11 +1333,11 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
             vec![
                 B5LogicalVertex {
                     object_id: 10,
-                    point: [0.25, 0.0, 1e-4],
+                    point: crate::test_support::test_b5::point([0.25, 0.0, 1e-4]),
                 },
                 B5LogicalVertex {
                     object_id: 11,
-                    point: [0.75, 0.0, 0.0],
+                    point: crate::test_support::test_b5::point([0.75, 0.0, 0.0]),
                 },
             ],
             BTreeMap::from([(3, [B5VertexRef::Logical(0), B5VertexRef::Logical(1)])]),

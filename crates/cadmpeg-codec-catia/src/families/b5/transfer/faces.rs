@@ -742,7 +742,10 @@ mod tests {
             edges: BTreeMap::new(),
             vertex_incidence_links: BTreeMap::new(),
             vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-                points,
+                points
+                    .into_iter()
+                    .map(crate::test_support::test_b5::point)
+                    .collect(),
                 Vec::new(),
                 edge_vertices,
             )

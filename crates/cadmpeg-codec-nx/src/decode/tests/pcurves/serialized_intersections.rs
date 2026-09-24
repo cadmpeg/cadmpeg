@@ -64,14 +64,16 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         VertexId::mint("nx:test:vertex#1").expect("identity grammar"),
     ];
     for index in 0..2 {
-        ir.model.points.push(
-            Point::new(
-                points[index].clone(),
-                Point3::new(0.005 + 9.99 * index as f64, 0.0, 0.0),
-                None,
-            )
+        ir.model.points.push(Point::new(
+            points[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                0.005 + 9.99 * index as f64,
+                0.0,
+                0.0,
+            ))
             .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertices[index].clone(),
             point: points[index].clone(),
@@ -282,9 +284,10 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         Point3::new(uv.u, uv.v, 0.0)
     });
     for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
-        point
-            .set_position(position)
-            .expect("a finite position is a point");
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(position)
+                .expect("a finite position is a point"),
+        );
     }
     ir.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::TolerantIntersection {

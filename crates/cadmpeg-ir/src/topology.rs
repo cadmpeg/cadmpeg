@@ -1221,19 +1221,21 @@ struct PointWire {
 }
 
 impl Point {
-    /// Admit a position carrier whose coordinates are finite.
+    /// The refusal of a position with a non-finite coordinate.
+    pub const NON_FINITE_POSITION: &'static str = "point position coordinates must be finite";
+
+    /// Construct a position carrier at admitted coordinates.
+    #[must_use]
     pub fn new(
         id: PointId,
-        position: Point3,
+        position: FinitePoint3,
         source_object: Option<crate::provenance::SourceObjectAssociation>,
-    ) -> Result<Self, &'static str> {
-        let position =
-            FinitePoint3::new(position).ok_or("point position coordinates must be finite")?;
-        Ok(Self {
+    ) -> Self {
+        Self {
             id,
             position,
             source_object,
-        })
+        }
     }
 
     /// Return the admitted coordinates in the document's length unit.
@@ -1242,15 +1244,8 @@ impl Point {
         self.position
     }
 
-    /// Replace the coordinates, refusing a non-finite position.
-    pub fn set_position(&mut self, position: Point3) -> Result<(), &'static str> {
-        self.position =
-            FinitePoint3::new(position).ok_or("point position coordinates must be finite")?;
-        Ok(())
-    }
-
     /// Replace the coordinates with admitted ones.
-    pub fn set_finite_position(&mut self, position: FinitePoint3) {
+    pub fn set_position(&mut self, position: FinitePoint3) {
         self.position = position;
     }
 }
@@ -1258,7 +1253,8 @@ impl Point {
 impl TryFrom<PointWire> for Point {
     type Error = &'static str;
     fn try_from(wire: PointWire) -> Result<Self, Self::Error> {
-        Self::new(wire.id, wire.position, wire.source_object)
+        let position = FinitePoint3::new(wire.position).ok_or(Self::NON_FINITE_POSITION)?;
+        Ok(Self::new(wire.id, position, wire.source_object))
     }
 }
 
@@ -1918,7 +1914,8 @@ mod tests {
 
     #[test]
     fn a_point_position_must_be_finite() {
-        use super::Point;
+        use super::{Point, PointWire};
+        use crate::features::FinitePoint3;
         use crate::ids::PointId;
         use crate::math::Point3;
 
@@ -1929,12 +1926,23 @@ mod tests {
             Point3::new(0.0, 0.0, f64::NEG_INFINITY),
         ] {
             assert_eq!(
-                Point::new(id.clone(), coordinates, None),
-                Err("point position coordinates must be finite")
+                Point::try_from(PointWire {
+                    id: id.clone(),
+                    position: coordinates,
+                    source_object: None,
+                }),
+                Err(Point::NON_FINITE_POSITION)
             );
         }
-        let point =
-            Point::new(id, Point3::new(1.0, 2.0, 3.0), None).expect("a finite position is a point");
+        assert_eq!(
+            Point::NON_FINITE_POSITION,
+            "point position coordinates must be finite"
+        );
+        let point = Point::new(
+            id,
+            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("a finite position is a point"),
+            None,
+        );
         assert_eq!(point.position().get(), Point3::new(1.0, 2.0, 3.0));
     }
 
@@ -1984,10 +1992,9 @@ mod tests {
         let raw = Point3::new(-0.0, f64::MAX, 5.0e-324);
         let mut point = Point::new(
             PointId::mint("t:model:point#0").expect("identity grammar"),
-            raw,
+            FinitePoint3::new(raw).expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point");
+        );
         let admitted = point.position();
         assert_eq!(
             admitted,
@@ -1999,7 +2006,7 @@ mod tests {
         );
 
         let moved = FinitePoint3::new(Point3::new(1.0, -2.0, 3.5)).expect("finite coordinates");
-        point.set_finite_position(moved);
+        point.set_position(moved);
         assert_eq!(point.position(), moved);
         assert_eq!(point.position().get(), Point3::new(1.0, -2.0, 3.5));
     }

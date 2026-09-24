@@ -217,14 +217,12 @@ fn encode_replays_an_unchanged_iges_source_image() {
 fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
     for (version, name) in [(IgesVersion::V5_1, "5.1"), (IgesVersion::V5_2, "5.2")] {
         let mut ir = CadIr::empty();
-        ir.model.points.push(
-            Point::new(
-                PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-                Point3::new(4.0, 5.0, 6.0),
-                None,
-            )
-            .expect("a finite position is a point"),
-        );
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
         let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
@@ -253,14 +251,12 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
 fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
     for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
         let mut ir = CadIr::empty();
-        ir.model.points.push(
-            Point::new(
-                PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
-                Point3::new(4.0, 5.0, 6.0),
-                None,
-            )
-            .expect("a finite position is a point"),
-        );
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("test:model:point#{name}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+                .expect("a finite position is a point"),
+            None,
+        ));
         let plan = plan_at(version, &ir, None).unwrap();
         let mut written = Vec::new();
         let report = plan.write_to(&mut written).unwrap();
@@ -404,14 +400,12 @@ fn encode_does_not_replay_a_source_with_the_wrong_version() {
 #[test]
 fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("test:model:point#1").expect("identity grammar"),
-            Point3::new(4.0, 5.0, 6.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#1").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(4.0, 5.0, 6.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     assert!(matches!(
         plan.report().write_path(),
@@ -452,13 +446,14 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
         .unwrap();
     let (mut ir, _, fidelity) = decoded.into_parts();
     let moved = ir.model.points[0].position().get();
-    ir.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    ir.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let plan = plan_at(IgesVersion::V5_3, &ir, Some(&fidelity)).unwrap();
     assert!(matches!(
         plan.report().write_path(),
@@ -955,10 +950,12 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         source_object: None,
     });
     for (index, position) in positions.into_iter().enumerate() {
-        ir.model.points.push(
-            Point::new(point_ids[index].clone(), position, None)
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),

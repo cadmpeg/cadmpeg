@@ -3974,10 +3974,11 @@ pub(super) fn emit_points(
         if r.head() == "point" && kept_points.contains(&i) {
             let c = collect_carrier(r);
             if let Some(p) = c.positions.first() {
-                out.points.push(
-                    Point::new(<PointId>::from(id(format, i)), scale_point(*p), None)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                );
+                let position = cadmpeg_ir::features::FinitePoint3::new(scale_point(*p))
+                    .ok_or(Point::NON_FINITE_POSITION)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                out.points
+                    .push(Point::new(<PointId>::from(id(format, i)), position, None));
             }
         }
     }

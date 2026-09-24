@@ -469,9 +469,12 @@ mod consolidated_revolution_binding_tests {
         for (index, position) in positions.into_iter().enumerate() {
             let point = PointId::mint(format!("catia:test:point#point%23{index}"))
                 .expect("identity grammar");
-            ir.model.points.push(
-                Point::new(point.clone(), position, None).expect("a finite position is a point"),
-            );
+            ir.model.points.push(Point::new(
+                point.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
+                None,
+            ));
             ir.model.vertices.push(Vertex {
                 id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
                     .expect("identity grammar"),
@@ -1567,10 +1570,7 @@ fn try_decode_standard_population(
         EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
         EdgeTableForm::Standard => fbb::standard_vertex_points(standard_spine),
     })
-    .unwrap_or_default()
-    .into_iter()
-    .map(|[x, y, z]| Point3::new(x, y, z))
-    .collect::<Vec<_>>();
+    .unwrap_or_default();
     let vertex_roster = selection
         .is_none_or(|selection| selection.vertex_roster_compatible)
         .then(|| {
@@ -2151,16 +2151,13 @@ fn try_decode_standard_population(
             "vertex_05_08_01",
             Exactness::ByteExact,
         );
-        ir.model.points.push(
-            Point::new(
-                point_id.clone(),
-                *p,
-                vertex_roster
-                    .as_ref()
-                    .map(|roster| cgm_source("vertex", roster[i])),
-            )
-            .ok()?,
-        );
+        ir.model.points.push(Point::new(
+            point_id.clone(),
+            *p,
+            vertex_roster
+                .as_ref()
+                .map(|roster| cgm_source("vertex", roster[i])),
+        ));
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
             i,
@@ -6112,11 +6109,7 @@ fn unique_native_identity_points(
                     (point
                         .position()
                         .get()
-                        .distance_squared(Point3::new(
-                            vertex.point[0],
-                            vertex.point[1],
-                            vertex.point[2],
-                        ))
+                        .distance_squared(vertex.point.get())
                         .sqrt()
                         <= tolerance)
                         .then_some(index)

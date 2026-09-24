@@ -14,6 +14,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -49,8 +50,8 @@ struct BoundaryItem {
     segment: BoundarySegment,
     model_curve: CurveId,
     source_edge: Edge,
-    start: Point3,
-    end: Point3,
+    start: FinitePoint3,
+    end: FinitePoint3,
     pcurves: Vec<(PcurveGeometry, [f64; 2])>,
 }
 
@@ -76,13 +77,11 @@ fn boundary_parameter_loss(entry: &DirectoryEntry, message: impl Into<String>) -
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BoundaryVertexClusterError {
     NonTransitive,
-    /// A clustered representative is not a finite position.
-    NonFinitePosition,
 }
 
 #[derive(Debug, PartialEq)]
 struct BoundaryVertexCluster {
-    representative: Point3,
+    representative: FinitePoint3,
     members: Vec<usize>,
 }
 
@@ -138,14 +137,14 @@ fn find_cluster_root(parents: &mut [usize], index: usize) -> usize {
 }
 
 fn cluster_boundary_positions(
-    positions: &[Point3],
+    positions: &[FinitePoint3],
     tolerance: cadmpeg_ir::scalar::PositiveReal,
 ) -> Result<Vec<BoundaryVertexCluster>, BoundaryVertexClusterError> {
     let tolerance = tolerance.get();
     let mut parents = (0..positions.len()).collect::<Vec<_>>();
     for (left_index, left) in positions.iter().enumerate() {
         for (right_index, right) in positions.iter().enumerate().skip(left_index + 1) {
-            if !close(*left, *right, tolerance) {
+            if !close(left.get(), right.get(), tolerance) {
                 continue;
             }
             let left_root = find_cluster_root(&mut parents, left_index);
@@ -166,7 +165,7 @@ fn cluster_boundary_positions(
             members
                 .iter()
                 .skip(offset + 1)
-                .any(|right| !close(positions[*left], positions[*right], tolerance))
+                .any(|right| !close(positions[*left].get(), positions[*right].get(), tolerance))
         }) {
             return Err(BoundaryVertexClusterError::NonTransitive);
         }
@@ -174,7 +173,8 @@ fn cluster_boundary_positions(
             .iter()
             .copied()
             .min_by(|left, right| {
-                point_order(positions[*left], positions[*right]).then_with(|| left.cmp(right))
+                point_order(positions[*left].get(), positions[*right].get())
+                    .then_with(|| left.cmp(right))
             })
             .map(|index| positions[index])
             .ok_or(BoundaryVertexClusterError::NonTransitive)?;
@@ -209,10 +209,11 @@ fn create_boundary_vertices(
         let point_id = crate::ids::point(&stem.slot(boundary).slot(index));
         sequences.record_point(&point_id, stem);
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
-        candidate.model_mut().points.push(
-            Point::new(point_id.clone(), cluster.representative, None)
-                .map_err(|_| BoundaryVertexClusterError::NonFinitePosition)?,
-        );
+        candidate.model_mut().points.push(Point::new(
+            point_id.clone(),
+            cluster.representative,
+            None,
+        ));
         candidate.model_mut().vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -237,11 +238,11 @@ fn create_boundary_vertices(
     Ok((vertex_ids.into_iter().flatten().collect(), derivations))
 }
 
-fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
+fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<FinitePoint3> {
     let point_id = &index.vertices(id.as_str())?.point;
     index
         .points(point_id.as_str())
-        .map(|point| point.position().get())
+        .map(|point| point.position())
 }
 
 pub(super) struct PcurveSupport<'a> {
@@ -806,14 +807,14 @@ fn linear_boundary_model_points(
     for item in items {
         let curve = index.curves(item.model_curve.as_str())?;
         let mut curve_points = match curve.geometry.solved() {
-            Some(SolvedCurveGeometry::Line(_)) => vec![item.start, item.end],
+            Some(SolvedCurveGeometry::Line(_)) => vec![item.start.get(), item.end.get()],
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 linear_model_nurbs_points(nurbs, item.source_edge.param_range()?)?
             }
             _ => return None,
         };
-        if curve_points.first().copied() != Some(item.start)
-            || curve_points.last().copied() != Some(item.end)
+        if curve_points.first().copied() != Some(item.start.get())
+            || curve_points.last().copied() != Some(item.end.get())
         {
             return None;
         }
@@ -1479,7 +1480,7 @@ fn select_boundary_edge(
     sense: Sense,
     tolerance: f64,
     parameter_curves_authoritative: bool,
-) -> Result<(Edge, Point3, Point3, bool), BoundaryEdgeSelectionError> {
+) -> Result<(Edge, FinitePoint3, FinitePoint3, bool), BoundaryEdgeSelectionError> {
     let mut candidates_with_endpoints = 0;
     let candidates = candidates
         .iter()
@@ -1487,7 +1488,7 @@ fn select_boundary_edge(
             let start = point_position(carrier_index, &edge.start)?;
             let end = point_position(carrier_index, &edge.end)?;
             candidates_with_endpoints += 1;
-            edge_range_matches_curve(edge, carrier_index, start, end, tolerance)
+            edge_range_matches_curve(edge, carrier_index, start.get(), end.get(), tolerance)
                 .then_some((edge, start, end))
         })
         .collect::<Vec<_>>();
@@ -1519,8 +1520,8 @@ fn select_boundary_edge(
                 carrier_index,
                 surface_id,
                 pcurves,
-                expected_start,
-                expected_end,
+                expected_start.get(),
+                expected_end.get(),
                 tolerance,
             )
         })
@@ -2159,14 +2160,16 @@ pub(super) fn project(
             };
             let tolerance_policy = FaceTolerancePolicy::from_global(
                 global,
-                items.iter().flat_map(|item| [item.start, item.end]),
+                items
+                    .iter()
+                    .flat_map(|item| [item.start.get(), item.end.get()]),
             );
             let sewing_tolerance = tolerance_policy.topology_sewing;
             face_tolerance = face_tolerance.max(sewing_tolerance);
             if items.iter().enumerate().any(|(index, item)| {
                 let (_, end) = traversal(item);
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
-                !close(end, next_start, sewing_tolerance)
+                !close(end.get(), next_start.get(), sewing_tolerance)
             }) {
                 losses.push(entity_loss(
                     entry,
@@ -2225,14 +2228,6 @@ pub(super) fn project(
                     losses.push(entity_loss(
                         entry,
                         "boundary endpoint tolerance neighborhoods are non-transitive",
-                    ));
-                    valid = false;
-                    break;
-                }
-                Err(BoundaryVertexClusterError::NonFinitePosition) => {
-                    losses.push(entity_loss(
-                        entry,
-                        "a boundary vertex position states a non-finite coordinate",
                     ));
                     valid = false;
                     break;

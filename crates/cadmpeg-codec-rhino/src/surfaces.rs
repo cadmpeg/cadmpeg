@@ -412,9 +412,11 @@ fn read_revolution(
         ));
     }
     let from = crate::wire::scaled_point(point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
+        .get();
     let to = crate::wire::scaled_point(point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
+        .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
+        .get();
     let angular_interval =
         finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
     if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACE_DEGENERATE {
@@ -959,7 +961,8 @@ fn read_plane_surface_with_parameterization(
     let geometry = TypedSurface::Plane {
         plane: cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
             crate::wire::scaled_point(native_plane.origin, scale)
-                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
+                .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?
+                .get(),
             vector(native_plane.zaxis),
             vector(native_plane.xaxis),
         )

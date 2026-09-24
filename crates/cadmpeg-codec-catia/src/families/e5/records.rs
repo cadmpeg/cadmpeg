@@ -163,7 +163,7 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
 /// referenced vertex population. The roster may be split into multiple runs;
 /// marker-like bytes inside framed payloads are not vertex rows.
 #[must_use]
-pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
+pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<FinitePoint3> {
     if vertex_count == 0 {
         return Vec::new();
     }
@@ -187,7 +187,7 @@ pub(super) fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
     runs.into_iter().flatten().collect()
 }
 
-fn vertex_runs(bytes: &[u8]) -> Vec<Vec<Point3>> {
+fn vertex_runs(bytes: &[u8]) -> Vec<Vec<FinitePoint3>> {
     let mut runs = Vec::new();
     let mut position = 0usize;
     while position + 15 <= bytes.len() {

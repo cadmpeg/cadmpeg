@@ -269,18 +269,16 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 )),
                 source_object: None,
             });
-            ir.model.points.push(
-                Point::new(
-                    point_id.clone(),
-                    Point3::new(
-                        seam[0] + offset * transform.normal()[0],
-                        seam[1] + offset * transform.normal()[1],
-                        seam[2] + offset * transform.normal()[2],
-                    ),
-                    None,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                seam[0] + offset * transform.normal()[0],
+                seam[1] + offset * transform.normal()[1],
+                seam[2] + offset * transform.normal()[2],
+            ))
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+            ir.model
+                .points
+                .push(Point::new(point_id.clone(), finite_position, None));
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,

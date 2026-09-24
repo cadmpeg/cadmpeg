@@ -160,13 +160,14 @@ fn decode_synthesizes_sparse_partition_configuration() {
 
     let (mut edited, _, fidelity) = decoded.into_parts();
     let moved = edited.model.points[0].position().get();
-    edited.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut written = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut written).unwrap();
     let scan = container::scan_bytes(&written);

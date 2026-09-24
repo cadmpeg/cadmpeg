@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveNurbs},
@@ -56,9 +57,9 @@ pub(crate) struct ZeroEntitySupportOccurrence {
     /// Model-carrier parameters at the two stored UV endpoints.
     pub(crate) model_parameters: Option<[f64; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
-    pub(crate) model_midpoint: Option<Point3>,
+    pub(crate) model_midpoint: Option<FinitePoint3>,
     /// UV endpoints lifted through the owning surface carrier.
-    pub(crate) model_endpoints: Option<[Point3; 2]>,
+    pub(crate) model_endpoints: Option<[FinitePoint3; 2]>,
 }
 
 /// One surface carrier and its maximal following `21xx` support run.
@@ -224,7 +225,7 @@ pub(crate) struct ZeroEntityLoop {
     /// Absolute coedge senses in member order; `true` is forward.
     pub(crate) forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
-    pub(crate) oriented_model_endpoints: Vec<[Point3; 2]>,
+    pub(crate) oriented_model_endpoints: Vec<[FinitePoint3; 2]>,
 }
 
 /// One `5e1a` allocation tuple.
@@ -981,9 +982,9 @@ fn bind_face_support_occurrences(
 }
 
 pub(crate) fn oriented_closed_model_endpoints(
-    endpoints: &[Option<[Point3; 2]>],
+    endpoints: &[Option<[FinitePoint3; 2]>],
     forward_senses: &[bool],
-) -> Option<Vec<[Point3; 2]>> {
+) -> Option<Vec<[FinitePoint3; 2]>> {
     const CLOSURE_TOLERANCE: f64 = 2e-3;
 
     if endpoints.is_empty() || endpoints.len() != forward_senses.len() {
@@ -1023,7 +1024,8 @@ pub(crate) fn oriented_closed_model_endpoints(
         .iter()
         .enumerate()
         .all(|(index, endpoints)| {
-            endpoints[1].distance(oriented[(index + 1) % oriented.len()][0]) <= CLOSURE_TOLERANCE
+            endpoints[1].distance(oriented[(index + 1) % oriented.len()][0].get())
+                <= CLOSURE_TOLERANCE
         })
         .then_some(oriented)
 }
@@ -1494,7 +1496,7 @@ fn zero_entity_model_curve(
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(
-                        cadmpeg_ir::features::FinitePoint3::new(point)?,
+                        point,
                         *cylinder_surface.frame().axis(),
                     ),
                 )),
@@ -1539,7 +1541,7 @@ fn zero_entity_model_curve(
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        zero_entity_surface_point(surface, [angle, 0.0])?,
+                        zero_entity_surface_point(surface, [angle, 0.0])?.get(),
                         cadmpeg_ir::math::Vector3::new(
                             half_angle.cos() * axis.x + half_angle.sin() * radial.x,
                             half_angle.cos() * axis.y + half_angle.sin() * radial.y,
@@ -1744,7 +1746,7 @@ fn zero_entity_model_curve_construction(
     ))
 }
 
-fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<Point3> {
+fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Option<FinitePoint3> {
     let point = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin().get();
@@ -1832,7 +1834,7 @@ fn zero_entity_surface_point(geometry: &SurfaceGeometry, [u, v]: [f64; 2]) -> Op
         }
         _ => return None,
     };
-    point.is_finite().then_some(point)
+    FinitePoint3::new(point)
 }
 
 /// Decode complete `5e1a` allocation tuples.
@@ -2177,6 +2179,7 @@ mod tests {
         zero_entity_vertex_incidences, ZeroEntityFaceControl, ZeroEntityLoopMembers,
         ZeroEntityUseSlot,
     };
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
     use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
     use cadmpeg_ir::geometry::CurveGeometry;
@@ -2467,9 +2470,14 @@ mod tests {
                 == [Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)]
         ));
         assert_eq!(support.model_parameters, Some([0.0, 1.0]));
-        assert_eq!(support.model_midpoint, Some(Point3::new(3.0, 8.0, 3.0)));
         assert_eq!(
-            support.model_endpoints,
+            support.model_midpoint.map(FinitePoint3::get),
+            Some(Point3::new(3.0, 8.0, 3.0))
+        );
+        assert_eq!(
+            support
+                .model_endpoints
+                .map(|pair| pair.map(FinitePoint3::get)),
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
         );
     }
@@ -2842,9 +2850,10 @@ mod tests {
 
     #[test]
     fn oriented_endpoint_tape_closes_one_missing_occurrence() {
-        let first = Point3::new(1.0, 0.0, 0.0);
-        let second = Point3::new(0.0, 1.0, 0.0);
-        let third = Point3::new(0.0, 0.0, 1.0);
+        let finite = |point| FinitePoint3::new(point).expect("finite test endpoint");
+        let first = finite(Point3::new(1.0, 0.0, 0.0));
+        let second = finite(Point3::new(0.0, 1.0, 0.0));
+        let third = finite(Point3::new(0.0, 0.0, 1.0));
         let endpoints = [Some([first, second]), Some([third, second]), None];
 
         assert_eq!(
@@ -2855,7 +2864,7 @@ mod tests {
         assert!(oriented_closed_model_endpoints(
             &[
                 Some([first, second]),
-                Some([Point3::new(1.0, 1.0, 0.0), first]),
+                Some([finite(Point3::new(1.0, 1.0, 0.0)), first]),
             ],
             &[true; 2],
         )

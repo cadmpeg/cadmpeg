@@ -323,10 +323,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
     let vertex =
         VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
-    ir.model.points.push(
-        Point::new(point.clone(), Point3::new(3.0_f64.sqrt(), 0.0, 1.0), None)
+    ir.model.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(3.0_f64.sqrt(), 0.0, 1.0))
             .expect("a finite position is a point"),
-    );
+        None,
+    ));
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,
@@ -728,10 +730,18 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point::new(start_point.clone(), Point3::new(0.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
-        Point::new(end_point.clone(), Point3::new(1.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
+        Point::new(
+            start_point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            end_point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -1263,10 +1273,18 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
     let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
     let end_point = PointId::mint("nx:test:point#1").expect("identity grammar");
     ir.model.points.extend([
-        Point::new(start_point.clone(), Point3::new(0.0, 0.0, 1.0), None)
-            .expect("a finite position is a point"),
-        Point::new(end_point.clone(), Point3::new(1.0, 0.005, 1.0), None)
-            .expect("a finite position is a point"),
+        Point::new(
+            start_point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            end_point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.005, 1.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     let start = VertexId::mint("nx:test:vertex#0").expect("identity grammar");
     let end = VertexId::mint("nx:test:vertex#1").expect("identity grammar");

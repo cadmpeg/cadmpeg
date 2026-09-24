@@ -9,6 +9,7 @@ use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -513,19 +514,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let Some(position) = points.get(&id).copied() else {
             continue;
         };
-        let Ok(point) = Point::new(
+        ir.model.points.push(Point::new(
             PointId::from(ids::data(kind!("point"), id)),
             position,
             apll_point_names
                 .get(&id)
                 .map(|name| super::step_source_association(id, name.clone())),
-        ) else {
-            losses.push(StepLossCode::DecodeWarning.note(format!(
-                "point carrier #{id} states a non-finite coordinate and was not transferred"
-            )));
-            continue;
-        };
-        ir.model.points.push(point);
+        ));
     }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
@@ -563,7 +558,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         {
             let placement = named_parameter(record, placement_type, 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied())
+                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
                 .map(|origin| {
                     let axis = optional_direction(
                         named_parameter(record, placement_type, 2),
@@ -715,7 +710,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let geometry = match curve_kind {
             LeafCurveEntity::Line => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
-                .and_then(|point| points.get(&point).copied())
+                .and_then(|point| points.get(&point).copied().map(FinitePoint3::get))
                 .zip(
                     named_parameter(record, "LINE", 2)
                         .and_then(Value::reference)
@@ -2651,7 +2646,7 @@ enum TrimMasterRepresentation {
 }
 
 struct TrimParameterContext<'a> {
-    points: &'a BTreeMap<u64, Point3>,
+    points: &'a BTreeMap<u64, FinitePoint3>,
     geometry: &'a CurveGeometry,
     angle_scale: f64,
     linear_parameter_scale: f64,
@@ -3666,7 +3661,7 @@ fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -
         return None;
     };
     context.points.get(id).and_then(|point| {
-        curve_parameter_at_point(context.geometry.solved()?, *point, context.tolerance)
+        curve_parameter_at_point(context.geometry.solved()?, point.get(), context.tolerance)
     })
 }
 
@@ -4059,7 +4054,12 @@ pub(super) fn coordinate_rows(record: &RawRecord, scale: f64) -> Option<Vec<Poin
         })
 }
 
-fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -> Option<Point3> {
+fn named_coordinates(
+    record: &RawRecord,
+    name: &str,
+    index: usize,
+    scale: f64,
+) -> Option<FinitePoint3> {
     let values = named_parameter(record, name, index)?.list()?;
     if values.len() != 3 {
         return None;
@@ -4069,10 +4069,14 @@ fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -
         values[1].number()? * scale,
         values[2].number()? * scale,
     );
-    point.is_finite().then_some(point)
+    FinitePoint3::new(point)
 }
 
-fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> Option<Point3> {
+fn apll_point_coordinates(
+    record: &RawRecord,
+    point_type: &str,
+    scale: f64,
+) -> Option<FinitePoint3> {
     let values = if record.partials.len() == 1 {
         named_parameter(record, point_type, 1).and_then(Value::list)
     } else {
@@ -4093,7 +4097,7 @@ fn apll_point_coordinates(record: &RawRecord, point_type: &str, scale: f64) -> O
         values[1].number()? * scale,
         values[2].number()? * scale,
     );
-    point.is_finite().then_some(point)
+    FinitePoint3::new(point)
 }
 
 fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {
@@ -4261,14 +4265,14 @@ fn default_nurbs_knots(
 fn nurbs_curve(
     id: u64,
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
+    points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
 ) -> Option<NurbsCurve> {
     let definition = nurbs_curve_definition(id, record, losses, "B_SPLINE_CURVE")?;
     let control_points = definition
         .control_points
         .into_iter()
-        .map(|id| points.get(&id).copied())
+        .map(|id| points.get(&id).copied().map(FinitePoint3::get))
         .collect::<Option<Vec<_>>>()?;
     match NurbsCurve::from_lanes(
         definition.degree,
@@ -4974,14 +4978,18 @@ fn polyline_pcurve(
 fn polyline(
     id: u64,
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
+    points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
 ) -> Option<NurbsCurve> {
     let control_points = record
         .parameter(1)?
         .list()?
         .iter()
-        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+        .map(|value| {
+            value
+                .reference()
+                .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))
+        })
         .collect::<Option<Vec<_>>>()?;
     if control_points.len() < 2 {
         return None;
@@ -5006,7 +5014,7 @@ fn polyline(
 fn nurbs_surface(
     id: u64,
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
+    points: &BTreeMap<u64, FinitePoint3>,
     losses: &mut Vec<LossNote>,
 ) -> Option<NurbsSurface> {
     let (base, offset) = if record.partials.len() > 1 {
@@ -5044,7 +5052,11 @@ fn nurbs_surface(
         .into_iter()
         .map(|row| {
             row.iter()
-                .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+                .map(|value| {
+                    value
+                        .reference()
+                        .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))
+                })
                 .collect::<Option<Vec<_>>>()
         })
         .collect::<Option<Vec<_>>>()?;
@@ -5252,7 +5264,7 @@ fn transformation_direction<T: Copy>(
 
 fn cartesian_transformation_operator(
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
+    points: &BTreeMap<u64, FinitePoint3>,
     directions: &BTreeMap<u64, Vector3>,
 ) -> Option<Transform> {
     let axis1 = transformation_direction(
@@ -5271,7 +5283,7 @@ fn cartesian_transformation_operator(
     .ok()?;
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
         .reference()
-        .and_then(|id| points.get(&id).copied())?;
+        .and_then(|id| points.get(&id).copied().map(FinitePoint3::get))?;
     let scale = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 3) {
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,

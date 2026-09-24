@@ -10,6 +10,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -186,8 +187,8 @@ fn add_edge(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None).ok()?,
-        Point::new(end_point.clone(), end, None).ok()?,
+        Point::new(start_point.clone(), FinitePoint3::new(start)?, None),
+        Point::new(end_point.clone(), FinitePoint3::new(end)?, None),
     ]);
     ir.model.vertices.extend([
         Vertex {

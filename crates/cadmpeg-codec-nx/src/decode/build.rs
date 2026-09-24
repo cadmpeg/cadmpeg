@@ -40,6 +40,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::Pcurve, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve,
     CurveGeometry, IntcurveSupportContext, ProceduralCurve, ProceduralCurveDefinition,
@@ -50,7 +51,6 @@ use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId,
     ShellId, SurfaceId, UnknownId, VertexId,
 };
-use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -60,7 +60,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) fn ordered_point_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(Point3, &'a Node)> {
+) -> Vec<(FinitePoint3, &'a Node)> {
     ordered_fixed_candidates(
         geometry::points(stream)
             .into_iter()
@@ -320,10 +320,9 @@ pub(super) fn try_decode_geometry(
             annotations
                 .derived(&pid, "position")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            ir.model.points.push(
-                Point::new(pid.clone(), position, None)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            ir.model
+                .points
+                .push(Point::new(pid.clone(), position, None));
             ir.model.vertices.push(Vertex {
                 id: vid.clone(),
                 point: pid.clone(),

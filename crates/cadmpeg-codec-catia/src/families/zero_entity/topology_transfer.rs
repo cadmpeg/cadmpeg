@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -48,8 +49,8 @@ pub(in crate::families::zero_entity) struct ZeroEntityTopologyCounts {
 #[derive(Debug, Clone)]
 struct Occurrence {
     support_record_ordinal: u32,
-    raw_endpoints: [Point3; 2],
-    oriented_endpoints: [Point3; 2],
+    raw_endpoints: [FinitePoint3; 2],
+    oriented_endpoints: [FinitePoint3; 2],
     model_parameters: Option<[f64; 2]>,
     curve: CurveId,
     oriented_curve: Option<(CurveId, [f64; 2])>,
@@ -250,8 +251,12 @@ pub(super) fn transfer_closed_face_topology(
             source_range.map(|range| (range, false))
         } else {
             source_range.and_then(|range| {
-                curve_orientation(&curve_geometry, range, occurrence.raw_endpoints)
-                    .map(|reversed| (range, reversed))
+                curve_orientation(
+                    &curve_geometry,
+                    range,
+                    occurrence.raw_endpoints.map(FinitePoint3::get),
+                )
+                .map(|reversed| (range, reversed))
             })
         };
         let raw_is_oriented = raw_indices == [0, 1];
@@ -437,9 +442,11 @@ pub(super) fn transfer_closed_face_topology(
             Exactness::Inferred,
         );
         annotations.derived(&point_ids[index], "position").ok()?;
-        ir.model
-            .points
-            .push(Point::new(point_ids[index].clone(), locus.representative_point, None).ok()?);
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            locus.representative_point,
+            None,
+        ));
         annotate(
             annotations,
             &vertex_ids[index],
@@ -901,7 +908,8 @@ fn increasing_range(parameters: [f64; 2]) -> Option<[f64; 2]> {
     ])
 }
 
-fn endpoint_indices(reference: [Point3; 2], target: [Point3; 2]) -> Option<[usize; 2]> {
+fn endpoint_indices(reference: [FinitePoint3; 2], target: [FinitePoint3; 2]) -> Option<[usize; 2]> {
+    let [reference, target] = [reference, target].map(|pair| pair.map(FinitePoint3::get));
     let direct = reference[0].distance(target[0]) <= MODEL_POINT_TOLERANCE.get()
         && reference[1].distance(target[1]) <= MODEL_POINT_TOLERANCE.get();
     let reversed = reference[0].distance(target[1]) <= MODEL_POINT_TOLERANCE.get()
@@ -929,6 +937,7 @@ mod tests {
     use super::super::records::ZeroEntitySupportRun;
     use super::{transfer_closed_face_topology, ZeroEntityClosedTopology};
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
@@ -954,13 +963,17 @@ mod tests {
             ))),
             model_curve_construction: None,
             model_parameters: Some([0.0, end.distance(start)]),
-            model_midpoint: Some(Point3::new(
+            model_midpoint: Some(finite(Point3::new(
                 (start.x + end.x) * 0.5,
                 (start.y + end.y) * 0.5,
                 (start.z + end.z) * 0.5,
-            )),
-            model_endpoints: Some([start, end]),
+            ))),
+            model_endpoints: Some([start, end].map(finite)),
         }
+    }
+
+    fn finite(point: Point3) -> FinitePoint3 {
+        FinitePoint3::new(point).expect("finite test point")
     }
 
     fn run(
@@ -1022,7 +1035,7 @@ mod tests {
                     forward_senses: vec![true, true, true],
                     oriented_model_endpoints: order
                         .into_iter()
-                        .map(|(start, end)| [start, end])
+                        .map(|(start, end)| [start, end].map(finite))
                         .collect(),
                 }]),
                 terminal_control:
@@ -1066,7 +1079,10 @@ mod tests {
         });
         for run in &runs {
             for support in &run.supports {
-                let [start, end] = support.model_endpoints.expect("test endpoints");
+                let [start, end] = support
+                    .model_endpoints
+                    .expect("test endpoints")
+                    .map(FinitePoint3::get);
                 ir.model.curves.push(Curve {
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1182,7 +1198,10 @@ mod tests {
         });
         for run in &runs {
             for support in &run.supports {
-                let [start, end] = support.model_endpoints.expect("test endpoints");
+                let [start, end] = support
+                    .model_endpoints
+                    .expect("test endpoints")
+                    .map(FinitePoint3::get);
                 let geometry = if support.record_ordinal == 5 {
                     CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(

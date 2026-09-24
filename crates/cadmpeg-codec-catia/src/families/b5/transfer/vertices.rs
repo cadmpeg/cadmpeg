@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::ids::{PointId, VertexId};
-use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
@@ -97,14 +96,9 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
-        ir.model.points.push(
-            Point::new(
-                point_id.clone(),
-                Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-                None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model
+            .points
+            .push(Point::new(point_id.clone(), *coordinates, None));
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,
@@ -141,14 +135,11 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::Derived,
         );
-        ir.model.points.push(
-            Point::new(
-                point_id.clone(),
-                Point3::new(vertex.point[0], vertex.point[1], vertex.point[2]),
-                Some(cgm_source("vertex", vertex.object_id)),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model.points.push(Point::new(
+            point_id.clone(),
+            vertex.point,
+            Some(cgm_source("vertex", vertex.object_id)),
+        ));
         let vertex_id = VertexId::compose(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,

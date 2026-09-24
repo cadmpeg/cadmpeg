@@ -182,14 +182,12 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 #[test]
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75))
+            .expect("a finite position is a point"),
+        None,
+    ));
     for version in [
         crate::RhinoArchiveVersion::V5,
         crate::RhinoArchiveVersion::V6,
@@ -1870,15 +1868,14 @@ fn opennurbs_object_walk_and_transfer_floor() {
             _ => unreachable!("supported writer version table"),
         };
         let mut point_ir = cadmpeg_ir::CadIr::empty();
-        point_ir.model.points.push(
-            cadmpeg_ir::topology::Point::new(
-                cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
-                    .expect("identity grammar"),
-                cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75),
-                None,
-            )
+        point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("integration:writer:point#0").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.25, -2.5, 3.75,
+            ))
             .expect("a finite position is a point"),
-        );
+            None,
+        ));
         let mut bytes = Vec::new();
         crate::test_support::plan_at(archive_version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))

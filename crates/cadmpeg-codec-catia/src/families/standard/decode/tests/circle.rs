@@ -32,10 +32,10 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                position,
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
                 None,
             )
-            .expect("a finite position is a point")
         }),
     );
     let sphere_geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(

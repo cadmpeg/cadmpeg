@@ -168,18 +168,18 @@ fn untrimmed_surface_curve() -> CadIr {
             "test:model:point#point-start"
                 .try_into()
                 .expect("valid identity"),
-            Point3::new(0.0, 1.0, 0.0),
+            crate::features::FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         crate::topology::Point::new(
             "test:model:point#point-end"
                 .try_into()
                 .expect("valid identity"),
-            Point3::new(-1.0, 0.0, 0.0),
+            crate::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -425,12 +425,14 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
             construction,
         )
         .unwrap();
-    ir.model.points[0]
-        .set_position(Point3::new(1.0, 2.0, 0.0))
-        .expect("a finite position is a point");
-    ir.model.points[1]
-        .set_position(Point3::new(2.0, 1.0, 0.0))
-        .expect("a finite position is a point");
+    ir.model.points[0].set_position(
+        crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
+            .expect("a finite position is a point"),
+    );
+    ir.model.points[1].set_position(
+        crate::features::FinitePoint3::new(Point3::new(2.0, 1.0, 0.0))
+            .expect("a finite position is a point"),
+    );
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         crate::geometry::analytic::CircleCurve::try_new(
             Point3::new(1.0, 1.0, 0.0),
@@ -494,12 +496,14 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
 #[test]
 fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     let mut ir = untrimmed_surface_curve();
-    ir.model.points[0]
-        .set_position(Point3::new(0.25, 0.0, 0.0))
-        .expect("a finite position is a point");
-    ir.model.points[1]
-        .set_position(Point3::new(0.0, 0.0, 0.0))
-        .expect("a finite position is a point");
+    ir.model.points[0].set_position(
+        crate::features::FinitePoint3::new(Point3::new(0.25, 0.0, 0.0))
+            .expect("a finite position is a point"),
+    );
+    ir.model.points[1].set_position(
+        crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("a finite position is a point"),
+    );
     ir.model.pcurves[0].geometry = PcurveGeometry::Trimmed(
         crate::geometry::pcurve::TrimmedPcurve::try_new(
             [0.0, 1.0],
@@ -759,9 +763,14 @@ fn edge_endpoint_mismatch_is_flagged() {
 
     let mut source_tolerant = unit_cube().expect("valid unit cube fixture");
     let moved = source_tolerant.model.points[0].position().get();
-    source_tolerant.model.points[0]
-        .set_position(crate::math::Point3::new(moved.x, moved.y, moved.z + 0.015))
-        .expect("a finite position is a point");
+    source_tolerant.model.points[0].set_position(
+        crate::features::FinitePoint3::new(crate::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 0.015,
+        ))
+        .expect("a finite position is a point"),
+    );
     source_tolerant.tolerances.linear =
         crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
     let report = validate_neutral(&source_tolerant, Vec::new());
@@ -777,9 +786,14 @@ fn edge_endpoint_mismatch_is_flagged() {
     // Displace one corner: the point no longer lies on its edges' curves at
     // the stored parameter values.
     let moved = ir.model.points[0].position().get();
-    ir.model.points[0]
-        .set_position(crate::math::Point3::new(moved.x, moved.y, moved.z + 1.0))
-        .expect("a finite position is a point");
+    ir.model.points[0].set_position(
+        crate::features::FinitePoint3::new(crate::math::Point3::new(
+            moved.x,
+            moved.y,
+            moved.z + 1.0,
+        ))
+        .expect("a finite position is a point"),
+    );
     let report = validate_neutral(&ir, Vec::new());
     assert!(
         report

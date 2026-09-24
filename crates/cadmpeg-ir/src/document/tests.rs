@@ -453,9 +453,10 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
         .collect();
     for (point, value) in ir.model.points.iter_mut().zip(edge_values.iter().cycle()) {
         let moved = point.position().get();
-        point
-            .set_position(Point3::new(*value, moved.y, moved.z))
-            .expect("a finite position is a point");
+        point.set_position(
+            crate::features::FinitePoint3::new(Point3::new(*value, moved.y, moved.z))
+                .expect("a finite position is a point"),
+        );
     }
     let json = ir.to_canonical_json().unwrap();
     let parsed = crate::CadIr::from_json(&json).unwrap();

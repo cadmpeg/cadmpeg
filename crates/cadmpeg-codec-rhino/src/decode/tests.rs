@@ -1057,10 +1057,10 @@ fn candidate_rejections_distinguish_admission_from_validation() {
                 "rhino:test:point#duplicate"
                     .try_into()
                     .expect("point identity"),
-                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
                 None,
-            )
-            .expect("a finite position is a point");
+            );
             candidate.model.points.extend([point.clone(), point]);
             Ok(())
         });
@@ -1105,10 +1105,10 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                 }
                 let point = Point::new(
                     "rhino:test:point#duplicate".try_into().unwrap(),
-                    Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .expect("a finite position is a point"),
                     None,
-                )
-                .expect("a finite position is a point");
+                );
                 candidate.model.points.extend([point.clone(), point]);
                 Ok(())
             });
@@ -1148,7 +1148,8 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
         let point = |key| {
             Point::new(
                 format!("rhino:test:point#{key}").try_into().unwrap(),
-                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
                 Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Rhino,
                     object_id: cadmpeg_core::text::NonBlankString::new(format!("point-{key}"))
@@ -1160,7 +1161,6 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                     instance_path: Vec::new(),
                 }),
             )
-            .expect("a finite position is a point")
         };
         context.ir.model.points.push(point("z"));
         let checkpoint = ModelCheckpoint::capture(&context.ir.model);

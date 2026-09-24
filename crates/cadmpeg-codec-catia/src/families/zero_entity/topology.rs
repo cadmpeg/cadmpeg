@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::features::FinitePoint3;
 use serde::{Deserialize, Serialize};
 
 use super::records::ZeroEntitySupportRun;
@@ -17,8 +17,8 @@ pub(super) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
 pub(crate) struct ZeroEntityOrientedOccurrence {
     pub(crate) face_record_ordinal: u32,
     pub(crate) support_record_ordinal: u32,
-    pub(crate) model_endpoints: [Point3; 2],
-    pub(crate) model_midpoint: Point3,
+    pub(crate) model_endpoints: [FinitePoint3; 2],
+    pub(crate) model_midpoint: FinitePoint3,
 }
 
 /// Two radial occurrences with matching bounded model-space witnesses.
@@ -28,8 +28,8 @@ pub(crate) struct ZeroEntityOrientedOccurrence {
 pub(crate) struct ZeroEntityEndpointPairCandidate {
     pub(crate) face_record_ordinals: [u32; 2],
     pub(crate) support_record_ordinals: [u32; 2],
-    pub(crate) model_endpoints: [Point3; 2],
-    pub(crate) model_midpoint: Point3,
+    pub(crate) model_endpoints: [FinitePoint3; 2],
+    pub(crate) model_midpoint: FinitePoint3,
 }
 
 /// Start or end of an oriented endpoint pair.
@@ -77,7 +77,7 @@ impl EndpointPairIndex {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ZeroEntityEndpointLocusCandidate {
     pub(crate) incident_endpoint_pair_endpoints: Vec<(EndpointPairIndex, EdgeEnd)>,
-    pub(crate) representative_point: Point3,
+    pub(crate) representative_point: FinitePoint3,
     pub(crate) maximum_deviation: f64,
 }
 
@@ -288,7 +288,7 @@ fn endpoint_locus_candidates_inner(
                                 return None;
                             }
                         }
-                        if point.distance(endpoints[*other].2) <= MODEL_POINT_TOLERANCE {
+                        if point.distance(endpoints[*other].2.get()) <= MODEL_POINT_TOLERANCE {
                             neighbors[index].push(*other);
                             neighbors[*other].push(index);
                         }
@@ -327,7 +327,7 @@ fn endpoint_locus_candidates_inner(
                         return None;
                     }
                 }
-                let deviation = endpoints[*left].2.distance(endpoints[*right].2);
+                let deviation = endpoints[*left].2.distance(endpoints[*right].2.get());
                 maximum_deviation = maximum_deviation.max(deviation);
                 complete &= deviation <= MODEL_POINT_TOLERANCE;
             }
@@ -418,7 +418,7 @@ fn selected_radial_matches(
                 .filter(|other| {
                     occurrences[index]
                         .model_midpoint
-                        .distance(occurrences[*other].model_midpoint)
+                        .distance(occurrences[*other].model_midpoint.get())
                         <= MODEL_POINT_TOLERANCE
                 })
                 .collect()
@@ -426,7 +426,7 @@ fn selected_radial_matches(
         .collect()
 }
 
-fn endpoint_cell(point: Point3) -> [i64; 3] {
+fn endpoint_cell(point: FinitePoint3) -> [i64; 3] {
     [
         (point.x / MODEL_POINT_TOLERANCE).floor() as i64,
         (point.y / MODEL_POINT_TOLERANCE).floor() as i64,
@@ -434,7 +434,8 @@ fn endpoint_cell(point: Point3) -> [i64; 3] {
     ]
 }
 
-fn unordered_endpoint_pairs_match(left: [Point3; 2], right: [Point3; 2]) -> bool {
+fn unordered_endpoint_pairs_match(left: [FinitePoint3; 2], right: [FinitePoint3; 2]) -> bool {
+    let [left, right] = [left, right].map(|pair| pair.map(FinitePoint3::get));
     let direct = left[0].distance(right[0]).max(left[1].distance(right[1]));
     let reversed = left[0].distance(right[1]).max(left[1].distance(right[0]));
     direct.min(reversed) <= MODEL_POINT_TOLERANCE
@@ -447,7 +448,12 @@ mod tests {
         ZeroEntityEndpointPairCandidate, ZeroEntityOrientedOccurrence,
     };
     use cadmpeg_core::decode::WorkBudget;
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::math::Point3;
+
+    fn finite(point: Point3) -> FinitePoint3 {
+        FinitePoint3::new(point).expect("finite test point")
+    }
 
     fn occurrence(
         face_record_ordinal: u32,
@@ -458,8 +464,8 @@ mod tests {
         ZeroEntityOrientedOccurrence {
             face_record_ordinal,
             support_record_ordinal,
-            model_endpoints,
-            model_midpoint,
+            model_endpoints: model_endpoints.map(finite),
+            model_midpoint: finite(model_midpoint),
         }
     }
 
@@ -580,11 +586,13 @@ mod tests {
 
     #[test]
     fn endpoint_locus_candidates_require_complete_endpoint_cliques() {
-        let pair = |support_record_ordinals, model_endpoints| ZeroEntityEndpointPairCandidate {
-            face_record_ordinals: support_record_ordinals,
-            support_record_ordinals,
-            model_endpoints,
-            model_midpoint: Point3::new(0.0, 0.0, 0.0),
+        let pair = |support_record_ordinals, model_endpoints: [Point3; 2]| {
+            ZeroEntityEndpointPairCandidate {
+                face_record_ordinals: support_record_ordinals,
+                support_record_ordinals,
+                model_endpoints: model_endpoints.map(finite),
+                model_midpoint: finite(Point3::new(0.0, 0.0, 0.0)),
+            }
         };
         let pairs = [
             pair(

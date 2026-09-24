@@ -159,7 +159,8 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
     assert_eq!(
         graph
             .get(NodeKind::Point, 11)
-            .and_then(crate::topology::Node::point_position),
+            .and_then(crate::topology::Node::point_position)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(
             1_001_000.0,
             f64::from_bits(1) * 1000.0,

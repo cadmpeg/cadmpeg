@@ -79,15 +79,15 @@ fn source_association_is_a_free_carrier_root() {
 fn point(id: &str) -> Point {
     Point::new(
         PointId::mint(id.to_owned()).expect("valid identity"),
-        Point3 {
+        crate::features::FinitePoint3::new(Point3 {
             x: 0.0,
             y: 0.0,
             z: 0.0,
-        },
+        })
+        .expect("a finite position is a point"),
         // Free points are reachable only via source association (or a vertex).
         Some(free_carrier(id)),
     )
-    .expect("a finite position is a point")
 }
 
 fn ir_strategy() -> impl Strategy<Value = CadIr> {

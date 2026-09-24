@@ -6,6 +6,7 @@ use std::fmt;
 
 use cadmpeg_core::decode::BoundedCount;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, BoundedReader, FramingError};
@@ -198,15 +199,16 @@ pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<f6
     result.is_finite().then_some(result)
 }
 
-/// Multiplies the three archive coordinates of a point by a unit scale.
+/// Multiplies the three archive coordinates of a point by a unit scale and
+/// admits the product when every coordinate is finite.
 pub(crate) fn scaled_point(
     value: crate::settings::Point3,
     scale: MillimeterScale,
-) -> Option<Point3> {
-    Some(Point3::new(
-        scaled_coordinate(value.0[0], scale)?,
-        scaled_coordinate(value.0[1], scale)?,
-        scaled_coordinate(value.0[2], scale)?,
+) -> Option<FinitePoint3> {
+    FinitePoint3::new(Point3::new(
+        value.0[0] * scale.value(),
+        value.0[1] * scale.value(),
+        value.0[2] * scale.value(),
     ))
 }
 

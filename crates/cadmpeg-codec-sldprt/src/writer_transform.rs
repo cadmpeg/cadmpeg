@@ -115,7 +115,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
             let placed = placed_point(*transform, point.position())?;
-            point.set_finite_position(placed);
+            point.set_position(placed);
         }
     }
     for surface in &mut ir.model.surfaces {

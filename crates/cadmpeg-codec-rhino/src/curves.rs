@@ -6,6 +6,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -71,7 +72,7 @@ pub(crate) enum DecodedGeometry {
     /// One point.
     Point {
         /// Decoded coordinates.
-        position: Point3,
+        position: FinitePoint3,
         /// Whether a unit conversion was applied.
         scaled: bool,
     },
@@ -94,7 +95,7 @@ pub(crate) enum DecodedGeometry {
 #[derive(Debug, Clone)]
 pub(crate) struct PointCloud {
     /// Ordered points.
-    pub(crate) points: Vec<Point3>,
+    pub(crate) points: Vec<FinitePoint3>,
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
     /// Repairs applied to optional channels that do not match the point count.
@@ -350,7 +351,14 @@ mod alias_tests {
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
         let cloud = read_cloud(&mut reader, MillimeterScale::IDENTITY)
             .expect("matching channels are recoverable");
-        assert_eq!(cloud.points, vec![Point3::new(1.0, 2.0, 3.0)]);
+        assert_eq!(
+            cloud
+                .points
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
+            vec![Point3::new(1.0, 2.0, 3.0)]
+        );
         assert!(cloud.warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -1285,7 +1293,7 @@ pub(crate) fn consume_legacy_polycurve_2d(
 fn read_point(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
-) -> Result<Point3, GeometryError> {
+) -> Result<FinitePoint3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
@@ -1373,9 +1381,11 @@ fn read_line(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let from = crate::wire::scaled_point(native_point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
+        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .get();
     let to = crate::wire::scaled_point(native_point(reader)?, scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?;
+        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .get();
     let domain = interval(reader)?.0;
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
@@ -1412,10 +1422,11 @@ fn read_polyline(
     let mut points = Vec::with_capacity(point_count);
     for _ in 0..point_count {
         let point = native_point(reader)?;
-        points
-            .push(crate::wire::scaled_point(point, scale).ok_or_else(|| {
-                error(reader.position(), "scaled polyline coordinate is invalid")
-            })?);
+        points.push(
+            crate::wire::scaled_point(point, scale)
+                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?
+                .get(),
+        );
     }
     let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != point_count {
@@ -1529,7 +1540,8 @@ fn read_circle(
     let yaxis = vector(native.yaxis);
     let axis = vector(native.zaxis);
     let center = crate::wire::scaled_point(native.origin, scale)
-        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
+        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?
+        .get();
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
     let norm_axis = axis.norm();

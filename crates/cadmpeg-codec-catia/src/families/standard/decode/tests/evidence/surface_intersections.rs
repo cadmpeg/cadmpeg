@@ -35,14 +35,12 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(
-            Point::new(
-                PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-                position,
-                None,
-            )
-            .expect("a finite position is a point"),
-        );
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(position)
+                .expect("a finite position is a point"),
+            None,
+        ));
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
@@ -152,10 +150,10 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                position,
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
                 None,
             )
-            .expect("a finite position is a point")
         }),
     );
     let sphere_id =
@@ -239,10 +237,10 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
         .map(|(index, position)| {
             Point::new(
                 PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-                position,
+                cadmpeg_ir::features::FinitePoint3::new(position)
+                    .expect("a finite position is a point"),
                 None,
             )
-            .expect("a finite position is a point")
         }),
     );
     let cylinder_id =
@@ -338,10 +336,10 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    position,
+                    cadmpeg_ir::features::FinitePoint3::new(position)
+                        .expect("a finite position is a point"),
                     None,
                 )
-                .expect("a finite position is a point")
             }),
     );
     let first_id =
@@ -435,10 +433,10 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    position,
+                    cadmpeg_ir::features::FinitePoint3::new(position)
+                        .expect("a finite position is a point"),
                     None,
                 )
-                .expect("a finite position is a point")
             }),
     );
     let support = StandardCurveSupport {
@@ -561,10 +559,10 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 Point::new(
                     PointId::mint(format!("catia:test:point#point-{index}"))
                         .expect("identity grammar"),
-                    position,
+                    cadmpeg_ir::features::FinitePoint3::new(position)
+                        .expect("a finite position is a point"),
                     None,
                 )
-                .expect("a finite position is a point")
             }));
         standard_spline_line(
             &ir,

@@ -172,9 +172,12 @@ fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_arch
     let decoded = decode(source);
     let mut edited = decoded.ir().clone();
     let moved = edited.model.points[0].position().get();
-    edited.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(2.5, moved.y, moved.z))
-        .expect("a finite position is a point");
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            2.5, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     edited.model.faces[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     let mut bytes = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut bytes)
@@ -470,13 +473,14 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
     let mut edited = result.ir().clone();
     let moved = edited.model.points[0].position().get();
-    edited.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
 
     let plan = F3dCodec
         .plan(

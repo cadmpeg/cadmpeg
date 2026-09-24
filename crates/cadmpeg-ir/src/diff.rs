@@ -593,9 +593,14 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let moved = right.model.points[0].position().get();
-        right.model.points[0]
-            .set_position(crate::math::Point3::new(moved.x + 1.0, moved.y, moved.z))
-            .expect("a finite position is a point");
+        right.model.points[0].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(
+                moved.x + 1.0,
+                moved.y,
+                moved.z,
+            ))
+            .expect("a finite position is a point"),
+        );
         right.model.loops.pop();
         right.model.coedges.pop();
 
@@ -670,9 +675,10 @@ mod tests {
             "the coordinate must move, or this test proves nothing"
         );
         let moved = right.model.points[index].position().get();
-        right.model.points[index]
-            .set_position(crate::math::Point3::new(after, moved.y, moved.z))
-            .expect("a finite position is a point");
+        right.model.points[index].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(after, moved.y, moved.z))
+                .expect("a finite position is a point"),
+        );
 
         assert_ne!(
             serde_json::to_value(&left.model.points).unwrap(),
@@ -708,13 +714,14 @@ mod tests {
         let mut right = left.clone();
         let index = scaled_point(&left);
         let point = right.model.points[index].position().get();
-        right.model.points[index]
-            .set_position(crate::math::Point3::new(
+        right.model.points[index].set_position(
+            crate::features::FinitePoint3::new(crate::math::Point3::new(
                 point.x.mul_add(1.0e-6, point.x),
                 point.y,
                 point.z,
             ))
-            .expect("a finite position is a point");
+            .expect("a finite position is a point"),
+        );
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());

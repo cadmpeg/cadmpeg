@@ -7,6 +7,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -1670,10 +1671,12 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             &cadmpeg_ir::identity_namespace!("rhino", "object", "vertex"),
             legacy_identity_key(format!("{suffix}.slot-{index}"))?,
         );
-        model.points.push(
-            Point::new(point_id.clone(), position, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        model
+            .points
+            .push(Point::new(point_id.clone(), finite_position, None));
         model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -2336,16 +2339,15 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
                 .map_err(malformed)?;
-            let position = Point3::new(
+            let Some(position) = FinitePoint3::new(Point3::new(
                 reader.f64().map_err(malformed)? * scale.value(),
                 reader.f64().map_err(malformed)? * scale.value(),
                 reader.f64().map_err(malformed)? * scale.value(),
-            );
-            if !position.is_finite() {
+            )) else {
                 return Err(CodecError::malformed(format_args!(
                     "V1 point at offset {offset} is not finite"
                 )));
-            }
+            };
             let suffix = format!("legacy-{decoded:06}");
             let suffix_key = legacy_identity_key(suffix.clone())?;
             let body_id = cadmpeg_ir::ids::BodyId::compose(
@@ -2368,10 +2370,9 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model.points.push(
-                Point::new(point_id.clone(), position, None)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            ir.model
+                .points
+                .push(Point::new(point_id.clone(), position, None));
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
@@ -2493,11 +2494,15 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
                         });
+                        let start = FinitePoint3::new(start)
+                            .ok_or(Point::NON_FINITE_POSITION)
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        let end = FinitePoint3::new(end)
+                            .ok_or(Point::NON_FINITE_POSITION)
+                            .map_err(cadmpeg_core::CodecError::malformed)?;
                         ir.model.points.extend([
-                            Point::new(start_point.clone(), start, None)
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
-                            Point::new(end_point.clone(), end, None)
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            Point::new(start_point.clone(), start, None),
+                            Point::new(end_point.clone(), end, None),
                         ]);
                         ir.model.vertices.extend([
                             Vertex {

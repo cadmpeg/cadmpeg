@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, Surface, SurfaceCurveFamily,
@@ -12,7 +13,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{
     BodyId, CurveId, EdgeId, PointId, ProceduralCurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
 use cadmpeg_ir::AnnotationBuilder;
@@ -52,7 +52,7 @@ struct WireSourceProcedural {
 struct ClosedWireMember<'a> {
     support: &'a crate::families::zero_entity::records::ZeroEntitySupportOccurrence,
     curve: CurveId,
-    endpoints: [Point3; 2],
+    endpoints: [FinitePoint3; 2],
     forward: bool,
     parameter_range: Option<[f64; 2]>,
 }
@@ -112,7 +112,7 @@ fn closed_wire_loop_members<'a>(
         .enumerate()
         .all(|(index, member)| {
             let next_start = members[(index + 1) % member_count].endpoints[0];
-            member.endpoints[1].distance(next_start) <= ZERO_ENTITY_WIRE_TOLERANCE.get()
+            member.endpoints[1].distance(next_start.get()) <= ZERO_ENTITY_WIRE_TOLERANCE.get()
         })
         .then_some(members)
 }
@@ -321,10 +321,9 @@ fn transfer_closed_wire_loops(
                     .map_err(cadmpeg_core::CodecError::malformed)?
                     .derived(&vertex_id, "point")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                ir.model.points.push(
-                    Point::new(point_id.clone(), start, None)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                );
+                ir.model
+                    .points
+                    .push(Point::new(point_id.clone(), start, None));
                 ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
@@ -1025,6 +1024,7 @@ mod tests {
     use super::{transfer_closed_wire_loops, WireTransferCounts};
     use crate::families::zero_entity::records::{ZeroEntityLoopClass, ZeroEntityLoopMembers};
     use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
     use cadmpeg_ir::geometry::{
         nurbs::NurbsCurve, Curve, CurveGeometry, ProceduralCurve, SolvedCurveGeometry,
@@ -1064,8 +1064,16 @@ mod tests {
             model_curve_construction: None,
             model_parameters,
             model_midpoint: None,
-            model_endpoints: Some(endpoints),
+            model_endpoints: Some(finite_pair(endpoints)),
         }
+    }
+
+    fn finite_pair(pair: [Point3; 2]) -> [FinitePoint3; 2] {
+        pair.map(|point| FinitePoint3::new(point).expect("finite test endpoint"))
+    }
+
+    fn finite_pairs(pairs: Vec<[Point3; 2]>) -> Vec<[FinitePoint3; 2]> {
+        pairs.into_iter().map(finite_pair).collect()
     }
 
     #[test]
@@ -1122,7 +1130,10 @@ mod tests {
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
-                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                            oriented_model_endpoints: finite_pairs(vec![
+                                [first, corner],
+                                [corner, first],
+                            ]),
                         },
                     ]),
                     terminal_control:
@@ -1210,7 +1221,10 @@ mod tests {
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
-                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                            oriented_model_endpoints: finite_pairs(vec![
+                                [first, corner],
+                                [corner, first],
+                            ]),
                         },
                         crate::families::zero_entity::records::ZeroEntityLoop {
                             pos: 25,
@@ -1226,7 +1240,10 @@ mod tests {
                             support_record_ordinals: vec![5, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
-                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                            oriented_model_endpoints: finite_pairs(vec![
+                                [first, corner],
+                                [corner, first],
+                            ]),
                         },
                         crate::families::zero_entity::records::ZeroEntityLoop {
                             pos: 30,
@@ -1242,7 +1259,7 @@ mod tests {
                             support_record_ordinals: vec![99],
                             loop_class: ZeroEntityLoopClass::Bound50,
                             forward_senses: vec![true],
-                            oriented_model_endpoints: vec![[first, corner]],
+                            oriented_model_endpoints: finite_pairs(vec![[first, corner]]),
                         },
                     ]),
                     terminal_control:
@@ -1387,7 +1404,10 @@ mod tests {
                             support_record_ordinals: vec![4, 5],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, true],
-                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                            oriented_model_endpoints: finite_pairs(vec![
+                                [first, corner],
+                                [corner, first],
+                            ]),
                         },
                     ]),
                     terminal_control:
@@ -1503,7 +1523,10 @@ mod tests {
                             support_record_ordinals: vec![4, 4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true, false],
-                            oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                            oriented_model_endpoints: finite_pairs(vec![
+                                [first, corner],
+                                [corner, first],
+                            ]),
                         },
                     ]),
                     terminal_control:
@@ -1603,7 +1626,7 @@ mod tests {
                             support_record_ordinals: vec![4],
                             loop_class: ZeroEntityLoopClass::Outer41,
                             forward_senses: vec![true],
-                            oriented_model_endpoints: vec![[first, second]],
+                            oriented_model_endpoints: finite_pairs(vec![[first, second]]),
                         },
                     ]),
                     terminal_control:

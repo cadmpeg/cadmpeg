@@ -258,7 +258,10 @@ fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
     ];
 
     assert_eq!(
-        cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()),
+        cluster_boundary_positions(
+            &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+            cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap()
+        ),
         Err(BoundaryVertexClusterError::NonTransitive)
     );
 }
@@ -271,9 +274,11 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
         Point3::new(10.0, 0.0, 0.0),
         Point3::new(0.0, 0.0, 0.0),
     ];
-    let clusters =
-        cluster_boundary_positions(&points, cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap())
-            .unwrap();
+    let clusters = cluster_boundary_positions(
+        &points.map(|point| cadmpeg_ir::features::FinitePoint3::new(point).unwrap()),
+        cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
+    )
+    .unwrap();
 
     assert_eq!(
         clusters
@@ -291,12 +296,12 @@ fn boundary_vertex_creation_retains_every_source_endpoint() {
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-a".into(),
             endpoint: BoundaryEndpoint::Start,
-            position: Point3::new(1.0, 0.0, 0.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
         },
         BoundaryVertexSourceEndpoint {
             edge: "iges:model:edge#source-b".into(),
             endpoint: BoundaryEndpoint::End,
-            position: Point3::new(0.0, 0.0, 0.0),
+            position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
         },
     ];
 
@@ -399,28 +404,28 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
     ir.model.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-point-start").expect("identity grammar"),
-            Point3::new(10.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#wrong-point-end").expect("identity grammar"),
-            Point3::new(11.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
-            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#matching-point-end").expect("identity grammar"),
-            Point3::new(2.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {

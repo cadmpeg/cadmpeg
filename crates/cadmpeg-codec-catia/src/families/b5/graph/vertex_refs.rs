@@ -1,6 +1,8 @@
 //! Vertex tables and admitted edge bindings.
 
+use super::super::vecmath::coordinates;
 use super::B5LogicalVertex;
+use cadmpeg_ir::features::FinitePoint3;
 use std::collections::BTreeMap;
 
 /// An endpoint in the raw or logical vertex table.
@@ -22,17 +24,17 @@ impl B5VertexRef {
     }
 
     fn point(self, vertices: &B5Vertices) -> [f64; 3] {
-        match self {
+        coordinates(match self {
             Self::Raw(index) => vertices.raw[index],
             Self::Logical(index) => vertices.logical[index].point,
-        }
+        })
     }
 }
 
 /// Vertex coordinates and edge references admitted against their table bounds.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct B5Vertices {
-    raw: Vec<[f64; 3]>,
+    raw: Vec<FinitePoint3>,
     logical: Vec<B5LogicalVertex>,
     edges: BTreeMap<u32, [B5VertexRef; 2]>,
 }
@@ -40,7 +42,7 @@ pub(in crate::families) struct B5Vertices {
 impl B5Vertices {
     /// Admit vertex tables and references that select existing rows.
     pub(in crate::families) fn try_new(
-        raw: Vec<[f64; 3]>,
+        raw: Vec<FinitePoint3>,
         logical: Vec<B5LogicalVertex>,
         edges: BTreeMap<u32, [B5VertexRef; 2]>,
     ) -> Result<Self, &'static str> {
@@ -69,7 +71,7 @@ impl B5Vertices {
     }
 
     /// Raw vertex coordinates in source order.
-    pub(in crate::families) fn raw_points(&self) -> &[[f64; 3]] {
+    pub(in crate::families) fn raw_points(&self) -> &[FinitePoint3] {
         &self.raw
     }
 
@@ -113,7 +115,7 @@ impl B5Vertices {
 
     #[cfg(test)]
     /// Append a raw vertex row without changing existing reference slots.
-    pub(in crate::families::b5) fn push_raw(&mut self, point: [f64; 3]) {
+    pub(in crate::families::b5) fn push_raw(&mut self, point: FinitePoint3) {
         self.raw.push(point);
     }
 }
@@ -128,22 +130,22 @@ mod tests {
     fn vertex_binding_admission_keeps_raw_and_logical_bounds_separate() {
         let logical = vec![B5LogicalVertex {
             object_id: 10,
-            point: [1.0, 0.0, 0.0],
+            point: crate::test_support::test_b5::point([1.0, 0.0, 0.0]),
         }];
         assert!(B5Vertices::try_new(
-            vec![[0.0; 3]],
+            vec![crate::test_support::test_b5::point([0.0; 3])],
             logical.clone(),
             BTreeMap::from([(1, [B5VertexRef::Raw(1); 2])])
         )
         .is_err());
         assert!(B5Vertices::try_new(
-            vec![[0.0; 3]],
+            vec![crate::test_support::test_b5::point([0.0; 3])],
             logical.clone(),
             BTreeMap::from([(1, [B5VertexRef::Logical(1); 2])])
         )
         .is_err());
         let mut vertices = B5Vertices::try_new(
-            vec![[0.0; 3]],
+            vec![crate::test_support::test_b5::point([0.0; 3])],
             logical,
             BTreeMap::from([(1, [B5VertexRef::Raw(0), B5VertexRef::Logical(0)])]),
         )

@@ -9,6 +9,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -24,8 +25,8 @@ const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 /// The bounded span one conic carrier is projected over.
 #[derive(Clone, Copy)]
 struct BoundedSpan {
-    start: Point3,
-    end: Point3,
+    start: FinitePoint3,
+    end: FinitePoint3,
     parameter_range: [f64; 2],
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
 }
@@ -53,9 +54,8 @@ fn add_bounded_curve(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None)
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        Point::new(end_point.clone(), end, None).map_err(cadmpeg_core::CodecError::malformed)?,
+        Point::new(start_point.clone(), start, None),
+        Point::new(end_point.clone(), end, None),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -214,22 +214,26 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(start) = transform.apply_point(Point3::new(
+        let Some(start_position) = FinitePoint3::new(Point3::new(
             *start_x * factor,
             *start_y * factor,
             *plane_z * factor,
-        )) else {
+        ))
+        .and_then(|point| point.transformed(transform)) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(end) = transform.apply_point(Point3::new(
+        let Some(end_position) = FinitePoint3::new(Point3::new(
             *end_x * factor,
             *end_y * factor,
             *plane_z * factor,
-        )) else {
+        ))
+        .and_then(|point| point.transformed(transform)) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
+        let start = start_position.get();
+        let end = end_position.get();
 
         let geometry_and_range = if zero(*coeff_e)
             && *coeff_a != 0.0
@@ -534,8 +538,8 @@ pub(super) fn project(
             entry,
             geometry,
             BoundedSpan {
-                start,
-                end,
+                start: start_position,
+                end: end_position,
                 parameter_range,
                 tolerance,
             },

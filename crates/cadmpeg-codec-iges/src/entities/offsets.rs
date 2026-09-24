@@ -886,9 +886,9 @@ pub(super) fn project(
                 }),
             });
         }
-        let (Ok(start_carrier), Ok(end_carrier)) = (
-            Point::new(start_point.clone(), start_position, None),
-            Point::new(end_point.clone(), end_position, None),
+        let (Some(start_position), Some(end_position)) = (
+            FinitePoint3::new(start_position),
+            FinitePoint3::new(end_position),
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -896,7 +896,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        ir.model.points.extend([start_carrier, end_carrier]);
+        ir.model.points.extend([
+            Point::new(start_point.clone(), start_position, None),
+            Point::new(end_point.clone(), end_position, None),
+        ]);
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),

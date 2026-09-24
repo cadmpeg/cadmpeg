@@ -171,7 +171,7 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
             .vertices
             .logical_vertices()
             .iter()
-            .map(|vertex| vertex.point)
+            .map(|vertex| crate::test_support::test_b5::coordinates(vertex.point))
             .collect::<Vec<_>>(),
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     );

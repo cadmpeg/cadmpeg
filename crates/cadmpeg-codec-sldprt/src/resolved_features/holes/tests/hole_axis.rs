@@ -624,16 +624,16 @@ fn hole_topology_uses_exact_cylinder_spans() {
     let points = [
         Point::new(
             PointId::mint("test:model:entity#start-point").expect("identity grammar"),
-            Point3::new(2.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:entity#end-point").expect("identity grammar"),
-            Point3::new(2.0, 0.0, -10.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, -10.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
     ];
 
     let mut bore_face = face;

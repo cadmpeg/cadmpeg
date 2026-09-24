@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
     sampled::{
@@ -1365,28 +1366,27 @@ impl<'a> Builder<'a> {
         );
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
-        let Some(position) = transform.apply_point(point) else {
+        let Some(position) =
+            FinitePoint3::new(point).and_then(|point| point.transformed(transform))
+        else {
             return Err(CodecError::malformed(format_args!(
                 "placed vertex {} position contains a non-finite coordinate",
                 vertex_use.shape
             )));
         };
-        ir.model.points.push(
-            Point::new(
-                point_id.clone(),
-                position,
-                Some(SourceObjectAssociation {
-                    format: cadmpeg_ir::CodecFormat::Fcstd,
-                    object_id: self.source_object.clone(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model.points.push(Point::new(
+            point_id.clone(),
+            position,
+            Some(SourceObjectAssociation {
+                format: cadmpeg_ir::CodecFormat::Fcstd,
+                object_id: self.source_object.clone(),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,

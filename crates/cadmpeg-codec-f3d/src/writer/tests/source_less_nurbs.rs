@@ -510,14 +510,15 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
     for (index, [x, y, z]) in coordinates.into_iter().enumerate() {
         let point_id =
             PointId::mint(format!("generated:test:inner_point#{index}")).expect("identity grammar");
-        source_less.model.points.push(
-            cadmpeg_ir::topology::Point::new(
+        source_less
+            .model
+            .points
+            .push(cadmpeg_ir::topology::Point::new(
                 point_id.clone(),
-                cadmpeg_ir::math::Point3::new(x, y, z),
+                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
+                    .expect("a finite position is a point"),
                 None,
-            )
-            .expect("a finite position is a point"),
-        );
+            ));
         let vertex_id = VertexId::mint(format!("generated:test:inner_vertex#{index}"))
             .expect("identity grammar");
         source_less

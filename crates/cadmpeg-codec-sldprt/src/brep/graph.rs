@@ -1478,14 +1478,13 @@ fn decode_graph(
             .note(id_point(a), &source_stream, rec.offset as u64)
             .tag("00_1d");
         let [x, y, z] = rec.xyz_m;
-        out.points.push(
-            Point::new(
-                id_point(a),
-                cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
-                None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        let finite_position = cadmpeg_ir::features::FinitePoint3::new(
+            cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
+        )
+        .ok_or(Point::NON_FINITE_POSITION)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        out.points
+            .push(Point::new(id_point(a), finite_position, None));
     }
 
     // Vertices.
@@ -1545,10 +1544,11 @@ fn decode_graph(
                 .note(&vertex_id, &source_stream, 0)
                 .tag("derived_closed_circle_seam");
             annotations.exactness(&vertex_id, Exactness::Derived);
-            out.points.push(
-                Point::new(point_id.clone(), position, None)
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
-            );
+            let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
+                .ok_or(Point::NON_FINITE_POSITION)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            out.points
+                .push(Point::new(point_id.clone(), finite_position, None));
             out.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
@@ -5380,9 +5380,11 @@ fn synthesize_cylinder_seams(
                 continue;
             };
             if let Some(point) = out.points.iter_mut().find(|point| point.id == point_id) {
-                point
-                    .set_position(position)
-                    .map_err(|refusal| cadmpeg_core::CodecError::Malformed(refusal.into()))?;
+                point.set_position(
+                    cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
+                    })?,
+                );
             }
         }
         let direction = cadmpeg_ir::math::Vector3::new(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z);
@@ -5600,9 +5602,7 @@ fn synthesize_sphere_seams(
                 continue;
             };
             if let Some(vertex_point) = out.points.iter_mut().find(|item| item.id == point_id) {
-                vertex_point
-                    .set_position(point)
-                    .map_err(|refusal| cadmpeg_core::CodecError::Malformed(refusal.into()))?;
+                vertex_point.set_position(degenerate.point());
             }
         }
         let curve_id = CurveId::compose(
@@ -5756,10 +5756,8 @@ fn synthesize_sphere_seams(
                         .tag("derived_sphere_seam");
                     annotations.exactness(id, Exactness::Derived);
                 }
-                out.points.push(
-                    Point::new(point_id.clone(), seam_point, None)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                );
+                out.points
+                    .push(Point::new(point_id.clone(), degenerate.point(), None));
                 out.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
@@ -7243,16 +7241,20 @@ mod tests {
             points: vec![
                 Point::new(
                     start_point,
-                    cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        1000.0, 0.0, 0.0,
+                    ))
+                    .expect("a finite position is a point"),
                     None,
-                )
-                .expect("a finite position is a point"),
+                ),
                 Point::new(
                     end_point,
-                    cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                        1000.0, 0.0, 0.0,
+                    ))
+                    .expect("a finite position is a point"),
                     None,
-                )
-                .expect("a finite position is a point"),
+                ),
             ],
             ..Default::default()
         };

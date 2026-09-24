@@ -1494,7 +1494,7 @@ fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topolog
             .vertices
             .logical_vertices()
             .iter()
-            .map(|vertex| vertex.point)
+            .map(|vertex| crate::test_support::test_b5::coordinates(vertex.point))
             .collect::<Vec<_>>(),
         vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
     );

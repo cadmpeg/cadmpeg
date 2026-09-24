@@ -236,12 +236,16 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
     ir.model.points.extend([
         Point::new(
             point_start.clone(),
-            Point3::new(2_000_000.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
-        Point::new(point_end.clone(), Point3::new(2_000_001.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
+        ),
+        Point::new(
+            point_end.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -282,14 +286,12 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 #[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("test:model:point#global-profile").expect("identity grammar"),
-            Point3::new(123.0, -4.0, 5.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#global-profile").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(123.0, -4.0, 5.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
 
     let plan = crate::IgesCodec
         .plan(
@@ -385,14 +387,12 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
-            Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
 
     let plan = crate::IgesCodec
         .plan(
