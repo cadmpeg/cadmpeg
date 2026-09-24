@@ -7,6 +7,8 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
@@ -79,9 +81,9 @@ impl fmt::Display for LocalizerKind {
 #[derive(Debug, Clone)]
 pub(crate) struct Localizer {
     pub(crate) kind: LocalizerKind,
-    pub(crate) point: [f64; 3],
-    pub(crate) vector: [f64; 3],
-    pub(crate) interval: [f64; 2],
+    pub(crate) point: FiniteVector<3>,
+    pub(crate) vector: FiniteVector<3>,
+    pub(crate) interval: FiniteVector<2>,
     pub(crate) curve: Option<NurbsCurve>,
     pub(crate) surface: Option<NurbsSurface>,
 }
@@ -161,29 +163,37 @@ fn scale_point(
     value: crate::settings::Point3,
     scale: MillimeterScale,
     offset: usize,
-) -> Result<[f64; 3], GeometryError> {
-    let mut result = [0.0; 3];
-    for (target, coordinate) in result.iter_mut().zip(value.0) {
-        *target = scaled_coordinate(coordinate, scale).ok_or_else(|| {
-            GeometryError::malformed(offset, "scaled morph-control coordinate is invalid")
-        })?;
-    }
-    Ok(result)
+) -> Result<FiniteVector<3>, GeometryError> {
+    let [x, y, z] = value
+        .0
+        .get()
+        .map(|coordinate| scaled_real(coordinate, scale));
+    let (Some(x), Some(y), Some(z)) = (x, y, z) else {
+        return Err(GeometryError::malformed(
+            offset,
+            "scaled morph-control coordinate is invalid",
+        ));
+    };
+    Ok(FiniteVector::from([x, y, z]))
+}
+
+/// Multiply an admitted archive coordinate by the unit scale and admit the
+/// product, as `scaled_coordinate` does.
+fn scaled_real(coordinate: f64, scale: MillimeterScale) -> Option<FiniteReal> {
+    FiniteReal::new(coordinate * scale.value())
 }
 
 fn scale_interval(
     value: [f64; 2],
     scale: MillimeterScale,
     offset: usize,
-) -> Result<[f64; 2], GeometryError> {
-    Ok([
-        scaled_coordinate(value[0], scale).ok_or_else(|| {
-            GeometryError::malformed(offset, "scaled localizer interval is invalid")
-        })?,
-        scaled_coordinate(value[1], scale).ok_or_else(|| {
-            GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
-        })?,
-    ])
+) -> Result<FiniteVector<2>, GeometryError> {
+    let start = scaled_real(value[0], scale)
+        .ok_or_else(|| GeometryError::malformed(offset, "scaled localizer interval is invalid"))?;
+    let end = scaled_real(value[1], scale).ok_or_else(|| {
+        GeometryError::malformed(offset + 8, "scaled localizer interval is invalid")
+    })?;
+    Ok(FiniteVector::from([start, end]))
 }
 
 fn optional_localizer<T>(
@@ -275,7 +285,7 @@ fn scaled_transform(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<[f64; 16], GeometryError> {
-    let mut transform = xform(reader)?.0;
+    let mut transform = xform(reader)?.0.get();
     for index in [3, 7, 11] {
         transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
             GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
@@ -807,9 +817,9 @@ mod tests {
         };
         assert_eq!(start.control_points()[1].x, 10.0);
         assert_eq!(end.control_points()[1].x, 20.0);
-        assert_eq!(morph.localizers[0].point, [10.0, 20.0, 30.0]);
-        assert_eq!(morph.localizers[0].vector, [0.0, 0.0, 1.0]);
-        assert_eq!(morph.localizers[0].interval, [40.0, 50.0]);
+        assert_eq!(morph.localizers[0].point.get(), [10.0, 20.0, 30.0]);
+        assert_eq!(morph.localizers[0].vector.get(), [0.0, 0.0, 1.0]);
+        assert_eq!(morph.localizers[0].interval.get(), [40.0, 50.0]);
         assert!(morph.preserve_structure);
     }
 

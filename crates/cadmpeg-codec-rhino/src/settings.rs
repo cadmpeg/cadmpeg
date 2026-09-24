@@ -65,28 +65,31 @@ pub(crate) struct SourceRange {
 
 /// A finite three-dimensional point.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Point3(pub(crate) [f64; 3]);
+pub(crate) struct Point3(pub(crate) FiniteVector<3>);
 
 /// A finite three-dimensional vector.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Vector3(pub(crate) [f64; 3]);
+pub(crate) struct Vector3(pub(crate) FiniteVector<3>);
 
 /// A finite serialized parameter interval.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Interval(pub(crate) FiniteVector<2>);
 
-/// A serialized plane, including its wire equation.
+/// A plane and its equation.
+///
+/// The readers admit finite values. The dimension decoder shifts a plane
+/// along its axes without an admission, so the fields hold raw coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Plane {
     /// Origin.
-    pub(crate) origin: Point3,
+    pub(crate) origin: [f64; 3],
     /// X axis.
-    pub(crate) xaxis: Vector3,
+    pub(crate) xaxis: [f64; 3],
     /// Y axis.
-    pub(crate) yaxis: Vector3,
+    pub(crate) yaxis: [f64; 3],
     /// Z axis.
-    pub(crate) zaxis: Vector3,
-    /// Serialized plane equation.
+    pub(crate) zaxis: [f64; 3],
+    /// Plane equation.
     pub(crate) equation: [f64; 4],
 }
 
@@ -99,9 +102,9 @@ pub(crate) struct BoundingBox {
     pub(crate) maximum: Point3,
 }
 
-/// A serialized row-major 4×4 transform.
+/// A serialized row-major 4×4 transform with finite entries.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Xform(pub(crate) [f64; 16]);
+pub(crate) struct Xform(pub(crate) FiniteVector<16>);
 
 /// A UTF-16 UTC time tuple as written by Rhino.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -737,14 +740,14 @@ fn finite_array<const N: usize>(
 pub(crate) fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Point3(finite_array(offset, values, "point")?.get()))
+    Ok(Point3(finite_array(offset, values, "point")?))
 }
 
 /// Reads a finite vector.
 pub(crate) fn vector(reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Vector3(finite_array(offset, values, "vector")?.get()))
+    Ok(Vector3(finite_array(offset, values, "vector")?))
 }
 
 /// Reads a finite interval.
@@ -763,10 +766,10 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
     let equation_offset = reader.position();
     let equation = [reader.f64()?, reader.f64()?, reader.f64()?, reader.f64()?];
     Ok(Plane {
-        origin,
-        xaxis,
-        yaxis,
-        zaxis,
+        origin: origin.0.get(),
+        xaxis: xaxis.0.get(),
+        yaxis: yaxis.0.get(),
+        zaxis: zaxis.0.get(),
         equation: finite_array(equation_offset, equation, "plane equation")?.get(),
     })
 }
@@ -786,7 +789,7 @@ pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingErro
     for value in &mut values {
         *value = reader.f64()?;
     }
-    Ok(Xform(finite_array(offset, values, "transform")?.get()))
+    Ok(Xform(finite_array(offset, values, "transform")?))
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.

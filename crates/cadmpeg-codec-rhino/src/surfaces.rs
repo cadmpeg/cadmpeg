@@ -412,10 +412,10 @@ fn read_revolution(
             "unsupported revolution-surface version",
         ));
     }
-    let from = crate::wire::scaled_point(point(reader)?, scale)
+    let from = crate::wire::scaled_point(point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
-    let to = crate::wire::scaled_point(point(reader)?, scale)
+    let to = crate::wire::scaled_point(point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
     let angular_interval =
@@ -1160,7 +1160,7 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
     let x = vector(value.xaxis);
     let y = vector(value.yaxis);
     let z = vector(value.zaxis);
-    if ![value.origin.0[0], value.origin.0[1], value.origin.0[2]]
+    if ![value.origin[0], value.origin[1], value.origin[2]]
         .into_iter()
         .chain(value.equation)
         .all(f64::is_finite)

@@ -197,7 +197,7 @@ fn scale_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    for coordinate in &mut value.origin.0 {
+    for coordinate in &mut value.origin {
         *coordinate = scaled_coordinate(*coordinate, scale)
             .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
     }
@@ -514,11 +514,11 @@ fn legacy_text_scaling(stored: Option<bool>) -> bool {
 
 fn shifted_plane(mut plane: Plane, point: [f64; 2]) -> Plane {
     for index in 0..3 {
-        plane.origin.0[index] += point[0] * plane.xaxis.0[index] + point[1] * plane.yaxis.0[index];
+        plane.origin[index] += point[0] * plane.xaxis[index] + point[1] * plane.yaxis[index];
     }
-    plane.equation[3] = -(plane.equation[0] * plane.origin.0[0]
-        + plane.equation[1] * plane.origin.0[1]
-        + plane.equation[2] * plane.origin.0[2]);
+    plane.equation[3] = -(plane.equation[0] * plane.origin[0]
+        + plane.equation[1] * plane.origin[1]
+        + plane.equation[2] * plane.origin[2]);
     plane
 }
 
@@ -529,7 +529,7 @@ fn difference(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
 fn world_horizontal_in_plane(plane: &Plane) -> [f64; 2] {
     // ON_DimLinear::Create projects plane.origin + world X onto the plane.
     // Plane axes are orthonormal, so the plane coordinates are these dot products.
-    [plane.xaxis.0[0], plane.yaxis.0[0]]
+    [plane.xaxis[0], plane.yaxis[0]]
 }
 
 fn ordinate_direction(stored: i32, definition: [f64; 2], leader: [f64; 2]) -> Option<OrdinateAxis> {
@@ -579,7 +579,6 @@ pub(crate) fn v2_annotation_direct(
     let raw_plane = plane(reader)?;
     if raw_plane
         .origin
-        .0
         .iter()
         .any(|value| value.abs() > V2_REALLY_BIG_NUMBER)
     {
@@ -1449,7 +1448,6 @@ pub(crate) fn project(
             dimension
                 .plane
                 .origin
-                .0
                 .iter()
                 .map(f64::to_string)
                 .collect::<Vec<_>>()
@@ -1460,7 +1458,6 @@ pub(crate) fn project(
             dimension
                 .plane
                 .xaxis
-                .0
                 .iter()
                 .map(f64::to_string)
                 .collect::<Vec<_>>()
@@ -1471,7 +1468,6 @@ pub(crate) fn project(
             dimension
                 .plane
                 .yaxis
-                .0
                 .iter()
                 .map(f64::to_string)
                 .collect::<Vec<_>>()
@@ -1482,7 +1478,6 @@ pub(crate) fn project(
             dimension
                 .plane
                 .zaxis
-                .0
                 .iter()
                 .map(f64::to_string)
                 .collect::<Vec<_>>()
@@ -1643,9 +1638,9 @@ pub(crate) fn project(
     let position = (!dimension.use_default_text_point)
         .then(|| {
             let [u, v] = dimension.user_text_point;
-            let origin = dimension.plane.origin.0;
-            let x_axis = dimension.plane.xaxis.0;
-            let y_axis = dimension.plane.yaxis.0;
+            let origin = dimension.plane.origin;
+            let x_axis = dimension.plane.xaxis;
+            let y_axis = dimension.plane.yaxis;
             [0, 1, 2].map(|axis| origin[axis] + u * x_axis[axis] + v * y_axis[axis])
         })
         .filter(|point| point.iter().all(|value| value.is_finite()));

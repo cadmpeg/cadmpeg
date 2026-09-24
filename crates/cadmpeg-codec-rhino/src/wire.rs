@@ -184,9 +184,9 @@ pub(crate) fn read_finite(
     finite(offset, value, label)
 }
 
-/// Converts an archive vector to the model vector type.
-pub(crate) fn vector(value: crate::settings::Vector3) -> Vector3 {
-    Vector3::new(value.0[0], value.0[1], value.0[2])
+/// Converts archive vector components to the model vector type.
+pub(crate) fn vector(value: [f64; 3]) -> Vector3 {
+    Vector3::new(value[0], value[1], value[2])
 }
 
 /// Multiplies an archive coordinate by a unit scale.
@@ -201,14 +201,11 @@ pub(crate) fn scaled_coordinate(value: f64, scale: MillimeterScale) -> Option<f6
 
 /// Multiplies the three archive coordinates of a point by a unit scale and
 /// admits the product when every coordinate is finite.
-pub(crate) fn scaled_point(
-    value: crate::settings::Point3,
-    scale: MillimeterScale,
-) -> Option<FinitePoint3> {
+pub(crate) fn scaled_point(value: [f64; 3], scale: MillimeterScale) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::new(
-        value.0[0] * scale.value(),
-        value.0[1] * scale.value(),
-        value.0[2] * scale.value(),
+        value[0] * scale.value(),
+        value[1] * scale.value(),
+        value[2] * scale.value(),
     ))
 }
 

@@ -1299,7 +1299,7 @@ fn read_point(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
-    crate::wire::scaled_point(point, scale)
+    crate::wire::scaled_point(point.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
 }
 
@@ -1315,7 +1315,7 @@ fn read_cloud(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point, scale)
+            crate::wire::scaled_point(point.0.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
@@ -1382,10 +1382,10 @@ fn read_line(
 ) -> Result<NurbsCurve, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
-    let from = crate::wire::scaled_point(native_point(reader)?, scale)
+    let from = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
         .get();
-    let to = crate::wire::scaled_point(native_point(reader)?, scale)
+    let to = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
         .get();
     let domain = interval(reader)?.0.get();
@@ -1425,7 +1425,7 @@ fn read_polyline(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point, scale)
+            crate::wire::scaled_point(point.0.get(), scale)
                 .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?
                 .get(),
         );
@@ -1557,9 +1557,9 @@ fn read_circle(
         && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && crate::wire::close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
-        && close_native_point(zero, native.origin, native.xaxis, radius)
-        && close_native_point(half_pi, native.origin, native.yaxis, radius)
-        && close_native_point(at_pi, native.origin, negate(native.xaxis), radius))
+        && close_native_point(zero.0.get(), native.origin, native.xaxis, radius)
+        && close_native_point(half_pi.0.get(), native.origin, native.yaxis, radius)
+        && close_native_point(at_pi.0.get(), native.origin, negate(native.xaxis), radius))
     {
         return Err(error(reader.position(), "circle plane axes are invalid"));
     }
@@ -1775,23 +1775,17 @@ fn require_major(version: u8, offset: usize) -> Result<(), GeometryError> {
     }
 }
 
-fn negate(value: crate::settings::Vector3) -> crate::settings::Vector3 {
-    crate::settings::Vector3([-value.0[0], -value.0[1], -value.0[2]])
+fn negate(value: [f64; 3]) -> [f64; 3] {
+    [-value[0], -value[1], -value[2]]
 }
 
-fn close_native_point(
-    point: NativePoint3,
-    origin: NativePoint3,
-    direction: crate::settings::Vector3,
-    radius: f64,
-) -> bool {
+fn close_native_point(point: [f64; 3], origin: [f64; 3], direction: [f64; 3], radius: f64) -> bool {
     let expected = [
-        origin.0[0] + direction.0[0] * radius,
-        origin.0[1] + direction.0[1] * radius,
-        origin.0[2] + direction.0[2] * radius,
+        origin[0] + direction[0] * radius,
+        origin[1] + direction[1] * radius,
+        origin[2] + direction[2] * radius,
     ];
     point
-        .0
         .iter()
         .zip(expected)
         .all(|(actual, expected)| (*actual - expected).abs() <= EPS_CURVE_POSITION)

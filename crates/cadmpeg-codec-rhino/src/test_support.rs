@@ -7,6 +7,13 @@
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;
 
+/// A finite fixture point.
+pub(crate) fn point3(coordinates: [f64; 3]) -> crate::settings::Point3 {
+    crate::settings::Point3(
+        cadmpeg_ir::units::FiniteVector::new(coordinates).expect("finite fixture point"),
+    )
+}
+
 /// The millimetre scale a fixture states, bound through the custom unit route
 /// a scanned document uses.
 pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::MillimeterScale {

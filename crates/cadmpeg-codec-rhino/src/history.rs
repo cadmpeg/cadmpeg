@@ -984,7 +984,7 @@ fn extended_geometry_json(
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
         let mut plane = hatch.plane;
-        for coordinate in &mut plane.origin.0 {
+        for coordinate in &mut plane.origin {
             *coordinate *= scale.value();
         }
         plane.equation[3] *= scale.value();
@@ -1004,10 +1004,10 @@ fn extended_geometry_json(
         let mut semantic = serde_json::json!({
             "kind": "hatch",
             "plane": {
-                "origin": plane.origin.0,
-                "xaxis": plane.xaxis.0,
-                "yaxis": plane.yaxis.0,
-                "zaxis": plane.zaxis.0,
+                "origin": plane.origin,
+                "xaxis": plane.xaxis,
+                "yaxis": plane.yaxis,
+                "zaxis": plane.zaxis,
                 "equation": plane.equation,
             },
             "pattern_scale": hatch.pattern_scale,

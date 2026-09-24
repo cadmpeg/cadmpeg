@@ -279,7 +279,7 @@ fn scaled_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    scale3(&mut value.origin.0, scale, offset)?;
+    scale3(&mut value.origin, scale, offset)?;
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
         .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
     Ok(value)
@@ -351,9 +351,9 @@ fn parse_trace_image(
             legacy_file_path,
             width_mm,
             height_mm,
-            plane_origin_mm: plane.origin.0,
-            plane_x_axis: plane.xaxis.0,
-            plane_y_axis: plane.yaxis.0,
+            plane_origin_mm: plane.origin,
+            plane_x_axis: plane.xaxis,
+            plane_y_axis: plane.yaxis,
             grayscale,
             hidden,
             filtered,
@@ -490,10 +490,10 @@ fn parse_cplane(
     let depth_buffer = packed & 0x0f < 1 || reader.bool()?;
     reader.skip_remaining()?;
     Ok(ConstructionPlane {
-        plane_origin_mm: value.origin.0,
-        plane_x_axis: value.xaxis.0,
-        plane_y_axis: value.yaxis.0,
-        plane_z_axis: value.zaxis.0,
+        plane_origin_mm: value.origin,
+        plane_x_axis: value.xaxis,
+        plane_y_axis: value.yaxis,
+        plane_z_axis: value.zaxis,
         plane_equation_mm: value.equation,
         grid_spacing_mm,
         snap_spacing_mm,
