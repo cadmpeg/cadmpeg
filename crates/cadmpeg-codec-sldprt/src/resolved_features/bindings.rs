@@ -749,7 +749,7 @@ fn mirror_plane_from_surface(
             let (origin, normal) = mirror_plane_from_surface(placed.basis())?;
             let transform = placed.transform();
             Some((
-                origin.transformed(*transform)?,
+                transform.apply_point(origin.get())?,
                 transform.apply_unit_normal(normal)?,
             ))
         }

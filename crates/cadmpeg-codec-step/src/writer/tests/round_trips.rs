@@ -152,7 +152,7 @@ fn curve_geometry_for_sheet_pcurve(
             (length.is_finite() && length > 0.0).then(|| {
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                        placed_origin,
+                        placed_origin.get(),
                         direction.scale(1.0 / length),
                     )
                     .unwrap(),

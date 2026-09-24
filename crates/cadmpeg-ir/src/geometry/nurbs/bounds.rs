@@ -2,6 +2,7 @@
 //! Bounds for positive-weight rational control polygons.
 
 use crate::math::sum::ExactSignedSum;
+use crate::scalar::FiniteReal;
 
 /// Global rational curve speed bound about `origin` over the active knot domain.
 /// Common weight scaling is removed before products are formed.
@@ -11,7 +12,7 @@ pub fn speed_bound<const N: usize>(
     points: &[[f64; N]],
     weights: &[f64],
     origin: [f64; N],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let order = usize::try_from(degree).ok()?;
     if points.len() <= order
         || weights.len() != points.len()
@@ -62,9 +63,9 @@ pub fn speed_bound<const N: usize>(
                     }
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_product(delta, f64::from(degree));
-                    numerator
-                        .finish()
-                        .map_or(Some(0.0), |value| value.quotient(width))
+                    numerator.finish().map_or(Some(0.0), |value| {
+                        value.quotient(width).map(FiniteReal::get)
+                    })
                 };
                 let delta = weighted
                     .iter()
@@ -85,11 +86,10 @@ pub fn speed_bound<const N: usize>(
     let mut denominator = ExactSignedSum::default();
     denominator.add_product(minimum, minimum);
     let correction = match numerator.finish() {
-        Some(value) => value.quotient(denominator.finish()?)?,
+        Some(value) => value.quotient(denominator.finish()?)?.get(),
         None => 0.0,
     };
-    let bound = numerator_speed / minimum + correction;
-    bound.is_finite().then_some(bound)
+    FiniteReal::new(numerator_speed / minimum + correction)
 }
 
 #[cfg(test)]
@@ -105,7 +105,8 @@ mod tests {
                     &[[0., 0.], [1., 0.]],
                     &[w, w],
                     [0., 0.]
-                ),
+                )
+                .map(crate::scalar::FiniteReal::get),
                 Some(1.0)
             );
         }
@@ -120,7 +121,8 @@ mod tests {
             &[1., 1.],
             [0., 0.],
         )
-        .unwrap();
+        .unwrap()
+        .get();
         assert!((speed * 1e308 - 0.5).abs() <= 8. * f64::EPSILON);
     }
     #[test]

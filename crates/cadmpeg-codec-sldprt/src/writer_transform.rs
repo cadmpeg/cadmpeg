@@ -156,7 +156,8 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             mesh.edit_vertices(|point| {
                 *point = transform
                     .apply_point(*point)
-                    .ok_or_else(|| TessellationError::EditRefused(NON_FINITE_POINT.to_string()))?;
+                    .ok_or_else(|| TessellationError::EditRefused(NON_FINITE_POINT.to_string()))?
+                    .get();
                 Ok(())
             })
             .map_err(|error| match error {
@@ -167,9 +168,12 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             })?;
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
                 mesh.edit_normals(|normal| {
-                    *normal = transform.apply_vector(*normal).ok_or_else(|| {
-                        TessellationError::EditRefused(NON_FINITE_DIRECTION.to_string())
-                    })?;
+                    *normal = transform
+                        .apply_vector(*normal)
+                        .ok_or_else(|| {
+                            TessellationError::EditRefused(NON_FINITE_DIRECTION.to_string())
+                        })?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -225,12 +229,17 @@ fn sampled_edit_error(error: GeometryLayoutError) -> CodecError {
 
 /// Places a point, refusing a placement that leaves the finite range.
 fn placed_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, CodecError> {
-    point.transformed(transform).ok_or_else(non_finite_point)
+    transform
+        .apply_point(point.get())
+        .ok_or_else(non_finite_point)
 }
 
 /// Places a direction, refusing a placement that leaves the finite range.
 fn placed_vector(transform: Transform, vector: Vector3) -> Result<Vector3, CodecError> {
-    transform.apply_vector(vector).ok_or_else(non_finite_vector)
+    transform
+        .apply_vector(vector)
+        .map(cadmpeg_ir::features::FiniteVector3::get)
+        .ok_or_else(non_finite_vector)
 }
 
 fn placed_frame(
@@ -326,7 +335,8 @@ fn transform_surface(
                 .edit_control_points(|point| {
                     *point = transform
                         .apply_point(*point)
-                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?;
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -340,9 +350,12 @@ fn transform_surface(
             surface
                 .edit_vertices(|points| {
                     for point in points {
-                        *point = transform.apply_point(*point).ok_or_else(|| {
-                            GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
-                        })?;
+                        *point = transform
+                            .apply_point(*point)
+                            .ok_or_else(|| {
+                                GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
+                            })?
+                            .get();
                     }
                     Ok(())
                 })
@@ -408,7 +421,8 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 .edit_control_points(|point| {
                     *point = transform
                         .apply_point(*point)
-                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?;
+                        .ok_or_else(|| NurbsError::EditRefused(NON_FINITE_POINT.to_string()))?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -422,9 +436,12 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             polyline
                 .edit_samples(|samples| {
                     samples.edit_points(|point| {
-                        *point = transform.apply_point(*point).ok_or_else(|| {
-                            GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
-                        })?;
+                        *point = transform
+                            .apply_point(*point)
+                            .ok_or_else(|| {
+                                GeometryLayoutError::EditRefused(NON_FINITE_POINT.to_string())
+                            })?
+                            .get();
                         Ok(())
                     })
                 })

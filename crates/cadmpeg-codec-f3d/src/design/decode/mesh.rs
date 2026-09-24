@@ -155,7 +155,7 @@ impl MeshAffineTransform {
         transform
             .apply_normal(cadmpeg_ir::math::Vector3::from(normal))
             .zip(transform.orientation())
-            .map(|(normal, orientation)| normal.scale(orientation))
+            .map(|(normal, orientation)| normal.as_raw().scale(orientation))
             .ok_or_else(|| CodecError::malformed("F3D mesh placement produces a degenerate normal"))
     }
 }

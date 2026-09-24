@@ -1918,23 +1918,29 @@ impl<'a> DecodeContext<'a> {
             .ok_or_else(|| "instance decode removed existing tessellations".to_string())?
         {
             mesh.edit_vertices(|vertex| {
-                *vertex = transform.apply_point(*vertex).ok_or_else(|| {
-                    cadmpeg_ir::tessellation::TessellationError::EditRefused(
-                        "instance mesh vertex transform produced a non-finite coordinate"
-                            .to_string(),
-                    )
-                })?;
+                *vertex = transform
+                    .apply_point(*vertex)
+                    .ok_or_else(|| {
+                        cadmpeg_ir::tessellation::TessellationError::EditRefused(
+                            "instance mesh vertex transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })?
+                    .get();
                 Ok(())
             })
             .map_err(|error| error.to_string())?;
             if !mesh.vertex_normals().is_empty() {
                 mesh.edit_normals(|value| {
-                    *value = transform.apply_normal(*value).ok_or_else(|| {
-                        cadmpeg_ir::tessellation::TessellationError::EditRefused(
-                            "mesh normal transform could not produce a finite unit normal"
-                                .to_string(),
-                        )
-                    })?;
+                    *value = transform
+                        .apply_normal(*value)
+                        .map(cadmpeg_ir::math::Vector3::from)
+                        .ok_or_else(|| {
+                            cadmpeg_ir::tessellation::TessellationError::EditRefused(
+                                "mesh normal transform could not produce a finite unit normal"
+                                    .to_string(),
+                            )
+                        })?;
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
@@ -1949,12 +1955,13 @@ impl<'a> DecodeContext<'a> {
             subd.cage
                 .edit_vertices(|vertices| {
                     for vertex in vertices {
-                        let moved = vertex.point().transformed(transform).ok_or_else(|| {
-                            cadmpeg_ir::subd::SubdError::EditRefused(
+                        let moved =
+                            transform.apply_point(vertex.point().get()).ok_or_else(|| {
+                                cadmpeg_ir::subd::SubdError::EditRefused(
                                 "instance cage vertex transform produced a non-finite coordinate"
                                     .to_string(),
                             )
-                        })?;
+                            })?;
                         vertex.set_point(moved);
                     }
                     Ok(())
@@ -5328,14 +5335,15 @@ const NON_FINITE_PLACEMENT: &str = "instance transform produced a non-finite coo
 fn placed_point(transform: Transform, point: Point3) -> Result<Point3, String> {
     transform
         .apply_point(point)
+        .map(FinitePoint3::get)
         .ok_or_else(|| NON_FINITE_PLACEMENT.to_string())
 }
 
 /// Places an admitted point, refusing a placement the transform sends out of
 /// the finite range. The placed point stays admitted.
 fn placed_finite_point(transform: Transform, point: FinitePoint3) -> Result<FinitePoint3, String> {
-    point
-        .transformed(transform)
+    transform
+        .apply_point(point.get())
         .ok_or_else(|| NON_FINITE_PLACEMENT.to_string())
 }
 
@@ -5348,12 +5356,15 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })?;
+                    *pole = transform
+                        .apply_point(*pole)
+                        .ok_or_else(|| {
+                            NurbsError::EditRefused(
+                                "instance control point transform produced a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
@@ -5368,12 +5379,15 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
                 .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })?;
+                    *pole = transform
+                        .apply_point(*pole)
+                        .ok_or_else(|| {
+                            NurbsError::EditRefused(
+                                "instance control point transform produced a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;
@@ -5443,12 +5457,15 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|pole| {
-                    *pole = transform.apply_point(*pole).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "instance control point transform produced a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })?;
+                    *pole = transform
+                        .apply_point(*pole)
+                        .ok_or_else(|| {
+                            NurbsError::EditRefused(
+                                "instance control point transform produced a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| error.to_string())?;

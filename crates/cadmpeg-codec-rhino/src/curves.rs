@@ -780,6 +780,7 @@ pub(crate) fn remap_nurbs_domain(
         .copied()
         .map(|knot| {
             let fraction = cadmpeg_ir::math::parameter_fraction(knot, source[0], source[1])
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
                 .ok_or_else(|| error(offset, "curve knot remap overflowed"))?;
             let value = if fraction == 0.0 {
                 target[0]
@@ -908,8 +909,9 @@ fn elevate_to_degree(
             .ok_or_else(|| error(offset, "polycurve weight scale is invalid"))?;
         for weight in &mut weights {
             *weight = cadmpeg_ir::math::scale_power_of_two(*weight, -exponent)
-                .filter(|weight| *weight != 0.0)
-                .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?;
+                .filter(|weight| weight.get() != 0.0)
+                .ok_or_else(|| error(offset, "polycurve weight normalization lost its range"))?
+                .get();
         }
     }
 

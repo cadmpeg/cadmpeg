@@ -374,9 +374,9 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
             }
             let relative = |point: cadmpeg_ir::features::FinitePoint3| {
                 Some(Point3::new(
-                    cadmpeg_ir::math::scale_power_of_two(point.x - origin.x, -exponent)?,
-                    cadmpeg_ir::math::scale_power_of_two(point.y - origin.y, -exponent)?,
-                    cadmpeg_ir::math::scale_power_of_two(point.z - origin.z, -exponent)?,
+                    cadmpeg_ir::math::scale_power_of_two(point.x - origin.x, -exponent)?.get(),
+                    cadmpeg_ir::math::scale_power_of_two(point.y - origin.y, -exponent)?.get(),
+                    cadmpeg_ir::math::scale_power_of_two(point.z - origin.z, -exponent)?.get(),
                 ))
             };
             let [Some(a), Some(b), Some(c)] = [a, b, c].map(relative) else {
@@ -436,18 +436,18 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
         )
     };
     let centroid = Point3::new(
-        origin.x + cadmpeg_ir::math::scale_power_of_two(centroid.x, exponent)?,
-        origin.y + cadmpeg_ir::math::scale_power_of_two(centroid.y, exponent)?,
-        origin.z + cadmpeg_ir::math::scale_power_of_two(centroid.z, exponent)?,
+        origin.x + cadmpeg_ir::math::scale_power_of_two(centroid.x, exponent)?.get(),
+        origin.y + cadmpeg_ir::math::scale_power_of_two(centroid.y, exponent)?.get(),
+        origin.z + cadmpeg_ir::math::scale_power_of_two(centroid.z, exponent)?.get(),
     );
     if !area.is_finite() || !signed_volume.is_finite() || !centroid.is_finite() {
         return None;
     }
-    let area = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent)?;
+    let area = cadmpeg_ir::math::scale_power_of_two(area, 2 * exponent)?.get();
     let volume = if signed_volume == 0.0 {
         0.0
     } else {
-        cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)?
+        cadmpeg_ir::math::scale_power_of_two(signed_volume.abs(), 3 * exponent)?.get()
     };
     Some(MeshProperties {
         area,

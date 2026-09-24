@@ -373,7 +373,11 @@ pub(super) fn decode(
             if let [placement] = distinct.as_slice() {
                 local_vertices = local_vertices
                     .into_iter()
-                    .map(|vertex| placement.apply_point(vertex))
+                    .map(|vertex| {
+                        placement
+                            .apply_point(vertex)
+                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                    })
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| {
                         CodecError::malformed(format!(
@@ -383,7 +387,11 @@ pub(super) fn decode(
                 if let Some(source_normals) = normals.take() {
                     match source_normals
                         .into_iter()
-                        .map(|normal| placement.apply_normal(normal))
+                        .map(|normal| {
+                            placement
+                                .apply_normal(normal)
+                                .map(cadmpeg_ir::math::Vector3::from)
+                        })
                         .collect::<Option<Vec<_>>>()
                     {
                         Some(transformed) => normals = Some(transformed),

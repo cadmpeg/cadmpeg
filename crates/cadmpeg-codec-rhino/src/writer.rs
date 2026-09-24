@@ -1315,9 +1315,11 @@ fn validate_nurbs_trim(
                     if sense == Sense::Forward {
                         Ok(value)
                     } else {
-                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1]).ok_or_else(
-                            || CodecError::malformed("reversed edge knot is non-finite"),
-                        )
+                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
+                            .map(cadmpeg_ir::scalar::FiniteReal::get)
+                            .ok_or_else(|| {
+                                CodecError::malformed("reversed edge knot is non-finite")
+                            })
                     }
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?,
@@ -1350,6 +1352,7 @@ fn validate_nurbs_trim(
         for step in 0..=16 {
             let fraction = f64::from(step) / 16.0;
             let parameter = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
             let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -1373,6 +1376,7 @@ fn validate_nurbs_trim(
                 parameter
             } else {
                 cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1])
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
                     .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
             };
             let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {

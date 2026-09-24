@@ -959,6 +959,7 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
             break;
         };
+        let (step_u, step_v) = (step_u.get(), step_v.get());
         let mut scale = 1.0;
         let mut accepted = None;
         for _ in 0..8 {
@@ -1980,7 +1981,8 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
                 domain[0],
                 domain[1],
                 index as f64 / COARSE_CONTACT_PCURVE_SEARCH_INTERVALS as f64,
-            )?;
+            )?
+            .get();
             Some((parameter, distance(parameter)?))
         })
         .collect::<Vec<_>>();
@@ -2032,7 +2034,8 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         let Some(step) = cadmpeg_ir::math::product_quotient(
             [residual_scale, projection],
             [scale, scaled_length],
-        ) else {
+        )
+        .map(cadmpeg_ir::scalar::FiniteReal::get) else {
             break;
         };
         let previous = parameter;
@@ -2120,7 +2123,8 @@ fn closest_pcurve_parameter_from_coarse_grid(
             domain[0],
             domain[1],
             index as f64 / COARSE_PCURVE_SEARCH_INTERVALS as f64,
-        )?;
+        )?
+        .get();
         let candidate = pcurve_uv(pcurve, parameter)?;
         let distance = (candidate.u - point.u).hypot(candidate.v - point.v);
         if !distance.is_finite() {
@@ -2154,18 +2158,16 @@ fn closest_pcurve_parameter_from_seed(
         let tangent = Point2::new(tangent.u / tangent_scale, tangent.v / tangent_scale);
         let speed_squared = tangent.u * tangent.u + tangent.v * tangent.v;
         let gradient = (candidate.u - point.u) * tangent.u + (candidate.v - point.v) * tangent.v;
-        let step = cadmpeg_ir::math::product_quotient([gradient], [speed_squared, tangent_scale])?;
-        if !step.is_finite() {
-            return None;
-        }
+        let step =
+            cadmpeg_ir::math::product_quotient([gradient], [speed_squared, tangent_scale])?.get();
         let next = if periodic {
             canonical_periodic_parameter(domain, true, parameter - step)
         } else {
             (parameter - step).clamp(domain[0], domain[1])
         };
         if next == parameter
-            || (cadmpeg_ir::math::parameter_fraction(next, domain[0], domain[1])?
-                - cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])?)
+            || (cadmpeg_ir::math::parameter_fraction(next, domain[0], domain[1])?.get()
+                - cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])?.get())
             .abs()
                 <= 64.0 * f64::EPSILON
         {
@@ -2371,7 +2373,7 @@ fn rational_squared_distance_derivative<const DIMENSION: usize>(
         .map(|control| {
             let mut normalized = *control;
             for value in &mut normalized {
-                *value = cadmpeg_ir::math::scale_power_of_two(*value, -exponent)?;
+                *value = cadmpeg_ir::math::scale_power_of_two(*value, -exponent)?.get();
             }
             Some(normalized)
         })
@@ -2532,7 +2534,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         if scalar_bernstein_sign_variations(&span.controls) == 0 {
             continue;
         }
-        let middle = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)?;
+        let middle = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)?.get();
         if middle == span.domain[0] || middle == span.domain[1] {
             let parameter =
                 [span.domain[0], span.domain[1]]
@@ -2560,9 +2562,9 @@ pub(super) fn scalar_bezier_roots_with_budget(
     parameters.dedup_by(|first, second| {
         let first = cadmpeg_ir::math::parameter_fraction(*first, domain[0], domain[1]);
         let second = cadmpeg_ir::math::parameter_fraction(*second, domain[0], domain[1]);
-        first
-            .zip(second)
-            .is_some_and(|(first, second)| (first - second).abs() <= 64.0 * f64::EPSILON)
+        first.zip(second).is_some_and(|(first, second)| {
+            (first.get() - second.get()).abs() <= 64.0 * f64::EPSILON
+        })
     });
     Some(ScalarBezierRoots::Isolated(parameters))
 }
@@ -2619,8 +2621,8 @@ fn subdivide_scalar_bezier_span(
 }
 
 fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
-    let fraction =
-        cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1]).unwrap_or(f64::NAN);
+    let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
+        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = controls.to_vec();
     while values.len() > 1 {
         values = values
@@ -2636,8 +2638,8 @@ pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     parameter: f64,
     domain: [f64; 2],
 ) -> f64 {
-    let fraction =
-        cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1]).unwrap_or(f64::NAN);
+    let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
+        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
     let mut values = controls.to_vec();
     while values.len() > 1 {
         values = values
@@ -2695,7 +2697,8 @@ fn canonical_periodic_parameter(domain: [f64; 2], periodic: bool, parameter: f64
     if !periodic {
         return parameter;
     }
-    cadmpeg_ir::math::wrap_parameter(parameter, domain[0], domain[1]).unwrap_or(f64::NAN)
+    cadmpeg_ir::math::wrap_parameter(parameter, domain[0], domain[1])
+        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)
 }
 
 fn lift_periodic_parameters(

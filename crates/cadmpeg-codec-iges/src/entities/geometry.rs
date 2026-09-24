@@ -1035,17 +1035,17 @@ pub(super) fn curve_geometry_coplanar(
     let point_valid = |point: Point3| {
         transform
             .apply_point(point)
-            .is_some_and(|point| point_on_plane(point, plane, resolution))
+            .is_some_and(|point| point_on_plane(point.get(), plane, resolution))
     };
     let normal_valid = |normal: Vector3| {
         transform
             .apply_normal(normal)
-            .is_some_and(|normal| normal_matches_plane(normal, plane.1))
+            .is_some_and(|normal| normal_matches_plane(*normal.as_raw(), plane.1))
     };
     let direction_valid = |direction: Vector3| {
         transform
             .apply_vector(direction)
-            .is_some_and(|direction| direction_in_plane(direction, plane.1))
+            .is_some_and(|direction| direction_in_plane(direction.get(), plane.1))
     };
     match geometry {
         SolvedCurveGeometry::Line(line_curve) => {
@@ -1401,11 +1401,17 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(basis_x) = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0)) else {
+        let Some(basis_x) = transform
+            .apply_vector(Vector3::new(1.0, 0.0, 0.0))
+            .map(cadmpeg_ir::features::FiniteVector3::get)
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite vector"));
             continue;
         };
-        let Some(basis_y) = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0)) else {
+        let Some(basis_y) = transform
+            .apply_vector(Vector3::new(0.0, 1.0, 0.0))
+            .map(cadmpeg_ir::features::FiniteVector3::get)
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite vector"));
             continue;
         };
@@ -1423,20 +1429,19 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let Some(center) = transform.apply_point(Point3::new(values[1], values[2], values[0]))
+        let Some(center) = transform
+            .apply_point(Point3::new(values[1], values[2], values[0]))
+            .map(cadmpeg_ir::features::FinitePoint3::get)
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(start) = FinitePoint3::new(Point3::new(values[3], values[4], values[0]))
-            .and_then(|point| point.transformed(transform))
+        let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(end) = FinitePoint3::new(Point3::new(values[5], values[6], values[0]))
-            .and_then(|point| point.transformed(transform))
-        else {
+        let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -1569,8 +1574,7 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(position) = FinitePoint3::new(Point3::new(x * factor, y * factor, z * factor))
-            .and_then(|position| position.transformed(transform))
+        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -1656,9 +1660,7 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(position) = FinitePoint3::new(Point3::new(x * factor, y * factor, 0.0))
-            .and_then(|position| position.transformed(transform))
-        else {
+        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, 0.0)) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -1720,15 +1722,13 @@ pub(crate) fn project_geometry(
             }
         };
         let Some(start) =
-            FinitePoint3::new(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
-                .and_then(|point| point.transformed(transform))
+            transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
         let Some(end) =
-            FinitePoint3::new(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
-                .and_then(|point| point.transformed(transform))
+            transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -1976,11 +1976,13 @@ pub(crate) fn project_geometry(
         let Some(control_points) = native_poles
             .chunks_exact(3)
             .map(|point| {
-                transform.apply_point(Point3::new(
-                    point[0] * factor,
-                    point[1] * factor,
-                    point[2] * factor,
-                ))
+                transform
+                    .apply_point(Point3::new(
+                        point[0] * factor,
+                        point[1] * factor,
+                        point[2] * factor,
+                    ))
+                    .map(cadmpeg_ir::features::FinitePoint3::get)
             })
             .collect::<Option<Vec<_>>>()
         else {
@@ -2022,7 +2024,10 @@ pub(crate) fn project_geometry(
                 ));
                 continue;
             }
-            let Some(normal) = transform.apply_vector(normal_definition) else {
+            let Some(normal) = transform
+                .apply_vector(normal_definition)
+                .map(cadmpeg_ir::features::FiniteVector3::get)
+            else {
                 losses.push(entity_loss(entry, "placement produces a non-finite vector"));
                 continue;
             };

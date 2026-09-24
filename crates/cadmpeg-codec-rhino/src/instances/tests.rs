@@ -56,7 +56,8 @@ fn parent_child_composition_uses_column_point_order() {
         parent
             .compose(child)
             .unwrap()
-            .apply_point(Point3::new(1.0, 0.0, 0.0)),
+            .apply_point(Point3::new(1.0, 0.0, 0.0))
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 }
@@ -131,7 +132,9 @@ fn normals_use_inverse_transpose_and_normalization() {
     ])
     .expect("affine transform");
     assert_eq!(
-        transform.apply_normal(Vector3::new(1.0, 0.0, 1.0)),
+        transform
+            .apply_normal(Vector3::new(1.0, 0.0, 1.0))
+            .map(Vector3::from),
         Some(Vector3::new(
             0.242_535_625_036_332_97,
             0.0,

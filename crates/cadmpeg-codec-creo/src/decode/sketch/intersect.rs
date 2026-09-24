@@ -95,7 +95,8 @@ pub(in crate::decode) fn intersect_section_line_arc(
         cadmpeg_ir::math::planar::line_circle_intersections(*start, *end, *center, radius.get())?;
     let endpoint_tolerance = EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get();
     let mut inside = intersections.into_iter().filter(|(_, point)| {
-        cadmpeg_ir::math::planar::point_segment_distance(*point, *start, *end) <= endpoint_tolerance
+        cadmpeg_ir::math::planar::point_segment_distance(point.get(), *start, *end)
+            <= endpoint_tolerance
     });
     let (_, point) = inside.next()?;
     if inside.next().is_some_and(|(_, other)| other != point) {

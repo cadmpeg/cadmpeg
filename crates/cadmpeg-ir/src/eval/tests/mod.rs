@@ -1918,7 +1918,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
         nurbs_curve_parameter_near_point(&curve, Point3::new(0.5, 1.0, 0.0), 1.0e-12, 0.5,),
         None
     );
-    assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound >= 2.0));
+    assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound.get() >= 2.0));
 }
 
 #[test]

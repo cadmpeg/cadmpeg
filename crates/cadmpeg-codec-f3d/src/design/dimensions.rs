@@ -5486,7 +5486,7 @@ pub(super) fn point_lies_on_sketch_geometry(
             ) else {
                 return false;
             };
-            close(x, axial)
+            close(x, axial.get())
                 && match bounds {
                     Some([start, end]) => {
                         parameter
@@ -5583,6 +5583,7 @@ fn exact_counted_offset(
                 &result.geometry,
                 linear_tolerance,
             )
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
         })?;
         if distance.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9 {
             return None;

@@ -331,6 +331,7 @@ pub(super) fn spun_nurbs(
                         [radius, std::f64::consts::SQRT_2, component],
                         [1.0],
                     )?
+                    .get()
                 };
                 *coordinate += offset;
             }

@@ -571,7 +571,7 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
         Point2::new(0.0, sphere_axial / scale),
         sphere.radius / scale,
     )
-    .map(|hits| hits.map(|(parameter, _)| parameter)) else {
+    .map(|hits| hits.map(|(parameter, _)| parameter.get())) else {
         return Vec::new();
     };
     let Some(reference) = normalize(cone.ref_direction()) else {
@@ -661,7 +661,7 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             Point2::new(torus.major_radius / scale, torus_axial / scale),
             torus.minor_radius / scale,
         )
-        .map(|hits| hits.map(|(parameter, _)| parameter)) else {
+        .map(|hits| hits.map(|(parameter, _)| parameter.get())) else {
             continue;
         };
         for root in roots {

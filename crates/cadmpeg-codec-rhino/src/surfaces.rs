@@ -1051,7 +1051,11 @@ fn read_poles(
             cadmpeg_ir::math::multiply_divide(value, scale.value(), weight)
                 .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
         };
-        points.push(Point3::new(coordinate(x)?, coordinate(y)?, coordinate(z)?));
+        points.push(Point3::new(
+            coordinate(x)?.get(),
+            coordinate(y)?.get(),
+            coordinate(z)?.get(),
+        ));
     }
     Ok((points, weights))
 }

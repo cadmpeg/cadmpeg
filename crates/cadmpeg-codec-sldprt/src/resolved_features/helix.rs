@@ -129,8 +129,8 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
             point.y - reference.y,
             point.z - reference.z,
         );
-        let x = scale_power_of_two(delta.dot(u), -exponent)?;
-        let y = scale_power_of_two(delta.dot(v), -exponent)?;
+        let x = scale_power_of_two(delta.dot(u), -exponent)?.get();
+        let y = scale_power_of_two(delta.dot(v), -exponent)?.get();
         let row = [x, y, 1.0];
         let target = -(x * x + y * y);
         for i in 0..3 {
@@ -147,15 +147,15 @@ fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)>
     if !radius_squared.is_finite() || radius_squared <= 0.0 {
         return None;
     }
-    let center_u = scale_power_of_two(center_u, exponent)?;
-    let center_v = scale_power_of_two(center_v, exponent)?;
-    let radius = scale_power_of_two(radius_squared.sqrt(), exponent)?;
+    let center_u = scale_power_of_two(center_u, exponent)?.get();
+    let center_v = scale_power_of_two(center_v, exponent)?.get();
+    let radius = scale_power_of_two(radius_squared.sqrt(), exponent)?.get();
     let origin = Point3::new(
         reference.x + center_u * u.x + center_v * v.x,
         reference.y + center_u * u.y + center_v * v.y,
         reference.z + center_u * u.z + center_v * v.z,
     );
-    (origin.is_finite() && radius.is_finite()).then_some((origin, radius))
+    origin.is_finite().then_some((origin, radius))
 }
 
 fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]> {

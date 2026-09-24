@@ -893,7 +893,10 @@ impl<'a> Builder<'a> {
                     .nodes()
                     .iter()
                     .map(|point| {
-                        face_transform.apply_point(*point).ok_or_else(|| {
+                        face_transform
+                            .apply_point(*point)
+                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                            .ok_or_else(|| {
                             CodecError::malformed(format_args!(
                                 "placed triangulation node for face {} contains a non-finite coordinate",
                                 face_use.shape
@@ -1376,7 +1379,7 @@ impl<'a> Builder<'a> {
         );
         // A finite point and a finite location still multiply and add to a
         // non-finite coordinate, which states no position.
-        let Some(position) = point.transformed(transform) else {
+        let Some(position) = transform.apply_point(point.get()) else {
             return Err(CodecError::malformed(format_args!(
                 "placed vertex {} position contains a non-finite coordinate",
                 vertex_use.shape
@@ -1936,11 +1939,14 @@ fn place_polyline_samples(
 ) -> Result<(), CodecError> {
     samples
         .edit_points(|point| {
-            *point = transform.apply_point(*point).ok_or_else(|| {
-                GeometryLayoutError::EditRefused(
-                    "placed polyline sample contains a non-finite coordinate".to_string(),
-                )
-            })?;
+            *point = transform
+                .apply_point(*point)
+                .ok_or_else(|| {
+                    GeometryLayoutError::EditRefused(
+                        "placed polyline sample contains a non-finite coordinate".to_string(),
+                    )
+                })?
+                .get();
             Ok(())
         })
         .map_err(|error| CodecError::malformed(error.to_string()))
@@ -2263,8 +2269,8 @@ pub(crate) fn normalize_occt_curve_range(
             let focal_distance = parabola_curve.focal_distance().get();
             let [start, end] = range?;
             Some([
-                cadmpeg_ir::math::multiply_divide(start, 0.5, focal_distance)?,
-                cadmpeg_ir::math::multiply_divide(end, 0.5, focal_distance)?,
+                cadmpeg_ir::math::multiply_divide(start, 0.5, focal_distance)?.get(),
+                cadmpeg_ir::math::multiply_divide(end, 0.5, focal_distance)?.get(),
             ])
         }
         SolvedCurveGeometry::Transformed(placed) => {

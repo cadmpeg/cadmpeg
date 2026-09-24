@@ -6773,7 +6773,7 @@ fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Opt
         };
         for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
             let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
-            samples.push(cadmpeg_ir::math::interpolate(lower, upper, fraction)?);
+            samples.push(cadmpeg_ir::math::interpolate(lower, upper, fraction)?.get());
         }
     }
     (!samples.is_empty()).then_some(samples)
@@ -6794,8 +6794,8 @@ fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> O
                 let u_fraction = u as f64 / (side - 1) as f64;
                 let v_fraction = v as f64 / (side - 1) as f64;
                 grid.push(Point2::new(
-                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?,
-                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?,
+                    cadmpeg_ir::math::interpolate(domains[0][0], domains[0][1], u_fraction)?.get(),
+                    cadmpeg_ir::math::interpolate(domains[1][0], domains[1][1], v_fraction)?.get(),
                 ));
             }
         }
@@ -6831,7 +6831,7 @@ fn refine_nurbs_surface_point(
         else {
             break;
         };
-        let step = Point2::new(u, v);
+        let step = Point2::new(u.get(), v.get());
         let current = nurbs_surface_point_distance(surface, point, parameters)?;
         let mut scale = 1.0;
         let mut accepted = None;

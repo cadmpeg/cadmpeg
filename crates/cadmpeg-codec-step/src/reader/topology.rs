@@ -3864,6 +3864,7 @@ fn mapped_pcurve_closest(
         };
         let Some(step) =
             cadmpeg_ir::math::solve::projection_step(tangent, point.vector_from(target))
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
         else {
             break;
         };
@@ -3876,7 +3877,8 @@ fn mapped_pcurve_closest(
             if candidate_error < error {
                 break;
             }
-            candidate = clamp_to_domain(cadmpeg_ir::math::interpolate(candidate, parameter, 0.5)?);
+            candidate =
+                clamp_to_domain(cadmpeg_ir::math::interpolate(candidate, parameter, 0.5)?.get());
             let Some(candidate_point) = evaluate_point(candidate) else {
                 break;
             };

@@ -654,7 +654,7 @@ fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
         })
         .collect::<Vec<_>>();
     cadmpeg_ir::math::planar::polygon_area_twice(&local)
-        .is_some_and(|area| area.abs() > EPS_NEAR_ZERO)
+        .is_some_and(|area| area.get().abs() > EPS_NEAR_ZERO)
 }
 
 fn ordered_contained_face_loops<'a>(

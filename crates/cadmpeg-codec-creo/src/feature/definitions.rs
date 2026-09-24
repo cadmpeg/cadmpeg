@@ -3475,7 +3475,7 @@ fn trim_line_circle_intersection(
     let endpoint_tolerance = TRIM_COORDINATE_EPS * radius;
     let mut inside = intersections.into_iter().filter(|(_, point)| {
         cadmpeg_ir::math::planar::point_segment_distance(
-            *point,
+            point.get(),
             cadmpeg_ir::math::Point2::new(start[0], start[1]),
             cadmpeg_ir::math::Point2::new(end[0], end[1]),
         ) <= endpoint_tolerance

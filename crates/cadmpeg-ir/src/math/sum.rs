@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Finite sums with an exact-product fallback for floating-point range loss.
 
+use crate::scalar::FiniteReal;
+
 /// A finite dot product with an exact-product fallback for range loss or cancellation.
 pub(crate) fn finite_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     if coefficients
         .iter()
         .chain(&components)
@@ -124,7 +126,7 @@ impl ScaledValue {
         self.exponent.0
     }
 
-    pub(crate) fn rescale(self, exponent: i32) -> Option<f64> {
+    pub(crate) fn rescale(self, exponent: i32) -> Option<FiniteReal> {
         super::scale_power_of_two(
             self.sign * self.mantissa,
             self.exponent.0.checked_sub(exponent)?,
@@ -137,20 +139,24 @@ impl ScaledValue {
             self.sign * self.mantissa,
             self.exponent.difference(scale_exponent),
         )
-        .unwrap_or(self.sign * f64::INFINITY)
+        .map_or(self.sign * f64::INFINITY, FiniteReal::get)
     }
-    pub(crate) fn finite(self) -> Option<f64> {
+    pub(crate) fn finite(self) -> Option<FiniteReal> {
         super::scale_power_of_two(self.sign * self.mantissa, self.exponent.0)
     }
 
-    pub(crate) fn quotient(self, denominator: Self) -> Option<f64> {
+    pub(crate) fn quotient(self, denominator: Self) -> Option<FiniteReal> {
         self.quotient_shifted(denominator, 0)
     }
 
     /// Divide by several nonzero extended-range factors before rounding to
     /// binary64. Each normalized mantissa is in `[0.5, 1)`, so the small
     /// product of mantissa quotients stays in range independently of exponent.
-    pub(crate) fn quotient_by_factors(self, denominators: &[Self], shift: i32) -> Option<f64> {
+    pub(crate) fn quotient_by_factors(
+        self,
+        denominators: &[Self],
+        shift: i32,
+    ) -> Option<FiniteReal> {
         let mut mantissa = self.sign * self.mantissa;
         let mut exponent = self.exponent.0.checked_add(shift)?;
         for denominator in denominators {
@@ -162,7 +168,11 @@ impl ScaledValue {
 
     /// Divide two scaled values, then apply a power of two without rounding
     /// either operand into the binary64 range first.
-    pub(crate) fn quotient_shifted(self, denominator: Self, exponent_shift: i32) -> Option<f64> {
+    pub(crate) fn quotient_shifted(
+        self,
+        denominator: Self,
+        exponent_shift: i32,
+    ) -> Option<FiniteReal> {
         super::scale_power_of_two(
             self.sign * denominator.sign * (self.mantissa / denominator.mantissa),
             self.exponent
@@ -351,9 +361,9 @@ impl ExactSignedSum {
     /// Round a sum in the subnormal range directly onto the binary64 grid.
     /// Rounding through a 53-bit scaled mantissa first can discard a tail that
     /// breaks a tie at half of the smallest subnormal.
-    pub(crate) fn finite_sum(self) -> Option<f64> {
+    pub(crate) fn finite_sum(self) -> Option<FiniteReal> {
         let Some((negative, magnitude)) = signed_difference(&self.positive, &self.negative) else {
-            return Some(0.0);
+            return Some(FiniteReal::ZERO);
         };
         let word = magnitude.iter().rposition(|value| *value != 0)?;
         let highest_bit = word * 64 + magnitude[word].checked_ilog2()? as usize;
@@ -372,9 +382,9 @@ impl ExactSignedSum {
             units += 1;
         }
         if units == 0 {
-            return Some(0.0);
+            return Some(FiniteReal::ZERO);
         }
-        Some(f64::from_bits((u64::from(negative) << 63) | units))
+        Some(FiniteReal::subnormal_units(negative, units))
     }
 }
 
@@ -442,7 +452,7 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
     value: f64,
     denominator: f64,
     factors: [f64; N],
-) -> Option<[f64; N]> {
+) -> Option<[FiniteReal; N]> {
     if !value.is_finite()
         || !denominator.is_finite()
         || factors.iter().any(|factor| !factor.is_finite())
@@ -450,7 +460,7 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
         return None;
     }
     if value == 0.0 || denominator == 0.0 {
-        return Some([0.0; N]);
+        return Some([FiniteReal::ZERO; N]);
     }
     let value = scaled_finite(value)?;
     let denominator = scaled_finite(denominator)?;
@@ -460,7 +470,7 @@ pub(crate) fn scaled_ratio_products<const N: usize>(
     // Plain `+`: the difference lies inside the `ScaledExponent` span and a
     // factor's exponent inside the `f64` range.
     let exponent = value.exponent.difference(denominator.exponent);
-    let mut products = [0.0; N];
+    let mut products = [FiniteReal::ZERO; N];
     for (product, factor) in products.iter_mut().zip(factors) {
         if factor == 0.0 {
             continue;
@@ -478,7 +488,7 @@ pub(crate) fn fast_dot<const N: usize>(
     coefficients: [f64; N],
     components: [f64; N],
     products: [f64; N],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     if products.iter().any(|product| !product.is_finite()) {
         return None;
     }
@@ -496,10 +506,10 @@ pub(crate) fn fast_dot<const N: usize>(
         .iter()
         .fold(0.0_f64, |scale, product| scale.max(product.abs()));
     if scale == 0.0 {
-        return Some(0.0);
+        return Some(FiniteReal::ZERO);
     }
-    let sum = products.into_iter().sum::<f64>();
-    if !sum.is_finite() || sum.abs() / scale < f64::EPSILON {
+    let sum = FiniteReal::new(products.into_iter().sum::<f64>())?;
+    if sum.get().abs() / scale < f64::EPSILON {
         return None;
     }
     Some(sum)

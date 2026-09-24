@@ -1410,7 +1410,7 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         Point2::new(0.0, 0.0),
         radius,
     )
-    .map(|hits| hits.map(|(parameter, _)| parameter)) else {
+    .map(|hits| hits.map(|(parameter, _)| parameter.get())) else {
         return Vec::new();
     };
     let nearest: [f64; 3] =

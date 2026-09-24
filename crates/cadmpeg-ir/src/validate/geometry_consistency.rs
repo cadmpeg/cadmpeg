@@ -805,7 +805,7 @@ fn mapped_pcurve_parameter_near_point(
         if error.is_finite() && error <= tolerance {
             return Some(parameter);
         }
-        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?;
+        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?.get();
         let mut candidate = clamp_to_domain(parameter - step);
         let mut candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
         for _ in 0..12 {

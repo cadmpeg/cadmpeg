@@ -8,7 +8,6 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -312,7 +311,7 @@ pub(super) fn project(
         let Some(positions) = definition_points
             .iter()
             .copied()
-            .map(|point| FinitePoint3::new(point).and_then(|point| point.transformed(transform)))
+            .map(|point| transform.apply_point(point))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(

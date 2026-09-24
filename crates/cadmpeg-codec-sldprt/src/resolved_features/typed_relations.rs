@@ -1053,7 +1053,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             else {
                 return false;
             };
-            let on_curve = (x - expected_x).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            let on_curve = (x - expected_x.get()).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
                     ((*start).min(*end) - SKETCH_POINT_TOLERANCE
@@ -1079,7 +1079,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             ) else {
                 return false;
             };
-            let on_curve = (x - axial).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
+            let on_curve = (x - axial.get()).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
                     ((*start).min(*end) - SKETCH_POINT_TOLERANCE

@@ -50,10 +50,10 @@ fn sectioned_area_pattern_plane(
     if !z.is_finite() || !length_factor.is_finite() {
         return None;
     }
-    let point = transform.apply_point(Point3::new(0.0, 0.0, z))?;
+    let point = transform.apply_point(Point3::new(0.0, 0.0, z))?.get();
     let normal = transform
         .apply_normal(Vector3::new(0.0, 0.0, 1.0))
-        .and_then(Vector3::unit_nonzero)?;
+        .and_then(|normal| normal.as_raw().unit_nonzero())?;
     Some((point, normal))
 }
 

@@ -1685,7 +1685,7 @@ fn feature_arcs_rebuild_from_checked_parts() {
 }
 
 #[test]
-fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
+fn apply_point_hands_back_an_admitted_point_bit_for_bit() {
     use crate::features::FinitePoint3;
     use crate::transform::Transform;
 
@@ -1700,8 +1700,8 @@ fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
         Point3::new(-0.0, 5.0e-324, -1.0e300),
     ] {
         let admitted = FinitePoint3::new(point).unwrap();
-        let placed = admitted.transformed(transform).unwrap();
-        let raw = transform.apply_point(point).unwrap();
+        let placed = transform.apply_point(admitted.get()).unwrap();
+        let raw = transform.apply_point(point).unwrap().get();
         assert_eq!(
             [placed.x, placed.y, placed.z].map(f64::to_bits),
             [raw.x, raw.y, raw.z].map(f64::to_bits)
@@ -1718,17 +1718,15 @@ fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
     ])
     .unwrap();
     let edge = FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).unwrap();
-    assert_eq!(edge.transformed(overflow), None);
+    assert_eq!(overflow.apply_point(edge.get()), None);
     assert_eq!(
-        FinitePoint3::new(Point3::new(0.0, 0.0, 1.0))
-            .unwrap()
-            .transformed(overflow),
+        overflow.apply_point(FinitePoint3::new(Point3::new(0.0, 0.0, 1.0)).unwrap().get()),
         FinitePoint3::new(Point3::new(f64::MAX, 0.0, 1.0))
     );
 }
 
 #[test]
-fn finite_vector_transformed_matches_apply_vector_and_stays_admitted() {
+fn apply_vector_hands_back_an_admitted_vector_bit_for_bit() {
     use crate::features::FiniteVector3;
     use crate::transform::Transform;
 
@@ -1743,8 +1741,8 @@ fn finite_vector_transformed_matches_apply_vector_and_stays_admitted() {
         Vector3::new(-0.0, 5.0e-324, -1.0e300),
     ] {
         let admitted = FiniteVector3::new(vector).unwrap();
-        let placed = admitted.transformed(transform).unwrap();
-        let raw = transform.apply_vector(vector).unwrap();
+        let placed = transform.apply_vector(admitted.get()).unwrap();
+        let raw = transform.apply_vector(vector).unwrap().get();
         assert_eq!(
             [placed.x, placed.y, placed.z].map(f64::to_bits),
             [raw.x, raw.y, raw.z].map(f64::to_bits)
@@ -1761,11 +1759,11 @@ fn finite_vector_transformed_matches_apply_vector_and_stays_admitted() {
     .unwrap();
     let unit = FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     assert_eq!(
-        unit.transformed(stretch),
+        stretch.apply_vector(unit.get()),
         FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
-        unit.transformed(stretch).unwrap().transformed(stretch),
+        stretch.apply_vector(stretch.apply_vector(unit.get()).unwrap().get()),
         None
     );
 }

@@ -5,6 +5,7 @@
 //! validation pass is responsible for sanity checks such as "a direction is
 //! non-degenerate" where the IR is expected to hold geometry.
 
+use crate::scalar::FiniteReal;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -62,8 +63,10 @@ impl Point3 {
     /// Squared Euclidean distance to another point (no square root).
     pub fn distance_squared(self, other: Point3) -> f64 {
         let delta = [self.x - other.x, self.y - other.y, self.z - other.z];
-        sum::finite_dot(delta, delta)
-            .unwrap_or_else(|| delta[0].powi(2) + delta[1].powi(2) + delta[2].powi(2))
+        sum::finite_dot(delta, delta).map_or_else(
+            || delta[0].powi(2) + delta[1].powi(2) + delta[2].powi(2),
+            FiniteReal::get,
+        )
     }
 
     /// Displacement from `origin` to `self`, i.e. `self - origin`.
@@ -127,7 +130,7 @@ impl Vector3 {
     /// Dot product with another vector.
     pub fn dot(self, other: Vector3) -> f64 {
         match sum::finite_dot([self.x, self.y, self.z], [other.x, other.y, other.z]) {
-            Some(value) => value,
+            Some(value) => value.get(),
             None => self.x * other.x + self.y * other.y + self.z * other.z,
         }
     }
@@ -136,7 +139,7 @@ impl Vector3 {
     #[must_use]
     pub fn cross(self, other: Vector3) -> Vector3 {
         let component = |a: f64, b: f64, c: f64, d: f64| match sum::finite_dot([a, -b], [c, d]) {
-            Some(value) => value,
+            Some(value) => value.get(),
             None => a * c - b * d,
         };
         Vector3::new(
@@ -178,14 +181,16 @@ impl Vector3 {
         // final quotient from its original component instead.
         let exponent = sum::scaled_finite(scale)?.exponent();
         let scaled = Vector3::new(
-            scale_power_of_two(self.x, -exponent)?,
-            scale_power_of_two(self.y, -exponent)?,
-            scale_power_of_two(self.z, -exponent)?,
+            scale_power_of_two(self.x, -exponent)?.get(),
+            scale_power_of_two(self.y, -exponent)?.get(),
+            scale_power_of_two(self.z, -exponent)?.get(),
         );
         let length = scaled.norm();
         let component = |value: f64, chart: f64| {
             if value != 0.0 && chart.abs() < f64::MIN_POSITIVE {
-                sum::scaled_finite(value)?.quotient_shifted(sum::scaled_finite(length)?, -exponent)
+                sum::scaled_finite(value)?
+                    .quotient_shifted(sum::scaled_finite(length)?, -exponent)
+                    .map(FiniteReal::get)
             } else {
                 Some(chart / length)
             }
@@ -240,13 +245,14 @@ impl Point2 {
 /// Multiply a finite value by a power of two, retaining representable subnormals.
 /// Large exponents are applied in normal chunks. Downward chunks leave 53 bits
 /// of exponent headroom so only the final multiplication rounds to subnormal.
-pub fn scale_power_of_two(mut value: f64, mut exponent: i32) -> Option<f64> {
-    if !value.is_finite() {
-        return None;
-    }
+/// A chunk that rounds the value to zero ends the downward chunks: the final
+/// factor is then finite and positive, so the product keeps the signed zero.
+pub fn scale_power_of_two(value: f64, mut exponent: i32) -> Option<FiniteReal> {
+    let admitted = FiniteReal::new(value)?;
     if value == 0.0 {
-        return Some(value);
+        return Some(admitted);
     }
+    let mut value = value;
     while exponent > 1023 {
         value *= 2.0_f64.powi(1023);
         if !value.is_finite() {
@@ -257,12 +263,11 @@ pub fn scale_power_of_two(mut value: f64, mut exponent: i32) -> Option<f64> {
     while exponent < -1022 {
         value *= 2.0_f64.powi(-969);
         if value == 0.0 {
-            return Some(value);
+            break;
         }
         exponent += 969;
     }
-    let result = value * 2.0_f64.powi(exponent);
-    result.is_finite().then_some(result)
+    FiniteReal::new(value * 2.0_f64.powi(exponent))
 }
 
 /// The exponent of the least power of two above a finite nonzero magnitude.
@@ -278,14 +283,14 @@ pub fn power_of_two_bound(value: f64) -> Option<i32> {
 
 /// Compute `left * right / denominator` without intermediate range loss.
 /// Inputs must be finite and the denominator nonzero; the result must be finite.
-pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {
+pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<FiniteReal> {
     if ![left, right, denominator].into_iter().all(f64::is_finite) {
         return None;
     }
     let denominator = sum::scaled_finite(denominator)?;
     match sum::product_sum(std::iter::once(Some([left, right]))) {
         sum::ProductSum::Value(numerator) => numerator.quotient(denominator),
-        sum::ProductSum::Zero => Some(0.0),
+        sum::ProductSum::Zero => Some(FiniteReal::ZERO),
         sum::ProductSum::Undefined => None,
     }
 }
@@ -296,7 +301,7 @@ pub fn multiply_divide(left: f64, right: f64, denominator: f64) -> Option<f64> {
 pub fn product_quotient<const N: usize, const D: usize>(
     numerator: [f64; N],
     denominator: [f64; D],
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     if N > 4 || D > 4 {
         return None;
     }
@@ -306,7 +311,7 @@ pub fn product_quotient<const N: usize, const D: usize>(
     };
     match sum::product_sum(std::iter::once(Some(numerator))) {
         sum::ProductSum::Value(value) => value.quotient(denominator),
-        sum::ProductSum::Zero => Some(0.0),
+        sum::ProductSum::Zero => Some(FiniteReal::ZERO),
         sum::ProductSum::Undefined => None,
     }
 }
@@ -314,12 +319,12 @@ pub fn product_quotient<const N: usize, const D: usize>(
 /// The finite products `(scale * sinh(parameter), scale * cosh(parameter))`.
 /// Large parameters are exponentiated in thirds before the products are
 /// combined; a small scale can then retain otherwise overflowing values.
-pub fn scaled_sinh_cosh(scale: f64, parameter: f64) -> Option<(f64, f64)> {
+pub fn scaled_sinh_cosh(scale: f64, parameter: f64) -> Option<(FiniteReal, FiniteReal)> {
     if !scale.is_finite() || !parameter.is_finite() {
         return None;
     }
     if scale == 0.0 {
-        return Some((0.0, 0.0));
+        return Some((FiniteReal::ZERO, FiniteReal::ZERO));
     }
     let sinh = parameter.sinh();
     let cosh = parameter.cosh();
@@ -335,12 +340,19 @@ pub fn scaled_sinh_cosh(scale: f64, parameter: f64) -> Option<(f64, f64)> {
     let magnitude = product_quotient([scale, exponential, exponential, tail], [2.0])?;
     // At this parameter magnitude, the omitted exp(-abs(parameter)) term
     // is too small to change either rounded product for any finite scale.
-    Some((magnitude * parameter.signum(), magnitude))
+    // The sign of a finite parameter selects the negation, which is the
+    // product with its signum bit for bit.
+    let signed = if parameter.is_sign_negative() {
+        magnitude.negated()
+    } else {
+        magnitude
+    };
+    Some((signed, magnitude))
 }
 
 /// Interpolate between finite endpoints at a fraction in `[0, 1]`.
 /// The weighted sum does not form an overflowing endpoint difference.
-pub fn interpolate(start: f64, end: f64, fraction: f64) -> Option<f64> {
+pub fn interpolate(start: f64, end: f64, fraction: f64) -> Option<FiniteReal> {
     if !(0.0..=1.0).contains(&fraction) {
         return None;
     }
@@ -350,15 +362,14 @@ pub fn interpolate(start: f64, end: f64, fraction: f64) -> Option<f64> {
 /// The finite fraction `(parameter - start) / (end - start)`.
 /// Exact differences retain finite quotients across overflowing widths. Fractions
 /// outside `[0, 1]` are retained for exterior knots of unclamped curves.
-pub fn parameter_fraction(parameter: f64, start: f64, end: f64) -> Option<f64> {
+pub fn parameter_fraction(parameter: f64, start: f64, end: f64) -> Option<FiniteReal> {
     if ![parameter, start, end].into_iter().all(f64::is_finite) || start == end {
         return None;
     }
     let numerator = parameter - start;
     let denominator = end - start;
     if numerator.is_finite() && denominator.is_finite() {
-        let fraction = numerator / denominator;
-        if fraction.is_finite() {
+        if let Some(fraction) = FiniteReal::new(numerator / denominator) {
             return Some(fraction);
         }
     }
@@ -371,7 +382,7 @@ pub fn parameter_fraction(parameter: f64, start: f64, end: f64) -> Option<f64> {
     let denominator = denominator.finish()?;
     numerator
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(denominator))
+        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
 }
 
 /// Whether a finite parameter lies in an ordered domain, allowing roundoff
@@ -389,26 +400,31 @@ pub fn parameter_in_domain(value: f64, domain: [f64; 2], relative_tolerance: f64
         return true;
     }
     parameter_fraction(value, domain[0], domain[1]).is_some_and(|fraction| {
-        fraction >= -relative_tolerance && fraction - 1.0 <= relative_tolerance
+        fraction.get() >= -relative_tolerance && fraction.get() - 1.0 <= relative_tolerance
     })
 }
 
 /// Map a finite parameter into the half-open finite interval `[start, end)`.
 /// A period wider than f64's range is evaluated in a half-scale chart.
-pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
-    if ![parameter, start, end].into_iter().all(f64::is_finite) || start >= end {
+pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<FiniteReal> {
+    let [Some(admitted_parameter), Some(admitted_start), Some(_)] =
+        [parameter, start, end].map(FiniteReal::new)
+    else {
+        return None;
+    };
+    if start >= end {
         return None;
     }
     if (start..end).contains(&parameter) {
-        return Some(parameter);
+        return Some(admitted_parameter);
     }
     if parameter == end {
-        return Some(start);
+        return Some(admitted_start);
     }
     let period = end - start;
     if !period.is_finite() {
         return multiply_divide(
-            wrap_parameter(parameter * 0.5, start * 0.5, end * 0.5)?,
+            wrap_parameter(parameter * 0.5, start * 0.5, end * 0.5)?.get(),
             2.0,
             1.0,
         );
@@ -419,16 +435,19 @@ pub fn wrap_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
     } else {
         (parameter.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
     };
-    let wrapped = start + offset;
-    wrapped
-        .is_finite()
-        .then_some(if wrapped >= end { start } else { wrapped })
+    FiniteReal::new(start + offset).map(|wrapped| {
+        if wrapped.get() >= end {
+            admitted_start
+        } else {
+            wrapped
+        }
+    })
 }
 
 /// Reflect a finite parameter about the midpoint of two finite bounds.
 /// The exact sum avoids overflow and cancellation in `start + end - parameter`.
 /// Returns `None` when an input or the reflected result is non-finite.
-pub fn reflect_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
+pub fn reflect_parameter(parameter: f64, start: f64, end: f64) -> Option<FiniteReal> {
     if ![parameter, start, end].into_iter().all(f64::is_finite) {
         return None;
     }
@@ -436,7 +455,8 @@ pub fn reflect_parameter(parameter: f64, start: f64, end: f64) -> Option<f64> {
     sum.add_product(start, 1.0);
     sum.add_product(end, 1.0);
     sum.add_product(parameter, -1.0);
-    sum.finish().map_or(Some(0.0), sum::ScaledValue::finite)
+    sum.finish()
+        .map_or(Some(FiniteReal::ZERO), sum::ScaledValue::finite)
 }
 
 #[cfg(test)]

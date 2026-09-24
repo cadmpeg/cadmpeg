@@ -126,7 +126,10 @@ pub(crate) fn parabolic_arc_nurbs(
     }
     let focal_distance = focal_distance.get();
     let transverse = axis.cross(major_direction);
-    let product = |a, b| cadmpeg_ir::math::product_quotient([focal_distance, a, b], [1.0]);
+    let product = |a, b| {
+        cadmpeg_ir::math::product_quotient([focal_distance, a, b], [1.0])
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+    };
     let (
         Some(start_major),
         Some(start_minor),
