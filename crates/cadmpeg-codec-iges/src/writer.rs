@@ -26,7 +26,7 @@ use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
 };
-use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     BodyKind, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region, Sense,
 };
@@ -295,7 +295,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            entities.push(point_entity(point.position().get()));
+            entities.push(point_entity(point.position()));
         }
         entities
     };
@@ -1013,7 +1013,7 @@ fn validate_brep_topology(
                                 ))
                             })?;
                         used_vertices.insert(vertex.id.as_str().to_owned());
-                        let position = point_position(ir, &vertex.point)?;
+                        let position = point_position(ir, &vertex.point)?.get();
                         let orientation = pcurve_orientation_context(
                             ir,
                             &surface.geometry,
@@ -1433,8 +1433,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                         "IGES B-rep references missing vertex {vertex_id}"
                     ))
                 })?;
-            let point = point_position(ir, &vertex.point)?;
-            for value in [point.x, point.y, point.z] {
+            for value in point_position(ir, &vertex.point)?.coordinates() {
                 parameters.push(',');
                 parameters.push_str(&number(value));
             }
@@ -1790,7 +1789,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
         {
             continue;
         }
-        entities.push(point_entity(point.position().get()));
+        entities.push(point_entity(point.position()));
     }
     Ok(entities)
 }
@@ -2240,7 +2239,7 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
         {
             continue;
         }
-        entities.push(point_entity(point.position().get()));
+        entities.push(point_entity(point.position()));
     }
     Ok(entities)
 }
@@ -4313,7 +4312,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
 
 #[derive(Clone, Copy)]
 struct Placement {
-    rows: [[f64; 4]; 3],
+    rows: [[FiniteReal; 4]; 3],
 }
 
 #[derive(Debug)]
@@ -4356,42 +4355,36 @@ fn construction_carrier_interval(
     }
 }
 
-fn point_entity(position: Point3) -> Entity {
+fn point_entity(position: FinitePoint3) -> Entity {
     point_entity_with_status(position, EntityStatus::Independent)
 }
 
-fn point_entity_with_status(position: Point3, status: EntityStatus) -> Entity {
+fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Entity {
+    let [x, y, z] = position.coordinates();
     Entity {
         type_code: 116,
         form: 0,
         label: "POINT",
         status,
-        parameter_body: format!(
-            "{},{},{};",
-            number(position.x),
-            number(position.y),
-            number(position.z)
-        )
-        .into_bytes(),
+        parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     }
 }
 
-fn direction_entity(direction: Vector3) -> Entity {
-    Entity {
+fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
+    let [x, y, z] = [
+        finite(direction.x, "direction x component")?,
+        finite(direction.y, "direction y component")?,
+        finite(direction.z, "direction z component")?,
+    ];
+    Ok(Entity {
         type_code: 123,
         form: 0,
         label: "DIRECTN",
         status: EntityStatus::PhysicallyDependent,
-        parameter_body: format!(
-            "{},{},{};",
-            number(direction.x),
-            number(direction.y),
-            number(direction.z)
-        )
-        .into_bytes(),
+        parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
-    }
+    })
 }
 
 fn pointer_surface_support(
@@ -4409,9 +4402,9 @@ fn pointer_surface_support(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok((
         vec![
-            point_entity_with_status(location.get(), EntityStatus::PhysicallyDependent),
-            direction_entity(axis),
-            direction_entity(reference),
+            point_entity_with_status(location, EntityStatus::PhysicallyDependent),
+            direction_entity(axis)?,
+            direction_entity(reference)?,
         ],
         location_index,
         axis_index,
@@ -4608,10 +4601,12 @@ fn extrusion_surface_entities(
         })?;
         (start, end)
     };
-    let inferred_target = start.translated(direction.get(), 1.0);
-    admitted_point(inferred_target, "Type 122 inferred terminate point")?;
-    let target = native_position.map_or(inferred_target, FinitePoint3::get);
-    if !same_point(target, inferred_target) {
+    let inferred_target = admitted_point(
+        start.translated(direction.get(), 1.0),
+        "Type 122 inferred terminate point",
+    )?;
+    let target = native_position.unwrap_or(inferred_target);
+    if !same_point(target.get(), inferred_target.get()) {
         return Err(CodecError::Malformed(
             "IGES Type 122 native terminate point disagrees with its sweep direction".into(),
         ));
@@ -4639,6 +4634,7 @@ fn extrusion_surface_entities(
     let directrix_index = base_index
         .checked_add(directrix_local_index)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
+    let [target_x, target_y, target_z] = target.coordinates();
     entities.push(Entity {
         type_code: 122,
         form: 0,
@@ -4647,9 +4643,9 @@ fn extrusion_surface_entities(
         parameter_body: format!(
             "{},{},{},{};",
             reference_marker(directrix_index),
-            number(target.x),
-            number(target.y),
-            number(target.z)
+            number(target_x),
+            number(target_y),
+            number(target_z)
         )
         .into_bytes(),
         transform: None,
@@ -4822,8 +4818,8 @@ fn revolution_surface_entities(
                 "{},{},{},{};",
                 reference_marker(base_index),
                 reference_marker(directrix_index),
-                number(start_angle),
-                number(terminate_angle)
+                number(finite(start_angle, "Type 120 start angle")?),
+                number(finite(terminate_angle, "Type 120 terminate angle")?)
             )
             .into_bytes(),
             transform: None,
@@ -4879,7 +4875,7 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let radius = cylinder_surface.radius().get();
+            let radius = cylinder_surface.radius().magnitude();
             let (mut entities, location, axis, reference) = pointer_surface_support(
                 base_index,
                 cylinder_surface.origin(),
@@ -4932,8 +4928,11 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(radius),
-                    number(half_angle.to_degrees()),
+                    number(finite(radius, "cone radius")?),
+                    number(finite(
+                        half_angle.to_degrees(),
+                        "cone semi-angle in degrees"
+                    )?),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -4964,7 +4963,7 @@ fn surface_entities(
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
-                    number(radius),
+                    number(finite(radius, "sphere radius")?),
                     reference_marker(axis),
                     reference_marker(reference)
                 )
@@ -4995,8 +4994,8 @@ fn surface_entities(
                     "{},{},{},{},{};",
                     reference_marker(location),
                     reference_marker(axis),
-                    number(major_radius),
-                    number(minor_radius),
+                    number(finite(major_radius, "torus major radius")?),
+                    number(finite(minor_radius, "torus minor radius")?),
                     reference_marker(reference)
                 )
                 .into_bytes(),
@@ -5028,9 +5027,9 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
-            values.into_iter().map(NonZeroReal::get).collect()
+            values.into_iter().map(FiniteReal::from).collect()
         }
-        None => alloc_filled(pole_count, 1.0, "iges NURBS surface weights")?,
+        None => alloc_filled(pole_count, FiniteReal::ONE, "iges NURBS surface weights")?,
     };
     let u_range = [nurbs.u_knots()[u_degree], nurbs.u_knots()[u_count]];
     let v_range = [nurbs.v_knots()[v_degree], nurbs.v_knots()[v_count]];
@@ -5053,13 +5052,9 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         i32::from(nurbs.u_periodic()),
         i32::from(nurbs.v_periodic())
     );
-    for value in nurbs.u_knots() {
+    for value in nurbs.u_knots().iter().chain(nurbs.v_knots().iter()) {
         parameters.push(',');
-        parameters.push_str(&number(*value));
-    }
-    for value in nurbs.v_knots() {
-        parameters.push(',');
-        parameters.push_str(&number(*value));
+        parameters.push_str(&number(finite(*value, "NURBS surface knot")?));
     }
     for v in 0..v_count {
         for u in 0..u_count {
@@ -5069,8 +5064,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     }
     for v in 0..v_count {
         for u in 0..u_count {
-            let point = nurbs.control_grid()[u][v];
-            for value in [point.x, point.y, point.z] {
+            for value in nurbs.control_grid()[u][v].coordinates() {
                 parameters.push(',');
                 parameters.push_str(&number(value));
             }
@@ -5078,7 +5072,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     }
     for value in [u_range[0], u_range[1], v_range[0], v_range[1]] {
         parameters.push(',');
-        parameters.push_str(&number(value));
+        parameters.push_str(&number(finite(value, "NURBS surface parameter bound")?));
     }
     parameters.push(';');
     Ok(Entity {
@@ -5133,12 +5127,12 @@ fn vertex_point_id(ir: &CadIr, vertex_id: &VertexId) -> Result<PointId, CodecErr
     Ok(vertex.point.clone())
 }
 
-fn point_position(ir: &CadIr, point_id: &PointId) -> Result<Point3, CodecError> {
+fn point_position(ir: &CadIr, point_id: &PointId) -> Result<FinitePoint3, CodecError> {
     ir.model
         .points
         .iter()
         .find(|point| point.id == *point_id)
-        .map(|point| point.position().get())
+        .map(cadmpeg_ir::topology::Point::position)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "IGES topology references missing point {point_id}"
@@ -5411,8 +5405,8 @@ fn curve_reference_span_inner(
                                 )));
                             }
                         }
-                        let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
-                        let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
+                        let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
+                        let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
                         let edge_tolerance = edge_topology_tolerance(ir, edge)?;
                         if !close_point_with_tolerance(start, derived_start, edge_tolerance)
                             || !close_point_with_tolerance(end, derived_end, edge_tolerance)
@@ -5572,8 +5566,8 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             edge.id
         )));
     }
-    let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
-    let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
+    let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
+    let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
     if matches!(
         geometry,
         CurveGeometry::Solved(
@@ -5673,13 +5667,12 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
 }
 
 // A common power-of-two factor leaves the conic equation unchanged.
-fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
-    let ordinary = [1.0 / (major * major), 1.0 / (minor * minor), -1.0];
-    if ordinary
-        .iter()
-        .all(|value| value.is_finite() && *value != 0.0)
-    {
-        return Ok(ordinary);
+fn conic_coefficients(major: f64, minor: f64) -> Result<[FiniteReal; 3], CodecError> {
+    let nonzero = |value: Option<FiniteReal>| value.filter(|value| value.get() != 0.0);
+    let ordinary = [1.0 / (major * major), 1.0 / (minor * minor), -1.0]
+        .map(|value| nonzero(FiniteReal::new(value)));
+    if let [Some(a), Some(c), Some(f)] = ordinary {
+        return Ok([a, c, f]);
     }
     let split = |radius: f64| {
         let exponent = radius.log2().floor() as i32;
@@ -5716,18 +5709,12 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
         scale(1.0 / (b * b), shift + exponents[1]),
         scale(-1.0, shift),
     ];
-    let admitted = coefficients
-        .iter()
-        .map(|value| {
-            value
-                .map(cadmpeg_ir::scalar::FiniteReal::get)
-                .filter(|value| *value != 0.0)
-        })
-        .collect::<Option<Vec<_>>>()
-        .and_then(|values| <[f64; 3]>::try_from(values).ok());
-    admitted.ok_or_else(|| {
-        CodecError::NotImplemented("IGES conic coefficient range is not representable".into())
-    })
+    let [Some(a), Some(c), Some(f)] = coefficients.map(nonzero) else {
+        return Err(CodecError::NotImplemented(
+            "IGES conic coefficient range is not representable".into(),
+        ));
+    };
+    Ok([a, c, f])
 }
 
 fn curve_entity(
@@ -5748,6 +5735,9 @@ fn curve_entity(
                     "IGES semantic writer cannot bound an unreferenced line".into(),
                 )
             })?;
+            let [start_x, start_y, start_z] =
+                admitted_point(span.start, "line start")?.coordinates();
+            let [end_x, end_y, end_z] = admitted_point(span.end, "line end")?.coordinates();
             Ok(Entity {
                 type_code: 110,
                 form: 0,
@@ -5755,12 +5745,12 @@ fn curve_entity(
                 status: EntityStatus::Independent,
                 parameter_body: format!(
                     "{},{},{},{},{},{};",
-                    number(span.start.x),
-                    number(span.start.y),
-                    number(span.start.z),
-                    number(span.end.x),
-                    number(span.end.y),
-                    number(span.end.z)
+                    number(start_x),
+                    number(start_y),
+                    number(start_z),
+                    number(end_x),
+                    number(end_y),
+                    number(end_z)
                 )
                 .into_bytes(),
                 transform: None,
@@ -5772,11 +5762,17 @@ fn curve_entity(
             let (axis, reference) = orthonormal_pair(circle_curve.frame());
             let y_axis = axis.cross(reference);
             validate_arc_sweep(range)?;
-            let start_xy = [radius * range[0].cos(), radius * range[0].sin()];
+            let start_xy = [
+                finite(radius * range[0].cos(), "arc start x")?,
+                finite(radius * range[0].sin(), "arc start y")?,
+            ];
             let end_xy = if is_full_arc(span) {
                 start_xy
             } else {
-                [radius * range[1].cos(), radius * range[1].sin()]
+                [
+                    finite(radius * range[1].cos(), "arc terminate x")?,
+                    finite(radius * range[1].sin(), "arc terminate y")?,
+                ]
             };
             Ok(Entity {
                 type_code: 100,
@@ -5801,11 +5797,17 @@ fn curve_entity(
             let (axis, major) = orthonormal_pair(ellipse_curve.frame());
             let y_axis = axis.cross(major);
             validate_arc_sweep(range)?;
-            let start_xy = [major_radius * range[0].cos(), minor_radius * range[0].sin()];
+            let start_xy = [
+                finite(major_radius * range[0].cos(), "ellipse start x")?,
+                finite(minor_radius * range[0].sin(), "ellipse start y")?,
+            ];
             let end_xy = if is_full_arc(span) {
                 start_xy
             } else {
-                [major_radius * range[1].cos(), minor_radius * range[1].sin()]
+                [
+                    finite(major_radius * range[1].cos(), "ellipse terminate x")?,
+                    finite(minor_radius * range[1].sin(), "ellipse terminate y")?,
+                ]
             };
             // V5.0 identifies the coefficient-defined ellipse as Form 1.  The
             // Parameter Data is identical to the compatibility Form 0 used by
@@ -5821,7 +5823,7 @@ fn curve_entity(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
                     number(coefficients[1]),
-                    if coefficients[2] == -1.0 {
+                    if coefficients[2].get() == -1.0 {
                         "-1".to_owned()
                     } else {
                         number(coefficients[2])
@@ -5854,7 +5856,7 @@ fn curve_entity(
                 status: EntityStatus::Independent,
                 parameter_body: format!(
                     "1,0,0,0,{},0,0,{},{},{},{};",
-                    number(-4.0 * focal_distance),
+                    number(finite(-4.0 * focal_distance, "parabola coefficient -4f")?),
                     number(start_xy[0]),
                     number(start_xy[1]),
                     number(end_xy[0]),
@@ -5886,8 +5888,8 @@ fn curve_entity(
                 parameter_body: format!(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
-                    number(-coefficients[1]),
-                    if coefficients[2] == -1.0 {
+                    number(coefficients[1].negated()),
+                    if coefficients[2].get() == -1.0 {
                         "-1".to_owned()
                     } else {
                         number(coefficients[2])
@@ -5955,9 +5957,9 @@ fn encode_nurbs(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
-            weights.into_iter().map(NonZeroReal::get).collect()
+            weights.into_iter().map(FiniteReal::from).collect()
         }
-        None => alloc_filled(control_count, 1.0, "iges NURBS weights")?,
+        None => alloc_filled(control_count, FiniteReal::ONE, "iges NURBS weights")?,
     };
     let polynomial = weights
         .first()
@@ -5975,28 +5977,28 @@ fn encode_nurbs(
         i32::from(polynomial),
         i32::from(nurbs.periodic())
     );
-    for value in nurbs.knots() {
+    for value in nurbs.knots().iter() {
         parameters.push(',');
-        parameters.push_str(&number(*value));
+        parameters.push_str(&number(finite(*value, "NURBS knot")?));
     }
     for weight in weights {
         parameters.push(',');
         parameters.push_str(&number(weight));
     }
     for point in nurbs.control_points() {
-        for value in [point.x, point.y, point.z] {
+        for value in point.coordinates() {
             parameters.push(',');
             parameters.push_str(&number(value));
         }
     }
-    parameters.push(',');
-    parameters.push_str(&number(range[0]));
-    parameters.push(',');
-    parameters.push_str(&number(range[1]));
+    for value in range {
+        parameters.push(',');
+        parameters.push_str(&number(finite(value, "NURBS parameter bound")?));
+    }
     let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
     for value in [normal.x, normal.y, normal.z] {
         parameters.push(',');
-        parameters.push_str(&number(value));
+        parameters.push_str(&number(finite(value, "NURBS plane normal component")?));
     }
     parameters.push(';');
     let status = if label == "PCURVE" {
@@ -6308,7 +6310,7 @@ fn orthonormal_pair(frame: &OrthonormalFrame3) -> (Vector3, Vector3) {
 /// divisions give the unit columns that a reader checks at the printed
 /// precision of 17 significant digits.
 fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placement, CodecError> {
-    admitted_point(origin, "placement origin")?;
+    let origin = admitted_point(origin, "placement origin")?.coordinates();
     let divided = |vector: Vector3| {
         let length = vector.norm();
         Vector3::new(vector.x / length, vector.y / length, vector.z / length)
@@ -6316,12 +6318,23 @@ fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placeme
     let x_axis = divided(x_axis);
     let y_axis = divided(y_axis - x_axis.scale(x_axis.dot(y_axis)));
     let z_axis = divided(x_axis.cross(y_axis));
+    let column = |axis: Vector3, field: &str| {
+        cadmpeg_ir::features::FiniteVector3::new(axis)
+            .map(cadmpeg_ir::features::FiniteVector3::components)
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES writer computed the non-finite placement {field} {axis:?}, which \
+                     IGES cannot state"
+                ))
+            })
+    };
+    let [x_axis, y_axis, z_axis] = [
+        column(x_axis, "x axis")?,
+        column(y_axis, "y axis")?,
+        column(z_axis, "z axis")?,
+    ];
     Ok(Placement {
-        rows: [
-            [x_axis.x, y_axis.x, z_axis.x, origin.x],
-            [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z],
-        ],
+        rows: std::array::from_fn(|row| [x_axis[row], y_axis[row], z_axis[row], origin[row]]),
     })
 }
 
@@ -6340,31 +6353,28 @@ fn is_full_arc(span: Option<&CurveSpan>) -> bool {
     span.is_none_or(|span| span.start == span.end)
 }
 
-fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[f64; 2], CodecError> {
+fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[FiniteReal; 2], CodecError> {
     let point = [
-        -2.0 * focal_distance * parameter,
-        focal_distance * parameter * parameter,
+        FiniteReal::new(-2.0 * focal_distance * parameter),
+        FiniteReal::new(focal_distance * parameter * parameter),
     ];
-    point
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(point)
-        .ok_or_else(|| CodecError::NotImplemented("IGES parabola endpoint is non-finite".into()))
+    let [Some(x), Some(y)] = point else {
+        return Err(CodecError::NotImplemented(
+            "IGES parabola endpoint is non-finite".into(),
+        ));
+    };
+    Ok([x, y])
 }
 
 fn hyperbola_point(
     major_radius: f64,
     minor_radius: f64,
     parameter: f64,
-) -> Result<[f64; 2], CodecError> {
+) -> Result<[FiniteReal; 2], CodecError> {
     (|| {
         Some([
-            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?
-                .1
-                .get(),
-            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?
-                .0
-                .get(),
+            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?.1,
+            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?.0,
         ])
     })()
     .ok_or_else(|| CodecError::NotImplemented("IGES hyperbola endpoint is non-finite".into()))
@@ -6480,8 +6490,8 @@ fn encode_file(
     let global = generated_global(
         version,
         &generation_timestamp,
-        minimum_resolution,
-        maximum_coordinate,
+        finite(minimum_resolution, "Global minimum resolution")?,
+        finite(maximum_coordinate, "Global maximum coordinate")?,
     );
     let global_cards = crate::global::layout_global_cards(&global)?;
     let global_count = global_cards.len();
@@ -6626,8 +6636,8 @@ fn global_hollerith(value: &str) -> String {
 fn generated_global(
     version: crate::IgesVersion,
     generation_timestamp: &str,
-    minimum_resolution: f64,
-    maximum_coordinate: f64,
+    minimum_resolution: FiniteReal,
+    maximum_coordinate: FiniteReal,
 ) -> Vec<u8> {
     let mut fields = vec![
         "1H,".to_owned(),
@@ -6817,12 +6827,25 @@ fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> 
     Ok(payload)
 }
 
-fn number(value: f64) -> String {
+/// An IGES real literal. The value is finite, so the literal is an IGES
+/// real.
+fn number(value: FiniteReal) -> String {
+    let value = value.get();
     if value == 0.0 {
         "0".into()
     } else {
         format!("{value:.16e}").replace('e', "D")
     }
+}
+
+/// Admit the value the writer read or computed for `field`. IGES states no
+/// non-finite real.
+fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
+    FiniteReal::new(value).ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES writer computed the non-finite {field} {value}, which IGES cannot state"
+        ))
+    })
 }
 
 #[cfg(test)]
