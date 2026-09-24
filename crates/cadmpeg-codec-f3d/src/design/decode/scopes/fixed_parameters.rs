@@ -22,6 +22,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
@@ -95,17 +96,17 @@ pub(super) fn exact_fixed_extrude_parameters(
                     .map(crate::records::parameters::DesignParameter::source_kind)
             });
         match source_kind {
-            Some("AlongDistance") if lane.value != 0.0 && along_distance.is_none() => {
+            Some("AlongDistance") if lane.value.get() != 0.0 && along_distance.is_none() => {
                 along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
             }
             Some("TaperAngle") if taper_angle.is_none() => taper_angle = Some(scalar),
-            Some("AlongDistance") if along_distance.is_some() && lane.value == 0.0 => {}
+            Some("AlongDistance") if along_distance.is_some() && lane.value.get() == 0.0 => {}
             Some(_) => return None,
             None => match lane.ordinal {
-                0 if lane.value != 0.0 && along_distance.is_none() => {
+                0 if lane.value.get() != 0.0 && along_distance.is_none() => {
                     along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
                 }
-                0 if along_distance.is_some() && lane.value == 0.0 => {}
+                0 if along_distance.is_some() && lane.value.get() == 0.0 => {}
                 1 if taper_angle.is_none() => taper_angle = Some(scalar),
                 _ => return None,
             },
@@ -155,8 +156,8 @@ fn exact_embedded_extrude_distance(
             {
                 return None;
             }
-            let value = View::f64_le_at(bytes, start + 51)?;
-            (value.is_finite() && value > 0.0).then_some(FixedScalarFrame {
+            let value = FiniteReal::new(View::f64_le_at(bytes, start + 51)?)?;
+            (value.get() > 0.0).then_some(FixedScalarFrame {
                 owner_record_index: Some(scope_record_index),
                 ordinal: 0,
                 value,
@@ -279,7 +280,7 @@ pub(super) fn exact_fixed_chamfer_parameters(
         .into_iter()
         .map(|(record_index, scalar)| {
             Some(DesignFixedChamferDistance {
-                value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?,
+                value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?,
                 record_index,
                 value_offset: scalar.value_offset,
             })

@@ -22,7 +22,7 @@ fn dispatcher_projects_perpendicular_surface_extend() {
         scope.payload_mut()
     {
         *slot = Some(DesignSurfaceExtendOperation {
-            distance: 0.04,
+            distance: crate::test_support::real(0.04),
             distance_offset: 40,
             distance_record_index: 400,
             method: DesignSurfaceExtendMethod::Perpendicular,

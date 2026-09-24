@@ -4,7 +4,7 @@
 use super::extrude::DesignExtrudeOperation;
 use super::surface_ops::DesignPipeSectionShape;
 use crate::records::identity::Located;
-use cadmpeg_ir::scalar::PositiveAngle;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -139,7 +139,7 @@ pub(crate) struct DesignSweepConstruction {
     pub(crate) operation_offset: u64,
     /// Six scalar values in `AlongDistance`, `AgainstDistance`,
     /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
-    pub(crate) values: [f64; 6],
+    pub(crate) values: [FiniteReal; 6],
     /// Referenced scalar records in lane order.
     pub(crate) record_indexes: [u32; 6],
     /// Byte offsets of the scalar values in lane order.
@@ -163,7 +163,7 @@ pub(crate) struct DesignPipeConstruction {
     pub(crate) filled_offset: u64,
     /// Four scalar values in path-fraction, reverse-path-fraction,
     /// section-size, and section-thickness order.
-    pub(crate) values: [f64; 4],
+    pub(crate) values: [FiniteReal; 4],
     /// Referenced scalar records in lane order.
     pub(crate) record_indexes: [u32; 4],
     /// Byte offsets of the scalar values in lane order.

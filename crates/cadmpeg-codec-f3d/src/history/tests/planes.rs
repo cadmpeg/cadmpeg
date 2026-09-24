@@ -170,8 +170,10 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         Some(crate::records::feature::patterns::DesignPlane {
-            origin: Point3::new(1.0, 2.0, 3.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+                .expect("finite plane origin"),
+            normal: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                .expect("finite plane normal"),
         })
     );
 
@@ -189,8 +191,10 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     assert_eq!(
         construction.plane,
         Some(crate::records::feature::patterns::DesignPlane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("finite plane origin"),
+            normal: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
+                .expect("finite plane normal"),
         })
     );
 }

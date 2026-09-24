@@ -4,7 +4,7 @@
 use crate::records::{
     identity::NonEmptyVec, mesh::DesignRelaxedGuidText, references::DesignClassTag,
 };
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub(crate) enum DesignSurfaceExtendMethod {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceExtendOperation {
     /// Extension distance in source centimetres.
-    pub(crate) distance: f64,
+    pub(crate) distance: FiniteReal,
     /// Byte offset of `distance`.
     pub(crate) distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
@@ -88,7 +88,7 @@ pub(crate) enum DesignSurfaceOffsetSupport {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceOffsetOperation {
     /// Signed offset distance in source centimetres.
-    pub(crate) distance: f64,
+    pub(crate) distance: FiniteReal,
     /// Byte offset of `distance`.
     pub(crate) distance_offset: u64,
     /// Indexed scalar record carrying `distance`.
@@ -396,7 +396,7 @@ pub(crate) struct DesignSurfacePatchBoundary {
     /// Source `PatchFlip` ordinal. Retained without a neutral meaning.
     pub(crate) flip: u32,
     /// Source `PatchScale` value.
-    pub(crate) scale: f64,
+    pub(crate) scale: FiniteReal,
     /// Indexed record the `rPatchModelRef` reference names: this boundary
     /// component's model reference.
     pub(crate) model_reference: u32,

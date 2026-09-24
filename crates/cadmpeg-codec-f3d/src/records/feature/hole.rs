@@ -5,6 +5,7 @@ use crate::records::identity::{DesignSecondaryIdentity, Located};
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -30,7 +31,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(
     deserialize_tangent_point_data,
-    [f64; 3],
+    [FiniteReal; 3],
     "tangent_point_data"
 );
 cadmpeg_core::named_optional_field!(
@@ -47,7 +48,7 @@ cadmpeg_core::named_optional_field!(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHoleTangentPoint {
     pub(crate) prefix: u8,
-    pub(crate) data: Located<[f64; 3]>,
+    pub(crate) data: Located<[FiniteReal; 3]>,
 }
 
 /// Exact point-and-direction construction carried by a `Hole` scope.
@@ -67,15 +68,15 @@ pub(crate) struct DesignHoleConstruction {
     /// Byte offset of the point-data record header.
     pub(crate) point_record_byte_offset: u64,
     /// Hole entry position in source model centimetres.
-    pub(crate) position: [f64; 3],
+    pub(crate) position: [FiniteReal; 3],
     /// Byte offset of the first position coordinate.
     pub(crate) position_offset: u64,
     /// Directed drilling vector in model space.
-    pub(crate) direction: [f64; 3],
+    pub(crate) direction: [FiniteReal; 3],
     /// Byte offset of the first direction component.
     pub(crate) direction_offset: u64,
     /// Two point-construction parameters carried by the point-data base level.
-    pub(crate) point_parameters: [f64; 2],
+    pub(crate) point_parameters: [FiniteReal; 2],
     /// Byte offsets of the two point-construction parameters.
     pub(crate) point_parameter_offsets: [u64; 2],
     /// `refType` construction rule carried by the point-data record.
@@ -98,15 +99,15 @@ struct DesignHoleConstructionWire {
     /// Byte offset of the point-data record header.
     point_record_byte_offset: u64,
     /// Hole entry position in source model centimetres.
-    position: [f64; 3],
+    position: [FiniteReal; 3],
     /// Byte offset of the first position coordinate.
     position_offset: u64,
     /// Directed drilling vector in model space.
-    direction: [f64; 3],
+    direction: [FiniteReal; 3],
     /// Byte offset of the first direction component.
     direction_offset: u64,
     /// Two point-construction parameters carried by the point-data base level.
-    point_parameters: [f64; 2],
+    point_parameters: [FiniteReal; 2],
     /// Byte offsets of the two point-construction parameters.
     point_parameter_offsets: [u64; 2],
     /// `refType` construction rule carried by the point-data record.
@@ -119,7 +120,7 @@ struct DesignHoleConstructionWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_tangent_point_data"
     )]
-    tangent_point_data: Option<[f64; 3]>,
+    tangent_point_data: Option<[FiniteReal; 3]>,
     /// Serialized byte immediately before the version-four tangent-point data.
     #[serde(
         default,

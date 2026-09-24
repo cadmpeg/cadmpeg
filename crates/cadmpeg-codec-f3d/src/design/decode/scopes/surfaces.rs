@@ -37,7 +37,7 @@ pub(super) fn exact_surface_extend_operation(
         DesignFeatureFamily::SurfaceExtend,
         8,
     )?;
-    if operation.distance <= 0.0 {
+    if operation.distance.get() <= 0.0 {
         return None;
     }
     let method = match operation.mode {
@@ -195,7 +195,7 @@ fn exact_construction_operand_group(
 
 #[derive(Clone)]
 struct ExactSurfaceBoundaryOperation {
-    distance: f64,
+    distance: cadmpeg_ir::scalar::FiniteReal,
     distance_offset: u64,
     distance_record_index: u32,
     mode: u32,
@@ -340,7 +340,7 @@ pub(super) fn exact_surface_stitch_operation(
     if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
         return None;
     }
-    let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?;
+    let gap_tolerance = cadmpeg_ir::scalar::PositiveReal::new(scalar.value.get())?;
     Some(DesignSurfaceStitchOperation {
         gap_tolerance,
         gap_tolerance_offset: scalar.value_offset,

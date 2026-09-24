@@ -633,7 +633,7 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
     for center in [
         None,
         Some(crate::records::identity::Located {
-            value: [1.25, -2.5, 3.75],
+            value: crate::test_support::reals([1.25, -2.5, 3.75]),
             offset: 40,
         }),
     ] {

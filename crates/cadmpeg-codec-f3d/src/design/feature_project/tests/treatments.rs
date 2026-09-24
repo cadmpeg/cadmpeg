@@ -134,18 +134,18 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         *slot = Some(DesignHoleConstruction {
             point_record_index: 378,
             point_record_byte_offset: 10,
-            position: [1.25, -2.5, 3.75],
+            position: crate::test_support::reals([1.25, -2.5, 3.75]),
             position_offset: 35,
-            direction: [0.0, 0.0, 1.0],
+            direction: crate::test_support::reals([0.0, 0.0, 1.0]),
             direction_offset: 59,
-            point_parameters: [0.125, -0.25],
+            point_parameters: crate::test_support::reals([0.125, -0.25]),
             point_parameter_offsets: [83, 91],
             reference_type: 19,
             reference_type_offset: 99,
             tangent_point_data: Some(DesignHoleTangentPoint {
                 prefix: 0,
                 data: Located {
-                    value: [-1.0, -1.0, -1.0],
+                    value: crate::test_support::reals([-1.0, -1.0, -1.0]),
                     offset: 104,
                 },
             }),
@@ -1181,12 +1181,12 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         *slot = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {
-                    value: 1.0,
+                    value: crate::test_support::real(1.0),
                     record_index: 10,
                     value_offset: 100,
                 }),
                 DesignFixedFilletLaw::Constant(DesignFixedFilletScalar {
-                    value: 0.5,
+                    value: crate::test_support::real(0.5),
                     record_index: 20,
                     value_offset: 200,
                 }),
@@ -1488,7 +1488,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             is_seed_selection: false,
             continuity: DesignPatchContinuity::Connected,
             flip: 2,
-            scale: -1.0,
+            scale: crate::test_support::real(-1.0),
             model_reference,
         };
     if let DesignScopePayloadMut::SurfacePatch(slot) = patch_scope.payload_mut() {

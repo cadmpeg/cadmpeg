@@ -12,9 +12,9 @@ use crate::records::dimensions::DesignRecipeReference;
 use crate::records::feature::patterns::DesignAxis;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::ids::FaceId;
-use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::math::Vector3;
 use serde::Deserialize;
 use serde::Serialize;
 use std::num::NonZeroU32;
@@ -812,13 +812,13 @@ struct EdgeResolvedAxisWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolved_axis_origin"
     )]
-    resolved_axis_origin: Option<Point3>,
+    resolved_axis_origin: Option<FinitePoint3>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_resolved_axis_direction"
     )]
-    resolved_axis_direction: Option<Vector3>,
+    resolved_axis_direction: Option<FiniteVector3>,
 }
 
 // The wire adapter receives the optional field by reference, including its absence.
@@ -887,13 +887,13 @@ cadmpeg_core::named_optional_field!(deserialize_recipe_state_id, i64, "recipe_st
 
 cadmpeg_core::named_optional_field!(
     deserialize_resolved_axis_origin,
-    Point3,
+    FinitePoint3,
     "resolved_axis_origin"
 );
 
 cadmpeg_core::named_optional_field!(
     deserialize_resolved_axis_direction,
-    Vector3,
+    FiniteVector3,
     "resolved_axis_direction"
 );
 

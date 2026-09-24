@@ -5,6 +5,7 @@ use super::extrude::DesignExtrudeOperation;
 use super::scope::DesignScopePayload;
 use crate::records::identity::Located;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
@@ -27,31 +28,31 @@ pub(crate) enum DesignSolidPrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignBoxPrimitive {
     /// Length along the source x-axis in source centimetres.
-    pub(crate) length: f64,
+    pub(crate) length: FiniteReal,
     /// Referenced length owner.
     pub(crate) length_record_index: u32,
     /// Byte offset of the evaluated length.
     pub(crate) length_offset: u64,
     /// Width along the source y-axis in source centimetres.
-    pub(crate) width: f64,
+    pub(crate) width: FiniteReal,
     /// Referenced width owner.
     pub(crate) width_record_index: u32,
     /// Byte offset of the evaluated width.
     pub(crate) width_offset: u64,
     /// Height along the source z-axis in source centimetres.
-    pub(crate) height: f64,
+    pub(crate) height: FiniteReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
     pub(crate) height_offset: u64,
     /// Translation along the source x-axis in source centimetres.
-    pub(crate) offset_x: f64,
+    pub(crate) offset_x: FiniteReal,
     /// Referenced x-offset owner.
     pub(crate) offset_x_record_index: u32,
     /// Byte offset of the evaluated x offset.
     pub(crate) offset_x_offset: u64,
     /// Translation along the source y-axis in source centimetres.
-    pub(crate) offset_y: f64,
+    pub(crate) offset_y: FiniteReal,
     /// Referenced y-offset owner.
     pub(crate) offset_y_record_index: u32,
     /// Byte offset of the evaluated y offset.
@@ -70,13 +71,13 @@ pub(crate) struct DesignBoxPrimitive {
 )]
 pub(crate) struct DesignCylinderPrimitive {
     /// Axial height in source centimetres.
-    pub(crate) height: f64,
+    pub(crate) height: FiniteReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
     pub(crate) height_offset: u64,
     /// Circular diameter in source centimetres.
-    pub(crate) diameter: f64,
+    pub(crate) diameter: FiniteReal,
     /// Referenced diameter owner.
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
@@ -93,13 +94,13 @@ pub(crate) struct DesignCylinderPrimitive {
 #[derive(Serialize, Deserialize)]
 struct DesignCylinderPrimitiveWire {
     /// Axial height in source centimetres.
-    height: f64,
+    height: FiniteReal,
     /// Referenced height owner.
     height_record_index: u32,
     /// Byte offset of the evaluated height.
     height_offset: u64,
     /// Circular diameter in source centimetres.
-    diameter: f64,
+    diameter: FiniteReal,
     /// Referenced diameter owner.
     diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
@@ -166,7 +167,7 @@ pub(crate) struct DesignSpherePrimitive {
     /// Byte offset of the placement matrix.
     pub(crate) transform_offset: u64,
     /// Sphere diameter in source centimetres.
-    pub(crate) diameter: f64,
+    pub(crate) diameter: FiniteReal,
     /// Referenced diameter record.
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the diameter scalar.
@@ -185,13 +186,13 @@ pub(crate) struct DesignTorusPrimitive {
     /// Byte offset of the placement matrix.
     pub(crate) transform_offset: u64,
     /// Major diameter in source centimetres.
-    pub(crate) major_diameter: f64,
+    pub(crate) major_diameter: FiniteReal,
     /// Referenced major-diameter record.
     pub(crate) major_diameter_record_index: u32,
     /// Byte offset of the major-diameter scalar.
     pub(crate) major_diameter_offset: u64,
     /// Tube diameter in source centimetres.
-    pub(crate) minor_diameter: f64,
+    pub(crate) minor_diameter: FiniteReal,
     /// Referenced minor-diameter record.
     pub(crate) minor_diameter_record_index: u32,
     /// Byte offset of the minor-diameter scalar.

@@ -8,6 +8,7 @@ use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 pub(in crate::design::decode) fn exact_indexed_header_at(
     bytes: &[u8],
@@ -41,7 +42,7 @@ pub(in crate::design::decode) fn rigid_transform_at(
 pub(super) struct FixedScalarFrame {
     pub(super) owner_record_index: Option<u32>,
     pub(super) ordinal: u8,
-    pub(super) value: f64,
+    pub(super) value: FiniteReal,
     pub(super) value_offset: u64,
 }
 
@@ -82,8 +83,8 @@ pub(super) fn exact_fixed_scalar(
                     return None;
                 }
             }
-            let value = View::f64_le_at(bytes, start + 40)?;
-            value.is_finite().then_some(FixedScalarFrame {
+            let value = FiniteReal::new(View::f64_le_at(bytes, start + 40)?)?;
+            Some(FixedScalarFrame {
                 owner_record_index: (bytes.get(start + 24) == Some(&1))
                     .then(|| View::u32_le_at(bytes, start + 25))
                     .flatten(),

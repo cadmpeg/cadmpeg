@@ -167,3 +167,56 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].byte_offset(), 200);
 }
+
+/// Two same-index Thicken envelopes without a history binding, the second at
+/// a later byte offset, whose signed thicknesses are `first` and `second`.
+fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
+    [(100, first), (200, second)]
+        .into_iter()
+        .map(|(byte_offset, thickness)| {
+            let mut scope = DesignParameterScope::empty(
+                &format!("f3d:stream:design-parameter-scope#{byte_offset}"),
+                crate::records::feature::scope::DesignFeatureKind::Thicken,
+                42,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.byte_offset = byte_offset;
+                    draft.reference_count_offset = draft.byte_offset + 9;
+                    draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                    draft.layout_fixture_references();
+                    draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                    draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            let crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot) =
+                scope.payload_mut()
+            else {
+                panic!("a Thicken scope holds a Thicken payload");
+            };
+            *slot = Some(
+                crate::records::feature::direct_face::DesignThickenOperation {
+                    signed_thickness: crate::test_support::real(thickness),
+                    thickness_record_index: 74,
+                    thickness_offset: byte_offset + 40,
+                },
+            );
+            scope
+        })
+        .collect()
+}
+
+/// The payload comparison states every difference of a checked float: the
+/// later of two envelopes equal but for provenance is retained, and two
+/// envelopes whose thicknesses differ in the last place stay unresolved.
+#[test]
+fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
+    let mut equivalent = thicken_variants(-1.0, -1.0);
+    admit_history_bound_scope_variants(&mut equivalent, &[]).expect("equivalent envelopes");
+    assert_eq!(equivalent.len(), 1);
+    assert_eq!(equivalent[0].byte_offset(), 200);
+
+    let mut different = thicken_variants(-1.0, -1.0 - f64::EPSILON);
+    assert!(admit_history_bound_scope_variants(&mut different, &[]).is_err());
+}

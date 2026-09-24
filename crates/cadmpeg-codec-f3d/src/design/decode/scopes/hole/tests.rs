@@ -93,11 +93,26 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
 
     assert_eq!(construction.point_record_index, 55);
     assert_eq!(construction.point_record_byte_offset, 0);
-    assert_f64_array(construction.position, [1.25, -2.5, 3.75]);
+    assert_f64_array(
+        construction
+            .position
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
     assert_eq!(construction.position_offset, position_at as u64);
-    assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
+    assert_f64_array(
+        construction
+            .direction
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0],
+    );
     assert_eq!(construction.direction_offset, (position_at + 24) as u64);
-    assert_f64_array(construction.point_parameters, [0.125, -0.25]);
+    assert_f64_array(
+        construction
+            .point_parameters
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.125, -0.25],
+    );
     assert_eq!(construction.reference_type, 19);
     assert_eq!(
         construction
@@ -110,7 +125,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
         construction
             .tangent_point_data
             .as_ref()
-            .map(|tangent| tangent.data.value)
+            .map(|tangent| tangent.data.value.map(cadmpeg_ir::scalar::FiniteReal::get))
             .expect("version-four tangent point data"),
         [-1.0, -1.0, -1.0],
     );
@@ -145,10 +160,25 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
     .expect("legacy hole point carrier");
 
     assert_eq!(construction.point_record_index, 55);
-    assert_f64_array(construction.position, [1.25, -2.5, 3.75]);
+    assert_f64_array(
+        construction
+            .position
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [1.25, -2.5, 3.75],
+    );
     assert_eq!(construction.position_offset, position_at as u64);
-    assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
-    assert_f64_array(construction.point_parameters, [0.125, -0.25]);
+    assert_f64_array(
+        construction
+            .direction
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 1.0],
+    );
+    assert_f64_array(
+        construction
+            .point_parameters
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.125, -0.25],
+    );
     assert_eq!(construction.reference_type, 19);
     assert_eq!(
         construction

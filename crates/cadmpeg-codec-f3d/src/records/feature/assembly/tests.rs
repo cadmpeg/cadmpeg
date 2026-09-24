@@ -370,7 +370,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             recipe_references: Vec::new(),
             next_byte_offset: 600,
         };
-    let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::try_new(
+    let carriers = crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
         crate::records::feature::assembly::DesignAssemblyLegacyOperand {
             construction_class_tag: crate::records::references::DesignClassTag::try_from(
                 "256".to_owned(),
@@ -381,7 +381,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
                 crate::records::feature::work_geometry::DesignWorkPointConstruction {
                     point_record_index: 10,
                     point_record_byte_offset: 100,
-                    position: [1.0, 2.0, 3.0],
+                    position: crate::test_support::reals([1.0, 2.0, 3.0]),
                     position_offset: 125,
                     rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                         crate::records::feature::work_geometry::DesignWorkPointRuleForm::Native {
@@ -404,11 +404,11 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             construction: Box::new(crate::records::feature::hole::DesignHoleConstruction {
                 point_record_index: 20,
                 point_record_byte_offset: 200,
-                position: [4.0, 5.0, 6.0],
+                position: crate::test_support::reals([4.0, 5.0, 6.0]),
                 position_offset: 225,
-                direction: [0.0, 0.0, 1.0],
+                direction: crate::test_support::reals([0.0, 0.0, 1.0]),
                 direction_offset: 250,
-                point_parameters: [0.0, 0.0],
+                point_parameters: crate::test_support::reals([0.0, 0.0]),
                 point_parameter_offsets: [275, 283],
                 reference_type: 0,
                 reference_type_offset: 291,
@@ -418,28 +418,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             }),
             selection: selection(41),
         },
-    )
-    .unwrap();
-    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let mut point = carriers.point.clone();
-        point.construction.position[0] = value;
-        assert!(
-            crate::records::feature::assembly::DesignAssemblyLegacyOperands::try_new(
-                point,
-                carriers.hole.clone()
-            )
-            .is_err()
-        );
-        let mut hole = carriers.hole.clone();
-        hole.construction.position[2] = value;
-        assert!(
-            crate::records::feature::assembly::DesignAssemblyLegacyOperands::try_new(
-                carriers.point.clone(),
-                hole
-            )
-            .is_err()
-        );
-    }
+    );
     let solved_frame = crate::records::feature::assembly::DesignAssemblySolvedFrame {
         reference_record_index: 30,
         reference_offset: 33,

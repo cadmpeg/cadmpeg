@@ -2,7 +2,7 @@
 //! Exact point-data levels and work-point constructions.
 
 use super::parameter_scope::payload_prologue;
-use crate::bytes::f64s_at;
+use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered;
 use crate::bytes::take_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -159,13 +159,7 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
             let [level] = levels.as_slice() else {
                 continue;
             };
-            let Some(position) = f64s_at(bytes, level.position_at, 3) else {
-                continue;
-            };
-            let Ok(position): Result<[f64; 3], _> = position.try_into() else {
-                continue;
-            };
-            if position.iter().all(|value| value.is_finite()) {
+            if let Some(position) = finite_reals_at(bytes, level.position_at) {
                 candidates.push(DesignWorkPointConstruction {
                     point_record_index: *record_index,
                     point_record_byte_offset: u64::try_from(start).ok()?,

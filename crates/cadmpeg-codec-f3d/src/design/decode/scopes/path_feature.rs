@@ -58,7 +58,7 @@ fn exact_pipe_owner_lanes(
                 FixedScalarFrame {
                     owner_record_index: Some(scope.record_index),
                     ordinal: u8::try_from(owner.local_ordinal()).ok()?,
-                    value: owner.evaluated_value().get(),
+                    value: owner.evaluated_value(),
                     value_offset: owner.evaluated_value_offset(),
                 },
             ))
@@ -127,8 +127,8 @@ pub(super) fn exact_path_feature_construction(
             };
             if angle.ordinal != 0
                 || opposite.ordinal != 1
-                || angle.value <= 0.0
-                || opposite.value != 0.0
+                || angle.value.get() <= 0.0
+                || opposite.value.get() != 0.0
             {
                 return None;
             }
@@ -136,7 +136,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value)?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value.get())?,
                     angle_record_index: *angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::identity::Located {

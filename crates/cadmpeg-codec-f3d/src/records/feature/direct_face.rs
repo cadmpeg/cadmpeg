@@ -2,7 +2,7 @@
 //! Direct face operations: offset faces, shell, thicken, move and draft.
 
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use serde::{Deserialize, Serialize};
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,7 +20,7 @@ pub(crate) enum DesignDirectFaceOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignOffsetFacesOperation {
     /// Signed distance in source centimetres.
-    pub(crate) distance: f64,
+    pub(crate) distance: FiniteReal,
     /// Referenced scalar record.
     pub(crate) distance_record_index: u32,
     /// Byte offset of the scalar.
@@ -46,7 +46,7 @@ pub(crate) struct DesignShellOperation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignThickenOperation {
     /// Signed thickness in source centimetres.
-    pub(crate) signed_thickness: f64,
+    pub(crate) signed_thickness: FiniteReal,
     /// Referenced scalar record.
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.

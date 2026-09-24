@@ -924,7 +924,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         is_seed_selection: false,
         continuity,
         flip: 2,
-        scale: -1.0,
+        scale: crate::test_support::real(-1.0),
         model_reference: 0,
     };
     let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
@@ -1027,7 +1027,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 is_seed_selection: false,
                 continuity: DesignPatchContinuity::Connected,
                 flip: 2,
-                scale: -1.0,
+                scale: crate::test_support::real(-1.0),
                 model_reference: 100,
             },
             DesignSurfacePatchBoundary {
@@ -1036,7 +1036,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 is_seed_selection: true,
                 continuity: DesignPatchContinuity::Connected,
                 flip: 2,
-                scale: -1.0,
+                scale: crate::test_support::real(-1.0),
                 model_reference: 110,
             },
             DesignSurfacePatchBoundary {
@@ -1045,7 +1045,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
                 is_seed_selection: false,
                 continuity: DesignPatchContinuity::Connected,
                 flip: 2,
-                scale: -1.0,
+                scale: crate::test_support::real(-1.0),
                 model_reference: 120,
             },
         ];

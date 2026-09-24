@@ -135,7 +135,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         *slot = Some(DesignWorkPointConstruction {
             point_record_index: 201,
             point_record_byte_offset: 0,
-            position: [4.0, 3.0, 0.0],
+            position: crate::test_support::reals([4.0, 3.0, 0.0]),
             position_offset: 0,
             rule: crate::records::feature::work_geometry::DesignWorkPointRule::try_from(
                 crate::records::feature::work_geometry::DesignWorkPointRuleForm::Vertex {

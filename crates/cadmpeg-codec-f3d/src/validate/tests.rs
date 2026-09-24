@@ -820,7 +820,7 @@ fn validation_checks_pipe_path_group_roles() {
                 section_shape_offset: 0,
                 filled: true,
                 filled_offset: 0,
-                values: [1.0, 1.0, 0.6, 0.15],
+                values: crate::test_support::reals([1.0, 1.0, 0.6, 0.15]),
                 record_indexes: [11, 12, 13, 14],
                 value_offsets: [0; 4],
             },

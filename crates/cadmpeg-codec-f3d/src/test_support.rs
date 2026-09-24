@@ -31,6 +31,16 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// A finite test value as the checked scalar a record holds.
+pub(crate) fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")
+}
+
+/// Finite test values as the checked lane a record holds.
+pub(crate) fn reals<const N: usize>(values: [f64; N]) -> [cadmpeg_ir::scalar::FiniteReal; N] {
+    values.map(real)
+}
+
 /// Write a length-prefixed ASCII string: a little-endian `u32` byte count then
 /// the bytes.
 pub(crate) fn lp_ascii(out: &mut Vec<u8>, value: &str) {
