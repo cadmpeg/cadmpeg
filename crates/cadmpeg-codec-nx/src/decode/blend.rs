@@ -969,7 +969,10 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
             radius * alpha * section_tangent.y,
             radius * alpha * section_tangent.z,
         );
-        let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
+        let Some((step_u, step_v)) = FiniteVector3::new(du)
+            .zip(FiniteVector3::new(dv))
+            .and_then(|(du, dv)| least_squares_step(du, dv, residual))
+        else {
             break;
         };
         let (step_u, step_v) = (step_u.get(), step_v.get());

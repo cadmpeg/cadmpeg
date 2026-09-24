@@ -6831,11 +6831,9 @@ fn refine_nurbs_surface_point(
         let partials =
             cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v)?;
         let residual = partials.point.vector_from(point);
-        let Some((u, v)) = cadmpeg_ir::math::solve::least_squares_step(
-            partials.du.get(),
-            partials.dv.get(),
-            residual,
-        ) else {
+        let Some((u, v)) =
+            cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
+        else {
             break;
         };
         let step = Point2::new(u.get(), v.get());
