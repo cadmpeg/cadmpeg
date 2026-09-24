@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -418,7 +419,7 @@ fn read_revolution(
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?
         .get();
     let angular_interval =
-        finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
+        increasing_interval(interval(reader)?.0, reader.position(), "revolution angle")?;
     if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACE_DEGENERATE {
         return Err(error(
             reader.position(),
@@ -426,7 +427,7 @@ fn read_revolution(
         ));
     }
     let parameter_interval = if major >= 2 {
-        finite_increasing(
+        increasing_interval(
             interval(reader)?.0,
             reader.position(),
             "revolution parameter interval",
@@ -948,12 +949,12 @@ fn read_plane_surface_with_parameterization(
     }
     let native_plane = plane(reader)?;
     validate_plane(native_plane, reader.position())?;
-    let domain = finite_increasing(interval(reader)?.0, reader.position(), "plane U domain")?;
-    let v_domain = finite_increasing(interval(reader)?.0, reader.position(), "plane V domain")?;
+    let domain = increasing_interval(interval(reader)?.0, reader.position(), "plane U domain")?;
+    let v_domain = increasing_interval(interval(reader)?.0, reader.position(), "plane V domain")?;
     let (u_extents, v_extents) = if version & 0x0f == 1 {
         (
-            finite_increasing(interval(reader)?.0, reader.position(), "plane U extents")?,
-            finite_increasing(interval(reader)?.0, reader.position(), "plane V extents")?,
+            increasing_interval(interval(reader)?.0, reader.position(), "plane U extents")?,
+            increasing_interval(interval(reader)?.0, reader.position(), "plane V extents")?,
         )
     } else {
         (domain, v_domain)
@@ -1139,12 +1140,13 @@ fn checked_positive(value: i32, offset: usize, label: &str) -> Result<usize, Geo
     usize::try_from(value).map_err(|_| error(offset, label))
 }
 
-fn finite_increasing(
-    value: [f64; 2],
+fn increasing_interval(
+    value: FiniteVector<2>,
     offset: usize,
     label: &str,
 ) -> Result<[f64; 2], GeometryError> {
-    if value[0].is_finite() && value[1].is_finite() && value[0] < value[1] {
+    let value = value.get();
+    if value[0] < value[1] {
         Ok(value)
     } else {
         Err(error(offset, label))

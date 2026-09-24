@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
@@ -70,9 +71,9 @@ pub(crate) struct Point3(pub(crate) [f64; 3]);
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Vector3(pub(crate) [f64; 3]);
 
-/// A serialized parameter interval.
+/// A finite serialized parameter interval.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Interval(pub(crate) [f64; 2]);
+pub(crate) struct Interval(pub(crate) FiniteVector<2>);
 
 /// A serialized plane, including its wire equation.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -726,28 +727,24 @@ fn finite_array<const N: usize>(
     offset: usize,
     values: [f64; N],
     label: &str,
-) -> Result<[f64; N], FramingError> {
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(values)
-        .ok_or_else(|| {
-            FramingError::structural(offset, format!("{label} contains a nonfinite value"))
-        })
+) -> Result<FiniteVector<N>, FramingError> {
+    FiniteVector::new(values).ok_or_else(|| {
+        FramingError::structural(offset, format!("{label} contains a nonfinite value"))
+    })
 }
 
 /// Reads a finite point.
 pub(crate) fn point(reader: &mut BoundedReader<'_>) -> Result<Point3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Point3(finite_array(offset, values, "point")?))
+    Ok(Point3(finite_array(offset, values, "point")?.get()))
 }
 
 /// Reads a finite vector.
 pub(crate) fn vector(reader: &mut BoundedReader<'_>) -> Result<Vector3, FramingError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    Ok(Vector3(finite_array(offset, values, "vector")?))
+    Ok(Vector3(finite_array(offset, values, "vector")?.get()))
 }
 
 /// Reads a finite interval.
@@ -770,7 +767,7 @@ pub(crate) fn plane(reader: &mut BoundedReader<'_>) -> Result<Plane, FramingErro
         xaxis,
         yaxis,
         zaxis,
-        equation: finite_array(equation_offset, equation, "plane equation")?,
+        equation: finite_array(equation_offset, equation, "plane equation")?.get(),
     })
 }
 
@@ -789,7 +786,7 @@ pub(crate) fn xform(reader: &mut BoundedReader<'_>) -> Result<Xform, FramingErro
     for value in &mut values {
         *value = reader.f64()?;
     }
-    Ok(Xform(finite_array(offset, values, "transform")?))
+    Ok(Xform(finite_array(offset, values, "transform")?.get()))
 }
 
 /// Decodes an archive UTF-8 string for later plugin/settings records.
