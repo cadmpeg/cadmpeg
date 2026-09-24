@@ -79,12 +79,14 @@ fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -
             nurbs.degree(),
             nurbs.knots(),
             nurbs.control_points().len(),
-        ),
+        )
+        .map(crate::topology::IncreasingParameterInterval::endpoints),
         PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
             nurbs.poles().len(),
-        ),
+        )
+        .map(crate::topology::IncreasingParameterInterval::endpoints),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {

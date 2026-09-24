@@ -840,8 +840,8 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
             if context.parameter_range() == [0.0, 1.0]
-            && context.sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
-            && context.sides()[1].pcurve_parameter_range() == Some([5.0, 2.0])
+            && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
+            && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
         &[(
@@ -858,7 +858,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
             if family.context().parameter_range() == [0.0, 8.0]
-            && family.context().sides()[0].pcurve_parameter_range() == Some([2.0, 4.0])
+            && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
     ));
 }
 

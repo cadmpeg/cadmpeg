@@ -994,10 +994,17 @@ mod tests {
         };
         assert_eq!(context.parameter_range(), [0.0, 1.0]);
         assert_eq!(context.sides()[0].surface, Some(support_ids[&10].clone()));
-        assert_eq!(context.sides()[0].pcurve_parameter_range(), None);
+        assert_eq!(
+            context.sides()[0]
+                .pcurve_parameter_range()
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+            None
+        );
         assert_eq!(context.sides()[1].surface, Some(support_ids[&20].clone()));
         assert_eq!(
-            context.sides()[1].pcurve_parameter_range(),
+            context.sides()[1]
+                .pcurve_parameter_range()
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             Some([0.25, 0.75])
         );
         assert_eq!(

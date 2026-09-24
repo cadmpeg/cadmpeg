@@ -148,13 +148,18 @@ pub(super) fn infer_edge_parameter_ranges(
 fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f64) -> f64 {
     match geometry {
         SolvedCurveGeometry::Nurbs(nurbs) if !nurbs.periodic() => {
-            nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
-                if upper {
-                    upper_bound
-                } else {
-                    lower
-                }
-            })
+            nurbs_curve_parameter_domain(nurbs)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                .map_or(
+                    fallback,
+                    |[lower, upper_bound]| {
+                        if upper {
+                            upper_bound
+                        } else {
+                            lower
+                        }
+                    },
+                )
         }
         SolvedCurveGeometry::Transformed(placed) => {
             curve_endpoint_seed(placed.basis(), upper, fallback)
@@ -173,6 +178,7 @@ fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) ->
         }
         SolvedCurveGeometry::Nurbs(nurbs) if nurbs.periodic() => {
             nurbs_curve_parameter_domain(nurbs)
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         }
         SolvedCurveGeometry::Transformed(placed) => {
             return edge_parameter_range(placed.basis(), start, end);
@@ -3625,7 +3631,7 @@ fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
             std::f64::consts::TAU
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve.periodic() => {
-            let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
+            let [lower, upper] = nurbs_curve_parameter_domain(curve)?.endpoints();
             upper - lower
         }
         _ => return None,
@@ -3849,7 +3855,7 @@ fn curve_parameter_at_point(
             )
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            let domain = nurbs_curve_parameter_domain(curve)?;
+            let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_parameter_at_point(

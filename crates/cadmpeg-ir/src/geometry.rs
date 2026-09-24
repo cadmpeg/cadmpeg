@@ -6318,15 +6318,6 @@ impl SupportPcurve {
             parameter_range,
         }
     }
-
-    /// Return the mapped pcurve endpoints as an array.
-    #[must_use]
-    pub const fn parameter_range_array(&self) -> Option<[f64; 2]> {
-        match self.parameter_range {
-            Some(range) => Some(range.endpoints()),
-            None => None,
-        }
-    }
 }
 
 impl From<PcurveGeometry> for SupportPcurve {
@@ -6401,35 +6392,31 @@ pub struct IntcurveSupportSide {
 }
 
 impl IntcurveSupportSide {
-    /// Return the mapped pcurve endpoints as an array.
+    /// Return the mapped pcurve interval, when this side's pcurve states one.
     #[must_use]
-    pub fn pcurve_parameter_range(&self) -> Option<[f64; 2]> {
+    pub fn pcurve_parameter_range(&self) -> Option<DirectedParameterRange> {
         self.pcurve
             .as_ref()
-            .and_then(SupportPcurve::parameter_range_array)
+            .and_then(|pcurve| pcurve.parameter_range)
     }
 
     /// Map one solved-curve parameter into this side's pcurve parameter.
     ///
     /// Returns `None` when this side has no pcurve, an explicit map has an invalid
     /// solved interval, or the mapped parameter cannot be represented as finite.
+    /// Each branch admits the parameter it returns where it computes it.
     #[must_use]
     pub fn pcurve_parameter(
         &self,
         solved_parameter_range: [f64; 2],
         parameter: f64,
-    ) -> Option<f64> {
-        if !parameter.is_finite() {
-            return None;
-        }
-        let pcurve_range = self
-            .pcurve
-            .as_ref()?
-            .parameter_range
-            .map(DirectedParameterRange::endpoints);
-        let Some(pcurve_range) = pcurve_range else {
-            return Some(parameter);
+    ) -> Option<FiniteReal> {
+        let admitted_parameter = FiniteReal::new(parameter)?;
+        let Some(pcurve_interval) = self.pcurve.as_ref()?.parameter_range else {
+            return Some(admitted_parameter);
         };
+        let [pcurve_start, pcurve_end] = pcurve_interval.finite_endpoints();
+        let pcurve_range = pcurve_interval.endpoints();
         let solved_span = solved_parameter_range[1] - solved_parameter_range[0];
         if solved_span == 0.0
             || solved_parameter_range
@@ -6439,10 +6426,10 @@ impl IntcurveSupportSide {
             return None;
         }
         if parameter == solved_parameter_range[0] {
-            return Some(pcurve_range[0]);
+            return Some(pcurve_start);
         }
         if parameter == solved_parameter_range[1] {
-            return Some(pcurve_range[1]);
+            return Some(pcurve_end);
         }
         let offset = parameter - solved_parameter_range[0];
         let mapped_span = pcurve_range[1] - pcurve_range[0];
@@ -6455,7 +6442,7 @@ impl IntcurveSupportSide {
                     [1.0, 1.0],
                     [pcurve_range[0], advance],
                 ) {
-                    return Some(mapped);
+                    return FiniteReal::new(mapped);
                 }
             }
         }
@@ -6470,9 +6457,9 @@ impl IntcurveSupportSide {
         denominator.add_product(solved_parameter_range[1], 1.0);
         denominator.add_product(-solved_parameter_range[0], 1.0);
         let denominator = denominator.finish()?;
-        numerator
-            .finish()
-            .map_or(Some(0.0), |value| value.quotient(denominator))
+        numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).and_then(FiniteReal::new)
+        })
     }
 }
 

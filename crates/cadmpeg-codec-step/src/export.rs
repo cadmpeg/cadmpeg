@@ -2660,7 +2660,9 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Subset(payload) => {
                 let support = payload.support();
-                let parameter_ranges = payload.parameter_ranges();
+                let parameter_ranges = payload
+                    .parameter_ranges()
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;

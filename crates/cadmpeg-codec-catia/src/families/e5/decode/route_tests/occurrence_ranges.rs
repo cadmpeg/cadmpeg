@@ -55,25 +55,29 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     assert_eq!(
         context.sides()[0]
             .pcurve_parameter_range()
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
             .expect("left local range"),
         [100.0, 200.0]
     );
     assert_eq!(
         context.sides()[1]
             .pcurve_parameter_range()
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints)
             .expect("right local range"),
         [-5.0, 5.0]
     );
     assert_eq!(
         context.sides()[0]
             .pcurve_parameter([10.0, 20.0], 15.0)
-            .expect("left mapped parameter"),
+            .expect("left mapped parameter")
+            .get(),
         150.0
     );
     assert_eq!(
         context.sides()[1]
             .pcurve_parameter([10.0, 20.0], 15.0)
-            .expect("right mapped parameter"),
+            .expect("right mapped parameter")
+            .get(),
         0.0
     );
 }

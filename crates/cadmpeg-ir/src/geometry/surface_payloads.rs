@@ -917,8 +917,8 @@ impl SubsetSurfaceConstruction {
         &self.support
     }
     /// Return the parameter ranges.
-    pub fn parameter_ranges(&self) -> [[f64; 2]; 2] {
-        self.parameter_ranges.map(DirectedParameterRange::endpoints)
+    pub fn parameter_ranges(&self) -> [DirectedParameterRange; 2] {
+        self.parameter_ranges
     }
     /// Return the u sense.
     pub fn u_sense(&self) -> &Option<bool> {

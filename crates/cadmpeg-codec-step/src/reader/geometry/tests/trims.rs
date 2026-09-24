@@ -58,7 +58,7 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .expect("trimmed surface construction");
     assert!(match procedural.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-            matches!((matched_payload.support(), &matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
+            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[3.0, 1.0], [4.0, 2.0]], Some(false), Some(false),) if support.as_str() == "step:data:surface#7"),
         _ => false,
     });
     let index = ModelIndex::new(decoded.ir());
@@ -102,7 +102,9 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
         .find(|surface| match surface.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!(
                 (
-                    &matched_payload.parameter_ranges(),
+                    &matched_payload
+                        .parameter_ranges()
+                        .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
                     matched_payload.u_sense(),
                     matched_payload.v_sense(),
                 ),
@@ -114,7 +116,9 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     assert!(match round_trip.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!(
             (
-                &matched_payload.parameter_ranges(),
+                &matched_payload
+                    .parameter_ranges()
+                    .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
                 matched_payload.u_sense(),
                 matched_payload.v_sense(),
             ),
@@ -158,7 +162,9 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
             construction.definition()
         );
     };
-    let parameter_ranges = definition_payload_0.parameter_ranges();
+    let parameter_ranges = definition_payload_0
+        .parameter_ranges()
+        .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
     let Some(true) = definition_payload_0.u_sense() else {
         panic!(
             "unexpected cyclic trimmed definition: {:?}",
@@ -244,7 +250,7 @@ fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
             .expect("periodic trimmed surface construction");
         assert!(match construction.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-                matches!((&matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (parameter_ranges, Some(u_sense), Some(v_sense),) if parameter_ranges
+                matches!((&matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (parameter_ranges, Some(u_sense), Some(v_sense),) if parameter_ranges
                 .iter()
                 .flatten()
                 .zip(expected_ranges.iter().flatten())
@@ -285,7 +291,7 @@ fn rectangular_trimmed_surface_keeps_topology_pcurves_in_local_uv_space() {
         .expect("trimmed face construction");
     assert!(match construction.definition() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) =>
-            matches!((matched_payload.support(), &matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 10.0], [0.0, 10.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#58"),
+            matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 10.0], [0.0, 10.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#58"),
         _ => false,
     });
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());

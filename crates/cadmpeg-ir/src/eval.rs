@@ -1570,8 +1570,10 @@ pub fn nurbs_curve_point(
 }
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
-pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    nurbs_pcurve_parameter_domain(curve.degree(), curve.knots(), curve.control_points().len())
+pub fn nurbs_curve_parameter_domain(
+    curve: &NurbsCurve,
+) -> Option<crate::topology::IncreasingParameterInterval> {
+    nurbs_pcurve_parameter_domain(curve.degree(), curve.knots(), curve.pole_count())
 }
 
 /// Effective knot domain shared by model-space and parameter-space NURBS
@@ -1582,7 +1584,7 @@ pub fn nurbs_pcurve_parameter_domain(
     degree: u32,
     knots: &[f64],
     control_point_count: usize,
-) -> Option<[f64; 2]> {
+) -> Option<crate::topology::IncreasingParameterInterval> {
     let degree = usize::try_from(degree).ok()?;
     if control_point_count <= degree
         || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
@@ -1591,7 +1593,7 @@ pub fn nurbs_pcurve_parameter_domain(
     }
     let lower = *knots.get(degree)?;
     let upper = *knots.get(control_point_count)?;
-    (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
+    crate::topology::IncreasingParameterInterval::new([lower, upper])
 }
 
 const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
@@ -1634,7 +1636,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     let tolerance = tolerance.get();
     let degree = usize::try_from(curve.degree()).ok()?;
     let count = curve.control_points().len();
-    let domain = nurbs_curve_parameter_domain(curve)?;
+    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
     if degree == 0 || !seed.is_finite() || !point.is_finite() {
         return None;
     }
@@ -1923,7 +1925,7 @@ fn parameter_interval_containing(boundaries: &[f64], parameter: f64) -> Option<[
 /// Periodic parameters retain their serialized phase outside this operation
 /// and are interpreted modulo the positive knot-domain period.
 pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f64> {
-    let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
+    let [lower, upper] = nurbs_curve_parameter_domain(curve)?.endpoints();
     if !parameter.is_finite() {
         return None;
     }
@@ -2012,7 +2014,7 @@ fn clamped_nurbs_pcurve_endpoint_frames(curve: &PcurveNurbs) -> Option<[(Point2,
     let knots = curve.knots();
     let control_points = curve.pole_rows().points();
     let [lower, upper] =
-        nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?;
+        nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?.endpoints();
     let degree = curve.degree() as usize;
     if knots.iter().take(degree + 1).any(|knot| *knot != lower)
         || knots
@@ -5558,7 +5560,7 @@ fn straight_sweep_path_origin(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.degree() == 1 && nurbs.control_points().len() == 2 && !nurbs.periodic() =>
         {
-            let [start, _] = nurbs_curve_parameter_domain(nurbs)?;
+            let [start, _] = nurbs_curve_parameter_domain(nurbs)?.endpoints();
             curve_point(&curve.geometry, start).map(FinitePoint3::get)
         }
         _ => None,
@@ -5644,7 +5646,7 @@ fn sweep_profile_differential(
     let curve = index.curves(profile.as_str())?;
     let (native_parameter, parameter_scale) = match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?;
+            let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?.endpoints();
             let native_span = native_end - native_start;
             let fraction = (parameter - profile_range[0]) / profile_span;
             let fraction = if reversed { 1.0 - fraction } else { fraction };
@@ -6899,7 +6901,9 @@ fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
                 let support = definition_payload.support();
-                let parameter_ranges = definition_payload.parameter_ranges();
+                let parameter_ranges = definition_payload
+                    .parameter_ranges()
+                    .map(crate::geometry::DirectedParameterRange::endpoints);
                 let u_sense = definition_payload.u_sense();
                 let v_sense = definition_payload.v_sense();
                 {
@@ -7265,7 +7269,9 @@ fn model_surface_mapping(
         }
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
             let support = definition_payload.support();
-            let parameter_ranges = definition_payload.parameter_ranges();
+            let parameter_ranges = definition_payload
+                .parameter_ranges()
+                .map(crate::geometry::DirectedParameterRange::endpoints);
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
             {

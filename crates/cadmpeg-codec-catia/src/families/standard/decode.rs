@@ -3670,7 +3670,8 @@ fn standard_limit_curve_point_parameter(
     {
         return None;
     }
-    let [parameter_start, parameter_end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
+    let [parameter_start, parameter_end] =
+        cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?.endpoints();
     let parameter_span = parameter_end - parameter_start;
     let control_polygon_length = curve
         .control_points()
@@ -6543,6 +6544,7 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
     };
     same_payload(left, right)
         || cadmpeg_ir::eval::nurbs_curve_parameter_domain(right)
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
             .and_then(|range| reverse_nurbs_curve(right, range).ok())
             .is_some_and(|reversed| same_payload(left, &reversed))
 }
@@ -6574,7 +6576,9 @@ fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 
 }
 
 fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
-    let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
+    let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         return false;
     };
     [lower, 0.5 * (lower + upper), upper]

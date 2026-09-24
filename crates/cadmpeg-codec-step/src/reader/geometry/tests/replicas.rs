@@ -428,7 +428,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
-                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges(), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
+                && match surface.definition() { cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(matched_payload) => matches!((matched_payload.support(), &matched_payload.parameter_ranges().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints), matched_payload.u_sense(), matched_payload.v_sense(),), (support, [[0.0, 1.0], [0.0, 1.0]], Some(true), Some(true),) if support.as_str() == "step:data:surface#8"), _ => false }
         }));
     assert!(decoded.report().losses.iter().all(|loss| {
         !loss

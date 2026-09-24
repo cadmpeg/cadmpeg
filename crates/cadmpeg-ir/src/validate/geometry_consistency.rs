@@ -265,7 +265,7 @@ fn check_support_sides(
         };
         let support = context.parameter_range().map(|parameter| {
             side.pcurve_parameter(context.parameter_range(), parameter)
-                .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter))
+                .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter.get()))
                 .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))
         });
         let [Some(support_start), Some(support_end)] = support else {
@@ -876,8 +876,10 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
             let u_count = surface.u_count();
             let v_count = surface.v_count();
             Some([
-                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?,
-                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?,
+                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)?
+                    .endpoints(),
+                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)?
+                    .endpoints(),
             ])
         }
         SolvedSurfaceGeometry::Transformed(placed) => {

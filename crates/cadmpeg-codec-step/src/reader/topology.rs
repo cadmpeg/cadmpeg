@@ -4050,9 +4050,11 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             nurbs.degree(),
             nurbs.knots(),
             nurbs.control_points().len(),
-        ),
+        )
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
         PcurveGeometry::PolarNurbs { nurbs } => {
             nurbs_pcurve_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
+                .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
@@ -4096,7 +4098,9 @@ fn surface_selection_parameter_domains(
         .map(cadmpeg_ir::geometry::ProceduralSurface::definition);
     match definition {
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
-            let parameter_ranges = definition_payload.parameter_ranges();
+            let parameter_ranges = definition_payload
+                .parameter_ranges()
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
             [
                 subset_parameter_domain(parameter_ranges[0]),
                 subset_parameter_domain(parameter_ranges[1]),
@@ -4133,8 +4137,10 @@ fn surface_selection_parameter_domains_from_geometry(
         SolvedSurfaceGeometry::Nurbs(surface) => {
             let (u_count, v_count) = (surface.u_count(), surface.v_count());
             [
-                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count),
-                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count),
+                nurbs_pcurve_parameter_domain(surface.u_degree(), surface.u_knots(), u_count)
+                    .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
+                nurbs_pcurve_parameter_domain(surface.v_degree(), surface.v_knots(), v_count)
+                    .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
             ]
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
@@ -4170,7 +4176,8 @@ fn curve_selection_parameter_domain_from_geometry(
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             Some([0.0, std::f64::consts::TAU])
         }
-        SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve),
+        SolvedCurveGeometry::Nurbs(curve) => nurbs_curve_parameter_domain(curve)
+            .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints),
         SolvedCurveGeometry::Polyline(polyline) => {
             let parameters: Vec<f64> = polyline.parameters()?.collect();
             let lower = *parameters.first()?;
