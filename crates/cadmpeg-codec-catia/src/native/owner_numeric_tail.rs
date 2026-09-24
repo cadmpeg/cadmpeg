@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The fixed numeric tail of a class-`0x62` consolidated owner packet.
 
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
@@ -11,8 +12,8 @@ use serde::{Deserialize, Serialize};
 )]
 pub(crate) struct CatiaOwnerNumericTail {
     header: [u8; 5],
-    lower: [f64; 2],
-    upper: [f64; 2],
+    /// The binary64 box as one increasing interval per axis.
+    axes: [IncreasingParameterInterval; 2],
     bounds: [[f32; 2]; 3],
 }
 
@@ -25,19 +26,21 @@ impl CatiaOwnerNumericTail {
         upper: [f64; 2],
         bounds: [[f32; 2]; 3],
     ) -> Option<Self> {
-        (lower
+        let axes = [
+            IncreasingParameterInterval::new([lower[0], upper[0]]),
+            IncreasingParameterInterval::new([lower[1], upper[1]]),
+        ];
+        let [Some(first), Some(second)] = axes else {
+            return None;
+        };
+        bounds
             .iter()
-            .zip(&upper)
-            .all(|(lower, upper)| lower.is_finite() && upper.is_finite() && lower < upper)
-            && bounds
-                .iter()
-                .all(|bound| bound[0].is_finite() && bound[1].is_finite() && bound[0] < bound[1]))
-        .then_some(Self {
-            header,
-            lower,
-            upper,
-            bounds,
-        })
+            .all(|bound| bound[0].is_finite() && bound[1].is_finite() && bound[0] < bound[1])
+            .then_some(Self {
+                header,
+                axes: [first, second],
+                bounds,
+            })
     }
 
     /// Returns the five-byte class-specific header.
@@ -48,12 +51,12 @@ impl CatiaOwnerNumericTail {
 
     /// Returns the lower coordinate pair of the binary64 box.
     pub(crate) fn lower(&self) -> [f64; 2] {
-        self.lower
+        self.axes.map(IncreasingParameterInterval::lower)
     }
 
     /// Returns the upper coordinate pair of the binary64 box.
     pub(crate) fn upper(&self) -> [f64; 2] {
-        self.upper
+        self.axes.map(IncreasingParameterInterval::upper)
     }
 
     /// Returns the three binary32 bounds in serialization order. In an
@@ -75,8 +78,8 @@ impl From<CatiaOwnerNumericTail> for CatiaOwnerNumericTailWire {
     fn from(value: CatiaOwnerNumericTail) -> Self {
         Self {
             header: value.header,
-            lower: value.lower,
-            upper: value.upper,
+            lower: value.lower(),
+            upper: value.upper(),
             bounds: value.bounds,
         }
     }

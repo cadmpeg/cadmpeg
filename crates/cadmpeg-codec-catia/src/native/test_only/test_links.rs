@@ -180,7 +180,6 @@ pub(super) fn validate_consolidated_edge_runs(
                 })
                 && matches!(descriptor.control, 0x02 | 0x0a)
                 && matches!(descriptor.values.len(), 2 | 3)
-                && descriptor.values.iter().all(|value| value.is_finite())
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || node.header_token >= token_limit
@@ -258,7 +257,7 @@ pub(super) fn validate_consolidated_edge_runs(
                 CatiaConsolidatedSupportBinding::Plane { byte_offset } => {
                     plane_offsets.contains(byte_offset)
                 }
-                CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. } => offset.is_finite(),
+                CatiaConsolidatedSupportBinding::NurbsCarrier { .. } => true,
             });
         if run.id != expected_id
             || pcurve_offsets[0] != Some(run.byte_offset)
@@ -266,10 +265,7 @@ pub(super) fn validate_consolidated_edge_runs(
             || pcurve_offsets[0] >= pcurve_offsets[1]
             || pcurve_offsets[1].is_some_and(|offset| offset >= node.byte_offset)
             || pcurve_ranges != [Some(run.parameter_range), Some(run.parameter_range)]
-            || run.parameter_range[0] >= run.parameter_range[1]
-            || !run.parameter_range.iter().all(|value| value.is_finite())
-            || !run.tolerance.is_finite()
-            || run.tolerance < 0.0
+            || run.tolerance.get() < 0.0
             || node.uses.is_none()
             || !matches!(node.tail, 0x01 | 0x21)
             || !bindings_valid

@@ -505,11 +505,14 @@ fn read_sum(
     let native = native_vector(reader)?;
     let basepoint = Vector3::new(
         crate::wire::scaled_coordinate(native.0[0], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .get(),
         crate::wire::scaled_coordinate(native.0[1], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .get(),
         crate::wire::scaled_coordinate(native.0[2], scale)
-            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?,
+            .ok_or_else(|| error(reader.position(), "scaled sum basepoint is invalid"))?
+            .get(),
     );
     bbox(reader)?;
     let first = decode_embedded_curve(data, reader, scale, archive, depth + 1)?;

@@ -59,6 +59,12 @@ impl<const N: usize> FiniteVector<N> {
     }
 }
 
+impl<const N: usize> PartialEq<[f64; N]> for FiniteVector<N> {
+    fn eq(&self, other: &[f64; N]) -> bool {
+        self.0 == *other
+    }
+}
+
 impl<const N: usize> From<[crate::scalar::FiniteReal; N]> for FiniteVector<N> {
     /// Carry finite scalars as coordinates. Every scalar is finite, so
     /// nothing is checked.

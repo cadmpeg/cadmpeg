@@ -94,7 +94,7 @@ pub(crate) struct Morph {
     pub(crate) control: Control,
     pub(crate) captive_ids: Vec<Uuid>,
     pub(crate) localizers: Vec<Localizer>,
-    pub(crate) tolerance: f64,
+    pub(crate) tolerance: FiniteReal,
     pub(crate) quick_preview: bool,
     pub(crate) preserve_structure: bool,
 }
@@ -287,9 +287,14 @@ fn scaled_transform(
 ) -> Result<[f64; 16], GeometryError> {
     let mut transform = xform(reader)?.0.get();
     for index in [3, 7, 11] {
-        transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
-        })?;
+        transform[index] = scaled_coordinate(transform[index], scale)
+            .ok_or_else(|| {
+                GeometryError::malformed(
+                    reader.position() - 128,
+                    "scaled cage transform is invalid",
+                )
+            })?
+            .get();
     }
     Ok(transform)
 }
@@ -334,7 +339,7 @@ pub(crate) fn decode(
             },
             captive_ids,
             localizers: Vec::new(),
-            tolerance: 0.0,
+            tolerance: FiniteReal::ZERO,
             quick_preview: false,
             preserve_structure: false,
         });
@@ -400,13 +405,13 @@ pub(crate) fn decode(
     outer.skip(list_next - outer.position())?;
     let (tolerance, quick_preview, preserve_structure) = if minor >= 1 {
         let tolerance = scaled_coordinate(outer.f64()?, scale)
-            .filter(|value| *value >= 0.0)
+            .filter(|value| value.get() >= 0.0)
             .ok_or_else(|| {
                 GeometryError::malformed(outer.position() - 8, "invalid morph tolerance")
             })?;
         (tolerance, outer.bool()?, outer.bool()?)
     } else {
-        (0.0, false, false)
+        (FiniteReal::ZERO, false, false)
     };
     outer.skip_remaining()?;
     Ok(Morph {
@@ -610,7 +615,7 @@ pub(crate) fn project(
                         ),
                         (
                             cadmpeg_core::nonblank_literal!("tolerance"),
-                            morph.tolerance.to_string(),
+                            morph.tolerance.get().to_string(),
                         ),
                         (
                             cadmpeg_core::nonblank_literal!("quick_preview"),
@@ -723,7 +728,7 @@ mod tests {
         })
         .expect("required invariant");
         assert_eq!(morph.captive_ids.len(), 1);
-        assert_eq!(morph.tolerance, 0.1);
+        assert_eq!(morph.tolerance.get(), 0.1);
         assert!(morph.quick_preview);
         assert!(!morph.preserve_structure);
         let Control::Cage {

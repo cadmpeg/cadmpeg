@@ -7,6 +7,28 @@
 pub(crate) mod test_archive;
 pub(crate) mod test_dump;
 
+/// A finite fixture scalar.
+pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")
+}
+
+/// A finite fixture array.
+pub(crate) fn finite_array<const N: usize>(
+    values: [f64; N],
+) -> [cadmpeg_ir::scalar::FiniteReal; N] {
+    values.map(finite)
+}
+
+/// A positive fixture scalar.
+pub(crate) fn positive(value: f64) -> cadmpeg_ir::scalar::PositiveReal {
+    cadmpeg_ir::scalar::PositiveReal::new(value).expect("positive fixture scalar")
+}
+
+/// A positive fixture angle.
+pub(crate) fn positive_angle(value: f64) -> cadmpeg_ir::scalar::PositiveAngle {
+    cadmpeg_ir::scalar::PositiveAngle::new(value).expect("positive fixture angle")
+}
+
 /// A finite fixture point.
 pub(crate) fn point3(coordinates: [f64; 3]) -> crate::settings::Point3 {
     crate::settings::Point3(
@@ -24,9 +46,12 @@ pub(crate) fn millimeter_scale(millimeters_per_unit: f64) -> crate::settings::Mi
     .expect("test millimetre scale");
     let units = crate::settings::UnitsAndTolerances {
         unit,
-        absolute_tolerance: 0.01,
-        angular_tolerance: 0.1,
-        relative_tolerance: 0.01,
+        absolute_tolerance: crate::test_support::positive(0.01),
+        absolute_tolerance_millimeters: cadmpeg_ir::scalar::PositiveLength::new(
+            0.01 * millimeters_per_unit,
+        ),
+        angular_tolerance: crate::test_support::positive_angle(0.1),
+        relative_tolerance: crate::test_support::positive(0.01),
         distance_display: None,
     };
     let crate::settings::UnitBinding::Millimeters(scale) =

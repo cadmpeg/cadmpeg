@@ -5,6 +5,7 @@ use crate::loss::Diagnostics;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -76,7 +77,7 @@ struct ViewRecord {
     list_kind: ViewListKind,
     list_index: usize,
     name: String,
-    target_millimeters: Option<[f64; 3]>,
+    target_millimeters: Option<[FiniteReal; 3]>,
     window_position: Option<WindowPosition>,
     show_construction_grid: bool,
     show_construction_axes: bool,
@@ -130,8 +131,8 @@ struct ConstructionPlane {
     plane_y_axis: [f64; 3],
     plane_z_axis: [f64; 3],
     plane_equation_mm: [f64; 4],
-    grid_spacing_mm: f64,
-    snap_spacing_mm: f64,
+    grid_spacing_mm: FiniteReal,
+    snap_spacing_mm: FiniteReal,
     grid_line_count: i32,
     thick_line_frequency: i32,
     name: String,
@@ -157,13 +158,13 @@ struct Viewport {
     frustum_valid: bool,
     port_valid: bool,
     projection: i32,
-    camera_location_mm: [f64; 3],
-    camera_direction: [f64; 3],
-    camera_up: [f64; 3],
-    camera_x_axis: [f64; 3],
-    camera_y_axis: [f64; 3],
-    camera_z_axis: [f64; 3],
-    frustum_mm: [f64; 6],
+    camera_location_mm: [FiniteReal; 3],
+    camera_direction: [FiniteReal; 3],
+    camera_up: [FiniteReal; 3],
+    camera_x_axis: [FiniteReal; 3],
+    camera_y_axis: [FiniteReal; 3],
+    camera_z_axis: [FiniteReal; 3],
+    frustum_mm: [FiniteReal; 6],
     port: [i32; 6],
     source_uuid: Option<String>,
     camera_up_locked: bool,
@@ -171,9 +172,9 @@ struct Viewport {
     camera_location_locked: bool,
     frustum_left_right_symmetric: bool,
     frustum_top_bottom_symmetric: bool,
-    target_millimeters: Option<[f64; 3]>,
+    target_millimeters: Option<[FiniteReal; 3]>,
     camera_frame_valid: Option<bool>,
-    view_scale: Option<[f64; 3]>,
+    view_scale: Option<[PositiveReal; 3]>,
 }
 
 #[derive(Debug, Serialize)]
@@ -198,8 +199,8 @@ struct ImageReference {
 #[derive(Debug, Serialize)]
 struct TraceImage {
     legacy_file_path: String,
-    width_mm: f64,
-    height_mm: f64,
+    width_mm: FiniteReal,
+    height_mm: FiniteReal,
     plane_origin_mm: [f64; 3],
     plane_x_axis: [f64; 3],
     plane_y_axis: [f64; 3],
@@ -220,18 +221,18 @@ struct Wallpaper {
 #[derive(Debug, Serialize)]
 struct PageSettings {
     page_number: i32,
-    width_mm: f64,
-    height_mm: f64,
-    margins_mm: [f64; 4],
+    width_mm: FiniteReal,
+    height_mm: FiniteReal,
+    margins_mm: [FiniteReal; 4],
     printer_name: String,
 }
 
 #[derive(Debug, Serialize)]
 struct ClippingPlane {
-    equation_mm: [f64; 4],
+    equation_mm: [FiniteReal; 4],
     plane_uuid: Option<String>,
     enabled: bool,
-    depth_mm: Option<f64>,
+    depth_mm: Option<FiniteReal>,
     depth_enabled: bool,
 }
 
@@ -247,7 +248,7 @@ struct ViewAttributes {
     clipping_planes: Vec<ClippingPlane>,
     named_view_uuid: Option<String>,
     show_construction_z_axis: bool,
-    focal_blur_distance_mm: Option<f64>,
+    focal_blur_distance_mm: Option<FiniteReal>,
     focal_blur_aperture: Option<f64>,
     focal_blur_jitter: Option<f64>,
     focal_blur_sample_count: Option<i32>,
@@ -268,10 +269,30 @@ fn legacy_clipping_depth(value: f64) -> (f64, bool) {
 
 fn scale3(value: &mut [f64; 3], scale: MillimeterScale, offset: usize) -> Result<(), FramingError> {
     for coordinate in value {
-        *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled view coordinate is invalid"))?;
+        *coordinate = scaled3_coordinate(*coordinate, scale, offset)?.get();
     }
     Ok(())
+}
+
+fn scaled3(
+    value: [f64; 3],
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<[FiniteReal; 3], FramingError> {
+    Ok([
+        scaled3_coordinate(value[0], scale, offset)?,
+        scaled3_coordinate(value[1], scale, offset)?,
+        scaled3_coordinate(value[2], scale, offset)?,
+    ])
+}
+
+fn scaled3_coordinate(
+    value: f64,
+    scale: MillimeterScale,
+    offset: usize,
+) -> Result<FiniteReal, FramingError> {
+    scaled_coordinate(value, scale)
+        .ok_or_else(|| FramingError::structural(offset, "scaled view coordinate is invalid"))
 }
 
 fn scaled_plane(
@@ -281,7 +302,8 @@ fn scaled_plane(
 ) -> Result<Plane, FramingError> {
     scale3(&mut value.origin, scale, offset)?;
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
+        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?
+        .get();
     Ok(value)
 }
 
@@ -522,24 +544,24 @@ fn parse_viewport(
     let frustum_valid = flag_i32(&mut reader)?;
     let port_valid = flag_i32(&mut reader)?;
     let projection = reader.i32()?;
-    let mut camera_location = [reader.f64()?, reader.f64()?, reader.f64()?];
-    scale3(&mut camera_location, scale, reader.position() - 24)?;
-    let vector = |reader: &mut BoundedReader<'_>| -> Result<[f64; 3], FramingError> {
+    let camera_location = [reader.f64()?, reader.f64()?, reader.f64()?];
+    let camera_location = scaled3(camera_location, scale, reader.position() - 24)?;
+    let vector = |reader: &mut BoundedReader<'_>| -> Result<[FiniteReal; 3], FramingError> {
         let value = [reader.f64()?, reader.f64()?, reader.f64()?];
-        value
-            .iter()
-            .all(|coordinate| coordinate.is_finite())
-            .then_some(value)
-            .ok_or_else(|| {
-                FramingError::structural(reader.position() - 24, "viewport vector is invalid")
-            })
+        let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
+            return Err(FramingError::structural(
+                reader.position() - 24,
+                "viewport vector is invalid",
+            ));
+        };
+        Ok([x, y, z])
     };
     let camera_direction = vector(&mut reader)?;
     let camera_up = vector(&mut reader)?;
     let camera_x_axis = vector(&mut reader)?;
     let camera_y_axis = vector(&mut reader)?;
     let camera_z_axis = vector(&mut reader)?;
-    let mut frustum = [0.0; 6];
+    let mut frustum = [FiniteReal::ZERO; 6];
     for coordinate in &mut frustum {
         *coordinate = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
             FramingError::structural(reader.position() - 8, "viewport frustum is invalid")
@@ -557,25 +579,21 @@ fn parse_viewport(
         }
     }
     let target = if version[1] >= 3 {
-        let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
-        scale3(&mut point, scale, reader.position() - 24)?;
-        Some(point)
+        let point = [reader.f64()?, reader.f64()?, reader.f64()?];
+        Some(scaled3(point, scale, reader.position() - 24)?)
     } else {
         None
     };
     let camera_frame_valid = (version[1] >= 4).then(|| reader.bool()).transpose()?;
     let view_scale = if version[1] >= 5 {
         let value = [reader.f64()?, reader.f64()?, reader.f64()?];
-        if !value
-            .iter()
-            .all(|coordinate| coordinate.is_finite() && *coordinate > 0.0)
-        {
+        let [Some(x), Some(y), Some(z)] = value.map(PositiveReal::new) else {
             return Err(FramingError::structural(
                 reader.position() - 24,
                 "viewport scale is invalid",
             ));
-        }
-        Some(value)
+        };
+        Some([x, y, z])
     } else {
         None
     };
@@ -774,16 +792,17 @@ fn parse_attributes(
         let width_mm = page.f64()?;
         let height_mm = page.f64()?;
         let margins_mm = [page.f64()?, page.f64()?, page.f64()?, page.f64()?];
-        if ![width_mm, height_mm]
-            .into_iter()
-            .chain(margins_mm)
-            .all(f64::is_finite)
-        {
+        let (Some(width_mm), Some(height_mm), [Some(left), Some(right), Some(top), Some(bottom)]) = (
+            FiniteReal::new(width_mm),
+            FiniteReal::new(height_mm),
+            margins_mm.map(FiniteReal::new),
+        ) else {
             return Err(FramingError::structural(
                 page_settings_offset,
                 "page setting is not finite",
             ));
-        }
+        };
+        let margins_mm = [left, right, top, bottom];
         let printer_name = utf16(&mut page)?;
         page.skip_remaining()?;
         checksum_children.push(chunk.range());
@@ -823,16 +842,17 @@ fn parse_attributes(
                     "clipping-plane version is unsupported",
                 ));
             }
-            let mut equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
-            if !equation.iter().all(|value| value.is_finite()) {
+            let equation = [plane.f64()?, plane.f64()?, plane.f64()?, plane.f64()?];
+            let [Some(a), Some(b), Some(c), Some(_)] = equation.map(FiniteReal::new) else {
                 return Err(FramingError::structural(
                     plane.position() - 32,
                     "clipping equation is invalid",
                 ));
-            }
-            equation[3] = scaled_coordinate(equation[3], scale).ok_or_else(|| {
+            };
+            let d = scaled_coordinate(equation[3], scale).ok_or_else(|| {
                 FramingError::structural(plane.position() - 8, "clipping equation is invalid")
             })?;
+            let equation = [a, b, c, d];
             let id = uuid(&mut plane)?;
             let enabled = plane.bool()?;
             let (depth, legacy_depth_enabled) = if minor >= 1 {
@@ -1115,9 +1135,10 @@ fn parse_view(
             }
             VIEW_TARGET if !child.short() => {
                 let mut reader = BoundedReader::new(data, child.body().start, child.body().end)?;
-                let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
-                for value in &mut point {
-                    *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+                let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
+                let mut point = [FiniteReal::ZERO; 3];
+                for (coordinate, value) in point.iter_mut().zip(raw_point) {
+                    *coordinate = scaled_coordinate(value, scale).ok_or_else(|| {
                         FramingError::structural(
                             reader.position() - 24,
                             "scaled view target is invalid",
@@ -1608,8 +1629,8 @@ mod tests {
         assert_eq!(value.plane_y_axis, [0.0, 0.0, 1.0]);
         assert_eq!(value.plane_z_axis, [0.0, -1.0, 0.0]);
         assert_eq!(value.plane_equation_mm, [0.0, -1.0, 0.0, -4.0]);
-        assert_eq!(value.grid_spacing_mm, 5.0);
-        assert_eq!(value.snap_spacing_mm, 1.5);
+        assert_eq!(value.grid_spacing_mm, crate::test_support::finite(5.0));
+        assert_eq!(value.snap_spacing_mm, crate::test_support::finite(1.5));
         assert_eq!(value.grid_line_count, 42);
         assert_eq!(value.thick_line_frequency, 3);
         assert_eq!(value.name, "construction-plane");
@@ -1657,11 +1678,26 @@ mod tests {
             crate::test_support::millimeter_scale(10.0),
         )
         .expect("valid viewport");
-        assert_eq!(value.camera_location_mm, [10.0, 20.0, 30.0]);
-        assert_eq!(value.camera_direction, [0.0, 0.0, -1.0]);
-        assert_eq!(value.frustum_mm, [-20.0, 20.0, -10.0, 10.0, 1.0, 1000.0]);
-        assert_eq!(value.target_millimeters, Some([40.0, 50.0, 60.0]));
-        assert_eq!(value.view_scale, Some([1.0, 2.0, 3.0]));
+        assert_eq!(
+            value.camera_location_mm,
+            crate::test_support::finite_array([10.0, 20.0, 30.0])
+        );
+        assert_eq!(
+            value.camera_direction,
+            crate::test_support::finite_array([0.0, 0.0, -1.0])
+        );
+        assert_eq!(
+            value.frustum_mm,
+            crate::test_support::finite_array([-20.0, 20.0, -10.0, 10.0, 1.0, 1000.0])
+        );
+        assert_eq!(
+            value.target_millimeters,
+            Some(crate::test_support::finite_array([40.0, 50.0, 60.0]))
+        );
+        assert_eq!(
+            value.view_scale,
+            Some([1.0, 2.0, 3.0].map(crate::test_support::positive))
+        );
         assert!(value.camera_valid && value.camera_location_locked);
     }
 
@@ -1745,7 +1781,10 @@ mod tests {
         )
         .expect("trace image");
         assert_eq!(trace.legacy_file_path, "trace-witness.png");
-        assert_eq!([trace.width_mm, trace.height_mm], [42.0, 24.0]);
+        assert_eq!(
+            [trace.width_mm, trace.height_mm],
+            crate::test_support::finite_array([42.0, 24.0])
+        );
         assert!(!trace.grayscale);
         assert!(trace.hidden && trace.filtered);
         assert!(trace.file_reference.is_none());
@@ -1961,7 +2000,10 @@ mod tests {
         )
         .expect("view attributes");
         assert_eq!(value.clipping_planes.len(), 1);
-        assert_eq!(value.clipping_planes[0].depth_mm, Some(3.0));
+        assert_eq!(
+            value.clipping_planes[0].depth_mm,
+            Some(crate::test_support::finite(3.0))
+        );
         assert!(value.clipping_planes[0].depth_enabled);
     }
 
@@ -2041,9 +2083,12 @@ mod tests {
         assert!(value.projection_locked);
         let page = value.page_settings.expect("page settings");
         assert_eq!(page.page_number, 7);
-        assert_eq!(page.width_mm, 210.0);
-        assert_eq!(page.height_mm, 297.0);
-        assert_eq!(page.margins_mm, [10.0, 11.0, 12.0, 13.0]);
+        assert_eq!(page.width_mm, crate::test_support::finite(210.0));
+        assert_eq!(page.height_mm, crate::test_support::finite(297.0));
+        assert_eq!(
+            page.margins_mm,
+            crate::test_support::finite_array([10.0, 11.0, 12.0, 13.0])
+        );
         assert_eq!(page.printer_name, "witness-printer");
     }
 

@@ -4,16 +4,16 @@
 //! class-`0xc8` planes, `0xff` edge-use records, and cylinder/cone/torus
 //! analytic surface carriers.
 
-use crate::families::freeform::rolling_ball_derivative;
+use crate::families::a5a8::records::rolling_ball_jet_derivative;
 use crate::math::distance;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::NurbsSurface, CurveGeometry, ProceduralSurfaceDefinition, RollingBallJetSite,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveLength};
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::families::e5::graph::Sign;
@@ -67,7 +67,8 @@ pub(in crate::families) struct E5RollingBallJet {
     /// Persistent E5 record id.
     pub(in crate::families) record_id: u32,
     /// Knots, multiplicities, and complete derivative channels in native order.
-    stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
+    stations:
+        Vec<cadmpeg_ir::geometry::RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
     /// Native surface-sense flag retained without reinterpretation.
     pub(in crate::families) sense: Sign,
 }
@@ -79,7 +80,7 @@ impl E5RollingBallJet {
     /// Convert the admitted carrier payload to the exact neutral jet form.
     pub(in crate::families) fn definition(&self) -> Option<ProceduralSurfaceDefinition> {
         Some(ProceduralSurfaceDefinition::RollingBallJet(
-            cadmpeg_ir::geometry::RollingBallJetStations::try_new(
+            cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
                 Self::DEGREE,
                 self.stations.clone(),
             )
@@ -412,9 +413,8 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         return None;
     }
     let station_count_u64 = u64::try_from(station_count).ok()?;
-    let knots = view.read_counted(station_count_u64, 8, View::f64_le)?;
-    if knots.iter().any(|knot| !knot.is_finite()) || knots.windows(2).any(|pair| pair[0] >= pair[1])
-    {
+    let knots = view.read_counted(station_count_u64, 8, |view| FiniteReal::new(view.f64_le()?))?;
+    if knots.windows(2).any(|pair| pair[0] >= pair[1]) {
         return None;
     }
     let multiplicities = view.read_counted(station_count_u64, 4, View::u32_le)?;
@@ -451,8 +451,8 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     };
     let tail_zero1 = view.f64_le()?;
     let tail_radius2 = view.f64_le()?;
-    if parameter_min.to_bits() != knots.first()?.to_bits()
-        || parameter_max.to_bits() != knots.last()?.to_bits()
+    if parameter_min.to_bits() != knots.first()?.get().to_bits()
+        || parameter_max.to_bits() != knots.last()?.get().to_bits()
         || tail_zero0.to_bits() != 0
         || tail_zero1.to_bits() != 0
         || !tail_radius0.is_finite()
@@ -468,16 +468,23 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         .zip(first_derivatives)
         .zip(second_derivatives)
         .map(|((position, first), second)| {
-            let first_limit = Point3::new(position[0], position[1], position[2]);
-            let second_limit = Point3::new(position[3], position[4], position[5]);
-            let center = Point3::new(position[6], position[7], position[8]);
-            let radius = distance(center, first_limit);
-            let second_radius = distance(center, second_limit);
+            let first_limit = FinitePoint3::from_coordinates(position[0], position[1], position[2]);
+            let second_limit =
+                FinitePoint3::from_coordinates(position[3], position[4], position[5]);
+            let center = FinitePoint3::from_coordinates(position[6], position[7], position[8]);
+            let radius = distance(center.get(), first_limit.get());
+            let second_radius = distance(center.get(), second_limit.get());
             let expected_angle = if radius > 0.0 && second_radius > 0.0 {
                 first_limit
-                    .vector_from(center)
+                    .get()
+                    .vector_from(center.get())
                     .scale(1.0 / radius)
-                    .dot(second_limit.vector_from(center).scale(1.0 / second_radius))
+                    .dot(
+                        second_limit
+                            .get()
+                            .vector_from(center.get())
+                            .scale(1.0 / second_radius),
+                    )
                     .clamp(-1.0, 1.0)
                     .acos()
             } else {
@@ -498,29 +505,22 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         .collect::<Vec<_>>();
     if sites.iter().any(
         |(
-            first_limit,
-            second_limit,
-            center,
+            _first_limit,
+            _second_limit,
+            _center,
             radius,
             second_radius,
             expected_angle,
             stored_angle,
-            first,
-            second,
+            _first,
+            _second,
         )| {
-            ![first_limit.x, first_limit.y, first_limit.z]
-                .into_iter()
-                .chain([second_limit.x, second_limit.y, second_limit.z])
-                .chain([center.x, center.y, center.z])
-                .all(f64::is_finite)
-                || !radius.is_finite()
+            !radius.is_finite()
                 || *radius <= 0.0
                 || !second_radius.is_finite()
                 || !relative_close(*radius, *second_radius, E5_D8_RADIUS_TOLERANCE)
-                || !stored_angle.is_finite()
                 || !expected_angle.is_finite()
-                || (stored_angle - expected_angle).abs() > E5_D8_ARC_TOLERANCE
-                || first.iter().chain(second).any(|value| !value.is_finite())
+                || (stored_angle.get() - expected_angle).abs() > E5_D8_ARC_TOLERANCE
                 || !relative_close(*radius, tail_radius0, E5_D8_RADIUS_TOLERANCE)
         },
     ) {
@@ -544,8 +544,8 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
                 second_limit,
                 center,
                 angle,
-                first_derivative: rolling_ball_derivative(first),
-                second_derivative: rolling_ball_derivative(second),
+                first_derivative: rolling_ball_jet_derivative(first),
+                second_derivative: rolling_ball_jet_derivative(second),
             },
         )
         .zip(knots)
@@ -566,11 +566,14 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     })
 }
 
-fn read_d8_channel_rows(view: &mut View<'_>, station_count_u64: u64) -> Option<Vec<[f64; 10]>> {
+fn read_d8_channel_rows(
+    view: &mut View<'_>,
+    station_count_u64: u64,
+) -> Option<Vec<[FiniteReal; 10]>> {
     view.read_counted(station_count_u64, 80, |view| {
-        let mut row = [0.0; 10];
+        let mut row = [FiniteReal::ZERO; 10];
         for value in &mut row {
-            *value = view.f64_le()?;
+            *value = FiniteReal::new(view.f64_le()?)?;
         }
         Some(row)
     })
@@ -633,22 +636,18 @@ fn e5_nurbs_surface(
     }
     let control_count = u_count.checked_mul(v_count)?;
     let control_points = view.read_counted(u64::try_from(control_count).ok()?, 24, |view| {
-        Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
+        FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
     })?;
     let weights = if mode == 1 {
-        Some(view.read_counted(u64::try_from(control_count).ok()?, 8, View::f64_le)?)
+        Some(
+            view.read_counted(u64::try_from(control_count).ok()?, 8, |view| {
+                NonZeroReal::new(view.f64_le()?)
+            })?,
+        )
     } else {
         None
     };
-    if control_points.iter().any(|point| !point.is_finite())
-        || weights.as_ref().is_some_and(|weights| {
-            weights
-                .iter()
-                .copied()
-                .any(|weight| !weight.is_finite() || weight == 0.0)
-        })
-        || view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES
-    {
+    if view.remaining() != E5_NURBS_SURFACE_TAIL_BYTES {
         return None;
     }
     view.skip(E5_NURBS_SURFACE_TAIL_BYTES)?;
@@ -656,7 +655,7 @@ fn e5_nurbs_surface(
     view.is_empty()
         .then(|| {
             crate::nurbs::note_refusal(
-                NurbsSurface::from_lanes(
+                NurbsSurface::from_checked_lanes(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -807,8 +806,8 @@ mod tests {
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
         assert_eq!(jet.stations.len(), 2);
-        assert_close(jet.stations[0].knot, 2.0);
-        assert_close(jet.stations[1].knot, 5.0);
+        assert_close(jet.stations[0].knot.get(), 2.0);
+        assert_close(jet.stations[1].knot.get(), 5.0);
         assert_eq!(
             jet.stations
                 .iter()
@@ -817,18 +816,27 @@ mod tests {
             [6, 6]
         );
         assert_eq!(jet.sense, crate::families::e5::graph::Sign::Negative);
-        assert_point_close(jet.stations[0].site.first_limit, Point3::new(2.0, 0.0, 0.0));
-        assert_point_close(jet.stations[1].site.center, Point3::new(1.0, 0.0, 0.0));
-        assert_close(jet.stations[0].site.angle, std::f64::consts::FRAC_PI_2);
+        assert_point_close(
+            jet.stations[0].site.first_limit.get(),
+            Point3::new(2.0, 0.0, 0.0),
+        );
+        assert_point_close(
+            jet.stations[1].site.center.get(),
+            Point3::new(1.0, 0.0, 0.0),
+        );
+        assert_close(
+            jet.stations[0].site.angle.get(),
+            std::f64::consts::FRAC_PI_2,
+        );
         assert_vector_close(
-            jet.stations[0].site.first_derivative.center,
+            jet.stations[0].site.first_derivative.center.get(),
             Vector3::new(0.7, 0.8, 0.9),
         );
         assert_vector_close(
-            jet.stations[0].site.second_derivative.center,
+            jet.stations[0].site.second_derivative.center.get(),
             Vector3::new(2.7, 2.8, 2.9),
         );
-        assert_close(jet.stations[1].site.second_derivative.angle, 4.0);
+        assert_close(jet.stations[1].site.second_derivative.angle.get(), 4.0);
         assert!(matches!(
             jet.definition().expect("valid rolling-ball jet fixture"),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().len() == 2 && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == [6, 6]));

@@ -857,7 +857,10 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
     .expect("dimension style with future minor");
     assert_eq!(value.archive_index, Some(7));
     assert_eq!(value.name, "dimension style");
-    assert_eq!(value.extension_line_extension_mm, 1.0);
+    assert_eq!(
+        value.extension_line_extension_mm,
+        crate::test_support::finite(1.0)
+    );
     assert_eq!(
         value.details.controls()["decimal_separator"],
         serde_json::json!(112)
@@ -926,7 +929,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     )
     .expect("V5 dimension-style extra");
     assert_eq!(extra.valid_fields, vec![false, true, true]);
-    assert_eq!(extra.baseline_spacing_mm, 5.0);
+    assert_eq!(extra.baseline_spacing_mm, crate::test_support::finite(5.0));
     assert_eq!(extra.mask_color, [11, 22, 33, 44]);
     assert_eq!(
         extra.source_style_uuid,
@@ -943,11 +946,14 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     .expect("V5 dimension style");
     assert_eq!(value.archive_index, Some(7));
     assert_eq!(value.name, "legacy dimension style");
-    assert_eq!(value.extension_line_extension_mm, 2.0);
-    assert_eq!(value.center_mark_size_mm, 8.0);
+    assert_eq!(
+        value.extension_line_extension_mm,
+        crate::test_support::finite(2.0)
+    );
+    assert_eq!(value.center_mark_size_mm, crate::test_support::finite(8.0));
     assert_eq!(value.text_height_mm, 28.0);
     assert_eq!(value.leader_arrow_size_mm, 46.0);
-    assert_eq!(value.length_factor, 15.0);
+    assert_eq!(value.length_factor, crate::test_support::finite(15.0));
     assert_eq!(value.alternate_length_format, 17);
     assert_eq!(
         value.details.parent_style_uuid().cloned(),
@@ -987,7 +993,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     )
     .expect("V5 dimension-style extra minor zero");
     assert_eq!(minor_zero.mask_color, [255, 255, 255, 0]);
-    assert_eq!(minor_zero.dimension_scale, 1.0);
+    assert_eq!(minor_zero.dimension_scale, crate::test_support::finite(1.0));
 
     let mut invalid = base;
     invalid[0] = 0x25;
@@ -1226,11 +1232,20 @@ fn light_scales_spatial_values_but_not_direction_or_angles() {
         None,
     )
     .expect("required invariant");
-    assert_eq!(light.location, [10.0, 20.0, 30.0]);
-    assert_eq!(light.direction, [0.0, 0.0, -1.0]);
-    assert_eq!(light.length, [40.0, 0.0, 0.0]);
-    assert_eq!(light.spot_angle_degrees, 0.25);
-    assert_eq!(light.spot_exponent, 16.0);
+    assert_eq!(
+        light.location,
+        crate::test_support::finite_array([10.0, 20.0, 30.0])
+    );
+    assert_eq!(
+        light.direction,
+        crate::test_support::finite_array([0.0, 0.0, -1.0])
+    );
+    assert_eq!(
+        light.length,
+        crate::test_support::finite_array([40.0, 0.0, 0.0])
+    );
+    assert_eq!(light.spot_angle_degrees, crate::test_support::finite(0.25));
+    assert_eq!(light.spot_exponent, crate::test_support::finite(16.0));
     assert_eq!(light.hotspot, 0.8);
 }
 
@@ -1245,8 +1260,8 @@ fn light_preserves_unset_hotspot_for_exponent_interface() {
         None,
     )
     .expect("required invariant");
-    assert_eq!(light.spot_angle_degrees, 0.25);
-    assert_eq!(light.spot_exponent, 16.0);
+    assert_eq!(light.spot_angle_degrees, crate::test_support::finite(0.25));
+    assert_eq!(light.spot_exponent, crate::test_support::finite(16.0));
     assert_eq!(light.hotspot, -1.234_321_012_343_21e308);
 }
 
@@ -1302,7 +1317,10 @@ fn legacy_material_preserves_core_appearance_and_switches() {
     assert_eq!(material.name, "steel");
     assert_eq!(material.diffuse, [5, 6, 7, 8]);
     assert_eq!(material.transparent, material.diffuse);
-    assert_eq!(material.index_of_refraction, 1.5);
+    assert_eq!(
+        material.index_of_refraction,
+        crate::test_support::finite(1.5)
+    );
     assert!(material.shareable);
     assert!(!material.disable_lighting);
 }
@@ -1432,11 +1450,14 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         );
         assert_eq!(material.ambient, [1, 2, 3, 4]);
         assert_eq!(material.diffuse, [5, 6, 7, 8]);
-        assert_eq!(material.shine, 64.0);
-        assert_eq!(material.transparency, 0.25);
+        assert_eq!(material.shine, crate::test_support::finite(64.0));
+        assert_eq!(material.transparency, crate::test_support::finite(0.25));
         assert_eq!(material.reflection, [41, 42, 43, 44]);
         assert_eq!(material.transparent, [45, 46, 47, 48]);
-        assert_eq!(material.index_of_refraction, 1.45);
+        assert_eq!(
+            material.index_of_refraction,
+            crate::test_support::finite(1.45)
+        );
         assert_eq!(
             material.source_uuid,
             Some(Uuid::from_wire([0x55; 16]).to_string())
@@ -1448,13 +1469,19 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
         assert_eq!(material.textures[1].legacy_file_path, "bump.png");
         assert_eq!(material.textures[1].texture_type, 2);
         assert_eq!(material.textures[1].mode, 1);
-        assert_eq!(material.textures[1].bump_scale, [0.0, 2.5]);
+        assert_eq!(
+            material.textures[1].bump_scale,
+            crate::test_support::finite_array([0.0, 2.5])
+        );
         assert_eq!(material.textures[2].legacy_file_path, "environment.png");
         assert_eq!(material.textures[2].texture_type, 86);
         assert_eq!(material.textures[2].mode, 1);
         assert_eq!(material.textures[0].source_offset, 77);
         assert_eq!(material.textures[0].wrap, [0, 0, 0]);
-        assert_eq!(material.textures[0].uvw_transform[0], [1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(
+            material.textures[0].uvw_transform[0],
+            crate::test_support::finite_array([1.0, 0.0, 0.0, 0.0])
+        );
     }
 }
 
@@ -1475,7 +1502,10 @@ fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity()
     assert_eq!(material.source_uuid, None);
     assert_eq!(material.reflection, [255, 255, 255, 0]);
     assert_eq!(material.transparent, [255, 255, 255, 0]);
-    assert_eq!(material.index_of_refraction, 1.0);
+    assert_eq!(
+        material.index_of_refraction,
+        crate::test_support::finite(1.0)
+    );
 }
 
 #[test]
@@ -1488,24 +1518,36 @@ fn physically_based_material_reads_versioned_prefix_and_suffix() {
     assert_eq!(material.revision.version(), 2);
     assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
     assert_eq!(material.brdf, 1);
-    assert_eq!(material.subsurface, 0.5);
+    assert_eq!(material.subsurface, crate::test_support::finite(0.5));
     assert_eq!(material.subsurface_scattering_color, [0.6, 0.7, 0.8, 0.9]);
-    assert_eq!(material.subsurface_scattering_radius, 1.0);
-    assert_eq!(material.metallic, 2.0);
-    assert_eq!(material.specular, 3.0);
-    assert_eq!(material.specular_tint, 4.0);
-    assert_eq!(material.roughness, 5.0);
-    assert_eq!(material.anisotropic, 6.0);
-    assert_eq!(material.anisotropic_rotation, 7.0);
-    assert_eq!(material.sheen, 8.0);
-    assert_eq!(material.sheen_tint, 9.0);
-    assert_eq!(material.clearcoat, 10.0);
-    assert_eq!(material.clearcoat_roughness, 11.0);
-    assert_eq!(material.opacity_ior, 12.0);
-    assert_eq!(material.opacity, 13.0);
-    assert_eq!(material.opacity_roughness, 14.0);
+    assert_eq!(
+        material.subsurface_scattering_radius,
+        crate::test_support::finite(1.0)
+    );
+    assert_eq!(material.metallic, crate::test_support::finite(2.0));
+    assert_eq!(material.specular, crate::test_support::finite(3.0));
+    assert_eq!(material.specular_tint, crate::test_support::finite(4.0));
+    assert_eq!(material.roughness, crate::test_support::finite(5.0));
+    assert_eq!(material.anisotropic, crate::test_support::finite(6.0));
+    assert_eq!(
+        material.anisotropic_rotation,
+        crate::test_support::finite(7.0)
+    );
+    assert_eq!(material.sheen, crate::test_support::finite(8.0));
+    assert_eq!(material.sheen_tint, crate::test_support::finite(9.0));
+    assert_eq!(material.clearcoat, crate::test_support::finite(10.0));
+    assert_eq!(
+        material.clearcoat_roughness,
+        crate::test_support::finite(11.0)
+    );
+    assert_eq!(material.opacity_ior, crate::test_support::finite(12.0));
+    assert_eq!(material.opacity, crate::test_support::finite(13.0));
+    assert_eq!(
+        material.opacity_roughness,
+        crate::test_support::finite(14.0)
+    );
     assert_eq!(material.emission, [0.11, 0.22, 0.33, 0.44]);
-    assert_eq!(material.revision.alpha(), 0.77);
+    assert_eq!(material.revision.alpha(), crate::test_support::finite(0.77));
 }
 
 #[test]
@@ -1516,7 +1558,7 @@ fn physically_based_material_version_one_defaults_alpha() {
     let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
         .expect("version one physically based material");
     assert_eq!(material.revision.version(), 1);
-    assert_eq!(material.revision.alpha(), 1.0);
+    assert_eq!(material.revision.alpha(), crate::test_support::finite(1.0));
 }
 
 fn legacy_rdk_payload(xml: &str, terminated: bool, suffix: &[u8]) -> Vec<u8> {
@@ -1620,8 +1662,8 @@ fn rendering_attributes_transfer_mapping_channels_and_flags() {
     let transform = value.mappings[0].channels[0]
         .object_transform
         .expect("minor-one mapping transform");
-    assert_eq!(transform[0][0], 0.0);
-    assert_eq!(transform[3][3], 15.0);
+    assert_eq!(transform[0][0], crate::test_support::finite(0.0));
+    assert_eq!(transform[3][3], crate::test_support::finite(15.0));
     assert_eq!(value.casts_shadows, Some(false));
     assert_eq!(value.receives_shadows, Some(false));
     assert_eq!(value.advanced_texture_preview, Some(true));

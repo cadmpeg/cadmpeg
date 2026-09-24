@@ -127,7 +127,7 @@ fn native_namespace_retains_consolidated_class61_records() {
     assert_eq!(prefix, &[0xb5, 0x03, 0x2b, 0x47, 0x8f, 0xb3, 0xd7, 0xfb]);
     assert_eq!(members, &[0x064a, 0x0650, 0x0656]);
     assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
-    assert_eq!(*scalar, 42.5);
+    assert_eq!(*scalar, crate::test_support::test_b5::finite(42.5));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -205,22 +205,21 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     assert_eq!(uv.control, 0x12);
     assert!(matches!(
         &uv.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv: [2.0, 3.0] }
+        crate::native::CatiaConsolidatedParameterPointPayload::Uv { uv } if *uv == [2.0, 3.0]
     ));
     assert_eq!(station_uv.payload.layout(), 0x1a);
     assert!(matches!(
         &station_uv.payload,
         crate::native::CatiaConsolidatedParameterPointPayload::StationUv {
-            station: 11.0,
-            uv: [4.0, 5.0],
-        }
+            station,
+            uv,
+        } if station.get() == 11.0 && *uv == [4.0, 5.0]
     ));
     assert_eq!(five_scalars.payload.layout(), 0x2a);
     assert!(matches!(
         &five_scalars.payload,
-        crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars {
-            values: [1.0, 2.0, 3.0, 4.0, 5.0],
-        }
+        crate::native::CatiaConsolidatedParameterPointPayload::FiveScalars { values }
+            if *values == [1.0, 2.0, 3.0, 4.0, 5.0]
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -251,25 +250,27 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
     assert!(matches!(
         &direction2.payload,
         crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-            point: [10.0, 20.0],
+            point,
             direction: [1.0, 0.0],
-            tail: [5.0, -2.0, 3.0],
-        }
+            tail,
+        } if *point == [10.0, 20.0] && *tail == [5.0, -2.0, 3.0]
     ));
     assert!(matches!(
         &direction3.payload,
         crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-            point: [10.0, 20.0],
-            direction: [1.0, 0.0, 0.0],
-            tail: [5.0, -2.0, 3.0],
-        }
+            point,
+            direction,
+            tail,
+        } if *point == [10.0, 20.0]
+            && direction.get() == [1.0, 0.0, 0.0]
+            && *tail == [5.0, -2.0, 3.0]
     ));
     assert!(matches!(
         &tail.payload,
         crate::native::CatiaConsolidatedPlaneCarrierPayload::PointTail {
-            point: [10.0, 20.0],
-            tail: [-2.0, 5.0, -2.0, 3.0],
-        }
+            point,
+            tail,
+        } if *point == [10.0, 20.0] && *tail == [-2.0, 5.0, -2.0, 3.0]
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -322,7 +323,7 @@ fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
     assert!(matches!(
         &carrier.payload,
         crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane, .. }
-            if lane == &values
+            if cadmpeg_ir::scalar::FiniteReal::raw_lane(lane) == values
     ));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -373,14 +374,20 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     );
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
-    assert_eq!(circle.center_pair, [4.0, -2.0]);
+    assert_eq!(
+        circle.center_pair,
+        crate::test_support::test_b5::finite_vector([4.0, -2.0])
+    );
     assert_eq!(circle.radius.get(), 3.0);
     assert_eq!(
         circle.range.endpoints(),
         [0.0, std::f64::consts::TAU * circle.radius.get()]
     );
     assert!(circle.full_circle());
-    assert_eq!(circle.chart_shift, 0.0);
+    assert_eq!(
+        circle.chart_shift,
+        crate::test_support::test_b5::finite(0.0)
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA circle");
@@ -417,7 +424,10 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         panic!("three consolidated cylinders")
     };
     assert_eq!(explicit.payload.layout(), 0x5a);
-    assert_eq!(explicit.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        explicit.origin,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(explicit.radius.get(), 2.0);
     assert!(matches!(
         explicit.payload,
@@ -475,21 +485,30 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     let [cone] = native.consolidated_cones.as_slice() else {
         panic!("one consolidated cone")
     };
-    assert_eq!(cone.apex, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        cone.apex,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(cone.direction_x.get(), [1.0, 0.0, 0.0]);
     assert_eq!(cone.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(cone.axis.get(), [0.0, 0.0, 1.0]);
-    assert_eq!(cone.half_angle, 0.25);
-    assert_eq!(cone.reference_radius, 4.0);
-    assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
+    assert_eq!(cone.half_angle.get(), 0.25);
+    assert_eq!(
+        cone.reference_radius,
+        crate::test_support::test_b5::finite(4.0)
+    );
+    assert_eq!(
+        cone.angular_range,
+        crate::test_support::test_b5::increasing([0.5, 0.5 + std::f64::consts::PI])
+    );
     assert_eq!(cone.slant_range.endpoints(), [2.0, 8.0]);
     assert_eq!(cone.angular_scale.get(), 3.0);
     assert_eq!(
         cone.angular_domain,
-        [
+        crate::test_support::test_b5::increasing([
             0.5 - std::f64::consts::FRAC_PI_2,
             0.5 + 3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -500,7 +519,9 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_cones[0].angular_domain[0] += 0.25;
+    let [lower, upper] = invalid.consolidated_cones[0].angular_domain.endpoints();
+    invalid.consolidated_cones[0].angular_domain =
+        crate::test_support::test_b5::increasing([lower + 0.25, upper]);
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
@@ -515,8 +536,14 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         panic!("one consolidated cone-face chart")
     };
     assert_eq!(face.program.len(), 16);
-    assert_eq!(face.angular_scale, 1.5);
-    assert_eq!(face.half_angle, std::f64::consts::FRAC_PI_4);
+    assert_eq!(
+        face.angular_scale,
+        crate::test_support::test_b5::finite(1.5)
+    );
+    assert_eq!(
+        face.half_angle,
+        crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_4)
+    );
     assert_eq!(
         face.parameter_points,
         [
@@ -609,7 +636,10 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         crate::native::CatiaRevolutionReferenceToken::Wide
     );
     assert_eq!(revolution.profile_allocation_id, 0x1234);
-    assert_eq!(revolution.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        revolution.origin,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(revolution.direction_x.get(), [1.0, 0.0, 0.0]);
     assert_eq!(revolution.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(revolution.axis.get(), [0.0, 0.0, 1.0]);
@@ -726,7 +756,10 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     let [line] = native.consolidated_line_profiles.as_slice() else {
         panic!("one consolidated line profile")
     };
-    assert_eq!(line.origin, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        line.origin,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(line.direction.get(), [0.0, 0.6, 0.8]);
     assert_eq!(line.range.endpoints(), [-4.0, 9.0]);
 
@@ -777,7 +810,10 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     let [torus] = native.consolidated_tori.as_slice() else {
         panic!("one consolidated torus")
     };
-    assert_eq!(torus.center, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        torus.center,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(torus.direction_x.get(), [1.0, 0.0, 0.0]);
     assert_eq!(torus.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(torus.axis.get(), [0.0, 0.0, 1.0]);
@@ -785,19 +821,25 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     assert_eq!(torus.minor_radius.get(), 2.0);
     assert_eq!(
         torus.major_angular_range,
-        [
+        crate::test_support::test_b5::increasing([
             std::f64::consts::FRAC_PI_2,
             3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
-    assert_eq!(torus.major_angular_domain, [0.0, std::f64::consts::TAU]);
-    assert_eq!(torus.minor_angular_range, [0.0, std::f64::consts::PI]);
+    assert_eq!(
+        torus.major_angular_domain,
+        crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU])
+    );
+    assert_eq!(
+        torus.minor_angular_range,
+        crate::test_support::test_b5::increasing([0.0, std::f64::consts::PI])
+    );
     assert_eq!(
         torus.minor_angular_domain,
-        [
+        crate::test_support::test_b5::increasing([
             -std::f64::consts::FRAC_PI_2,
             3.0 * std::f64::consts::FRAC_PI_2
-        ]
+        ])
     );
     assert_eq!(torus.major_scale.get(), 14.0);
     assert_eq!(torus.minor_scale.get(), 4.0);
@@ -810,7 +852,11 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     );
 
     let mut invalid = native;
-    invalid.consolidated_tori[0].major_angular_domain[0] += 0.25;
+    let [lower, upper] = invalid.consolidated_tori[0]
+        .major_angular_domain
+        .endpoints();
+    invalid.consolidated_tori[0].major_angular_domain =
+        crate::test_support::test_b5::increasing([lower + 0.25, upper]);
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
@@ -824,13 +870,22 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     let [sphere] = native.consolidated_spheres.as_slice() else {
         panic!("one consolidated sphere")
     };
-    assert_eq!(sphere.center, [1.0, 2.0, 3.0]);
+    assert_eq!(
+        sphere.center,
+        crate::test_support::test_b5::finite_vector([1.0, 2.0, 3.0])
+    );
     assert_eq!(sphere.direction_x.get(), [1.0, 0.0, 0.0]);
     assert_eq!(sphere.direction_y.get(), [0.0, 1.0, 0.0]);
     assert_eq!(sphere.axis.get(), [0.0, 0.0, 1.0]);
     assert_eq!(sphere.radius.get(), 5.0);
-    assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
-    assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
+    assert_eq!(
+        sphere.azimuth_range,
+        crate::test_support::test_b5::increasing([-2.0, 4.0])
+    );
+    assert_eq!(
+        sphere.latitude_range,
+        crate::test_support::test_b5::increasing([-1.0, std::f64::consts::FRAC_PI_2])
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA sphere");
@@ -839,13 +894,10 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
         native
     );
 
-    let mut invalid = native;
-    invalid.consolidated_spheres[0].latitude_range.reverse();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA sphere for load validation");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+    // A sphere holds its admitted increasing latitude range, so a reversed
+    // range is refused before a native record can hold it.
+    let [lower, upper] = native.consolidated_spheres[0].latitude_range.endpoints();
+    assert!(cadmpeg_ir::topology::IncreasingParameterInterval::new([upper, lower]).is_none());
 }
 
 #[test]
@@ -1870,4 +1922,24 @@ fn cone_face_followed_by_spanning_parameter_point_terminates() {
     let faces = crate::native::consolidated_cone_faces(&bytes, &records, &[]);
     assert_eq!(faces.len(), 1);
     assert!(faces[0].parameter_points.is_empty());
+}
+
+#[test]
+fn a_loaded_plane_carrier_direction_is_admitted_unit() {
+    let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
+    let direction3 = &native.consolidated_plane_carriers[1];
+    let mut value = serde_json::to_value(direction3).expect("plane carrier JSON");
+    assert_eq!(
+        value["payload"]["direction"],
+        serde_json::json!([1.0, 0.0, 0.0])
+    );
+    value["payload"]["direction"] = serde_json::json!([2.0, 0.0, 0.0]);
+    let error = serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(value)
+        .expect_err("a non-unit plane-carrier direction");
+    assert!(
+        error
+            .to_string()
+            .contains("direction is not a finite unit vector"),
+        "{error}"
+    );
 }

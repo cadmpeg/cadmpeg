@@ -3029,6 +3029,50 @@ pub struct RollingBallJetStation<R = f64, V = Vector3, P = Point3> {
 
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 
+const ROLLING_BALL_KNOTS: &str = "rolling-ball jet knots must be finite and strictly increasing";
+
+/// Refuse fewer than two stations, and multiplicities outside
+/// `1..=degree + 1` or ends that are not clamped at `degree + 1`.
+fn admit_rolling_ball_multiplicities<R, V, P>(
+    degree: u32,
+    stations: &[RollingBallJetStation<R, V, P>],
+) -> Result<(), &'static str> {
+    let maximum_multiplicity = degree
+        .checked_add(1)
+        .filter(|_| degree != 0)
+        .ok_or("rolling-ball jet degree must be positive with a representable end multiplicity")?;
+    if stations.len() < 2 {
+        return Err("rolling-ball jet stations must contain at least two rows");
+    }
+    if stations[0].multiplicity != maximum_multiplicity
+        || stations[stations.len() - 1].multiplicity != maximum_multiplicity
+        || stations
+            .iter()
+            .any(|station| station.multiplicity == 0 || station.multiplicity > maximum_multiplicity)
+    {
+        return Err("rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends");
+    }
+    Ok(())
+}
+
+/// Refuse a site whose radii are not finite, whose first radius is not
+/// positive, or whose two radii disagree beyond the relative tolerance.
+fn admit_rolling_ball_radii(
+    site: &RollingBallJetSite<FiniteReal, FiniteVector3, FinitePoint3>,
+) -> Result<(), &'static str> {
+    let first_radius = site.first_limit.distance(site.center.get());
+    let second_radius = site.second_limit.distance(site.center.get());
+    if !first_radius.is_finite()
+        || first_radius <= 0.0
+        || !second_radius.is_finite()
+        || (first_radius - second_radius).abs()
+            > EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
+    {
+        return Err("rolling-ball jet site radii must be finite and agree within tolerance, with a positive first radius");
+    }
+    Ok(())
+}
+
 /// Degree and finite clamped station data of a rolling-ball jet.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "RollingBallJetReadWire")]
@@ -3045,47 +3089,40 @@ impl RollingBallJetStations {
         degree: u32,
         stations: Vec<RollingBallJetStation>,
     ) -> Result<Self, &'static str> {
-        let maximum_multiplicity = degree.checked_add(1).filter(|_| degree != 0).ok_or(
-            "rolling-ball jet degree must be positive with a representable end multiplicity",
-        )?;
-        if stations.len() < 2 {
-            return Err("rolling-ball jet stations must contain at least two rows");
-        }
-        if stations[0].multiplicity != maximum_multiplicity
-            || stations[stations.len() - 1].multiplicity != maximum_multiplicity
-            || stations.iter().any(|station| {
-                station.multiplicity == 0 || station.multiplicity > maximum_multiplicity
-            })
-        {
-            return Err(
-                "rolling-ball jet multiplicities must be in 1..=degree+1 with clamped ends",
-            );
-        }
+        admit_rolling_ball_multiplicities(degree, &stations)?;
         let knots = FiniteReal::lane(stations.iter().map(|station| station.knot).collect())
             .filter(|knots| knots.windows(2).all(|pair| pair[0] < pair[1]))
-            .ok_or("rolling-ball jet knots must be finite and strictly increasing")?;
+            .ok_or(ROLLING_BALL_KNOTS)?;
         let stations = stations
             .into_iter()
             .zip(knots)
             .map(|(station, knot)| {
                 let site = station.site.admit()?;
-                let first_radius = site.first_limit.distance(site.center.get());
-                let second_radius = site.second_limit.distance(site.center.get());
-                if !first_radius.is_finite()
-                    || first_radius <= 0.0
-                    || !second_radius.is_finite()
-                    || (first_radius - second_radius).abs()
-                        > EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
-                {
-                    return Err("rolling-ball jet site radii must be finite and agree within tolerance, with a positive first radius");
-                }
-                Ok(RollingBallJetStation {
+                admit_rolling_ball_radii(&site)?;
+                Ok::<_, &'static str>(RollingBallJetStation {
                     knot,
                     multiplicity: station.multiplicity,
                     site,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { degree, stations })
+    }
+
+    /// Admit stations whose knots, points, angles and derivatives are already
+    /// finite. The multiplicity, knot-order and radius refusals are those of
+    /// [`Self::try_new`], in its order.
+    pub fn from_admitted(
+        degree: u32,
+        stations: Vec<RollingBallJetStation<FiniteReal, FiniteVector3, FinitePoint3>>,
+    ) -> Result<Self, &'static str> {
+        admit_rolling_ball_multiplicities(degree, &stations)?;
+        if !stations.windows(2).all(|pair| pair[0].knot < pair[1].knot) {
+            return Err(ROLLING_BALL_KNOTS);
+        }
+        for station in &stations {
+            admit_rolling_ball_radii(&station.site)?;
+        }
         Ok(Self { degree, stations })
     }
 

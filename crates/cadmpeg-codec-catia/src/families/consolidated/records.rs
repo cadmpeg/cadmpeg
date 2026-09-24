@@ -11,6 +11,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -245,25 +246,25 @@ impl From<Class25ScalarMarker> for u8 {
     into = "Class25ScalarSegmentWire"
 )]
 pub(crate) enum Class25ScalarSegment {
-    M82Five(Box<[f64; 5]>),
-    M82Six(Box<[f64; 6]>),
-    M82Seven(Box<[f64; 7]>),
-    M83Eight(Box<[f64; 8]>),
-    M83Nine(Box<[f64; 9]>),
-    M89(Box<[f64; 20]>),
-    M8b(Box<[f64; 24]>),
+    M82Five(Box<[FiniteReal; 5]>),
+    M82Six(Box<[FiniteReal; 6]>),
+    M82Seven(Box<[FiniteReal; 7]>),
+    M83Eight(Box<[FiniteReal; 8]>),
+    M83Nine(Box<[FiniteReal; 9]>),
+    M89(Box<[FiniteReal; 20]>),
+    M8b(Box<[FiniteReal; 24]>),
 }
 #[derive(Serialize, Deserialize)]
 struct Class25ScalarSegmentWire {
     marker: Class25ScalarMarker,
-    trailing: Vec<f64>,
+    trailing: Vec<FiniteReal>,
 }
 impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
     type Error = String;
     fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
         fn with_arity<const N: usize>(
-            lane: &[f64],
-            constructor: fn(Box<[f64; N]>) -> Class25ScalarSegment,
+            lane: &[FiniteReal],
+            constructor: fn(Box<[FiniteReal; N]>) -> Class25ScalarSegment,
         ) -> Option<Class25ScalarSegment> {
             Some(constructor(Box::new(lane.try_into().ok()?)))
         }
@@ -310,7 +311,7 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Two compact operands followed by one persistent operand.
         operands: [u32; 3],
         /// Complete finite scalar lane.
-        values: Vec<f64>,
+        values: Vec<FiniteReal>,
     },
     /// Class-`0x25` three-operand form with one uninterrupted scalar lane.
     Scalar25 {
@@ -319,7 +320,7 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
         persistent_lead: Class25PersistentLead,
         /// Complete finite scalar lane.
-        values: Vec<f64>,
+        values: Vec<FiniteReal>,
     },
     /// Class-`0x25` three-operand form with a tagged scalar-lane boundary.
     SegmentedScalar25 {
@@ -328,7 +329,7 @@ pub(crate) enum ConsolidatedEdgeDefinitionData {
         /// Explicit third-operand lead (`0x0a` or `0x0b`), or `None` for compact encoding.
         persistent_lead: Class25PersistentLead,
         /// Five finite scalars preceding the segment marker.
-        leading: [f64; 5],
+        leading: [FiniteReal; 5],
         /// Marker and its scalar tail.
         #[serde(flatten)]
         segment: Class25ScalarSegment,
@@ -356,22 +357,16 @@ pub(crate) fn consolidated_edge_definition_data(
         let operands = [first, second, third];
         let scalar_bytes = payload.get(at..)?;
         if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-            let values = finite_f64_lane(scalar_bytes)?
-                .into_iter()
-                .map(FiniteReal::get)
-                .collect();
+            let values = finite_f64_lane(scalar_bytes)?;
             return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands,
                 persistent_lead,
                 values,
             });
         }
-        let leading = read_f64_array::<5>(scalar_bytes, 0)?.map(FiniteReal::get);
+        let leading = read_f64_array::<5>(scalar_bytes, 0)?;
         let marker = *scalar_bytes.get(40)?;
-        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?
-            .into_iter()
-            .map(FiniteReal::get)
-            .collect();
+        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
         let segment = Class25ScalarSegment::try_from(Class25ScalarSegmentWire {
             marker: Class25ScalarMarker::try_from(marker).ok()?,
             trailing,
@@ -397,10 +392,7 @@ pub(crate) fn consolidated_edge_definition_data(
     if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
         return None;
     }
-    let values = finite_f64_lane(scalar_bytes)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
+    let values = finite_f64_lane(scalar_bytes)?;
     if values[2] != *values.last()? {
         return None;
     }
@@ -410,7 +402,7 @@ pub(crate) fn consolidated_edge_definition_data(
             && values[1] == values[4]
             && values[1] == values[7]
             && values[2] == values[5]
-            && values[5] == 1.0)
+            && values[5].get() == 1.0)
     {
         return None;
     }
@@ -569,7 +561,7 @@ fn consolidated_edge_blocks_from_records(
                 let parameters = parameters.get(&parameter_record.byte_offset())?;
                 let co_parametric = first.sites.len() == second.sites.len()
                     && first.range == second.range
-                    && first.range == parameters.range.endpoints();
+                    && first.range == parameters.range;
                 co_parametric.then(|| ConsolidatedEdgeBlock {
                     pcurves: [first.clone(), second.clone()],
                     parameters: parameters.clone(),
@@ -1392,7 +1384,11 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 }) else {
                     continue;
                 };
-                let partner_points = block.pcurves[partner].points();
+                let partner_points = block.pcurves[partner]
+                    .points()
+                    .into_iter()
+                    .map(FiniteVector::get)
+                    .collect::<Vec<_>>();
                 let winners: Vec<_> = surfaces
                     .iter()
                     .filter_map(|surface| {
@@ -1500,7 +1496,7 @@ fn support_points(
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point))
+                .map(|site| b2_cylinder_point(carrier, site.point.get()))
                 .collect()
         }
         ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
@@ -1512,7 +1508,7 @@ fn support_points(
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cylinder_point(carrier, site.point))
+                .map(|site| b2_cylinder_point(carrier, site.point.get()))
                 .collect()
         }
         ConsolidatedSupportBinding::Cone { pos } => {
@@ -1520,7 +1516,7 @@ fn support_points(
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_cone_point(carrier, site.point))
+                .map(|site| b2_cone_point(carrier, site.point.get()))
                 .collect()
         }
         ConsolidatedSupportBinding::Sphere { pos } => {
@@ -1529,7 +1525,7 @@ fn support_points(
                 .sites
                 .iter()
                 .map(|site| {
-                    let [u, v] = site.point;
+                    let [u, v] = site.point.get();
                     cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
                         .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
@@ -1540,7 +1536,7 @@ fn support_points(
             pcurve
                 .sites
                 .iter()
-                .map(|site| b2_torus_point(carrier, site.point))
+                .map(|site| b2_torus_point(carrier, site.point.get()))
                 .collect()
         }
         ConsolidatedSupportBinding::Plane { pos } => {
@@ -1550,7 +1546,7 @@ fn support_points(
                 .sites
                 .iter()
                 .map(|site| {
-                    let [u, v] = site.point;
+                    let [u, v] = site.point.get();
                     cadmpeg_ir::eval::surface_point(&geometry, u, v)
                         .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
@@ -1566,7 +1562,7 @@ fn support_points(
                 .sites
                 .iter()
                 .map(|site| {
-                    let [u, v] = site.point;
+                    let [u, v] = site.point.get();
                     let partials = nurbs_surface_partials(surface, u, v)?;
                     let normal = partials.du.cross(partials.dv).unit()?;
                     Some(Point3::new(
@@ -1640,14 +1636,13 @@ fn nurbs_carrier_offset(
 
 fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
     let (Some(first), Some(last)) = (
-        pcurve.sites.first().map(|site| site.point),
-        pcurve.sites.last().map(|site| site.point),
+        pcurve.sites.first().map(|site| site.point.get()),
+        pcurve.sites.last().map(|site| site.point.get()),
     ) else {
         return false;
     };
     let span = circle.range.upper() - circle.range.lower();
     span.is_finite()
-        && span > 0.0
         && (first[1] - last[1]).abs() <= EPS_ENDPOINT_RANGE * span
         && (first[0].min(last[0]) - circle.range.lower()).abs() <= EPS_CIRCLE_ENDPOINT * span
         && (first[0].max(last[0]) - circle.range.upper()).abs() <= EPS_CIRCLE_ENDPOINT * span
@@ -1659,8 +1654,8 @@ fn pcurve_endpoints_match(
     evaluate: impl Fn([f64; 2]) -> Option<Point3>,
 ) -> bool {
     let (Some(first), Some(last)) = (
-        pcurve.sites.first().map(|site| site.point),
-        pcurve.sites.last().map(|site| site.point),
+        pcurve.sites.first().map(|site| site.point.get()),
+        pcurve.sites.last().map(|site| site.point.get()),
     ) else {
         return false;
     };
@@ -1810,11 +1805,11 @@ mod tests {
             layout: crate::native::CatiaCircleLayout::Identity6Bit,
             record_id: 1,
             frame_token: 0,
-            center_pair: [0.0; 2],
+            center_pair: crate::test_support::test_b5::finite_vector([0.0; 2]),
             radius: cadmpeg_ir::scalar::PositiveLength::new(span).expect("positive span"),
             range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, span])
                 .expect("increasing span"),
-            chart_shift: 0.0,
+            chart_shift: cadmpeg_ir::scalar::FiniteReal::ZERO,
         };
         let pcurve = |points: Vec<[f64; 2]>| ConsolidatedPcurve {
             pos: 0,
@@ -1825,14 +1820,18 @@ mod tests {
                 .enumerate()
                 .map(
                     |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
-                        knot: if index == 0 { 0.0 } else { span },
-                        point,
-                        first_derivatives: [0.0, 0.0],
-                        second_derivatives: [0.0, 0.0],
+                        knot: crate::test_support::test_b5::finite(if index == 0 {
+                            0.0
+                        } else {
+                            span
+                        }),
+                        point: crate::test_support::test_b5::finite_vector(point),
+                        first_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                        second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
                     },
                 )
                 .collect(),
-            range: [0.0, span],
+            range: crate::test_support::test_b5::increasing([0.0, span]),
             tail: Vec::new(),
         };
 

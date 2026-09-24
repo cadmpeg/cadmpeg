@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
 
@@ -310,13 +311,13 @@ const _: [(); 1] = [(); StandardUnit::scales_are_positive_finite() as usize];
 /// A custom unit whose meter and millimeter scales are finite and positive.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CustomUnit {
-    meters_per_unit: f64,
+    meters_per_unit: PositiveReal,
     millimeters_per_unit: MillimeterScale,
     name: String,
 }
 
 impl CustomUnit {
-    pub(crate) fn meters_per_unit(&self) -> f64 {
+    pub(crate) fn meters_per_unit(&self) -> PositiveReal {
         self.meters_per_unit
     }
 
@@ -337,8 +338,8 @@ pub(crate) enum UnitSystem {
 impl UnitSystem {
     pub(crate) fn custom(meters_per_unit: f64, name: String) -> Option<Self> {
         let millimeters_per_unit = MillimeterScale::new(meters_per_unit * 1000.0)?;
-        (meters_per_unit.is_finite() && meters_per_unit > 0.0).then_some(Self::Custom(CustomUnit {
-            meters_per_unit,
+        Some(Self::Custom(CustomUnit {
+            meters_per_unit: PositiveReal::new(meters_per_unit)?,
             millimeters_per_unit,
             name,
         }))
@@ -373,12 +374,15 @@ pub(crate) struct DistanceDisplay {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UnitsAndTolerances {
     pub(crate) unit: UnitSystem,
-    /// Absolute tolerance in native archive units.
-    pub(crate) absolute_tolerance: f64,
-    /// Angular tolerance, never scaled.
-    pub(crate) angular_tolerance: f64,
-    /// Relative tolerance, never scaled.
-    pub(crate) relative_tolerance: f64,
+    /// Positive absolute tolerance in native archive units.
+    pub(crate) absolute_tolerance: PositiveReal,
+    /// Absolute tolerance in millimeters when the unit states a scale: the
+    /// native tolerance times the scale, admitted finite and positive.
+    pub(crate) absolute_tolerance_millimeters: Option<PositiveLength>,
+    /// Angular tolerance, never scaled, in `(0, pi]`.
+    pub(crate) angular_tolerance: PositiveAngle,
+    /// Relative tolerance, never scaled, in `(0, 1)`.
+    pub(crate) relative_tolerance: PositiveReal,
     pub(crate) distance_display: Option<DistanceDisplay>,
 }
 
@@ -387,9 +391,8 @@ impl UnitsAndTolerances {
         self.unit.millimeters_per_unit()
     }
 
-    pub(crate) fn absolute_tolerance_millimeters(&self) -> Option<f64> {
-        self.millimeters_per_unit()
-            .map(|scale| self.absolute_tolerance * scale)
+    pub(crate) fn absolute_tolerance_millimeters(&self) -> Option<PositiveLength> {
+        self.absolute_tolerance_millimeters
     }
 }
 
@@ -500,25 +503,25 @@ pub(crate) struct MeshParameters {
     /// Obsolete weld field retained in the wire layout.
     pub(crate) obsolete_weld: i32,
     /// Meshing tolerance.
-    pub(crate) tolerance: f64,
+    pub(crate) tolerance: FiniteReal,
     /// Minimum edge length.
-    min_edge_length: f64,
+    min_edge_length: FiniteReal,
     /// Maximum edge length.
-    max_edge_length: f64,
+    max_edge_length: FiniteReal,
     /// Grid aspect ratio.
-    grid_aspect_ratio: f64,
+    grid_aspect_ratio: FiniteReal,
     /// Minimum grid count.
     grid_min_count: i32,
     /// Maximum grid count.
     grid_max_count: i32,
     /// Grid angle in radians.
-    grid_angle_radians: f64,
+    grid_angle_radians: FiniteReal,
     /// Grid amplification factor.
-    grid_amplification: f64,
+    grid_amplification: FiniteReal,
     /// Refinement angle in radians.
-    refine_angle_radians: f64,
+    refine_angle_radians: FiniteReal,
     /// Obsolete combine angle retained in the wire layout.
-    obsolete_combine_angle: f64,
+    obsolete_combine_angle: FiniteReal,
     /// Face-type enum: 0 mixed, 1 triangles, 2 quads.
     face_type: i32,
     /// Texture-range mode, introduced at minor 1.
@@ -526,7 +529,7 @@ pub(crate) struct MeshParameters {
     /// Custom-settings flag, introduced at minor 2.
     pub(crate) custom_settings: Option<bool>,
     /// Relative tolerance, introduced at minor 2.
-    relative_tolerance: Option<f64>,
+    relative_tolerance: Option<FiniteReal>,
     /// Mesher selector, introduced at minor 3.
     mesher: Option<u8>,
     /// Custom-settings-enabled flag, introduced at minor 4.
@@ -585,7 +588,7 @@ pub(crate) struct LayerHierarchy {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LayerPlot {
     pub(crate) color: [u8; 4],
-    pub(crate) weight_mm: f64,
+    pub(crate) weight_mm: FiniteReal,
 }
 
 /// Layer metadata decoded without attributes or geometry.
@@ -646,7 +649,7 @@ pub(crate) struct LayerPerViewportSettings {
     /// Per-viewport plot color, if effective.
     pub(crate) plot_color: Option<[u8; 4]>,
     /// Per-viewport plot weight in millimeters, if effective.
-    pub(crate) plot_weight_mm: Option<f64>,
+    pub(crate) plot_weight_mm: Option<FiniteReal>,
     /// Source visibility override.
     pub(crate) visible: Option<LayerVisibility>,
     /// Source persistent-visibility override for child layers.
@@ -950,7 +953,8 @@ fn parse_layer_extensions(
         let color = color_value.filter(|value| *value != [u8::MAX; 4]);
         let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
         let plot_weight_mm = plot_weight_value
-            .filter(|value| value.is_finite() && (*value >= 0.0 || *value == -1.0));
+            .and_then(FiniteReal::new)
+            .filter(|value| value.get() >= 0.0 || value.get() == -1.0);
         let visible = visible_value.and_then(LayerVisibility::from_byte);
         let persistent_visibility = if parent_is_nil {
             None
@@ -997,7 +1001,7 @@ fn parse_layer_extensions(
                     .cmp(&b.plot_color.map(u32::from_le_bytes))
             })
             .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
-                (Some(a), Some(b)) => a.total_cmp(&b),
+                (Some(a), Some(b)) => a.get().total_cmp(&b.get()),
                 (None, None) => std::cmp::Ordering::Equal,
                 (None, Some(_)) => std::cmp::Ordering::Less,
                 (Some(_), None) => std::cmp::Ordering::Greater,
@@ -1132,24 +1136,19 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
     };
     let angular = finite(angular_offset, angular, "angular tolerance")?;
     let relative = finite(relative_offset, relative, "relative tolerance")?;
-    if absolute <= 0.0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "absolute tolerance must be positive",
-        ));
-    }
-    if angular <= 0.0 || angular > std::f64::consts::PI {
-        return Err(FramingError::structural(
-            reader.position(),
-            "angular tolerance must be in (0, pi]",
-        ));
-    }
-    if relative <= 0.0 || relative >= 1.0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "relative tolerance must be in (0, 1)",
-        ));
-    }
+    let absolute = PositiveReal::new(absolute.get()).ok_or_else(|| {
+        FramingError::structural(reader.position(), "absolute tolerance must be positive")
+    })?;
+    let angular = PositiveAngle::new(angular.get())
+        .filter(|angular| angular.get() <= std::f64::consts::PI)
+        .ok_or_else(|| {
+            FramingError::structural(reader.position(), "angular tolerance must be in (0, pi]")
+        })?;
+    let relative = PositiveReal::new(relative.get())
+        .filter(|relative| relative.get() < 1.0)
+        .ok_or_else(|| {
+            FramingError::structural(reader.position(), "relative tolerance must be in (0, 1)")
+        })?;
     let distance_display = if !legacy && version >= 101 {
         Some(DistanceDisplay {
             mode: reader.i32()?,
@@ -1180,19 +1179,19 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
                 FramingError::structural(reader.position(), "unknown unit enum value")
             })?,
     };
-    if let Some(scale) = unit.millimeters_per_unit() {
-        let scaled_absolute = absolute * scale;
-        if !scaled_absolute.is_finite() || scaled_absolute <= 0.0 {
-            return Err(FramingError::structural(
-                reader.position(),
-                "scaled absolute tolerance is invalid",
-            ));
-        }
-    }
+    let absolute_tolerance_millimeters = unit
+        .millimeters_per_unit()
+        .map(|scale| {
+            PositiveLength::new(absolute.get() * scale).ok_or_else(|| {
+                FramingError::structural(reader.position(), "scaled absolute tolerance is invalid")
+            })
+        })
+        .transpose()?;
     reader.skip_remaining()?;
     Ok(UnitsAndTolerances {
         unit,
         absolute_tolerance: absolute,
+        absolute_tolerance_millimeters,
         angular_tolerance: angular,
         relative_tolerance: relative,
         distance_display,

@@ -49,7 +49,12 @@ fn loop_metadata_accepts_exact_base_and_extended_forms() {
         assert_eq!(
             metadata.extension,
             Some(B5LoopMetadataExtension {
-                scalars: [1.0, -2.0, 3.5, 4.25],
+                scalars: [
+                    crate::test_support::test_b5::finite(1.0),
+                    crate::test_support::test_b5::finite(-2.0),
+                    crate::test_support::test_b5::finite(3.5),
+                    crate::test_support::test_b5::finite(4.25)
+                ],
                 control: metadata_control,
                 floats: [1.0, -2.0, 3.5, 4.25, 5.5, -6.75],
             })
@@ -187,7 +192,7 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
         parse_pcurve(&record(payload.clone()))
             .expect("complete class-21 pcurve")
             .class_21_suffix_scalar,
-        Some(1.0)
+        Some(crate::test_support::test_b5::positive(1.0))
     );
     let tail = payload.len() - 36;
     let mut alternate_scalar = payload.clone();
@@ -262,7 +267,10 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
         pcurve.distinct_knots,
         crate::test_support::test_b5::finite_lane(&[10.0, 20.0])
     );
-    assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+    assert_eq!(
+        pcurve.class_21_suffix_scalar,
+        Some(crate::test_support::test_b5::positive(10.0))
+    );
     assert_eq!(
         pcurve_parameter_domain(&pcurve),
         Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
@@ -282,9 +290,9 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
         B5Surface::Plane {
             origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            direction_v: [0.0, 1.0, 0.0],
-            u_range: [-1.0, 1.0],
-            v_range: [-1.0, 1.0],
+            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+            v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         },
     )]);
     let opaque_pcurves = BTreeMap::new();
@@ -319,18 +327,18 @@ fn surface_candidate_merge_refines_opaque_wrappers_and_rejects_exact_conflicts()
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let cylinder = B5Surface::Cylinder {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(1.0),
-        u_range: [0.0, std::f64::consts::TAU],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(1.0),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let mut surfaces = BTreeMap::from([(1, unknown)]);
     let mut conflicts = HashSet::new();
@@ -381,9 +389,9 @@ fn full_surface_alias_closure_is_order_independent_unbounded_and_cycle_safe() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let mut surfaces = BTreeMap::from([(30, plane.clone())]);
     let mut conflicts = HashSet::new();
@@ -439,9 +447,9 @@ fn surface_alias_closes_after_its_terminal_construction_resolves() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     surfaces.insert(2, plane.clone());
     assert!(resolve_surface_aliases(
@@ -494,16 +502,16 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
     let carrier = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let source = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.5]),
         frame: crate::test_support::test_b5::plane_frame([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]),
-        direction_v: [-1.0, 0.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([-1.0, 0.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let mut payload = vec![0x82, 0x82, 0x83];
     payload.extend_from_slice(&(-0.5f64).to_le_bytes());
@@ -743,9 +751,9 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let record = B5FaceRecord {
         object_id: 30,
@@ -867,12 +875,15 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
     let surface = B5Surface::Sphere {
         center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(5.0),
-        azimuth_range: [0.0, std::f64::consts::TAU],
-        latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-        construction_radius: chart_scale,
-        chart_origin: 0.0,
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        latitude_range: crate::test_support::test_b5::increasing([
+            -std::f64::consts::FRAC_PI_2,
+            std::f64::consts::FRAC_PI_2,
+        ]),
+        construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let opaque_pcurves = BTreeMap::from([(2, pcurve.clone())]);
     let surfaces = BTreeMap::from([(4, surface)]);
@@ -983,7 +994,10 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
             degree: 1,
             distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
             multiplicities: vec![2, 2],
-            control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+            control_points: vec![
+                crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+            ],
             weights: None,
             parameter_range: None,
             parameterization: B5PcurveParameterization::Native,
@@ -1089,7 +1103,10 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             degree: 1,
             distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
             multiplicities: vec![2, 2],
-            control_points: vec![[0.0, 0.0], [10.0, 0.0]],
+            control_points: vec![
+                crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+                crate::test_support::test_b5::finite_vector([10.0, 0.0]),
+            ],
             weights: None,
             parameter_range: None,
             parameterization: B5PcurveParameterization::Native,
@@ -1105,9 +1122,9 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
         B5Surface::Plane {
             origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            direction_v: [0.0, 1.0, 0.0],
-            u_range: [0.0, 10.0],
-            v_range: [-1.0, 1.0],
+            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            u_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
+            v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         },
     )]);
     let edge_parameter_incidences = BTreeMap::from([(3, [20, 21])]);
@@ -1179,7 +1196,10 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
             degree: 1,
             distinct_knots: crate::test_support::test_b5::finite_lane(&[2.0, 8.0]),
             multiplicities: vec![2, 2],
-            control_points: vec![[2.0, 0.0], [8.0, 0.0]],
+            control_points: vec![
+                crate::test_support::test_b5::finite_vector([2.0, 0.0]),
+                crate::test_support::test_b5::finite_vector([8.0, 0.0]),
+            ],
             weights: None,
             parameter_range: Some(crate::test_support::test_b5::finite_pair([2.0, 8.0])),
             parameterization: B5PcurveParameterization::Native,
@@ -1192,9 +1212,9 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
         B5Surface::Plane {
             origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            direction_v: [0.0, 1.0, 0.0],
-            u_range: [0.0, 10.0],
-            v_range: [-1.0, 1.0],
+            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+            u_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
+            v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         },
     )]);
     let opaque_pcurves = BTreeMap::new();
@@ -1248,12 +1268,15 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         B5Surface::Sphere {
             center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
             frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-            direction_y: [0.0, 1.0, 0.0],
+            direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
             radius: crate::test_support::test_b5::positive_length(5.0),
-            azimuth_range: [0.0, std::f64::consts::TAU],
-            latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-            construction_radius: chart_scale,
-            chart_origin: 0.0,
+            azimuth_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+            latitude_range: crate::test_support::test_b5::increasing([
+                -std::f64::consts::FRAC_PI_2,
+                std::f64::consts::FRAC_PI_2,
+            ]),
+            construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
+            chart_origin: crate::test_support::test_b5::finite(0.0),
         },
     )]);
     let mut incidence_payload = vec![0x81, 0x82, 0x81];
@@ -1428,7 +1451,10 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,

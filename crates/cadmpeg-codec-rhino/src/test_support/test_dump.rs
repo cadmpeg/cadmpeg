@@ -960,9 +960,10 @@ pub(crate) fn set_test_units(scan: &mut crate::container::Scan<'_>, scale: f64) 
     };
     scan.metadata.settings.units = Some(settings::UnitsAndTolerances {
         unit,
-        absolute_tolerance: 0.01,
-        angular_tolerance: 0.1,
-        relative_tolerance: 0.01,
+        absolute_tolerance: crate::test_support::positive(0.01),
+        absolute_tolerance_millimeters: cadmpeg_ir::scalar::PositiveLength::new(0.01 * scale),
+        angular_tolerance: crate::test_support::positive_angle(0.1),
+        relative_tolerance: crate::test_support::positive(0.01),
         distance_display: None,
     });
 }

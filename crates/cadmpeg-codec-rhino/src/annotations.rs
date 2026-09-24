@@ -4,6 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -100,7 +101,7 @@ struct AnnotationRecord {
     legacy_user_text: Option<String>,
     legacy_user_positioned_text: Option<bool>,
     legacy_style_index: Option<i32>,
-    legacy_text_height: Option<f64>,
+    legacy_text_height: Option<FiniteReal>,
     legacy_justification: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     v2_default_text: Option<String>,
@@ -235,7 +236,7 @@ impl DotDisplay {
 
 #[derive(Debug, Serialize)]
 struct TextDotData {
-    center: [f64; 3],
+    center: [FiniteReal; 3],
     height_points: i32,
     primary_text: String,
     secondary_text: String,
@@ -251,8 +252,8 @@ struct AnnotationArrowRecord {
     id: String,
     source_offset: u64,
     source_uuid: String,
-    tail: [f64; 3],
-    head: [f64; 3],
+    tail: [FiniteReal; 3],
+    head: [FiniteReal; 3],
     links: Vec<String>,
 }
 
@@ -314,12 +315,13 @@ fn scaled_plane(
     offset: usize,
 ) -> Result<Plane, FramingError> {
     for coordinate in &mut plane.origin {
-        *coordinate = scaled_coordinate(*coordinate, scale).ok_or_else(|| {
-            FramingError::structural(offset, "scaled annotation plane is invalid")
-        })?;
+        *coordinate = scaled_coordinate(*coordinate, scale)
+            .ok_or_else(|| FramingError::structural(offset, "scaled annotation plane is invalid"))?
+            .get();
     }
     plane.equation[3] = scaled_coordinate(plane.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
+        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?
+        .get();
     Ok(plane)
 }
 
@@ -336,7 +338,8 @@ fn decode_annotation(
     annotation.text_rectangle_width = scaled_coordinate(annotation.text_rectangle_width, scale)
         .ok_or_else(|| {
             FramingError::structural(range.start, "scaled text rectangle width is invalid")
-        })?;
+        })?
+        .get();
     let mut points = Vec::new();
     if leader {
         let count = outer.i32()?;
@@ -356,15 +359,22 @@ fn decode_annotation(
                 ));
             }
             points.push([
-                scaled_coordinate(point[0], scale).ok_or_else(|| {
-                    FramingError::structural(
-                        outer.position() - 16,
-                        "scaled leader point is invalid",
-                    )
-                })?,
-                scaled_coordinate(point[1], scale).ok_or_else(|| {
-                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
-                })?,
+                scaled_coordinate(point[0], scale)
+                    .ok_or_else(|| {
+                        FramingError::structural(
+                            outer.position() - 16,
+                            "scaled leader point is invalid",
+                        )
+                    })?
+                    .get(),
+                scaled_coordinate(point[1], scale)
+                    .ok_or_else(|| {
+                        FramingError::structural(
+                            outer.position() - 8,
+                            "scaled leader point is invalid",
+                        )
+                    })?
+                    .get(),
             ]);
         }
     }
@@ -418,7 +428,7 @@ struct V2Text {
     #[serde(rename = "v2_font_weight")]
     font_weight: i32,
     #[serde(rename = "v2_text_height")]
-    text_height: f64,
+    text_height: FiniteReal,
 }
 
 fn decode_v2_annotation(
@@ -481,9 +491,10 @@ fn decode_dot(
             "text-dot version is unsupported",
         ));
     }
-    let mut center = [reader.f64()?, reader.f64()?, reader.f64()?];
-    for value in &mut center {
-        *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+    let raw_center = [reader.f64()?, reader.f64()?, reader.f64()?];
+    let mut center = [FiniteReal::ZERO; 3];
+    for (target, value) in center.iter_mut().zip(raw_center) {
+        *target = scaled_coordinate(value, scale).ok_or_else(|| {
             FramingError::structural(range.start, "scaled text-dot center is invalid")
         })?;
     }
@@ -529,10 +540,11 @@ fn v2_point(
     scale: MillimeterScale,
     offset: usize,
     kind: &str,
-) -> Result<[f64; 3], FramingError> {
-    let mut point = [reader.f64()?, reader.f64()?, reader.f64()?];
-    for value in &mut point {
-        *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+) -> Result<[FiniteReal; 3], FramingError> {
+    let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
+    let mut point = [FiniteReal::ZERO; 3];
+    for (target, value) in point.iter_mut().zip(raw_point) {
+        *target = scaled_coordinate(value, scale).ok_or_else(|| {
             FramingError::structural(offset, format!("scaled V2 {kind} point is invalid"))
         })?;
     }
@@ -566,7 +578,7 @@ fn decode_v2_annotation_arrow(
     data: &[u8],
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
-) -> Result<([f64; 3], [f64; 3]), FramingError> {
+) -> Result<([FiniteReal; 3], [FiniteReal; 3]), FramingError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     v2_version(&mut reader, range.start, "annotation-arrow")?;
     let tail = v2_point(&mut reader, scale, range.start, "annotation-arrow tail")?;
@@ -1219,7 +1231,7 @@ mod tests {
             .expect("V2 text fields are present together");
         assert_eq!(text.face_name, "Witness Sans");
         assert_eq!(text.font_weight, 700);
-        assert_eq!(text.text_height, 125.0);
+        assert_eq!(text.text_height, crate::test_support::finite(125.0));
         assert_eq!(value.base.plane.origin, [10.0, 20.0, 30.0]);
 
         let mut leader = v2_annotation_payload(
@@ -1430,7 +1442,10 @@ mod tests {
             crate::test_support::millimeter_scale(10.0),
         )
         .expect("valid text dot");
-        assert_eq!(dot.center, [10.0, 20.0, 30.0]);
+        assert_eq!(
+            dot.center,
+            crate::test_support::finite_array([10.0, 20.0, 30.0])
+        );
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "secondary");
         assert!(
@@ -1458,7 +1473,10 @@ mod tests {
             crate::settings::MillimeterScale::IDENTITY,
         )
         .expect("valid V1.0 text dot");
-        assert_eq!(dot.center, [12.5, -3.25, 7.75]);
+        assert_eq!(
+            dot.center,
+            crate::test_support::finite_array([12.5, -3.25, 7.75])
+        );
         assert_eq!(dot.height_points, 23);
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "");
@@ -1485,7 +1503,10 @@ mod tests {
             crate::test_support::millimeter_scale(2.0),
         )
         .expect("valid V2 text dot");
-        assert_eq!(dot.center, [2.5, -5.0, 9.5]);
+        assert_eq!(
+            dot.center,
+            crate::test_support::finite_array([2.5, -5.0, 9.5])
+        );
         assert_eq!(dot.primary_text, "V2 dot");
         assert_eq!(dot.height_points, 0);
         assert_eq!(dot.font_face, "");
@@ -1512,8 +1533,11 @@ mod tests {
             crate::test_support::millimeter_scale(10.0),
         )
         .expect("valid V2 arrow");
-        assert_eq!(tail, [10.0, 20.0, 30.0]);
-        assert_eq!(head, [-40.0, 50.0, -60.0]);
+        assert_eq!(tail, crate::test_support::finite_array([10.0, 20.0, 30.0]));
+        assert_eq!(
+            head,
+            crate::test_support::finite_array([-40.0, 50.0, -60.0])
+        );
     }
 
     #[test]
@@ -1615,7 +1639,7 @@ mod tests {
         assert_eq!(value.user_text, "formula");
         assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, 15.0);
+        assert_eq!(value.text_height, crate::test_support::finite(15.0));
         assert_eq!(value.dimstyle_index, 12);
         assert_eq!(value.justification, (1 << 18) | 1);
     }
@@ -1645,7 +1669,7 @@ mod tests {
         assert_eq!(value.user_text, "legacy");
         assert_eq!(value.plane.origin, [10.0, 35.0, 30.0]);
         assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
-        assert_eq!(value.text_height, 15.0);
+        assert_eq!(value.text_height, crate::test_support::finite(15.0));
         assert_eq!(value.dimstyle_index, -1);
         assert_eq!(value.justification, (1 << 18) | 1);
         assert!(!value.allow_text_scaling);

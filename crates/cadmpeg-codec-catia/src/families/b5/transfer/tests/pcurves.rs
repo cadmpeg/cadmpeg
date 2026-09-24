@@ -36,10 +36,10 @@ fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(6.0),
-        u_range: [1.0, 1.0 + 6.0 * std::f64::consts::PI],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([1.0, 1.0 + 6.0 * std::f64::consts::PI]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(3.0),
-        chart_origin: 1.0,
+        chart_origin: crate::test_support::test_b5::finite(1.0),
     };
     let point = neutral_pcurve_point([3.0 * std::f64::consts::PI, 3.0], &surface);
     assert_eq!(point.u, std::f64::consts::PI);
@@ -60,9 +60,9 @@ fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
 #[test]
 fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
     let profile = B5Profile::Line {
-        point: [2.0, 0.0, 0.0],
-        direction: [0.0, 0.0, 1.0],
-        parameter_range: [-1.0, 1.0],
+        point: crate::test_support::test_b5::point([2.0, 0.0, 0.0]),
+        direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
+        parameter_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let (surface, plan) = revolution_surface(
         Some(&profile),
@@ -130,7 +130,10 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 degree: 1,
                 distinct_knots: crate::test_support::test_b5::finite_lane(&angular_range),
                 multiplicities: vec![2, 2],
-                control_points: vec![[0.5, angular_range[0]], [0.5, angular_range[1]]],
+                control_points: vec![
+                    crate::test_support::test_b5::finite_vector([0.5, angular_range[0]]),
+                    crate::test_support::test_b5::finite_vector([0.5, angular_range[1]]),
+                ],
                 weights: None,
                 parameter_range: None,
                 parameterization: B5PcurveParameterization::Native,
@@ -146,8 +149,8 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 profile_curve: 110,
                 axis_origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 axis_direction: crate::test_support::test_b5::unit([0.0, 0.0, 1.0]),
-                profile_range: [-1.0, 1.0],
-                angular_range,
+                profile_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+                angular_range: crate::test_support::test_b5::increasing(angular_range),
                 angular_scale: crate::test_support::test_b5::positive(1.0),
             },
         )]),
@@ -195,9 +198,9 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         profiles: BTreeMap::from([(
             110,
             B5Profile::Line {
-                point: [2.0, 0.0, 0.0],
-                direction: [0.0, 0.0, 1.0],
-                parameter_range: [-1.0, 1.0],
+                point: crate::test_support::test_b5::point([2.0, 0.0, 0.0]),
+                direction: crate::test_support::test_b5::exact_unit([0.0, 0.0, 1.0]),
+                parameter_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
             },
         )]),
     };
@@ -230,7 +233,10 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 2.0], [3.0, 2.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 2.0]),
+            crate::test_support::test_b5::finite_vector([3.0, 2.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -240,9 +246,9 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
         lifted_curve_geometry(&pcurve, &plane)
@@ -256,16 +262,19 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(2.0),
-        u_range: [0.0, 4.0 * std::f64::consts::PI],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([0.0, 4.0 * std::f64::consts::PI]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(2.0),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     assert!(
         matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius().get() == 2.0 })
     );
     let meridian = B5Pcurve {
-        control_points: vec![[1.0, -2.0], [1.0, 4.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([1.0, -2.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 4.0]),
+        ],
         ..pcurve
     };
     assert!(matches!(
@@ -283,7 +292,10 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.5 * scale, 0.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -294,10 +306,10 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         origin: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(scale),
-        u_range: [0.0, std::f64::consts::TAU * scale],
-        v_range: [-scale, scale],
+        u_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU * scale]),
+        v_range: crate::test_support::test_b5::increasing([-scale, scale]),
         angular_scale: crate::test_support::test_b5::finite(scale),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
     let edge_start = cylinder_point(
@@ -306,7 +318,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         [0.0, 0.0, 1.0],
         scale,
         scale,
-        pcurve.control_points[0],
+        pcurve.control_points[0].get(),
     );
     let edge_end = cylinder_point(
         [0.0; 3],
@@ -314,7 +326,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         [0.0, 0.0, 1.0],
         scale,
         scale,
-        pcurve.control_points[1],
+        pcurve.control_points[1].get(),
     );
     assert!(oriented_circle_plan(
         &pcurve,
@@ -330,16 +342,19 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         apex: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle: std::f64::consts::FRAC_PI_6,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [0.0, scale],
+        half_angle: crate::test_support::test_b5::positive_angle(std::f64::consts::FRAC_PI_6),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([0.0, scale]),
         angular_scale: crate::test_support::test_b5::positive(1.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     let cone_pcurve = B5Pcurve {
-        control_points: vec![[0.0, scale], [0.5, scale]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, scale]),
+            crate::test_support::test_b5::finite_vector([0.5, scale]),
+        ],
         ..pcurve.clone()
     };
     assert!(
@@ -353,18 +368,27 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
     let torus = B5Surface::Torus {
         center: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
         major_radius: crate::test_support::test_b5::positive_length(scale),
         minor_radius: crate::test_support::test_b5::positive_length(scale),
-        major_angular_range: [0.0, std::f64::consts::TAU],
-        major_angular_domain: [0.0, std::f64::consts::TAU],
-        minor_angular_range: [0.0, std::f64::consts::TAU],
-        minor_angular_domain: [0.0, std::f64::consts::TAU],
+        major_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        major_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
+        minor_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        minor_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
         major_scale: crate::test_support::test_b5::positive(1.0),
         minor_scale: crate::test_support::test_b5::positive(1.0),
     };
     let torus_pcurve = B5Pcurve {
-        control_points: vec![[0.0, 0.0], [0.5, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.5, 0.0]),
+        ],
         ..pcurve
     };
     assert!(
@@ -384,7 +408,11 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         degree: 2,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
-        control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 1.0]),
+            crate::test_support::test_b5::finite_vector([0.0, 1.0]),
+        ],
         weights: Some(crate::test_support::test_b5::positive_lane(&[
             1.0,
             std::f64::consts::FRAC_1_SQRT_2,
@@ -398,9 +426,9 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 2.0]),
         frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-        direction_v: [0.0, 1.0, 0.0],
-        u_range: [-1.0, 1.0],
-        v_range: [-1.0, 1.0],
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
         lifted_curve_geometry(&pcurve, &plane)
@@ -491,7 +519,11 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
         degree: 2,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
-        control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([4.0, 2.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 6.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 10.0]),
+        ],
         weights: Some(crate::test_support::test_b5::positive_lane(&[
             1.0, 2.0, 1.0,
         ])),
@@ -515,7 +547,11 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
     );
 
     let turnback = B5Pcurve {
-        control_points: vec![[4.0, 2.0], [4.0, 10.0], [4.0, 6.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([4.0, 2.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 10.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 6.0]),
+        ],
         ..pcurve.clone()
     };
     assert!(isocurve_endpoint_parameters(&turnback, [0.0, 1.0]).is_none());
@@ -586,10 +622,10 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(2.0),
-        u_range: [0.0, 4.0 * std::f64::consts::PI],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([0.0, 4.0 * std::f64::consts::PI]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(2.0),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let pcurve = B5Pcurve {
         object_id: 1,
@@ -597,7 +633,10 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[11.0, 3.0], [13.0, 3.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([11.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([13.0, 3.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -611,7 +650,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         [0.0, 0.0, 1.0],
         2.0,
         2.0,
-        pcurve.control_points[0],
+        pcurve.control_points[0].get(),
     );
     let edge_end = cylinder_point(
         [0.0; 3],
@@ -619,7 +658,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         [0.0, 0.0, 1.0],
         2.0,
         2.0,
-        pcurve.control_points[1],
+        pcurve.control_points[1].get(),
     );
     let forward = oriented_circle_plan(
         &pcurve,
@@ -632,9 +671,12 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     .expect("seam-crossing circle range");
     assert_eq!(forward.parameter_range, Some([5.5, 6.5]));
 
-    let tiny_sweep = 1e-14;
+    let tiny_sweep = 1e-14_f64;
     let tiny_pcurve = B5Pcurve {
-        control_points: vec![[0.0, 3.0], [2.0 * tiny_sweep, 3.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([2.0 * tiny_sweep, 3.0]),
+        ],
         ..pcurve.clone()
     };
     let tiny_geometry =
@@ -645,7 +687,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         [0.0, 0.0, 1.0],
         2.0,
         2.0,
-        tiny_pcurve.control_points[1],
+        tiny_pcurve.control_points[1].get(),
     );
     let tiny = oriented_circle_plan(
         &tiny_pcurve,
@@ -684,7 +726,11 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
     let turnback = B5Pcurve {
         degree: 2,
         multiplicities: vec![3, 3],
-        control_points: vec![[0.0, 3.0], [4.0, 3.0], [2.0, 3.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([2.0, 3.0]),
+        ],
         ..pcurve
     };
     let turnback_geometry =
@@ -712,16 +758,19 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         apex: crate::test_support::test_b5::point([0.0; 3]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [-4.0, 0.0],
+        half_angle: crate::test_support::test_b5::positive_angle(half_angle),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([-4.0, 0.0]),
         angular_scale: crate::test_support::test_b5::positive(2.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     let cone_pcurve = B5Pcurve {
-        control_points: vec![[0.0, -4.0], [2.0, -4.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, -4.0]),
+            crate::test_support::test_b5::finite_vector([2.0, -4.0]),
+        ],
         ..reversed_pcurve
     };
     let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone).expect("signed cone latitude");
@@ -812,12 +861,12 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         apex: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-        half_angle,
-        reference_radius: 0.0,
-        angular_range: [0.0, std::f64::consts::TAU],
-        slant_range: [2.0, 8.0],
+        half_angle: crate::test_support::test_b5::positive_angle(half_angle),
+        reference_radius: crate::test_support::test_b5::finite(0.0),
+        angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        slant_range: crate::test_support::test_b5::increasing([2.0, 8.0]),
         angular_scale: crate::test_support::test_b5::positive(3.0),
-        angular_domain: [0.0, std::f64::consts::TAU],
+        angular_domain: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
         surface: None,
     };
     let pcurve = B5Pcurve {
@@ -829,7 +878,10 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
             3.0 * std::f64::consts::PI,
         ]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 4.0]),
+            crate::test_support::test_b5::finite_vector([3.0 * std::f64::consts::PI, 4.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -840,7 +892,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         pcurve
             .control_points
             .iter()
-            .map(|point| neutral_pcurve_point(*point, &cone))
+            .map(|point| neutral_pcurve_point(point.get(), &cone))
             .collect::<Vec<_>>(),
         [
             Point2::new(0.0, 2.0 * half_angle.cos()),
@@ -874,12 +926,12 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
     let sphere = B5Surface::Sphere {
         center: crate::test_support::test_b5::point([1.0, 2.0, 3.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(5.0),
-        azimuth_range: [0.0, std::f64::consts::TAU],
-        latitude_range: [-1.0, 1.0],
-        construction_radius: 8.0,
-        chart_origin: 0.0,
+        azimuth_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        latitude_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        construction_radius: crate::test_support::test_b5::positive_length(8.0),
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let pcurve = B5SphereGreatCirclePcurve {
         u_bounds: crate::test_support::test_b5::increasing([0.0, 8.0]),
@@ -925,7 +977,7 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
     else {
         unreachable!()
     };
-    *construction_radius = tiny;
+    *construction_radius = crate::test_support::test_b5::positive_length(tiny);
     *radius = crate::test_support::test_b5::positive_length(tiny);
     let tiny_pcurve = B5SphereGreatCirclePcurve {
         u_bounds: crate::test_support::test_b5::increasing([0.0, tiny]),
@@ -995,12 +1047,18 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
             B5Surface::Sphere {
                 center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
                 frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-                direction_y: [0.0, 1.0, 0.0],
+                direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
                 radius: crate::test_support::test_b5::positive_length(5.0),
-                azimuth_range: [0.0, std::f64::consts::TAU],
-                latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-                construction_radius: chart_scale,
-                chart_origin: 0.0,
+                azimuth_range: crate::test_support::test_b5::increasing([
+                    0.0,
+                    std::f64::consts::TAU,
+                ]),
+                latitude_range: crate::test_support::test_b5::increasing([
+                    -std::f64::consts::FRAC_PI_2,
+                    std::f64::consts::FRAC_PI_2,
+                ]),
+                construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
+                chart_origin: crate::test_support::test_b5::finite(0.0),
             },
         )]),
         surface_aliases: BTreeMap::new(),
@@ -1166,12 +1224,18 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
             B5Surface::Sphere {
                 center: crate::test_support::test_b5::point(component.center),
                 frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-                direction_y: [0.0, 1.0, 0.0],
+                direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
                 radius: crate::test_support::test_b5::positive_length(radius),
-                azimuth_range: [0.0, std::f64::consts::TAU],
-                latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
-                construction_radius: chart_scale,
-                chart_origin: 0.0,
+                azimuth_range: crate::test_support::test_b5::increasing([
+                    0.0,
+                    std::f64::consts::TAU,
+                ]),
+                latitude_range: crate::test_support::test_b5::increasing([
+                    -std::f64::consts::FRAC_PI_2,
+                    std::f64::consts::FRAC_PI_2,
+                ]),
+                construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
+                chart_origin: crate::test_support::test_b5::finite(0.0),
             },
         );
         let points = [
@@ -1294,13 +1358,19 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
     let torus = B5Surface::Torus {
         center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-        direction_y: [0.0, 1.0, 0.0],
+        direction_y: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
         major_radius: crate::test_support::test_b5::positive_length(5.0),
         minor_radius: crate::test_support::test_b5::positive_length(2.0),
-        major_angular_range: [0.0, std::f64::consts::TAU],
-        major_angular_domain: [0.0, std::f64::consts::TAU],
-        minor_angular_range: [0.0, std::f64::consts::TAU],
-        minor_angular_domain: [0.0, std::f64::consts::TAU],
+        major_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        major_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
+        minor_angular_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
+        minor_angular_domain: crate::test_support::test_b5::increasing([
+            0.0,
+            std::f64::consts::TAU,
+        ]),
         major_scale: crate::test_support::test_b5::positive(5.0),
         minor_scale: crate::test_support::test_b5::positive(2.0),
     };
@@ -1310,7 +1380,10 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.0, 4.0 * std::f64::consts::PI]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -1334,7 +1407,10 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
     assert_eq!(radius, 2.0);
 
     let latitude = B5Pcurve {
-        control_points: vec![[0.0, 0.0], [10.0 * std::f64::consts::PI, 0.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([10.0 * std::f64::consts::PI, 0.0]),
+        ],
         ..base
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
@@ -1385,7 +1461,10 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
-        control_points: vec![[0.0, 3.0], [4.0, 7.0]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 3.0]),
+            crate::test_support::test_b5::finite_vector([4.0, 7.0]),
+        ],
         weights: None,
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
@@ -1396,10 +1475,10 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
         frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         radius: crate::test_support::test_b5::positive_length(2.0),
-        u_range: [0.0, 4.0 * std::f64::consts::PI],
-        v_range: [-1.0, 1.0],
+        u_range: crate::test_support::test_b5::increasing([0.0, 4.0 * std::f64::consts::PI]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
         angular_scale: crate::test_support::test_b5::finite(2.0),
-        chart_origin: 0.0,
+        chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
     let Some(plan) = cylinder_helix(
@@ -1466,9 +1545,12 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert_eq!(center.z, 4.0);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
-    let tiny = 1e-14;
+    let tiny = 1e-14_f64;
     let tiny_pcurve = B5Pcurve {
-        control_points: vec![[0.0, 0.0], [2.0 * tiny, 2.0 * tiny]],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([2.0 * tiny, 2.0 * tiny]),
+        ],
         ..pcurve
     };
     let tiny_end = [2.0 * tiny.cos(), 2.0 * tiny.sin(), 2.0 * tiny];

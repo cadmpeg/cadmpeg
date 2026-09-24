@@ -13,10 +13,11 @@ use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{
-    Angle, FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveAngle,
+    PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
-use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
@@ -114,24 +115,24 @@ pub(crate) enum B2ParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
     Scalar {
         /// Stored scalar.
-        value: f64,
+        value: FiniteReal,
     },
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
         /// Surface-chart coordinates.
-        uv: [f64; 2],
+        uv: FiniteVector<2>,
     },
     /// Host-chain station followed by UV (`L=0x1a`).
     StationUv {
         /// Host-chain axial boundary station.
-        station: f64,
+        station: FiniteReal,
         /// Surface-chart coordinates.
-        uv: [f64; 2],
+        uv: FiniteVector<2>,
     },
     /// Unsplit five-scalar layout (`L=0x2a`).
     FiveScalars {
         /// Stored scalar payload.
-        values: [f64; 5],
+        values: FiniteVector<5>,
     },
 }
 
@@ -161,7 +162,7 @@ pub(crate) enum B2PlaneCarrierPayload {
         /// with its omitted third component zero.
         frame: OrthonormalFrame3,
         /// Complete trailing scalar lane.
-        tail: [f64; 3],
+        tail: FiniteVector<3>,
     },
     /// Two-coordinate point, three-coordinate direction, and three tail scalars.
     PointDirection3 {
@@ -169,16 +170,18 @@ pub(crate) enum B2PlaneCarrierPayload {
         origin: FinitePoint3,
         /// Plane normal `unit(direction × Z)` and the stored unit direction.
         frame: OrthonormalFrame3,
+        /// Stored in-plane unit direction.
+        direction: RelaxedHypotUnitVector3,
         /// Complete trailing scalar lane.
-        tail: [f64; 3],
+        tail: FiniteVector<3>,
     },
     /// Two-coordinate point followed by four scalar values with no direction
     /// lane in this layout.
     PointTail {
         /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
+        point: FiniteVector<2>,
         /// Complete trailing scalar lane.
-        tail: [f64; 4],
+        tail: FiniteVector<4>,
     },
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
@@ -186,7 +189,7 @@ pub(crate) enum B2PlaneCarrierPayload {
         /// Second payload byte selecting the scalar layout.
         selector: u8,
         /// Complete selector-specific scalar lane in source order.
-        values: Vec<f64>,
+        values: Vec<FiniteReal>,
     },
 }
 
@@ -416,7 +419,7 @@ pub(crate) struct B2Long61 {
     /// Five `0x0a <u16le>` persistent identities after delimiter `0xfe`.
     pub(crate) references: [u16; 5],
     /// Finite scalar preceding the terminal byte.
-    pub(crate) scalar: f64,
+    pub(crate) scalar: FiniteReal,
 }
 
 /// Structurally complete consolidated class-`0x5b` or class-`0x5c` record.
@@ -493,9 +496,9 @@ pub(crate) struct B2ConeFace {
     /// Complete reference-and-control program preceding the scalars.
     pub(crate) program: Vec<u8>,
     /// Stored angular chart scale.
-    pub(crate) angular_scale: f64,
-    /// Cone half-angle in radians.
-    pub(crate) half_angle: f64,
+    pub(crate) angular_scale: FiniteReal,
+    /// Cone half-angle in radians, strictly between zero and a quarter turn.
+    pub(crate) half_angle: PositiveAngle,
 }
 
 /// Settled terminal sense code in a class-`0x06` consolidated use record.
@@ -771,12 +774,13 @@ pub(crate) fn b2_cone_faces(data: &[u8]) -> Vec<B2ConeFace> {
         let Some(half_angle) = f64_le(data, scalar_at + 8) else {
             continue;
         };
-        let (angular_scale, half_angle) = (angular_scale.get(), half_angle.get());
+        let Some(half_angle) = PositiveAngle::new(half_angle.get()) else {
+            continue;
+        };
         if header_token == 5
             && program.first() == Some(&0x85)
             && program.ends_with(&[0x03, 0x11])
-            && 0.0 < half_angle
-            && half_angle < std::f64::consts::FRAC_PI_2
+            && half_angle.get() < std::f64::consts::FRAC_PI_2
         {
             faces.push(B2ConeFace {
                 pos,
@@ -1208,9 +1212,9 @@ fn owner_chart_bounds_match(
 
 fn parameter_point_scalars(point: &B2ParameterPoint) -> Vec<f64> {
     match &point.payload {
-        B2ParameterPointPayload::Scalar { value } => vec![*value],
+        B2ParameterPointPayload::Scalar { value } => vec![value.get()],
         B2ParameterPointPayload::Uv { uv } => uv.to_vec(),
-        B2ParameterPointPayload::StationUv { station, uv } => vec![*station, uv[0], uv[1]],
+        B2ParameterPointPayload::StationUv { station, uv } => vec![station.get(), uv[0], uv[1]],
         B2ParameterPointPayload::FiveScalars { values } => values.to_vec(),
     }
 }
@@ -1422,7 +1426,7 @@ pub(crate) fn b2_long_61_from_records(
                 *reference = View::u16_le_at(data, at + 1)?;
                 at += 3;
             }
-            let scalar = f64_le(data, at)?.get();
+            let scalar = f64_le(data, at)?;
             if at + 9 != frame.end {
                 return None;
             }
@@ -1620,20 +1624,20 @@ pub(crate) fn b2_parameter_points_from_records(
             let at = frame.payload + 2;
             let payload = match layout {
                 0x0a => B2ParameterPointPayload::Scalar {
-                    value: f64_le(data, at)?.get(),
+                    value: f64_le(data, at)?,
                 },
                 0x12 => B2ParameterPointPayload::Uv {
-                    uv: read_f64_array::<2>(data, at)?.map(FiniteReal::get),
+                    uv: read_f64_array::<2>(data, at)?.into(),
                 },
                 0x1a => {
-                    let values = read_f64_array::<3>(data, at)?.map(FiniteReal::get);
+                    let values = read_f64_array::<3>(data, at)?;
                     B2ParameterPointPayload::StationUv {
                         station: values[0],
-                        uv: [values[1], values[2]],
+                        uv: [values[1], values[2]].into(),
                     }
                 }
                 0x2a => B2ParameterPointPayload::FiveScalars {
-                    values: read_f64_array::<5>(data, at)?.map(FiniteReal::get),
+                    values: read_f64_array::<5>(data, at)?.into(),
                 },
                 _ => return None,
             };
@@ -1674,8 +1678,8 @@ pub(crate) fn b2_plane_carriers_from_records(
                 0xe4 => {
                     (lane.len() == 7 * size_of::<f64>()).then_some(())?;
                     let values = read_f64_array::<7>(lane, 0)?;
-                    let tail = [values[4], values[5], values[6]].map(FiniteReal::get);
-                    let (origin, frame) = b2_plane_chart(
+                    let tail = FiniteVector::from([values[4], values[5], values[6]]);
+                    let (origin, frame, _) = b2_plane_chart(
                         [values[0], values[1]],
                         [values[2].get(), values[3].get(), 0.0],
                         tail,
@@ -1689,8 +1693,8 @@ pub(crate) fn b2_plane_carriers_from_records(
                 0xc4 => {
                     (lane.len() == 8 * size_of::<f64>()).then_some(())?;
                     let values = read_f64_array::<8>(lane, 0)?;
-                    let tail = [values[5], values[6], values[7]].map(FiniteReal::get);
-                    let (origin, frame) = b2_plane_chart(
+                    let tail = FiniteVector::from([values[5], values[6], values[7]]);
+                    let (origin, frame, direction) = b2_plane_chart(
                         [values[0], values[1]],
                         [values[2], values[3], values[4]].map(FiniteReal::get),
                         tail,
@@ -1698,15 +1702,15 @@ pub(crate) fn b2_plane_carriers_from_records(
                     B2PlaneCarrierPayload::PointDirection3 {
                         origin,
                         frame,
+                        direction,
                         tail,
                     }
                 }
                 0xec => {
                     let values: [FiniteReal; 6] = finite_f64_lane(lane)?.try_into().ok()?;
-                    let values = values.map(FiniteReal::get);
                     B2PlaneCarrierPayload::PointTail {
-                        point: [values[0], values[1]],
-                        tail: [values[2], values[3], values[4], values[5]],
+                        point: [values[0], values[1]].into(),
+                        tail: [values[2], values[3], values[4], values[5]].into(),
                     }
                 }
                 _ => {
@@ -1714,10 +1718,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                     if values.is_empty() {
                         return None;
                     }
-                    B2PlaneCarrierPayload::ScalarLane {
-                        selector,
-                        values: values.into_iter().map(FiniteReal::get).collect(),
-                    }
+                    B2PlaneCarrierPayload::ScalarLane { selector, values }
                 }
             };
             Some(B2PlaneCarrier {
@@ -1740,8 +1741,8 @@ pub(crate) fn b2_plane_carriers_from_records(
 fn b2_plane_chart(
     [x, y]: [FiniteReal; 2],
     direction: [f64; 3],
-    tail: [f64; 3],
-) -> Option<(FinitePoint3, OrthonormalFrame3)> {
+    tail: FiniteVector<3>,
+) -> Option<(FinitePoint3, OrthonormalFrame3, RelaxedHypotUnitVector3)> {
     let origin = FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO);
     let u_axis = RelaxedHypotUnitVector3::new(direction)?;
     (direction[2].abs() <= EPS_B2_RECORD_GEOMETRY && tail[0] > 0.0 && tail[1] < tail[2])
@@ -1749,6 +1750,7 @@ fn b2_plane_chart(
     Some((
         origin,
         OrthonormalFrame3::about_horizontal_normal(u_axis.into())?,
+        u_axis,
     ))
 }
 
@@ -1790,7 +1792,7 @@ pub(in crate::families) fn b2_class25_descriptors_from_records(
                 pos: frame.pos,
                 record_id,
                 control,
-                values: values.into_iter().map(FiniteReal::get).collect(),
+                values,
             })
         })
         .collect()
@@ -1804,7 +1806,7 @@ pub(crate) struct B2EdgeParameters {
     /// Native shared-edge parameter range.
     pub(crate) range: IncreasingParameterInterval,
     /// Shared-edge geometric tolerance.
-    pub(crate) tolerance: f64,
+    pub(crate) tolerance: FiniteReal,
 }
 
 /// Typed class-`0x18` descriptor immediately preceding a class-`0x25` edge.
@@ -1817,7 +1819,7 @@ pub(crate) struct B2Class25Descriptor {
     /// Descriptor control byte (`0x02` or `0x0a`).
     pub(crate) control: u8,
     /// Complete finite scalar lane containing two or three values.
-    pub(crate) values: Vec<f64>,
+    pub(crate) values: Vec<FiniteReal>,
 }
 
 fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
@@ -1894,13 +1896,13 @@ pub(crate) struct B2Circle {
     /// Frame token following the record length.
     pub(crate) frame_token: u8,
     /// Two center coordinates in the host-implied carrier plane.
-    pub(crate) center_pair: [f64; 2],
+    pub(crate) center_pair: FiniteVector<2>,
     /// Circle radius in millimetres.
     pub(crate) radius: PositiveLength,
     /// Arc-length parameter interval.
     pub(crate) range: IncreasingParameterInterval,
     /// Length-valued angular chart shift.
-    pub(crate) chart_shift: f64,
+    pub(crate) chart_shift: FiniteReal,
 }
 
 #[cfg(test)]
@@ -1938,7 +1940,7 @@ pub(in crate::families) struct B2SpatialCircle {
     /// Stored arc-length interval.
     pub(in crate::families) range: IncreasingParameterInterval,
     /// Stored chart shift.
-    pub(in crate::families) chart_shift: f64,
+    pub(in crate::families) chart_shift: FiniteReal,
 }
 
 /// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
@@ -1965,6 +1967,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         return None;
     }
     let center = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+    let chart_shift_value = values[13];
     let values = values.map(FiniteReal::get);
     let radius = values[9];
     let range = [values[10], values[11]];
@@ -1983,7 +1986,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
         frame: circle_frame,
         radius,
         range,
-        chart_shift: values[13],
+        chart_shift: chart_shift_value,
     })
 }
 
@@ -2146,15 +2149,15 @@ pub(crate) struct B2Cone {
     /// Cone half-angle in radians.
     pub(crate) half_angle: Angle,
     /// Reference radius of the conical surface, independent of the active chart ranges.
-    pub(crate) reference_radius: f64,
+    pub(crate) reference_radius: FiniteReal,
     /// Active azimuth interval.
-    pub(crate) angular_range: [f64; 2],
+    pub(crate) angular_range: IncreasingParameterInterval,
     /// Native slant-coordinate range.
     pub(crate) slant_range: IncreasingParameterInterval,
     /// Divisor mapping the stored U coordinate to azimuth.
     pub(crate) angular_scale: PositiveReal,
     /// Full-turn azimuth chart domain.
-    pub(crate) angular_domain: [f64; 2],
+    pub(crate) angular_domain: IncreasingParameterInterval,
     /// Neutral carrier: its origin is the axis point at the slant-interval
     /// start and its radius is the cross-section radius there.
     pub(crate) surface: ConeSurface,
@@ -2227,9 +2230,9 @@ pub(crate) struct B2Sphere {
     /// Sphere radius.
     pub(crate) radius: PositiveLength,
     /// Active azimuth interval.
-    pub(crate) azimuth_range: [f64; 2],
+    pub(crate) azimuth_range: IncreasingParameterInterval,
     /// Active latitude interval.
-    pub(crate) latitude_range: [f64; 2],
+    pub(crate) latitude_range: IncreasingParameterInterval,
 }
 
 /// Doubly periodic torus chart stored in a `b2 03 2b` record.
@@ -2248,13 +2251,13 @@ pub(crate) struct B2Torus {
     /// Minor radius.
     pub(crate) minor_radius: PositiveLength,
     /// Active major-angle interval.
-    pub(crate) major_angular_range: [f64; 2],
+    pub(crate) major_angular_range: IncreasingParameterInterval,
     /// Full-turn major-angle chart domain.
-    pub(crate) major_angular_domain: [f64; 2],
+    pub(crate) major_angular_domain: IncreasingParameterInterval,
     /// Active minor-angle interval.
-    pub(crate) minor_angular_range: [f64; 2],
+    pub(crate) minor_angular_range: IncreasingParameterInterval,
     /// Full-turn minor-angle chart domain.
-    pub(crate) minor_angular_domain: [f64; 2],
+    pub(crate) minor_angular_domain: IncreasingParameterInterval,
     /// Scale from major angle to stored U parameter.
     pub(crate) major_scale: PositiveReal,
     /// Scale from minor angle to stored V parameter.
@@ -2446,11 +2449,11 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         };
         let apex = FinitePoint3::from_coordinates(stored[0], stored[1], stored[2]);
         let half_angle = Angle::from_assigned_real(stored[12]);
+        let reference_radius = stored[13];
         let values = stored.map(FiniteReal::get);
         let t1: [f64; 3] = [values[3], values[4], values[5]];
         let t2: [f64; 3] = [values[6], values[7], values[8]];
         let axis: [f64; 3] = [values[9], values[10], values[11]];
-        let reference_radius = values[13];
         let angular_range = [values[14], values[15]];
         let mut slant_range = [values[16], values[17]];
         let angular_scale = values[18];
@@ -2482,6 +2485,14 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         {
             continue;
         }
+        // The angular check admits a strictly increasing range inside a
+        // strictly increasing full-turn domain.
+        let (Some(angular_range), Some(angular_domain)) = (
+            IncreasingParameterInterval::new(angular_range),
+            IncreasingParameterInterval::new(angular_domain),
+        ) else {
+            continue;
+        };
         let axial = slant_start.get() * half_angle.get().cos();
         let (apex_point, axis) = (apex.get(), axis.get());
         let Some(origin) = FinitePoint3::new(Point3::new(
@@ -2740,20 +2751,23 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             (periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
                 && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
                 && values[24] == 0.0)
-                .then_some(B2Torus {
-                    pos: frame.pos,
-                    center,
-                    frame: axis_frame,
-                    direction_y,
-                    major_radius,
-                    minor_radius,
-                    major_angular_range,
-                    major_angular_domain,
-                    minor_angular_range,
-                    minor_angular_domain,
-                    major_scale,
-                    minor_scale,
-                })
+                .then_some(())?;
+            // Each angular check admits a strictly increasing range inside a
+            // strictly increasing full-turn domain.
+            Some(B2Torus {
+                pos: frame.pos,
+                center,
+                frame: axis_frame,
+                direction_y,
+                major_radius,
+                minor_radius,
+                major_angular_range: IncreasingParameterInterval::new(major_angular_range)?,
+                major_angular_domain: IncreasingParameterInterval::new(major_angular_domain)?,
+                minor_angular_range: IncreasingParameterInterval::new(minor_angular_range)?,
+                minor_angular_domain: IncreasingParameterInterval::new(minor_angular_domain)?,
+                major_scale,
+                minor_scale,
+            })
         })
         .collect()
 }
@@ -2805,8 +2819,10 @@ pub(crate) fn b2_spheres_from_records(
                 frame: UnitFrame3::right_handed(axis, direction_x, direction_y)?,
                 direction_y,
                 radius,
-                azimuth_range,
-                latitude_range,
+                // The sphere chart check admits strictly increasing azimuth
+                // and latitude ranges.
+                azimuth_range: IncreasingParameterInterval::new(azimuth_range)?,
+                latitude_range: IncreasingParameterInterval::new(latitude_range)?,
             })
         })
         .collect()
@@ -3047,7 +3063,7 @@ pub(crate) fn b2_circles_from_records(
         let Some(chart_shift) = f64_le(data, values_end + 1) else {
             continue;
         };
-        let chart_shift = chart_shift.get();
+        let center_pair = FiniteVector::from([values[0], values[1]]);
         let [c1, c2, radius, lo, hi] = values.map(FiniteReal::get);
         let (Some(radius), Some(range)) = (
             PositiveLength::new(radius),
@@ -3061,7 +3077,7 @@ pub(crate) fn b2_circles_from_records(
                 layout,
                 record_id,
                 frame_token,
-                center_pair: [c1, c2],
+                center_pair,
                 radius,
                 range,
                 chart_shift,
@@ -3102,6 +3118,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
         let Some(values) = read_f64_array::<9>(data, frame.payload + 6) else {
             continue;
         };
+        let tolerance = values[2];
         let values = values.map(FiniteReal::get);
         let Some(range) = IncreasingParameterInterval::new([values[0], values[1]]) else {
             continue;
@@ -3116,7 +3133,7 @@ pub(in crate::families) fn b2_edge_parameters_from_records(
             out.push(B2EdgeParameters {
                 pos,
                 range,
-                tolerance: values[2],
+                tolerance,
             });
         }
     }

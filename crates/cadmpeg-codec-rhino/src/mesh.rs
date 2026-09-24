@@ -523,9 +523,9 @@ pub(crate) fn decode(
         .into_iter()
         .map(|point| {
             Some(Point3::new(
-                crate::wire::scaled_coordinate(point[0], scale)?,
-                crate::wire::scaled_coordinate(point[1], scale)?,
-                crate::wire::scaled_coordinate(point[2], scale)?,
+                crate::wire::scaled_coordinate(point[0], scale)?.get(),
+                crate::wire::scaled_coordinate(point[1], scale)?.get(),
+                crate::wire::scaled_coordinate(point[2], scale)?.get(),
             ))
         })
         .collect::<Option<Vec<_>>>()

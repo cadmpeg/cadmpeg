@@ -10,6 +10,8 @@ use crate::object_graph::extent_contains;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::FiniteVector;
 
 pub(crate) mod class5b5c;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
@@ -376,7 +378,7 @@ pub(crate) struct CatiaConsolidatedCone {
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Cone apex.
-    apex: [f64; 3],
+    apex: FiniteVector<3>,
     /// First transverse unit direction.
     direction_x: crate::checked::RelaxedUnitVector3,
     /// Second transverse unit direction.
@@ -384,17 +386,17 @@ pub(crate) struct CatiaConsolidatedCone {
     /// Cone-axis unit direction.
     axis: crate::checked::RelaxedUnitVector3,
     /// Cone half-angle in radians.
-    half_angle: f64,
+    half_angle: cadmpeg_ir::scalar::Angle,
     /// Reference radius of the conical surface, independent of the active chart ranges.
-    reference_radius: f64,
+    reference_radius: FiniteReal,
     /// Active azimuth interval.
-    angular_range: [f64; 2],
+    angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Native slant-coordinate interval, including zero at the apex.
     slant_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Scale from azimuth to stored U parameter.
     angular_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Full-turn azimuth chart domain.
-    angular_domain: [f64; 2],
+    angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
 }
 
 /// Payload-layout discriminator of a consolidated arc-length circle.
@@ -452,13 +454,13 @@ pub(crate) struct CatiaConsolidatedCircle {
     /// Width-coded frame token.
     frame_token: u8,
     /// Two centre coordinates in the host-implied carrier plane.
-    pub(crate) center_pair: [f64; 2],
+    pub(crate) center_pair: FiniteVector<2>,
     /// Circle radius in millimetres.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length parameter interval.
     pub(crate) range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Length-valued angular chart shift.
-    chart_shift: f64,
+    chart_shift: FiniteReal,
 }
 
 impl CatiaConsolidatedCircle {
@@ -477,11 +479,11 @@ struct CatiaConsolidatedCircleWire {
     layout: CatiaCircleLayout,
     record_id: u32,
     frame_token: u8,
-    center_pair: [f64; 2],
+    center_pair: FiniteVector<2>,
     radius: cadmpeg_ir::scalar::PositiveLength,
     range: cadmpeg_ir::topology::IncreasingParameterInterval,
     full_circle: bool,
-    chart_shift: f64,
+    chart_shift: FiniteReal,
 }
 impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
     type Error = String;
@@ -577,7 +579,7 @@ pub(crate) struct CatiaConsolidatedCylinder {
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Cylinder-axis origin.
-    origin: [f64; 3],
+    origin: FiniteVector<3>,
     /// Cylinder radius.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Arc-length circumferential interval.
@@ -593,7 +595,7 @@ struct CatiaConsolidatedCylinderWire {
     id: String,
     byte_offset: u64,
     layout: u8,
-    origin: [f64; 3],
+    origin: FiniteVector<3>,
     radius: cadmpeg_ir::scalar::PositiveLength,
     u_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     v_range: cadmpeg_ir::topology::IncreasingParameterInterval,
@@ -732,7 +734,7 @@ pub(crate) struct CatiaConsolidatedEmbeddedCylinder {
     /// Compact embedded object identity.
     object_id: u32,
     /// Cylinder-axis origin.
-    origin: [f64; 3],
+    origin: FiniteVector<3>,
     /// Cylinder radius.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Full-turn arc-length circumferential interval.
@@ -754,24 +756,24 @@ enum CatiaConsolidatedParameterPointPayload {
     /// One retained scalar after two zero tuple fields are elided.
     Scalar {
         /// Stored scalar.
-        value: f64,
+        value: FiniteReal,
     },
     /// Two surface-chart coordinates.
     Uv {
         /// Surface-chart coordinates.
-        uv: [f64; 2],
+        uv: FiniteVector<2>,
     },
     /// Host-chain station followed by two surface-chart coordinates.
     StationUv {
         /// Host-chain station.
-        station: f64,
+        station: FiniteReal,
         /// Surface-chart coordinates.
-        uv: [f64; 2],
+        uv: FiniteVector<2>,
     },
     /// Unsplit five-scalar lane.
     FiveScalars {
         /// Stored finite scalars.
-        values: [f64; 5],
+        values: FiniteVector<5>,
     },
 }
 
@@ -782,20 +784,6 @@ impl CatiaConsolidatedParameterPointPayload {
             Self::Uv { .. } => 0x12,
             Self::StationUv { .. } => 0x1a,
             Self::FiveScalars { .. } => 0x2a,
-        }
-    }
-}
-
-#[cfg(test)]
-impl CatiaConsolidatedParameterPointPayload {
-    fn is_valid(&self) -> bool {
-        match self {
-            Self::Scalar { value } => value.is_finite(),
-            Self::Uv { uv } => uv.iter().all(|value| value.is_finite()),
-            Self::StationUv { station, uv } => {
-                station.is_finite() && uv.iter().all(|value| value.is_finite())
-            }
-            Self::FiveScalars { values } => values.iter().all(|value| value.is_finite()),
         }
     }
 }
@@ -876,28 +864,28 @@ enum CatiaConsolidatedPlaneCarrierPayload {
     /// Two-coordinate point, two-coordinate direction, and three tail scalars.
     PointDirection2 {
         /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
+        point: FiniteVector<2>,
         /// In-plane unit direction with its third component omitted.
         direction: [f64; 2],
         /// Complete trailing scalar lane.
-        tail: [f64; 3],
+        tail: FiniteVector<3>,
     },
     /// Two-coordinate point, three-coordinate direction, and three tail scalars.
     PointDirection3 {
         /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
+        point: FiniteVector<2>,
         /// In-plane unit direction.
-        direction: [f64; 3],
+        direction: crate::checked::RelaxedHypotUnitVector3,
         /// Complete trailing scalar lane.
-        tail: [f64; 3],
+        tail: FiniteVector<3>,
     },
     /// Two-coordinate point followed by four scalar values with no direction
     /// lane in this layout.
     PointTail {
         /// In-plane point with the host-implied third coordinate omitted.
-        point: [f64; 2],
+        point: FiniteVector<2>,
         /// Complete trailing scalar lane.
-        tail: [f64; 4],
+        tail: FiniteVector<4>,
     },
     /// Finite scalar lane for a selector whose semantic layout is not yet
     /// established.
@@ -906,7 +894,7 @@ enum CatiaConsolidatedPlaneCarrierPayload {
         #[serde(skip, default)]
         selector: u8,
         /// Complete selector-specific scalar lane in source order.
-        values: Vec<f64>,
+        values: Vec<FiniteReal>,
     },
 }
 
@@ -1024,15 +1012,15 @@ pub(crate) struct CatiaConsolidatedPcurve {
     /// Number of leading extrapolation sites.
     extrapolation_sites: u32,
     /// Strictly increasing native parameter sites.
-    knots: Vec<f64>,
+    knots: Vec<FiniteReal>,
     /// Surface-chart positions at the parameter sites.
-    points: Vec<[f64; 2]>,
+    points: Vec<FiniteVector<2>>,
     /// First derivatives at the parameter sites.
-    first_derivatives: Vec<[f64; 2]>,
+    first_derivatives: Vec<FiniteVector<2>>,
     /// Second derivatives at the parameter sites.
-    second_derivatives: Vec<[f64; 2]>,
+    second_derivatives: Vec<FiniteVector<2>>,
     /// Native evaluation interval.
-    range: [f64; 2],
+    range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Bytes following the evaluation interval in the framed payload.
     #[serde(with = "cadmpeg_ir::bytes")]
     tail: Vec<u8>,
@@ -1046,7 +1034,7 @@ pub(crate) struct CatiaConsolidatedSphere {
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Sphere centre.
-    center: [f64; 3],
+    center: FiniteVector<3>,
     /// First transverse unit direction.
     direction_x: crate::checked::ExactHypotUnitVector3,
     /// Second transverse unit direction.
@@ -1056,9 +1044,9 @@ pub(crate) struct CatiaConsolidatedSphere {
     /// Sphere radius.
     radius: cadmpeg_ir::scalar::PositiveLength,
     /// Active azimuth interval.
-    azimuth_range: [f64; 2],
+    azimuth_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Active latitude interval.
-    latitude_range: [f64; 2],
+    latitude_range: cadmpeg_ir::topology::IncreasingParameterInterval,
 }
 
 /// One structurally complete consolidated `B:2b` torus chart.
@@ -1069,7 +1057,7 @@ pub(crate) struct CatiaConsolidatedTorus {
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Torus centre.
-    center: [f64; 3],
+    center: FiniteVector<3>,
     /// First transverse unit direction.
     direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
@@ -1081,13 +1069,13 @@ pub(crate) struct CatiaConsolidatedTorus {
     /// Minor radius.
     minor_radius: cadmpeg_ir::scalar::PositiveLength,
     /// Active major-angle interval.
-    major_angular_range: [f64; 2],
+    major_angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Full-turn major-angle chart domain.
-    major_angular_domain: [f64; 2],
+    major_angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Active minor-angle interval.
-    minor_angular_range: [f64; 2],
+    minor_angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Full-turn minor-angle chart domain.
-    minor_angular_domain: [f64; 2],
+    minor_angular_domain: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Scale from major angle to stored U parameter.
     major_scale: cadmpeg_ir::scalar::PositiveReal,
     /// Scale from minor angle to stored V parameter.
@@ -1102,7 +1090,7 @@ pub(crate) struct CatiaConsolidatedLineProfile {
     /// Byte offset of the framed record.
     byte_offset: u64,
     /// Stored line origin.
-    origin: [f64; 3],
+    origin: FiniteVector<3>,
     /// Unit line direction.
     direction: crate::checked::ExactUnitVector3,
     /// Increasing stored parameter interval.
@@ -1152,7 +1140,7 @@ pub(crate) struct CatiaConsolidatedRevolution {
     /// Unresolved consolidated allocation identity of the profile curve.
     profile_allocation_id: u16,
     /// Axis-frame origin.
-    origin: [f64; 3],
+    origin: FiniteVector<3>,
     /// First transverse unit direction.
     direction_x: crate::checked::ExactUnitVector3,
     /// Second transverse unit direction.
@@ -1160,7 +1148,7 @@ pub(crate) struct CatiaConsolidatedRevolution {
     /// Revolution-axis unit direction.
     axis: crate::checked::ExactUnitVector3,
     /// Stored full-turn angular parameter interval.
-    angular_range: [f64; 2],
+    angular_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Stored profile parameter interval.
     profile_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Unique consolidated circle with the same stored profile interval.
@@ -1204,7 +1192,7 @@ enum CatiaConsolidatedClass61Payload {
         /// Five persistent identities following the list delimiter.
         references: [u16; 5],
         /// Finite class-specific scalar preceding the terminal byte.
-        scalar: f64,
+        scalar: FiniteReal,
     },
 }
 
@@ -1232,9 +1220,9 @@ pub(crate) struct CatiaConsolidatedConeFace {
     #[serde(with = "cadmpeg_ir::bytes")]
     program: Vec<u8>,
     /// Stored angular chart scale.
-    angular_scale: f64,
-    /// Cone half-angle in radians.
-    half_angle: f64,
+    angular_scale: FiniteReal,
+    /// Cone half-angle in radians, strictly between zero and a quarter turn.
+    half_angle: cadmpeg_ir::scalar::PositiveAngle,
     /// Complete immediately following parameter-point run.
     pub(crate) parameter_points: Vec<String>,
 }
@@ -1250,9 +1238,9 @@ pub(crate) struct CatiaConsolidatedEdgeRun {
     /// Retained pcurve identities in serialized side order.
     pcurves: [String; 2],
     /// Shared native parameter interval.
-    parameter_range: [f64; 2],
+    parameter_range: cadmpeg_ir::topology::IncreasingParameterInterval,
     /// Shared geometric tolerance.
-    tolerance: f64,
+    tolerance: FiniteReal,
     /// Exact terminal edge node.
     node: String,
     /// Uniquely resolved support carrier for each pcurve side.
@@ -1304,7 +1292,7 @@ pub(crate) struct CatiaConsolidatedClass25Descriptor {
     /// Descriptor control byte.
     pub(crate) control: u8,
     /// Complete finite scalar lane.
-    values: Vec<f64>,
+    values: Vec<FiniteReal>,
 }
 
 /// Descriptor and circle relation structurally bound to an analytic edge.
@@ -1423,7 +1411,7 @@ pub(crate) enum CatiaConsolidatedSupportBinding {
         /// Carrier record byte offset.
         byte_offset: u64,
         /// Signed normal offset in millimetres.
-        offset: f64,
+        offset: FiniteReal,
     },
 }
 
@@ -6370,7 +6358,7 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     pub(crate) face_local_slot: u32,
     /// Stored UV endpoints when the record family carries them inline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) uv_endpoints: Option<[[f64; 2]; 2]>,
+    pub(crate) uv_endpoints: Option<[[FiniteReal; 2]; 2]>,
     /// Complete parameter-space curve carried by the support record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pcurve: Option<cadmpeg_ir::geometry::pcurve::PcurveGeometry>,
@@ -6382,13 +6370,13 @@ pub(crate) struct CatiaZeroEntitySupportOccurrence {
     pub(crate) model_curve_construction: Option<cadmpeg_ir::geometry::ProceduralCurveDefinition>,
     /// Model-carrier parameters at the two stored UV endpoints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) model_parameters: Option<[f64; 2]>,
+    pub(crate) model_parameters: Option<[FiniteReal; 2]>,
     /// Surface point at the midpoint of the bounded pcurve parameter interval.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) model_midpoint: Option<cadmpeg_ir::math::Point3>,
+    pub(crate) model_midpoint: Option<FinitePoint3>,
     /// UV endpoints lifted through the owning surface carrier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) model_endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
+    pub(crate) model_endpoints: Option<[FinitePoint3; 2]>,
 }
 
 /// One counted zero-entity `5fxx` face record.
@@ -6439,7 +6427,7 @@ pub(crate) struct CatiaZeroEntityLoop {
     pub(crate) forward_senses: Vec<bool>,
     /// Complete sense-oriented model-space endpoint pairs in member order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) oriented_model_endpoints: Vec<[cadmpeg_ir::math::Point3; 2]>,
+    pub(crate) oriented_model_endpoints: Vec<[FinitePoint3; 2]>,
 }
 
 /// One zero-entity surface carrier and its maximal following support run.
@@ -6517,9 +6505,9 @@ pub(crate) struct CatiaZeroEntityEndpointPairCandidate {
     /// Two radial support-record identities in ascending ordinal order.
     pub(crate) support_records: [String; 2],
     /// Model-space endpoints oriented by the first support occurrence.
-    pub(crate) model_endpoints: [cadmpeg_ir::math::Point3; 2],
+    pub(crate) model_endpoints: [FinitePoint3; 2],
     /// Model-space midpoint witness supplied by the first support occurrence.
-    pub(crate) model_midpoint: cadmpeg_ir::math::Point3,
+    pub(crate) model_midpoint: FinitePoint3,
 }
 
 /// One endpoint-pair endpoint incident to a geometric endpoint-locus candidate.
@@ -6539,7 +6527,7 @@ pub(crate) struct CatiaZeroEntityEndpointLocusCandidate {
     /// Incident endpoints in endpoint-pair and endpoint order.
     pub(crate) incident_endpoint_pair_endpoints: Vec<CatiaZeroEntityEndpointPairEndpoint>,
     /// Model-space point from the first incident endpoint.
-    pub(crate) representative_point: cadmpeg_ir::math::Point3,
+    pub(crate) representative_point: FinitePoint3,
     /// Maximum pairwise distance between incident endpoint coordinates.
     pub(crate) maximum_deviation: f64,
 }
@@ -7384,11 +7372,11 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
         .map(|(index, cone)| CatiaConsolidatedCone {
             id: format!("catia:consolidated:cone#{index}"),
             byte_offset: cone.pos as u64,
-            apex: cone.apex.get().into(),
+            apex: cone.apex.coordinates().into(),
             direction_x: cone.frame.reference(),
             direction_y: cone.t2,
             axis: cone.frame.axis(),
-            half_angle: cone.half_angle.get(),
+            half_angle: cone.half_angle,
             reference_radius: cone.reference_radius,
             angular_range: cone.angular_range,
             slant_range: cone.slant_range,
@@ -7438,7 +7426,7 @@ fn consolidated_cylinders(
             CatiaConsolidatedCylinder {
                 id: format!("catia:consolidated:cylinder#{index}"),
                 byte_offset: cylinder.pos as u64,
-                origin: cylinder.origin.get().into(),
+                origin: cylinder.origin.coordinates().into(),
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
                 v_range: cylinder.v_range,
@@ -7471,7 +7459,7 @@ fn consolidated_cylinder_groups(
                 byte_offset: embedded.pos as u64,
                 group: group.id.clone(),
                 object_id: embedded.object_id,
-                origin: embedded.cylinder.origin.get().into(),
+                origin: embedded.cylinder.origin.coordinates().into(),
                 radius: embedded.cylinder.radius,
                 u_range: embedded.cylinder.u_range,
                 v_range: embedded.cylinder.v_range,
@@ -7537,22 +7525,24 @@ fn consolidated_plane_carriers(
                     frame,
                     tail,
                 } => {
-                    let (origin, direction) = (origin.get(), frame.reference().as_raw());
+                    let [x, y, _] = origin.coordinates();
+                    let direction = frame.reference().as_raw();
                     CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
-                        point: [origin.x, origin.y],
+                        point: [x, y].into(),
                         direction: [direction.x, direction.y],
                         tail,
                     }
                 }
                 B2PlaneCarrierPayload::PointDirection3 {
                     origin,
-                    frame,
+                    direction,
                     tail,
+                    ..
                 } => {
-                    let (origin, direction) = (origin.get(), frame.reference().as_raw());
+                    let [x, y, _] = origin.coordinates();
                     CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
-                        point: [origin.x, origin.y],
-                        direction: [direction.x, direction.y, direction.z],
+                        point: [x, y].into(),
+                        direction,
                         tail,
                     }
                 }
@@ -7655,11 +7645,11 @@ fn consolidated_revolutions(
             byte_offset: revolution.pos as u64,
             reference_token: revolution.reference_token,
             profile_allocation_id: revolution.profile_allocation_id,
-            origin: revolution.origin.get().into(),
+            origin: revolution.origin.coordinates().into(),
             direction_x: revolution.profile_frame.axis(),
             direction_y: revolution.profile_frame.reference(),
             axis: revolution.axis,
-            angular_range: revolution.angular_range.endpoints(),
+            angular_range: revolution.angular_range,
             profile_range: revolution.profile_range,
             profile_circle: resolved_profiles
                 .get(&(revolution.pos as u64))
@@ -7680,7 +7670,7 @@ fn consolidated_line_profiles(
         .map(|(index, line)| CatiaConsolidatedLineProfile {
             id: format!("catia:consolidated:line-profile#{index}"),
             byte_offset: line.pos as u64,
-            origin: line.origin.get().into(),
+            origin: line.origin.coordinates().into(),
             direction: line.direction,
             range: line.range,
         })
@@ -7697,7 +7687,7 @@ fn consolidated_spheres(
         .map(|(index, sphere)| CatiaConsolidatedSphere {
             id: format!("catia:consolidated:sphere#{index}"),
             byte_offset: sphere.pos as u64,
-            center: sphere.center.get().into(),
+            center: sphere.center.coordinates().into(),
             direction_x: sphere.frame.reference(),
             direction_y: sphere.direction_y,
             axis: sphere.frame.axis(),
@@ -7715,7 +7705,7 @@ fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaC
         .map(|(index, torus)| CatiaConsolidatedTorus {
             id: format!("catia:consolidated:torus#{index}"),
             byte_offset: torus.pos as u64,
-            center: torus.center.get().into(),
+            center: torus.center.coordinates().into(),
             direction_x: torus.frame.reference(),
             direction_y: torus.direction_y,
             axis: torus.frame.axis(),
@@ -7776,11 +7766,7 @@ fn zero_entity_support_runs(
                                 gap: loop_record.members.gap(),
                                 loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
-                                oriented_model_endpoints: loop_record
-                                    .oriented_model_endpoints
-                                    .into_iter()
-                                    .map(|pair| pair.map(FinitePoint3::get))
-                                    .collect(),
+                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
                             }
                         })
                         .collect(),
@@ -7800,10 +7786,8 @@ fn zero_entity_support_runs(
                     model_curve: support.model_curve,
                     model_curve_construction: support.model_curve_construction,
                     model_parameters: support.model_parameters,
-                    model_midpoint: support.model_midpoint.map(FinitePoint3::get),
-                    model_endpoints: support
-                        .model_endpoints
-                        .map(|pair| pair.map(FinitePoint3::get)),
+                    model_midpoint: support.model_midpoint,
+                    model_endpoints: support.model_endpoints,
                 })
                 .collect(),
         })
@@ -7828,8 +7812,8 @@ fn zero_entity_endpoint_pair_candidates(
             support_records: candidate
                 .support_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
-            model_endpoints: candidate.model_endpoints.map(FinitePoint3::get),
-            model_midpoint: candidate.model_midpoint.get(),
+            model_endpoints: candidate.model_endpoints,
+            model_midpoint: candidate.model_midpoint,
         })
         .collect()
 }
@@ -7852,7 +7836,7 @@ fn zero_entity_endpoint_locus_candidates(
                     },
                 )
                 .collect(),
-            representative_point: candidate.representative_point.get(),
+            representative_point: candidate.representative_point,
             maximum_deviation: candidate.maximum_deviation,
         })
         .collect()
@@ -8246,7 +8230,7 @@ fn consolidated_edge_runs(
                 pcurve_ids.get(&pcurve_offsets[0])?.clone(),
                 pcurve_ids.get(&pcurve_offsets[1])?.clone(),
             ],
-            parameter_range: run.edge.parameters.range.endpoints(),
+            parameter_range: run.edge.parameters.range,
             tolerance: run.edge.parameters.tolerance,
             node: node.id.clone(),
             support_bindings: resolved.map_or([None, None], |resolved| {
@@ -8497,7 +8481,7 @@ fn native_consolidated_support_binding(
             offset,
         } => CatiaConsolidatedSupportBinding::NurbsCarrier {
             byte_offset: *pos as u64,
-            offset: offset.get(),
+            offset: *offset,
         },
     }
 }

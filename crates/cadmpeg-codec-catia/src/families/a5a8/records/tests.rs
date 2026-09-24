@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::test_support::test_a5a8::{
     a5_freeform_curve_stream, a5_freeform_curve_stream_with_count, a5_guide_curve_stream,
@@ -708,8 +709,15 @@ fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
     assert_eq!(pcurves[0].extrapolation_sites, 2);
-    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
-    assert_eq!(pcurves[0].range, [0.0, 1.0]);
+    assert_eq!(
+        pcurves[0]
+            .points()
+            .into_iter()
+            .map(FiniteVector::get)
+            .collect::<Vec<_>>(),
+        vec![[0.0, 0.0], [1.0, 1.0]]
+    );
+    assert_eq!(pcurves[0].range.endpoints(), [0.0, 1.0]);
     assert_eq!(pcurves[0].tail, [0x07]);
 
     let mut padded = a5_pcurve_stream();
@@ -733,7 +741,14 @@ fn consolidated_pcurve_parser_reads_width2_frame() {
     let pcurves = crate::families::a5a8::records::a5_pcurves(&a6_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x1234);
-    assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
+    assert_eq!(
+        pcurves[0]
+            .points()
+            .into_iter()
+            .map(FiniteVector::get)
+            .collect::<Vec<_>>(),
+        vec![[0.0, 0.0], [1.0, 1.0]]
+    );
 }
 
 #[test]
@@ -1177,7 +1192,7 @@ fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
             } else {
                 sample.site.limit1
             };
-            Point3::new(point[0], point[1], point[2])
+            point.get()
         });
         let knots = jet.knots();
         assert_eq!(
@@ -1237,13 +1252,13 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     let curves = crate::families::a5a8::records::a5_guide_curves(&a5_guide_curve_stream());
     assert_eq!(curves.len(), 1);
     assert_eq!(curves[0].degree, 5);
-    assert_eq!(curves[0].sites[0].point, [0.0, 0.0, 0.0]);
+    assert_eq!(curves[0].sites[0].point.get(), [0.0, 0.0, 0.0]);
     assert_eq!(curves[0].sites[0].direction, [1.0, 0.0, 0.0]);
     assert_eq!(curves[0].sites[1].direction, [0.0, 1.0, 0.0]);
     let points = curves[0]
         .sites
         .iter()
-        .map(|site| site.point)
+        .map(|site| site.point.get())
         .collect::<Vec<_>>();
     let derivatives = vec![[0.0; 3]; 2];
     let (knots, controls) = crate::nurbs::quintic_jet_bspline(
@@ -1255,8 +1270,14 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
     )
     .expect("exact 3D quintic jet");
     assert_eq!(knots, [vec![0.0; 6], vec![1.0; 6]].concat());
-    assert_eq!(controls.first(), Some(&[0.0, 0.0, 0.0]));
-    assert_eq!(controls.last(), Some(&[2.0, 3.0, 4.0]));
+    assert_eq!(
+        controls.first().map(|point| point.get()),
+        Some([0.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        controls.last().map(|point| point.get()),
+        Some([2.0, 3.0, 4.0])
+    );
 }
 
 #[test]

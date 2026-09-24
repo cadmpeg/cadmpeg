@@ -8,6 +8,7 @@ use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, MillimeterScale, Plane};
 use crate::wire::{scaled_coordinate, uuid, Uuid};
+use cadmpeg_ir::scalar::FiniteReal;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 pub(crate) const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
@@ -115,7 +116,7 @@ enum DimensionFamily {
     Legacy {
         dimstyle_index: i32,
         text_display_mode: i32,
-        text_height: f64,
+        text_height: FiniteReal,
         justification: i32,
     },
     /// V2 dimension with default text and definition points.
@@ -199,10 +200,12 @@ fn scale_plane(
 ) -> Result<Plane, FramingError> {
     for coordinate in &mut value.origin {
         *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?
+            .get();
     }
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
+        .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?
+        .get();
     Ok(value)
 }
 
@@ -346,9 +349,11 @@ fn scaled_point(
 ) -> Result<[f64; 2], FramingError> {
     Ok([
         scaled_coordinate(value[0], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?
+            .get(),
         scaled_coordinate(value[1], scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?,
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension point is invalid"))?
+            .get(),
     ])
 }
 
@@ -367,7 +372,7 @@ pub(crate) struct LegacyAnnotation {
     pub(crate) user_positioned_text: bool,
     pub(crate) dimstyle_index: i32,
     pub(crate) allow_text_scaling: bool,
-    pub(crate) text_height: f64,
+    pub(crate) text_height: FiniteReal,
     pub(crate) justification: i32,
 }
 
@@ -441,7 +446,7 @@ fn legacy_annotation_fields(
     let text_height = scaled_coordinate(annotation.f64()?, scale).ok_or_else(|| {
         FramingError::structural(annotation.position() - 8, "invalid legacy text height")
     })?;
-    if !text_height.is_finite() || text_height < 0.0 {
+    if text_height.get() < 0.0 {
         return Err(FramingError::structural(
             annotation.position() - 8,
             "invalid legacy annotation text height",
@@ -475,7 +480,10 @@ fn legacy_annotation_fields(
         initial_style_index
     };
     let (plane, justification) = if kind == 7 && justification == 0 {
-        (shifted_plane(plane, [0.0, text_height]), (1 << 18) | 1)
+        (
+            shifted_plane(plane, [0.0, text_height.get()]),
+            (1 << 18) | 1,
+        )
     } else {
         (plane, justification)
     };
@@ -716,7 +724,10 @@ fn decode_legacy(
                 "invalid legacy angular angle",
             ));
         }
-        LegacyDimensionFields::Angular { angle, radius }
+        LegacyDimensionFields::Angular {
+            angle,
+            radius: radius.get(),
+        }
     } else {
         let direction = outer.i32()?;
         let kink_offsets = if minor >= 1 {
@@ -735,11 +746,11 @@ fn decode_legacy(
                 })?,
             ]
         } else {
-            [0.0, 0.0]
+            [FiniteReal::ZERO; 2]
         };
         LegacyDimensionFields::Ordinate {
             direction,
-            kink_offsets,
+            kink_offsets: kink_offsets.map(FiniteReal::get),
         }
     };
     outer.skip_remaining()?;
@@ -960,14 +971,14 @@ fn decode_v2(
         let raw_radius = reader.f64()?;
         let radius = scaled_coordinate(raw_radius, scale)
             .ok_or_else(|| FramingError::structural(radius_offset, "invalid V2 angular radius"))?;
+        // The scaled radius is admitted finite, and the unit scale is finite
+        // and positive, so the stored radius is finite too.
         if !angle.is_finite()
             || angle <= 0.0
             || angle > V2_REALLY_BIG_NUMBER
-            || !raw_radius.is_finite()
             || raw_radius <= 0.0
             || raw_radius > V2_REALLY_BIG_NUMBER
-            || !radius.is_finite()
-            || radius <= 0.0
+            || radius.get() <= 0.0
         {
             return Err(FramingError::structural(
                 range.start,
@@ -983,7 +994,10 @@ fn decode_v2(
                 second_direction: points[1],
                 first_extension_offset: -1.0,
                 second_extension_offset: -1.0,
-                dimension_line_point: [radius * (0.5 * angle).cos(), radius * (0.5 * angle).sin()],
+                dimension_line_point: [
+                    radius.get() * (0.5 * angle).cos(),
+                    radius.get() * (0.5 * angle).sin(),
+                ],
             },
             user_text_point,
             !annotation.user_positioned_text,
@@ -1010,7 +1024,7 @@ fn decode_v2(
         family: DimensionFamily::V2 {
             default_text: annotation.default_text,
             points: annotation.points,
-            angular_radius,
+            angular_radius: angular_radius.map(FiniteReal::get),
         },
         plane,
         horizontal_direction: world_horizontal_in_plane(&plane),
@@ -1114,8 +1128,8 @@ pub(crate) fn decode(
         Definition::Angular {
             first_direction: first,
             second_direction: second,
-            first_extension_offset,
-            second_extension_offset,
+            first_extension_offset: first_extension_offset.get(),
+            second_extension_offset: second_extension_offset.get(),
             dimension_line_point,
         }
     } else if class == RADIAL {
@@ -1171,7 +1185,7 @@ pub(crate) fn decode(
             definition_point,
             leader_point,
             measured_direction,
-            kink_offsets,
+            kink_offsets: kink_offsets.map(FiniteReal::get),
         }
     } else if class == CENTERMARK {
         if annotation.kind != 8 {
@@ -1181,11 +1195,13 @@ pub(crate) fn decode(
             ));
         }
         let radius = scaled_coordinate(outer.f64()?, scale)
-            .filter(|radius| *radius >= 0.0)
+            .filter(|radius| radius.get() >= 0.0)
             .ok_or_else(|| {
                 FramingError::structural(outer.position() - 8, "invalid center-mark radius")
             })?;
-        Definition::CenterMark { radius }
+        Definition::CenterMark {
+            radius: radius.get(),
+        }
     } else {
         return Err(FramingError::structural(
             range.start,
@@ -1282,19 +1298,22 @@ pub(crate) fn apply_userdata(
                 extra.payload_range.end,
                 archive,
             )?;
-            *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(
-                    reader.position() - 8,
-                    "invalid V5 angular extension offset",
-                )
-            })?;
-            *second_extension_offset =
-                scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
+            *first_extension_offset = scaled_coordinate(reader.f64()?, scale)
+                .ok_or_else(|| {
                     FramingError::structural(
                         reader.position() - 8,
                         "invalid V5 angular extension offset",
                     )
-                })?;
+                })?
+                .get();
+            *second_extension_offset = scaled_coordinate(reader.f64()?, scale)
+                .ok_or_else(|| {
+                    FramingError::structural(
+                        reader.position() - 8,
+                        "invalid V5 angular extension offset",
+                    )
+                })?
+                .get();
             reader.skip_remaining()?;
         }
     }
@@ -1518,7 +1537,7 @@ pub(crate) fn project(
                 "text_display_mode".to_string(),
                 text_display_mode.to_string(),
             );
-            properties.insert("text_height".to_string(), text_height.to_string());
+            properties.insert("text_height".to_string(), text_height.get().to_string());
             properties.insert("justification".to_string(), justification.to_string());
         }
         DimensionFamily::V2 {

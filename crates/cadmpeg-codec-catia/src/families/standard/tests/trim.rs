@@ -189,7 +189,10 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
     assert_eq!(record.packet.independent_count(), 1);
     assert_eq!(record.packet.strip_lengths(), [3]);
     assert!(record.packet.fan_lengths().is_empty());
-    assert_eq!(record.frame_vector, Some([1.0, 0.0, 0.0]));
+    assert_eq!(
+        record.frame_vector,
+        Some(crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]))
+    );
 
     let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
     assert_eq!(layout.end, bytes.len());

@@ -8,6 +8,7 @@ use std::ops::Range;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -142,10 +143,10 @@ struct MaterialRecord {
     specular: [u8; 4],
     reflection: [u8; 4],
     transparent: [u8; 4],
-    index_of_refraction: f64,
-    reflectivity: f64,
-    shine: f64,
-    transparency: f64,
+    index_of_refraction: FiniteReal,
+    reflectivity: FiniteReal,
+    shine: FiniteReal,
+    transparency: FiniteReal,
     #[serde(flatten, serialize_with = "serialize_material_textures")]
     textures: Vec<TextureRecord>,
     shareable: bool,
@@ -161,9 +162,9 @@ struct MaterialRecord {
 #[derive(Debug)]
 struct MaterialFresnelSettings {
     reflections: bool,
-    reflection_glossiness: f64,
-    refraction_glossiness: f64,
-    index_of_refraction: f64,
+    reflection_glossiness: FiniteReal,
+    refraction_glossiness: FiniteReal,
+    index_of_refraction: FiniteReal,
 }
 
 // Serde passes the field by reference to this adapter.
@@ -212,29 +213,29 @@ struct PhysicallyBasedMaterialRecord {
     revision: PhysicallyBasedMaterialRevision,
     base_color: [f32; 4],
     brdf: i32,
-    subsurface: f64,
+    subsurface: FiniteReal,
     subsurface_scattering_color: [f32; 4],
-    subsurface_scattering_radius: f64,
-    metallic: f64,
-    specular: f64,
-    specular_tint: f64,
-    roughness: f64,
-    anisotropic: f64,
-    anisotropic_rotation: f64,
-    sheen: f64,
-    sheen_tint: f64,
-    clearcoat: f64,
-    clearcoat_roughness: f64,
-    opacity_ior: f64,
-    opacity: f64,
-    opacity_roughness: f64,
+    subsurface_scattering_radius: FiniteReal,
+    metallic: FiniteReal,
+    specular: FiniteReal,
+    specular_tint: FiniteReal,
+    roughness: FiniteReal,
+    anisotropic: FiniteReal,
+    anisotropic_rotation: FiniteReal,
+    sheen: FiniteReal,
+    sheen_tint: FiniteReal,
+    clearcoat: FiniteReal,
+    clearcoat_roughness: FiniteReal,
+    opacity_ior: FiniteReal,
+    opacity: FiniteReal,
+    opacity_roughness: FiniteReal,
     emission: [f32; 4],
 }
 
 #[derive(Debug)]
 enum PhysicallyBasedMaterialRevision {
     V1,
-    V2 { alpha: f64 },
+    V2 { alpha: FiniteReal },
 }
 
 impl PhysicallyBasedMaterialRevision {
@@ -245,9 +246,9 @@ impl PhysicallyBasedMaterialRevision {
         }
     }
 
-    fn alpha(&self) -> f64 {
+    fn alpha(&self) -> FiniteReal {
         match self {
-            Self::V1 => 1.0,
+            Self::V1 => FiniteReal::ONE,
             Self::V2 { alpha } => *alpha,
         }
     }
@@ -289,14 +290,14 @@ struct TextureRecord {
     minification_filter: u32,
     magnification_filter: u32,
     wrap: [u32; 3],
-    uvw_transform: [[f64; 4]; 4],
+    uvw_transform: [[FiniteReal; 4]; 4],
     border_color: [u8; 4],
     transparent_color: [u8; 4],
     transparency_texture_uuid: Option<String>,
-    bump_scale: [f64; 2],
-    alpha_blend: [f64; 5],
+    bump_scale: [FiniteReal; 2],
+    alpha_blend: [FiniteReal; 5],
     rgb_blend_constant: [u8; 4],
-    rgb_blend: [f64; 4],
+    rgb_blend: [FiniteReal; 4],
     blend_order: i32,
     file_reference: Option<TextureFileReference>,
     treat_as_linear: Option<bool>,
@@ -311,19 +312,19 @@ struct LightRecord {
     name: String,
     enabled: bool,
     style: i32,
-    intensity: f64,
-    watts: f64,
+    intensity: FiniteReal,
+    watts: FiniteReal,
     ambient: [u8; 4],
     diffuse: [u8; 4],
     specular: [u8; 4],
-    direction: [f64; 3],
-    location: [f64; 3],
-    spot_angle_degrees: f64,
-    spot_exponent: f64,
-    attenuation: [f64; 3],
-    shadow_intensity: f64,
-    length: [f64; 3],
-    width: [f64; 3],
+    direction: [FiniteReal; 3],
+    location: [FiniteReal; 3],
+    spot_angle_degrees: FiniteReal,
+    spot_exponent: FiniteReal,
+    attenuation: [FiniteReal; 3],
+    shadow_intensity: FiniteReal,
+    length: [FiniteReal; 3],
+    width: [FiniteReal; 3],
     hotspot: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     attributes: Option<LightAttributesRecord>,
@@ -331,13 +332,13 @@ struct LightRecord {
 }
 
 struct SourceLinetypeSegment {
-    length: f64,
+    length: FiniteReal,
     segment_type: u32,
 }
 
 #[derive(Debug, Serialize)]
 struct LinetypeSegment {
-    length_millimeters: f64,
+    length_millimeters: FiniteReal,
     segment_type: u32,
 }
 
@@ -352,25 +353,25 @@ struct LinetypeRecord {
     segments: Vec<LinetypeSegment>,
     line_cap: u8,
     line_join: u8,
-    width: f64,
+    width: FiniteReal,
     width_units: u8,
-    taper_points: Vec<[f64; 2]>,
+    taper_points: Vec<[FiniteReal; 2]>,
     always_model_distance: bool,
 }
 
 struct SourceHatchLine {
-    angle_radians: f64,
-    base: [f64; 2],
-    offset: [f64; 2],
-    dashes: Vec<f64>,
+    angle_radians: FiniteReal,
+    base: [FiniteReal; 2],
+    offset: [FiniteReal; 2],
+    dashes: Vec<FiniteReal>,
 }
 
 #[derive(Debug, Serialize)]
 struct HatchLineRecord {
-    angle_radians: f64,
-    base_millimeters: [f64; 2],
-    offset_millimeters: [f64; 2],
-    dashes_millimeters: Vec<f64>,
+    angle_radians: FiniteReal,
+    base_millimeters: [FiniteReal; 2],
+    offset_millimeters: [FiniteReal; 2],
+    dashes_millimeters: Vec<FiniteReal>,
 }
 
 #[derive(Debug, Serialize)]
@@ -442,12 +443,16 @@ struct DimensionStyleRecord {
     archive_index: Option<i32>,
     source_uuid: Option<String>,
     name: String,
-    extension_line_extension_mm: f64,
-    extension_line_offset_mm: f64,
-    arrow_size_mm: f64,
+    extension_line_extension_mm: FiniteReal,
+    extension_line_offset_mm: FiniteReal,
+    arrow_size_mm: FiniteReal,
+    /// Leader arrow size; a V5 record before minor 5 states one unit of the
+    /// document scale, which no reader admits.
     leader_arrow_size_mm: f64,
-    center_mark_size_mm: f64,
-    text_gap_mm: f64,
+    center_mark_size_mm: FiniteReal,
+    text_gap_mm: FiniteReal,
+    /// Text height; a V5 record before minor 1 states one unit of the document
+    /// scale, which no reader admits.
     text_height_mm: f64,
     text_display_mode: u32,
     angle_format: u32,
@@ -455,16 +460,16 @@ struct DimensionStyleRecord {
     angle_resolution: i32,
     length_resolution: i32,
     text_style_index: i32,
-    length_factor: f64,
+    length_factor: FiniteReal,
     alternate_enabled: bool,
-    alternate_length_factor: f64,
+    alternate_length_factor: FiniteReal,
     alternate_length_format: u32,
     alternate_length_resolution: i32,
     prefix: String,
     suffix: String,
     alternate_prefix: String,
     alternate_suffix: String,
-    dimension_line_extension_mm: f64,
+    dimension_line_extension_mm: FiniteReal,
     suppress_extension_line_1: bool,
     suppress_extension_line_2: bool,
     #[serde(flatten)]
@@ -535,14 +540,14 @@ struct V5DimensionStyleExtraRecord {
     valid_fields: Vec<bool>,
     tolerance_style: i32,
     tolerance_resolution: i32,
-    tolerance_upper_value: f64,
-    tolerance_lower_value: f64,
-    tolerance_height_scale: f64,
-    baseline_spacing_mm: f64,
+    tolerance_upper_value: FiniteReal,
+    tolerance_lower_value: FiniteReal,
+    tolerance_height_scale: FiniteReal,
+    baseline_spacing_mm: FiniteReal,
     draw_text_mask: bool,
     mask_color_source: i32,
     mask_color: [u8; 4],
-    dimension_scale: f64,
+    dimension_scale: FiniteReal,
     dimension_scale_source: i32,
     source_style_uuid: Option<String>,
 }
@@ -555,7 +560,7 @@ struct FontRecord {
     windows_logfont_name: String,
     postscript_name: String,
     obsolete_description: String,
-    point_size: Option<f64>,
+    point_size: Option<FiniteReal>,
     family_name: String,
     locale_name: String,
     localized_postscript_name: String,
@@ -580,7 +585,7 @@ enum FontWeight {
     },
     Modern {
         windows: i32,
-        apple: f64,
+        apple: FiniteReal,
     },
 }
 
@@ -673,8 +678,8 @@ struct TextureMappingRecord {
     name: String,
     mapping_type: u32,
     projection: u32,
-    primitive_transform: [[f64; 4]; 4],
-    uvw_transform: [[f64; 4]; 4],
+    primitive_transform: [[FiniteReal; 4]; 4],
+    uvw_transform: [[FiniteReal; 4]; 4],
     primitive_class_uuid: Option<String>,
     texture_space: u32,
     capped: bool,
@@ -720,7 +725,7 @@ struct RenderingMappingChannel {
     mapping_channel_id: i32,
     mapping_uuid: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    object_transform: Option<[[f64; 4]; 4]>,
+    object_transform: Option<[[FiniteReal; 4]; 4]>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1060,7 +1065,7 @@ struct ObjectAttributesPresentation {
     plot_color_source: u8,
     plot_weight_source: u8,
     plot_color: [u8; 4],
-    plot_weight_mm: f64,
+    plot_weight_mm: FiniteReal,
     group_indexes: Vec<i32>,
     display_materials: Vec<[String; 2]>,
     active_space: u8,
@@ -1069,9 +1074,9 @@ struct ObjectAttributesPresentation {
     clipping_proof: bool,
     clipping_plane_uuids: Vec<String>,
     hatch_pattern_index: i32,
-    section_hatch_scale: f64,
-    section_hatch_rotation: f64,
-    linetype_pattern_scale: f64,
+    section_hatch_scale: FiniteReal,
+    section_hatch_rotation: FiniteReal,
+    linetype_pattern_scale: FiniteReal,
     hatch_background: [u8; 4],
     hatch_boundary_visible: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1283,14 +1288,16 @@ fn read_color_f32(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f32; 4
         })
 }
 
-fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[f64; 3], FramingError> {
+fn finite3(reader: &mut BoundedReader<'_>, label: &str) -> Result<[FiniteReal; 3], FramingError> {
     let offset = reader.position();
     let value = [reader.f64()?, reader.f64()?, reader.f64()?];
-    value
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(value)
-        .ok_or_else(|| FramingError::structural(offset, format!("{label} is not finite")))
+    let [Some(x), Some(y), Some(z)] = value.map(FiniteReal::new) else {
+        return Err(FramingError::structural(
+            offset,
+            format!("{label} is not finite"),
+        ));
+    };
+    Ok([x, y, z])
 }
 
 fn anonymous(
@@ -2067,9 +2074,9 @@ fn parse_v2_v3_texture(
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
     let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
-        [0.0, read_finite(reader, "legacy bump scale")?]
+        [FiniteReal::ZERO, read_finite(reader, "legacy bump scale")?]
     } else {
-        [0.0, 1.0]
+        [FiniteReal::ZERO, FiniteReal::ONE]
     };
     if legacy_file_path.is_empty() {
         return Ok(None);
@@ -2086,18 +2093,49 @@ fn parse_v2_v3_texture(
         magnification_filter: 1,
         wrap: [0, 0, 0],
         uvw_transform: [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
+            [
+                FiniteReal::ONE,
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+            ],
+            [
+                FiniteReal::ZERO,
+                FiniteReal::ONE,
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+            ],
+            [
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+                FiniteReal::ONE,
+                FiniteReal::ZERO,
+            ],
+            [
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+                FiniteReal::ZERO,
+                FiniteReal::ONE,
+            ],
         ],
         border_color: [255, 255, 255, 255],
         transparent_color: [255, 255, 255, 255],
         transparency_texture_uuid: None,
         bump_scale,
-        alpha_blend: [1.0, 1.0, 1.0, 0.0, 0.0],
+        alpha_blend: [
+            FiniteReal::ONE,
+            FiniteReal::ONE,
+            FiniteReal::ONE,
+            FiniteReal::ZERO,
+            FiniteReal::ZERO,
+        ],
         rgb_blend_constant: [0, 0, 0, 0],
-        rgb_blend: [1.0, 1.0, 0.0, 0.0],
+        rgb_blend: [
+            FiniteReal::ONE,
+            FiniteReal::ONE,
+            FiniteReal::ZERO,
+            FiniteReal::ZERO,
+        ],
         blend_order: 0,
         file_reference: None,
         treat_as_linear: None,
@@ -2157,7 +2195,12 @@ fn parse_v2_v3_material(
             read_finite(&mut reader, "index of refraction")?,
         )
     } else {
-        (Uuid::nil(), [255, 255, 255, 0], [255, 255, 255, 0], 1.0)
+        (
+            Uuid::nil(),
+            [255, 255, 255, 0],
+            [255, 255, 255, 0],
+            FiniteReal::ONE,
+        )
     };
     reader.skip_remaining()?;
     let key = if id.is_nil() {
@@ -2179,7 +2222,7 @@ fn parse_v2_v3_material(
         reflection,
         transparent,
         index_of_refraction,
-        reflectivity: 0.0,
+        reflectivity: FiniteReal::ZERO,
         shine,
         transparency,
         textures,
@@ -2437,23 +2480,25 @@ fn parse_light(
     let index = reader.i32()?;
     let id = uuid(&mut reader)?;
     let name = utf16(&mut reader)?;
-    let mut length = [0.0; 3];
-    let mut width = [0.0; 3];
+    let mut length = [FiniteReal::ZERO; 3];
+    let mut width = [FiniteReal::ZERO; 3];
     if packed & 0x0f >= 1 {
         length = finite3(&mut reader, "light length")?;
         width = finite3(&mut reader, "light width")?;
     }
+    // A stored hotspot is admitted finite; an older record derives it from the
+    // spot exponent, a value clamped to `[0, 1]` that no reader admits.
     let hotspot = if packed & 0x0f >= 2 {
-        read_finite(&mut reader, "light hotspot")?
+        read_finite(&mut reader, "light hotspot")?.get()
     } else {
-        let value = (1.0 - spot_exponent / 128.0).clamp(0.0, 1.0);
-        spot_exponent = 0.0;
+        let value = (1.0 - spot_exponent.get() / 128.0).clamp(0.0, 1.0);
+        spot_exponent = FiniteReal::ZERO;
         value
     };
     reader.skip_remaining()?;
     for vector in [&mut location, &mut length, &mut width] {
         for value in vector {
-            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(range.start, "scaled light geometry is invalid")
             })?;
         }
@@ -2535,7 +2580,7 @@ fn parse_linetype(
     let (mut reader, version) = anonymous(data, range, archive)?;
     let mut cap = 0;
     let mut join = 0;
-    let mut width = 1.0;
+    let mut width = FiniteReal::ONE;
     let mut width_units = 0;
     let mut taper = Vec::new();
     let mut always = false;
@@ -2586,16 +2631,20 @@ fn parse_linetype(
                     1 << 16,
                     reader.position(),
                 )?;
+                let mut points = Vec::with_capacity(bytes / 16);
                 for _ in 0..bytes / 16 {
-                    taper.push([reader.f64()?, reader.f64()?]);
+                    points.push([reader.f64()?, reader.f64()?]);
                 }
-                if !taper.iter().flatten().all(|value| value.is_finite()) {
-                    return Err(FramingError::structural(
-                        reader.position(),
-                        "linetype taper is not finite",
-                    )
-                    .into());
-                }
+                let admitted = points
+                    .into_iter()
+                    .map(|[first, second]| {
+                        Some([FiniteReal::new(first)?, FiniteReal::new(second)?])
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        FramingError::structural(reader.position(), "linetype taper is not finite")
+                    })?;
+                taper.extend(admitted);
                 item = reader.u8()?;
             }
         }
@@ -2617,7 +2666,7 @@ fn parse_linetype(
         .map(|segment| {
             let length_millimeters = if always {
                 let scale = pattern_document_scale(binding)?;
-                scaled_coordinate(segment.length, scale).ok_or_else(|| {
+                scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
                     FramingError::structural(
                         source_offset,
                         "scaled model-distance linetype segment is invalid",
@@ -2720,7 +2769,7 @@ impl SourceHatchLine {
             .chain(self.offset.iter_mut())
             .chain(self.dashes.iter_mut())
         {
-            *value = scaled_coordinate(*value, scale).ok_or_else(|| {
+            *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
                 FramingError::structural(source_offset, "scaled hatch line is invalid")
             })?;
         }
@@ -2876,8 +2925,8 @@ fn scaled_length(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
     label: &str,
-) -> Result<f64, FramingError> {
-    let value = read_finite(reader, label)?;
+) -> Result<FiniteReal, FramingError> {
+    let value = read_finite(reader, label)?.get();
     scaled_coordinate(value, scale).ok_or_else(|| {
         FramingError::structural(reader.position() - 8, format!("scaled {label} is invalid"))
     })
@@ -3142,7 +3191,7 @@ fn parse_v5_dimension_style_extra(
     let (dimension_scale, dimension_scale_source) = if version.1 >= 2 {
         (read_finite(&mut reader, "dimension scale")?, reader.i32()?)
     } else {
-        (1.0, 0)
+        (FiniteReal::ONE, 0)
     };
     let source_style_uuid = if version.1 >= 3 {
         uuid(&mut reader)?
@@ -3202,7 +3251,7 @@ fn parse_v5_dimension_style(
     let angle_resolution = reader.i32()?;
     let text_style_index = reader.i32()?;
     let text_height_mm = if minor >= 1 {
-        scaled_length(&mut reader, scale, "text height")?
+        scaled_length(&mut reader, scale, "text height")?.get()
     } else {
         scale.value()
     };
@@ -3265,9 +3314,9 @@ fn parse_v5_dimension_style(
         )
     } else {
         (
-            1.0,
+            FiniteReal::ONE,
             false,
-            1.0,
+            FiniteReal::ONE,
             0,
             2,
             String::new(),
@@ -3284,7 +3333,7 @@ fn parse_v5_dimension_style(
     let dimension_line_extension_mm = if minor >= 4 {
         scaled_length(&mut reader, scale, "dimension-line extension")?
     } else {
-        0.0
+        FiniteReal::ZERO
     };
     let (
         leader_arrow_size_mm,
@@ -3293,7 +3342,7 @@ fn parse_v5_dimension_style(
         suppress_extension_line_2,
     ) = if minor >= 5 {
         (
-            scaled_length(&mut reader, scale, "leader arrow size")?,
+            scaled_length(&mut reader, scale, "leader arrow size")?.get(),
             reader.i32()?,
             reader.bool()?,
             reader.bool()?,
@@ -3365,10 +3414,10 @@ fn parse_dimension_style(
         scaled_length(&mut reader, scale, "extension-line extension")?;
     let extension_line_offset_mm = scaled_length(&mut reader, scale, "extension-line offset")?;
     let arrow_size_mm = scaled_length(&mut reader, scale, "arrow size")?;
-    let leader_arrow_size_mm = scaled_length(&mut reader, scale, "leader arrow size")?;
+    let leader_arrow_size_mm = scaled_length(&mut reader, scale, "leader arrow size")?.get();
     let center_mark_size_mm = scaled_length(&mut reader, scale, "center-mark size")?;
     let text_gap_mm = scaled_length(&mut reader, scale, "text gap")?;
-    let text_height_mm = scaled_length(&mut reader, scale, "text height")?;
+    let text_height_mm = scaled_length(&mut reader, scale, "text height")?.get();
     let text_display_mode = reader.u32()?;
     let angle_format = reader.u32()?;
     let length_format = reader.u32()?;
@@ -3433,17 +3482,22 @@ fn parse_dimension_style(
     })
 }
 
-fn xform(reader: &mut BoundedReader<'_>) -> Result<[[f64; 4]; 4], FramingError> {
+fn xform(reader: &mut BoundedReader<'_>) -> Result<[[FiniteReal; 4]; 4], FramingError> {
     let offset = reader.position();
     let mut rows = [[0.0; 4]; 4];
     for value in rows.iter_mut().flatten() {
         *value = reader.f64()?;
     }
-    rows.iter()
+    let mut admitted = [[FiniteReal::ZERO; 4]; 4];
+    for (target, value) in admitted
+        .iter_mut()
         .flatten()
-        .all(|value| value.is_finite())
-        .then_some(rows)
-        .ok_or_else(|| FramingError::structural(offset, "texture transform is not finite"))
+        .zip(rows.into_iter().flatten())
+    {
+        *target = FiniteReal::new(value)
+            .ok_or_else(|| FramingError::structural(offset, "texture transform is not finite"))?;
+    }
+    Ok(admitted)
 }
 
 fn parse_embedded_image(

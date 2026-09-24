@@ -16,12 +16,14 @@ use crate::wire::records::{
     ConsolidatedRecord,
 };
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{knots_strictly_increasing, NurbsCurve, NurbsSurface},
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
+use cadmpeg_ir::units::FiniteVector;
 use std::ops::Range;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
@@ -221,7 +223,7 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> Option<usize> {
+fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[FiniteReal]) -> Option<usize> {
     let end = at.checked_add(141)?;
     let tail = data.get(at..end)?;
     if tail[0] != 0x05
@@ -244,7 +246,7 @@ fn parse_a8_elided_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> Opti
     let one_v = read_f64(52)?;
     let zero_x = read_f64(60)?;
     let (&v_last, &v_first) = v_knots.last().zip(v_knots.first())?;
-    let expected_v_span = v_last - v_first;
+    let expected_v_span = v_last.get() - v_first.get();
     (zero_u == 0.0
         && positive_u.is_finite()
         && positive_u > 0.0
@@ -437,9 +439,9 @@ pub(in crate::families) struct A8Pcurve {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct A8PcurveSite {
     knot: FiniteReal,
-    point: [f64; 2],
-    first_derivative: [f64; 2],
-    second_derivative: [f64; 2],
+    point: FiniteVector<2>,
+    first_derivative: FiniteVector<2>,
+    second_derivative: FiniteVector<2>,
 }
 
 impl A8Pcurve {
@@ -451,10 +453,10 @@ impl A8Pcurve {
 
     #[cfg(test)]
     fn points(&self) -> Vec<[f64; 2]> {
-        self.sites.iter().map(|site| site.point).collect()
+        self.sites.iter().map(|site| site.point.get()).collect()
     }
 
-    pub(in crate::families) fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
+    pub(in crate::families) fn bspline(&self) -> Option<(Vec<f64>, Vec<FiniteVector<2>>)> {
         crate::nurbs::quintic_jet_bspline(
             Self::DEGREE,
             &self
@@ -462,16 +464,20 @@ impl A8Pcurve {
                 .iter()
                 .map(|site| site.knot.get())
                 .collect::<Vec<_>>(),
-            &self.sites.iter().map(|site| site.point).collect::<Vec<_>>(),
             &self
                 .sites
                 .iter()
-                .map(|site| site.first_derivative)
+                .map(|site| site.point.get())
                 .collect::<Vec<_>>(),
             &self
                 .sites
                 .iter()
-                .map(|site| site.second_derivative)
+                .map(|site| site.first_derivative.get())
+                .collect::<Vec<_>>(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.second_derivative.get())
                 .collect::<Vec<_>>(),
         )
     }
@@ -489,20 +495,20 @@ fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct RollingBallSite {
     /// First limiting curve point.
-    pub(in crate::families) limit1: [f64; 3],
+    pub(in crate::families) limit1: FinitePoint3,
     /// Second limiting curve point.
-    pub(in crate::families) limit2: [f64; 3],
+    pub(in crate::families) limit2: FinitePoint3,
     /// Rolling-ball centre.
-    pub(in crate::families) center: [f64; 3],
+    pub(in crate::families) center: FinitePoint3,
     /// Stored opening angle.
-    pub(in crate::families) theta: f64,
+    pub(in crate::families) theta: FiniteReal,
 }
 
 #[cfg(test)]
 impl RollingBallSite {
     /// Radius from the centre to the first limit.
     fn radius(&self) -> f64 {
-        distance(self.center, self.limit1)
+        distance(self.center.get(), self.limit1.get())
     }
 }
 
@@ -510,13 +516,13 @@ impl RollingBallSite {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct A5FreeformJet {
     /// Distinct knot.
-    pub(in crate::families) knot: f64,
+    pub(in crate::families) knot: FiniteReal,
     /// Position channels at this knot.
     pub(in crate::families) site: RollingBallSite,
     /// Ten first-derivative channels.
-    pub(in crate::families) first_derivatives: [f64; 10],
+    pub(in crate::families) first_derivatives: [FiniteReal; 10],
     /// Ten second-derivative channels.
-    pub(in crate::families) second_derivatives: [f64; 10],
+    pub(in crate::families) second_derivatives: [FiniteReal; 10],
 }
 
 /// Consolidated degree-5 rolling-ball jet.
@@ -534,7 +540,7 @@ impl A5FreeformCurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
     fn knots(&self) -> Vec<f64> {
-        self.sites.iter().map(|site| site.knot).collect()
+        self.sites.iter().map(|site| site.knot.get()).collect()
     }
 }
 
@@ -550,18 +556,19 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         .sites
         .iter()
         .map(|sample| {
-            if second_limit {
+            let limit = if second_limit {
                 sample.site.limit2
             } else {
                 sample.site.limit1
-            }
+            };
+            limit.get().into()
         })
         .collect::<Vec<_>>();
     let first = jet
         .sites
         .iter()
         .map(|sample| {
-            let values = sample.first_derivatives;
+            let values = FiniteReal::raw_array(sample.first_derivatives);
             [values[offset], values[offset + 1], values[offset + 2]]
         })
         .collect::<Vec<_>>();
@@ -569,7 +576,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
         .sites
         .iter()
         .map(|sample| {
-            let values = sample.second_derivatives;
+            let values = FiniteReal::raw_array(sample.second_derivatives);
             [values[offset], values[offset + 1], values[offset + 2]]
         })
         .collect::<Vec<_>>();
@@ -613,14 +620,15 @@ pub(in crate::families) fn rolling_ball_limit_curve(
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct GuideCurveSite {
     /// Parameter knot.
-    knot: f64,
+    knot: FiniteReal,
     /// Six first-derivative channels.
-    pub(in crate::families) first_derivative: [f64; 6],
+    pub(in crate::families) first_derivative: FiniteVector<6>,
     /// Six second-derivative channels.
-    pub(in crate::families) second_derivative: [f64; 6],
+    pub(in crate::families) second_derivative: FiniteVector<6>,
     /// Guide-curve point.
-    pub(in crate::families) point: [f64; 3],
-    /// Unit direction from the first stored triple to the second.
+    pub(in crate::families) point: FiniteVector<3>,
+    /// Unit direction from the first stored triple to the second: the
+    /// square root of its summed squares is within `1e-9` of one.
     pub(super) direction: [f64; 3],
 }
 
@@ -639,7 +647,7 @@ pub(in crate::families) struct A5GuideCurve {
 
 impl A5GuideCurve {
     pub(in crate::families) fn knots(&self) -> Vec<f64> {
-        self.sites.iter().map(|site| site.knot).collect()
+        self.sites.iter().map(|site| site.knot.get()).collect()
     }
 }
 
@@ -782,11 +790,8 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     if at.checked_add(known_bytes)? > frame.end {
         return None;
     }
-    let knots = f64_values(data, &mut at, count, frame.end)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    if !knots_strictly_increasing(&knots) {
+    let knots = f64_values(data, &mut at, count, frame.end)?;
+    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
         return None;
     }
     if at
@@ -796,9 +801,9 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     {
         return None;
     }
-    let block = |start: usize| -> Option<Vec<[f64; 6]>> {
+    let block = |start: usize| -> Option<Vec<[FiniteReal; 6]>> {
         (0..count)
-            .map(|site| Some(read_f64_array::<6>(data, start + site * 48)?.map(FiniteReal::get)))
+            .map(|site| read_f64_array::<6>(data, start + site * 48))
             .collect()
     };
     let positions = block(at)?;
@@ -810,19 +815,18 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
         .zip(first_derivatives)
         .zip(second_derivatives)
         .map(|(((value, knot), first_derivative), second_derivative)| {
-            let point = [value[0], value[1], value[2]];
             let direction = [
-                value[3] - value[0],
-                value[4] - value[1],
-                value[5] - value[2],
+                value[3].get() - value[0].get(),
+                value[4].get() - value[1].get(),
+                value[5].get() - value[2].get(),
             ];
             let length =
                 (direction[0].powi(2) + direction[1].powi(2) + direction[2].powi(2)).sqrt();
             ((length - 1.0).abs() < EPS_GUIDE_DIRECTION_UNIT).then_some(GuideCurveSite {
                 knot,
-                first_derivative,
-                second_derivative,
-                point,
+                first_derivative: first_derivative.into(),
+                second_derivative: second_derivative.into(),
+                point: [value[0], value[1], value[2]].into(),
                 direction,
             })
         })
@@ -839,15 +843,15 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
 #[derive(Debug, Clone, PartialEq)]
 struct A8FreeformJet {
     /// Distinct knot.
-    knot: f64,
+    knot: FiniteReal,
     /// Multiplicity of this distinct knot.
     multiplicity: u32,
     /// Position channels at this knot.
     pub(super) site: RollingBallSite,
     /// Ten first-derivative channels.
-    first_derivatives: [f64; 10],
+    first_derivatives: [FiniteReal; 10],
     /// Ten second-derivative channels.
-    second_derivatives: [f64; 10],
+    second_derivatives: [FiniteReal; 10],
 }
 
 /// Common-form degree-5 rolling-ball jet stored in an `a8 <flag> 32` object record.
@@ -877,44 +881,54 @@ pub(in crate::families) fn rolling_ball_jet_definition(
     if jet.sites.is_empty() {
         return None;
     }
-    let derivative = |values: [f64; 10]| RollingBallJetDerivative {
-        first_limit: Vector3::new(values[0], values[1], values[2]),
-        second_limit: Vector3::new(values[3], values[4], values[5]),
-        center: Vector3::new(values[6], values[7], values[8]),
-        angle: values[9],
-    };
     let stations = jet
         .sites
         .iter()
         .map(|sample| cadmpeg_ir::geometry::RollingBallJetStation {
             knot: sample.knot,
             multiplicity: sample.multiplicity,
-            site: RollingBallJetSite {
-                first_limit: Point3::new(
-                    sample.site.limit1[0],
-                    sample.site.limit1[1],
-                    sample.site.limit1[2],
-                ),
-                second_limit: Point3::new(
-                    sample.site.limit2[0],
-                    sample.site.limit2[1],
-                    sample.site.limit2[2],
-                ),
-                center: Point3::new(
-                    sample.site.center[0],
-                    sample.site.center[1],
-                    sample.site.center[2],
-                ),
-                angle: sample.site.theta,
-                first_derivative: derivative(sample.first_derivatives),
-                second_derivative: derivative(sample.second_derivatives),
-            },
+            site: rolling_ball_jet_site(
+                &sample.site,
+                sample.first_derivatives,
+                sample.second_derivatives,
+            ),
         })
         .collect();
     Some(ProceduralSurfaceDefinition::RollingBallJet(
-        cadmpeg_ir::geometry::RollingBallJetStations::try_new(A8FreeformCurve::DEGREE, stations)
-            .ok()?,
+        cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
+            A8FreeformCurve::DEGREE,
+            stations,
+        )
+        .ok()?,
     ))
+}
+
+/// The admitted neutral jet site of one decoded rolling-ball site and its two
+/// ten-channel derivative rows.
+pub(in crate::families) fn rolling_ball_jet_site(
+    site: &RollingBallSite,
+    first_derivatives: [FiniteReal; 10],
+    second_derivatives: [FiniteReal; 10],
+) -> RollingBallJetSite<FiniteReal, FiniteVector3, FinitePoint3> {
+    RollingBallJetSite {
+        first_limit: site.limit1,
+        second_limit: site.limit2,
+        center: site.center,
+        angle: site.theta,
+        first_derivative: rolling_ball_jet_derivative(first_derivatives),
+        second_derivative: rolling_ball_jet_derivative(second_derivatives),
+    }
+}
+
+pub(in crate::families) fn rolling_ball_jet_derivative(
+    values: [FiniteReal; 10],
+) -> RollingBallJetDerivative<FiniteReal, FiniteVector3> {
+    RollingBallJetDerivative {
+        first_limit: FiniteVector3::from_components(values[0], values[1], values[2]),
+        second_limit: FiniteVector3::from_components(values[3], values[4], values[5]),
+        center: FiniteVector3::from_components(values[6], values[7], values[8]),
+        angle: values[9],
+    }
 }
 
 /// Decode framed `a8 <flag> 32` common-form rolling-ball jet records.
@@ -952,14 +966,14 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
-        knots.push(f64_le(data, at)?.get());
+        knots.push(f64_le(data, at)?);
         at += 8;
     }
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
         multiplicities.push(compact_int(data, &mut at)?);
     }
-    if !knots_strictly_increasing(&knots) {
+    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
         return None;
     }
     let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
@@ -973,9 +987,9 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     {
         return None;
     }
-    let block = |start: usize| -> Option<Vec<[f64; 10]>> {
+    let block = |start: usize| -> Option<Vec<[FiniteReal; 10]>> {
         (0..count)
-            .map(|site| Some(read_f64_array::<10>(data, start + site * 80)?.map(FiniteReal::get)))
+            .map(|site| read_f64_array::<10>(data, start + site * 80))
             .collect()
     };
     let positions = block(at)?;
@@ -1054,15 +1068,15 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
-        knots.push(f64_le(data, at)?.get());
+        knots.push(f64_le(data, at)?);
         at += 8;
     }
-    if !knots_strictly_increasing(&knots) {
+    if !knots_strictly_increasing(&FiniteReal::raw_lane(&knots)) {
         return None;
     }
-    let block = |start: usize| -> Option<Vec<[f64; 10]>> {
+    let block = |start: usize| -> Option<Vec<[FiniteReal; 10]>> {
         (0..count)
-            .map(|site| Some(read_f64_array::<10>(data, start + site * 80)?.map(FiniteReal::get)))
+            .map(|site| read_f64_array::<10>(data, start + site * 80))
             .collect()
     };
     let positions = block(at)?;
@@ -1089,22 +1103,23 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     })
 }
 
-fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>> {
+fn rolling_ball_sites(positions: Vec<[FiniteReal; 10]>) -> Option<Vec<RollingBallSite>> {
     let mut sites = Vec::with_capacity(positions.len());
-    for v in positions {
-        let limit1 = [v[0], v[1], v[2]];
-        let limit2 = [v[3], v[4], v[5]];
-        let center = [v[6], v[7], v[8]];
-        let radius = distance(center, limit1);
-        let other = distance(center, limit2);
-        let chord = distance(limit1, limit2);
+    for values in positions {
+        let limit1 = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+        let limit2 = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
+        let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
+        let theta = values[9];
+        let radius = distance(center.get(), limit1.get());
+        let other = distance(center.get(), limit2.get());
+        let chord = distance(limit1.get(), limit2.get());
         let radius_scale = radius.max(other);
         let relative_radius_difference = ((radius / radius_scale) - (other / radius_scale)).abs();
         if !radius.is_finite()
             || radius <= 0.0
             || !other.is_finite()
             || relative_radius_difference > EPS_ROLLING_BALL_RADIUS
-            || (v[9] - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs()
+            || (theta.get() - 2.0 * ((chord / radius) * 0.5).clamp(-1.0, 1.0).asin()).abs()
                 > EPS_ROLLING_BALL_ANGLE
         {
             return None;
@@ -1113,7 +1128,7 @@ fn rolling_ball_sites(positions: Vec<[f64; 10]>) -> Option<Vec<RollingBallSite>>
             limit1,
             limit2,
             center,
-            theta: v[9],
+            theta,
         });
     }
     Some(sites)
@@ -1177,9 +1192,6 @@ fn parse_object_stream_pcurve(
         }
         Some(values)
     };
-    let read = |at: &mut usize| {
-        read_finite(at).map(|values| values.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
-    };
     let knots = read_finite(&mut at)?;
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1193,16 +1205,16 @@ fn parse_object_stream_pcurve(
     if at.checked_add(array_bytes.checked_add(18)?)? > end {
         return None;
     }
-    let u = read(&mut at)?;
-    let v = read(&mut at)?;
-    let du = read(&mut at)?;
-    let dv = read(&mut at)?;
+    let u = read_finite(&mut at)?;
+    let v = read_finite(&mut at)?;
+    let du = read_finite(&mut at)?;
+    let dv = read_finite(&mut at)?;
     if data.get(at) != Some(&0x05) {
         return None;
     }
     at += 1;
-    let ddu = read(&mut at)?;
-    let ddv = read(&mut at)?;
+    let ddu = read_finite(&mut at)?;
+    let ddv = read_finite(&mut at)?;
     let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
     at += 16;
     if data.get(at) != Some(&0x07)
@@ -1230,9 +1242,9 @@ fn parse_object_stream_pcurve(
             .zip(ddu.into_iter().zip(ddv))
             .map(|(((knot, (u, v)), (du, dv)), (ddu, ddv))| A8PcurveSite {
                 knot,
-                point: [u, v],
-                first_derivative: [du, dv],
-                second_derivative: [ddu, ddv],
+                point: [u, v].into(),
+                first_derivative: [du, dv].into(),
+                second_derivative: [ddu, ddv].into(),
             })
             .collect(),
         range,
@@ -1338,7 +1350,7 @@ fn a8_surface_from_external_grid(
         pos: header.pos,
         identity: Some(header.object_id),
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_checked_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     header.u_degree,
                     header.u_knots.expanded()?,
@@ -1387,8 +1399,8 @@ pub(in crate::families) fn a8_external_grid_ranges(data: &[u8]) -> Vec<Range<usi
 
 struct ExternalGridCandidate {
     range: Range<usize>,
-    control_points: Vec<Point3>,
-    weights: Option<Vec<f64>>,
+    control_points: Vec<FinitePoint3>,
+    weights: Option<Vec<NonZeroReal>>,
 }
 
 fn a8_external_grid_candidates(
@@ -1451,7 +1463,7 @@ fn a8_external_grid_candidates(
                 complete = false;
                 break;
             };
-            control_points.push(point.get());
+            control_points.push(point);
             at += 24;
         }
         if !complete {
@@ -1461,10 +1473,13 @@ fn a8_external_grid_candidates(
             let Some(values) = f64_values(data, &mut at, poles, end) else {
                 continue;
             };
-            let values = values.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
-            if values.contains(&0.0) {
+            let Some(values) = values
+                .into_iter()
+                .map(|value| NonZeroReal::new(value.get()))
+                .collect::<Option<Vec<_>>>()
+            else {
                 continue;
-            }
+            };
             Some(values)
         } else {
             None

@@ -128,8 +128,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     let plane = crate::families::standard::records::decode_plane(
         &crate::families::standard::records::PlaneParams {
             target: 0,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 0.999_999),
+            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            normal: crate::test_support::test_b5::finite_vector([0.0, 0.0, 0.999_999]),
         },
     )
     .expect("near-unit plane carrier");
@@ -144,8 +144,8 @@ fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
     assert!(crate::families::standard::records::decode_plane(
         &crate::families::standard::records::PlaneParams {
             target: 0,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 0.0),
+            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+            normal: crate::test_support::test_b5::finite_vector([0.0, 0.0, 0.0]),
         },
     )
     .is_none());
@@ -478,7 +478,10 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 1),
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 1)
+            .into_iter()
+            .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
+            .collect::<Vec<_>>(),
         [Some([0.0, 0.0, 1.0])]
     );
 }
@@ -501,7 +504,10 @@ fn fbb_frame_vectors_concatenate_unique_population_chains() {
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd3, 0xd3, 0xd3, 0xd3]);
 
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 2),
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 2)
+            .into_iter()
+            .map(|vector| vector.map(cadmpeg_ir::units::FiniteVector::get))
+            .collect::<Vec<_>>(),
         [Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, 1.0]),]
     );
 }
@@ -790,10 +796,23 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     let StandardSurfaceRecord::Freeform { bounds, .. } = &records[0] else {
         unreachable!("freeform roster row")
     };
-    assert_eq!(bounds.aabb_center, [0.0, 0.0, 0.0]);
-    assert_eq!(bounds.aabb_half_extents, [1.0, 1.0, 1.0]);
-    assert_eq!(bounds.sphere_center, [0.0, 0.0, 0.0]);
-    assert_eq!(bounds.sphere_radius, 2.0);
+    assert_eq!(
+        bounds.aabb_center.map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        bounds
+            .aabb_half_extents
+            .map(cadmpeg_ir::scalar::NonNegativeLength::get),
+        [1.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        bounds
+            .sphere_center
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [0.0, 0.0, 0.0]
+    );
+    assert_eq!(bounds.sphere_radius.get(), 2.0);
     assert!(matches!(
         &records[1],
         StandardSurfaceRecord::Analytic(prefix)
@@ -973,17 +992,26 @@ fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
         2.5,
     ));
     let normals = HashMap::from([
-        (0x0004_0506, [0.0, 1.0, 0.0]),
-        (0x0001_0203, [1.0, 0.0, 0.0]),
-        (0x0007_0809, [0.0, 0.0, 1.0]),
+        (
+            0x0004_0506,
+            crate::test_support::test_b5::finite_vector([0.0, 1.0, 0.0]),
+        ),
+        (
+            0x0001_0203,
+            crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]),
+        ),
+        (
+            0x0007_0809,
+            crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
+        ),
     ]);
     let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
     assert_eq!(planes.len(), 3);
     assert_eq!(planes[0].target, 0x0001_0203);
-    assert_eq!(planes[0].normal, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(planes[0].normal, [1.0, 0.0, 0.0]);
     assert_eq!(planes[1].target, 0x0004_0506);
-    assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(planes[1].normal, [0.0, 1.0, 0.0]);
     assert_eq!(planes[2].target, 0x0007_0809);
     assert_eq!(planes[2].origin, Point3::new(0.0, 0.0, 50.0));
 }
@@ -1049,10 +1077,22 @@ fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
         2.5,
     ));
     let normals = HashMap::from([
-        (duplicate_tag, [1.0, 0.0, 0.0]),
-        (invalid_tag, [0.0, 1.0, 0.0]),
-        (valid_tag, [0.0, 0.0, 1.0]),
-        (rounded_tag, [0.0, 0.0, 1.0]),
+        (
+            duplicate_tag,
+            crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]),
+        ),
+        (
+            invalid_tag,
+            crate::test_support::test_b5::finite_vector([0.0, 1.0, 0.0]),
+        ),
+        (
+            valid_tag,
+            crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
+        ),
+        (
+            rounded_tag,
+            crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
+        ),
     ]);
 
     let planes = crate::families::standard::records::plane_params(&bytes, &normals);
@@ -1092,10 +1132,22 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
         assert_eq!(
             crate::families::standard::records::standard_face_bounds(&bytes, &record),
             Some(StandardFaceBounds {
-                aabb_center: [1.0, 2.0, 3.0],
-                aabb_half_extents: [4.0, 5.0, 6.0],
-                sphere_center: [1.0, 2.0, 3.0],
-                sphere_radius: 8.0,
+                aabb_center: [
+                    crate::test_support::test_b5::finite(1.0),
+                    crate::test_support::test_b5::finite(2.0),
+                    crate::test_support::test_b5::finite(3.0)
+                ],
+                aabb_half_extents: [
+                    crate::test_support::test_b5::nonnegative_length(4.0),
+                    crate::test_support::test_b5::nonnegative_length(5.0),
+                    crate::test_support::test_b5::nonnegative_length(6.0)
+                ],
+                sphere_center: [
+                    crate::test_support::test_b5::finite(1.0),
+                    crate::test_support::test_b5::finite(2.0),
+                    crate::test_support::test_b5::finite(3.0)
+                ],
+                sphere_radius: crate::test_support::test_b5::nonnegative_length(8.0),
             })
         );
     }

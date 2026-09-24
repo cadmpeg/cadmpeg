@@ -5,12 +5,12 @@ use cadmpeg_ir::scalar::FiniteReal;
 /// Distinct finite increasing knots paired with their multiplicities.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct A8KnotLane {
-    distinct: Vec<f64>,
+    distinct: Vec<FiniteReal>,
     multiplicities: Vec<u32>,
 }
 
 impl A8KnotLane {
-    pub(super) fn distinct(&self) -> &[f64] {
+    pub(super) fn distinct(&self) -> &[FiniteReal] {
         &self.distinct
     }
 
@@ -21,20 +21,16 @@ impl A8KnotLane {
     }
 
     pub(super) fn try_new(distinct: Vec<FiniteReal>, multiplicities: Vec<u32>) -> Option<Self> {
-        let distinct = distinct
-            .into_iter()
-            .map(FiniteReal::get)
-            .collect::<Vec<_>>();
-        (distinct.len() == multiplicities.len() && knots_strictly_increasing(&distinct)).then_some(
-            Self {
-                distinct,
-                multiplicities,
-            },
-        )
+        (distinct.len() == multiplicities.len()
+            && knots_strictly_increasing(&FiniteReal::raw_lane(&distinct)))
+        .then_some(Self {
+            distinct,
+            multiplicities,
+        })
     }
 
     pub(super) fn expanded(&self) -> Option<Vec<f64>> {
-        expand_knots(&self.distinct, &self.multiplicities)
+        expand_knots(&FiniteReal::raw_lane(&self.distinct), &self.multiplicities)
     }
 
     pub(super) fn pole_count(&self, degree: u32) -> Option<u32> {
