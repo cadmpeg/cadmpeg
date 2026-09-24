@@ -21,7 +21,7 @@ use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell,
     Vertex,
 };
-use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3};
+use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -472,14 +472,14 @@ fn append_e5_planes(
 /// is serialized as a line-like endpoint tape. Treating that roundoff as a
 /// second rank would send plane fitting through an ill-conditioned 2D solve;
 /// the known geometric normal must select the rank-one path instead.
-fn e5_uv_vectors_are_independent(left: [f64; 2], right: [f64; 2]) -> bool {
+fn e5_uv_vectors_are_independent(left: FiniteVector<2>, right: FiniteVector<2>) -> bool {
     const RANK_TOLERANCE: f64 = EPS_E5_DECODE_EXACT_GEOMETRY;
     let scale = left
         .into_iter()
         .chain(right)
         .map(f64::abs)
         .fold(0.0_f64, f64::max);
-    if !scale.is_finite() || scale == 0.0 {
+    if scale == 0.0 {
         return false;
     }
     let left = [left[0] / scale, left[1] / scale];
@@ -497,11 +497,11 @@ fn solve_e5_plane_frame(
     if topology.vertex_refs.len() != points.len() {
         return None;
     }
-    let point_by_ref: HashMap<u32, Point3> = topology
+    let point_by_ref: HashMap<u32, FinitePoint3> = topology
         .vertex_refs
         .iter()
         .copied()
-        .zip(points.iter().map(|point| point.get()))
+        .zip(points.iter().copied())
         .collect();
     let mut segments = Vec::new();
     for face in topology
@@ -549,7 +549,7 @@ fn solve_e5_plane_frame(
         }
         None
     };
-    let endpoint_pairs = |segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
+    let endpoint_pairs = |segment: &([FiniteVector<2>; 2], [FinitePoint3; 2]), reversed: bool| {
         let points = if reversed {
             [segment.1[1], segment.1[0]]
         } else {
@@ -557,15 +557,16 @@ fn solve_e5_plane_frame(
         };
         [(segment.0[0], points[0]), (segment.0[1], points[1])]
     };
-    let endpoint_error =
-        |axes: (Vector3, Vector3), segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
-            plane_frame_residual(
-                origin.get().into(),
-                &endpoint_pairs(segment, reversed),
-                axes.0,
-                axes.1,
-            )
-        };
+    let endpoint_error = |axes: (Vector3, Vector3),
+                          segment: &([FiniteVector<2>; 2], [FinitePoint3; 2]),
+                          reversed: bool| {
+        plane_frame_residual(
+            origin.get().into(),
+            &endpoint_pairs(segment, reversed),
+            axes.0,
+            axes.1,
+        )
+    };
 
     let mut fitted_axes = Vec::new();
     if let Some(anchors) = anchors {
@@ -697,13 +698,14 @@ fn solve_e5_plane_frame(
     (canonical.len() == 1).then(|| canonical[0])
 }
 
-fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Option<[[f64; 2]; 2]> {
-    let finite = |endpoints: [[f64; 2]; 2]| {
-        endpoints
-            .into_iter()
-            .flatten()
-            .all(f64::is_finite)
-            .then_some(endpoints)
+fn e5_native_uv_endpoints(
+    pcurve: &crate::families::e5::graph::E5Pcurve,
+) -> Option<[FiniteVector<2>; 2]> {
+    let finite = |[start, end]: [[f64; 2]; 2]| {
+        let (Some(start), Some(end)) = (FiniteVector::new(start), FiniteVector::new(end)) else {
+            return None;
+        };
+        Some([start, end])
     };
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
@@ -731,8 +733,8 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
             ]
         })),
         crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => Some([
-            sites.first()?.point.map(FiniteReal::get),
-            sites.last()?.point.map(FiniteReal::get),
+            FiniteVector::from(sites.first()?.point),
+            FiniteVector::from(sites.last()?.point),
         ]),
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
@@ -758,7 +760,7 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
                     None,
                     parameter.get(),
                 )
-                .map(|point| [point.as_raw().u, point.as_raw().v])
+                .map(FiniteVector::from)
             });
             Some([endpoints[0]?, endpoints[1]?])
         }
@@ -767,14 +769,8 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
 
 fn fit_e5_plane_axes(
     origin: FinitePoint3,
-    pairs: &[([f64; 2], Point3)],
+    pairs: &[(FiniteVector<2>, FinitePoint3)],
 ) -> Option<(Vector3, Vector3, f64)> {
-    if pairs
-        .iter()
-        .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
-    {
-        return None;
-    }
     let origin: [f64; 3] = origin.get().into();
     let uv_scale = pairs
         .iter()
@@ -784,7 +780,7 @@ fn fit_e5_plane_axes(
     if !uv_scale.is_finite() || uv_scale == 0.0 {
         return None;
     }
-    let normalized_uv = |uv: [f64; 2]| [uv[0] / uv_scale, uv[1] / uv_scale];
+    let normalized_uv = |uv: FiniteVector<2>| [uv[0] / uv_scale, uv[1] / uv_scale];
     let suu = pairs
         .iter()
         .map(|(uv, _)| normalized_uv(*uv)[0].powi(2))
@@ -839,15 +835,9 @@ fn fit_e5_plane_axes(
 
 fn fit_rank_one_e5_plane_axes(
     origin: FinitePoint3,
-    pairs: &[([f64; 2], Point3)],
+    pairs: &[(FiniteVector<2>, FinitePoint3)],
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
-    if pairs
-        .iter()
-        .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
-    {
-        return None;
-    }
     let origin: [f64; 3] = origin.get().into();
     let (uv, point) = pairs.iter().find(|(uv, _)| {
         let norm = uv[0].hypot(uv[1]);
@@ -886,7 +876,7 @@ fn fit_rank_one_e5_plane_axes(
 
 fn plane_frame_residual(
     origin: [f64; 3],
-    pairs: &[([f64; 2], Point3)],
+    pairs: &[(FiniteVector<2>, FinitePoint3)],
     u_axis: Vector3,
     v_axis: Vector3,
 ) -> f64 {
@@ -896,7 +886,7 @@ fn plane_frame_residual(
             origin[1] + uv[0] * u_axis.y + uv[1] * v_axis.y,
             origin[2] + uv[0] * u_axis.z + uv[1] * v_axis.z,
         ];
-        let error = distance(predicted, <[f64; 3]>::from(*point));
+        let error = distance(predicted, point.get().into());
         if error.is_finite() {
             residual.max(error)
         } else {

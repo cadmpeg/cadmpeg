@@ -361,3 +361,12 @@ fn finite_lanes_optional_bounds_and_arrays_admit_all_or_nothing() {
     );
     assert!(FiniteReal::array([4.0, f64::NEG_INFINITY]).is_none());
 }
+
+#[test]
+fn a_finite_point_carries_its_coordinates_into_a_finite_vector() {
+    use crate::math::Point2;
+    use crate::units::{FinitePoint2, FiniteVector};
+
+    let point = FinitePoint2::new(Point2::new(-1.5, 4.0)).unwrap();
+    assert_eq!(FiniteVector::from(point).get(), [-1.5, 4.0]);
+}
