@@ -90,7 +90,7 @@ pub(crate) struct B5Graph {
     pub(in crate::families) edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
     /// Maximum incident endpoint residual for each logical vertex, keyed by
     /// the combined vertex index used by `edge_vertices`.
-    pub(in crate::families) vertex_tolerances: BTreeMap<usize, f64>,
+    pub(in crate::families) vertex_tolerances: BTreeMap<usize, PositiveReal>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
     pub(in crate::families) profiles: BTreeMap<u32, B5Profile>,
@@ -292,7 +292,7 @@ pub(in crate::families) enum B5Surface {
         /// Active native axial interval.
         v_range: [f64; 2],
         /// Divisor mapping native U to azimuth.
-        angular_scale: f64,
+        angular_scale: FiniteReal,
         /// Origin of the full-turn native U chart.
         chart_origin: f64,
     },
@@ -314,8 +314,8 @@ pub(in crate::families) enum B5Surface {
         angular_range: [f64; 2],
         /// Native slant-coordinate range.
         slant_range: [f64; 2],
-        /// Divisor mapping native U to azimuth.
-        angular_scale: f64,
+        /// Positive divisor mapping native U to azimuth.
+        angular_scale: PositiveReal,
         /// Full-turn azimuth chart domain.
         angular_domain: [f64; 2],
         /// Neutral carrier: its origin is the axis point at the slant-interval
@@ -362,10 +362,10 @@ pub(in crate::families) enum B5Surface {
         minor_angular_range: [f64; 2],
         /// Full-turn minor-angle chart domain.
         minor_angular_domain: [f64; 2],
-        /// Divisor mapping native U to the major angle.
-        major_scale: f64,
-        /// Divisor mapping native V to the minor angle.
-        minor_scale: f64,
+        /// Positive divisor mapping native U to the major angle.
+        major_scale: PositiveReal,
+        /// Positive divisor mapping native V to the minor angle.
+        minor_scale: PositiveReal,
     },
     /// `b5 03 2d`: a surface of revolution sweeping `profile_curve` about
     /// `axis_origin`/`axis_direction`.
@@ -647,8 +647,9 @@ pub(in crate::families) struct B5Pcurve {
     pub(super) multiplicities: Vec<u32>,
     /// `(u, v)` control points in the surface's parameter space.
     pub(super) control_points: Vec<[f64; 2]>,
-    /// Per-pole rational weights. `None` denotes a polynomial pcurve.
-    pub(super) weights: Option<Vec<f64>>,
+    /// Positive per-pole rational weights. `None` denotes a polynomial
+    /// pcurve.
+    pub(super) weights: Option<Vec<PositiveReal>>,
     /// Explicit occurrence parameter interval when the pcurve record stores one.
     pub(super) parameter_range: Option<[FiniteReal; 2]>,
     /// Coordinate convention for evaluating the stored knot vector.
@@ -660,7 +661,7 @@ pub(in crate::families) struct B5Pcurve {
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
     /// scale, or NURBS evaluation failure).
-    pub(super) lifted_endpoints: Option<[[f64; 3]; 2]>,
+    pub(super) lifted_endpoints: Option<[FinitePoint3; 2]>,
 }
 
 /// Parameter coordinates used by one B5 pcurve record.
@@ -2048,7 +2049,10 @@ fn incidence_vertex_coordinates(
                     let points = incidence
                         .lanes
                         .into_iter()
-                        .map(|lane| lift_parameter_incidence(lane.curve, lane.parameter, geometry))
+                        .map(|lane| {
+                            lift_parameter_incidence(lane.curve, lane.parameter, geometry)
+                                .map(coordinates)
+                        })
                         .collect::<Option<Vec<_>>>()?;
                     (!points.is_empty()).then_some(points)
                 })
@@ -2074,7 +2078,7 @@ fn lift_parameter_incidence(
     pcurve_id: u32,
     parameter: FiniteReal,
     geometry: &B5PcurveContext<'_>,
-) -> Option<[f64; 3]> {
+) -> Option<FinitePoint3> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
         let domain = pcurve_parameter_domain(pcurve)?;
         (parameter >= domain[0] && parameter <= domain[1]).then_some(())?;
@@ -2216,11 +2220,18 @@ pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64;
         .iter()
         .map(|point| Point2::new(point[0], point[1]))
         .collect();
+    let weights = pcurve.weights.as_ref().map(|weights| {
+        weights
+            .iter()
+            .copied()
+            .map(PositiveReal::get)
+            .collect::<Vec<_>>()
+    });
     let point = nurbs_pcurve_uv(
         pcurve.degree,
         &knots,
         &control_points,
-        pcurve.weights.as_deref(),
+        weights.as_deref(),
         parameter,
     )?;
     Some([point.u, point.v])
@@ -2301,7 +2312,7 @@ pub(super) fn bounded_occurrence_range(
 struct BoundNativeVertices {
     edges: BTreeMap<u32, [B5VertexRef; 2]>,
     vertices: Vec<B5LogicalVertex>,
-    tolerances: BTreeMap<usize, f64>,
+    tolerances: BTreeMap<usize, PositiveReal>,
 }
 
 fn bind_native_vertices(
@@ -2338,17 +2349,10 @@ fn bind_native_vertices(
             ) else {
                 continue;
             };
-            if lifted
-                .iter()
-                .flatten()
-                .any(|coordinate| !coordinate.is_finite())
-            {
-                continue;
-            }
             for lane in 0..2 {
                 logical_coordinates
                     .entry(vertices[lane])
-                    .or_insert(lifted[lane]);
+                    .or_insert(coordinates(lifted[lane]));
             }
         }
     }
@@ -2375,12 +2379,13 @@ fn bind_native_vertices(
             edge_vertices.insert(edge, [start, end]);
         }
     }
-    let mut tolerances = BTreeMap::<usize, f64>::new();
+    let mut tolerances = BTreeMap::<usize, PositiveReal>::new();
     for loop_ in loops.values() {
         for member in &loop_.members {
             let Some(lifted) = pcurve_endpoints(member.pcurve, member.edge, geometry) else {
                 continue;
             };
+            let lifted = lifted.map(coordinates);
             let Some(&loci) = edge_vertices.get(&member.edge) else {
                 continue;
             };
@@ -2403,14 +2408,20 @@ fn bind_native_vertices(
                 ),
             ];
             for (locus, residual) in residuals {
-                if residual > POINT_TOLERANCE && residual.is_finite() {
-                    tolerances
-                        .entry(locus.combined_index(points.len()))
-                        .and_modify(|tolerance| {
-                            *tolerance = tolerance.max(residual + EPS_B5_GRAPH_GEOMETRY);
-                        })
-                        .or_insert(residual + EPS_B5_GRAPH_GEOMETRY);
+                if residual <= POINT_TOLERANCE {
+                    continue;
                 }
+                let Some(candidate) = PositiveReal::new(residual + EPS_B5_GRAPH_GEOMETRY) else {
+                    continue;
+                };
+                tolerances
+                    .entry(locus.combined_index(points.len()))
+                    .and_modify(|tolerance| {
+                        if candidate > *tolerance {
+                            *tolerance = candidate;
+                        }
+                    })
+                    .or_insert(candidate);
             }
         }
     }
@@ -2610,7 +2621,7 @@ fn bind_edge_vertices(
                 continue;
             };
             let indices: Option<[usize; 2]> = endpoints
-                .map(|endpoint| canonical_point(points, &point_index, endpoint))
+                .map(|endpoint| canonical_point(points, &point_index, coordinates(endpoint)))
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
                 .and_then(|indices| indices.try_into().ok());
@@ -2638,7 +2649,7 @@ fn pcurve_endpoints(
     pcurve_id: u32,
     edge_id: u32,
     geometry: &B5PcurveContext<'_>,
-) -> Option<[[f64; 3]; 2]> {
+) -> Option<[FinitePoint3; 2]> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
         let parameters = edge_pcurve_parameter_values(
             geometry.edge_parameter_incidences,
@@ -2835,23 +2846,22 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             ];
             let angular_factor = f64_le(&record.payload, 113)?.get();
             let chart_origin = f64_le(&record.payload, 129)?.get();
-            let angular_scale = radius / angular_factor;
+            let angular_scale = FiniteReal::new(radius / angular_factor)?;
             let chart_domain = [
                 chart_origin,
-                chart_origin + std::f64::consts::TAU * angular_scale,
+                chart_origin + std::f64::consts::TAU * angular_scale.get(),
             ];
             chart_domain[1].is_finite().then_some(())?;
             let chart_tolerance = EPS_B5_GRAPH_EXACT_GEOMETRY
                 * u_range
                     .into_iter()
                     .chain(chart_domain)
-                    .chain([angular_scale])
+                    .chain([angular_scale.get()])
                     .map(f64::abs)
                     .fold(1.0, f64::max);
             let admitted_radius = PositiveLength::new(radius)?;
             let frame = completed_frame(stored_u, stored_v)?;
             (angular_factor > 0.0
-                && angular_scale.is_finite()
                 && f64_le(&record.payload, 121)?.get() == 1.0
                 && u_range[0] < u_range[1]
                 && u_range[0] >= chart_domain[0] - chart_tolerance
@@ -2886,7 +2896,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             if slant_range[0].abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY {
                 slant_range[0] = 0.0;
             }
-            let angular_scale = f64_le(&record.payload, 145)?.get();
+            let angular_scale = PositiveReal::new(f64_le(&record.payload, 145)?.get())?;
             let angular_domain = [
                 f64_le(&record.payload, 169)?.get(),
                 f64_le(&record.payload, 177)?.get(),
@@ -2897,7 +2907,6 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && half_angle.get() < std::f64::consts::FRAC_PI_2
                 && periodic_angular_range_is_valid(angular_range, angular_domain)
                 && slant_range[0] < slant_range[1]
-                && angular_scale > 0.0
                 && f64_le(&record.payload, 153)?.get() == 1.0
                 && f64_le(&record.payload, 161)?.get() == 0.0)
                 .then_some(())?;
@@ -2995,16 +3004,14 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, 161)?.get(),
                 f64_le(&record.payload, 169)?.get(),
             ];
-            let major_scale = f64_le(&record.payload, 177)?.get();
-            let minor_scale = f64_le(&record.payload, 185)?.get();
+            let major_scale = PositiveReal::new(f64_le(&record.payload, 177)?.get())?;
+            let minor_scale = PositiveReal::new(f64_le(&record.payload, 185)?.get())?;
             let frame = right_handed_frame(axis, direction_x, direction_y)?;
             let admitted_major_radius = PositiveLength::new(major_radius)?;
             let admitted_minor_radius = PositiveLength::new(minor_radius)?;
             (periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
-                && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain)
-                && major_scale > 0.0
-                && minor_scale > 0.0)
-                .then_some(())?;
+                && periodic_angular_range_is_valid(minor_angular_range, minor_angular_domain))
+            .then_some(())?;
             Some(B5Surface::Torus {
                 center: f64_point(&record.payload, 1)?,
                 frame,
@@ -4018,7 +4025,7 @@ fn lift_pcurve_endpoints(
     surface: &B5Surface,
     profiles: &BTreeMap<u32, B5Profile>,
     control_points: &[[f64; 2]],
-) -> Option<[[f64; 3]; 2]> {
+) -> Option<[FinitePoint3; 2]> {
     let endpoints = [*control_points.first()?, *control_points.last()?];
     let lifted = match surface {
         B5Surface::UnresolvedNurbs { .. }
@@ -4050,7 +4057,7 @@ fn lift_pcurve_endpoints(
             );
             let reference_y = cross(axis, reference_x);
             Some(endpoints.map(|[u, v]| {
-                let angle = u / angular_scale;
+                let angle = u / angular_scale.get();
                 add(
                     origin,
                     add(
@@ -4075,7 +4082,7 @@ fn lift_pcurve_endpoints(
             angular_scale,
             ..
         } => Some(endpoints.map(|[u, v]| {
-            let angle = u / angular_scale;
+            let angle = u / angular_scale.get();
             let radial = add(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
@@ -4108,8 +4115,8 @@ fn lift_pcurve_endpoints(
             );
             let (major_radius, minor_radius) = (major_radius.get(), minor_radius.get());
             Some(endpoints.map(|[u, v]| {
-                let major_angle = u / major_scale;
-                let minor_angle = v / minor_scale;
+                let major_angle = u / major_scale.get();
+                let minor_angle = v / minor_scale.get();
                 let radial = add(
                     scale(direction_x, major_angle.cos()),
                     scale(*direction_y, major_angle.sin()),
@@ -4177,12 +4184,11 @@ fn lift_pcurve_endpoints(
             evaluate_nurbs(surface, endpoints[1][0], endpoints[1][1])?,
         ]),
     };
-    lifted.filter(|points| {
-        points
-            .iter()
-            .flatten()
-            .all(|coordinate| coordinate.is_finite())
-    })
+    let [start, end] = lifted?;
+    Some([
+        FinitePoint3::new(Point3::from(start))?,
+        FinitePoint3::new(Point3::from(end))?,
+    ])
 }
 
 fn evaluate_nurbs(surface: &NurbsSurface, u: f64, v: f64) -> Option<[f64; 3]> {
@@ -4442,11 +4448,14 @@ fn rational_arc_pcurve(
         .into_iter()
         .map(FiniteReal::new)
         .collect::<Option<Vec<_>>>()?;
+    let weights = weights
+        .into_iter()
+        .map(PositiveReal::new)
+        .collect::<Option<Vec<_>>>()?;
     if control_points
         .iter()
         .flatten()
         .any(|coordinate| !coordinate.is_finite())
-        || weights.iter().any(|weight| !weight.is_finite())
     {
         return None;
     }
@@ -4566,7 +4575,7 @@ fn sphere_great_circle_point(
     pcurve: &B5SphereGreatCirclePcurve,
     surface: &B5Surface,
     parameter: FiniteReal,
-) -> Option<[f64; 3]> {
+) -> Option<FinitePoint3> {
     let B5Surface::Sphere {
         center,
         frame,
@@ -4613,7 +4622,7 @@ fn sphere_great_circle_point(
                 * (cos_latitude * (cos_azimuth * direction_x[2] + sin_azimuth * direction_y[2])
                     + sin_latitude * axis[2]),
     ];
-    point.into_iter().all(f64::is_finite).then_some(point)
+    FinitePoint3::new(Point3::from(point))
 }
 
 fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {

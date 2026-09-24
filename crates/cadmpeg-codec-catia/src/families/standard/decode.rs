@@ -6108,7 +6108,7 @@ fn corroborate_successor_endpoint_points(
 fn unique_native_identity_points(
     vertices: &[crate::families::b5::graph::B5LogicalVertex],
     raw_point_count: usize,
-    tolerances: &BTreeMap<usize, f64>,
+    tolerances: &BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal>,
     points: &[Point],
 ) -> HashMap<u32, usize> {
     const MATCH_TOLERANCE: f64 = 2e-3;
@@ -6119,8 +6119,7 @@ fn unique_native_identity_points(
         .filter_map(|(rank, vertex)| {
             let tolerance = tolerances
                 .get(&(raw_point_count + rank))
-                .copied()
-                .unwrap_or(MATCH_TOLERANCE)
+                .map_or(MATCH_TOLERANCE, |tolerance| tolerance.get())
                 .max(MATCH_TOLERANCE);
             let matches = points
                 .iter()

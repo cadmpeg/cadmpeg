@@ -259,12 +259,12 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         );
         let cache = circular_helix_cache(
             &definition,
-            tolerance,
+            cadmpeg_ir::scalar::PositiveReal::new(tolerance).expect("positive fixture tolerance"),
             &mut LaneRefusals::new(),
             "large helix",
         )
         .expect("finite cache and sagitta");
-        assert!(cache.fit_tolerance > 0.0 && cache.fit_tolerance <= tolerance);
+        assert!(cache.fit_tolerance.get() > 0.0 && cache.fit_tolerance.get() <= tolerance);
         let step = sweep / (cache.curve.control_points().len() - 1) as f64;
         // For a tiny angle, sagitta/r is step^2/8 to relative roundoff.
         // Divide before comparing so the reference does not square the angle.
@@ -273,6 +273,6 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         } else {
             radius * (1.0 - (step / 2.0).cos())
         };
-        assert!((cache.fit_tolerance / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
+        assert!((cache.fit_tolerance.get() / expected - 1.0).abs() < RELATIVE_ROUNDOFF);
     }
 }

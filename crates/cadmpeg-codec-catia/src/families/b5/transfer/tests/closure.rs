@@ -1376,6 +1376,6 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     )]);
 
     let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
-    assert!((tolerances[&0] - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
+    assert!((tolerances[&0].get() - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
     assert!(!tolerances.contains_key(&1));
 }

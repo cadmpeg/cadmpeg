@@ -38,7 +38,7 @@ fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
         radius: crate::test_support::test_b5::positive_length(6.0),
         u_range: [1.0, 1.0 + 6.0 * std::f64::consts::PI],
         v_range: [-1.0, 1.0],
-        angular_scale: 3.0,
+        angular_scale: crate::test_support::test_b5::finite(3.0),
         chart_origin: 1.0,
     };
     let point = neutral_pcurve_point([3.0 * std::f64::consts::PI, 3.0], &surface);
@@ -258,7 +258,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         radius: crate::test_support::test_b5::positive_length(2.0),
         u_range: [0.0, 4.0 * std::f64::consts::PI],
         v_range: [-1.0, 1.0],
-        angular_scale: 2.0,
+        angular_scale: crate::test_support::test_b5::finite(2.0),
         chart_origin: 0.0,
     };
     assert!(
@@ -296,7 +296,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         radius: crate::test_support::test_b5::positive_length(scale),
         u_range: [0.0, std::f64::consts::TAU * scale],
         v_range: [-scale, scale],
-        angular_scale: scale,
+        angular_scale: crate::test_support::test_b5::finite(scale),
         chart_origin: 0.0,
     };
     let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
@@ -335,7 +335,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, scale],
-        angular_scale: 1.0,
+        angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -361,8 +361,8 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
         minor_angular_domain: [0.0, std::f64::consts::TAU],
-        major_scale: 1.0,
-        minor_scale: 1.0,
+        major_scale: crate::test_support::test_b5::positive(1.0),
+        minor_scale: crate::test_support::test_b5::positive(1.0),
     };
     let torus_pcurve = B5Pcurve {
         control_points: vec![[0.0, 0.0], [0.5, 0.0]],
@@ -386,7 +386,11 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
         control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
-        weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+        weights: Some(crate::test_support::test_b5::positive_lane(&[
+            1.0,
+            std::f64::consts::FRAC_1_SQRT_2,
+            1.0,
+        ])),
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
@@ -404,7 +408,12 @@ fn affine_plane_lift_preserves_pcurve_weights() {
     else {
         panic!("expected lifted rational curve");
     };
-    assert_eq!(curve.weights(), pcurve.weights.clone());
+    assert_eq!(
+        curve.weights(),
+        pcurve
+            .weights
+            .map(|weights| weights.into_iter().map(|weight| weight.get()).collect())
+    );
     assert!(curve.control_points().iter().all(|point| point.z == 2.0));
 }
 
@@ -481,7 +490,9 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
         control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
-        weights: Some(vec![1.0, 2.0, 1.0]),
+        weights: Some(crate::test_support::test_b5::positive_lane(&[
+            1.0, 2.0, 1.0,
+        ])),
         parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
@@ -506,12 +517,6 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
         ..pcurve.clone()
     };
     assert!(isocurve_endpoint_parameters(&turnback, [0.0, 1.0]).is_none());
-
-    let nonpositive_weight = B5Pcurve {
-        weights: Some(vec![1.0, 0.0, 1.0]),
-        ..pcurve
-    };
-    assert!(isocurve_endpoint_parameters(&nonpositive_weight, [0.0, 1.0]).is_none());
 }
 
 #[test]
@@ -581,7 +586,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         radius: crate::test_support::test_b5::positive_length(2.0),
         u_range: [0.0, 4.0 * std::f64::consts::PI],
         v_range: [-1.0, 1.0],
-        angular_scale: 2.0,
+        angular_scale: crate::test_support::test_b5::finite(2.0),
         chart_origin: 0.0,
     };
     let pcurve = B5Pcurve {
@@ -710,7 +715,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [-4.0, 0.0],
-        angular_scale: 2.0,
+        angular_scale: crate::test_support::test_b5::positive(2.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -811,7 +816,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [2.0, 8.0],
-        angular_scale: 3.0,
+        angular_scale: crate::test_support::test_b5::positive(3.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -1291,8 +1296,8 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
         minor_angular_domain: [0.0, std::f64::consts::TAU],
-        major_scale: 5.0,
-        minor_scale: 2.0,
+        major_scale: crate::test_support::test_b5::positive(5.0),
+        minor_scale: crate::test_support::test_b5::positive(2.0),
     };
     let base = B5Pcurve {
         object_id: 1,
@@ -1388,7 +1393,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         radius: crate::test_support::test_b5::positive_length(2.0),
         u_range: [0.0, 4.0 * std::f64::consts::PI],
         v_range: [-1.0, 1.0],
-        angular_scale: 2.0,
+        angular_scale: crate::test_support::test_b5::finite(2.0),
         chart_origin: 0.0,
     };
     let end = [2.0 * 2.0_f64.cos(), 2.0 * 2.0_f64.sin(), 7.0];
@@ -1415,7 +1420,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(apex_factor, 0.0);
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
-    assert!(plan.fit_tolerance <= 1e-4);
+    assert!(plan.fit_tolerance.get() <= 1e-4);
     assert_eq!(
         plan.cache.control_points().first(),
         Some(&Point3::new(2.0, 0.0, 3.0))

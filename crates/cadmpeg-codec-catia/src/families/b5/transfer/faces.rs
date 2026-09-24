@@ -231,11 +231,7 @@ fn b5_planar_loop_points(
         }
         let [start, end] = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
         let (pcurve_id, parameter_range) = pcurve_uses.get(&(loop_id, member))?;
-        if !parameter_range
-            .iter()
-            .all(|parameter| parameter.is_finite())
-            || parameter_range[0] == parameter_range[1]
-        {
+        if parameter_range[0] == parameter_range[1] {
             return None;
         }
         let pcurve = ir
@@ -250,8 +246,8 @@ fn b5_planar_loop_points(
         let direction = line_pcurve.direction().as_raw();
         let uv_endpoints = parameter_range.map(|parameter| {
             Point2::new(
-                uv_origin.u + parameter * direction.u,
-                uv_origin.v + parameter * direction.v,
+                uv_origin.u + parameter.get() * direction.u,
+                uv_origin.v + parameter.get() * direction.v,
             )
         });
         let lifted = uv_endpoints.map(|uv| b5_plane_point(origin, u_axis, v_axis, uv));
@@ -576,7 +572,7 @@ pub(super) fn emit_faces(
                         .map(|(pcurve, parameter_range)| {
                             orientation.members[member]
                                 .pcurve_reversed
-                                .then_some([parameter_range[1], parameter_range[0]])
+                                .then_some([parameter_range[1].get(), parameter_range[0].get()])
                                 .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
                                 .transpose()
                                 .map(|parameter_range| cadmpeg_ir::topology::PcurveUse {
@@ -683,7 +679,7 @@ mod tests {
                     (
                         PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
                             .expect("identity grammar"),
-                        [0.0, 1.0],
+                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
                     ),
                 );
             }

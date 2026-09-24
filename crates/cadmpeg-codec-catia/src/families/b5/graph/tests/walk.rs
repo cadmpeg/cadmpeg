@@ -1098,7 +1098,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
-        angular_scale: 1.0,
+        angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -1115,7 +1115,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
-        angular_scale: 1.0,
+        angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };
@@ -1165,7 +1165,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         radius: crate::test_support::test_b5::positive_length(carrier_radius),
         u_range: [0.0, std::f64::consts::TAU * carrier_radius],
         v_range: [-1.0, 1.0],
-        angular_scale: carrier_radius,
+        angular_scale: crate::test_support::test_b5::finite(carrier_radius),
         chart_origin: 0.0,
     };
     let torus = |carrier_radius| B5Surface::Torus {
@@ -1178,8 +1178,8 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         major_angular_domain: [0.0, std::f64::consts::TAU],
         minor_angular_range: [0.0, std::f64::consts::TAU],
         minor_angular_domain: [0.0, std::f64::consts::TAU],
-        major_scale: 1.0,
-        minor_scale: carrier_radius,
+        major_scale: crate::test_support::test_b5::positive(1.0),
+        minor_scale: crate::test_support::test_b5::positive(carrier_radius),
     };
     let sphere = |carrier_radius| B5Surface::Sphere {
         center: crate::test_support::test_b5::point([0.0; 3]),
@@ -1223,7 +1223,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
-        angular_scale: 1.0,
+        angular_scale: crate::test_support::test_b5::positive(1.0),
         angular_domain: [0.0, std::f64::consts::TAU],
         surface: None,
     };

@@ -51,6 +51,21 @@ pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")
 }
 
+/// Admit a pair of finite fixture points.
+pub(crate) fn points(coordinates: [[f64; 3]; 2]) -> [cadmpeg_ir::features::FinitePoint3; 2] {
+    coordinates.map(point)
+}
+
+/// The coordinates of an admitted fixture point.
+pub(crate) fn coordinates(point: cadmpeg_ir::features::FinitePoint3) -> [f64; 3] {
+    point.get().into()
+}
+
+/// Admit a positive fixture lane.
+pub(crate) fn positive_lane(values: &[f64]) -> Vec<cadmpeg_ir::scalar::PositiveReal> {
+    values.iter().copied().map(positive).collect()
+}
+
 /// Admit a finite fixture pair.
 pub(crate) fn finite_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2] {
     values.map(finite)

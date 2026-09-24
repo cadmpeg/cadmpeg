@@ -62,7 +62,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     assert_eq!(pcurve.control_points, vec![[0.0, 4.0], [8.0, 0.0]]);
     assert_eq!(
         pcurve.lifted_endpoints,
-        Some([[0.0, 4.0, 0.0], [8.0, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [0.0, 4.0, 0.0],
+            [8.0, 0.0, 0.0]
+        ]))
     );
     let isoparametric = graph.pcurves.get(&601).expect("isoparametric line pcurve");
     assert_eq!(isoparametric.degree, 1);
@@ -74,7 +77,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     assert_eq!(isoparametric.control_points, vec![[2.0, -3.0], [2.0, 5.0]]);
     assert_eq!(
         isoparametric.lifted_endpoints,
-        Some([[2.0, -3.0, 0.0], [2.0, 5.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [2.0, -3.0, 0.0],
+            [2.0, 5.0, 0.0]
+        ]))
     );
     let transverse = graph.pcurves.get(&602).expect("transverse line pcurve");
     assert_eq!(transverse.degree, 1);
@@ -86,7 +92,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     assert_eq!(transverse.control_points, vec![[1.0, -4.0], [7.0, -4.0]]);
     assert_eq!(
         transverse.lifted_endpoints,
-        Some([[1.0, -4.0, 0.0], [7.0, -4.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [1.0, -4.0, 0.0],
+            [7.0, -4.0, 0.0]
+        ]))
     );
 }
 
@@ -261,7 +270,10 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     );
     assert_eq!(
         graph.pcurves[&200].lifted_endpoints,
-        Some([[10.0, 0.0, 0.0], [11.0, 0.0, 0.0]])
+        Some(crate::test_support::test_b5::points([
+            [10.0, 0.0, 0.0],
+            [11.0, 0.0, 0.0]
+        ]))
     );
     assert_eq!(
         graph.vertices.edges()[&300]
@@ -275,13 +287,17 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     );
     let revolution_endpoints = graph.pcurves[&210]
         .lifted_endpoints
-        .expect("revolution lift");
+        .expect("revolution lift")
+        .map(crate::test_support::test_b5::coordinates);
     assert!((revolution_endpoints[0][0] - 1.0).abs() < 1.0e-12);
     assert!((revolution_endpoints[1][0] + 1.0).abs() < 1.0e-12);
     assert!((revolution_endpoints[1][2] - 1.0).abs() < 1.0e-12);
     assert_eq!(
         graph.pcurves[&211].lifted_endpoints,
-        Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])
+        Some(crate::test_support::test_b5::points([
+            [0.0, 0.0, 0.0],
+            [8.0, 2.0, 2.0]
+        ]))
     );
 }
 
