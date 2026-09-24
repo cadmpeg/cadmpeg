@@ -284,7 +284,10 @@ fn sketch_constraint_has_complete_neutral_semantics(
 }
 
 fn spatial_sketch_constraint_has_complete_neutral_semantics(
-    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput,
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput<
+        cadmpeg_ir::units::UnitVector3,
+        cadmpeg_ir::scalar::PositiveLength,
+    >,
 ) -> bool {
     use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput as Constraint;
 

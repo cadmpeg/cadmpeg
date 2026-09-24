@@ -756,13 +756,13 @@ fn profiled_hole_construction_with_evidence(
     };
     let has_line = |first: Point2, second: Point2| {
         lines.iter().any(|(start, end)| {
-            (same_point(*start, first) && same_point(*end, second))
-                || (same_point(*start, second) && same_point(*end, first))
+            (same_point(start.get(), first) && same_point(end.get(), second))
+                || (same_point(start.get(), second) && same_point(end.get(), first))
         })
     };
     let has_point_pair = |first: Point2, second: Point2| {
-        points.iter().any(|point| same_point(*point, first))
-            && points.iter().any(|point| same_point(*point, second))
+        points.iter().any(|point| same_point(point.get(), first))
+            && points.iter().any(|point| same_point(point.get(), second))
     };
     let profile_translation = |edges: &[(Point2, Point2)], minimum_lines: usize| {
         let expected_points = edges
@@ -1574,7 +1574,7 @@ pub(crate) fn project_hole_position_sketches(
                     };
                     (entity.sketch == *sketch_id
                         && entity.native_ref.as_deref() == Some(marker.id()))
-                    .then_some(position)
+                    .then_some(position.get())
                 });
                 let entity = positions.next();
                 if positions.next().is_some() {
@@ -1789,7 +1789,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                         && entity.native_ref.as_deref() == Some(marker.id()))
                     .then_some(&entity.geometry)
                     .and_then(|geometry| match geometry.definition() {
-                        SpatialSketchGeometryDefinition::Point { position } => Some(*position),
+                        SpatialSketchGeometryDefinition::Point { position } => Some(position.get()),
                         _ => None,
                     })
                 });
@@ -1848,7 +1848,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     .iter()
                     .filter(|entity| entity.sketch == *sketch_id)
                     .filter_map(|entity| match entity.geometry.definition() {
-                        SpatialSketchGeometryDefinition::Point { position } => Some(*position),
+                        SpatialSketchGeometryDefinition::Point { position } => Some(position.get()),
                         _ => None,
                     })
                     .collect::<Vec<_>>();

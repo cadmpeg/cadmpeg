@@ -664,6 +664,7 @@ fn exact_circular_pattern(
         else {
             continue;
         };
+        let center_position = center_position.get();
         let patterned = returned
             .iter()
             .copied()
@@ -764,11 +765,11 @@ fn rotated_sketch_geometry_matches(
         (
             SketchGeometryDefinition::Point { position: first },
             SketchGeometryDefinition::Point { position: second },
-        ) => point_matches(*first, *second),
+        ) => point_matches(first.get(), second.get()),
         (
             SketchGeometryDefinition::Line { start: a, end: b },
             SketchGeometryDefinition::Line { start: c, end: d },
-        ) => point_matches(*a, *c) && point_matches(*b, *d),
+        ) => point_matches(a.get(), c.get()) && point_matches(b.get(), d.get()),
         (
             SketchGeometryDefinition::Circle {
                 center: a,
@@ -778,7 +779,7 @@ fn rotated_sketch_geometry_matches(
                 center: b,
                 radius: br,
             },
-        ) => point_matches(*a, *b) && scalar_close(ar.get(), br.get()),
+        ) => point_matches(a.get(), b.get()) && scalar_close(ar.get(), br.get()),
         (
             SketchGeometryDefinition::Arc {
                 center: a,
@@ -793,7 +794,7 @@ fn rotated_sketch_geometry_matches(
                 end_angle: be,
             },
         ) => {
-            point_matches(*a, *b)
+            point_matches(a.get(), b.get())
                 && scalar_close(ar.get(), br.get())
                 && angle_matches(as_.get(), bs.get())
                 && angle_matches(ae.get(), be.get())
@@ -814,7 +815,7 @@ fn rotated_sketch_geometry_matches(
                 bounds: bb,
             },
         ) => {
-            point_matches(*a, *b)
+            point_matches(a.get(), b.get())
                 && angle_matches(aa.get(), ba.get())
                 && scalar_close(ar.get(), br.get())
                 && scalar_close(ai.get(), bi.get())
@@ -868,7 +869,7 @@ fn translated_sketch_geometry_matches(
         (
             SketchGeometryDefinition::Point { position: first },
             SketchGeometryDefinition::Point { position: second },
-        ) => point_matches(*first, *second),
+        ) => point_matches(first.get(), second.get()),
         (
             SketchGeometryDefinition::Line {
                 start: first_start,
@@ -878,7 +879,10 @@ fn translated_sketch_geometry_matches(
                 start: second_start,
                 end: second_end,
             },
-        ) => point_matches(*first_start, *second_start) && point_matches(*first_end, *second_end),
+        ) => {
+            point_matches(first_start.get(), second_start.get())
+                && point_matches(first_end.get(), second_end.get())
+        }
         (
             SketchGeometryDefinition::Circle {
                 center: first_center,
@@ -889,7 +893,7 @@ fn translated_sketch_geometry_matches(
                 radius: second_radius,
             },
         ) => {
-            point_matches(*first_center, *second_center)
+            point_matches(first_center.get(), second_center.get())
                 && scalar_close(first_radius.get(), second_radius.get())
         }
         (
@@ -906,7 +910,7 @@ fn translated_sketch_geometry_matches(
                 end_angle: second_end,
             },
         ) => {
-            point_matches(*first_center, *second_center)
+            point_matches(first_center.get(), second_center.get())
                 && scalar_close(first_radius.get(), second_radius.get())
                 && scalar_close(first_start.get(), second_start.get())
                 && scalar_close(first_end.get(), second_end.get())
@@ -927,7 +931,7 @@ fn translated_sketch_geometry_matches(
                 bounds: second_bounds,
             },
         ) => {
-            point_matches(*first_center, *second_center)
+            point_matches(first_center.get(), second_center.get())
                 && scalar_close(first_major_angle.get(), second_major_angle.get())
                 && scalar_close(first_major_radius.get(), second_major_radius.get())
                 && scalar_close(first_minor_radius.get(), second_minor_radius.get())

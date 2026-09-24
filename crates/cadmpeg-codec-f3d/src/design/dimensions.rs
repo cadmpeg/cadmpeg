@@ -2148,7 +2148,7 @@ fn unique_point_class_dimension_definition(
         .iter()
         .filter(|entity| &entity.sketch == sketch)
         .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => Some((entity, position)),
+            SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -3163,9 +3163,11 @@ fn spatial_reflection_symmetry(
     let mut axis = None;
     for entity in entities {
         match *entity.geometry.definition() {
-            SpatialSketchGeometryDefinition::Point { position } => points.push((entity, position)),
+            SpatialSketchGeometryDefinition::Point { position } => {
+                points.push((entity, position.get()))
+            }
             SpatialSketchGeometryDefinition::Line { start, end } if axis.is_none() => {
-                axis = Some((entity, start, end));
+                axis = Some((entity, start.get(), end.get()));
             }
             _ => return None,
         }
@@ -3351,7 +3353,7 @@ fn spatial_point_distance_matches(
     else {
         return false;
     };
-    let measured = first.distance(*second);
+    let measured = first.distance(second.get());
     let scale = 1.0 + measured.max(expected.abs());
     expected.is_finite()
         && measured.is_finite()
@@ -3379,7 +3381,7 @@ fn spatial_line_segment(
 ) -> Option<[Point3; 2]> {
     match geometry.definition() {
         cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Line { start, end } => {
-            Some([*start, *end])
+            Some([start.get(), end.get()])
         }
         _ => None,
     }
@@ -4284,13 +4286,13 @@ pub(super) fn exact_coincident_loci(
         }
         match entity.geometry.definition() {
             Geometry::Point { position } => {
-                loci.push((SketchLocus::Entity(entity.id().clone()), *position));
+                loci.push((SketchLocus::Entity(entity.id().clone()), position.get()));
             }
             Geometry::Circle { center, .. }
             | Geometry::Arc { center, .. }
             | Geometry::Ellipse { center, .. }
             | Geometry::Hyperbola { center, .. } => {
-                loci.push((SketchLocus::Center(entity.id().clone()), *center));
+                loci.push((SketchLocus::Center(entity.id().clone()), center.get()));
             }
             Geometry::Line { .. }
             | Geometry::ReferenceLine { .. }
@@ -4415,8 +4417,9 @@ fn indirect_angular_lines(
             else {
                 return None;
             };
-            (sketch_points_close(*position, *start) || sketch_points_close(*position, *end))
-                .then_some(*candidate)
+            (sketch_points_close(position.get(), start.get())
+                || sketch_points_close(position.get(), end.get()))
+            .then_some(*candidate)
         })
         .filter(|candidate| {
             line_angle_matches(
@@ -4507,7 +4510,7 @@ fn recipe_linear_dimension_candidates(
         .iter()
         .copied()
         .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => Some((entity, position)),
+            SketchGeometryDefinition::Point { position } => Some((entity, position.get())),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -4635,7 +4638,9 @@ fn recipe_extension_point_dimension(
             .iter()
             .copied()
             .find_map(|entity| match *entity.geometry.definition() {
-                SketchGeometryDefinition::Point { position } if entity.id() == id => Some(position),
+                SketchGeometryDefinition::Point { position } if entity.id() == id => {
+                    Some(position.get())
+                }
                 _ => None,
             })
     };
@@ -4758,7 +4763,9 @@ fn symmetric_parallel_line_dimension_definition(
 
 fn line_segment(geometry: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
     match geometry.geometry.definition() {
-        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
+            Some([start.get(), end.get()])
+        }
         _ => None,
     }
 }
@@ -5230,9 +5237,9 @@ fn exact_centered_entity_relation(
         |entity: &cadmpeg_ir::sketches::SketchEntity| match entity.geometry.definition() {
             SketchGeometryDefinition::Circle { center, radius }
             | SketchGeometryDefinition::Arc { center, radius, .. } => {
-                Some((*center, Some(radius.get())))
+                Some((center.get(), Some(radius.get())))
             }
-            SketchGeometryDefinition::Ellipse { center, .. } => Some((*center, None)),
+            SketchGeometryDefinition::Ellipse { center, .. } => Some((center.get(), None)),
             _ => None,
         };
     let (first_center, first_radius) = centered_geometry(first)?;
@@ -5284,7 +5291,7 @@ fn exact_counted_dimension_relation(
             let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
                 return false;
             };
-            point_lies_on_sketch_geometry(position, &geometry.geometry)
+            point_lies_on_sketch_geometry(position.get(), &geometry.geometry)
         };
     if point_on_geometry(first, second) || point_on_geometry(second, first) {
         return Some(Definition::Coincident {
@@ -5370,7 +5377,7 @@ pub(super) fn point_lies_on_sketch_geometry(
                     * (1.0 + left.abs().max(right.abs()))
     };
     match geometry.definition() {
-        SketchGeometryDefinition::Point { position } => sketch_points_close(point, *position),
+        SketchGeometryDefinition::Point { position } => sketch_points_close(point, position.get()),
         SketchGeometryDefinition::Line { start, end } => {
             let direction = Point2::new(end.u - start.u, end.v - start.v);
             let length = direction.u.hypot(direction.v);
@@ -5424,9 +5431,6 @@ pub(super) fn point_lies_on_sketch_geometry(
             minor_radius,
             bounds,
         } => {
-            if major_radius.get() <= 0.0 || minor_radius.get() <= 0.0 {
-                return false;
-            }
             let relative = Point2::new(point.u - center.u, point.v - center.v);
             let (sin, cos) = major_angle.get().sin_cos();
             let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.get();
@@ -5449,9 +5453,6 @@ pub(super) fn point_lies_on_sketch_geometry(
             minor_radius,
             bounds,
         } => {
-            if major_radius.get() <= 0.0 || minor_radius.get() <= 0.0 {
-                return false;
-            }
             let relative = Point2::new(point.u - center.u, point.v - center.v);
             let (sin, cos) = major_angle.get().sin_cos();
             let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.get();
@@ -5460,8 +5461,9 @@ pub(super) fn point_lies_on_sketch_geometry(
             close(x, parameter.cosh())
                 && match bounds {
                     Some([start, end]) => {
-                        parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
-                            && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                        parameter >= start.get() - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                            && parameter
+                                <= end.get() + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
                     None => true,
                 }
@@ -5472,9 +5474,6 @@ pub(super) fn point_lies_on_sketch_geometry(
             focal_length,
             bounds,
         } => {
-            if focal_length.get() <= 0.0 {
-                return false;
-            }
             let relative = Point2::new(point.u - vertex.u, point.v - vertex.v);
             let (sin, cos) = axis_angle.get().sin_cos();
             let x = relative.u.mul_add(cos, relative.v * sin);
@@ -5490,9 +5489,11 @@ pub(super) fn point_lies_on_sketch_geometry(
                 && match bounds {
                     Some([start, end]) => {
                         parameter
-                            >= start.min(*end) - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                            >= start.get().min(end.get())
+                                - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                             && parameter
-                                <= start.max(*end) + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                                <= start.get().max(end.get())
+                                    + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
                     None => true,
                 }
@@ -5771,9 +5772,7 @@ fn sketch_curve_offset(
                     .max(result_center.v.abs())
                     .max(source_radius.get())
                     .max(result_radius.get());
-            (source_radius.get() > 0.0
-                && result_radius.get() > 0.0
-                && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
+            ((source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
                 .then_some(source_radius.get() - result_radius.get())
         }
@@ -5799,9 +5798,7 @@ fn sketch_curve_offset(
                     .max(source_radius.get())
                     .max(result_radius.get());
             let result_sweep = result_end.get() - result_start.get();
-            (source_radius.get() > 0.0
-                && result_radius.get() > 0.0
-                && result_sweep.abs() > EPS_OFFSET_SWEEP
+            (result_sweep.abs() > EPS_OFFSET_SWEEP
                 && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
                 .then_some(source_radius.get() - result_radius.get())
@@ -5828,9 +5825,7 @@ fn sketch_curve_offset(
                     .max(source_radius.get())
                     .max(result_radius.get());
             let source_sweep = source_end.get() - source_start.get();
-            (source_radius.get() > 0.0
-                && result_radius.get() > 0.0
-                && source_sweep.abs() > EPS_OFFSET_SWEEP
+            (source_sweep.abs() > EPS_OFFSET_SWEEP
                 && (source_center.u - result_center.u).abs() <= EPS_CENTERED_RELATION * scale
                 && (source_center.v - result_center.v).abs() <= EPS_CENTERED_RELATION * scale)
                 .then_some(source_sweep.signum() * (source_radius.get() - result_radius.get()))
@@ -5880,9 +5875,7 @@ fn sketch_curve_offset(
                             EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
                         )
                     });
-            (source_radius.get() > 0.0
-                && result_radius.get() > 0.0
-                && source_sweep.abs() > EPS_OFFSET_SWEEP
+            (source_sweep.abs() > EPS_OFFSET_SWEEP
                 && result_sweep.abs() > EPS_OFFSET_SWEEP
                 && source_sweep.signum() == result_sweep.signum()
                 && angular_overlap
@@ -6010,8 +6003,8 @@ fn reflected_geometry_matches(
             SketchGeometryDefinition::Point {
                 position: second_position,
             },
-        ) => reflect_point(*first_position, *axis_start, *axis_end)
-            .is_some_and(|reflected| sketch_points_close(reflected, *second_position)),
+        ) => reflect_point(first_position.get(), *axis_start, *axis_end)
+            .is_some_and(|reflected| sketch_points_close(reflected, second_position.get())),
         (
             SketchGeometryDefinition::Line {
                 start: first_start,
@@ -6022,16 +6015,17 @@ fn reflected_geometry_matches(
                 end: second_end,
             },
         ) => {
-            let Some(reflected_start) = reflect_point(*first_start, *axis_start, *axis_end) else {
+            let Some(reflected_start) = reflect_point(first_start.get(), *axis_start, *axis_end)
+            else {
                 return false;
             };
-            let Some(reflected_end) = reflect_point(*first_end, *axis_start, *axis_end) else {
+            let Some(reflected_end) = reflect_point(first_end.get(), *axis_start, *axis_end) else {
                 return false;
             };
-            sketch_points_close(reflected_start, *second_start)
-                && sketch_points_close(reflected_end, *second_end)
-                || sketch_points_close(reflected_start, *second_end)
-                    && sketch_points_close(reflected_end, *second_start)
+            sketch_points_close(reflected_start, second_start.get())
+                && sketch_points_close(reflected_end, second_end.get())
+                || sketch_points_close(reflected_start, second_end.get())
+                    && sketch_points_close(reflected_end, second_start.get())
         }
         (
             SketchGeometryDefinition::Circle {
@@ -6046,8 +6040,8 @@ fn reflected_geometry_matches(
             let radius_scale = 1.0 + first_radius.get().abs().max(second_radius.get().abs());
             (first_radius.get() - second_radius.get()).abs()
                 <= EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
-                && reflect_point(*first_center, *axis_start, *axis_end)
-                    .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
+                && reflect_point(first_center.get(), *axis_start, *axis_end)
+                    .is_some_and(|reflected| sketch_points_close(reflected, second_center.get()))
         }
         (
             SketchGeometryDefinition::Arc {
@@ -6067,14 +6061,12 @@ fn reflected_geometry_matches(
             let first_sweep = (first_end.get() - first_start.get()).abs();
             let second_sweep = (second_end.get() - second_start.get()).abs();
             let sweep_scale = 1.0 + first_sweep.max(second_sweep);
-            if first_radius.get() <= 0.0
-                || second_radius.get() <= 0.0
-                || (first_radius.get() - second_radius.get()).abs()
-                    > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
+            if (first_radius.get() - second_radius.get()).abs()
+                > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
                 || (first_sweep - second_sweep).abs()
                     > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * sweep_scale
-                || !reflect_point(*first_center, *axis_start, *axis_end)
-                    .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
+                || !reflect_point(first_center.get(), *axis_start, *axis_end)
+                    .is_some_and(|reflected| sketch_points_close(reflected, second_center.get()))
             {
                 return false;
             }
@@ -6085,21 +6077,22 @@ fn reflected_geometry_matches(
                 )
             };
             let Some(reflected_start) = reflect_point(
-                arc_point(*first_center, first_radius.get(), first_start.get()),
+                arc_point(first_center.get(), first_radius.get(), first_start.get()),
                 *axis_start,
                 *axis_end,
             ) else {
                 return false;
             };
             let Some(reflected_end) = reflect_point(
-                arc_point(*first_center, first_radius.get(), first_end.get()),
+                arc_point(first_center.get(), first_radius.get(), first_end.get()),
                 *axis_start,
                 *axis_end,
             ) else {
                 return false;
             };
-            let second_start = arc_point(*second_center, second_radius.get(), second_start.get());
-            let second_end = arc_point(*second_center, second_radius.get(), second_end.get());
+            let second_start =
+                arc_point(second_center.get(), second_radius.get(), second_start.get());
+            let second_end = arc_point(second_center.get(), second_radius.get(), second_end.get());
             sketch_points_close(reflected_start, second_start)
                 && sketch_points_close(reflected_end, second_end)
                 || sketch_points_close(reflected_start, second_end)

@@ -1199,7 +1199,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             &sketches[0].id,
             7,
             0,
-        ) && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ) && *direction.as_raw() == Vector3::new(0.0, 1.0, 0.0)
     ));
     assert!(matches!(
         constraints
@@ -1216,8 +1216,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 reference_direction,
                 radius: actual_radius,
             } if actual_radius.get() == 2.0 && center == Point3::new(13.0, 21.0, 32.0)
-                && normal == Vector3::new(0.0, 1.0, 0.0)
-                && reference_direction == Vector3::new(0.0, 0.0, 1.0)
+                && *normal.as_raw() == Vector3::new(0.0, 1.0, 0.0)
+                && *reference_direction.as_raw() == Vector3::new(0.0, 0.0, 1.0)
         )));
 }
 

@@ -1308,7 +1308,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     assert_eq!(serde_json::to_value(&geometry).unwrap(), wire);
     let original = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -1322,7 +1322,7 @@ fn planar_geometry_preserves_wire_and_failed_edits_preserve_geometry() {
     .is_err());
     assert_eq!(geometry, original);
     edit::replace(&mut geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -1358,7 +1358,7 @@ fn planar_text_numeric_fields_are_checked_on_every_admission_route() {
     invalid_rotation["placement"]["rotation"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<SketchGeometry>(invalid_rotation).is_err());
     for field in 0..3 {
-        let mut definition = geometry.clone().into_definition();
+        let mut definition = geometry.definition().to_raw();
         let SketchGeometryDefinition::Text {
             height,
             width_factor,
@@ -1916,6 +1916,7 @@ fn native_constraint_kind_rejects_empty_text_at_input_admission() {
     assert!(serde_json::from_value::<SketchConstraintDefinition>(wire).is_err());
 }
 
+mod admitted_records;
 mod frames;
 mod spatial;
 

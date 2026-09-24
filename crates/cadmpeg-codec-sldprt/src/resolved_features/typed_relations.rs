@@ -1056,8 +1056,8 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let on_curve = (x - expected_x.get()).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
-                    ((*start).min(*end) - SKETCH_POINT_TOLERANCE
-                        ..=(*start).max(*end) + SKETCH_POINT_TOLERANCE)
+                    (start.get().min(end.get()) - SKETCH_POINT_TOLERANCE
+                        ..=start.get().max(end.get()) + SKETCH_POINT_TOLERANCE)
                         .contains(&parameter)
                 })
         }
@@ -1082,8 +1082,8 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let on_curve = (x - axial.get()).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + x.abs());
             on_curve
                 && bounds.as_ref().is_none_or(|[start, end]| {
-                    ((*start).min(*end) - SKETCH_POINT_TOLERANCE
-                        ..=(*start).max(*end) + SKETCH_POINT_TOLERANCE)
+                    (start.get().min(end.get()) - SKETCH_POINT_TOLERANCE
+                        ..=start.get().max(end.get()) + SKETCH_POINT_TOLERANCE)
                         .contains(&parameter)
                 })
         }
@@ -1203,7 +1203,7 @@ fn centered_geometry(entity: &SketchEntity) -> Option<Point2> {
     match entity.geometry.definition() {
         SketchGeometryDefinition::Circle { center, .. }
         | SketchGeometryDefinition::Arc { center, .. }
-        | SketchGeometryDefinition::Ellipse { center, .. } => Some(*center),
+        | SketchGeometryDefinition::Ellipse { center, .. } => Some(center.get()),
         _ => None,
     }
 }
@@ -1288,7 +1288,7 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
                 .powi(2)
                 + (minor_radius.get() * (normal[0] * minor[0] + normal[1] * minor[1])).powi(2))
             .sqrt();
-            return point_line_distance_value(*center, line)
+            return point_line_distance_value(center.get(), line)
                 .is_some_and(|distance| same_dimension_length(distance, support));
         }
         centered_geometry(circle)

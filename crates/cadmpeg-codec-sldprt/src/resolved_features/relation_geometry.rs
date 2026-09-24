@@ -722,10 +722,10 @@ pub(crate) fn project_relation_point_geometry(
             let already_present = entities.iter().any(|entity| {
                 entity.sketch == *sketch
                     && matches!(entity.geometry.definition(), SketchGeometryDefinition::Line { start: existing_start, end: existing_end }
-                        if (quantize(*existing_start, QUANTUM) == quantize(start, QUANTUM)
-                            && quantize(*existing_end, QUANTUM) == quantize(end, QUANTUM))
-                            || (quantize(*existing_start, QUANTUM) == quantize(end, QUANTUM)
-                                && quantize(*existing_end, QUANTUM) == quantize(start, QUANTUM)))
+                        if (quantize(existing_start.get(), QUANTUM) == quantize(start, QUANTUM)
+                            && quantize(existing_end.get(), QUANTUM) == quantize(end, QUANTUM))
+                            || (quantize(existing_start.get(), QUANTUM) == quantize(end, QUANTUM)
+                                && quantize(existing_end.get(), QUANTUM) == quantize(start, QUANTUM)))
             });
             if already_present {
                 continue;
@@ -982,7 +982,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             && entity.native_ref.as_deref() == Some(marker.id())
                     })
                     .and_then(|entity| match entity.geometry.definition() {
-                        SketchGeometryDefinition::Point { position } => Some(*position),
+                        SketchGeometryDefinition::Point { position } => Some(position.get()),
                         _ => None,
                     });
                 if resolved.is_some() {
@@ -1374,7 +1374,7 @@ fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[Gri
     let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
         return None;
     };
-    let mut endpoints = [quantize(*start, quantum), quantize(*end, quantum)];
+    let mut endpoints = [quantize(start.get(), quantum), quantize(end.get(), quantum)];
     endpoints.sort_unstable();
     Some(endpoints)
 }
@@ -3029,7 +3029,7 @@ mod relation_geometry_tests {
                 else {
                     return None;
                 };
-                Some((geometry_ref, position))
+                Some((geometry_ref, position.get()))
             })
             .collect::<HashMap<_, _>>();
         assert_eq!(
@@ -3605,7 +3605,7 @@ mod relation_geometry_tests {
             .find(|entity| entity.id().clone() == *point)
             .unwrap();
         assert!(matches!(*point_entity.geometry.definition(),
-            SpatialSketchGeometryDefinition::Point { position } if position == source_position
+            SpatialSketchGeometryDefinition::Point { position } if position.get() == source_position
         ));
         let line_entity = entities
             .iter()
@@ -3618,7 +3618,7 @@ mod relation_geometry_tests {
         };
         assert_eq!(line_entity.endpoint_refs.len(), 2);
         assert!(same_dimension_length(
-            spatial_point_line_distance(source_position, start, end).unwrap(),
+            spatial_point_line_distance(source_position, start.get(), end.get()).unwrap(),
             6.5
         ));
     }

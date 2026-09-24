@@ -784,7 +784,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                                 center: existing,
                                 radius: existing_radius,
                             } => {
-                                quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
+                                quantize(existing.get(), QUANTUM) == quantize(center, QUANTUM)
                                     && same_dimension_length(existing_radius.get(), radius)
                             }
                             _ => false,
@@ -981,7 +981,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
-                        if quantize(*existing, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
+                        if quantize(existing.get(), EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center.get(), EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
                             && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;
@@ -996,16 +996,23 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                         Err(_) => continue,
                     },
                     (*sketch).clone(),
-                    match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                        center,
-                        radius: Length::new(radius).ok_or_else(|| {
+                    match cadmpeg_ir::scalar::PositiveLength::try_from(
+                        Length::new(radius).ok_or_else(|| {
                             cadmpeg_core::CodecError::Malformed(
                                 "SolidWorks projected length must be finite".into(),
                             )
                         })?,
+                    )
+                    .ok()
+                    .and_then(|radius| {
+                        SketchGeometry::from_parts(SketchGeometryDefinition::Circle {
+                            center,
+                            radius,
+                        })
+                        .ok()
                     }) {
-                        Ok(geometry) => geometry,
-                        Err(_) => continue,
+                        Some(geometry) => geometry,
+                        None => continue,
                     },
                 )
                 .with_construction(construction)
@@ -1908,7 +1915,7 @@ pub(crate) fn project_marker_dimensioned_circles(
             if entities.iter().any(|entity| {
                 entity.sketch == *sketch_id
                     && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
-                        if quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
+                        if quantize(existing.get(), QUANTUM) == quantize(center, QUANTUM)
                             && same_dimension_length(existing_radius.get(), radius))
             }) {
                 continue;

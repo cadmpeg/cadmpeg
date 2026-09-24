@@ -2,7 +2,9 @@
 //! Fillet and chamfer operands, dimensions, and radius laws.
 
 use super::{face_selections_overlap, EdgeSelection, FaceSelection};
-use crate::scalar::{FiniteReal, InteriorAngle, Length, PositiveLength};
+use crate::scalar::{
+    FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
+};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -190,33 +192,50 @@ pub struct ChamferGroup {
     pub spec: ChamferSpec,
 }
 
+const INVALID_VARIABLE_RADII: &str = "variable radius points require at least two ordered parameters in [0, 1] and nonnegative radii with one positive radius";
+
 /// An ordered variable-radius law with at least two samples and a positive radius.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "Vec<VariableRadius>", into = "Vec<VariableRadius>")]
-pub struct VariableRadii(Vec<VariableRadius>);
+#[cfg_attr(feature = "schema", schemars(into = "Vec<VariableRadius>"))]
+#[serde(try_from = "Vec<VariableRadius>")]
+pub struct VariableRadii(Vec<VariableRadius<Fraction, NonNegativeLength>>);
 
 impl VariableRadii {
     /// Admits finite ordered parameters in [0, 1] and nonnegative radii with one positive radius.
     pub fn new(points: Vec<VariableRadius>) -> Result<Self, &'static str> {
-        if points.len() < 2
-            || !points.iter().all(|point| {
-                point.parameter.is_finite()
-                    && (0.0..=1.0).contains(&point.parameter)
-                    && point.radius.get() >= 0.0
+        let points = points
+            .into_iter()
+            .map(|point| {
+                Some(VariableRadius {
+                    parameter: Fraction::new(point.parameter)?,
+                    radius: NonNegativeLength::new(point.radius.get())?,
+                })
             })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(INVALID_VARIABLE_RADII)?;
+        Self::from_parts(points)
+    }
+
+    /// Builds the law from admitted samples. The sample types state the
+    /// parameter range and the radius sign, so only the sample count, one
+    /// positive radius and the parameter order are tested.
+    pub fn from_parts(
+        points: Vec<VariableRadius<Fraction, NonNegativeLength>>,
+    ) -> Result<Self, &'static str> {
+        if points.len() < 2
             || !points.iter().any(|point| point.radius.get() > 0.0)
             || !points
                 .windows(2)
                 .all(|pair| pair[0].parameter < pair[1].parameter)
         {
-            return Err("variable radius points require at least two ordered parameters in [0, 1] and nonnegative radii with one positive radius");
+            return Err(INVALID_VARIABLE_RADII);
         }
         Ok(Self(points))
     }
 
     /// Returns the admitted radius samples in parameter order.
-    pub fn as_slice(&self) -> &[VariableRadius] {
+    pub fn as_slice(&self) -> &[VariableRadius<Fraction, NonNegativeLength>] {
         &self.0
     }
 }
@@ -229,21 +248,35 @@ impl TryFrom<Vec<VariableRadius>> for VariableRadii {
     }
 }
 
-impl From<VariableRadii> for Vec<VariableRadius> {
-    fn from(points: VariableRadii) -> Self {
-        points.0
+impl Serialize for VariableRadii {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
     }
 }
 
 /// Radius at a normalized position along a filleted edge chain.
+// A source states a raw parameter and a signed length; `VariableRadii`
+// holds the admitted sample, whose parameter is a `Fraction` and whose
+// radius is a `NonNegativeLength`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct VariableRadius {
+pub struct VariableRadius<P = f64, L = Length> {
     /// Position in `[0, 1]` along the edge chain.
-    pub parameter: f64,
+    pub parameter: P,
     /// Fillet radius at this position.
-    pub radius: Length,
+    pub radius: L,
+}
+
+impl VariableRadius<Fraction, NonNegativeLength> {
+    /// The sample with a raw parameter and a signed length radius.
+    #[must_use]
+    pub fn to_raw(&self) -> VariableRadius {
+        VariableRadius {
+            parameter: self.parameter.get(),
+            radius: Length::from(self.radius),
+        }
+    }
 }
 
 /// Identified chamfer form for a chamfer that is not yet dimensioned.

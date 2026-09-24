@@ -245,7 +245,7 @@ fn owner_scoped_radial_dimensions_preserve_repeated_measurements() {
     .with_geometry_ref(entity.geometry_ref.clone())
     .with_endpoint_refs(entity.endpoint_refs.clone());
     edit::replace(&mut duplicate.geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             const RADIUS_PERTURBATION: f64 = 5.0e-7;
 

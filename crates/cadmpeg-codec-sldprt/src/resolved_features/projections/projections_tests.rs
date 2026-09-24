@@ -1439,9 +1439,9 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: actual_radius },
-                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
-            ] if actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
+                VariableRadius { parameter: first_parameter, radius: actual_radius },
+                VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
+            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1581,9 +1581,9 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: actual_radius },
-                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
-            ] if actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
+                VariableRadius { parameter: first_parameter, radius: actual_radius },
+                VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
+            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
     ));
 }
 
@@ -1651,9 +1651,9 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
-                VariableRadius { parameter: 0.0, radius: actual_radius },
-                VariableRadius { parameter: 1.0, radius: actual_radius_2 },
-            ] if actual_radius.get() == 50.0 && actual_radius_2.get() == 4.0) && selections.len() == 1
+                VariableRadius { parameter: first_parameter, radius: actual_radius },
+                VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
+            ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 50.0 && actual_radius_2.get() == 4.0) && selections.len() == 1
     ));
 
     let mut collision = selection;

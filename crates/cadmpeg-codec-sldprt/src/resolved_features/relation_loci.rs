@@ -3035,13 +3035,16 @@ fn marker_center_dimensioned_entity(
     else {
         return None;
     };
+    let center = center.get();
     let candidates = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == *sketch)
         .filter_map(|entity| {
             let (candidate_center, radius) = match *entity.geometry.definition() {
                 SketchGeometryDefinition::Circle { center, radius }
-                | SketchGeometryDefinition::Arc { center, radius, .. } => (center, radius.get()),
+                | SketchGeometryDefinition::Arc { center, radius, .. } => {
+                    (center.get(), radius.get())
+                }
                 _ => return None,
             };
             (quantize(
@@ -3784,8 +3787,8 @@ pub(super) fn profile_loci_by_marker(
                                 };
                                 point_on_quantized_segment(
                                     translated,
-                                    quantize(*start, QUANTUM),
-                                    quantize(*end, QUANTUM),
+                                    quantize(start.get(), QUANTUM),
+                                    quantize(end.get(), QUANTUM),
                                 )
                                 .then(|| SketchLocus::Entity(entity.id().clone()))
                             }));
@@ -3866,8 +3869,8 @@ pub(super) fn profile_loci_by_marker(
                     else {
                         return None;
                     };
-                    let candidate_start = quantize(candidate_start, QUANTUM);
-                    let candidate_end = quantize(candidate_end, QUANTUM);
+                    let candidate_start = quantize(candidate_start.get(), QUANTUM);
+                    let candidate_end = quantize(candidate_end.get(), QUANTUM);
                     ((candidate_start == start && candidate_end == end)
                         || (candidate_start == end && candidate_end == start))
                         .then_some(entity.id().clone())
@@ -4067,7 +4070,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                     entity.sketch == **sketch && entity.native_ref.as_deref() == Some(marker.id())
                 }) {
                     let anchors = match *entity.geometry.definition() {
-                        SketchGeometryDefinition::Point { position } => vec![position],
+                        SketchGeometryDefinition::Point { position } => vec![position.get()],
                         _ => marker_geometry_anchors(marker.kind(), &entity.geometry),
                     };
                     for anchor in anchors {
@@ -4157,21 +4160,21 @@ fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> 
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Point { position },
-        ) => vec![*position],
+        ) => vec![position.get()],
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Line { start, end },
-        ) => vec![*start, *end],
+        ) => vec![start.get(), end.get()],
         (
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Arc { center, .. }
             | SketchGeometryDefinition::Ellipse { center, .. },
-        ) => vec![*center],
+        ) => vec![center.get()],
         (SketchInputKind::LineOrCircle, SketchGeometryDefinition::Line { start, end }) => {
             vec![
-                *start,
-                *end,
+                start.get(),
+                end.get(),
                 Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
             ]
         }
@@ -4180,7 +4183,9 @@ fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> 
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Ellipse { center, .. },
         )
-        | (SketchInputKind::Arc, SketchGeometryDefinition::Arc { center, .. }) => vec![*center],
+        | (SketchInputKind::Arc, SketchGeometryDefinition::Arc { center, .. }) => {
+            vec![center.get()]
+        }
         _ => Vec::new(),
     }
 }

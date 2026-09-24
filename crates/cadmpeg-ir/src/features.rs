@@ -5776,6 +5776,16 @@ impl<T> NonEmptyMembers<T> {
         NonEmptyMembers(self.0.into_iter().map(map).collect())
     }
 
+    /// Map every member in source order, or none of them when `map` refuses
+    /// one. The mapped sequence keeps the nonempty witness.
+    pub(crate) fn try_map<U>(self, map: impl FnMut(T) -> Option<U>) -> Option<NonEmptyMembers<U>> {
+        self.0
+            .into_iter()
+            .map(map)
+            .collect::<Option<Vec<_>>>()
+            .map(NonEmptyMembers)
+    }
+
     /// The members in source order.
     pub fn as_slice(&self) -> &[T] {
         &self.0

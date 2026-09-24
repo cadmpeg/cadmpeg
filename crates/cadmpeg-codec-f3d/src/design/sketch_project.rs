@@ -980,7 +980,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                         placement.transform()[1][column],
                         placement.transform()[2][column],
                     );
-                    let line = end.vector_from(start);
+                    let line = end.vector_from(start.get());
                     let cross = line.cross(direction);
                     if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12
                         || cross.norm()

@@ -5,8 +5,8 @@ use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::{
     features::{FinitePoint3, FiniteVector3, ParameterId},
-    scalar::{Angle, Length, PositiveAngle},
-    units::{UnitVector2, UnitVector3},
+    scalar::{Angle, FiniteReal, Length, PositiveAngle, PositiveLength, PositiveReal},
+    units::{FinitePoint2, UnitVector2, UnitVector3},
 };
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -463,8 +463,11 @@ impl SketchEntity {
 /// Solved two-dimensional sketch geometry with finite numeric coordinates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(into = "SketchGeometryDefinition"))]
 #[serde(try_from = "SketchGeometryDefinition")]
-pub struct SketchGeometry(SketchGeometryDefinition);
+pub struct SketchGeometry(
+    SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal>,
+);
 
 impl SketchGeometry {
     /// Retain source-native geometry without solved numeric fields.
@@ -479,126 +482,330 @@ impl SketchGeometry {
         Self(SketchGeometryDefinition::Nurbs { curve })
     }
 
+    /// Build the geometry from an admitted definition. The field types
+    /// state finiteness and positivity, so only the conditions between
+    /// fields are tested: a reference-line direction longer than machine
+    /// epsilon and an ellipse major radius at least its minor radius.
+    pub fn from_parts(
+        definition: SketchGeometryDefinition<
+            FinitePoint2,
+            PositiveLength,
+            FiniteReal,
+            PositiveReal,
+        >,
+    ) -> Result<Self, &'static str> {
+        match &definition {
+            SketchGeometryDefinition::ReferenceLine { direction, .. }
+                if direction.u.hypot(direction.v) <= f64::EPSILON =>
+            {
+                Err("sketch reference line requires finite origin and nonzero finite direction")
+            }
+            SketchGeometryDefinition::Ellipse {
+                major_radius,
+                minor_radius,
+                ..
+            } if major_radius.get() < minor_radius.get() => {
+                Err("sketch ellipse major_radius must be at least minor_radius")
+            }
+            _ => Ok(Self(definition)),
+        }
+    }
+
     /// Borrow the admitted geometry definition.
     #[must_use]
-    pub fn definition(&self) -> &SketchGeometryDefinition {
+    pub fn definition(
+        &self,
+    ) -> &SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
         &self.0
     }
 
     /// Extract the admitted definition.
     #[must_use]
-    pub fn into_definition(self) -> SketchGeometryDefinition {
+    pub fn into_definition(
+        self,
+    ) -> SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
         self.0
     }
+}
+
+impl SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
+    /// The definition with raw points, lengths, bounds and width factor.
+    #[must_use]
+    pub fn to_raw(&self) -> SketchGeometryDefinition {
+        use SketchGeometryDefinition as Definition;
+        match self {
+            Self::Point { position } => Definition::Point {
+                position: position.get(),
+            },
+            Self::Line { start, end } => Definition::Line {
+                start: start.get(),
+                end: end.get(),
+            },
+            Self::ReferenceLine { origin, direction } => Definition::ReferenceLine {
+                origin: origin.get(),
+                direction: direction.get(),
+            },
+            Self::Circle { center, radius } => Definition::Circle {
+                center: center.get(),
+                radius: Length::from(*radius),
+            },
+            Self::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => Definition::Arc {
+                center: center.get(),
+                radius: Length::from(*radius),
+                start_angle: *start_angle,
+                end_angle: *end_angle,
+            },
+            Self::Ellipse {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => Definition::Ellipse {
+                center: center.get(),
+                major_angle: *major_angle,
+                major_radius: Length::from(*major_radius),
+                minor_radius: Length::from(*minor_radius),
+                bounds: *bounds,
+            },
+            Self::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => Definition::Hyperbola {
+                center: center.get(),
+                major_angle: *major_angle,
+                major_radius: Length::from(*major_radius),
+                minor_radius: Length::from(*minor_radius),
+                bounds: bounds.map(FiniteReal::raw_array),
+            },
+            Self::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => Definition::Parabola {
+                vertex: vertex.get(),
+                axis_angle: *axis_angle,
+                focal_length: Length::from(*focal_length),
+                bounds: bounds.map(FiniteReal::raw_array),
+            },
+            Self::Nurbs { curve } => Definition::Nurbs {
+                curve: curve.clone(),
+            },
+            Self::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => Definition::Text {
+                text: text.clone(),
+                font_family: font_family.clone(),
+                font_weight: *font_weight,
+                height: Length::from(*height),
+                width_factor: width_factor.map(PositiveReal::get),
+                placement: placement.map(|placement| TextPlacement {
+                    anchor: placement.anchor.get(),
+                    rotation: placement.rotation,
+                }),
+                horizontal_alignment: *horizontal_alignment,
+                vertical_alignment: *vertical_alignment,
+            },
+            Self::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => Definition::ExternalReference {
+                document: document.clone(),
+                object: object.clone(),
+                subelements: subelements.clone(),
+            },
+            Self::Native { native_kind } => Definition::Native {
+                native_kind: native_kind.clone(),
+            },
+        }
+    }
+}
+
+/// Admit a sketch point, or refuse it with `message`.
+fn admit_sketch_point(point: Point2, message: &'static str) -> Result<FinitePoint2, &'static str> {
+    FinitePoint2::new(point).ok_or(message)
+}
+
+/// Admit a positive sketch length, or refuse it with `message`.
+fn admit_sketch_length(
+    length: Length,
+    message: &'static str,
+) -> Result<PositiveLength, &'static str> {
+    PositiveLength::try_from(length).map_err(|_| message)
+}
+
+/// Admit optional finite bounds, or refuse them with `message`.
+fn admit_sketch_bounds(
+    bounds: Option<[f64; 2]>,
+    message: &'static str,
+) -> Result<Option<[FiniteReal; 2]>, &'static str> {
+    bounds
+        .map(|bounds| FiniteReal::array(bounds).ok_or(message))
+        .transpose()
 }
 
 impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SketchGeometryDefinition) -> Result<Self, Self::Error> {
-        let positive = |length: &Length| length.get() > 0.0;
-        match &definition {
-            SketchGeometryDefinition::Point { position } if !position.is_finite() => {
-                return Err("sketch point position must be finite");
+        use SketchGeometryDefinition as Definition;
+        const CIRCULAR: &str =
+            "sketch circular geometry requires finite center and positive finite radius";
+        Self::from_parts(match definition {
+            Definition::Point { position } => Definition::Point {
+                position: admit_sketch_point(position, "sketch point position must be finite")?,
+            },
+            Definition::Line { start, end } => {
+                const LINE: &str = "sketch line endpoints must be finite";
+                Definition::Line {
+                    start: admit_sketch_point(start, LINE)?,
+                    end: admit_sketch_point(end, LINE)?,
+                }
             }
-            SketchGeometryDefinition::Line { start, end }
-                if !start.is_finite() || !end.is_finite() =>
-            {
-                return Err("sketch line endpoints must be finite");
+            Definition::ReferenceLine { origin, direction } => {
+                const REFERENCE: &str =
+                    "sketch reference line requires finite origin and nonzero finite direction";
+                Definition::ReferenceLine {
+                    origin: admit_sketch_point(origin, REFERENCE)?,
+                    direction: admit_sketch_point(direction, REFERENCE)?,
+                }
             }
-            SketchGeometryDefinition::ReferenceLine { origin, direction }
-                if !origin.is_finite()
-                    || !direction.is_finite()
-                    || direction.u.hypot(direction.v) <= f64::EPSILON =>
-            {
-                return Err(
-                    "sketch reference line requires finite origin and nonzero finite direction",
-                );
-            }
-            SketchGeometryDefinition::Circle { center, radius }
-            | SketchGeometryDefinition::Arc { center, radius, .. }
-                if !center.is_finite() || !positive(radius) =>
-            {
-                return Err(
-                    "sketch circular geometry requires finite center and positive finite radius",
-                );
-            }
-            SketchGeometryDefinition::Ellipse {
+            Definition::Circle { center, radius } => Definition::Circle {
+                center: admit_sketch_point(center, CIRCULAR)?,
+                radius: admit_sketch_length(radius, CIRCULAR)?,
+            },
+            Definition::Arc {
                 center,
-                major_angle: _,
-                major_radius,
-                minor_radius,
-                bounds: _,
-            } => {
-                if !center.is_finite() {
-                    return Err("sketch ellipse center and major_angle must be finite");
-                }
-                if !positive(major_radius) || !positive(minor_radius) {
-                    return Err("sketch ellipse radii must be positive and finite");
-                }
-                if major_radius.get() < minor_radius.get() {
-                    return Err("sketch ellipse major_radius must be at least minor_radius");
-                }
-            }
-            SketchGeometryDefinition::Hyperbola {
+                radius,
+                start_angle,
+                end_angle,
+            } => Definition::Arc {
+                center: admit_sketch_point(center, CIRCULAR)?,
+                radius: admit_sketch_length(radius, CIRCULAR)?,
+                start_angle,
+                end_angle,
+            },
+            Definition::Ellipse {
                 center,
-                major_angle: _,
+                major_angle,
                 major_radius,
                 minor_radius,
                 bounds,
             } => {
-                if !center.is_finite() {
-                    return Err("sketch hyperbola center and major_angle must be finite");
-                }
-                if !positive(major_radius) || !positive(minor_radius) {
-                    return Err("sketch hyperbola radii must be positive and finite");
-                }
-                if bounds.iter().flatten().any(|value| !value.is_finite()) {
-                    return Err("sketch hyperbola bounds must be finite");
+                const RADII: &str = "sketch ellipse radii must be positive and finite";
+                Definition::Ellipse {
+                    center: admit_sketch_point(
+                        center,
+                        "sketch ellipse center and major_angle must be finite",
+                    )?,
+                    major_angle,
+                    major_radius: admit_sketch_length(major_radius, RADII)?,
+                    minor_radius: admit_sketch_length(minor_radius, RADII)?,
+                    bounds,
                 }
             }
-            SketchGeometryDefinition::Parabola {
+            Definition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => {
+                const RADII: &str = "sketch hyperbola radii must be positive and finite";
+                Definition::Hyperbola {
+                    center: admit_sketch_point(
+                        center,
+                        "sketch hyperbola center and major_angle must be finite",
+                    )?,
+                    major_angle,
+                    major_radius: admit_sketch_length(major_radius, RADII)?,
+                    minor_radius: admit_sketch_length(minor_radius, RADII)?,
+                    bounds: admit_sketch_bounds(bounds, "sketch hyperbola bounds must be finite")?,
+                }
+            }
+            Definition::Parabola {
                 vertex,
-                axis_angle: _,
+                axis_angle,
                 focal_length,
                 bounds,
-            } => {
-                if !vertex.is_finite() {
-                    return Err("sketch parabola vertex and axis_angle must be finite");
-                }
-                if !positive(focal_length) {
-                    return Err("sketch parabola focal_length must be positive and finite");
-                }
-                if bounds.iter().flatten().any(|value| !value.is_finite()) {
-                    return Err("sketch parabola bounds must be finite");
-                }
-            }
-            SketchGeometryDefinition::Text {
+            } => Definition::Parabola {
+                vertex: admit_sketch_point(
+                    vertex,
+                    "sketch parabola vertex and axis_angle must be finite",
+                )?,
+                axis_angle,
+                focal_length: admit_sketch_length(
+                    focal_length,
+                    "sketch parabola focal_length must be positive and finite",
+                )?,
+                bounds: admit_sketch_bounds(bounds, "sketch parabola bounds must be finite")?,
+            },
+            Definition::Nurbs { curve } => Definition::Nurbs { curve },
+            Definition::Text {
+                text,
+                font_family,
+                font_weight,
                 height,
                 width_factor,
                 placement,
-                ..
-            } => {
-                if !positive(height) {
-                    return Err("sketch text height must be positive and finite");
-                }
-                if width_factor.is_some_and(|value| !value.is_finite() || value <= 0.0) {
-                    return Err("sketch text width_factor must be positive and finite");
-                }
-                if placement.is_some_and(|placement| !placement.anchor.is_finite()) {
-                    return Err("sketch text anchor and rotation must be finite");
-                }
-            }
-            SketchGeometryDefinition::Point { .. }
-            | SketchGeometryDefinition::Line { .. }
-            | SketchGeometryDefinition::ReferenceLine { .. }
-            | SketchGeometryDefinition::Circle { .. }
-            | SketchGeometryDefinition::Arc { .. }
-            | SketchGeometryDefinition::Nurbs { .. }
-            | SketchGeometryDefinition::ExternalReference { .. }
-            | SketchGeometryDefinition::Native { .. } => {}
-        }
-        Ok(Self(definition))
+                horizontal_alignment,
+                vertical_alignment,
+            } => Definition::Text {
+                text,
+                font_family,
+                font_weight,
+                height: admit_sketch_length(
+                    height,
+                    "sketch text height must be positive and finite",
+                )?,
+                width_factor: width_factor
+                    .map(|value| {
+                        PositiveReal::new(value)
+                            .ok_or("sketch text width_factor must be positive and finite")
+                    })
+                    .transpose()?,
+                placement: placement
+                    .map(|placement| {
+                        Ok::<_, &'static str>(TextPlacement {
+                            anchor: admit_sketch_point(
+                                placement.anchor,
+                                "sketch text anchor and rotation must be finite",
+                            )?,
+                            rotation: placement.rotation,
+                        })
+                    })
+                    .transpose()?,
+                horizontal_alignment,
+                vertical_alignment,
+            },
+            Definition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => Definition::ExternalReference {
+                document,
+                object,
+                subelements,
+            },
+            Definition::Native { native_kind } => Definition::Native { native_kind },
+        })
     }
 }
 
@@ -607,39 +814,42 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum SketchGeometryDefinition {
+#[serde(bound(
+    deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>"
+))]
+pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64> {
     /// Isolated point.
     Point {
         /// Solved point position.
-        position: Point2,
+        position: P,
     },
     /// Bounded line segment.
     Line {
         /// Segment start.
-        start: Point2,
+        start: P,
         /// Segment end.
-        end: Point2,
+        end: P,
     },
     /// Unbounded construction or reference line.
     ReferenceLine {
         /// Point on the line.
-        origin: Point2,
+        origin: P,
         /// Non-zero direction in sketch coordinates.
-        direction: Point2,
+        direction: P,
     },
     /// Full circle.
     Circle {
         /// Circle center.
-        center: Point2,
+        center: P,
         /// Circle radius.
-        radius: Length,
+        radius: L,
     },
     /// Circular arc with angles in radians.
     Arc {
         /// Arc center.
-        center: Point2,
+        center: P,
         /// Arc radius.
-        radius: Length,
+        radius: L,
         /// Start angle.
         start_angle: Angle,
         /// End angle.
@@ -648,13 +858,13 @@ pub enum SketchGeometryDefinition {
     /// Full or bounded ellipse.
     Ellipse {
         /// Ellipse center.
-        center: Point2,
+        center: P,
         /// Major-axis angle in sketch coordinates.
         major_angle: Angle,
         /// Semi-major radius.
-        major_radius: Length,
+        major_radius: L,
         /// Semi-minor radius.
-        minor_radius: Length,
+        minor_radius: L,
         /// Parameter bounds for an arc; absent for a full ellipse.
         #[serde(
             default,
@@ -666,29 +876,29 @@ pub enum SketchGeometryDefinition {
     /// Full or bounded hyperbola.
     Hyperbola {
         /// Hyperbola center.
-        center: Point2,
+        center: P,
         /// Major-axis angle in sketch coordinates.
         major_angle: Angle,
         /// Semi-major radius.
-        major_radius: Length,
+        major_radius: L,
         /// Semi-minor radius.
-        minor_radius: Length,
+        minor_radius: L,
         /// Parameter bounds for a branch; absent for the full curve.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_sketch_geometry_definition_bounds"
         )]
-        bounds: Option<[f64; 2]>,
+        bounds: Option<[R; 2]>,
     },
     /// Full or bounded parabola.
     Parabola {
         /// Parabola vertex.
-        vertex: Point2,
+        vertex: P,
         /// Symmetry-axis angle in sketch coordinates.
         axis_angle: Angle,
         /// Distance from the vertex to the focus.
-        focal_length: Length,
+        focal_length: L,
         /// Bounds on the local transverse coordinate `y`, in sketch length units.
         /// The axial coordinate is `x = y² / (4 * focal_length)`.
         /// Absent for the full curve.
@@ -697,7 +907,7 @@ pub enum SketchGeometryDefinition {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_sketch_geometry_definition_bounds"
         )]
-        bounds: Option<[f64; 2]>,
+        bounds: Option<[R; 2]>,
     },
     /// NURBS curve in sketch coordinates.
     Nurbs {
@@ -713,7 +923,7 @@ pub enum SketchGeometryDefinition {
         /// Font weight from the source text style.
         font_weight: SketchFontWeight,
         /// Nominal character height.
-        height: Length,
+        height: L,
         /// Horizontal scale relative to the nominal font width, absent when the
         /// source stores none.
         #[serde(
@@ -721,14 +931,14 @@ pub enum SketchGeometryDefinition {
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_width_factor"
         )]
-        width_factor: Option<f64>,
+        width_factor: Option<W>,
         /// Text placement in sketch coordinates, absent when the source stores none.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_placement"
         )]
-        placement: Option<TextPlacement>,
+        placement: Option<TextPlacement<P>>,
         /// Horizontal placement about the text anchor, when the source class
         /// carries an alignment enum.
         #[serde(
@@ -774,9 +984,9 @@ pub enum SketchGeometryDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct TextPlacement {
+pub struct TextPlacement<P = Point2> {
     /// Point the text is placed and rotated about, in sketch coordinates.
-    pub anchor: Point2,
+    pub anchor: P,
     /// Counterclockwise rotation from the sketch u axis.
     pub rotation: Angle,
 }
@@ -822,6 +1032,8 @@ pub struct SpatialSketch {
 }
 
 const EPS_SPATIAL_PROFILE_FRAME: f64 = 1.0e-9;
+const SPATIAL_PROFILE_AXES_ERROR: &str =
+    "spatial profile normal and u_axis must be unit and orthogonal";
 
 /// One closed spatial-sketch profile and its admitted model-space plane.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -864,14 +1076,25 @@ impl SpatialSketchProfile {
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
     ) -> Result<Self, &'static str> {
-        const AXES_ERROR: &str = "spatial profile normal and u_axis must be unit and orthogonal";
         let origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
-        let normal = UnitVector3::new(normal).ok_or(AXES_ERROR)?;
-        let u_axis = UnitVector3::new(u_axis).ok_or(AXES_ERROR)?;
+        let normal = UnitVector3::new(normal).ok_or(SPATIAL_PROFILE_AXES_ERROR)?;
+        let u_axis = UnitVector3::new(u_axis).ok_or(SPATIAL_PROFILE_AXES_ERROR)?;
+        Self::from_parts(origin, normal, u_axis, boundary)
+    }
+
+    /// Build a profile from an admitted origin and unit axes. The argument
+    /// types state finiteness and unit length, so only the axis
+    /// orthogonality and the boundary are tested.
+    pub fn from_parts(
+        origin: FinitePoint3,
+        normal: UnitVector3,
+        u_axis: UnitVector3,
+        boundary: Vec<SpatialSketchEntityUse>,
+    ) -> Result<Self, &'static str> {
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
         let dot = n.x * u.x + n.y * u.y + n.z * u.z;
         if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
-            return Err(AXES_ERROR);
+            return Err(SPATIAL_PROFILE_AXES_ERROR);
         }
         let unique = boundary
             .iter()
@@ -1047,27 +1270,32 @@ pub struct SpatialSketchEntityPair {
     pub second: SpatialSketchEntityId,
 }
 
-const EPS_SPATIAL_CONSTRAINT_UNIT: f64 = 1.0e-9;
-
 /// A spatial sketch constraint with admitted local members and scalar values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(into = "SpatialSketchConstraintDefinitionInput")
+)]
 #[serde(try_from = "SpatialSketchConstraintDefinitionInput")]
-pub struct SpatialSketchConstraintDefinition(SpatialSketchConstraintDefinitionInput);
+pub struct SpatialSketchConstraintDefinition(
+    SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength>,
+);
 
 impl SpatialSketchConstraintDefinition {
     /// Borrow the admitted spatial constraint kind.
     #[must_use]
-    pub fn kind(&self) -> &SpatialSketchConstraintDefinitionInput {
+    pub fn kind(&self) -> &SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength> {
         &self.0
     }
 
-    /// Replace the kind only after all edited local invariants pass.
+    /// Edit the raw kind and replace it only after all edited local
+    /// invariants pass.
     pub fn edit<R>(
         &mut self,
         edit: impl FnOnce(&mut SpatialSketchConstraintDefinitionInput) -> R,
     ) -> Result<R, &'static str> {
-        let mut kind = self.0.clone();
+        let mut kind = self.0.to_raw();
         let result = edit(&mut kind);
         *self = kind.try_into()?;
         Ok(result)
@@ -1079,10 +1307,11 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
 
     fn try_from(kind: SpatialSketchConstraintDefinitionInput) -> Result<Self, Self::Error> {
         use SpatialSketchConstraintDefinitionInput as Kind;
-        let unit = |direction: &Vector3| {
-            let norm = direction.norm();
-            norm.is_finite() && (norm - 1.0).abs() <= EPS_SPATIAL_CONSTRAINT_UNIT
-        };
+        const INVALID: &str = "invalid spatial sketch constraint local arity or scalar value";
+        let kind = kind.map_values(
+            |direction| UnitVector3::new(direction).ok_or(INVALID),
+            |distance| PositiveLength::try_from(distance).map_err(|_| INVALID),
+        )?;
         let valid = match &kind {
             Kind::Native { operands, .. } => !operands.is_empty(),
             Kind::LineLength { .. } => true,
@@ -1125,16 +1354,10 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
                         == first.len() + second.len()
             }
             Kind::Offset {
-                sources,
-                results,
-                normal,
-                distance,
-                ..
+                sources, results, ..
             } => {
                 !sources.is_empty()
                     && !results.is_empty()
-                    && unit(normal)
-                    && distance.get() > 0.0
                     && sources
                         .iter()
                         .chain(results)
@@ -1142,10 +1365,10 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
                         .len()
                         == sources.len() + results.len()
             }
-            Kind::ParallelToDirection { direction, .. } => unit(direction),
+            Kind::ParallelToDirection { .. } => true,
         };
         if !valid {
-            return Err("invalid spatial sketch constraint local arity or scalar value");
+            return Err(INVALID);
         }
         Ok(Self(kind))
     }
@@ -1156,7 +1379,7 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum SpatialSketchConstraintDefinitionInput {
+pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::Length> {
     /// Source-native spatial relation without complete neutral semantics.
     Native {
         /// Source relation family.
@@ -1284,9 +1507,9 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// `sources`; an offset operation can change curve carriers or topology.
         results: Vec<SpatialSketchEntityId>,
         /// Unit normal of the result curve set's common plane.
-        normal: Vector3,
+        normal: U,
         /// Strictly positive operation-level offset magnitude.
-        distance: crate::scalar::Length,
+        distance: L,
         /// Signed driving offset-distance parameter, when dimensional.
         #[serde(
             default,
@@ -1300,13 +1523,131 @@ pub enum SpatialSketchConstraintDefinitionInput {
         /// Line constrained to the direction.
         entity: SpatialSketchEntityId,
         /// Unit model-space direction; either sign denotes the same axis.
-        direction: Vector3,
+        direction: U,
     },
     /// A spline's defining model-space entities grouped by one native relation.
     SplineGroup {
         /// Ordered spline-group members.
         entities: Vec<SpatialSketchEntityId>,
     },
+}
+
+impl<U, L> SpatialSketchConstraintDefinitionInput<U, L> {
+    /// The kind with its unit directions and its offset distance mapped, or
+    /// the first refusal of either map.
+    fn map_values<V, M, E>(
+        self,
+        mut direction: impl FnMut(U) -> Result<V, E>,
+        length: impl FnOnce(L) -> Result<M, E>,
+    ) -> Result<SpatialSketchConstraintDefinitionInput<V, M>, E> {
+        use SpatialSketchConstraintDefinitionInput as Kind;
+        Ok(match self {
+            Self::Native {
+                native_kind,
+                native_state,
+                parameter,
+                operands,
+            } => Kind::Native {
+                native_kind,
+                native_state,
+                parameter,
+                operands,
+            },
+            Self::Coincident { first, second } => Kind::Coincident { first, second },
+            Self::Symmetric {
+                first,
+                second,
+                axis,
+            } => Kind::Symmetric {
+                first,
+                second,
+                axis,
+            },
+            Self::PointOnSurface { point, surface } => Kind::PointOnSurface { point, surface },
+            Self::Midpoint { point, entity } => Kind::Midpoint { point, entity },
+            Self::Tangent { first, second } => Kind::Tangent { first, second },
+            Self::PointDistance {
+                first,
+                second,
+                parameter,
+            } => Kind::PointDistance {
+                first,
+                second,
+                parameter,
+            },
+            Self::PointLineDistance {
+                point,
+                line,
+                parameter,
+            } => Kind::PointLineDistance {
+                point,
+                line,
+                parameter,
+            },
+            Self::LineLength { entity, parameter } => Kind::LineLength { entity, parameter },
+            Self::RepeatedLineLength {
+                entities,
+                parameter,
+            } => Kind::RepeatedLineLength {
+                entities,
+                parameter,
+            },
+            Self::ParallelLineDistance {
+                first,
+                second,
+                parameter,
+            } => Kind::ParallelLineDistance {
+                first,
+                second,
+                parameter,
+            },
+            Self::RepeatedParallelLineDistance { pairs, parameter } => {
+                Kind::RepeatedParallelLineDistance { pairs, parameter }
+            }
+            Self::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            } => Kind::ParallelLineSetDistance {
+                first,
+                second,
+                parameter,
+            },
+            Self::Offset {
+                sources,
+                results,
+                normal,
+                distance,
+                parameter,
+            } => Kind::Offset {
+                sources,
+                results,
+                normal: direction(normal)?,
+                distance: length(distance)?,
+                parameter,
+            },
+            Self::ParallelToDirection {
+                entity,
+                direction: value,
+            } => Kind::ParallelToDirection {
+                entity,
+                direction: direction(value)?,
+            },
+            Self::SplineGroup { entities } => Kind::SplineGroup { entities },
+        })
+    }
+}
+
+impl SpatialSketchConstraintDefinitionInput<UnitVector3, PositiveLength> {
+    /// The kind with raw directions and a raw offset distance.
+    #[must_use]
+    pub fn to_raw(&self) -> SpatialSketchConstraintDefinitionInput {
+        let Ok(raw) = self.clone().map_values(
+            |direction| Ok::<_, std::convert::Infallible>(Vector3::from(direction)),
+            |distance| Ok(crate::scalar::Length::from(distance)),
+        );
+        raw
+    }
 }
 
 /// NURBS curve with positive degree and positive rational weights.
@@ -1367,81 +1708,165 @@ const EPS_SPATIAL_CIRCLE_FRAME: f64 = 1.0e-9;
 /// Spatial-sketch geometry with checked analytic numeric fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(into = "SpatialSketchGeometryDefinition"))]
 #[serde(try_from = "SpatialSketchGeometryDefinition")]
-pub struct SpatialSketchGeometry(SpatialSketchGeometryDefinition);
+pub struct SpatialSketchGeometry(
+    SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength>,
+);
 
 impl SpatialSketchGeometry {
     /// Borrow the admitted spatial geometry definition.
     #[must_use]
-    pub fn definition(&self) -> &SpatialSketchGeometryDefinition {
+    pub fn definition(
+        &self,
+    ) -> &SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> {
         &self.0
     }
+}
+
+/// An admitted circular frame: center, radius, unit normal and unit
+/// reference direction.
+type CircularFrame = (FinitePoint3, PositiveLength, UnitVector3, UnitVector3);
+
+/// Admit a circular center and radius, then a unit orthogonal frame.
+fn admit_spatial_circle(
+    center: Point3,
+    radius: Length,
+    normal: Vector3,
+    reference_direction: Vector3,
+) -> Result<CircularFrame, &'static str> {
+    let (Some(center), Ok(radius)) = (FinitePoint3::new(center), PositiveLength::try_from(radius))
+    else {
+        return Err("spatial circular geometry requires finite center and positive finite radius");
+    };
+    let (Some(normal), Some(reference_direction)) = (
+        UnitVector3::new(normal),
+        UnitVector3::new(reference_direction),
+    ) else {
+        return Err("spatial circular normal and reference_direction must be unit and orthogonal");
+    };
+    if normal.as_raw().dot(*reference_direction.as_raw()).abs() > EPS_SPATIAL_CIRCLE_FRAME {
+        return Err("spatial circular normal and reference_direction must be unit and orthogonal");
+    }
+    Ok((center, radius, normal, reference_direction))
 }
 
 impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
     type Error = &'static str;
 
     fn try_from(definition: SpatialSketchGeometryDefinition) -> Result<Self, Self::Error> {
-        match &definition {
-            SpatialSketchGeometryDefinition::Point { position } if !position.is_finite() => {
-                return Err("spatial sketch point position must be finite");
-            }
-            SpatialSketchGeometryDefinition::Line { start, end } => {
+        use SpatialSketchGeometryDefinition as Definition;
+        Ok(Self(match definition {
+            Definition::Point { position } => Definition::Point {
+                position: FinitePoint3::new(position)
+                    .ok_or("spatial sketch point position must be finite")?,
+            },
+            Definition::Line { start, end } => {
                 let distance = (end.x - start.x)
                     .hypot(end.y - start.y)
                     .hypot(end.z - start.z);
-                if !start.is_finite() || !end.is_finite() || distance <= EPS_SPATIAL_LINE_LENGTH {
+                let (Some(start), Some(end)) = (FinitePoint3::new(start), FinitePoint3::new(end))
+                else {
+                    return Err("spatial sketch line endpoints must be finite and separated");
+                };
+                if distance <= EPS_SPATIAL_LINE_LENGTH {
                     return Err("spatial sketch line endpoints must be finite and separated");
                 }
+                Definition::Line { start, end }
             }
-            SpatialSketchGeometryDefinition::Circle {
+            Definition::Circle {
                 center,
                 normal,
                 reference_direction,
                 radius,
-            }
-            | SpatialSketchGeometryDefinition::Arc {
-                center,
-                normal,
-                reference_direction,
-                radius,
-                ..
             } => {
-                if !center.is_finite() || radius.get() <= 0.0 {
-                    return Err("spatial circular geometry requires finite center and positive finite radius");
+                let (center, radius, normal, reference_direction) =
+                    admit_spatial_circle(center, radius, normal, reference_direction)?;
+                Definition::Circle {
+                    center,
+                    normal,
+                    reference_direction,
+                    radius,
                 }
-                let normal_length = normal.norm();
-                let reference_length = reference_direction.norm();
-                let orthogonal = (normal.x * reference_direction.x
-                    + normal.y * reference_direction.y
-                    + normal.z * reference_direction.z)
-                    .abs()
-                    <= EPS_SPATIAL_CIRCLE_FRAME;
-                if !normal_length.is_finite()
-                    || !reference_length.is_finite()
-                    || (normal_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
-                    || (reference_length - 1.0).abs() > EPS_SPATIAL_CIRCLE_FRAME
-                    || !orthogonal
-                {
-                    return Err("spatial circular normal and reference_direction must be unit and orthogonal");
+            }
+            Definition::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let (center, radius, normal, reference_direction) =
+                    admit_spatial_circle(center, radius, normal, reference_direction)?;
+                if start_angle == end_angle {
+                    return Err("spatial sketch arc angles must be finite and distinct");
                 }
-                if let SpatialSketchGeometryDefinition::Arc {
+                Definition::Arc {
+                    center,
+                    normal,
+                    reference_direction,
+                    radius,
                     start_angle,
                     end_angle,
-                    ..
-                } = &definition
-                {
-                    if start_angle == end_angle {
-                        return Err("spatial sketch arc angles must be finite and distinct");
-                    }
                 }
             }
-            SpatialSketchGeometryDefinition::Point { .. }
-            | SpatialSketchGeometryDefinition::Nurbs { .. }
-            | SpatialSketchGeometryDefinition::NurbsSurface { .. }
-            | SpatialSketchGeometryDefinition::Native { .. } => {}
+            Definition::Nurbs { curve } => Definition::Nurbs { curve },
+            Definition::NurbsSurface { surface } => Definition::NurbsSurface { surface },
+            Definition::Native { native_kind } => Definition::Native { native_kind },
+        }))
+    }
+}
+
+impl SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> {
+    /// The definition with raw points, directions and radii.
+    #[must_use]
+    pub fn to_raw(&self) -> SpatialSketchGeometryDefinition {
+        use SpatialSketchGeometryDefinition as Definition;
+        match self {
+            Self::Point { position } => Definition::Point {
+                position: position.get(),
+            },
+            Self::Line { start, end } => Definition::Line {
+                start: start.get(),
+                end: end.get(),
+            },
+            Self::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius,
+            } => Definition::Circle {
+                center: center.get(),
+                normal: Vector3::from(*normal),
+                reference_direction: Vector3::from(*reference_direction),
+                radius: Length::from(*radius),
+            },
+            Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => Definition::Arc {
+                center: center.get(),
+                normal: Vector3::from(*normal),
+                reference_direction: Vector3::from(*reference_direction),
+                radius: Length::from(*radius),
+                start_angle: *start_angle,
+                end_angle: *end_angle,
+            },
+            Self::Nurbs { curve } => Definition::Nurbs {
+                curve: curve.clone(),
+            },
+            Self::NurbsSurface { surface } => Definition::NurbsSurface {
+                surface: surface.clone(),
+            },
+            Self::Native { native_kind } => Definition::Native {
+                native_kind: native_kind.clone(),
+            },
         }
-        Ok(Self(definition))
     }
 }
 
@@ -1450,40 +1875,40 @@ impl TryFrom<SpatialSketchGeometryDefinition> for SpatialSketchGeometry {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum SpatialSketchGeometryDefinition {
+pub enum SpatialSketchGeometryDefinition<P = Point3, V = Vector3, L = Length> {
     /// Model-space point.
     Point {
         /// Point position in model coordinates.
-        position: Point3,
+        position: P,
     },
     /// Bounded model-space line segment.
     Line {
         /// Segment start in model coordinates.
-        start: Point3,
+        start: P,
         /// Segment end in model coordinates.
-        end: Point3,
+        end: P,
     },
     /// Oriented full model-space circle.
     Circle {
         /// Circle center in model coordinates.
-        center: Point3,
+        center: P,
         /// Unit normal defining positive angular travel.
-        normal: Vector3,
+        normal: V,
         /// Unit radial direction at parameter zero.
-        reference_direction: Vector3,
+        reference_direction: V,
         /// Circle radius.
-        radius: Length,
+        radius: L,
     },
     /// Oriented bounded model-space circular arc.
     Arc {
         /// Arc center in model coordinates.
-        center: Point3,
+        center: P,
         /// Unit normal defining positive angular travel.
-        normal: Vector3,
+        normal: V,
         /// Unit radial direction at parameter zero.
-        reference_direction: Vector3,
+        reference_direction: V,
         /// Arc radius.
-        radius: Length,
+        radius: L,
         /// Inclusive start parameter in radians.
         start_angle: Angle,
         /// Inclusive end parameter in radians.
@@ -3149,7 +3574,7 @@ impl SketchEntityKindRestriction {
     /// Whether `geometry` has an admitted kind. External and native geometry
     /// has no neutral kind, so it is admitted.
     #[must_use]
-    pub fn admits(self, geometry: &SketchGeometryDefinition) -> bool {
+    pub fn admits<P, L, R, W>(self, geometry: &SketchGeometryDefinition<P, L, R, W>) -> bool {
         if matches!(
             geometry,
             SketchGeometryDefinition::ExternalReference { .. }
@@ -3210,12 +3635,12 @@ cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref"
 cadmpeg_core::named_optional_field!(deserialize_geometry_ref, String, "geometry_ref");
 cadmpeg_core::named_optional_field!(deserialize_bounds, [Angle; 2], "bounds");
 cadmpeg_core::named_optional_field!(
-    deserialize_sketch_geometry_definition_bounds,
-    [f64; 2],
+    deserialize_sketch_geometry_definition_bounds<R>,
+    [R; 2],
     "bounds"
 );
-cadmpeg_core::named_optional_field!(deserialize_width_factor, f64, "width_factor");
-cadmpeg_core::named_optional_field!(deserialize_placement, TextPlacement, "placement");
+cadmpeg_core::named_optional_field!(deserialize_width_factor<W>, W, "width_factor");
+cadmpeg_core::named_optional_field!(deserialize_placement<P>, TextPlacement<P>, "placement");
 cadmpeg_core::named_optional_field!(
     deserialize_horizontal_alignment,
     SketchTextHorizontalAlignment,

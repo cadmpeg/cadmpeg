@@ -29,7 +29,14 @@ fn variable_radius_law_admits_ordered_nonnegative_samples() {
     }
     let points = vec![point(0.2, 0.0), point(0.4, 2.0), point(0.8, 0.0)];
     let admitted = VariableRadii::new(points.clone()).unwrap();
-    assert_eq!(admitted.as_slice(), points);
+    assert_eq!(
+        admitted
+            .as_slice()
+            .iter()
+            .map(VariableRadius::to_raw)
+            .collect::<Vec<_>>(),
+        points
+    );
     let wire = json!({"kind":"variable","points":[
         {"parameter":0.2,"radius":0.0},
         {"parameter":0.4,"radius":2.0},
@@ -91,5 +98,34 @@ fn edge_treatment_wire_preserves_resolved_and_unresolved_forms() {
     ] {
         let spec: ChamferSpec = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(spec).unwrap(), wire);
+    }
+}
+
+#[test]
+fn variable_radii_hold_admitted_samples_and_take_admitted_parts() {
+    use crate::scalar::{Fraction, NonNegativeLength};
+    let admitted = VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 2.0)]).unwrap();
+    assert_eq!(
+        admitted.as_slice()[1].parameter,
+        Fraction::new(1.0).unwrap()
+    );
+    assert_eq!(
+        admitted.as_slice()[1].radius,
+        NonNegativeLength::new(2.0).unwrap()
+    );
+    let sample = |parameter: f64, radius: f64| VariableRadius {
+        parameter: Fraction::new(parameter).unwrap(),
+        radius: NonNegativeLength::new(radius).unwrap(),
+    };
+    assert_eq!(
+        VariableRadii::from_parts(vec![sample(0.0, 0.0), sample(1.0, 2.0)]).unwrap(),
+        admitted
+    );
+    for points in [
+        vec![sample(0.0, 1.0)],
+        vec![sample(0.0, 0.0), sample(1.0, 0.0)],
+        vec![sample(1.0, 1.0), sample(0.5, 2.0)],
+    ] {
+        assert!(VariableRadii::from_parts(points).is_err());
     }
 }

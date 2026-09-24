@@ -123,7 +123,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     for (index, point) in points.as_slice().iter().enumerate() {
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Position{index}"),
-                            point.parameter.to_string(),
+                            point.parameter.get().to_string(),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Radius{index}"),

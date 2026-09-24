@@ -216,15 +216,9 @@ fn affine_sketch_frame_marker_transform(
         normal[0] * u_axis[1] - normal[1] * u_axis[0],
     ];
     let origin = [origin.x, origin.y, origin.z];
-    if !(normal
-        .into_iter()
-        .chain(u_axis)
-        .chain(v_axis)
-        .chain(origin)
-        .all(f64::is_finite)
-        && quantum.is_finite()
-        && quantum > 0.0)
-    {
+    // The resolved frame holds finite axes and origin; the product axis is
+    // computed and can overflow.
+    if !(v_axis.into_iter().all(f64::is_finite) && quantum.is_finite() && quantum > 0.0) {
         return None;
     }
     let normal_axis =
@@ -693,18 +687,24 @@ pub(super) fn sketch_entity_marker_loci(entity: &SketchEntity) -> Option<SketchE
 }
 
 pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
-    let locus = |point, locus| (point, locus);
+    let locus = |point: Point2, locus| (point, locus);
     match entity.geometry.definition() {
         SketchGeometryDefinition::Point { position } => {
-            vec![locus(*position, SketchLocus::Entity(entity.id().clone()))]
+            vec![locus(
+                position.get(),
+                SketchLocus::Entity(entity.id().clone()),
+            )]
         }
         SketchGeometryDefinition::Line { start, end } => vec![
-            locus(*start, SketchLocus::Start(entity.id().clone())),
-            locus(*end, SketchLocus::End(entity.id().clone())),
+            locus(start.get(), SketchLocus::Start(entity.id().clone())),
+            locus(end.get(), SketchLocus::End(entity.id().clone())),
         ],
         SketchGeometryDefinition::ReferenceLine { .. } => Vec::new(),
         SketchGeometryDefinition::Circle { center, .. } => {
-            vec![locus(*center, SketchLocus::Center(entity.id().clone()))]
+            vec![locus(
+                center.get(),
+                SketchLocus::Center(entity.id().clone()),
+            )]
         }
         SketchGeometryDefinition::Ellipse {
             center,
@@ -713,7 +713,10 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             minor_radius,
             bounds,
         } => {
-            let mut loci = vec![locus(*center, SketchLocus::Center(entity.id().clone()))];
+            let mut loci = vec![locus(
+                center.get(),
+                SketchLocus::Center(entity.id().clone()),
+            )];
             if let Some([start, end]) = bounds {
                 let point = |parameter: f64| {
                     Point2::new(
@@ -741,7 +744,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             start_angle,
             end_angle,
         } => vec![
-            locus(*center, SketchLocus::Center(entity.id().clone())),
+            locus(center.get(), SketchLocus::Center(entity.id().clone())),
             locus(
                 Point2::new(
                     center.u + radius.get() * start_angle.get().cos(),
@@ -764,7 +767,10 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             minor_radius,
             bounds,
         } => {
-            let mut loci = vec![locus(*center, SketchLocus::Center(entity.id().clone()))];
+            let mut loci = vec![locus(
+                center.get(),
+                SketchLocus::Center(entity.id().clone()),
+            )];
             let point = |parameter: f64| {
                 let (_, x) = cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)?;
                 let (y, _) = cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.get(), parameter)?;
@@ -777,7 +783,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 point.is_finite().then_some(point)
             };
             if let Some([start, end]) = bounds {
-                if let (Some(start), Some(end)) = (point(*start), point(*end)) {
+                if let (Some(start), Some(end)) = (point(start.get()), point(end.get())) {
                     loci.push(locus(start, SketchLocus::Start(entity.id().clone())));
                     loci.push(locus(end, SketchLocus::End(entity.id().clone())));
                 }
@@ -803,7 +809,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 point.is_finite().then_some(point)
             };
             match bounds {
-                Some([start, end]) => match (point(*start), point(*end)) {
+                Some([start, end]) => match (point(start.get()), point(end.get())) {
                     (Some(start), Some(end)) => vec![
                         locus(start, SketchLocus::Start(entity.id().clone())),
                         locus(end, SketchLocus::End(entity.id().clone())),

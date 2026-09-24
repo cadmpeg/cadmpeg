@@ -19,11 +19,13 @@ use super::{SKETCH_MARKER, SKETCH_POINT_TOLERANCE, SPATIAL_VERTEX_PREFIX};
 use crate::records::{FeatureInputLane, SketchRelationKind};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity,
     SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId, SketchLocus,
     SpatialSketchGeometryDefinition, SpatialSketchId,
 };
+use cadmpeg_ir::units::FinitePoint2;
 
 /// Reject unsupported neutral sketch edits before native lane replay.
 ///
@@ -150,7 +152,9 @@ fn patch_spatial_sketches(
             .iter()
             .copied()
             .filter_map(|entity| match *entity.geometry.definition() {
-                SpatialSketchGeometryDefinition::Point { position } => Some((entity, position)),
+                SpatialSketchGeometryDefinition::Point { position } => {
+                    Some((entity, position.get()))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -273,14 +277,8 @@ fn patch_spatial_sketches(
                     sketch.id.as_str()
                 )));
             };
-            if start == end {
-                return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT spatial sketch {} has a zero-length line",
-                    sketch.id.as_str()
-                )));
-            }
-            patch_spatial_vertex(payload, offsets[0], start)?;
-            patch_spatial_vertex(payload, offsets[1], end)?;
+            patch_spatial_vertex(payload, offsets[0], start.get())?;
+            patch_spatial_vertex(payload, offsets[1], end.get())?;
         }
     }
 
@@ -1162,17 +1160,21 @@ fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<boo
     }
 }
 
-fn circular_center_radius(geometry: &SketchGeometryDefinition) -> Option<(Point2, f64)> {
+fn circular_center_radius(
+    geometry: &SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal>,
+) -> Option<(Point2, f64)> {
     match geometry {
         SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => Some((*center, radius.get())),
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
+            Some((center.get(), radius.get()))
+        }
         _ => None,
     }
 }
 
 fn sketch_line(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some((*start, *end)),
+        SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
         _ => None,
     }
 }
@@ -1181,7 +1183,7 @@ fn sketch_center(geometry: &SketchGeometry) -> Option<Point2> {
     match geometry.definition() {
         SketchGeometryDefinition::Circle { center, .. }
         | SketchGeometryDefinition::Arc { center, .. }
-        | SketchGeometryDefinition::Ellipse { center, .. } => Some(*center),
+        | SketchGeometryDefinition::Ellipse { center, .. } => Some(center.get()),
         _ => None,
     }
 }
@@ -1412,17 +1414,11 @@ fn source_less_lanes(
         for entity in entities {
             match *entity.geometry.definition() {
                 SpatialSketchGeometryDefinition::Point { position } => {
-                    append_spatial_point_marker(&mut payload, position, object_id)?;
+                    append_spatial_point_marker(&mut payload, position.get(), object_id)?;
                 }
                 SpatialSketchGeometryDefinition::Line { start, end } => {
-                    if start == end {
-                        return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                            "source-less SLDPRT spatial sketch {} has a zero-length line",
-                            sketch.id.as_str()
-                        )));
-                    }
-                    append_spatial_vertex(&mut payload, start);
-                    append_spatial_vertex(&mut payload, end);
+                    append_spatial_vertex(&mut payload, start.get());
+                    append_spatial_vertex(&mut payload, end.get());
                 }
                 _ => {
                     return Err(cadmpeg_core::CodecError::NotImplemented(format!(

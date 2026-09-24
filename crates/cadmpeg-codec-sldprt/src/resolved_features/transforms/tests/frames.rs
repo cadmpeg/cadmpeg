@@ -954,7 +954,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     assert!(matches!(
         entities[2].geometry.definition(),
         SketchGeometryDefinition::Circle { center, radius }
-            if *center == Point2::new(15.0, 40.0) && *radius == Length::new(4.0).unwrap()
+            if *center == Point2::new(15.0, 40.0) && Length::from(*radius) == Length::new(4.0).unwrap()
     ));
     assert!(!entities[2].construction);
 

@@ -61,6 +61,7 @@ use cadmpeg_ir::sketches::{
     SketchGeometryDefinition, SketchId, SketchPlacement,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
@@ -282,7 +283,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
                         radius: existing_radius,
                         ..
                     } => {
-                        quantize(*existing, QUANTUM) == center
+                        quantize(existing.get(), QUANTUM) == center
                             && same_dimension_length(existing_radius.get(), *radius)
                     }
                     _ => false,
@@ -1720,7 +1721,7 @@ pub(crate) fn project_marker_backed_sketches(
                         };
                         corners
                             .iter()
-                            .all(|corner| !point_matches_corner(position, *corner))
+                            .all(|corner| !point_matches_corner(position.get(), *corner))
                             .then_some(index)
                     })
                     .collect::<Vec<_>>();
@@ -1732,7 +1733,7 @@ pub(crate) fn project_marker_backed_sketches(
                             !matches!((
                                 entity.geometry).definition(),
                                 SketchGeometryDefinition::Point { position }
-                                    if point_matches_corner(*position, *corner)
+                                    if point_matches_corner(position.get(), *corner)
                             )
                         })
                     })
@@ -2295,33 +2296,37 @@ fn transform_sketch_block_geometry(
     rotation: f64,
 ) -> Option<SketchGeometry> {
     let point = |point| transform_sketch_block_point(point, transform, frame);
-    let direction = |direction| transform_sketch_block_direction(direction, transform, frame);
+    let finite_point =
+        |value| transform_sketch_block_point(value, transform, frame).and_then(FinitePoint2::new);
+    let direction = |direction| {
+        transform_sketch_block_direction(direction, transform, frame).and_then(FinitePoint2::new)
+    };
     let angle = |value: Angle| Angle::new(value.get() + rotation);
     Some(match geometry.definition() {
         SketchGeometryDefinition::Point { position } => {
-            SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                position: point(*position)?,
+            SketchGeometry::from_parts(SketchGeometryDefinition::Point {
+                position: finite_point(position.get())?,
             })
             .ok()?
         }
         SketchGeometryDefinition::Line { start, end } => {
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: point(*start)?,
-                end: point(*end)?,
+            SketchGeometry::from_parts(SketchGeometryDefinition::Line {
+                start: finite_point(start.get())?,
+                end: finite_point(end.get())?,
             })
             .ok()?
         }
         SketchGeometryDefinition::ReferenceLine {
             origin,
             direction: axis,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
-            origin: point(*origin)?,
-            direction: direction(*axis)?,
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::ReferenceLine {
+            origin: finite_point(origin.get())?,
+            direction: direction(axis.get())?,
         })
         .ok()?,
         SketchGeometryDefinition::Circle { center, radius } => {
-            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                center: point(*center)?,
+            SketchGeometry::from_parts(SketchGeometryDefinition::Circle {
+                center: finite_point(center.get())?,
                 radius: *radius,
             })
             .ok()?
@@ -2331,8 +2336,8 @@ fn transform_sketch_block_geometry(
             radius,
             start_angle,
             end_angle,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: point(*center)?,
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+            center: finite_point(center.get())?,
             radius: *radius,
             start_angle: angle(*start_angle)?,
             end_angle: angle(*end_angle)?,
@@ -2344,8 +2349,8 @@ fn transform_sketch_block_geometry(
             major_radius,
             minor_radius,
             bounds,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
-            center: point(*center)?,
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::Ellipse {
+            center: finite_point(center.get())?,
             major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
@@ -2361,8 +2366,8 @@ fn transform_sketch_block_geometry(
             major_radius,
             minor_radius,
             bounds,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::Hyperbola {
-            center: point(*center)?,
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::Hyperbola {
+            center: finite_point(center.get())?,
             major_angle: angle(*major_angle)?,
             major_radius: *major_radius,
             minor_radius: *minor_radius,
@@ -2374,8 +2379,8 @@ fn transform_sketch_block_geometry(
             axis_angle,
             focal_length,
             bounds,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::Parabola {
-            vertex: point(*vertex)?,
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::Parabola {
+            vertex: finite_point(vertex.get())?,
             axis_angle: angle(*axis_angle)?,
             focal_length: *focal_length,
             bounds: *bounds,
@@ -2409,7 +2414,7 @@ fn transform_sketch_block_geometry(
             placement,
             horizontal_alignment,
             vertical_alignment,
-        } => SketchGeometry::try_from(SketchGeometryDefinition::Text {
+        } => SketchGeometry::from_parts(SketchGeometryDefinition::Text {
             text: text.clone(),
             font_family: font_family.clone(),
             font_weight: *font_weight,
@@ -2417,7 +2422,7 @@ fn transform_sketch_block_geometry(
             width_factor: *width_factor,
             placement: match placement {
                 Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
-                    anchor: point(placement.anchor)?,
+                    anchor: finite_point(placement.anchor.get())?,
                     rotation: angle(placement.rotation)?,
                 }),
                 None => None,
@@ -3552,7 +3557,9 @@ mod detached_legacy_sketch_tests {
             .entities
             .iter()
             .filter_map(|entity| match *entity.geometry.definition() {
-                SketchGeometryDefinition::Circle { center, radius } => Some((center, radius)),
+                SketchGeometryDefinition::Circle { center, radius } => {
+                    Some((center.get(), Length::from(radius)))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -3567,7 +3574,7 @@ mod detached_legacy_sketch_tests {
             .entities
             .iter()
             .filter_map(|entity| match *entity.geometry.definition() {
-                SketchGeometryDefinition::Line { start, end } => Some((start, end)),
+                SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
                 _ => None,
             })
             .collect::<Vec<_>>();

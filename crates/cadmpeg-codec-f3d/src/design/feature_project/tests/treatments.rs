@@ -924,7 +924,11 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     ])
     .expect("complete variable Fillet law");
     assert_eq!(
-        points.as_slice(),
+        points
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::features::edge_treatments::VariableRadius::to_raw)
+            .collect::<Vec<_>>(),
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
@@ -969,7 +973,11 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
         crate::design::feature_project::variable_fillet_law(&[(0, &start), (1, &end)])
             .expect("variable Fillet law without an explicit weight");
     assert_eq!(
-        points.as_slice(),
+        points
+            .as_slice()
+            .iter()
+            .map(cadmpeg_ir::features::edge_treatments::VariableRadius::to_raw)
+            .collect::<Vec<_>>(),
         [
             cadmpeg_ir::features::edge_treatments::VariableRadius {
                 parameter: 0.0,
@@ -1816,7 +1824,7 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         points
             .as_slice()
             .iter()
-            .map(|point| (point.parameter, point.radius.get()))
+            .map(|point| (point.parameter.get(), point.radius.get()))
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
