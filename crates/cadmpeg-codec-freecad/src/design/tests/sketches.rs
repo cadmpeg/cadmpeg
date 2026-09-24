@@ -53,8 +53,8 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
             bounds: Some([start, end]),
             ..
         } if (angle.get() - 0.47).abs() < 1.0e-12
-            && (start + 0.63).abs() < 1.0e-12
-            && (end - 0.88).abs() < 1.0e-12
+            && (start.get() + 0.63).abs() < 1.0e-12
+            && (end.get() - 0.88).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[6].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
@@ -62,8 +62,8 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
             bounds: Some([start, end]),
             ..
         } if (angle.get() - 0.67).abs() < 1.0e-12
-            && (start + 2.1).abs() < 1.0e-12
-            && (end - 2.4).abs() < 1.0e-12
+            && (start.get() + 2.1).abs() < 1.0e-12
+            && (end.get() - 2.4).abs() < 1.0e-12
     ));
     assert!(result
         .ir()
@@ -614,9 +614,9 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
     assert!(matches!(
         *entities[1].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola {
-            bounds: Some([-1.0, 1.5]),
+            bounds: Some(bounds),
             ..
-        }
+        } if cadmpeg_ir::scalar::FiniteReal::raw_array(bounds) == [-1.0, 1.5]
     ));
     assert!(matches!(
         *entities[2].geometry.definition(),
@@ -630,9 +630,10 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
         *entities[3].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
             focal_length: actual_focal_length,
-            bounds: Some([-2.0, 3.0]),
+            bounds: Some(bounds),
             ..
         } if actual_focal_length.get() == 2.5
+            && cadmpeg_ir::scalar::FiniteReal::raw_array(bounds) == [-2.0, 3.0]
     ));
     assert!(matches!(*entities[4].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {

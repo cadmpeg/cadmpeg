@@ -166,7 +166,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
         .iter()
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.clone()?, position))
+                Some((entity.native_ref.clone()?, position.get()))
             }
             _ => None,
         })
@@ -704,7 +704,7 @@ pub(super) fn resolve_slot_marker_arcs(
         .iter()
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.as_deref()?, position))
+                Some((entity.native_ref.as_deref()?, position.get()))
             }
             _ => None,
         })
@@ -898,7 +898,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .iter()
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.clone()?, position))
+                Some((entity.native_ref.clone()?, position.get()))
             }
             _ => None,
         })
@@ -906,9 +906,11 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
     let point_records = entities
         .iter()
         .filter_map(|entity| match *entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => {
-                Some((entity.sketch.clone(), entity.native_ref.clone()?, position))
-            }
+            SketchGeometryDefinition::Point { position } => Some((
+                entity.sketch.clone(),
+                entity.native_ref.clone()?,
+                position.get(),
+            )),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -958,7 +960,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
                 index,
                 sketch: entity.sketch.clone(),
                 endpoints: [start.clone(), end.clone()],
-                center,
+                center: center.get(),
                 radius: radius.get(),
             })
         })
@@ -967,7 +969,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .iter()
         .filter_map(|entity| match *entity.geometry.definition() {
             SketchGeometryDefinition::Point { position } => {
-                Some((entity.native_ref.as_deref()?, position))
+                Some((entity.native_ref.as_deref()?, position.get()))
             }
             _ => None,
         })

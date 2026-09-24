@@ -90,7 +90,10 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
         panic!("complete arc");
     };
     assert_eq!(center, cadmpeg_ir::math::Point2::new(0.0, 0.0));
-    assert_eq!(radius, Length::new(2.0).expect("finite length fixture"));
+    assert_eq!(
+        Length::from(radius),
+        Length::new(2.0).expect("finite length fixture")
+    );
     assert!((start_angle.get() - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((end_angle.get() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }

@@ -1084,7 +1084,10 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Nurbs(curve) => {
             curve.pole_rows().raw_points().into_iter().all(point_valid)
         }
-        SolvedCurveGeometry::Polyline(polyline) => polyline.points().all(point_valid),
+        SolvedCurveGeometry::Polyline(polyline) => polyline
+            .points()
+            .map(cadmpeg_ir::features::FinitePoint3::get)
+            .all(point_valid),
         SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
             let Some(curve) = index.curves(segment.curve.as_str()) else {
                 return false;

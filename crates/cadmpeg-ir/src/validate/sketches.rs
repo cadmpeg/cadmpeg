@@ -35,7 +35,7 @@ fn spatial_oriented_endpoints(
     reversed: bool,
 ) -> Option<(crate::math::Point3, crate::math::Point3)> {
     let endpoints = match geometry.definition() {
-        SpatialSketchGeometryDefinition::Line { start, end } => (*start, *end),
+        SpatialSketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
@@ -44,6 +44,8 @@ fn spatial_oriented_endpoints(
             start_angle,
             end_angle,
         } => {
+            let normal = normal.as_raw();
+            let reference_direction = reference_direction.as_raw();
             let transverse = crate::math::Vector3::new(
                 normal.y * reference_direction.z - normal.z * reference_direction.y,
                 normal.z * reference_direction.x - normal.x * reference_direction.z,
@@ -349,8 +351,8 @@ fn spatial_parallel_lines(
         second_start.z - first_start.z,
     );
     Some(SpatialParallelLines {
-        first: [*first_start, *first_end],
-        second: [*second_start, *second_end],
+        first: [first_start.get(), first_end.get()],
+        second: [second_start.get(), second_end.get()],
         distance: crate::math::Vector3::new(
             offset.y * first_direction.z - offset.z * first_direction.y,
             offset.z * first_direction.x - offset.x * first_direction.z,
@@ -694,7 +696,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Some(SpatialSketchGeometryDefinition::Point { position: first }),
                         Some(SpatialSketchGeometryDefinition::Point { position: second }),
                         Some(SpatialSketchGeometryDefinition::Line { start, end }),
-                    ) => crate::eval::spatial_points_are_reflections(*first, *second, *start, *end),
+                    ) => crate::eval::spatial_points_are_reflections(
+                        first.get(),
+                        second.get(),
+                        start.get(),
+                        end.get(),
+                    ),
                     _ => false,
                 };
                 if !solved {
@@ -837,7 +844,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     (
                         Some(SpatialSketchGeometryDefinition::Point { position: first }),
                         Some(SpatialSketchGeometryDefinition::Point { position: second }),
-                    ) => Some(first.distance(*second)),
+                    ) => Some(first.distance(second.get())),
                     _ => None,
                 };
                 let expected = match parameter_values.get(parameter) {
@@ -1049,6 +1056,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let line =
                     crate::math::Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
                 let line_norm = line.norm();
+                let direction = direction.as_raw();
                 let cross = crate::math::Vector3::new(
                     line.y * direction.z - line.z * direction.y,
                     line.z * direction.x - line.x * direction.z,
@@ -1569,8 +1577,8 @@ fn planar_parallel_lines(
     )?
     .abs();
     Some(PlanarParallelLines {
-        first: [*first_start, *first_end],
-        second: [*second_start, *second_end],
+        first: [first_start.get(), first_end.get()],
+        second: [second_start.get(), second_end.get()],
         distance,
     })
 }
@@ -1608,15 +1616,15 @@ fn oriented_endpoints(
     reversed: bool,
 ) -> Option<(crate::math::Point2, crate::math::Point2)> {
     let endpoints = match geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => (*start, *end),
+        SketchGeometryDefinition::Line { start, end } => (start.get(), end.get()),
         SketchGeometryDefinition::Arc {
             center,
             radius,
             start_angle,
             end_angle,
         } => (
-            circular_point(*center, radius.get(), start_angle.get()),
-            circular_point(*center, radius.get(), end_angle.get()),
+            circular_point(center.get(), radius.get(), start_angle.get()),
+            circular_point(center.get(), radius.get(), end_angle.get()),
         ),
         SketchGeometryDefinition::Ellipse {
             center,
@@ -1626,14 +1634,14 @@ fn oriented_endpoints(
             bounds: Some([start, end]),
         } => (
             ellipse_point(
-                *center,
+                center.get(),
                 major_angle.get(),
                 major_radius.get(),
                 minor_radius.get(),
                 start.get(),
             ),
             ellipse_point(
-                *center,
+                center.get(),
                 major_angle.get(),
                 major_radius.get(),
                 minor_radius.get(),
@@ -1692,7 +1700,7 @@ fn sketch_locus_point(
     let entity_geometry = geometry.get(locus_entity(locus))?;
     match locus {
         SketchLocus::Entity(_) => match entity_geometry.definition() {
-            SketchGeometryDefinition::Point { position } => Some(*position),
+            SketchGeometryDefinition::Point { position } => Some(position.get()),
             _ => None,
         },
         SketchLocus::Start(_) | SketchLocus::End(_) => {
@@ -1707,8 +1715,8 @@ fn sketch_locus_point(
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Arc { center, .. }
             | SketchGeometryDefinition::Ellipse { center, .. }
-            | SketchGeometryDefinition::Hyperbola { center, .. } => Some(*center),
-            SketchGeometryDefinition::Parabola { vertex, .. } => Some(*vertex),
+            | SketchGeometryDefinition::Hyperbola { center, .. } => Some(center.get()),
+            SketchGeometryDefinition::Parabola { vertex, .. } => Some(vertex.get()),
             _ => None,
         },
     }

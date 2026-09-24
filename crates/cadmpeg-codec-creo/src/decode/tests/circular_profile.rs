@@ -271,7 +271,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     );
 
     edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -290,7 +290,7 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     );
 
     edit::replace(&mut ir.model.sketch_entities[1].geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
 

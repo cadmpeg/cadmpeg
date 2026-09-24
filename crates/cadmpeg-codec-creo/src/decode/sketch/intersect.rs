@@ -29,10 +29,10 @@ const EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY: f64 = 1.0e-12;
 fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
-            Some((*start, Point2::new(end.u - start.u, end.v - start.v)))
+            Some((start.get(), Point2::new(end.u - start.u, end.v - start.v)))
         }
         SketchGeometryDefinition::ReferenceLine { origin, direction } => {
-            Some((*origin, *direction))
+            Some((origin.get(), direction.get()))
         }
         _ => None,
     }
@@ -91,11 +91,15 @@ pub(in crate::decode) fn intersect_section_line_arc(
     {
         return None;
     }
-    let intersections =
-        cadmpeg_ir::math::planar::line_circle_intersections(*start, *end, *center, radius.get())?;
+    let intersections = cadmpeg_ir::math::planar::line_circle_intersections(
+        start.get(),
+        end.get(),
+        center.get(),
+        radius.get(),
+    )?;
     let endpoint_tolerance = EPS_SKETCH_INTERSECTION_DEGENERATE * radius.get();
     let mut inside = intersections.into_iter().filter(|(_, point)| {
-        cadmpeg_ir::math::planar::point_segment_distance(point.get(), *start, *end)
+        cadmpeg_ir::math::planar::point_segment_distance(point.get(), start.get(), end.get())
             <= endpoint_tolerance
     });
     let (_, point) = inside.next()?;

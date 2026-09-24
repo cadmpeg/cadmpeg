@@ -550,7 +550,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
 
     let mut noncoincident_entities = spatial_entities.to_vec();
     edit::replace(&mut noncoincident_entities[2].geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut cadmpeg_ir::sketches::SpatialSketchGeometryDefinition =
                 &mut definition;

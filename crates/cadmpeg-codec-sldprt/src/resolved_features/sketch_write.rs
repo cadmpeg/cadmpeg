@@ -277,10 +277,14 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("free-vertex"))
                 .colon(ordinal),
         );
-        let finite_position =
-            cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
-                .ok_or(Point::NON_FINITE_POSITION)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+        let finite_position = cadmpeg_ir::features::FinitePoint3::new(lift_point(
+            position.get(),
+            origin,
+            u_axis,
+            v_axis,
+        ))
+        .ok_or(Point::NON_FINITE_POSITION)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
@@ -405,8 +409,8 @@ fn generated_sketch_curve(
     };
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
-            let origin = lift(*start);
-            let target = lift(*end);
+            let origin = lift(start.get());
+            let target = lift(end.get());
             let delta = Vector3::new(
                 target.x - origin.x,
                 target.y - origin.y,
@@ -424,15 +428,15 @@ fn generated_sketch_curve(
                         delta.y / length,
                         delta.z / length,
                     )).map_err(cadmpeg_core::CodecError::malformed)?)),
-                start: *start,
-                end: *end,
+                start: start.get(),
+                end: end.get(),
                 param_range: [0.0, length],
             })
         }
         SketchGeometryDefinition::Circle { center, radius } => {
-            let point = offset_point(*center, Point2::new(radius.get(), 0.0));
+            let point = offset_point(center.get(), Point2::new(radius.get(), 0.0));
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
                 start: point,
                 end: point,
                 param_range: [0.0, std::f64::consts::TAU],
@@ -444,9 +448,9 @@ fn generated_sketch_curve(
             start_angle,
             end_angle,
         } => Ok(GeneratedSketchCurve {
-            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(*center), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
-            start: offset_point(*center, polar(radius.get(), start_angle.get())),
-            end: offset_point(*center, polar(radius.get(), end_angle.get())),
+            curve: CurveGeometry::Solved(SolvedCurveGeometry::Circle(cadmpeg_ir::geometry::analytic::CircleCurve::try_new(lift(center.get()), normal, u_axis, radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+            start: offset_point(center.get(), polar(radius.get(), start_angle.get())),
+            end: offset_point(center.get(), polar(radius.get(), end_angle.get())),
             param_range: [start_angle.get(), end_angle.get()],
         }),
         SketchGeometryDefinition::Ellipse {
@@ -472,7 +476,7 @@ fn generated_sketch_curve(
                 });
             let full = bounds.is_none();
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(lift(*center), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(lift(center.get()), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
                 param_range: [start, end],
@@ -605,7 +609,7 @@ pub(super) fn patch_line_profiles(
                 SketchGeometryDefinition::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(*position, origin, u_axis, v_axis);
+                    let point = lift_point(position.get(), origin, u_axis, v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
                         if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
@@ -618,7 +622,7 @@ pub(super) fn patch_line_profiles(
                 SketchGeometryDefinition::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(*point, origin, u_axis, v_axis);
+                        let point = lift_point(point.get(), origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if Point3::distance(previous, point) > EPS_SKETCH_WRITE_GEOMETRY {
@@ -705,8 +709,8 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
             start_angle,
             end_angle,
         } => Some([
-            offset_point(*center, polar(radius.get(), start_angle.get())),
-            offset_point(*center, polar(radius.get(), end_angle.get())),
+            offset_point(center.get(), polar(radius.get(), start_angle.get())),
+            offset_point(center.get(), polar(radius.get(), end_angle.get())),
         ]),
         SketchGeometryDefinition::Ellipse {
             center,
@@ -766,7 +770,7 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
     fn try_from(geometry: &SketchGeometry) -> Result<Self, Self::Error> {
         match geometry.definition() {
             SketchGeometryDefinition::Circle { center, radius } => Ok(Self::Circle {
-                center: *center,
+                center: center.get(),
                 radius: radius.get(),
             }),
             SketchGeometryDefinition::Arc {
@@ -775,7 +779,7 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 start_angle,
                 end_angle,
             } => Ok(Self::Arc {
-                center: *center,
+                center: center.get(),
                 radius: radius.get(),
                 start_angle: start_angle.get(),
                 end_angle: end_angle.get(),
@@ -787,7 +791,7 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
                 minor_radius,
                 bounds,
             } => Ok(Self::Ellipse(PatchEllipse {
-                center: *center,
+                center: center.get(),
                 major_angle: major_angle.get(),
                 major_radius: major_radius.get(),
                 minor_radius: minor_radius.get(),

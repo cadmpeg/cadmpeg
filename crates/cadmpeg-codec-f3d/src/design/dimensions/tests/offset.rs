@@ -206,7 +206,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
 
     let mut skewed = result;
     edit::replace(&mut skewed.geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -774,7 +774,7 @@ fn counted_roles_require_matching_solved_geometry() {
             if &first == arc.id() && &second == equal_arc.id()
     ));
     edit::replace(&mut equal_arc.geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition = &mut definition;
 

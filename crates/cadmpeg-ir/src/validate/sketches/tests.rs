@@ -247,7 +247,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -275,7 +275,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     edit::replace(
         &mut ir.model.sketch_entities[result_ordinal].geometry,
         |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
 
@@ -415,7 +415,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         .expect("disconnected entity remains present")
         .geometry;
     edit::replace(disconnected_geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut crate::sketches::SketchGeometryDefinition = &mut definition;
 

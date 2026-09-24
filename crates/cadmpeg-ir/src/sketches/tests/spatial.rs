@@ -821,7 +821,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     }
     let before = geometry.clone();
     assert!(edit::replace(&mut geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
 
@@ -840,7 +840,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     .is_err());
     assert_eq!(geometry, before);
     edit::replace(&mut geometry, |previous| {
-        let mut definition = previous.definition().clone();
+        let mut definition = previous.definition().to_raw();
         {
             let definition: &mut crate::sketches::SpatialSketchGeometryDefinition = &mut definition;
 

@@ -6375,7 +6375,7 @@ struct PolylineParameters {
 
 fn polyline_parameters(
     count: usize,
-    parameters: Option<impl Iterator<Item = f64>>,
+    parameters: Option<impl Iterator<Item = cadmpeg_ir::scalar::FiniteReal>>,
 ) -> Result<PolylineParameters, CodecError> {
     if count < 2 {
         return Err(CodecError::NotImplemented(
@@ -6384,13 +6384,15 @@ fn polyline_parameters(
     }
     let values: Vec<f64> = parameters.map_or_else(
         || (0..count).map(|value| value as f64).collect(),
-        Iterator::collect,
+        |parameters| {
+            parameters
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .collect()
+        },
     );
     match values.as_slice() {
         [first, interior @ .., last]
-            if values.len() == count
-                && values.iter().all(|value| value.is_finite())
-                && values.windows(2).all(|pair| pair[0] < pair[1]) =>
+            if values.len() == count && values.windows(2).all(|pair| pair[0] < pair[1]) =>
         {
             Ok(PolylineParameters {
                 first: *first,

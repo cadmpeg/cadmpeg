@@ -3,7 +3,7 @@
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::NonNegativeReal;
+use crate::scalar::{FiniteReal, NonNegativeReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -147,14 +147,17 @@ impl<'de> Deserialize<'de> for PolygonalSurface {
 }
 
 /// One polyline sample with the source parameter recorded at it.
+// A source states a raw parameter and point; a `PolylineCurve` holds the
+// admitted sample, whose parameter is a `FiniteReal` and whose point is a
+// `FinitePoint3`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct PolylineVertex {
+pub struct PolylineVertex<R = f64, P = Point3> {
     /// Source parameter at this sample.
-    pub parameter: f64,
+    pub parameter: R,
     /// Model-space sample.
-    pub point: Point3,
+    pub point: P,
 }
 
 /// The samples of a polyline, with or without source parameters.
@@ -166,30 +169,30 @@ pub struct PolylineVertex {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum PolylineSamples {
+pub enum PolylineSamples<R = f64, P = Point3> {
     /// Samples the source did not parameterize.
     Unparameterized {
         /// Ordered model-space samples.
-        points: crate::features::NonEmptyMembers<Point3>,
+        points: crate::features::NonEmptyMembers<P>,
     },
     /// Samples the source parameterized.
     Parameterized {
         /// Ordered samples, each with its source parameter.
-        vertices: crate::features::NonEmptyMembers<PolylineVertex>,
+        vertices: crate::features::NonEmptyMembers<PolylineVertex<R, P>>,
     },
 }
 
 /// Source-native polyline with an explicit chordal error bound.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "PolylineCurveWire"))]
-#[serde(try_from = "PolylineCurveWire", into = "PolylineCurveWire")]
+#[serde(try_from = "PolylineCurveWire")]
 pub struct PolylineCurve {
-    samples: PolylineSamples,
+    samples: PolylineSamples<FiniteReal, FinitePoint3>,
     chordal_deflection: NonNegativeReal,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct PolylineCurveWire {
@@ -199,12 +202,20 @@ struct PolylineCurveWire {
     chordal_deflection: f64,
 }
 
-impl From<PolylineCurve> for PolylineCurveWire {
-    fn from(curve: PolylineCurve) -> Self {
-        Self {
-            samples: curve.samples,
-            chordal_deflection: curve.chordal_deflection.get(),
+/// The written form of a polyline, borrowing its admitted samples.
+#[derive(Serialize)]
+struct PolylineCurveWriteWire<'a> {
+    samples: &'a PolylineSamples<FiniteReal, FinitePoint3>,
+    chordal_deflection: NonNegativeReal,
+}
+
+impl Serialize for PolylineCurve {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PolylineCurveWriteWire {
+            samples: &self.samples,
+            chordal_deflection: self.chordal_deflection,
         }
+        .serialize(serializer)
     }
 }
 
@@ -216,7 +227,7 @@ impl TryFrom<PolylineCurveWire> for PolylineCurve {
     }
 }
 
-impl PolylineSamples {
+impl<R, P> PolylineSamples<R, P> {
     /// Number of samples. The sample list is nonempty by type.
     #[must_use]
     pub fn count(&self) -> usize {
@@ -225,9 +236,11 @@ impl PolylineSamples {
             Self::Parameterized { vertices } => vertices.len(),
         }
     }
+}
 
+impl<R: Copy, P: Copy> PolylineSamples<R, P> {
     /// Ordered model-space samples.
-    pub fn points(&self) -> impl Iterator<Item = Point3> + '_ {
+    pub fn points(&self) -> impl Iterator<Item = P> + '_ {
         let (points, vertices) = match self {
             Self::Unparameterized { points } => (Some(points), None),
             Self::Parameterized { vertices } => (None, Some(vertices)),
@@ -240,7 +253,7 @@ impl PolylineSamples {
     }
 
     /// Source parameters, absent when the source stated none.
-    pub fn parameters(&self) -> Option<impl Iterator<Item = f64> + '_> {
+    pub fn parameters(&self) -> Option<impl Iterator<Item = R> + '_> {
         match self {
             Self::Unparameterized { .. } => None,
             Self::Parameterized { vertices } => {
@@ -248,7 +261,9 @@ impl PolylineSamples {
             }
         }
     }
+}
 
+impl PolylineSamples {
     /// Edit each sample point, keeping the prior points on a refusal.
     ///
     /// The closure states its own refusal, which discards the whole edit.
@@ -272,6 +287,67 @@ impl PolylineSamples {
         *self = candidate;
         Ok(())
     }
+
+    /// The samples with admitted points, absent when a coordinate is not
+    /// finite.
+    fn admit_points(self) -> Option<PolylineSamples<f64, FinitePoint3>> {
+        Some(match self {
+            Self::Unparameterized { points } => PolylineSamples::Unparameterized {
+                points: points.try_map(FinitePoint3::new)?,
+            },
+            Self::Parameterized { vertices } => PolylineSamples::Parameterized {
+                vertices: vertices.try_map(|vertex| {
+                    Some(PolylineVertex {
+                        parameter: vertex.parameter,
+                        point: FinitePoint3::new(vertex.point)?,
+                    })
+                })?,
+            },
+        })
+    }
+}
+
+impl PolylineSamples<f64, FinitePoint3> {
+    /// The samples with admitted parameters, absent when a parameter is not
+    /// finite or the parameters are not strictly monotonic.
+    fn admit_parameters(self) -> Option<PolylineSamples<FiniteReal, FinitePoint3>> {
+        match self {
+            Self::Unparameterized { points } => Some(PolylineSamples::Unparameterized { points }),
+            Self::Parameterized { vertices } => {
+                let vertices = vertices.try_map(|vertex| {
+                    Some(PolylineVertex {
+                        parameter: FiniteReal::new(vertex.parameter)?,
+                        point: vertex.point,
+                    })
+                })?;
+                (vertices
+                    .windows(2)
+                    .all(|pair| pair[0].parameter < pair[1].parameter)
+                    || vertices
+                        .windows(2)
+                        .all(|pair| pair[0].parameter > pair[1].parameter))
+                .then_some(PolylineSamples::Parameterized { vertices })
+            }
+        }
+    }
+}
+
+impl PolylineSamples<FiniteReal, FinitePoint3> {
+    /// The samples with raw parameters and points.
+    #[must_use]
+    pub fn to_raw(&self) -> PolylineSamples {
+        match self {
+            Self::Unparameterized { points } => PolylineSamples::Unparameterized {
+                points: points.clone().map(FinitePoint3::get),
+            },
+            Self::Parameterized { vertices } => PolylineSamples::Parameterized {
+                vertices: vertices.clone().map(|vertex| PolylineVertex {
+                    parameter: vertex.parameter.get(),
+                    point: vertex.point.get(),
+                }),
+            },
+        }
+    }
 }
 
 impl PolylineCurve {
@@ -283,9 +359,9 @@ impl PolylineCurve {
         samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
-        Self::admit_sample_points(&samples)?;
+        let samples = Self::admit_sample_points(samples)?;
         let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
-        Self::admit_sample_parameters(&samples)?;
+        let samples = Self::admit_sample_parameters(samples)?;
         Ok(Self {
             samples,
             chordal_deflection,
@@ -293,36 +369,30 @@ impl PolylineCurve {
     }
 
     /// Admit at least two samples whose every coordinate is finite.
-    fn admit_sample_points(samples: &PolylineSamples) -> Result<(), GeometryLayoutError> {
+    fn admit_sample_points(
+        samples: PolylineSamples,
+    ) -> Result<PolylineSamples<f64, FinitePoint3>, GeometryLayoutError> {
         if samples.count() < 2 {
             return Err(geometry_layout_error(
                 "polyline must contain at least two points",
             ));
         }
-        if samples.points().any(|point| !point.is_finite()) {
-            return Err(geometry_layout_error("points must be finite"));
-        }
-        Ok(())
+        samples
+            .admit_points()
+            .ok_or_else(|| geometry_layout_error("points must be finite"))
     }
 
     /// Admit source parameters that are finite and strictly monotonic.
-    fn admit_sample_parameters(samples: &PolylineSamples) -> Result<(), GeometryLayoutError> {
-        if let Some(parameters) = samples.parameters() {
-            let parameters: Vec<f64> = parameters.collect();
-            if !parameters.iter().all(|value| value.is_finite())
-                || !(parameters.windows(2).all(|pair| pair[0] < pair[1])
-                    || parameters.windows(2).all(|pair| pair[0] > pair[1]))
-            {
-                return Err(geometry_layout_error(
-                    "parameters must be finite and strictly monotonic",
-                ));
-            }
-        }
-        Ok(())
+    fn admit_sample_parameters(
+        samples: PolylineSamples<f64, FinitePoint3>,
+    ) -> Result<PolylineSamples<FiniteReal, FinitePoint3>, GeometryLayoutError> {
+        samples.admit_parameters().ok_or_else(|| {
+            geometry_layout_error("parameters must be finite and strictly monotonic")
+        })
     }
 
-    /// Ordered model-space samples.
-    pub fn points(&self) -> impl Iterator<Item = Point3> + '_ {
+    /// Ordered admitted model-space samples.
+    pub fn points(&self) -> impl Iterator<Item = FinitePoint3> + '_ {
         self.samples.points()
     }
 
@@ -332,23 +402,21 @@ impl PolylineCurve {
         self.samples.count()
     }
 
-    /// Source parameters, absent when the source stated none.
-    pub fn parameters(&self) -> Option<impl Iterator<Item = f64> + '_> {
+    /// Admitted source parameters, absent when the source stated none.
+    pub fn parameters(&self) -> Option<impl Iterator<Item = FiniteReal> + '_> {
         self.samples.parameters()
     }
 
-    /// Edit the sample rows transactionally.
+    /// Edit the raw sample rows transactionally and admit the result.
     ///
     /// The closure states its own refusal, which discards the whole edit.
     pub fn edit_samples(
         &mut self,
         edit: impl FnOnce(&mut PolylineSamples) -> Result<(), GeometryLayoutError>,
     ) -> Result<(), GeometryLayoutError> {
-        let mut candidate = self.samples.clone();
+        let mut candidate = self.samples.to_raw();
         edit(&mut candidate)?;
-        Self::admit_sample_points(&candidate)?;
-        Self::admit_sample_parameters(&candidate)?;
-        self.samples = candidate;
+        self.samples = Self::admit_sample_parameters(Self::admit_sample_points(candidate)?)?;
         Ok(())
     }
 

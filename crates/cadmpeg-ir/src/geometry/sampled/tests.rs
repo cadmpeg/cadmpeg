@@ -205,3 +205,49 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
         polyline
     );
 }
+
+#[test]
+fn a_polyline_holds_its_admitted_samples() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use crate::scalar::FiniteReal;
+    let samples = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: 2.0,
+                point: Point3::new(0.0, 0.0, 0.0),
+            },
+            PolylineVertex {
+                parameter: 1.0,
+                point: Point3::new(1.0, 0.0, 0.0),
+            },
+        ]
+        .try_into()
+        .expect("nonempty polyline fixture"),
+    };
+    let mut polyline = PolylineCurve::new(samples.clone(), 0.0).unwrap();
+    assert_eq!(
+        polyline.points().collect::<Vec<_>>(),
+        [
+            FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+            FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+        ]
+    );
+    assert_eq!(
+        polyline
+            .parameters()
+            .map(|parameters| parameters.map(FiniteReal::get).collect::<Vec<_>>()),
+        Some(vec![2.0, 1.0])
+    );
+    // A refused edit keeps the admitted samples.
+    let error = polyline
+        .edit_samples(|samples| {
+            samples.edit_points(|point| {
+                point.x = f64::NAN;
+                Ok(())
+            })
+        })
+        .unwrap_err();
+    assert_eq!(error.to_string(), "points must be finite");
+    assert_eq!(polyline, PolylineCurve::new(samples, 0.0).unwrap());
+}

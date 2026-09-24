@@ -383,19 +383,25 @@ pub(in super::super) enum ProfileGeometry {
 impl ProfileGeometry {
     fn from_sketch(geometry: SketchGeometry) -> Option<Self> {
         Some(match geometry.into_definition() {
-            SketchGeometryDefinition::Line { start, end } => Self::Line { start, end },
+            SketchGeometryDefinition::Line { start, end } => Self::Line {
+                start: start.get(),
+                end: end.get(),
+            },
             SketchGeometryDefinition::Arc {
                 center,
                 radius,
                 start_angle,
                 end_angle,
             } => Self::Arc {
-                center,
-                radius,
+                center: center.get(),
+                radius: cadmpeg_ir::scalar::Length::from(radius),
                 start_angle,
                 end_angle,
             },
-            SketchGeometryDefinition::Circle { center, radius } => Self::Circle { center, radius },
+            SketchGeometryDefinition::Circle { center, radius } => Self::Circle {
+                center: center.get(),
+                radius: cadmpeg_ir::scalar::Length::from(radius),
+            },
             SketchGeometryDefinition::Nurbs { curve } => Self::Nurbs { curve },
             _ => return None,
         })

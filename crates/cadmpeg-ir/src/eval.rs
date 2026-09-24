@@ -7581,10 +7581,10 @@ fn offset_surface_second_partials(
 /// A sample row carries its own parameter, so the two lists this returns agree
 /// by construction. An unparameterized polyline evaluates on its sample index.
 fn polyline_samples(polyline: &PolylineCurve) -> (Vec<Point3>, Vec<f64>) {
-    let points: Vec<Point3> = polyline.points().collect();
+    let points: Vec<Point3> = polyline.points().map(FinitePoint3::get).collect();
     let parameters = polyline.parameters().map_or_else(
         || (0..points.len()).map(|index| index as f64).collect(),
-        Iterator::collect,
+        |parameters| parameters.map(FiniteReal::get).collect(),
     );
     (points, parameters)
 }

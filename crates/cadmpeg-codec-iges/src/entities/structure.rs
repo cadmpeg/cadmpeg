@@ -1553,7 +1553,8 @@ fn bounded_plane_curve_is_simple(
                 polyline.parameters().is_some_and(|mut parameters| {
                     let first = parameters.next();
                     let last = parameters.last().or(first);
-                    first == Some(range[0]) && last == Some(range[1])
+                    first.map(cadmpeg_ir::scalar::FiniteReal::get) == Some(range[0])
+                        && last.map(cadmpeg_ir::scalar::FiniteReal::get) == Some(range[1])
                 })
             });
             let points = polyline
@@ -1561,7 +1562,7 @@ fn bounded_plane_curve_is_simple(
                 .map(|point| {
                     context
                         .transform
-                        .apply_point(point)
+                        .apply_point(point.get())
                         .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
                 .collect::<Option<Vec<_>>>();

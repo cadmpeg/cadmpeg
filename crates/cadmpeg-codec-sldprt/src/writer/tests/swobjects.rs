@@ -675,7 +675,7 @@ fn encoder_writes_source_less_line_sketches() {
             })
             .unwrap();
         edit::replace(&mut point.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;

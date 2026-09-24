@@ -8653,7 +8653,7 @@ fn spatial_sketch_entity_endpoints(
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     match entity.geometry.definition() {
-        SpatialSketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        SpatialSketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
         SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
@@ -8662,6 +8662,8 @@ fn spatial_sketch_entity_endpoints(
             start_angle,
             end_angle,
         } => {
+            let normal = normal.as_raw();
+            let reference_direction = reference_direction.as_raw();
             let transverse = normal.cross(*reference_direction);
             let at = |angle: f64| {
                 center.translated(
@@ -8705,7 +8707,7 @@ pub(super) fn closed_spatial_sketch_profiles(
                 reference_direction,
                 ..
             } => Some(
-                SpatialSketchProfile::try_new(
+                SpatialSketchProfile::from_parts(
                     *center,
                     *normal,
                     *reference_direction,

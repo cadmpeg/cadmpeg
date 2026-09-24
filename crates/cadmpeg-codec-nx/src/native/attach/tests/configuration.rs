@@ -815,9 +815,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     assert_eq!(ir.model.sketches[0].id, sketch);
     assert!(matches!(
         *ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Point {
-            position: Point2 { u: 12.5, v: -3.0 }
-        }
+        SketchGeometryDefinition::Point { position }
+            if position == Point2 { u: 12.5, v: -3.0 }
     ));
 
     let mut rejected_ir = CadIr::empty();
@@ -916,9 +915,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
     );
     assert!(matches!(
         *ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Point {
-            position: Point2 { u: 12.5, v: -3.0 }
-        }
+        SketchGeometryDefinition::Point { position }
+            if position == Point2 { u: 12.5, v: -3.0 }
     ));
 }
 

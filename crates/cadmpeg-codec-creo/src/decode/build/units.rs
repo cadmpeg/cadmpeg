@@ -1091,11 +1091,24 @@ fn scale_radius_spec(
             scale_positive_length(offset_two, scale)?;
         }
         RadiusSpec::Variable { points } => {
-            let mut scaled = points.as_slice().to_vec();
-            for point in &mut scaled {
-                scale_length(&mut point.radius, scale)?;
-            }
-            *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(scaled)
+            // `scale` is finite and positive, so a scaled nonnegative radius
+            // stays nonnegative and is refused only when it is not finite.
+            let scaled = points
+                .as_slice()
+                .iter()
+                .map(|point| {
+                    Ok(cadmpeg_ir::features::edge_treatments::VariableRadius {
+                        parameter: point.parameter,
+                        radius: cadmpeg_ir::scalar::NonNegativeLength::new(
+                            point.radius.get() * scale,
+                        )
+                        .ok_or_else(|| {
+                            CodecError::Malformed("Creo scaled length must be finite".into())
+                        })?,
+                    })
+                })
+                .collect::<Result<Vec<_>, CodecError>>()?;
+            *points = cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(scaled)
                 .map_err(|message| CodecError::Malformed(message.into()))?;
         }
         RadiusSpec::Unresolved { .. } => {}
@@ -1794,7 +1807,7 @@ fn observe_pcurve_scale(
 }
 
 fn scale_sketch_geometry(geometry: &mut SketchGeometry, scale: f64) -> Result<(), CodecError> {
-    let mut definition = geometry.definition().clone();
+    let mut definition = geometry.definition().to_raw();
     match &mut definition {
         SketchGeometryDefinition::Point { position } => scale_point2(position, scale),
         SketchGeometryDefinition::Line { start, end } => {
@@ -1873,7 +1886,7 @@ fn scale_spatial_sketch_geometry(
     geometry: &mut SpatialSketchGeometry,
     scale: f64,
 ) -> Result<(), CodecError> {
-    let mut definition = geometry.definition().clone();
+    let mut definition = geometry.definition().to_raw();
     match &mut definition {
         SpatialSketchGeometryDefinition::Point { position } => scale_point3(position, scale),
         SpatialSketchGeometryDefinition::Line { start, end } => {
@@ -1973,7 +1986,7 @@ mod tests {
         .expect("valid finite regression fixture");
         super::scale_sketch_geometry(&mut geometry, 10.).expect("valid finite regression fixture");
         assert!(
-            matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some([10.,20.]),focal_length,..} if focal_length.get()==20.)
+            matches!(geometry.definition(),SketchGeometryDefinition::Parabola{bounds:Some(bounds),focal_length,..} if cadmpeg_ir::scalar::FiniteReal::raw_array(*bounds) == [10., 20.] && focal_length.get()==20.)
         );
     }
 

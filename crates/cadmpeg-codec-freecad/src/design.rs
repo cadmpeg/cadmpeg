@@ -3236,7 +3236,7 @@ fn endpoint_point(endpoint: (usize, bool), entities: &[SketchEntity]) -> Option<
 
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
     match *entity.geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some((start, end)),
+        SketchGeometryDefinition::Line { start, end } => Some((start.get(), end.get())),
         SketchGeometryDefinition::Arc {
             center,
             radius,

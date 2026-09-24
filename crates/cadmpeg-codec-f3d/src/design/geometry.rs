@@ -107,7 +107,7 @@ fn sketch_arrangement_faces(
     for use_ in candidate_uses {
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
-            circles.push((use_, center, radius));
+            circles.push((use_, center.get(), radius));
             continue;
         }
         let range = sketch_geometry_parameter_range(&entity.geometry)?;
@@ -496,7 +496,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     };
     let (center, radius) = match *arc_entity.geometry.definition() {
         SketchGeometryDefinition::Circle { center, radius }
-        | SketchGeometryDefinition::Arc { center, radius, .. } => (center, radius.get()),
+        | SketchGeometryDefinition::Arc { center, radius, .. } => (center.get(), radius.get()),
         _ => return false,
     };
     let SketchGeometryDefinition::Nurbs { curve } = nurbs_entity.geometry.definition() else {
@@ -576,6 +576,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     let SketchGeometryDefinition::Line { start, end } = *line_entity.geometry.definition() else {
         return false;
     };
+    let (start, end) = (start.get(), end.get());
     let SketchGeometryDefinition::Nurbs { curve } = nurbs_entity.geometry.definition() else {
         return false;
     };
@@ -762,16 +763,19 @@ fn arrangement_split_parameters(
     let mut parameters = vec![range[0], range[1]];
     match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {
-            if point_distance(*start, *end) <= tolerance {
+            if point_distance(start.get(), end.get()) <= tolerance {
                 return None;
             }
             for point in nodes {
-                let parameter =
-                    cadmpeg_ir::math::planar::line_projection_parameter(*start, *end, *point)?
-                        .get();
+                let parameter = cadmpeg_ir::math::planar::line_projection_parameter(
+                    start.get(),
+                    end.get(),
+                    *point,
+                )?
+                .get();
                 if parameter > 0.0
                     && parameter < 1.0
-                    && point_segment_distance(*point, (*start, *end)) <= tolerance
+                    && point_segment_distance(*point, (start.get(), end.get())) <= tolerance
                 {
                     parameters.push(parameter);
                 }
@@ -779,7 +783,7 @@ fn arrangement_split_parameters(
         }
         SketchGeometryDefinition::Arc { center, radius, .. } => {
             for point in nodes {
-                if (point_distance(*point, *center) - radius.get()).abs() > tolerance {
+                if (point_distance(*point, center.get()) - radius.get()).abs() > tolerance {
                     continue;
                 }
                 let angle = (point.v - center.v).atan2(point.u - center.u);
@@ -949,7 +953,7 @@ fn arrangement_edges_coincident(
                 ..
             },
         ) => {
-            point_distance(*left_center, *right_center) <= tolerance
+            point_distance(left_center.get(), right_center.get()) <= tolerance
                 && (left_radius.get() - right_radius.get()).abs() <= tolerance
                 && ((left.boundary.parameter_range.endpoints()[1]
                     - left.boundary.parameter_range.endpoints()[0])
@@ -1045,7 +1049,7 @@ fn arrangement_edge_tubes(
         }]),
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => certified_arc_tubes(
-            *center,
+            center.get(),
             radius.get(),
             edge.boundary.parameter_range.endpoints()[0],
             edge.boundary.parameter_range.endpoints()[1],
@@ -1079,7 +1083,7 @@ fn arrangement_analytic_segment(
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => {
             Some(ProfileBoundarySegment::Arc {
-                center: *center,
+                center: center.get(),
                 radius: radius.get(),
                 start_angle: edge.boundary.parameter_range.endpoints()[0],
                 end_angle: edge.boundary.parameter_range.endpoints()[1],
@@ -1153,7 +1157,9 @@ fn sketch_geometry_speed_bound(
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     match geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some(point_distance(*start, *end)),
+        SketchGeometryDefinition::Line { start, end } => {
+            Some(point_distance(start.get(), end.get()))
+        }
         SketchGeometryDefinition::Circle { radius, .. }
         | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
         SketchGeometryDefinition::Ellipse {
@@ -1606,7 +1612,7 @@ fn profile_boundary(
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             return Some(ProfileBoundary::Circle {
-                center,
+                center: center.get(),
                 radius: radius.get(),
             });
         }
@@ -1646,8 +1652,8 @@ fn certified_profile_loop(
         let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
         let mut entity_tubes = match entity.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => vec![CertifiedCurveTube {
-                start: *start,
-                end: *end,
+                start: start.get(),
+                end: end.get(),
                 error: 0.0,
             }],
             SketchGeometryDefinition::Arc {
@@ -1656,7 +1662,7 @@ fn certified_profile_loop(
                 start_angle,
                 end_angle,
             } => certified_arc_tubes(
-                *center,
+                center.get(),
                 radius.get(),
                 start_angle.get(),
                 end_angle.get(),
@@ -1855,7 +1861,10 @@ fn circular_arc_profile_segments(
                 } else {
                     [start, end]
                 };
-                ProfileBoundarySegment::Line { start, end }
+                ProfileBoundarySegment::Line {
+                    start: start.get(),
+                    end: end.get(),
+                }
             }
             SketchGeometryDefinition::Arc {
                 center,
@@ -1869,7 +1878,7 @@ fn circular_arc_profile_segments(
                     (start_angle.get(), end_angle.get())
                 };
                 ProfileBoundarySegment::Arc {
-                    center,
+                    center: center.get(),
                     radius: radius.get(),
                     start_angle,
                     end_angle,
@@ -1904,6 +1913,7 @@ fn line_profile_vertices(
         let SketchGeometryDefinition::Line { start, end } = *entity.geometry.definition() else {
             return None;
         };
+        let (start, end) = (start.get(), end.get());
         let [start, end] = if use_.reversed {
             [end, start]
         } else {
@@ -2459,7 +2469,7 @@ pub(super) fn point_on_sketch_entity(
             let dy = end.v - start.v;
             let length_squared = dx * dx + dy * dy;
             if length_squared == 0.0 {
-                return point_distance(point, *start) <= tolerance;
+                return point_distance(point, start.get()) <= tolerance;
             }
             let t = ((point.u - start.u) * dx + (point.v - start.v) * dy) / length_squared;
             if !(-tolerance..=1.0 + tolerance).contains(&t) {
@@ -2468,7 +2478,7 @@ pub(super) fn point_on_sketch_entity(
             point_distance(point, Point2::new(start.u + t * dx, start.v + t * dy)) <= tolerance
         }
         SketchGeometryDefinition::Circle { center, radius } => {
-            (point_distance(point, *center) - radius.get()).abs() <= tolerance
+            (point_distance(point, center.get()) - radius.get()).abs() <= tolerance
         }
         SketchGeometryDefinition::Arc {
             center,
@@ -2476,7 +2486,7 @@ pub(super) fn point_on_sketch_entity(
             start_angle,
             end_angle,
         } => {
-            let radial_error = (point_distance(point, *center) - radius.get()).abs();
+            let radial_error = (point_distance(point, center.get()) - radius.get()).abs();
             if radial_error > tolerance {
                 return false;
             }
@@ -2494,7 +2504,7 @@ pub(super) fn point_on_sketch_entity(
             major_radius,
             minor_radius,
             bounds,
-        } if major_radius.get() > 0.0 && minor_radius.get() > 0.0 => {
+        } => {
             let du = point.u - center.u;
             let dv = point.v - center.v;
             let cosine = major_angle.get().cos();
@@ -3025,7 +3035,11 @@ fn tangent_nested_line_profile(
                 .0;
             match *entity.geometry.definition() {
                 cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
-                    Some(if use_.reversed { end } else { start })
+                    Some(if use_.reversed {
+                        end.get()
+                    } else {
+                        start.get()
+                    })
                 }
                 _ => None,
             }
@@ -3042,7 +3056,7 @@ pub(super) fn sketch_entity_endpoints(
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     match entity.geometry.definition() {
-        SketchGeometryDefinition::Line { start, end } => Some([*start, *end]),
+        SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Arc {
             center,
             radius,

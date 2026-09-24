@@ -1332,7 +1332,11 @@ fn spatial_polyline_profile_containing_points(
                 else {
                     return None;
                 };
-                Some(project(if use_.reversed { *end } else { *start }))
+                Some(project(if use_.reversed {
+                    end.get()
+                } else {
+                    start.get()
+                }))
             })
             .collect::<Option<Vec<_>>>()?;
         if polygon.len() >= 3
@@ -2186,7 +2190,11 @@ fn coincident_spatial_profile_geometry(
         first_center.y - second_center.y,
         first_center.z - second_center.z,
     );
-    let Some((first_normal, second_normal)) = first_normal.unit().zip(second_normal.unit()) else {
+    let Some((first_normal, second_normal)) = first_normal
+        .as_raw()
+        .unit()
+        .zip(second_normal.as_raw().unit())
+    else {
         return false;
     };
     let normal_angle = first_normal

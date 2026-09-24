@@ -1546,7 +1546,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
             edges: EdgeSelection::Unresolved,
             radius: RadiusSpec::Variable { points }, ..
-        }] if points.as_slice() == [
+        }] if points.as_slice().iter().map(VariableRadius::to_raw).collect::<Vec<_>>() == [
             VariableRadius { parameter: 0.0, radius: Length::new(2.0).unwrap() },
             VariableRadius { parameter: 0.5, radius: Length::new(4.0).unwrap() },
             VariableRadius { parameter: 1.0, radius: Length::new(3.0).unwrap() },
@@ -1564,7 +1564,11 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         let RadiusSpec::Variable { points } = &mut groups[0].radius else {
             panic!("variable fillet radius")
         };
-        let mut samples = points.as_slice().to_vec();
+        let mut samples = points
+            .as_slice()
+            .iter()
+            .map(VariableRadius::to_raw)
+            .collect::<Vec<_>>();
         samples[1].parameter = 0.4;
         samples[1].radius = Length::new(5.0).unwrap();
         *points = cadmpeg_ir::features::edge_treatments::VariableRadii::new(samples).unwrap();

@@ -9,7 +9,7 @@ use cadmpeg_ir::{
         AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
         FeatureDefinition, FeatureOperation, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, Fraction, Length, NonNegativeLength},
 };
 
 use crate::history::classify::{indexed_name, is_fillet};
@@ -57,11 +57,11 @@ pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     .parse::<f64>()
                     .ok()?;
                 let radius = parse_positive_length_mm(radius)?;
-                (parameter.is_finite() && (0.0..=1.0).contains(&parameter)).then_some((
+                Some((
                     index,
                     VariableRadius {
-                        parameter,
-                        radius: Length::new(radius)?,
+                        parameter: Fraction::new(parameter)?,
+                        radius: NonNegativeLength::new(radius)?,
                     },
                 ))
             })
@@ -77,7 +77,7 @@ pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                 .then_some(points)
             })
             .and_then(|points| {
-                cadmpeg_ir::features::edge_treatments::VariableRadii::new(
+                cadmpeg_ir::features::edge_treatments::VariableRadii::from_parts(
                     points.into_iter().map(|(_, point)| point).collect(),
                 )
                 .ok()

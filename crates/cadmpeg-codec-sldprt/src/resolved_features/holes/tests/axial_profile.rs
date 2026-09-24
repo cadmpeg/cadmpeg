@@ -84,7 +84,7 @@ fn axial_profile_resolves_counterbore_roles() {
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -112,7 +112,7 @@ fn axial_profile_resolves_counterbore_roles() {
     let mut independently_translated_entities = entities.clone();
     for (ordinal, entity) in independently_translated_entities.iter_mut().enumerate() {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -222,7 +222,7 @@ fn axial_profile_resolves_counterdrill_roles() {
     let mut translated = entities.clone();
     for entity in &mut translated {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -528,7 +528,7 @@ fn axial_profile_resolves_countersink_and_drill_point_roles() {
     let mut translated_entities = entities.clone();
     for entity in &mut translated_entities {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -620,7 +620,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
         let mut translated_entities = exact_entities;
         for entity in &mut translated_entities {
             edit::replace(&mut entity.geometry, |previous| {
-                let mut definition = previous.definition().clone();
+                let mut definition = previous.definition().to_raw();
                 {
                     let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                         &mut definition;
@@ -649,7 +649,7 @@ fn axial_profile_resolves_open_countersink_with_optional_terminal_overrun() {
     let mut independently_translated = entities(-6.0, false);
     for (index, entity) in independently_translated.iter_mut().enumerate() {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;

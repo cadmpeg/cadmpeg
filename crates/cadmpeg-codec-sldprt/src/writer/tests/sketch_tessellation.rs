@@ -164,7 +164,7 @@ fn semantic_writer_applies_line_sketch_edits() {
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -224,7 +224,7 @@ fn semantic_writer_applies_compressed_line_sketch_edits() {
     let point_ref = decoded.ir().model.sketch_entities[0].endpoint_refs[0].clone();
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -297,7 +297,7 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -340,7 +340,7 @@ fn semantic_writer_applies_circle_sketch_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -369,9 +369,9 @@ fn semantic_writer_applies_circle_sketch_edits() {
     assert!(matches!(
         (regenerated.ir().model.sketch_entities[0].geometry).definition(),
         SketchGeometryDefinition::Circle {
-            center: cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 },
+            center,
             radius: actual_radius,
-        } if actual_radius.get() == 750.0
+        } if *center == cadmpeg_ir::math::Point2 { u: 250.0, v: 0.0 } && actual_radius.get() == 750.0
     ));
 }
 
@@ -390,7 +390,7 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         edit::replace(&mut ir_edit.model.sketch_entities[0].geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -428,12 +428,13 @@ fn semantic_writer_applies_ellipse_sketch_edits() {
     assert!(matches!(
         regenerated.ir().model.sketch_entities[0].geometry.definition(),
         SketchGeometryDefinition::Ellipse {
-            center: cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 },
+            center,
             major_angle: angle,
             major_radius: actual_major_radius,
             minor_radius: actual_minor_radius,
             bounds: None,
-        } if ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
+        } if *center == cadmpeg_ir::math::Point2 { u: 0.0, v: 125.0 }
+            && ((angle.get() - 0.25).abs() < EPS_SKETCH_ANGLE) && actual_major_radius.get() == 1500.0 && actual_minor_radius.get() == 500.0
     ));
 }
 
@@ -463,7 +464,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
             })
             .expect("arc sketch entity");
         edit::replace(&mut arc.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             {
                 let definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition =
                     &mut definition;
@@ -492,7 +493,7 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
         ];
         for entity in &mut ir_edit.model.sketch_entities {
             edit::replace(&mut entity.geometry, |previous| {
-                let mut definition = previous.definition().clone();
+                let mut definition = previous.definition().to_raw();
                 (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                     let SketchGeometryDefinition::Line { start, end } = definition else {
                         return;
@@ -525,11 +526,12 @@ fn semantic_writer_applies_bounded_arc_sketch_edits() {
     assert!(regenerated.ir().model.sketch_entities.iter().any(
         |entity| matches!(*entity.geometry.definition(),
             SketchGeometryDefinition::Arc {
-                center: cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 },
+                center,
                 radius: actual_radius,
                 start_angle: start,
                 end_angle: end,
-            } if ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && actual_radius.get() == 800.0
+            } if center == cadmpeg_ir::math::Point2 { u: 100.0, v: 0.0 }
+                && ((start.get() - 0.25).abs() < EPS_SKETCH_ANGLE && (end.get() - 1.25).abs() < EPS_SKETCH_ANGLE) && actual_radius.get() == 800.0
         )));
 }
 
@@ -546,7 +548,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
     let mut decoded = EditableDecodeResult::from(decoded);
     for entity in &mut decoded.ir_mut().model.sketch_entities {
         edit::replace(&mut entity.geometry, |previous| {
-            let mut definition = previous.definition().clone();
+            let mut definition = previous.definition().to_raw();
             (|definition: &mut cadmpeg_ir::sketches::SketchGeometryDefinition| {
                 let SketchGeometryDefinition::Nurbs { curve } = definition else {
                     return;
