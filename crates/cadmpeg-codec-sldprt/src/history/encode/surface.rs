@@ -399,7 +399,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance.into()),
+                format_length_mm(distance),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);

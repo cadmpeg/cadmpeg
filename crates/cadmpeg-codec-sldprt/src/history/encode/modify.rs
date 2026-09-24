@@ -683,7 +683,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(rotation) => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("RotationOrigin"),
-                        format_point3_mm(rotation.origin.into()),
+                        format_point3_mm(rotation.origin),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("RotationAxis"),
@@ -691,7 +691,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Rotation"),
-                        format_angle_rad(rotation.angle.into()),
+                        format_angle_rad(rotation.angle),
                     );
                 }
                 None => {
