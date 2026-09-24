@@ -34,18 +34,18 @@ use super::native::annotate;
 /// Builds the apex cone the positional and legacy carrier routes all state.
 ///
 /// The apex is the frame origin, the radius there is zero and the ratio is one, so the half
-/// angle alone states the taper. A non-finite half angle states no cone.
+/// angle alone states the taper.
 fn apex_cone(
     frame: &crate::surface::PositionalFrame,
-    half_angle: f64,
-) -> Option<cadmpeg_ir::geometry::analytic::ConeSurface> {
-    Some(cadmpeg_ir::geometry::analytic::ConeSurface::new(
+    half_angle: crate::surface::ApexConeHalfAngle,
+) -> cadmpeg_ir::geometry::analytic::ConeSurface {
+    cadmpeg_ir::geometry::analytic::ConeSurface::new(
         frame.finite_origin(),
         frame.orthonormal_frame(),
         cadmpeg_ir::scalar::NonNegativeLength::ZERO,
         cadmpeg_ir::scalar::PositiveReal::ONE,
-        cadmpeg_ir::scalar::Angle::new(half_angle)?,
-    ))
+        half_angle.get().into(),
+    )
 }
 
 /// Resolve the IR surface identity for a native topology surface identifier.

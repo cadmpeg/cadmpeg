@@ -30,8 +30,8 @@ pub(crate) struct DesignOffsetFacesOperation {
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignShellOperation {
-    /// Positive wall thickness in source centimetres.
-    pub(crate) thickness: f64,
+    /// Wall thickness in source centimetres.
+    pub(crate) thickness: cadmpeg_ir::scalar::PositiveReal,
     /// Referenced scalar record.
     pub(crate) thickness_record_index: u32,
     /// Byte offset of the scalar.

@@ -58,7 +58,6 @@ pub(super) fn exact_assembly_alignment(
         .filter(|owner| {
             native_stream(owner.id()) == Some(stream)
                 && owner.scope_record_index() == scope.record_index
-                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
     lanes.sort_by_key(|owner| owner.local_ordinal());
@@ -122,16 +121,16 @@ pub(super) fn exact_assembly_alignment(
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
-                angle.evaluated_value(),
+                angle.evaluated_value().get(),
                 [
-                    offset_x.evaluated_value(),
-                    offset_y.evaluated_value(),
-                    offset_z.evaluated_value(),
+                    offset_x.evaluated_value().get(),
+                    offset_y.evaluated_value().get(),
+                    offset_z.evaluated_value().get(),
                 ],
             ),
             [angle, axial_offset] => (
-                angle.evaluated_value(),
-                [0.0, 0.0, axial_offset.evaluated_value()],
+                angle.evaluated_value().get(),
+                [0.0, 0.0, axial_offset.evaluated_value().get()],
             ),
             _ => return None,
         };

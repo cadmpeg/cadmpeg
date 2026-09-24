@@ -61,7 +61,7 @@ fn lane(feature: &str, marker: &str, relation: &str) -> FeatureInputLane {
                 SketchInputKind::LineOrCircle,
             );
             constructed_marker.feature_ref = Some(feature.into());
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker

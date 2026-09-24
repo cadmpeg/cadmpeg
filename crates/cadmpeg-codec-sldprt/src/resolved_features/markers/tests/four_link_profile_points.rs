@@ -110,7 +110,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         );
         constructed_marker.feature_ref = Some("profile".into());
         constructed_marker = constructed_marker.with_test_identity(Some(20), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -121,7 +121,7 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("profile".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

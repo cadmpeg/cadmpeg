@@ -393,7 +393,7 @@ fn scan_discovers_complete_active_datum_cylinder_carrier() {
     assert_eq!(cylinder.frame.frame().origin(), [-12.5, 4.0, 0.0]);
     assert_eq!(cylinder.frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(cylinder.frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-    assert_eq!(cylinder.frame.radius(), 0.75);
+    assert_eq!(cylinder.frame.radius().get(), 0.75);
     assert_eq!(cylinder.frame.length().map(PositiveLength::get), Some(34.0));
 }
 
@@ -488,7 +488,7 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
         assert_eq!(cylinder.frame.frame().origin(), origin);
         assert_eq!(cylinder.frame.frame().axis(), axis);
         assert_eq!(cylinder.frame.frame().ref_direction(), ref_direction);
-        assert_eq!(cylinder.frame.radius(), radius);
+        assert_eq!(cylinder.frame.radius().get(), radius);
         assert_eq!(
             cylinder.frame.length().map(PositiveLength::get),
             Some(length)

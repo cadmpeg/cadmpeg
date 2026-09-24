@@ -1246,7 +1246,7 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
     (id != u32::MAX).then_some(id)
 }
 
-fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
+fn marker_state_value(payload: &[u8], offset: usize) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     if compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some() {
         return None;
     }
@@ -1256,8 +1256,7 @@ fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
         48
     };
     let offset = offset.checked_add(relative)?;
-    let value = View::f64_le_at(payload, offset)?;
-    value.is_finite().then_some(value)
+    cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(payload, offset)?)
 }
 
 pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2]> {

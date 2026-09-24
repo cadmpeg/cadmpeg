@@ -4,6 +4,7 @@ use crate::scalar;
 use crate::surface::decode_positional_cone_frame;
 use crate::surface::prototype_cone_frame;
 use crate::surface::terminal_cone_half_angle_layout;
+use crate::surface::ApexConeHalfAngle;
 use crate::surface::PositionalConeFrame;
 use crate::surface::SurfaceNamedParameter;
 use crate::surface::SurfaceNamedValue;
@@ -18,7 +19,7 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
         [0.0, 1.0, 2.0],
         [0.0, 1.0, 0.0],
         [1.0, 0.0, 0.0],
-        std::f64::consts::FRAC_PI_4,
+        ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4).expect("apex cone half angle"),
     )
     .expect("valid positional cone frame");
 
@@ -34,13 +35,7 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
     )
     .is_none());
 
-    assert!(PositionalConeFrame::new(
-        valid.frame().origin(),
-        valid.frame().axis(),
-        valid.frame().ref_direction(),
-        0.0
-    )
-    .is_none());
+    assert!(ApexConeHalfAngle::new(0.0).is_none());
 
     assert!(PositionalConeFrame::new(
         valid.frame().origin(),
@@ -58,13 +53,7 @@ fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
     )
     .is_none());
 
-    assert!(PositionalConeFrame::new(
-        valid.frame().origin(),
-        valid.frame().axis(),
-        valid.frame().ref_direction(),
-        std::f64::consts::FRAC_PI_2
-    )
-    .is_none());
+    assert!(ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_2).is_none());
 }
 
 #[test]
@@ -82,7 +71,7 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
     assert_eq!(frame.frame().origin(), [37.01, 0.0, 0.0]);
     assert_eq!(frame.frame().axis(), [-1.0, -0.0, -0.0]);
     assert_eq!(frame.frame().ref_direction(), [-0.0, -0.0, -1.0]);
-    assert!((frame.half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
+    assert!((frame.half_angle.get().get() - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
 
     let angle = terminal_cone_half_angle_layout(&body).expect("terminal half-angle");
     let mut local_system_body = vec![0xf9, 0x04, 0x03];
@@ -99,7 +88,7 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
             },
             SurfaceNamedParameter {
                 name: "half_angle".to_string(),
-                value: SurfaceNamedValue::ScalarSequence(vec![angle.value]),
+                value: SurfaceNamedValue::ScalarSequence(vec![angle.value.get().get()]),
                 body: body[angle.start..].to_vec(),
                 offset: 0,
                 value_offset: 0,
@@ -134,7 +123,7 @@ fn positional_cone_frame_decodes_complete_planar_envelopes() {
         assert_eq!(frame.frame().origin()[2], 0.0);
         assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
         assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-        assert!((frame.half_angle - 0.636_540_466_818_335).abs() < 1.0e-12);
+        assert!((frame.half_angle.get().get() - 0.636_540_466_818_335).abs() < 1.0e-12);
     }
 
     let mut inconsistent = unreferenced;

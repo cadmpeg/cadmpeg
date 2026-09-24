@@ -137,7 +137,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
                 SketchInputEntity::new(marker_id, marker_parent, 0, 370, SketchInputKind::Point);
             constructed_marker.feature_ref = None;
             constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.0, 0.0]);
             constructed_marker.links = None;
             constructed_marker
@@ -678,7 +678,7 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("profile".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -854,7 +854,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = None;
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

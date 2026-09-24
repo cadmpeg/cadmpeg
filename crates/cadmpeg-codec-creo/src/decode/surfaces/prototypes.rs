@@ -403,10 +403,10 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let Some(frame) = crate::surface::prototype_cone_frame(record) else {
                     continue;
                 };
-                let Some(cone) = super::apex_cone(frame.frame(), frame.half_angle()) else {
-                    continue;
-                };
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(super::apex_cone(
+                    frame.frame(),
+                    frame.half_angle(),
+                )))
             }
             SupportedPrototype::Spline(_) => {
                 let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -647,56 +647,39 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             crate::legacy_geometry::LegacySurfaceGeometry::Cylinder { frame, radius }
                 if row.kind == crate::surface::SurfaceKind::Cylinder =>
             {
-                let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(*radius) else {
-                    continue;
-                };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                     cadmpeg_ir::geometry::analytic::CylinderSurface::new(
                         frame.finite_origin(),
                         frame.orthonormal_frame(),
-                        radius,
+                        *radius,
                     ),
                 ))
             }
             crate::legacy_geometry::LegacySurfaceGeometry::Cone {
                 frame, half_angle, ..
-            } if row.kind == crate::surface::SurfaceKind::Cone => {
-                let Some(cone) = super::apex_cone(frame, *half_angle) else {
-                    continue;
-                };
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone))
-            }
+            } if row.kind == crate::surface::SurfaceKind::Cone => SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Cone(super::apex_cone(frame, *half_angle)),
+            ),
             crate::legacy_geometry::LegacySurfaceGeometry::Torus {
                 frame,
                 major_radius,
                 minor_radius,
-            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
-                let (Some(major_radius), Some(minor_radius)) = (
-                    cadmpeg_ir::scalar::PositiveLength::new(*major_radius),
-                    cadmpeg_ir::scalar::NonZeroLength::new(*minor_radius),
-                ) else {
-                    continue;
-                };
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::new(
-                        frame.finite_origin(),
-                        frame.orthonormal_frame(),
-                        major_radius,
-                        minor_radius,
-                    ),
-                ))
-            }
+            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => SurfaceGeometry::Solved(
+                SolvedSurfaceGeometry::Torus(cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    frame.finite_origin(),
+                    frame.orthonormal_frame(),
+                    *major_radius,
+                    (*minor_radius).into(),
+                )),
+            ),
             crate::legacy_geometry::LegacySurfaceGeometry::Sphere { frame, radius }
                 if row.kind == crate::surface::SurfaceKind::TorusOrSphere =>
             {
-                let Some(radius) = cadmpeg_ir::scalar::NonZeroLength::new(*radius) else {
-                    continue;
-                };
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                     cadmpeg_ir::geometry::analytic::SphereSurface::new(
                         frame.finite_origin(),
                         frame.orthonormal_frame(),
-                        radius,
+                        (*radius).into(),
                     ),
                 ))
             }

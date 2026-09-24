@@ -49,7 +49,6 @@ pub(super) fn exact_draft_operation_with_owners(
                         && owner.scope_record_index() == scope.record_index
                         && scope_stream
                             .is_none_or(|stream| native_stream(owner.id()) == Some(stream))
-                        && owner.evaluated_value().is_finite()
                 })
                 .collect::<Vec<_>>();
             let [owner] = owners.as_slice() else {
@@ -58,7 +57,7 @@ pub(super) fn exact_draft_operation_with_owners(
             Some((
                 *record_index,
                 owner.local_ordinal(),
-                owner.evaluated_value(),
+                owner.evaluated_value().get(),
                 owner.evaluated_value_offset(),
             ))
         })

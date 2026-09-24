@@ -3362,7 +3362,7 @@ fn attach_feature_operations(
                     dimensions
                         .dimensions
                         .each_ref()
-                        .map(|dimension| dimension.value)
+                        .map(|dimension| dimension.value.get())
                 });
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
@@ -4201,12 +4201,7 @@ fn attach_sketch_graph(
     let mut entities = Vec::new();
     let mut represented_groups = BTreeSet::new();
     for group in operation_groups {
-        if !represented_groups.insert(group.id.as_str())
-            || group
-                .coordinates
-                .iter()
-                .any(|coordinate| !coordinate.is_finite())
-        {
+        if !represented_groups.insert(group.id.as_str()) {
             return None;
         }
         let point_use = point_uses_by_group.get(group.id.as_str()).copied();
@@ -5871,7 +5866,7 @@ fn block_placement(
     let angular_tolerance = ir.tolerances.angular.get();
     if dimensions
         .iter()
-        .any(|dimension| !dimension.is_finite() || *dimension <= linear_tolerance)
+        .any(|dimension| *dimension <= linear_tolerance)
     {
         return None;
     }

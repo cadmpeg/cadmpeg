@@ -471,7 +471,7 @@ pub(super) fn encode_document_parameters(
             out.extend_from_slice(&0u32.to_le_bytes());
         }
         native_lp_utf16(&mut out, parameter.name())?;
-        out.extend_from_slice(&parameter.evaluated_value().to_le_bytes());
+        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
         out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
     Ok(out)

@@ -853,8 +853,8 @@ fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(
 pub(crate) struct DesignEdgeTreatmentRadiusCandidate {
     /// Deleted stable edge slot shared by the preceding support faces.
     pub(crate) edge_slot: i64,
-    /// Positive characteristic radius of the inserted treatment carrier.
-    pub(crate) radius: f64,
+    /// Characteristic radius of the inserted treatment carrier.
+    pub(crate) radius: cadmpeg_ir::scalar::PositiveReal,
 }
 
 cadmpeg_core::named_optional_field!(pub(super) deserialize_resolved_edge_slot, i64, "resolved_edge_slot");

@@ -103,7 +103,8 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
                 value: [1.25, -2.5, 3.75],
                 offset: 40,
             }),
-            uniform_factor: 2.5,
+            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
+                .expect("checked fixture value"),
             uniform_factor_offset: 20,
         });
     }

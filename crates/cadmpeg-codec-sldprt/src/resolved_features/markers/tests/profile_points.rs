@@ -81,7 +81,7 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
         );
         constructed_marker.feature_ref = Some("profile".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

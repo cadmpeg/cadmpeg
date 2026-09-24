@@ -2246,8 +2246,8 @@ pub(super) struct FeatureSketchPoint {
     pub(super) name: String,
     /// Ordered scalar fields carrying the two coordinates.
     pub(super) scalar_fields: [String; 2],
-    /// Ordered finite native coordinate values.
-    pub(super) coordinates: [f64; 2],
+    /// Ordered native coordinate values.
+    pub(super) coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
 /// Complete named scaled shifted-binary64 record in a reconstructed sketch payload.
@@ -2281,7 +2281,7 @@ pub(super) struct FeatureSketchPointGroup {
     /// Identical point records in payload order.
     pub(super) points: Vec<String>,
     /// Bit-identical ordered coordinate values.
-    pub(super) coordinates: [f64; 2],
+    pub(super) coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
 /// Named two-scalar point object spanning consecutive offset-store blocks.
@@ -3394,8 +3394,8 @@ pub(super) struct FeatureBlockPayloadPoint {
     name: String,
     /// Ordered scalar fields carrying the two coordinates.
     scalar_fields: [String; 2],
-    /// Ordered finite native coordinate values.
-    coordinates: [f64; 2],
+    /// Ordered native coordinate values.
+    coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
 /// Exact same-name point identity within one reconstructed `BLOCK` payload.
@@ -3410,7 +3410,7 @@ pub(super) struct FeatureBlockPayloadPointGroup {
     /// Identical point records in payload order.
     points: Vec<String>,
     /// Bit-identical ordered coordinate values.
-    coordinates: [f64; 2],
+    coordinates: cadmpeg_ir::units::FiniteVector<2>,
 }
 
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
@@ -3431,7 +3431,7 @@ pub(super) struct FeatureBlockDimensions {
 pub(super) struct FeatureBlockDimension {
     pub(super) declaration: String,
     pub(super) expression: String,
-    pub(super) value: f64,
+    pub(super) value: cadmpeg_ir::scalar::FiniteReal,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3448,8 +3448,8 @@ struct FeatureBlockDimensionsWire {
     declarations: [String; 3],
     /// Ordered exact numeric expression records.
     expressions: [String; 3],
-    /// Ordered finite dimensions in model millimeters.
-    values: [f64; 3],
+    /// Ordered dimensions in model millimeters.
+    values: [cadmpeg_ir::scalar::FiniteReal; 3],
 }
 
 impl From<FeatureBlockDimensions> for FeatureBlockDimensionsWire {
@@ -6000,7 +6000,10 @@ pub(super) fn feature_sketch_points(
                 named_record: record.id.clone(),
                 name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: [first.scalar.value(), second.scalar.value()],
+                coordinates: cadmpeg_ir::units::FiniteVector::new([
+                    first.scalar.value(),
+                    second.scalar.value(),
+                ])?,
             })
         })
         .collect()
@@ -7799,7 +7802,10 @@ pub(super) fn feature_block_payload_points(
                 named_record: record.id.clone(),
                 name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                coordinates: [first.scalar.value(), second.scalar.value()],
+                coordinates: cadmpeg_ir::units::FiniteVector::new([
+                    first.scalar.value(),
+                    second.scalar.value(),
+                ])?,
             })
         })
         .collect()
@@ -7889,7 +7895,7 @@ pub(super) fn feature_block_dimensions(
             }) {
                 return None;
             }
-            let resolved: [(&Expression, f64); 3] = run
+            let resolved: [(&Expression, cadmpeg_ir::scalar::FiniteReal); 3] = run
                 .iter()
                 .map(|declaration| {
                     let mut matches = expressions.iter().filter(|expression| {
@@ -7901,9 +7907,11 @@ pub(super) fn feature_block_dimensions(
                     }
                     Some((
                         expression,
-                        crate::native::om::expression_length_in_millimeters(
-                            &expression.unit,
-                            expression.value?.get(),
+                        cadmpeg_ir::scalar::FiniteReal::new(
+                            crate::native::om::expression_length_in_millimeters(
+                                &expression.unit,
+                                expression.value?.get(),
+                            )?,
                         )?,
                     ))
                 })

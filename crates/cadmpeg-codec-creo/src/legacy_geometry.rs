@@ -3,6 +3,7 @@
 
 use crate::legacy::value_index;
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::BTreeMap;
 
 use crate::curve::{CurveTopologyRow, PcurveEndpoints};
@@ -31,16 +32,15 @@ pub(crate) enum LegacySurfaceGeometry {
     Cylinder {
         /// A point on the cylinder axis with the axis and ref direction.
         frame: surface::PositionalFrame,
-        /// Positive cylinder radius in the stored model coordinate system.
-        radius: f64,
+        /// Cylinder radius in the stored model coordinate system.
+        radius: PositiveLength,
     },
     /// A circular cone from a complete legacy local system and signed angle.
     Cone {
         /// The apex with the axis directed toward increasing radius.
         frame: surface::PositionalFrame,
-        /// Cone half-angle in radians, admitted by
-        /// [`crate::surface::valid_apex_cone_half_angle`].
-        half_angle: f64,
+        /// Cone half angle.
+        half_angle: surface::ApexConeHalfAngle,
         /// Sign that maps the source `v` parameter to this positive-angle frame.
         parameter_v_sign: f64,
     },
@@ -49,9 +49,9 @@ pub(crate) enum LegacySurfaceGeometry {
         /// The torus center with the axis and ref direction.
         frame: surface::PositionalFrame,
         /// Torus major radius.
-        major_radius: f64,
+        major_radius: PositiveLength,
         /// Torus minor radius.
-        minor_radius: f64,
+        minor_radius: PositiveLength,
     },
     /// A sphere represented by the torus family with a zero major radius.
     Sphere {
@@ -59,7 +59,7 @@ pub(crate) enum LegacySurfaceGeometry {
         /// sphere keeps for parameter provenance.
         frame: surface::PositionalFrame,
         /// Sphere radius.
-        radius: f64,
+        radius: PositiveLength,
     },
     /// A complete bicubic interpolation surface carrier.
     Spline(crate::interpolation_grid::InterpolationGrid),
@@ -487,18 +487,15 @@ fn surface_carrier(
         AnalyticFamily::Plane => LegacySurfaceGeometry::Plane { frame },
         AnalyticFamily::Cylinder => LegacySurfaceGeometry::Cylinder {
             frame,
-            radius: real_scalar(reals, primitive.offset, "radius")
-                .filter(|radius| *radius > 0.0)?,
+            radius: real_scalar(reals, primitive.offset, "radius").and_then(PositiveLength::new)?,
         },
         AnalyticFamily::Cone => {
             // The legacy record signs the half angle: the magnitude is the half angle and the
-            // sign gives the axis direction. The magnitude is the apex cone half angle that
-            // `surface::valid_apex_cone_half_angle` owns, because
+            // sign gives the axis direction. The magnitude is an apex cone half angle, because
             // `decode::surfaces::prototypes` builds the same `radius = 0.0`, `ratio = 1.0`
             // cone from this carrier as the positional cone rows do.
             let signed_half_angle = real_scalar(reals, primitive.offset, "half_angle")?;
-            let half_angle = signed_half_angle.abs();
-            surface::valid_apex_cone_half_angle(half_angle).then_some(())?;
+            let half_angle = surface::ApexConeHalfAngle::new(signed_half_angle.abs())?;
             LegacySurfaceGeometry::Cone {
                 frame: if signed_half_angle.is_sign_positive() {
                     frame
@@ -513,7 +510,7 @@ fn surface_carrier(
             let major_radius =
                 real_scalar(reals, primitive.offset, "radius1").filter(|radius| *radius >= 0.0)?;
             let minor_radius =
-                real_scalar(reals, primitive.offset, "radius2").filter(|radius| *radius > 0.0)?;
+                real_scalar(reals, primitive.offset, "radius2").and_then(PositiveLength::new)?;
             if major_radius == 0.0 {
                 LegacySurfaceGeometry::Sphere {
                     frame,
@@ -522,7 +519,7 @@ fn surface_carrier(
             } else {
                 LegacySurfaceGeometry::Torus {
                     frame,
-                    major_radius,
+                    major_radius: PositiveLength::new(major_radius)?,
                     minor_radius,
                 }
             }
@@ -688,6 +685,7 @@ mod tests {
         RealRun, ValueRecord,
     };
     use crate::test_support::{fixture_offset, object};
+    use cadmpeg_ir::scalar::PositiveLength;
 
     fn real(value: f64) -> String {
         format!("{:016X}", value.to_bits())
@@ -1047,7 +1045,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             result.carriers[0].geometry,
             LegacySurfaceGeometry::Cylinder {
                 frame: frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-                radius: 2.0,
+                radius: PositiveLength::new(2.0).expect("positive radius"),
             }
         );
     }
@@ -1211,7 +1209,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             result.carriers[0].geometry,
             LegacySurfaceGeometry::Cone {
                 frame: frame([1.0, 2.0, 3.0], [-0.0, -0.0, -1.0], [1.0, 0.0, 0.0]),
-                half_angle: std::f64::consts::FRAC_PI_4,
+                half_angle: crate::surface::ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4)
+                    .expect("apex cone half angle"),
                 parameter_v_sign: -1.0,
             }
         );
@@ -1269,7 +1268,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                         },
                         [1.0, 0.0, 0.0],
                     ),
-                    half_angle,
+                    half_angle: crate::surface::ApexConeHalfAngle::new(half_angle)
+                        .expect("apex cone half angle"),
                     parameter_v_sign,
                 }
             );
@@ -1285,8 +1285,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             torus.carriers[0].geometry,
             LegacySurfaceGeometry::Torus {
                 frame: frame([1.0, 2.0, 3.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-                major_radius: 4.0,
-                minor_radius: 0.5,
+                major_radius: PositiveLength::new(4.0).expect("positive radius"),
+                minor_radius: PositiveLength::new(0.5).expect("positive radius"),
             }
         );
 
@@ -1297,7 +1297,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             sphere.carriers[0].geometry,
             LegacySurfaceGeometry::Sphere {
                 frame: frame([1.0, 2.0, 3.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-                radius: 2.0,
+                radius: PositiveLength::new(2.0).expect("positive radius"),
             }
         );
     }
@@ -1309,7 +1309,8 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
             surface_id: 42,
             geometry: LegacySurfaceGeometry::Cone {
                 frame: frame([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-                half_angle: std::f64::consts::FRAC_PI_4,
+                half_angle: crate::surface::ApexConeHalfAngle::new(std::f64::consts::FRAC_PI_4)
+                    .expect("apex cone half angle"),
                 parameter_v_sign: -1.0,
             },
             offset: 0,

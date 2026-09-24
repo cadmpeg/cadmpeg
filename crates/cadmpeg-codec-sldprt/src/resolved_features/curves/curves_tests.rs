@@ -161,7 +161,7 @@ fn indexed_line_cycle_carries_rectangle_from_known_vertices() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -445,7 +445,7 @@ fn compact_legacy_object_index_cycle_carries_rectangle() {
                 SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
             constructed_marker.feature_ref = Some("feature".into());
             constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = coordinates_m;
             constructed_marker.links = None;
             constructed_marker
@@ -604,7 +604,7 @@ fn current_compact_line_cycle_infers_its_missing_rectangle_corner() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -667,7 +667,7 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -843,7 +843,7 @@ fn linked_semicircle_records_close_a_two_center_profile() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("sketch".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = crate::records::SketchInputLinks::new(
             1,

@@ -257,7 +257,7 @@ fn cylinder_frame_agrees_with_model(
             .into_iter()
             .zip(model_ref)
             .all(|(left, right)| close(left, right))
-        || !close(frame.radius(), radius)
+        || !close(frame.radius().get(), radius)
     {
         return false;
     }

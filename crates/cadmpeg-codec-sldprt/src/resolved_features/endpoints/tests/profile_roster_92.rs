@@ -44,7 +44,7 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker

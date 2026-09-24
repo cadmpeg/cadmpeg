@@ -91,7 +91,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
             SketchInputEntity::new(marker_id, marker_parent, 1, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.0, 0.0075]);
         constructed_marker.links = None;
         constructed_marker
@@ -108,7 +108,7 @@ fn extended_linked_line_uses_inline_self_endpoint() {
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(6), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -159,7 +159,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
             SketchInputEntity::new(marker_id, marker_parent, 1, 200, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(5), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.01, 0.012]);
         constructed_marker.links = None;
         constructed_marker
@@ -176,7 +176,7 @@ fn extended_identity_line_uses_inline_and_identified_point_endpoints() {
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(6), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.007, 0.0075]);
         constructed_marker.links = None;
         constructed_marker
@@ -280,7 +280,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
             SketchInputEntity::new(marker_id, marker_parent, 7, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(7), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.014, 0.016]);
         constructed_marker.links = None;
         constructed_marker
@@ -297,7 +297,7 @@ fn extended_declared_line_uses_its_typed_point_selector() {
         );
         constructed_marker.feature_ref = Some("sketch".into());
         constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -465,7 +465,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
             SketchInputEntity::new(marker_id, marker_parent, 0, 0, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("profile".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -657,7 +657,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         let mut constructed_marker = SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("profile".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -806,7 +806,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1113,7 +1113,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1129,7 +1129,7 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1207,7 +1207,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1223,7 +1223,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1294,7 +1294,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1310,7 +1310,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

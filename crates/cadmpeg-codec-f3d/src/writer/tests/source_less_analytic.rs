@@ -967,7 +967,9 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .expect("identity grammar")]
     );
     assert_eq!(
-        f3d_native(decoded.ir()).design_parameters[0].evaluated_value(),
+        f3d_native(decoded.ir()).design_parameters[0]
+            .evaluated_value()
+            .get(),
         3.0
     );
 }

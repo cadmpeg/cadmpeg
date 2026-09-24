@@ -1185,9 +1185,9 @@ pub(crate) struct SketchInputEntity {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
-    /// Finite little-endian state scalar at the marker layout's state slot.
+    /// Little-endian state scalar at the marker layout's state slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) state_value: Option<f64>,
+    pub(crate) state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) coordinates_m: Option<[f64; 2]>,
@@ -1230,13 +1230,13 @@ pub(crate) struct SketchInputEntityWire {
     local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     kind: SketchInputKind,
-    /// Finite little-endian state scalar at the marker layout's state slot.
+    /// Little-endian state scalar at the marker layout's state slot.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_state_value"
     )]
-    state_value: Option<f64>,
+    state_value: Option<cadmpeg_ir::scalar::FiniteReal>,
     /// Two little-endian coordinate fields stored by geometry-handle marker families, in metres.
     #[serde(
         default,
@@ -2476,5 +2476,9 @@ cadmpeg_core::named_optional_field!(deserialize_class_ref, String, "class_ref");
 cadmpeg_core::named_optional_field!(deserialize_object_id, ObjectId, "object_id");
 cadmpeg_core::named_optional_field!(deserialize_entity_ref, String, "entity_ref");
 cadmpeg_core::named_optional_field!(deserialize_object_index, u32, "object_index");
-cadmpeg_core::named_optional_field!(deserialize_state_value, f64, "state_value");
+cadmpeg_core::named_optional_field!(
+    deserialize_state_value,
+    cadmpeg_ir::scalar::FiniteReal,
+    "state_value"
+);
 cadmpeg_core::named_optional_field!(deserialize_coordinates_m, [f64; 2], "coordinates_m");

@@ -645,7 +645,7 @@ fn round_edge_support_frame_selects_one_offset_line() {
     assert_eq!(frame.frame().origin(), [1.2, 0.2, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
-    assert_eq!(frame.radius(), 0.2);
+    assert_eq!(frame.radius().get(), 0.2);
     assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
@@ -677,7 +677,7 @@ fn perpendicular_round_edge_supports_solve_their_radius() {
         .zip([1.2, 0.2, 0.0])
         .all(|(actual, expected)| (actual - expected).abs() < EPS_TEST_GEOMETRY));
     assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
-    assert!((frame.radius() - 0.2).abs() < EPS_TEST_GEOMETRY);
+    assert!((frame.radius().get() - 0.2).abs() < EPS_TEST_GEOMETRY);
     assert_eq!(frame.length().map(PositiveLength::get), Some(5.0));
 }
 
@@ -1008,7 +1008,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
         entity_id,
         center: [0.0; 3],
         center_stored: true,
-        radius: 2.0,
+        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
         axis,
         start,
         end,

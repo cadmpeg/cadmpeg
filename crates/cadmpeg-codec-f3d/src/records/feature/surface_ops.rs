@@ -52,8 +52,8 @@ pub(crate) struct DesignSurfaceExtendOperation {
     pub(crate) boundary_reference_offset: u64,
     /// Ordered edge-recipe records contained by the boundary carrier.
     pub(crate) edge_record_indices: Vec<u32>,
-    /// Positive modelling tolerance in source centimetres.
-    pub(crate) tolerance: f64,
+    /// Modelling tolerance in source centimetres.
+    pub(crate) tolerance: cadmpeg_ir::scalar::PositiveReal,
     /// Byte offset of `tolerance`.
     pub(crate) tolerance_offset: u64,
 }
@@ -72,8 +72,8 @@ pub(crate) enum DesignSurfaceOffsetSupport {
         boundary_reference_offset: u64,
         /// Ordered edge-recipe records contained by the boundary carrier.
         edge_record_indices: Vec<u32>,
-        /// Positive modelling tolerance in source centimetres.
-        tolerance: f64,
+        /// Modelling tolerance in source centimetres.
+        tolerance: cadmpeg_ir::scalar::PositiveReal,
         /// Byte offset of `tolerance`.
         tolerance_offset: u64,
     },

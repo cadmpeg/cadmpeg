@@ -455,8 +455,8 @@ pub(crate) struct DesignLoftLegacyBodyCarrier {
     pub(crate) opaque_index: std::num::NonZeroU8,
     /// Byte offset of the first `opaque_index` copy.
     pub(crate) opaque_index_offset: u64,
-    /// Opaque finite scalar in the legacy scalar lane.
-    pub(crate) opaque_scalar: f64,
+    /// Opaque scalar in the legacy scalar lane.
+    pub(crate) opaque_scalar: cadmpeg_ir::scalar::FiniteReal,
     /// Byte offset of `opaque_scalar`.
     pub(crate) opaque_scalar_offset: u64,
     /// Byte offset of the repeated `opaque_index` copy.
@@ -569,7 +569,8 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             member_count_offset: wire.member_count_offset,
             opaque_index,
             opaque_index_offset: wire.opaque_index_offset,
-            opaque_scalar: wire.opaque_scalar,
+            opaque_scalar: cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
+                .ok_or("opaque_scalar must be finite")?,
             opaque_scalar_offset: wire.opaque_scalar_offset,
             repeated_opaque_index_offset: wire.repeated_opaque_index_offset,
             next_next_record_index: wire.next_next_record_index,
@@ -601,7 +602,7 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             member_count_offset: carrier.member_count_offset,
             opaque_index: u32::from(carrier.opaque_index.get()),
             opaque_index_offset: carrier.opaque_index_offset,
-            opaque_scalar: carrier.opaque_scalar,
+            opaque_scalar: carrier.opaque_scalar.get(),
             opaque_scalar_offset: carrier.opaque_scalar_offset,
             repeated_opaque_index: u32::from(carrier.opaque_index.get()),
             repeated_opaque_index_offset: carrier.repeated_opaque_index_offset,

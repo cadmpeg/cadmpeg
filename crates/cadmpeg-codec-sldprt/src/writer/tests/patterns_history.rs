@@ -1530,7 +1530,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .sketch_entities
         .iter()
         .enumerate()
-        .all(|(ordinal, entity)| entity.state_value == Some(ordinal as f64 + 1.0)));
+        .all(
+            |(ordinal, entity)| entity.state_value.map(cadmpeg_ir::scalar::FiniteReal::get)
+                == Some(ordinal as f64 + 1.0)
+        ));
     let by_ordinal = |ordinal| {
         lane.sketch_entities
             .iter()
@@ -1561,7 +1564,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .find(|entity| entity.ordinal() == 1)
             .unwrap();
         entity.reclassify(SketchInputKind::from_native_code(5));
-        entity.state_value = Some(12.5);
+        entity.state_value = cadmpeg_ir::scalar::FiniteReal::new(12.5);
     });
 
     let mut encoded = Vec::new();
@@ -1587,7 +1590,10 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         entity.kind(),
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
-    assert_eq!(entity.state_value, Some(12.5));
+    assert_eq!(
+        entity.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(12.5)
+    );
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_input_lanes[0]
             .sketch_entities

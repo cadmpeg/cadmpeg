@@ -39,7 +39,6 @@ fn exact_pipe_owner_lanes(
                     .any(|value| value == &owner.record_index())
                 && owner.class_tag().as_str() == "342"
                 && owner.frame_length() == 103
-                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
     owners.sort_by_key(|owner| owner.local_ordinal());
@@ -59,7 +58,7 @@ fn exact_pipe_owner_lanes(
                 FixedScalarFrame {
                     owner_record_index: Some(scope.record_index),
                     ordinal: u8::try_from(owner.local_ordinal()).ok()?,
-                    value: owner.evaluated_value(),
+                    value: owner.evaluated_value().get(),
                     value_offset: owner.evaluated_value_offset(),
                 },
             ))
@@ -99,7 +98,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index: angle.record_index(),
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -168,7 +167,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + 21)?,
                     operation_offset: u64::try_from(start + 21).ok()?,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,
@@ -192,7 +191,7 @@ pub(super) fn exact_path_feature_construction(
                 path_features::DesignRevolveConstruction {
                     operation: operation(start + class_403_revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value())?,
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     angle_record_index,
                     angle_offset: angle.evaluated_value_offset(),
                     opposite_angle: None,

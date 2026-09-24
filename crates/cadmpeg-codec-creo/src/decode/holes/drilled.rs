@@ -449,8 +449,8 @@ pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
         .iter()
         .all(|frame| {
             let candidate_axis = unit_length(*frame.frame().orthonormal_frame().axis());
-            let radius_scale = frame.radius().abs().max(radius.abs()).max(1.0);
-            if (frame.radius() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
+            let radius_scale = frame.radius().get().max(radius.abs()).max(1.0);
+            if (frame.radius().get() - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale {
                 return false;
             }
             let alignment = axis

@@ -302,7 +302,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             count: 25,
             count_record_index,
             count_offset: (count_start + 40) as u64,
-            angle: std::f64::consts::TAU,
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
+                .expect("checked fixture value"),
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
             axis: crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
@@ -380,7 +381,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .unwrap();
     assert_eq!(owner_backed.count, 25);
     assert_eq!(owner_backed.count_offset, 101);
-    assert_eq!(owner_backed.angle, std::f64::consts::TAU);
+    assert_eq!(owner_backed.angle.get(), std::f64::consts::TAU);
     assert_eq!(owner_backed.angle_offset, 202);
     bytes[count_start + 4] = b'3';
     bytes[angle_start + 4] = b'3';

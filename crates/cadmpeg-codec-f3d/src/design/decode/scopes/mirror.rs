@@ -29,6 +29,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::HashMap;
 
 /// Parse the class-441 Mirror count owner carried outside the ordinary owner
@@ -95,7 +96,7 @@ fn exact_legacy_mirror_scope_count(
 fn exact_legacy_mirror_scope_tolerance(
     bytes: &[u8],
     scope: &DesignParameterScope,
-) -> Option<(f64, u64, DesignMirrorScopeTolerance)> {
+) -> Option<(PositiveReal, u64, DesignMirrorScopeTolerance)> {
     let (
         tail_length,
         previous_state,
@@ -185,10 +186,7 @@ fn exact_legacy_mirror_scope_tolerance(
             return None;
         }
     }
-    let value = View::f64_le_at(bytes, value_offset)?;
-    if !value.is_finite() || value <= 0.0 {
-        return None;
-    }
+    let value = PositiveReal::new(View::f64_le_at(bytes, value_offset)?)?;
     let first_reference_offset = kind_end.checked_add(first_reference)?;
     let second_reference_offset = kind_end.checked_add(second_reference)?;
     let reference_slot = second_reference - first_reference;
@@ -367,21 +365,16 @@ pub(crate) fn bind_mirror_constructions(
         let count = scope_owners
             .iter()
             .copied()
-            .filter(|owner| {
-                owner.local_ordinal() == 0
-                    && owner.evaluated_value() == 2.0
-                    && owner.evaluated_value().is_finite()
-            })
+            .filter(|owner| owner.local_ordinal() == 0 && owner.evaluated_value().get() == 2.0)
             .collect::<Vec<_>>();
         let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
         let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
         let tolerance = scope_owners
             .iter()
             .copied()
-            .filter(|owner| {
-                owner.local_ordinal() == 1
-                    && owner.evaluated_value().is_finite()
-                    && owner.evaluated_value() > 0.0
+            .filter(|owner| owner.local_ordinal() == 1)
+            .filter_map(|owner| {
+                Some((owner, PositiveReal::try_from(owner.evaluated_value()).ok()?))
             })
             .collect::<Vec<_>>();
         let (count, tolerance_source) = (
@@ -391,8 +384,8 @@ pub(crate) fn bind_mirror_constructions(
                 _ => None,
             },
             match (tolerance.as_slice(), inline_tolerance) {
-                ([tolerance], None) => Some((
-                    tolerance.evaluated_value(),
+                ([(tolerance, value)], None) => Some((
+                    *value,
                     tolerance.evaluated_value_offset(),
                     mirror::DesignMirrorToleranceSource::Owner {
                         record_index: tolerance.record_index(),

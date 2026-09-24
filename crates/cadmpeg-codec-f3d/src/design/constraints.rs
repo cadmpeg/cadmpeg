@@ -325,7 +325,7 @@ fn exact_rectangular_pattern(
             });
             let count = direction.evaluated_count.get();
             if count_parameter.is_some_and(|parameter| {
-                !scalar_close(parameter.evaluated_value(), f64::from(count))
+                !scalar_close(parameter.evaluated_value().get(), f64::from(count))
             }) {
                 return None;
             }
@@ -633,7 +633,7 @@ fn exact_circular_pattern(
         })
         || count_parameter.is_some_and(|parameter| {
             !scalar_close(
-                parameter.evaluated_value(),
+                parameter.evaluated_value().get(),
                 f64::from(evaluated_count.get()),
             )
         })

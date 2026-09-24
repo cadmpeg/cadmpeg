@@ -233,7 +233,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
         geometry: CylinderSurface::new(
             frame.frame().finite_origin(),
             frame.frame().orthonormal_frame(),
-            cadmpeg_ir::scalar::PositiveLength::new(frame.radius())?,
+            frame.radius(),
         ),
     })
 }

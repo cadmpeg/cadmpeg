@@ -643,7 +643,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         [200, 201]
     );
     assert_eq!(group.opaque_index.get(), 180);
-    assert_eq!(group.opaque_scalar(), 0.25);
+    assert_eq!(group.opaque_scalar().get(), 0.25);
     assert!(group.variant);
     assert_eq!(group.paired_byte_offset(), paired_at as u64);
 

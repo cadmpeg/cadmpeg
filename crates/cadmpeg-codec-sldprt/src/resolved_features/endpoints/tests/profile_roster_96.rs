@@ -57,7 +57,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker

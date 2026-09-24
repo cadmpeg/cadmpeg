@@ -781,7 +781,8 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         operation_label: label.id.clone(),
         name: "Point1".to_string(),
         points: vec!["payload-point".to_string()],
-        coordinates: [12.5, -3.0],
+        coordinates: cadmpeg_ir::units::FiniteVector::new([12.5, -3.0])
+            .expect("finite coordinates"),
     };
     let point_use = crate::native::features::FeatureSketchPointUse {
         id: "nx:feature-history:sketch-point-use#section-7-0".to_string(),
@@ -858,7 +859,8 @@ fn named_sketch_points_project_without_an_external_named_point() {
         named_record: "named-record".to_string(),
         name: "Point1".to_string(),
         scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
-        coordinates: [12.5, -3.0],
+        coordinates: cadmpeg_ir::units::FiniteVector::new([12.5, -3.0])
+            .expect("finite coordinates"),
     };
     let group = crate::native::features::FeatureSketchPointGroup {
         id: "point-group".to_string(),
@@ -1329,7 +1331,8 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         dimensions: std::array::from_fn(|slot| crate::native::features::FeatureBlockDimension {
             declaration: ["d20", "d21", "d22"][slot].into(),
             expression: expressions[slot].id.clone(),
-            value: [20.0, 21.0, 22.0][slot],
+            value: cadmpeg_ir::scalar::FiniteReal::new([20.0, 21.0, 22.0][slot])
+                .expect("finite dimension"),
         }),
     };
     let mut ir = cadmpeg_ir::CadIr::empty();

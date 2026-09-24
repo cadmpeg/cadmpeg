@@ -178,12 +178,9 @@ pub(super) fn exact_direct_face_operation(
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-            if scalar.value <= 0.0 {
-                return None;
-            }
             Some(DesignDirectFaceOperation::Shell(
                 direct_face::DesignShellOperation {
-                    thickness: scalar.value,
+                    thickness: cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?,
                     thickness_record_index,
                     thickness_offset: scalar.value_offset,
                     outward,
@@ -357,10 +354,8 @@ pub(super) fn exact_scale_operation(
         } else {
             return None;
         };
-    let uniform_factor = View::f64_le_at(bytes, uniform_factor_offset)?;
-    if !uniform_factor.is_finite() || uniform_factor <= 0.0 {
-        return None;
-    }
+    let uniform_factor =
+        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
     Some(DesignScaleOperation {
         body_group_record_index,
         center_record_index,

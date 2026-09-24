@@ -765,7 +765,7 @@ pub(crate) fn decode_feature_local_system_slots(
 pub(crate) fn decode_saved_conic_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<([f64; 12], usize)> {
+) -> Option<(cadmpeg_ir::units::FiniteVector<12>, usize)> {
     (body.first() == Some(&0xf9)).then_some(())?;
     let (rows, cursor) = compact_int(body, 1);
     let (columns, mut cursor) = compact_int(body, cursor);
@@ -786,7 +786,7 @@ pub(crate) fn decode_saved_conic_local_system_prefix(
         *value = decoded;
         cursor = next;
     }
-    Some((finite_local_system_slots(values)?, cursor))
+    Some((cadmpeg_ir::units::FiniteVector::new(values)?, cursor))
 }
 
 /// Decode a positional plane local system, including its terminal-zero macro.
@@ -2616,7 +2616,10 @@ mod tests {
         assert_eq!(
             decode_saved_conic_local_system_prefix(&body, &ScalarCache::default()),
             Some((
-                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                cadmpeg_ir::units::FiniteVector::new([
+                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0
+                ])
+                .expect("finite local system"),
                 body.len()
             ))
         );

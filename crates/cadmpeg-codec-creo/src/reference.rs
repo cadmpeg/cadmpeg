@@ -5,6 +5,7 @@ use cadmpeg_core::bytes::find_in;
 
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
+use cadmpeg_ir::scalar::PositiveLength;
 
 /// Bounds the stored lengths and the normalized dot product of a conic local system's two
 /// stored directions.
@@ -32,8 +33,8 @@ pub(crate) enum ReferenceLineKind {
     Line3d {
         /// Canonical entity identifier repeated across the row boundary.
         entity_id: u32,
-        /// Positive stored `orig_len`, equal to the endpoint distance.
-        original_length: f64,
+        /// Stored `orig_len`, equal to the endpoint distance.
+        original_length: PositiveLength,
     },
 }
 
@@ -59,8 +60,8 @@ pub(crate) struct ReferenceCircle {
     pub(crate) center: [f64; 3],
     /// Whether the center is stored explicitly rather than derived as a midpoint.
     pub(crate) center_stored: bool,
-    /// Positive circle radius.
-    pub(crate) radius: f64,
+    /// Circle radius.
+    pub(crate) radius: PositiveLength,
     /// Unit circle-plane normal.
     pub(crate) axis: [f64; 3],
     /// First stored endpoint.
@@ -140,10 +141,10 @@ pub(crate) struct ReferenceEllipse {
     pub(crate) axis: [f64; 3],
     /// Unit direction of the semi-major axis.
     pub(crate) major_direction: [f64; 3],
-    /// Positive semi-major radius.
-    pub(crate) major_radius: f64,
-    /// Positive semi-minor radius.
-    pub(crate) minor_radius: f64,
+    /// Semi-major radius.
+    pub(crate) major_radius: PositiveLength,
+    /// Semi-minor radius.
+    pub(crate) minor_radius: PositiveLength,
     /// Source conic byte offset.
     pub(crate) offset: usize,
 }
@@ -183,15 +184,18 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         let Some((axis, _)) = normalize_with_length(cross(first_frame, second_frame)) else {
             continue;
         };
-        let radii = [conic.coefficient_1.abs(), conic.coefficient_2.abs()];
-        if radii
-            .iter()
-            .any(|radius| !radius.is_finite() || *radius <= 0.0)
-        {
+        let (Some(first_coefficient), Some(second_coefficient)) = (
+            PositiveLength::new(conic.coefficient_1.abs()),
+            PositiveLength::new(conic.coefficient_2.abs()),
+        ) else {
             continue;
-        }
-        let major_radius = radii[0].max(radii[1]);
-        let minor_radius = radii[0].min(radii[1]);
+        };
+        let (major_radius, minor_radius) = if first_coefficient.get() >= second_coefficient.get() {
+            (first_coefficient, second_coefficient)
+        } else {
+            (second_coefficient, first_coefficient)
+        };
+        let radii = [first_coefficient.get(), second_coefficient.get()];
         let endpoints = [conic.start, conic.end];
         let endpoint_deltas =
             endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
@@ -204,10 +208,12 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
             }) && dot(first_direction, axis).abs() <= EPS_ENDPOINT_AGREEMENT
                 && (first_radius - second_radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
                 .then_some(())?;
-            let radius_scale = major_radius.max(1.0);
-            if (first_radius - major_radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
+            let radius_scale = major_radius.get().max(1.0);
+            if (first_radius - major_radius.get()).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
                 Some(first_direction)
-            } else if (first_radius - minor_radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale {
+            } else if (first_radius - minor_radius.get()).abs()
+                <= EPS_RADIUS_AGREEMENT * radius_scale
+            {
                 normalize_with_length(cross(first_direction, axis)).map(|(direction, _)| direction)
             } else {
                 None
@@ -868,7 +874,7 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     result
 }
 
-fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], f64)> {
+fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], PositiveLength)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
         let mut values = [0.0; 7];
@@ -881,12 +887,11 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
         let second = [values[3], values[4], values[5]];
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let stored_length = values[6].abs();
-        let scale = distance.max(stored_length).max(1.0);
+        let stored_length = PositiveLength::new(values[6].abs())?;
+        let scale = distance.max(stored_length.get()).max(1.0);
         (distance.is_finite()
             && distance > EPS_LINE_NONZERO
-            && stored_length > 0.0
-            && (distance - stored_length).abs() <= EPS_ENDPOINT_AGREEMENT * scale)
+            && (distance - stored_length.get()).abs() <= EPS_ENDPOINT_AGREEMENT * scale)
             .then_some((start, first, second, stored_length))
     });
     let mut candidates = candidates;
@@ -989,43 +994,43 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         }
         Some(values)
     }
-    let explicit_axis = |center: [f64; 3], radius: f64, first: [f64; 3], second: [f64; 3]| {
-        let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
-        let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
-        let first_distance = first_delta
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let second_distance = second_delta
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let scale = radius.max(first_distance).max(second_distance).max(1.0);
-        let normal = [
-            first_delta[1] * second_delta[2] - first_delta[2] * second_delta[1],
-            first_delta[2] * second_delta[0] - first_delta[0] * second_delta[2],
-            first_delta[0] * second_delta[1] - first_delta[1] * second_delta[0],
-        ];
-        let normal_length = normal
-            .iter()
-            .fold(0.0_f64, |norm, value| norm.hypot(*value));
-        (radius.is_finite()
-            && radius > 0.0
-            && center
+    let explicit_axis =
+        |center: [f64; 3], radius: PositiveLength, first: [f64; 3], second: [f64; 3]| {
+            let radius = radius.get();
+            let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
+            let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
+            let first_distance = first_delta
+                .iter()
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let second_distance = second_delta
+                .iter()
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            let scale = radius.max(first_distance).max(second_distance).max(1.0);
+            let normal = [
+                first_delta[1] * second_delta[2] - first_delta[2] * second_delta[1],
+                first_delta[2] * second_delta[0] - first_delta[0] * second_delta[2],
+                first_delta[0] * second_delta[1] - first_delta[1] * second_delta[0],
+            ];
+            let normal_length = normal
+                .iter()
+                .fold(0.0_f64, |norm, value| norm.hypot(*value));
+            (center
                 .iter()
                 .chain(first.iter())
                 .chain(second.iter())
                 .all(|value| value.is_finite())
-            && first_distance.is_finite()
-            && second_distance.is_finite()
-            && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
-            && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
-            && normal_length.is_finite()
-            && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
-            .then(|| normal.map(|value| value / normal_length))
-    };
+                && first_distance.is_finite()
+                && second_distance.is_finite()
+                && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
+                && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
+                && normal_length.is_finite()
+                && normal_length > EPS_CIRCLE_NORMAL_NONZERO * scale * scale)
+                .then(|| normal.map(|value| value / normal_length))
+        };
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<10>(body, start, cache)?;
         let center = [values[0], values[1], values[2]];
-        let radius = values[3].abs();
+        let radius = PositiveLength::new(values[3].abs())?;
         let first = [values[4], values[5], values[6]];
         let second = [values[7], values[8], values[9]];
         let axis = explicit_axis(center, radius, first, second)?;
@@ -1042,18 +1047,17 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
     });
     let diametric = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<7>(body, start, cache)?;
-        let radius = values[0].abs();
+        let radius = PositiveLength::new(values[0].abs())?;
         let first = [values[1], values[2], values[3]];
         let second = [values[4], values[5], values[6]];
         let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let scale = radius.max(diameter).max(1.0);
+        let scale = radius.get().max(diameter).max(1.0);
         (diameter.is_finite()
-            && radius > 0.0
             && values.iter().all(|value| value.is_finite())
             && delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
-            && (diameter - 2.0 * radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
+            && (diameter - 2.0 * radius.get()).abs() <= EPS_RADIUS_AGREEMENT * scale)
             .then_some(ReferenceCircle {
                 entity_id,
                 center,

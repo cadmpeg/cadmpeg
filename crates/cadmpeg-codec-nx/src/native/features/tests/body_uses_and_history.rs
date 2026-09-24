@@ -732,7 +732,11 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
 
     let mut conflicting = points[0].clone();
     conflicting.id = "conflicting".to_string();
-    conflicting.coordinates[1] = f64::from_bits((-2.5_f64).to_bits() + 1);
+    conflicting.coordinates = cadmpeg_ir::units::FiniteVector::new([
+        conflicting.coordinates[0],
+        f64::from_bits((-2.5_f64).to_bits() + 1),
+    ])
+    .expect("finite coordinates");
     assert!(feature_block_payload_point_groups(&[points[0].clone(), conflicting]).is_empty());
 
     let mut incomplete = record.clone();

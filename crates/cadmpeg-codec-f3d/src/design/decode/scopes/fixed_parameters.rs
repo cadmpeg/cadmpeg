@@ -272,18 +272,20 @@ pub(super) fn exact_fixed_chamfer_parameters(
             .iter()
             .enumerate()
             .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
-        || lanes.iter().any(|(_, scalar)| scalar.value <= 0.0)
     {
         return None;
     }
-    let mut distances =
-        lanes
-            .into_iter()
-            .map(|(record_index, scalar)| DesignFixedChamferDistance {
-                value: scalar.value,
+    let mut distances = lanes
+        .into_iter()
+        .map(|(record_index, scalar)| {
+            Some(DesignFixedChamferDistance {
+                value: cadmpeg_ir::scalar::PositiveReal::new(scalar.value)?,
                 record_index,
                 value_offset: scalar.value_offset,
-            });
+            })
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter();
     let first = distances.next()?;
     Some(match distances.next() {
         Some(second) => DesignFixedChamferParameters::TwoDistances { first, second },
@@ -305,8 +307,7 @@ pub(super) fn unique_revolve_angle_owner<'a>(
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
             && owner.local_ordinal() == 0
-            && owner.evaluated_value().is_finite()
-            && owner.evaluated_value() > 0.0
+            && owner.evaluated_value().get() > 0.0
     });
     let angle = candidates.next()?;
     candidates.next().is_none().then_some(angle)

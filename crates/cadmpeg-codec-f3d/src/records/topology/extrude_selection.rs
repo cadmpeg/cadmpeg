@@ -34,8 +34,8 @@ pub(crate) struct DesignExtrudeSelectionGroup {
     members: Vec<Located<u32>>,
     /// Opaque nonzero u32 repeated around the f64 scalar.
     pub(crate) opaque_index: NonZeroU32,
-    /// Opaque finite f64 between the repeated u32 copies.
-    opaque_scalar: f64,
+    /// Opaque scalar between the repeated u32 copies.
+    opaque_scalar: cadmpeg_ir::scalar::FiniteReal,
     /// Boolean byte between the two nested-record references.
     pub(crate) variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
@@ -115,9 +115,8 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
         }
         let opaque_index =
             NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
-        if !wire.opaque_scalar.is_finite() {
-            return Err("opaque_scalar must be finite".into());
-        }
+        let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
+            .ok_or("opaque_scalar must be finite")?;
         Ok(Self {
             members: wire
                 .members
@@ -132,7 +131,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
             opaque_index,
-            opaque_scalar: wire.opaque_scalar,
+            opaque_scalar,
             variant: wire.variant,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             offsets,
@@ -142,7 +141,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
 
 impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
     fn from(group: DesignExtrudeSelectionGroup) -> Self {
-        let opaque_scalar = group.opaque_scalar();
+        let opaque_scalar = group.opaque_scalar().get();
         let member_count_offset = group.member_count_offset();
         let opaque_index_offset = group.opaque_index_offset();
         let opaque_scalar_offset = group.opaque_scalar_offset();
@@ -217,7 +216,7 @@ impl DesignExtrudeSelectionGroup {
     pub(crate) fn paired_byte_offset(&self) -> u64 {
         self.offsets[3]
     }
-    pub(crate) fn opaque_scalar(&self) -> f64 {
+    pub(crate) fn opaque_scalar(&self) -> cadmpeg_ir::scalar::FiniteReal {
         self.opaque_scalar
     }
     #[cfg(test)]

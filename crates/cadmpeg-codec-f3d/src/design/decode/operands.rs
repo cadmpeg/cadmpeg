@@ -523,8 +523,7 @@ pub(crate) fn bind_work_plane_constructions(
             native_stream(owner.id()) == Some(stream.as_str())
                 && owner.record_index() == *extra_offset
                 && owner.scope_record_index() == scope.record_index
-                && owner.evaluated_value().is_finite()
-                && owner.evaluated_value() == 0.0
+                && owner.evaluated_value().get() == 0.0
         }) else {
             continue;
         };
@@ -533,7 +532,7 @@ pub(crate) fn bind_work_plane_constructions(
                 && parameter.record_index == owner.parameter_record_index()
                 && parameter.owner_record_index() == Some(owner.record_index())
                 && parameter.source_kind() == "ExtraOffset"
-                && parameter.evaluated_value() == 0.0
+                && parameter.evaluated_value().get() == 0.0
         }) {
             continue;
         }
@@ -1637,10 +1636,7 @@ fn parse_loft_legacy_body_carrier(
         .ok()
         .and_then(std::num::NonZeroU8::new)?;
     cursor = cursor.checked_add(4)?;
-    let opaque_scalar = View::f64_le_at(bytes, cursor)?;
-    if !opaque_scalar.is_finite() {
-        return None;
-    }
+    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
     cursor = cursor.checked_add(8)?;
     let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
     if repeated_opaque_index != u32::from(opaque_index.get()) {

@@ -2182,7 +2182,9 @@ pub(super) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::sc
         .unit()
         .map(|field| field.value.as_str())
         .is_some_and(design_angle_unit))
-    .then_some(cadmpeg_ir::scalar::Angle::new(parameter.evaluated_value())?)
+    .then_some(cadmpeg_ir::scalar::Angle::new(
+        parameter.evaluated_value().get(),
+    )?)
 }
 
 /// Length scale from a placement's stored origin to the neutral length unit.

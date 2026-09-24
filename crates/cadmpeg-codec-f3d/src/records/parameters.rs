@@ -4,6 +4,7 @@
 use super::identity::{Located, RecordedValue};
 use super::references::DesignClassTag;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::num::NonZeroU64;
 
@@ -154,7 +155,7 @@ pub(crate) struct DesignParameter {
     /// Byte offset of the name's UTF-16LE code units.
     name_offset: u64,
     /// Evaluated scalar in the record's native unit convention.
-    evaluated_value: f64,
+    evaluated_value: FiniteReal,
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
 }
@@ -180,9 +181,8 @@ pub(crate) struct DesignParameterDraft {
 impl TryFrom<DesignParameterDraft> for DesignParameter {
     type Error = String;
     fn try_from(draft: DesignParameterDraft) -> Result<Self, Self::Error> {
-        if !draft.evaluated_value.is_finite() {
-            return Err("evaluated_value must be finite".into());
-        }
+        let evaluated_value =
+            FiniteReal::new(draft.evaluated_value).ok_or("evaluated_value must be finite")?;
         let expression =
             NonBlankString::new(draft.expression).ok_or("expression must not be empty")?;
         let name = NonBlankString::new(draft.name).ok_or("name must not be empty")?;
@@ -224,7 +224,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             unit,
             name,
             name_offset: draft.name_offset,
-            evaluated_value: draft.evaluated_value,
+            evaluated_value,
             evaluated_value_offset: draft.evaluated_value_offset,
         })
     }
@@ -284,8 +284,8 @@ impl DesignParameter {
     pub(crate) fn evaluated_value_offset(&self) -> u64 {
         self.evaluated_value_offset
     }
-    /// Finite evaluated scalar.
-    pub(crate) fn evaluated_value(&self) -> f64 {
+    /// Evaluated scalar.
+    pub(crate) fn evaluated_value(&self) -> FiniteReal {
         self.evaluated_value
     }
     /// Nonempty parameter name.
@@ -304,10 +304,7 @@ impl DesignParameter {
     #[cfg(test)]
     /// Checked replacement of the evaluated scalar.
     pub(crate) fn try_set_evaluated_value(&mut self, value: f64) -> Result<(), String> {
-        if !value.is_finite() {
-            return Err("evaluated_value must be finite".into());
-        }
-        self.evaluated_value = value;
+        self.evaluated_value = FiniteReal::new(value).ok_or("evaluated_value must be finite")?;
         Ok(())
     }
     #[cfg(test)]
@@ -464,7 +461,7 @@ impl From<DesignParameter> for DesignParameterSerde {
         let source_kind_offset = parameter.source_kind_offset();
         let name_offset = parameter.name_offset();
         let evaluated_value_offset = parameter.evaluated_value_offset();
-        let evaluated_value = parameter.evaluated_value();
+        let evaluated_value = parameter.evaluated_value().get();
         let kind = parameter.kind();
         let owner_record_index = parameter.owner_record_index();
         let family_discriminator = parameter.family_discriminator();
@@ -509,7 +506,7 @@ pub(crate) struct DesignParameterOwner {
     class_tag: DesignClassTag,
     scope_record_index: u32,
     local_ordinal: u32,
-    evaluated_value: f64,
+    evaluated_value: FiniteReal,
     evaluated_value_offset: u64,
     owned_ordinal: u32,
     variant: Option<u8>,
@@ -559,7 +556,7 @@ impl DesignParameterOwner {
         self.local_ordinal
     }
     /// The evaluated value value.
-    pub(crate) fn evaluated_value(&self) -> f64 {
+    pub(crate) fn evaluated_value(&self) -> FiniteReal {
         self.evaluated_value
     }
     /// The evaluated value offset value.
@@ -589,9 +586,8 @@ impl DesignParameterOwner {
 impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
     type Error = String;
     fn try_from(wire: DesignParameterOwnerWire) -> Result<Self, Self::Error> {
-        if !wire.evaluated_value.is_finite() {
-            return Err("evaluated_value must be finite".into());
-        }
+        let evaluated_value =
+            FiniteReal::new(wire.evaluated_value).ok_or("evaluated_value must be finite")?;
         let (base_index, order) = if wire.record_index.checked_add(1)
             == Some(wire.parameter_record_index)
             && wire.record_index.checked_add(2) == Some(wire.companion_record_index)
@@ -656,7 +652,7 @@ impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
             class_tag: wire.class_tag,
             scope_record_index: wire.scope_record_index,
             local_ordinal: wire.local_ordinal,
-            evaluated_value: wire.evaluated_value,
+            evaluated_value,
             evaluated_value_offset: wire.evaluated_value_offset,
             owned_ordinal: wire.owned_ordinal,
             variant: wire.variant,
@@ -674,7 +670,7 @@ impl From<DesignParameterOwner> for DesignParameterOwnerWire {
             record_index: owner.record_index(),
             scope_record_index: owner.scope_record_index,
             local_ordinal: owner.local_ordinal,
-            evaluated_value: owner.evaluated_value,
+            evaluated_value: owner.evaluated_value.get(),
             evaluated_value_offset: owner.evaluated_value_offset,
             parameter_record_index: owner.parameter_record_index(),
             owned_ordinal: owner.owned_ordinal,

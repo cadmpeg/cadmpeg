@@ -78,7 +78,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
                 SketchInputEntity::new(marker_id, marker_parent, 0, 10, SketchInputKind::Point);
             constructed_marker.feature_ref = Some("feature".into());
             constructed_marker = constructed_marker.with_test_identity(Some(0), Some(0));
-            constructed_marker.state_value = Some(1.0);
+            constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
             constructed_marker.coordinates_m = Some([0.001, 0.002]);
             constructed_marker.links = None;
             constructed_marker

@@ -37,7 +37,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = crate::records::SketchInputLinks::new(0, links);
         constructed_marker
@@ -127,7 +127,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = crate::records::SketchInputLinks::new(0, links);
         constructed_marker
@@ -234,7 +234,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(2), Some(2));
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([0.0, 1.0]);
         constructed_marker.links = None;
         constructed_marker
@@ -268,7 +268,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), Some(1));
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = Some([1.0, 0.0]);
         constructed_marker.links = crate::records::SketchInputLinks::new(
             0,
@@ -337,7 +337,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(object_index), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -354,7 +354,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(3), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -420,7 +420,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -436,7 +436,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -944,7 +944,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, 0, kind);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1012,7 +1012,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1068,7 +1068,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(100), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1104,7 +1104,7 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
             SketchInputKind::Point,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1158,7 +1158,7 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1214,7 +1214,7 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
         let mut constructed_marker =
             crate::records::SketchInputEntity::new(marker_id, marker_parent, 0, offset, kind);
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1276,7 +1276,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1295,7 +1295,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(Some(1), None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker
@@ -1355,7 +1355,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         );
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker = constructed_marker.with_test_identity(object_index, None);
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = coordinates_m;
         constructed_marker.links = None;
         constructed_marker
@@ -1374,7 +1374,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
             SketchInputKind::LineOrCircle,
         );
         constructed_marker.feature_ref = Some("feature".into());
-        constructed_marker.state_value = Some(1.0);
+        constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
         constructed_marker.coordinates_m = None;
         constructed_marker.links = None;
         constructed_marker

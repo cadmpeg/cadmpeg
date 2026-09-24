@@ -217,7 +217,7 @@ fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
     );
     assert!(candidates.iter().all(|candidate| {
         candidate.frame().axis() == [1.0, 0.0, 0.0]
-            && candidate.radius == 4.0
+            && candidate.radius.get() == 4.0
             && candidate.length.map(PositiveLength::get) == Some(6.0)
     }));
 }
@@ -244,7 +244,7 @@ fn numerical_followup_radial_sample_must_match_encoded_radius() {
         );
         assert_eq!(result.is_some(), radial == radius);
         if let Some(frame) = result {
-            assert_eq!(frame.radius(), radius);
+            assert_eq!(frame.radius().get(), radius);
         }
     }
 }

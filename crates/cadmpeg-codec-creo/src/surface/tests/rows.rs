@@ -261,7 +261,7 @@ fn compound_bounded_cylinder_local_system_retains_its_terminal_radius() {
         frame.frame().ref_direction(),
         [-0.992_546_151_641_322_3, 0.121_869_343_405_145_1, 0.0]
     );
-    assert_eq!(frame.radius, 0.606_300_635_480_064_5);
+    assert_eq!(frame.radius.get(), 0.606_300_635_480_064_5);
     assert_eq!(frame.length, None);
 }
 

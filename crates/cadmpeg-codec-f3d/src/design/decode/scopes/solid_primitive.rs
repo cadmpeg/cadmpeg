@@ -141,24 +141,24 @@ pub(super) fn exact_solid_primitive(
             let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
                 return None;
             };
-            (length.evaluated_value() > 0.0
-                && width.evaluated_value() > 0.0
-                && height.evaluated_value() > 0.0)
+            (length.evaluated_value().get() > 0.0
+                && width.evaluated_value().get() > 0.0
+                && height.evaluated_value().get() > 0.0)
                 .then_some(DesignSolidPrimitive::Box(
                     crate::records::feature::primitives::DesignBoxPrimitive {
-                        length: length.evaluated_value(),
+                        length: length.evaluated_value().get(),
                         length_record_index: length.record_index(),
                         length_offset: length.evaluated_value_offset(),
-                        width: width.evaluated_value(),
+                        width: width.evaluated_value().get(),
                         width_record_index: width.record_index(),
                         width_offset: width.evaluated_value_offset(),
-                        height: height.evaluated_value(),
+                        height: height.evaluated_value().get(),
                         height_record_index: height.record_index(),
                         height_offset: height.evaluated_value_offset(),
-                        offset_x: offset_x.evaluated_value(),
+                        offset_x: offset_x.evaluated_value().get(),
                         offset_x_record_index: offset_x.record_index(),
                         offset_x_offset: offset_x.evaluated_value_offset(),
-                        offset_y: offset_y.evaluated_value(),
+                        offset_y: offset_y.evaluated_value().get(),
                         offset_y_record_index: offset_y.record_index(),
                         offset_y_offset: offset_y.evaluated_value_offset(),
                         operation,
@@ -174,21 +174,20 @@ pub(super) fn exact_solid_primitive(
             let [height, diameter] = owners.as_slice() else {
                 return None;
             };
-            (height.evaluated_value() > 0.0 && diameter.evaluated_value() > 0.0).then_some(
-                DesignSolidPrimitive::Cylinder(
+            (height.evaluated_value().get() > 0.0 && diameter.evaluated_value().get() > 0.0)
+                .then_some(DesignSolidPrimitive::Cylinder(
                     crate::records::feature::primitives::DesignCylinderPrimitive {
-                        height: height.evaluated_value(),
+                        height: height.evaluated_value().get(),
                         height_record_index: height.record_index(),
                         height_offset: height.evaluated_value_offset(),
-                        diameter: diameter.evaluated_value(),
+                        diameter: diameter.evaluated_value().get(),
                         diameter_record_index: diameter.record_index(),
                         diameter_offset: diameter.evaluated_value_offset(),
                         transform: cylinder_transform,
                         operation,
                         operation_offset: operation_offset as u64,
                     },
-                ),
-            )
+                ))
         }
         _ => None,
     }
@@ -460,7 +459,6 @@ fn exact_owned_primitive_parameters<'a>(
                     .reference_members()
                     .values()
                     .any(|value| value == &owner.record_index())
-                && owner.evaluated_value().is_finite()
         })
         .collect::<Vec<_>>();
     owners.sort_by_key(|owner| owner.local_ordinal());

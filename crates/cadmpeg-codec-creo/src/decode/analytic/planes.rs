@@ -909,7 +909,7 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
     let Some(frame) = fc05_reference_circle_frame(&circles) else {
         return legacy;
     };
-    if (frame.radius() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
+    if (frame.radius().get() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
         || dot(frame.frame().axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
     {
         return legacy;
@@ -944,9 +944,10 @@ fn fc05_reference_circle_frame(
     let [circle] = circles else {
         return None;
     };
-    if !circle.center_stored || !circle.radius.is_finite() || circle.radius <= 0.0 {
+    if !circle.center_stored {
         return None;
     }
+    let radius = circle.radius.get();
     let axis = normalize(circle.axis)?;
     let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
     let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
@@ -958,11 +959,11 @@ fn fc05_reference_circle_frame(
         .chain(circle.start)
         .chain(circle.end)
         .map(f64::abs)
-        .fold(circle.radius.max(1.0), f64::max);
+        .fold(radius.max(1.0), f64::max);
     if !radial_length.is_finite()
         || !end_radial_length.is_finite()
-        || (radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
-        || (end_radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || (radial_length - radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || (end_radial_length - radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
         || dot(axis, radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
         || dot(axis, end_radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
     {
@@ -972,7 +973,7 @@ fn fc05_reference_circle_frame(
         circle.center,
         axis,
         radial.map(|value| value / radial_length),
-        circle.radius,
+        radius,
         None,
     )
 }
@@ -1057,7 +1058,7 @@ fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, Ca
                     origin: frame.frame().origin(),
                     axis: frame.frame().axis(),
                     ref_direction: frame.frame().ref_direction(),
-                    radius: frame.radius(),
+                    radius: frame.radius().get(),
                 }),
             ))
         })

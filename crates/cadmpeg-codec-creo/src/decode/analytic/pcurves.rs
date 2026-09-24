@@ -487,7 +487,7 @@ fn pcurve_endpoint_carrier_status(
 }
 
 /// Mirrors an apex cone through its apex: the same shape a cone surface record carries, so it
-/// takes its half angle from [`crate::surface::valid_apex_cone_half_angle`].
+/// takes its half angle as a [`crate::surface::ApexConeHalfAngle`].
 ///
 /// The frame is not examined. A `ConeSurface` holds an
 /// [`cadmpeg_ir::units::OrthonormalFrame3`], whose only admission is
@@ -504,7 +504,7 @@ fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeome
     let half_angle = cone_surface.half_angle().get();
     if radius != 0.0
         || (ratio - 1.0).abs() > EPS_NEAR_ZERO
-        || !crate::surface::valid_apex_cone_half_angle(half_angle)
+        || crate::surface::ApexConeHalfAngle::new(half_angle).is_none()
     {
         return None;
     }

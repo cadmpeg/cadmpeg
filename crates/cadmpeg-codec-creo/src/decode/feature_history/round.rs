@@ -1006,7 +1006,7 @@ fn chamfer_cone_equation(
             frame.frame().ref_direction(),
             0.0,
             1.0,
-            frame.half_angle(),
+            frame.half_angle().get().get(),
         );
     }
     let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, row.id);

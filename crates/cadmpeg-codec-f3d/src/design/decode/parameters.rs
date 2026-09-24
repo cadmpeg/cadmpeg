@@ -555,7 +555,7 @@ pub(crate) fn decode_parameter_owners(
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
         let evaluated = crate::records::identity::Located {
-            value: parameter.evaluated_value(),
+            value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
         };
         let owner = parse_parameter_owner(frame)

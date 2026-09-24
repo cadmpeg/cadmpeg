@@ -204,7 +204,7 @@ struct ExactSurfaceBoundaryOperation {
     boundary_reference_record_index: u32,
     boundary_reference_offset: u64,
     edge_record_indices: Vec<u32>,
-    tolerance: f64,
+    tolerance: cadmpeg_ir::scalar::PositiveReal,
     tolerance_offset: u64,
 }
 
@@ -302,8 +302,9 @@ fn exact_surface_boundary_operation(
             }
             let mode = View::u32_le_at(bytes, tail + 2)?;
             let boundary_reference_record_index = marked_record_reference(bytes, tail + 6)?;
-            let tolerance = View::f64_le_at(bytes, tail + 39)?;
-            (tolerance.is_finite() && tolerance > 0.0).then_some(ExactSurfaceBoundaryOperation {
+            let tolerance =
+                cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, tail + 39)?)?;
+            Some(ExactSurfaceBoundaryOperation {
                 distance: scalar.value,
                 distance_offset: scalar.value_offset,
                 distance_record_index: *distance_record_index,

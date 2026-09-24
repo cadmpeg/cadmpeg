@@ -108,12 +108,12 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
-            thickness: 0.25,
+            thickness,
             thickness_record_index: 9_000,
             outward: false,
             thickness_offset,
             outward_offset: 21,
-        })) if thickness_offset == (scalar_start + 40) as u64
+        })) if thickness.get() == 0.25 && thickness_offset == (scalar_start + 40) as u64
     ));
 
     let mut wrong_pair = scope.clone();

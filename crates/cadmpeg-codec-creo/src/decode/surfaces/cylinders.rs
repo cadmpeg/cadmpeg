@@ -113,9 +113,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             continue;
         }
         let frame = datum.frame;
-        let Some(radius) = cadmpeg_ir::scalar::PositiveLength::new(frame.radius()) else {
-            continue;
-        };
+        let radius = frame.radius();
         let cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
             frame.frame().finite_origin(),
             frame.frame().orthonormal_frame(),
@@ -660,8 +658,8 @@ fn unique_tangent_axial_interval_corner_frame(
                     }
                     let distance =
                         (dot(normal, candidate.frame().origin()) - dot(normal, plane.origin)).abs();
-                    (distance - candidate.radius()).abs()
-                        <= EPS_CYLINDER_POSITION * candidate.radius().max(1.0)
+                    (distance - candidate.radius().get()).abs()
+                        <= EPS_CYLINDER_POSITION * candidate.radius().get().max(1.0)
                 })
                 .count();
             (score != 0).then_some((candidate, score))
@@ -701,8 +699,8 @@ fn unique_support_tangent_cylinder_frame(
             .ok()?;
         let plane_offset = dot(normal, plane.origin);
         let candidates = [
-            (plane_offset - stored.radius()) / normal[axis_index],
-            (plane_offset + stored.radius()) / normal[axis_index],
+            (plane_offset - stored.radius().get()) / normal[axis_index],
+            (plane_offset + stored.radius().get()) / normal[axis_index],
         ]
         .into_iter()
         .filter(|coordinate| coordinate.is_finite())
@@ -710,7 +708,7 @@ fn unique_support_tangent_cylinder_frame(
             let scale = coordinate
                 .abs()
                 .max(stored.frame().origin()[axis_index].abs())
-                .max(stored.radius())
+                .max(stored.radius().get())
                 .max(1.0);
             (coordinate.abs() - stored.frame().origin()[axis_index].abs()).abs()
                 <= EPS_CYLINDER_POSITION * scale
@@ -750,13 +748,13 @@ fn unique_support_tangent_cylinder_frame(
         let tangent_to_all = witnessed_planes.iter().all(|plane| {
             let normal = plane.normal;
             let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
-            let scale = distance.max(stored.radius()).max(1.0);
-            (distance - stored.radius()).abs() <= EPS_CYLINDER_POSITION * scale
+            let scale = distance.max(stored.radius().get()).max(1.0);
+            (distance - stored.radius().get()).abs() <= EPS_CYLINDER_POSITION * scale
         });
         if !tangent_to_all {
             continue;
         }
-        let Some(candidate) = crate::surface::PositionalCylinderFrame::with_admitted_length(
+        let Some(candidate) = crate::surface::PositionalCylinderFrame::with_admitted_dimensions(
             origin,
             stored.frame().axis(),
             stored.frame().ref_direction(),
@@ -1115,22 +1113,18 @@ pub(in super::super) fn transfer_positional_cylinders(
             && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());
         if feature_class == Some(SchemaClass::Hole)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
-                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius())
+                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius().get())
             })
         {
             continue;
         }
         // The repair arm below and the transfer arm after it state the same
-        // carrier from the same frame. They differ in what a refusal costs:
-        // the repair arm leaves the existing surface's geometry as it stands,
-        // the transfer arm states no surface at all.
-        let carrier = cadmpeg_ir::scalar::PositiveLength::new(frame.radius()).map(|radius| {
-            cadmpeg_ir::geometry::analytic::CylinderSurface::new(
-                frame.frame().finite_origin(),
-                frame.frame().orthonormal_frame(),
-                radius,
-            )
-        });
+        // carrier from the same frame.
+        let cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+            frame.frame().finite_origin(),
+            frame.frame().orthonormal_frame(),
+            frame.radius(),
+        );
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, record.surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             if row_local_frame_selected
@@ -1149,10 +1143,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     .find(|surface| surface.id == id)
                 {
                     surface.geometry =
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(match carrier {
-                            Some(payload) => payload,
-                            None => continue,
-                        }));
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface));
                     annotate(
                         annotations,
                         &id,
@@ -1165,9 +1156,6 @@ pub(in super::super) fn transfer_positional_cylinders(
             }
             continue;
         }
-        let Some(cylinder_surface) = carrier else {
-            continue;
-        };
         annotate(
             annotations,
             &id,
@@ -1249,15 +1237,11 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     let [first, second] = circles else {
         return None;
     };
-    (first.radius.is_finite()
-        && first.radius > 0.0
-        && first.center_stored
-        && second.center_stored
-        && second.radius.is_finite())
-    .then_some(())?;
-    let radius = first.radius;
-    let radius_scale = radius.max(second.radius).max(1.0);
-    ((second.radius - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale).then_some(())?;
+    (first.center_stored && second.center_stored).then_some(())?;
+    let radius = first.radius.get();
+    let second_radius = second.radius.get();
+    let radius_scale = radius.max(second_radius).max(1.0);
+    ((second_radius - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale).then_some(())?;
     let scale = first
         .center
         .iter()
@@ -1401,9 +1385,7 @@ pub(in super::super) fn transfer_positional_cones(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        let Some(cone_surface) = super::apex_cone(frame.frame(), frame.half_angle()) else {
-            continue;
-        };
+        let cone_surface = super::apex_cone(frame.frame(), frame.half_angle());
         annotate(
             annotations,
             &id,

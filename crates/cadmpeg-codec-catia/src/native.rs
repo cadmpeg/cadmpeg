@@ -865,7 +865,8 @@ enum CatiaConsolidatedPlaneCarrierPayload {
     PointDirection2 {
         /// In-plane point with the host-implied third coordinate omitted.
         point: FiniteVector<2>,
-        /// In-plane unit direction with its third component omitted.
+        /// In-plane direction with its third component omitted; the decoder
+        /// stores the first two components of an admitted unit direction.
         direction: [f64; 2],
         /// Complete trailing scalar lane.
         tail: FiniteVector<3>,
@@ -1011,7 +1012,7 @@ pub(crate) struct CatiaConsolidatedPcurve {
     degree: u32,
     /// Number of leading extrapolation sites.
     extrapolation_sites: u32,
-    /// Strictly increasing native parameter sites.
+    /// Native parameter sites; the decoder stores them strictly increasing.
     knots: Vec<FiniteReal>,
     /// Surface-chart positions at the parameter sites.
     points: Vec<FiniteVector<2>>,

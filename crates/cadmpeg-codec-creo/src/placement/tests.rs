@@ -1075,7 +1075,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
             origin,
             frame.frame().axis(),
             frame.frame().ref_direction(),
-            frame.radius(),
+            frame.radius().get(),
             frame.length().map(PositiveLength::get),
         )
         .expect("valid positional cylinder frame");
@@ -1090,7 +1090,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         frame.frame().origin(),
         [0.1, 0.99_f64.sqrt(), 0.0],
         [0.99_f64.sqrt(), -0.1, 0.0],
-        frame.radius(),
+        frame.radius().get(),
         frame.length().map(PositiveLength::get),
     )
     .expect("valid positional cylinder frame");
