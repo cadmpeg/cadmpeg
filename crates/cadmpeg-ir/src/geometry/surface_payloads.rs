@@ -588,9 +588,10 @@ impl RevolutionSurfaceConstruction {
     pub fn directrix(&self) -> &CurveId {
         &self.directrix
     }
-    /// Return the axis origin.
-    pub fn axis_origin(&self) -> &Point3 {
-        self.axis_origin.as_raw()
+    /// Return the admitted axis origin.
+    #[must_use]
+    pub const fn axis_origin(&self) -> FinitePoint3 {
+        self.axis_origin
     }
     /// Replace the axis origin and keep every other admitted field.
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {
@@ -1116,9 +1117,10 @@ impl AxisRevolutionSurfaceConstruction {
     pub fn directrix(&self) -> &CurveId {
         &self.directrix
     }
-    /// Return the axis origin.
-    pub fn axis_origin(&self) -> &Point3 {
-        self.axis_origin.as_raw()
+    /// Return the admitted axis origin.
+    #[must_use]
+    pub const fn axis_origin(&self) -> FinitePoint3 {
+        self.axis_origin
     }
     /// Replace the axis origin and keep the admitted directrix and direction.
     pub fn set_axis_origin(&mut self, axis_origin: FinitePoint3) {

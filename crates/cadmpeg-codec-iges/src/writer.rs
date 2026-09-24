@@ -4403,10 +4403,9 @@ fn direction_entity(direction: Vector3) -> Entity {
 
 fn pointer_surface_support(
     base_index: usize,
-    location: Point3,
+    location: FinitePoint3,
     frame: &OrthonormalFrame3,
 ) -> Result<(Vec<Entity>, usize, usize, usize), CodecError> {
-    ensure_finite_point(location, "analytic surface location")?;
     let (axis, reference) = orthonormal_pair(frame);
     let location_index = base_index;
     let axis_index = base_index
@@ -4417,7 +4416,7 @@ fn pointer_surface_support(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok((
         vec![
-            point_entity_with_status(location, EntityStatus::PhysicallyDependent),
+            point_entity_with_status(location.get(), EntityStatus::PhysicallyDependent),
             direction_entity(axis),
             direction_entity(reference),
         ],
@@ -4790,11 +4789,7 @@ fn revolution_surface_entities(
     let axis_direction = axis_direction.to_unit_length();
     let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
     let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        cadmpeg_ir::geometry::analytic::LineCurve::new(
-            FinitePoint3::new(*axis_origin)
-                .ok_or_else(|| CodecError::malformed("LineCurve.origin must be finite"))?,
-            axis_direction,
-        ),
+        cadmpeg_ir::geometry::analytic::LineCurve::new(axis_origin, axis_direction),
     ));
     let axis_span = CurveSpan {
         range: [0.0, 1.0],
@@ -4869,7 +4864,7 @@ fn surface_entities(
                 }]);
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, plane_surface.frame())?;
+                pointer_surface_support(base_index, plane_surface.origin(), plane_surface.frame())?;
             entities.push(Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES plane has no analytic surface family".into())
@@ -4890,10 +4885,12 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin().get();
             let radius = cylinder_surface.radius().get();
-            let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, cylinder_surface.frame())?;
+            let (mut entities, location, axis, reference) = pointer_surface_support(
+                base_index,
+                cylinder_surface.origin(),
+                cylinder_surface.frame(),
+            )?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cylinder has no analytic surface family".into())
@@ -4915,7 +4912,6 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin().get();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -4930,7 +4926,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, cone_surface.frame())?;
+                pointer_surface_support(base_index, cone_surface.origin(), cone_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cone has no analytic surface family".into())
@@ -4953,15 +4949,17 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center().get();
             let radius = sphere_surface.radius().get();
             if radius <= 0.0 {
                 return Err(CodecError::NotImplemented(
                     "IGES sphere radius must be positive".into(),
                 ));
             }
-            let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, center, sphere_surface.frame())?;
+            let (mut entities, location, axis, reference) = pointer_surface_support(
+                base_index,
+                sphere_surface.center(),
+                sphere_surface.frame(),
+            )?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES sphere has no analytic surface family".into())
@@ -4983,7 +4981,6 @@ fn surface_entities(
             Ok(entities)
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center().get();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if minor_radius <= 0.0 || minor_radius >= major_radius {
@@ -4992,7 +4989,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, center, torus_surface.frame())?;
+                pointer_surface_support(base_index, torus_surface.center(), torus_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES torus has no analytic surface family".into())

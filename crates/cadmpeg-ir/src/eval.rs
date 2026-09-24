@@ -3675,7 +3675,7 @@ fn model_native_revolution_partials(
     let partials = model_axis_revolution_partials(
         index,
         directrix,
-        *construction.axis_origin(),
+        construction.axis_origin().get(),
         construction.axis_direction(),
         angle,
         directrix_parameter,
@@ -5031,7 +5031,7 @@ pub fn model_surface_point(
             model_axis_revolution_point(
                 &index,
                 definition_payload.directrix(),
-                *definition_payload.axis_origin(),
+                definition_payload.axis_origin().get(),
                 definition_payload.axis_direction(),
                 u,
                 v,
@@ -6671,7 +6671,7 @@ fn model_surface_point_by_id_inner(
                 model_axis_revolution_point(
                     index,
                     definition_payload.directrix(),
-                    *definition_payload.axis_origin(),
+                    definition_payload.axis_origin().get(),
                     definition_payload.axis_direction(),
                     u,
                     v,
@@ -7174,7 +7174,7 @@ fn model_surface_mapping(
                 base: model_axis_revolution_partials(
                     index,
                     definition_payload.directrix(),
-                    *definition_payload.axis_origin(),
+                    definition_payload.axis_origin().get(),
                     definition_payload.axis_direction(),
                     u,
                     v,

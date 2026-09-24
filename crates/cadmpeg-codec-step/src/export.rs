@@ -2628,7 +2628,8 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
-                let origin = geometry::point(&mut self.emitter, *definition_payload.axis_origin());
+                let origin =
+                    geometry::point(&mut self.emitter, definition_payload.axis_origin().get());
                 let direction = geometry::direction(
                     &mut self.emitter,
                     *definition_payload.axis_direction().as_raw(),

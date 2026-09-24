@@ -1623,7 +1623,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                     )?;
             }
             ProceduralSurfaceDefinition::Revolution(payload) => {
-                let mut axis_origin = *payload.axis_origin();
+                let mut axis_origin = payload.axis_origin().get();
                 scale_point3(&mut axis_origin, scale);
                 payload.set_axis_origin(
                     cadmpeg_ir::features::FinitePoint3::new(axis_origin)
@@ -1631,7 +1631,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 );
             }
             ProceduralSurfaceDefinition::AxisRevolution(payload) => {
-                let mut axis_origin = *payload.axis_origin();
+                let mut axis_origin = payload.axis_origin().get();
                 scale_point3(&mut axis_origin, scale);
                 payload.set_axis_origin(
                     cadmpeg_ir::features::FinitePoint3::new(axis_origin)
