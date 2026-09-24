@@ -2,10 +2,11 @@
 //! Scaled geometric least-squares solves.
 
 use super::Vector3;
+use crate::scalar::FiniteReal;
 
 /// Scalar least-squares step along a finite nonzero tangent. Exact products
 /// retain the quotient when either squared norms or projections overflow or underflow.
-pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<f64> {
+pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<FiniteReal> {
     if !tangent.is_finite() || !residual.is_finite() {
         return None;
     }
@@ -22,11 +23,15 @@ pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<f64> {
     let denominator = denominator.finish()?;
     numerator
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(denominator))
+        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
 }
 
 /// Solve a two-column least-squares step without imposing an absolute rank scale.
-pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
+pub fn least_squares_step(
+    du: Vector3,
+    dv: Vector3,
+    residual: Vector3,
+) -> Option<(FiniteReal, FiniteReal)> {
     if !du.is_finite() || !dv.is_finite() || !residual.is_finite() {
         return None;
     }
@@ -45,7 +50,7 @@ pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option
         return None;
     }
     if residual.x == 0.0 && residual.y == 0.0 && residual.z == 0.0 {
-        return Some((0.0, 0.0));
+        return Some((FiniteReal::ZERO, FiniteReal::ZERO));
     }
     let fast = (|| {
         let residual_components = [residual.x, residual.y, residual.z];
@@ -55,32 +60,39 @@ pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option
             du_components,
             residual_components,
             std::array::from_fn(|index| du_components[index] * residual_components[index]),
-        )?;
+        )?
+        .get();
         let dv_residual = super::sum::fast_dot(
             dv_components,
             residual_components,
             std::array::from_fn(|index| dv_components[index] * residual_components[index]),
-        )?;
+        )?
+        .get();
         let u_numerator = super::sum::fast_dot(
             [dv_squared, -mixed],
             [du_residual, dv_residual],
             [dv_squared * du_residual, -mixed * dv_residual],
-        )?;
+        )?
+        .get();
         let v_numerator = super::sum::fast_dot(
             [du_squared, -mixed],
             [dv_residual, du_residual],
             [du_squared * dv_residual, -mixed * du_residual],
-        )?;
+        )?
+        .get();
         let u_denominator = determinant * du_scale;
         let v_denominator = determinant * dv_scale;
         if !u_denominator.is_normal() || !v_denominator.is_normal() {
             return None;
         }
-        let u = u_numerator / u_denominator;
-        let v = v_numerator / v_denominator;
-        let safe_result =
-            |value: f64, numerator: f64| value.is_normal() || (value == 0.0 && numerator == 0.0);
-        (safe_result(u, u_numerator) && safe_result(v, v_numerator)).then_some((u, v))
+        // A quotient is kept when it is normal, or zero from a zero numerator.
+        let admitted = |value: f64, numerator: f64| {
+            FiniteReal::normal_or_zero(value).filter(|value| value.get() != 0.0 || numerator == 0.0)
+        };
+        Some((
+            admitted(u_numerator / u_denominator, u_numerator)?,
+            admitted(v_numerator / v_denominator, v_numerator)?,
+        ))
     })();
     if let Some(step) = fast {
         return Some(step);
@@ -106,29 +118,36 @@ pub fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option
     let v_denominator = v_denominator.finish()?;
     let u = u_numerator
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(u_denominator))?;
+        .map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(u_denominator)
+        })?;
     let v = v_numerator
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(v_denominator))?;
+        .map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(v_denominator)
+        })?;
     Some((u, v))
 }
 
 #[cfg(test)]
 mod tests {
     use super::Vector3;
+    use crate::scalar::FiniteReal;
+
+    fn step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
+        super::least_squares_step(du, dv, residual).map(|(u, v)| (u.get(), v.get()))
+    }
+
     #[test]
     fn numerical_audit_least_squares_checks_rank_independent_of_column_scale() {
         let tiny = Vector3::new(1.0e-200, 0.0, 0.0);
         let huge = Vector3::new(0.0, 1.0e200, 0.0);
-        assert_eq!(
-            super::least_squares_step(tiny, huge, huge),
-            Some((0.0, 1.0))
-        );
+        assert_eq!(step(tiny, huge, huge), Some((0.0, 1.0)));
         for scale in [1.0e-200, 1.0e-9, 1.0, 1.0e200] {
             let du = Vector3::new(1.0, 0.0, 0.0);
             let dv = Vector3::new(0.0, scale, 0.0);
-            assert_eq!(super::least_squares_step(du, dv, dv), Some((0.0, 1.0)));
-            assert_eq!(super::least_squares_step(du, du, dv), None);
+            assert_eq!(step(du, dv, dv), Some((0.0, 1.0)));
+            assert_eq!(step(du, du, dv), None);
         }
     }
 
@@ -137,18 +156,12 @@ mod tests {
         let tiny = Vector3::new(1.0e-200, 0.0, 0.0);
         let huge = Vector3::new(0.0, 1.0e200, 0.0);
         let residual = Vector3::new(tiny.x, huge.y, 0.0);
-        assert_eq!(
-            super::least_squares_step(tiny, huge, residual),
-            Some((1.0, 1.0))
-        );
+        assert_eq!(step(tiny, huge, residual), Some((1.0, 1.0)));
 
         let smallest = Vector3::new(f64::from_bits(1), 0.0, 0.0);
         let unit = Vector3::new(0.0, 1.0, 0.0);
         let residual = Vector3::new(smallest.x, unit.y, 0.0);
-        assert_eq!(
-            super::least_squares_step(smallest, unit, residual),
-            Some((1.0, 1.0))
-        );
+        assert_eq!(step(smallest, unit, residual), Some((1.0, 1.0)));
     }
 
     #[test]
@@ -156,11 +169,13 @@ mod tests {
         for scale in [1e-200, 1., 1e200] {
             let step =
                 super::projection_step(Vector3::new(scale, 0., 0.), Vector3::new(0.25, 0., 0.))
-                    .unwrap();
+                    .unwrap()
+                    .get();
             assert!((step * scale - 0.25).abs() <= 8. * f64::EPSILON);
         }
         assert_eq!(
-            super::projection_step(Vector3::new(0., 0., 0.), Vector3::new(1., 0., 0.)),
+            super::projection_step(Vector3::new(0., 0., 0.), Vector3::new(1., 0., 0.))
+                .map(FiniteReal::get),
             None
         );
     }

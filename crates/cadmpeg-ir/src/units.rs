@@ -767,6 +767,18 @@ impl FinitePoint2 {
     pub const fn as_raw(&self) -> &Point2 {
         &self.0
     }
+    /// The point with two finite coordinates. Every coordinate is finite, so
+    /// the point is admitted without a check.
+    #[must_use]
+    pub const fn from_coordinates(
+        u: crate::scalar::FiniteReal,
+        v: crate::scalar::FiniteReal,
+    ) -> Self {
+        Self(Point2 {
+            u: u.get(),
+            v: v.get(),
+        })
+    }
     /// Reflect through the parameter-space origin. Negation keeps every
     /// coordinate finite, so the result stays admitted.
     #[must_use]

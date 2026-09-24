@@ -3,6 +3,7 @@ use super::{
     scaled_finite, ExactSignedSum, MAX_SCALED_EXPONENT, MIN_SCALED_EXPONENT,
     MIN_SIGNIFICAND_EXPONENT,
 };
+use crate::scalar::FiniteReal;
 
 #[test]
 fn zero_ratio_still_refuses_nonfinite_inputs() {
@@ -12,7 +13,10 @@ fn zero_ratio_still_refuses_nonfinite_inputs() {
         None
     );
     assert_eq!(super::scaled_ratio_products(f64::NAN, 0.0, [1.0]), None);
-    assert_eq!(super::scaled_ratio_products(0.0, 1.0, [2.0]), Some([0.0]));
+    assert_eq!(
+        super::scaled_ratio_products(0.0, 1.0, [2.0]).map(|products| products.map(FiniteReal::get)),
+        Some([0.0])
+    );
 }
 
 #[test]
@@ -29,15 +33,15 @@ fn exact_dot_rounds_subnormal_ties_using_the_full_product_sum() {
     let coefficients = [2.0_f64.powi(-537), 2.0_f64.powi(-564)];
     let components = [2.0_f64.powi(-538), 2.0_f64.powi(-564)];
     assert_eq!(
-        super::finite_dot(coefficients, components),
+        super::finite_dot(coefficients, components).map(FiniteReal::get),
         Some(f64::from_bits(1))
     );
     assert_eq!(
-        super::finite_dot([-coefficients[0], -coefficients[1]], components),
+        super::finite_dot([-coefficients[0], -coefficients[1]], components).map(FiniteReal::get),
         Some(-f64::from_bits(1))
     );
     assert_eq!(
-        super::finite_dot([coefficients[0], 0.0], components),
+        super::finite_dot([coefficients[0], 0.0], components).map(FiniteReal::get),
         Some(0.0)
     );
 }

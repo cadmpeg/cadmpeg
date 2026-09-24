@@ -6456,7 +6456,7 @@ impl IntcurveSupportSide {
                     [1.0, 1.0],
                     [pcurve_range[0], advance],
                 ) {
-                    return FiniteReal::new(mapped);
+                    return Some(mapped);
                 }
             }
         }
@@ -6471,9 +6471,9 @@ impl IntcurveSupportSide {
         denominator.add_product(solved_parameter_range[1], 1.0);
         denominator.add_product(-solved_parameter_range[0], 1.0);
         let denominator = denominator.finish()?;
-        numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
-            value.quotient(denominator).and_then(FiniteReal::new)
-        })
+        numerator
+            .finish()
+            .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
     }
 }
 

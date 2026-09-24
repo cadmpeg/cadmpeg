@@ -257,14 +257,14 @@ pub(crate) fn decode_at(
         let point = stored
             .into_iter()
             .map(|coordinate| {
-                cadmpeg_ir::math::multiply_divide(coordinate, scale.value(), weight).ok_or_else(
-                    || {
+                cadmpeg_ir::math::multiply_divide(coordinate, scale.value(), weight)
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+                    .ok_or_else(|| {
                         GeometryError::malformed(
                             body.position(),
                             "scaled NURBS cage coordinate is invalid",
                         )
-                    },
-                )
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         control_points

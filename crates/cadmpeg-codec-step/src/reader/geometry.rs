@@ -3864,7 +3864,8 @@ fn curve_parameter_at_point(
                 .transform()
                 .try_inverse_affine()
                 .ok()?
-                .apply_point(point)?,
+                .apply_point(point)?
+                .get(),
             tolerance,
         ),
         _ => None,

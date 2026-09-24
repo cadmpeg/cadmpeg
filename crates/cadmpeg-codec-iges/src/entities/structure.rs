@@ -1451,7 +1451,11 @@ fn linear_nurbs_is_simple_closed(
     let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).and_then(|points| {
         points
             .into_iter()
-            .map(|point| transform.apply_point(point))
+            .map(|point| {
+                transform
+                    .apply_point(point)
+                    .map(cadmpeg_ir::features::FinitePoint3::get)
+            })
             .collect::<Option<Vec<_>>>()
     }) else {
         return false;
@@ -1562,7 +1566,12 @@ fn bounded_plane_curve_is_simple(
             });
             let points = polyline
                 .points()
-                .map(|point| context.transform.apply_point(point))
+                .map(|point| {
+                    context
+                        .transform
+                        .apply_point(point)
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                })
                 .collect::<Option<Vec<_>>>();
             active_range_matches
                 && points.is_some_and(|points| {

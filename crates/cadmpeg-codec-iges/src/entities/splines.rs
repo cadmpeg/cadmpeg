@@ -411,14 +411,16 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
-            let Some(start_point) =
-                transform.apply_point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor))
+            let Some(start_point) = transform
+                .apply_point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor))
+                .map(cadmpeg_ir::features::FinitePoint3::get)
             else {
                 continuous = false;
                 break;
             };
-            let Some(end_point) =
-                transform.apply_point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor))
+            let Some(end_point) = transform
+                .apply_point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor))
+                .map(cadmpeg_ir::features::FinitePoint3::get)
             else {
                 continuous = false;
                 break;
@@ -495,11 +497,13 @@ pub(super) fn project(
             }
             let Some(bezier) = (0..4)
                 .map(|index| {
-                    transform.apply_point(Point3::new(
-                        x[index] * factor,
-                        y[index] * factor,
-                        z[index] * factor,
-                    ))
+                    transform
+                        .apply_point(Point3::new(
+                            x[index] * factor,
+                            y[index] * factor,
+                            z[index] * factor,
+                        ))
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -815,11 +819,14 @@ pub(super) fn project(
                 ];
                 for (u_local, x_row) in coordinates[0].iter().enumerate() {
                     for (v_local, x) in x_row.iter().enumerate() {
-                        let Some(point) = transform.apply_point(Point3::new(
-                            *x * factor,
-                            coordinates[1][u_local][v_local] * factor,
-                            coordinates[2][u_local][v_local] * factor,
-                        )) else {
+                        let Some(point) = transform
+                            .apply_point(Point3::new(
+                                *x * factor,
+                                coordinates[1][u_local][v_local] * factor,
+                                coordinates[2][u_local][v_local] * factor,
+                            ))
+                            .map(cadmpeg_ir::features::FinitePoint3::get)
+                        else {
                             valid = false;
                             break 'patches;
                         };

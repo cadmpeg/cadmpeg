@@ -4,6 +4,7 @@
 //! and the sign of its discriminant.
 
 use cadmpeg_ir::math::{multiply_divide, power_of_two_bound, scale_power_of_two};
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// The relative band inside which a sum of products states zero.
 ///
@@ -137,8 +138,8 @@ pub(super) fn real_roots(
         let Some(terms) = scale_power_of_two(coefficient.terms, shift - scale_exponent) else {
             return Vec::new();
         };
-        values[index] = value;
-        errors[index] = EPS_QUADRATIC_CANCELLATION * terms;
+        values[index] = value.get();
+        errors[index] = EPS_QUADRATIC_CANCELLATION * terms.get();
     }
     let [a, b, c] = values;
     let product = 4.0 * a * c;
@@ -157,6 +158,7 @@ pub(super) fn real_roots(
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
         return multiply_divide(-linear.value, 0.5, quadratic.value)
+            .map(FiniteReal::get)
             .into_iter()
             .collect();
     }
@@ -171,9 +173,10 @@ pub(super) fn real_roots(
             return Some(0.0);
         }
         let numerator_exponent = power_of_two_bound(numerator)?;
-        let ratio = scale_power_of_two(numerator, -numerator_exponent)?
-            / scale_power_of_two(denominator, -denominator_exponent)?;
+        let ratio = scale_power_of_two(numerator, -numerator_exponent)?.get()
+            / scale_power_of_two(denominator, -denominator_exponent)?.get();
         scale_power_of_two(ratio, numerator_exponent - denominator_exponent + shift)
+            .map(FiniteReal::get)
     };
     // q is in the scaled variable's chart. Combine the chart exponent with
     // each original coefficient before division can overflow or underflow.

@@ -129,14 +129,6 @@ impl FinitePoint3 {
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
     }
-
-    /// Apply an affine transform. [`Transform::apply_point`] returns a point
-    /// only when every coordinate is finite, so its result stays admitted.
-    /// The result is absent when the transform overflows a coordinate.
-    #[must_use]
-    pub fn transformed(self, transform: Transform) -> Option<Self> {
-        transform.apply_point(self.0).map(Self)
-    }
 }
 
 impl crate::geometry::nurbs::NurbsCurve {
@@ -194,19 +186,21 @@ checked_feature_geometry!(
     "FiniteVector3 components must be finite", get, as_raw
 );
 impl FiniteVector3 {
+    /// The vector with three finite components. Every component is finite,
+    /// so the vector is admitted without a check.
+    #[must_use]
+    pub const fn from_components(x: FiniteReal, y: FiniteReal, z: FiniteReal) -> Self {
+        Self(Vector3 {
+            x: x.get(),
+            y: y.get(),
+            z: z.get(),
+        })
+    }
+
     /// Reverse all components.
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
-    }
-
-    /// Apply the linear part of an affine transform.
-    /// [`Transform::apply_vector`] returns a vector only when every component
-    /// is finite, so its result stays admitted. The result is absent when the
-    /// transform overflows a component.
-    #[must_use]
-    pub fn transformed(self, transform: Transform) -> Option<Self> {
-        transform.apply_vector(self.0).map(Self)
     }
 }
 

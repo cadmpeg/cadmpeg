@@ -70,7 +70,8 @@ fn insert_knot<const DIMENSION: usize>(
     inserted[..=first].copy_from_slice(&controls[..=first]);
     inserted[tail + 1..].copy_from_slice(&controls[tail..]);
     for index in first + 1..=tail {
-        let alpha = crate::math::parameter_fraction(value, knots[index], knots[index + degree])?;
+        let alpha =
+            crate::math::parameter_fraction(value, knots[index], knots[index + degree])?.get();
         inserted[index] = std::array::from_fn(|axis| {
             (1.0 - alpha) * controls[index - 1][axis] + alpha * controls[index][axis]
         });

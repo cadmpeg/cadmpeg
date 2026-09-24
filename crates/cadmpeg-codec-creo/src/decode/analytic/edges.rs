@@ -167,7 +167,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
                 range[0],
                 range[1],
             ))
-            .is_some_and(|(first, second)| second - first > EPS_NEAR_ZERO))
+            .is_some_and(|(first, second)| second.get() - first.get() > EPS_NEAR_ZERO))
         .then_some(parameters);
     }
 
@@ -228,8 +228,10 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
         };
         reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
         return Some([
-            cadmpeg_ir::math::reflect_parameter(first, intrinsic_range[0], intrinsic_range[1])?,
-            cadmpeg_ir::math::reflect_parameter(second, intrinsic_range[0], intrinsic_range[1])?,
+            cadmpeg_ir::math::reflect_parameter(first, intrinsic_range[0], intrinsic_range[1])?
+                .get(),
+            cadmpeg_ir::math::reflect_parameter(second, intrinsic_range[0], intrinsic_range[1])?
+                .get(),
         ]);
     }
 
@@ -260,7 +262,7 @@ fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<
         .edit_knots(|knots| {
             for knot in knots {
                 *knot = cadmpeg_ir::math::reflect_parameter(-*knot, range[0], range[1])
-                    .unwrap_or(f64::NAN);
+                    .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
             }
         })
         .ok()?;
@@ -353,7 +355,7 @@ fn degree_one_nurbs_point_parameter(
         let parameter = if span.is_finite() {
             lower + local * span
         } else {
-            cadmpeg_ir::math::interpolate(lower, upper, local)?
+            cadmpeg_ir::math::interpolate(lower, upper, local)?.get()
         };
         let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
             continue;

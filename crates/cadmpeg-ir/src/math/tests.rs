@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{Point2, Point3, Vector3};
+use crate::scalar::FiniteReal;
 
 const EPS_UNIT_RESULT: f64 = 8.0 * f64::EPSILON;
 
@@ -153,11 +154,17 @@ fn numerical_audit_parameter_reflection_preserves_shifted_endpoints() {
         [1.0e308, 1.1e308],
         [-f64::MAX, f64::MAX],
     ] {
-        assert_eq!(super::reflect_parameter(start, start, end), Some(end));
-        assert_eq!(super::reflect_parameter(end, start, end), Some(start));
+        assert_eq!(
+            super::reflect_parameter(start, start, end).map(FiniteReal::get),
+            Some(end)
+        );
+        assert_eq!(
+            super::reflect_parameter(end, start, end).map(FiniteReal::get),
+            Some(start)
+        );
     }
     assert_eq!(
-        super::reflect_parameter(0.0, -f64::MAX, f64::MAX),
+        super::reflect_parameter(0.0, -f64::MAX, f64::MAX).map(FiniteReal::get),
         Some(0.0)
     );
     assert!(super::reflect_parameter(-f64::MAX, 0.0, f64::MAX).is_none());
@@ -165,9 +172,12 @@ fn numerical_audit_parameter_reflection_preserves_shifted_endpoints() {
 
 #[test]
 fn numerical_audit_product_quotient_preserves_representable_results() {
-    assert_eq!(super::multiply_divide(0.0, 1.0e200, 1.0e-200), Some(0.0));
+    assert_eq!(
+        super::multiply_divide(0.0, 1.0e200, 1.0e-200).map(FiniteReal::get),
+        Some(0.0)
+    );
     for value in [f64::from_bits(1), 1.0e-200, 1.0, 1.0e200, f64::MAX] {
-        let result = super::multiply_divide(value, value, value).unwrap();
+        let result = super::multiply_divide(value, value, value).unwrap().get();
         assert!((result / value - 1.0).abs() <= 4.0 * f64::EPSILON);
     }
     assert!(super::multiply_divide(1.0, 1.0, 0.0).is_none());
@@ -177,34 +187,65 @@ fn numerical_audit_product_quotient_preserves_representable_results() {
 fn numerical_ranges_products_keep_intermediate_exponents() {
     use super::{product_quotient, scaled_sinh_cosh};
     assert_eq!(
-        product_quotient([1e200, 1e200], [4.0, 1e200]),
+        product_quotient([1e200, 1e200], [4.0, 1e200]).map(FiniteReal::get),
         Some(2.5e199)
     );
-    assert_eq!(product_quotient([2.0, 1e308, 0.5], []), Some(1e308));
+    assert_eq!(
+        product_quotient([2.0, 1e308, 0.5], []).map(FiniteReal::get),
+        Some(1e308)
+    );
     assert_eq!(product_quotient([1.0], [0.0]), None);
     assert_eq!(product_quotient([f64::NAN], [1.0]), None);
     assert_eq!(product_quotient([f64::MAX, 2.0], []), None);
     for parameter in [-720.0_f64, 720.0] {
         let expected = (parameter.abs() + 1e-10_f64.ln()).exp() * 0.5;
         let (sinh, cosh) = scaled_sinh_cosh(1e-10, parameter).unwrap();
+        let (sinh, cosh) = (sinh.get(), cosh.get());
         assert!((cosh / expected - 1.0).abs() < 1024.0 * f64::EPSILON);
         assert_eq!(sinh, parameter.signum() * cosh);
     }
-    assert_eq!(scaled_sinh_cosh(0.0, 2000.0), Some((0.0, 0.0)));
+    assert_eq!(
+        scaled_sinh_cosh(0.0, 2000.0).map(|(sinh, cosh)| (sinh.get(), cosh.get())),
+        Some((0.0, 0.0))
+    );
     assert_eq!(scaled_sinh_cosh(1.0, 2000.0), None);
-    assert_eq!(scaled_sinh_cosh(2.0, 0.0), Some((0.0, 2.0)));
+    assert_eq!(
+        scaled_sinh_cosh(2.0, 0.0).map(|(sinh, cosh)| (sinh.get(), cosh.get())),
+        Some((0.0, 2.0))
+    );
 }
 #[test]
 fn numerical_ranges_interpolation_and_wrapping_avoid_endpoint_subtraction_overflow() {
     use super::{interpolate, wrap_parameter};
-    assert_eq!(interpolate(-1e308, 1e308, 0.5), Some(0.0));
-    assert_eq!(interpolate(-1e308, 1e308, 0.0), Some(-1e308));
-    assert_eq!(interpolate(-1e308, 1e308, 1.0), Some(1e308));
+    assert_eq!(
+        interpolate(-1e308, 1e308, 0.5).map(FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        interpolate(-1e308, 1e308, 0.0).map(FiniteReal::get),
+        Some(-1e308)
+    );
+    assert_eq!(
+        interpolate(-1e308, 1e308, 1.0).map(FiniteReal::get),
+        Some(1e308)
+    );
     assert_eq!(interpolate(0.0, 1.0, f64::NAN), None);
-    assert_eq!(wrap_parameter(1e308, -1e308, 0.0), Some(-1e308));
-    assert_eq!(wrap_parameter(1.5e308, -1e308, 1e308), Some(-5e307));
-    assert_eq!(wrap_parameter(1.0, -1.0, 1.0), Some(-1.0));
-    assert_eq!(wrap_parameter(0.5, -1.0, 1.0), Some(0.5));
+    assert_eq!(
+        wrap_parameter(1e308, -1e308, 0.0).map(FiniteReal::get),
+        Some(-1e308)
+    );
+    assert_eq!(
+        wrap_parameter(1.5e308, -1e308, 1e308).map(FiniteReal::get),
+        Some(-5e307)
+    );
+    assert_eq!(
+        wrap_parameter(1.0, -1.0, 1.0).map(FiniteReal::get),
+        Some(-1.0)
+    );
+    assert_eq!(
+        wrap_parameter(0.5, -1.0, 1.0).map(FiniteReal::get),
+        Some(0.5)
+    );
     assert_eq!(wrap_parameter(1.0, 0.0, 0.0), None);
 }
 
@@ -221,9 +262,12 @@ fn a_power_of_two_bound_normalises_without_moving_a_significand() {
         f64::MAX,
     ] {
         let exponent = power_of_two_bound(value).unwrap();
-        let normalised = scale_power_of_two(value, -exponent).unwrap();
+        let normalised = scale_power_of_two(value, -exponent).unwrap().get();
         assert!((0.5..1.0).contains(&normalised.abs()));
-        assert_eq!(scale_power_of_two(normalised, exponent), Some(value));
+        assert_eq!(
+            scale_power_of_two(normalised, exponent).map(FiniteReal::get),
+            Some(value)
+        );
     }
     assert_eq!(power_of_two_bound(1.0), Some(1));
     assert_eq!(power_of_two_bound(-6.0), Some(3));
@@ -237,13 +281,25 @@ fn audit_regression_power_scaling_preserves_extreme_finite_results() {
     use super::scale_power_of_two;
     let minimum = f64::from_bits(1);
     let maximum_power = 2.0_f64.powi(1023);
-    assert_eq!(scale_power_of_two(minimum, 2097), Some(maximum_power));
-    assert_eq!(scale_power_of_two(maximum_power, -2097), Some(minimum));
-    assert_eq!(scale_power_of_two(1.5, -1074), Some(2.0 * minimum));
-    assert_eq!(scale_power_of_two(1.0, i32::MAX), None);
-    assert_eq!(scale_power_of_two(1.0, i32::MIN), Some(0.0));
     assert_eq!(
-        scale_power_of_two(-0.0, i32::MAX).unwrap().to_bits(),
+        scale_power_of_two(minimum, 2097).map(FiniteReal::get),
+        Some(maximum_power)
+    );
+    assert_eq!(
+        scale_power_of_two(maximum_power, -2097).map(FiniteReal::get),
+        Some(minimum)
+    );
+    assert_eq!(
+        scale_power_of_two(1.5, -1074).map(FiniteReal::get),
+        Some(2.0 * minimum)
+    );
+    assert_eq!(scale_power_of_two(1.0, i32::MAX), None);
+    assert_eq!(
+        scale_power_of_two(1.0, i32::MIN).map(FiniteReal::get),
+        Some(0.0)
+    );
+    assert_eq!(
+        scale_power_of_two(-0.0, i32::MAX).unwrap().get().to_bits(),
         (-0.0_f64).to_bits()
     );
     assert_eq!(scale_power_of_two(f64::NAN, 0), None);
@@ -259,7 +315,7 @@ fn numerical_0922b_parameter_fraction_preserves_finite_charts() {
         (3.0, 0.0, 1.0, 3.0),
     ] {
         assert_eq!(
-            super::parameter_fraction(parameter, start, end),
+            super::parameter_fraction(parameter, start, end).map(FiniteReal::get),
             Some(expected)
         );
     }

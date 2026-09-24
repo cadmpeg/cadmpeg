@@ -768,6 +768,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             let point = |parameter: f64| {
                 let (_, x) = cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)?;
                 let (y, _) = cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.get(), parameter)?;
+                let (x, y) = (x.get(), y.get());
                 let (sine, cosine) = major_angle.get().sin_cos();
                 let point = Point2::new(
                     center.u + x * cosine - y * sine,
@@ -793,7 +794,8 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 let x = cadmpeg_ir::math::product_quotient(
                     [parameter, parameter],
                     [4.0, focal_length.get()],
-                )?;
+                )?
+                .get();
                 let point = Point2::new(
                     vertex.u + x * axis_angle.get().cos() - parameter * axis_angle.get().sin(),
                     vertex.v + x * axis_angle.get().sin() + parameter * axis_angle.get().cos(),

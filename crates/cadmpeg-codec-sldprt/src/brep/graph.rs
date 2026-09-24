@@ -3102,8 +3102,8 @@ where
     F: FnMut(f64) -> Option<f64>,
 {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-    let mut a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?;
-    let mut b = cadmpeg_ir::math::interpolate(left, right, ratio)?;
+    let mut a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?.get();
+    let mut b = cadmpeg_ir::math::interpolate(left, right, ratio)?.get();
     let mut da = objective(a)?;
     let mut db = objective(b)?;
     for _ in 0..80 {
@@ -3111,17 +3111,17 @@ where
             right = b;
             b = a;
             db = da;
-            a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?;
+            a = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio)?.get();
             da = objective(a)?;
         } else {
             left = a;
             a = b;
             da = db;
-            b = cadmpeg_ir::math::interpolate(left, right, ratio)?;
+            b = cadmpeg_ir::math::interpolate(left, right, ratio)?.get();
             db = objective(b)?;
         }
     }
-    let parameter = cadmpeg_ir::math::interpolate(left, right, 0.5)?;
+    let parameter = cadmpeg_ir::math::interpolate(left, right, 0.5)?.get();
     Some((parameter, objective(parameter)?))
 }
 
@@ -3149,7 +3149,8 @@ where
                 start,
                 end,
                 index as f64 / INVERSE_SAMPLE_COUNT as f64,
-            )?;
+            )?
+            .get();
             samples.push((parameter, objective(parameter)?));
         }
         candidates.extend(samples.iter().copied());
@@ -4901,7 +4902,7 @@ fn nurbs_curve_sample_parameters(
         }
         for index in 0..=NURBS_CACHE_SAMPLES_PER_SPAN {
             let fraction = index as f64 / NURBS_CACHE_SAMPLES_PER_SPAN as f64;
-            parameters.push(cadmpeg_ir::math::interpolate(start, end, fraction)?);
+            parameters.push(cadmpeg_ir::math::interpolate(start, end, fraction)?.get());
         }
     }
     parameters.sort_by(f64::total_cmp);

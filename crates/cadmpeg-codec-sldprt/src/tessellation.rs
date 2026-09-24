@@ -892,7 +892,7 @@ pub(crate) fn assign_unique_surface_owners(
                     candidate
                         .inverse
                         .apply_point(point.get())
-                        .and_then(|point| surface_measure(surface, point, Some(tolerance)))
+                        .and_then(|point| surface_measure(surface, point.get(), Some(tolerance)))
                         .is_some_and(|measure| measure.residual <= tolerance)
                 })
             })
@@ -957,7 +957,7 @@ fn approximate_surface_owner(
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
-                let local_point = candidate.inverse.apply_point(point.get())?;
+                let local_point = candidate.inverse.apply_point(point.get())?.get();
                 let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
@@ -1016,7 +1016,7 @@ fn approximate_trimmed_surface_owner(
             for point in mesh.vertices() {
                 let measure = surface_measure(
                     candidate.surface.solved()?,
-                    candidate.inverse.apply_point(point.get())?,
+                    candidate.inverse.apply_point(point.get())?.get(),
                     None,
                 )?;
                 max_residual = max_residual.max(measure.residual);
@@ -1269,6 +1269,7 @@ impl CylindricalTrim {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
+            let point = point.get();
             let axial = point
                 .vector_from(self.origin)
                 .dot(*self.frame.axis().as_raw());
@@ -1300,6 +1301,7 @@ impl ConicalTrim {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
+            let point = point.get();
             let axial = point
                 .vector_from(self.origin)
                 .dot(*self.frame.axis().as_raw());
@@ -1338,7 +1340,7 @@ impl PlanarTrim {
             .map(|point| {
                 inverse_body
                     .apply_point(point.get())
-                    .map(|point| self.frame.project(point))
+                    .map(|point| self.frame.project(point.get()))
             })
             .collect::<Option<Vec<_>>>()
         else {
@@ -2233,9 +2235,9 @@ fn plane_frame(surface: &SolvedSurfaceGeometry) -> Option<PlaneFrame> {
             let basis = plane_frame(placed.basis())?;
             let transform = placed.transform();
             (
-                basis.origin.transformed(*transform)?,
-                transform.apply_vector(basis.normal)?,
-                transform.apply_vector(basis.u_axis)?,
+                transform.apply_point(basis.origin.get())?,
+                transform.apply_vector(basis.normal)?.get(),
+                transform.apply_vector(basis.u_axis)?.get(),
             )
         }
         _ => return None,
@@ -2252,7 +2254,8 @@ fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
 }
 
 fn polygon_area_twice(polygon: &[Point2]) -> f64 {
-    cadmpeg_ir::math::planar::polygon_area_twice(polygon).unwrap_or(f64::NAN)
+    cadmpeg_ir::math::planar::polygon_area_twice(polygon)
+        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)
 }
 
 fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
@@ -2664,7 +2667,11 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
             transform
                 .apply_vector(analytic_surface_normal(
                     placed.basis(),
-                    transform.try_inverse_affine().ok()?.apply_point(point)?,
+                    transform
+                        .try_inverse_affine()
+                        .ok()?
+                        .apply_point(point)?
+                        .get(),
                 )?)?
                 .unit()
         }
@@ -2737,7 +2744,8 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
                     .transform()
                     .try_inverse_affine()
                     .ok()?
-                    .apply_point(point)?,
+                    .apply_point(point)?
+                    .get(),
             )
         }
         SolvedSurfaceGeometry::Nurbs(_)
@@ -2778,7 +2786,11 @@ fn surface_measure(
         if transform.is_proper_rigid() {
             let mut measure = surface_measure(
                 placed.basis(),
-                transform.try_inverse_affine().ok()?.apply_point(point)?,
+                transform
+                    .try_inverse_affine()
+                    .ok()?
+                    .apply_point(point)?
+                    .get(),
                 fit_tolerance,
             )?;
             measure.normal = measure

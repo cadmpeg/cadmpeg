@@ -660,7 +660,7 @@ pub(in super::super) fn line_arc_intersect(
     )
     .is_some_and(|parameters| {
         parameters.into_iter().any(|(t, point)| {
-            (-parameter_tolerance..=1.0 + parameter_tolerance).contains(&t)
+            (-parameter_tolerance..=1.0 + parameter_tolerance).contains(&t.get())
                 && point_on_profile_arc([point.u, point.v], arc, tolerance)
         })
     })

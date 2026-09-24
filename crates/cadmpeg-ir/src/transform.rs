@@ -5,8 +5,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::math::sum::{finite_dot, ExactSignedSum, ScaledValue};
 use crate::math::{Point2, Point3, Vector3};
+use crate::scalar::FiniteReal;
 use crate::units::UnitVector3;
 
 /// A row-major affine transform applied to two-dimensional geometry.
@@ -79,8 +81,10 @@ impl Transform2 {
     pub fn apply_point(self, point: Point2) -> Point2 {
         let components = [point.u, point.v, 1.0];
         let apply = |row: [f64; 3]| {
-            finite_dot(row, components)
-                .unwrap_or_else(|| row[0] * point.u + row[1] * point.v + row[2])
+            finite_dot(row, components).map_or_else(
+                || row[0] * point.u + row[1] * point.v + row[2],
+                FiniteReal::get,
+            )
         };
         Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
@@ -90,7 +94,7 @@ impl Transform2 {
         let components = [vector.u, vector.v];
         let apply = |row: [f64; 3]| {
             finite_dot([row[0], row[1]], components)
-                .unwrap_or_else(|| row[0] * vector.u + row[1] * vector.v)
+                .map_or_else(|| row[0] * vector.u + row[1] * vector.v, FiniteReal::get)
         };
         Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
@@ -180,6 +184,15 @@ impl Transform {
             .then_some(Self { rows })
     }
 
+    /// Build an affine transform from finite coefficients. Every coefficient
+    /// is finite, so the rows keep the admission of [`Self::affine`] without
+    /// a check.
+    fn from_finite_rows(rows: [[FiniteReal; 4]; 3]) -> Self {
+        Self {
+            rows: rows.map(|row| row.map(FiniteReal::get)),
+        }
+    }
+
     /// The affine rows, without the constant bottom row.
     #[must_use]
     pub fn affine_rows(self) -> [[f64; 4]; 3] {
@@ -222,14 +235,14 @@ impl Transform {
     pub fn compose(self, right: Self) -> Result<Self, TransformError> {
         let left = self.rows();
         let right = right.rows();
-        let mut rows = [[0.0; 4]; 3];
+        let mut rows = [[FiniteReal::ZERO; 4]; 3];
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate() {
                 *value = finite_dot(left[row], std::array::from_fn(|inner| right[inner][column]))
                     .ok_or(TransformError::NonFinite)?;
             }
         }
-        Self::affine(rows).ok_or(TransformError::NonFinite)
+        Ok(Self::from_finite_rows(rows))
     }
 
     /// Applies this affine transform to a point.
@@ -238,9 +251,9 @@ impl Transform {
     /// near the finite range added to a coordinate near it sums to an infinity.
     /// The result is absent when any coordinate is not finite.
     #[must_use]
-    pub fn apply_point(self, point: Point3) -> Option<Point3> {
+    pub fn apply_point(self, point: Point3) -> Option<FinitePoint3> {
         let components = [point.x, point.y, point.z, 1.0];
-        Some(Point3::new(
+        Some(FinitePoint3::from_coordinates(
             finite_dot(self.rows[0], components)?,
             finite_dot(self.rows[1], components)?,
             finite_dot(self.rows[2], components)?,
@@ -252,10 +265,10 @@ impl Transform {
     /// The result is absent when any component is not finite, which finite
     /// coefficients and a finite operand still produce by overflow.
     #[must_use]
-    pub fn apply_vector(self, vector: Vector3) -> Option<Vector3> {
+    pub fn apply_vector(self, vector: Vector3) -> Option<FiniteVector3> {
         let components = [vector.x, vector.y, vector.z];
         let linear = self.rows.map(|row| [row[0], row[1], row[2]]);
-        Some(Vector3::new(
+        Some(FiniteVector3::from_components(
             finite_dot(linear[0], components)?,
             finite_dot(linear[1], components)?,
             finite_dot(linear[2], components)?,
@@ -267,15 +280,15 @@ impl Transform {
     pub fn orientation(self) -> Option<f64> {
         let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
         let value = linear_determinant(&matrix)?;
-        Some(value.rescale(value.exponent())?.signum())
+        Some(value.rescale(value.exponent())?.get().signum())
     }
 
     /// Applies the inverse-transpose linear transform and normalizes the result.
-    pub fn apply_normal(self, normal: Vector3) -> Option<Vector3> {
+    pub fn apply_normal(self, normal: Vector3) -> Option<UnitVector3> {
         if !normal.is_finite() {
             return None;
         }
-        self.apply_finite_normal(normal).map(Vector3::from)
+        self.apply_finite_normal(normal)
     }
 
     /// Applies the inverse-transpose linear transform to an admitted unit
@@ -288,7 +301,7 @@ impl Transform {
     fn apply_finite_normal(self, normal: Vector3) -> Option<UnitVector3> {
         let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
         let determinant = linear_determinant(&matrix)?;
-        let orientation = determinant.rescale(determinant.exponent())?.signum();
+        let orientation = determinant.rescale(determinant.exponent())?.get().signum();
         let components = [normal.x, normal.y, normal.z];
         let values: [Option<ScaledValue>; 3] = std::array::from_fn(|row| {
             let mut sum = ExactSignedSum::default();
@@ -305,24 +318,25 @@ impl Transform {
         let m = self.rows;
         let inverse_linear = self.inverse_linear()?;
         let translation = [m[0][3], m[1][3], m[2][3]];
-        let mut rows = [[0.0; 4]; 3];
+        let mut rows = [[FiniteReal::ZERO; 4]; 3];
         for row in 0..3 {
             rows[row][..3].copy_from_slice(&inverse_linear[row]);
-            rows[row][3] =
-                -finite_dot(inverse_linear[row], translation).ok_or(TransformError::NonFinite)?;
+            rows[row][3] = finite_dot(inverse_linear[row].map(FiniteReal::get), translation)
+                .ok_or(TransformError::NonFinite)?
+                .negated();
         }
-        Self::affine(rows).ok_or(TransformError::NonFinite)
+        Ok(Self::from_finite_rows(rows))
     }
 
-    fn inverse_linear(self) -> Result<[[f64; 3]; 3], TransformError> {
+    fn inverse_linear(self) -> Result<[[FiniteReal; 3]; 3], TransformError> {
         let matrix = self.rows.map(|row| [row[0], row[1], row[2]]);
         let determinant = linear_determinant(&matrix).ok_or(TransformError::Singular)?;
-        let mut inverse = [[0.0; 3]; 3];
+        let mut inverse = [[FiniteReal::ZERO; 3]; 3];
         for (row, entries) in inverse.iter_mut().enumerate() {
             for (column, entry) in entries.iter_mut().enumerate() {
                 let mut cofactor = ExactSignedSum::default();
                 add_cofactor_product(&mut cofactor, &matrix, column, row, 1.0);
-                *entry = cofactor.finish().map_or(Ok(0.0), |value| {
+                *entry = cofactor.finish().map_or(Ok(FiniteReal::ZERO), |value| {
                     value.quotient(determinant).ok_or(TransformError::NonFinite)
                 })?;
             }
@@ -334,6 +348,7 @@ impl Transform {
 #[cfg(test)]
 mod tests {
     use super::{Transform, Transform2, TransformError};
+    use crate::features::{FinitePoint3, FiniteVector3};
     use crate::math::{Point3, Vector3};
 
     mod numeric;
@@ -354,12 +369,13 @@ mod tests {
         assert_eq!(
             transform
                 .apply_point(point)
-                .and_then(|placed| inverse.apply_point(placed)),
+                .and_then(|placed| inverse.apply_point(placed.get()))
+                .map(FinitePoint3::get),
             Some(point)
         );
         assert_eq!(Transform::identity().compose(transform), Ok(transform));
         assert_eq!(
-            transform.apply_vector(vector),
+            transform.apply_vector(vector).map(FiniteVector3::get),
             Some(Vector3::new(3.0, 6.0, 12.0))
         );
     }
@@ -375,7 +391,9 @@ mod tests {
         assert_eq!(transform.apply_point(Point3::new(f64::MAX, 0.0, 0.0)), None);
         assert_eq!(transform.apply_vector(Vector3::new(0.0, 1e200, 0.0)), None);
         assert_eq!(
-            transform.apply_point(Point3::new(0.0, 0.0, 1.0)),
+            transform
+                .apply_point(Point3::new(0.0, 0.0, 1.0))
+                .map(FinitePoint3::get),
             Some(Point3::new(f64::MAX, 0.0, 1.0))
         );
     }
@@ -416,7 +434,9 @@ mod tests {
         ])
         .expect("affine transform");
         assert_eq!(
-            transform.apply_normal(Vector3::new(1.0, 1.0, 0.0)),
+            transform
+                .apply_normal(Vector3::new(1.0, 1.0, 0.0))
+                .map(Vector3::from),
             Some(Vector3::new(
                 1.0 / 5.0_f64.sqrt(),
                 2.0 / 5.0_f64.sqrt(),
@@ -427,7 +447,9 @@ mod tests {
             transform
                 .apply_unit_normal(crate::units::UnitVector3::X_AXIS)
                 .map(Vector3::from),
-            transform.apply_normal(Vector3::new(1.0, 0.0, 0.0))
+            transform
+                .apply_normal(Vector3::new(1.0, 0.0, 0.0))
+                .map(Vector3::from)
         );
         let mut rows = transform.affine_rows();
         rows[0][0] = 0.0;
@@ -456,7 +478,7 @@ mod tests {
                 .expect("nonsingular linear component");
             assert_eq!(UnitVector3::new(*mapped.as_raw()), Some(mapped));
             assert_eq!(
-                transform.apply_normal(*normal.as_raw()),
+                transform.apply_normal(*normal.as_raw()).map(Vector3::from),
                 Some(*mapped.as_raw())
             );
         }

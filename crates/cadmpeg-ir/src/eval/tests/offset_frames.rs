@@ -14,7 +14,7 @@ fn offset_frames_reject_extreme_perpendicular_tangents() {
     assert!(fitted_nurbs_offset_candidate(source, result, 0.0).is_none());
     let parallel = result.map(|(point, _)| (point, Point2::new(1e200, 0.0)));
     assert_eq!(
-        fitted_nurbs_offset_candidate(source, parallel, 0.0),
+        fitted_nurbs_offset_candidate(source, parallel, 0.0).map(crate::scalar::FiniteReal::get),
         Some(1.0)
     );
 }

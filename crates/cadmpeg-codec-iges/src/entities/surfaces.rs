@@ -547,7 +547,10 @@ fn partition_homogeneous_spans(
             .iter()
             .copied()
             .filter(|boundary| start < *boundary && *boundary < end)
-            .map(|boundary| cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary))
+            .map(|boundary| {
+                cadmpeg_ir::math::interpolate(domain[0], domain[1], boundary)
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            })
             .collect::<Option<Vec<_>>>()?;
         let mut current = span.clone();
         for cut in cuts {
@@ -1135,14 +1138,20 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(u_axis) = transform.apply_vector(local_u).and_then(unit_vector) else {
+        let Some(u_axis) = transform
+            .apply_vector(local_u)
+            .and_then(|axis| unit_vector(axis.get()))
+        else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its u direction",
             ));
             continue;
         };
-        let Some(v_axis) = transform.apply_vector(local_v).and_then(unit_vector) else {
+        let Some(v_axis) = transform
+            .apply_vector(local_v)
+            .and_then(|axis| unit_vector(axis.get()))
+        else {
             losses.push(entity_loss(
                 entry,
                 "plane placement collapses its v direction",
@@ -1161,9 +1170,12 @@ pub(super) fn project(
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    transform.apply_point(local_origin).ok_or_else(|| {
-                        CodecError::malformed("plane placement produces a non-finite origin")
-                    })?,
+                    transform
+                        .apply_point(local_origin)
+                        .ok_or_else(|| {
+                            CodecError::malformed("plane placement produces a non-finite origin")
+                        })?
+                        .get(),
                     normal,
                     u_axis,
                 )
@@ -1414,12 +1426,13 @@ pub(super) fn project(
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;
             };
-            let Some(start) = start.transformed(transform) else {
+            let Some(start) = transform.apply_point(start.get()) else {
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
             };
-            let Some(target) =
-                transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
+            let Some(target) = transform
+                .apply_point(Point3::new(x * factor, y * factor, z * factor))
+                .map(cadmpeg_ir::features::FinitePoint3::get)
             else {
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
@@ -1513,11 +1526,14 @@ pub(super) fn project(
         if entry.transform != 0
             && placed_directrix
                 .edit_control_points(|point| {
-                    *point = transform.apply_point(*point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                            "placement produces a non-finite pole".into(),
-                        )
-                    })?;
+                    *point = transform
+                        .apply_point(*point)
+                        .ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                                "placement produces a non-finite pole".into(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .is_err()
@@ -1541,7 +1557,9 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
         };
-        let Some(target) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
+        let Some(target) = transform
+            .apply_point(Point3::new(x * factor, y * factor, z * factor))
+            .map(cadmpeg_ir::features::FinitePoint3::get)
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -1781,12 +1799,17 @@ pub(super) fn project(
                     )),
                     source_object: Some(source_object(entry)?),
                 });
-                let placed_origin = admitted_axis.0.transformed(transform).ok_or_else(|| {
-                    CodecError::malformed("placement produces a non-finite revolution origin")
-                })?;
+                let placed_origin =
+                    transform
+                        .apply_point(admitted_axis.0.get())
+                        .ok_or_else(|| {
+                            CodecError::malformed(
+                                "placement produces a non-finite revolution origin",
+                            )
+                        })?;
                 let Some(placed_direction) = transform
                     .apply_vector(axis_direction)
-                    .and_then(unit_vector)
+                    .and_then(|direction| unit_vector(direction.get()))
                     .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
                 else {
                     losses.push(entity_loss(
@@ -1902,7 +1925,8 @@ pub(super) fn project(
                         .apply_point(axis_point.translated(radial_control, 1.0))
                         .ok_or_else(|| {
                             CodecError::malformed("placement produces a non-finite revolution pole")
-                        })?,
+                        })?
+                        .get(),
                 );
                 weights.push(u_weight * angular_weight);
             }
@@ -1960,11 +1984,14 @@ pub(super) fn project(
             let mut placed_generatrix = generatrix.clone();
             if placed_generatrix
                 .edit_control_points(|point| {
-                    *point = transform.apply_point(*point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
-                            "placement produces a non-finite pole".into(),
-                        )
-                    })?;
+                    *point = transform
+                        .apply_point(*point)
+                        .ok_or_else(|| {
+                            cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
+                                "placement produces a non-finite pole".into(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .is_err()
@@ -1986,12 +2013,14 @@ pub(super) fn project(
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
                 source_object: Some(source_object(entry)?),
             });
-            let placed_origin = admitted_axis.0.transformed(transform).ok_or_else(|| {
-                CodecError::malformed("placement produces a non-finite revolution origin")
-            })?;
+            let placed_origin = transform
+                .apply_point(admitted_axis.0.get())
+                .ok_or_else(|| {
+                    CodecError::malformed("placement produces a non-finite revolution origin")
+                })?;
             let Some(placed_direction) = transform
                 .apply_vector(axis_direction)
-                .and_then(unit_vector)
+                .and_then(|direction| unit_vector(direction.get()))
                 .and_then(|direction| UnitVector3::new(direction.scale(orientation)))
             else {
                 losses.push(entity_loss(
@@ -2321,7 +2350,8 @@ pub(super) fn project(
                         .apply_point(native_points[native_index])
                         .ok_or_else(|| {
                             CodecError::malformed("placement produces a non-finite surface pole")
-                        })?,
+                        })?
+                        .get(),
                 );
                 if let Some(weights) = &mut weights {
                     weights.push(native_weights[native_index]);

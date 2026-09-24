@@ -644,13 +644,14 @@ fn analytic_segment_intersections(
             ProfileBoundarySegment::Line { start: c, end: d },
         ) => {
             let [parameter, other_parameter] =
-                cadmpeg_ir::math::planar::line_line_parameters(*a, *b, *c, *d)?;
+                cadmpeg_ir::math::planar::line_line_parameters(*a, *b, *c, *d)?
+                    .map(cadmpeg_ir::scalar::FiniteReal::get);
             if !(0.0..=1.0).contains(&parameter) || !(0.0..=1.0).contains(&other_parameter) {
                 return Some(Vec::new());
             }
             Some(vec![Point2::new(
-                cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?,
-                cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?,
+                cadmpeg_ir::math::interpolate(a.u, b.u, parameter)?.get(),
+                cadmpeg_ir::math::interpolate(a.v, b.v, parameter)?.get(),
             )])
         }
         (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
@@ -694,6 +695,7 @@ fn line_arc_intersection_points(
         return Some(points);
     };
     for (_, point) in parameters {
+        let point = point.get();
         if cadmpeg_ir::math::planar::point_segment_distance(point, start, end)
             <= 128.0 * f64::EPSILON * radius
         {
@@ -739,6 +741,7 @@ fn arc_intersection_points(
     Some(
         cadmpeg_ir::math::planar::circle_intersections(*lc, *lr, *rc, *rr)?
             .into_iter()
+            .map(cadmpeg_ir::units::FinitePoint2::get)
             .filter(|point| {
                 directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
                     && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re)
@@ -764,7 +767,8 @@ fn arrangement_split_parameters(
             }
             for point in nodes {
                 let parameter =
-                    cadmpeg_ir::math::planar::line_projection_parameter(*start, *end, *point)?;
+                    cadmpeg_ir::math::planar::line_projection_parameter(*start, *end, *point)?
+                        .get();
                 if parameter > 0.0
                     && parameter < 1.0
                     && point_segment_distance(*point, (*start, *end)) <= tolerance
@@ -1244,7 +1248,9 @@ fn point_on_profile_boundary_use(
 }
 
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
-    cadmpeg_ir::math::planar::polygon_area_twice(vertices).unwrap_or(f64::NAN) * 0.5
+    cadmpeg_ir::math::planar::polygon_area_twice(vertices)
+        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)
+        * 0.5
 }
 
 pub(super) fn region_containing_points(
@@ -1828,6 +1834,7 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
         &weights,
         [0.0, 0.0],
     )
+    .map(cadmpeg_ir::scalar::FiniteReal::get)
 }
 
 fn circular_arc_profile_segments(
@@ -2125,14 +2132,14 @@ pub(super) fn point_segment_distance(point: Point2, (start, end): (Point2, Point
     else {
         return point_distance(point, start).min(point_distance(point, end));
     };
-    let parameter = parameter.clamp(0.0, 1.0);
+    let parameter = parameter.get().clamp(0.0, 1.0);
     let (Some(u), Some(v)) = (
         cadmpeg_ir::math::interpolate(start.u, end.u, parameter),
         cadmpeg_ir::math::interpolate(start.v, end.v, parameter),
     ) else {
         return f64::INFINITY;
     };
-    point_distance(point, Point2::new(u, v))
+    point_distance(point, Point2::new(u.get(), v.get()))
 }
 
 fn segment_distance(left: (Point2, Point2), right: (Point2, Point2)) -> f64 {

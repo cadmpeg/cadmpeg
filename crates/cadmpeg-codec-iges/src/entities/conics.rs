@@ -209,26 +209,26 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic placement collapses its plane"));
             continue;
         };
-        let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, *plane_z * factor))
+        let Some(plane_origin) = transform
+            .apply_point(Point3::new(0.0, 0.0, *plane_z * factor))
+            .map(cadmpeg_ir::features::FinitePoint3::get)
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(start_position) = FinitePoint3::new(Point3::new(
+        let Some(start_position) = transform.apply_point(Point3::new(
             *start_x * factor,
             *start_y * factor,
             *plane_z * factor,
-        ))
-        .and_then(|point| point.transformed(transform)) else {
+        )) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(end_position) = FinitePoint3::new(Point3::new(
+        let Some(end_position) = transform.apply_point(Point3::new(
             *end_x * factor,
             *end_y * factor,
             *plane_z * factor,
-        ))
-        .and_then(|point| point.transformed(transform)) else {
+        )) else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -380,7 +380,7 @@ pub(super) fn project(
                 [*coeff_e, factor, scale_x, scale_x],
                 [4.0, *coeff_a, scale_y],
             )
-            .map(f64::abs) else {
+            .map(|value| value.get().abs()) else {
                 losses.push(entity_loss(
                     entry,
                     "parabola focal distance is not representable",
@@ -395,6 +395,7 @@ pub(super) fn project(
                     0.5,
                     focal_distance,
                 )
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis), parameter(end, axis))
@@ -437,7 +438,7 @@ pub(super) fn project(
                 [*coeff_d, factor, scale_y, scale_y],
                 [4.0, *coeff_c, scale_x],
             )
-            .map(f64::abs) else {
+            .map(|value| value.get().abs()) else {
                 losses.push(entity_loss(
                     entry,
                     "parabola focal distance is not representable",
@@ -452,6 +453,7 @@ pub(super) fn project(
                     0.5,
                     focal_distance,
                 )
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
             let (Some(mut start_parameter), Some(mut end_parameter)) =
                 (parameter(start, axis), parameter(end, axis))

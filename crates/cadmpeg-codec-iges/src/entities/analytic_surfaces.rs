@@ -88,7 +88,7 @@ fn transformed_direction(
     let direction = required_direction(record, index, role, entries, records)?;
     transform
         .apply_vector(direction)
-        .and_then(Vector3::unit_nonzero)
+        .and_then(|direction| direction.get().unit_nonzero())
         .ok_or_else(|| format!("{role} collapses under the surface transformation"))
 }
 
@@ -179,7 +179,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some(location) = transform.apply_point(location) else {
+        let Some(location) = transform
+            .apply_point(location)
+            .map(cadmpeg_ir::features::FinitePoint3::get)
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -368,7 +371,7 @@ pub(super) fn project(
                 } else {
                     transform
                         .apply_vector(Vector3::new(0.0, 0.0, 1.0))
-                        .and_then(Vector3::unit_nonzero)
+                        .and_then(|axis| axis.get().unit_nonzero())
                         .ok_or_else(|| "sphere axis collapses under its transformation".to_owned())
                 };
                 let axis = match axis {

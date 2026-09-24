@@ -3530,9 +3530,11 @@ fn reverse_nurbs(
         ));
     }
     let reflect = |parameter| {
-        cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1]).ok_or_else(|| {
-            CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
-        })
+        cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1])
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .ok_or_else(|| {
+                CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
+            })
     };
     let knots = nurbs
         .knots()
@@ -5735,7 +5737,11 @@ fn conic_coefficients(major: f64, minor: f64) -> Result<[f64; 3], CodecError> {
     ];
     let admitted = coefficients
         .iter()
-        .map(|value| value.filter(|value| *value != 0.0))
+        .map(|value| {
+            value
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .filter(|value| *value != 0.0)
+        })
         .collect::<Option<Vec<_>>>()
         .and_then(|values| <[f64; 3]>::try_from(values).ok());
     admitted.ok_or_else(|| {
@@ -6125,7 +6131,7 @@ fn apply_rigid_transform(
     transform: cadmpeg_ir::transform::Transform,
 ) -> Result<CurveGeometry, CodecError> {
     let point = |value: FinitePoint3| -> Result<FinitePoint3, CodecError> {
-        value.transformed(transform).ok_or_else(|| {
+        transform.apply_point(value.get()).ok_or_else(|| {
             CodecError::malformed("transformed curve point has a non-finite coordinate")
         })
     };
@@ -6133,7 +6139,7 @@ fn apply_rigid_transform(
         let placed = transform.apply_vector(value).ok_or_else(|| {
             CodecError::malformed(format_args!("IGES {label} has a non-finite component"))
         })?;
-        UnitVector3::normalized(placed)
+        UnitVector3::normalized(placed.get())
             .ok_or_else(|| CodecError::malformed(format_args!("IGES {label} is degenerate")))
     };
     Ok(match geometry {
@@ -6259,12 +6265,15 @@ fn apply_rigid_transform(
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
                 .edit_control_points(|control_point| {
-                    *control_point = transform.apply_point(*control_point).ok_or_else(|| {
-                        NurbsError::EditRefused(
-                            "transformed NURBS curve control point has a non-finite coordinate"
-                                .to_string(),
-                        )
-                    })?;
+                    *control_point = transform
+                        .apply_point(*control_point)
+                        .ok_or_else(|| {
+                            NurbsError::EditRefused(
+                                "transformed NURBS curve control point has a non-finite coordinate"
+                                    .to_string(),
+                            )
+                        })?
+                        .get();
                     Ok(())
                 })
                 .map_err(|error| match error {
@@ -6279,12 +6288,15 @@ fn apply_rigid_transform(
             polyline
                 .edit_samples(|samples| {
                     samples.edit_points(|sample| {
-                        *sample = transform.apply_point(*sample).ok_or_else(|| {
-                            GeometryLayoutError::EditRefused(
-                                "transformed polyline sample has a non-finite coordinate"
-                                    .to_string(),
-                            )
-                        })?;
+                        *sample = transform
+                            .apply_point(*sample)
+                            .ok_or_else(|| {
+                                GeometryLayoutError::EditRefused(
+                                    "transformed polyline sample has a non-finite coordinate"
+                                        .to_string(),
+                                )
+                            })?
+                            .get();
                         Ok(())
                     })
                 })
@@ -6382,8 +6394,12 @@ fn hyperbola_point(
 ) -> Result<[f64; 2], CodecError> {
     (|| {
         Some([
-            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?.1,
-            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?.0,
+            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?
+                .1
+                .get(),
+            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?
+                .0
+                .get(),
         ])
     })()
     .ok_or_else(|| CodecError::NotImplemented("IGES hyperbola endpoint is non-finite".into()))

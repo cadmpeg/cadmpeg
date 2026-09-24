@@ -1022,6 +1022,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
                 break;
             };
+            let (step_u, step_v) = (step_u.get(), step_v.get());
             parameters.u -= step_u;
             parameters.v -= step_v;
             if !linear_extension {
@@ -1161,6 +1162,7 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             position.z - point.z,
         );
         let (step_u, step_v) = least_squares_step(du, dv, residual)?;
+        let (step_u, step_v) = (step_u.get(), step_v.get());
         let mut accepted = None;
         let mut scale = 1.0;
         for _ in 0..8 {
@@ -1915,6 +1917,7 @@ fn intersection_parameter_tangent(
     let mut tangent = [0.0; 4];
     for side in 0..2 {
         let (u, v) = least_squares_step(derivatives[side][0], derivatives[side][1], chord)?;
+        let (u, v) = (u.get(), v.get());
         let mapped = Vector3::unit_nonzero(Vector3::new(
             derivatives[side][0].x * u + derivatives[side][1].x * v,
             derivatives[side][0].y * u + derivatives[side][1].y * v,
@@ -2120,11 +2123,11 @@ pub(super) fn solve_damped_least_squares_4x4(
     };
     for row in &mut matrix {
         for value in row.iter_mut() {
-            *value = cadmpeg_ir::math::scale_power_of_two(*value, -matrix_exponent)?;
+            *value = cadmpeg_ir::math::scale_power_of_two(*value, -matrix_exponent)?.get();
         }
     }
     for value in &mut rhs {
-        *value = cadmpeg_ir::math::scale_power_of_two(*value, -rhs_exponent)?;
+        *value = cadmpeg_ir::math::scale_power_of_two(*value, -rhs_exponent)?.get();
     }
     let lengths: [f64; 4] =
         std::array::from_fn(|column| (0..4).fold(0.0_f64, |n, row| n.hypot(matrix[row][column])));
@@ -2166,7 +2169,8 @@ pub(super) fn solve_damped_least_squares_4x4(
                 *value = cadmpeg_ir::math::scale_power_of_two(
                     scaled_step[index] / column_scales[index],
                     rhs_exponent - matrix_exponent,
-                )?;
+                )?
+                .get();
             }
             return Some(step);
         }

@@ -259,6 +259,7 @@ fn sketch_curve_offset_matches(
     if let Some(distance) =
         crate::eval::fitted_nurbs_offset_frame_distance(source, result, linear_tolerance)
     {
+        let distance = distance.get();
         let scale = 1.0 + distance.abs().max(expected.abs());
         return expected.is_finite()
             && (distance - expected).abs()
@@ -1282,18 +1283,19 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let first_collinear = first_geometry.first().is_some_and(|reference| {
                     first_geometry.iter().all(|candidate| {
                         planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance)
+                            .is_some_and(|distance| distance.get() <= tolerance)
                     })
                 });
                 let second_collinear = second_geometry.first().is_some_and(|reference| {
                     second_geometry.iter().all(|candidate| {
                         planar_parallel_line_distance(reference, candidate)
-                            .is_some_and(|distance| distance <= tolerance)
+                            .is_some_and(|distance| distance.get() <= tolerance)
                     })
                 });
                 let measured = first_geometry.iter().find_map(|first| {
                     second_geometry.iter().find_map(|second| {
                         planar_parallel_line_span_distance(first, second, tolerance)
+                            .map(crate::scalar::FiniteReal::get)
                     })
                 });
                 let expected = match parameter_values.get(parameter) {
@@ -1527,10 +1529,13 @@ fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
 struct PlanarParallelLines {
     first: [crate::math::Point2; 2],
     second: [crate::math::Point2; 2],
-    distance: f64,
+    distance: crate::scalar::FiniteReal,
 }
 
-fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry) -> Option<f64> {
+fn planar_parallel_line_distance(
+    first: &SketchGeometry,
+    second: &SketchGeometry,
+) -> Option<crate::scalar::FiniteReal> {
     planar_parallel_lines(first, second).map(|lines| lines.distance)
 }
 
@@ -1590,7 +1595,7 @@ fn planar_parallel_line_span_distance(
     first: &SketchGeometry,
     second: &SketchGeometry,
     linear_tolerance: f64,
-) -> Option<f64> {
+) -> Option<crate::scalar::FiniteReal> {
     let lines = planar_parallel_lines(first, second)?;
     let [first_start, first_end] = lines.first;
     let [second_start, second_end] = lines.second;
@@ -1603,8 +1608,8 @@ fn planar_parallel_line_span_distance(
             [unit.x, unit.x, unit.y, unit.y],
         )
     };
-    let first_interval = [0.0, project(first_end)?];
-    let second_interval = [project(second_start)?, project(second_end)?];
+    let first_interval = [0.0, project(first_end)?.get()];
+    let second_interval = [project(second_start)?.get(), project(second_end)?.get()];
     let first_min = first_interval[0].min(first_interval[1]);
     let first_max = first_interval[0].max(first_interval[1]);
     let second_min = second_interval[0].min(second_interval[1]);

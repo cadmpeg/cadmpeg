@@ -739,7 +739,10 @@ fn reverse_pcurve_over_range(
                 .knots()
                 .iter()
                 .rev()
-                .map(|knot| cadmpeg_ir::math::reflect_parameter(*knot, start, end))
+                .map(|knot| {
+                    cadmpeg_ir::math::reflect_parameter(*knot, start, end)
+                        .map(cadmpeg_ir::scalar::FiniteReal::get)
+                })
                 .collect::<Option<Vec<_>>>()
             else {
                 return Ok(None);
@@ -750,14 +753,10 @@ fn reverse_pcurve_over_range(
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
-            let finite = reversed_knots
+            let finite = poles
                 .iter()
-                .chain(
-                    poles
-                        .iter()
-                        .flat_map(|pole| [&pole.radial.u, &pole.radial.v, &pole.axial]),
-                )
-                .all(|value| value.is_finite());
+                .flat_map(|pole| [pole.radial.u, pole.radial.v, pole.axial])
+                .all(f64::is_finite);
             if !finite {
                 return Ok(None);
             }
@@ -775,7 +774,10 @@ fn reverse_pcurve_over_range(
                 .knots()
                 .iter()
                 .rev()
-                .map(|knot| cadmpeg_ir::math::reflect_parameter(*knot, start, end))
+                .map(|knot| {
+                    cadmpeg_ir::math::reflect_parameter(*knot, start, end)
+                        .map(cadmpeg_ir::scalar::FiniteReal::get)
+                })
                 .collect::<Option<Vec<_>>>()
             else {
                 return Ok(None);
@@ -786,10 +788,10 @@ fn reverse_pcurve_over_range(
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
-            let finite = reversed_knots
+            let finite = control_points
                 .iter()
-                .chain(control_points.iter().flat_map(|point| [&point.u, &point.v]))
-                .all(|value| value.is_finite());
+                .flat_map(|point| [point.u, point.v])
+                .all(f64::is_finite);
             if !finite {
                 return Ok(None);
             }
@@ -914,7 +916,9 @@ fn reverse_analytic_pcurve_over_range(
         let component = |cosine, sine| {
             let (cosine_sinh, cosine_cosh) =
                 cadmpeg_ir::math::scaled_sinh_cosh(cosine, reflection)?;
+            let (cosine_sinh, cosine_cosh) = (cosine_sinh.get(), cosine_cosh.get());
             let (sine_sinh, sine_cosh) = cadmpeg_ir::math::scaled_sinh_cosh(sine, reflection)?;
+            let (sine_sinh, sine_cosh) = (sine_sinh.get(), sine_cosh.get());
             Some((cosine_cosh + sine_sinh, -cosine_sinh - sine_cosh))
         };
         let (cosine_u, sine_u) = component(cosine.u, sine.u)?;
@@ -2378,7 +2382,7 @@ fn boundary_curve_speed_bound_with_index(
                     return None;
                 };
             let isocurve = nurbs_surface_isocurve(nurbs, fixed_axis, fixed_parameter)?;
-            let bound = nurbs_curve_speed_bound(&isocurve)? * varying_scale.abs();
+            let bound = nurbs_curve_speed_bound(&isocurve)?.get() * varying_scale.abs();
             bound.is_finite().then_some(bound)
         }
         _ => None,

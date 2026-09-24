@@ -30,7 +30,7 @@ fn numerical_0922_hyperbola_loci_remain_finite() {
     assert_eq!(r.len(), 3);
     assert!(r.iter().all(|(p, _)| p.is_finite()));
     let reference = cadmpeg_ir::math::scaled_sinh_cosh(1e-100, 711.).unwrap();
-    assert_eq!(r[2].0, Point2::new(reference.1, reference.0));
+    assert_eq!(r[2].0, Point2::new(reference.1.get(), reference.0.get()));
     assert!(super::super::typed_relations::sketch_entity_contains_point(
         &e, r[2].0
     ));

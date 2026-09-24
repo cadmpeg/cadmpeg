@@ -414,6 +414,25 @@ impl FiniteReal {
         Self(self.0.abs())
     }
 
+    /// The value `units` times the least positive subnormal magnitude,
+    /// negated when `negative` is set.
+    ///
+    /// A `u64` converts to at most `2^64`, and `2^64` times `2^-1074` is
+    /// `2^-1010`, so the product is finite for every argument and nothing is
+    /// checked. Up to `2^53` units the conversion and the product are exact,
+    /// so the value is the one whose bit pattern is the sign bit and `units`.
+    #[must_use]
+    pub(crate) fn subnormal_units(negative: bool, units: u64) -> Self {
+        let magnitude = units as f64 * f64::from_bits(1);
+        Self(if negative { -magnitude } else { magnitude })
+    }
+
+    /// Admit a normal value or a zero. Every normal value and every zero is
+    /// finite, so the one predicate states the whole admission.
+    pub(crate) fn normal_or_zero(value: f64) -> Option<Self> {
+        (value.is_normal() || value == 0.0).then_some(Self(value))
+    }
+
     /// Admit every value of each lane, or none of them.
     pub(crate) fn lanes<const N: usize>(lanes: [Vec<f64>; N]) -> Option<[Vec<Self>; N]> {
         lanes
@@ -477,6 +496,17 @@ impl crate::geometry::DirectedParameterRange {
     pub const fn finite_endpoints(self) -> [FiniteReal; 2] {
         let [start, end] = self.endpoints();
         [FiniteReal(start), FiniteReal(end)]
+    }
+}
+
+impl crate::units::FinitePoint2 {
+    /// Return the coordinates as finite reals. The point admits only finite
+    /// coordinates, so nothing is checked. The route lives beside
+    /// [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub const fn coordinates(self) -> [FiniteReal; 2] {
+        let point = self.get();
+        [FiniteReal(point.u), FiniteReal(point.v)]
     }
 }
 

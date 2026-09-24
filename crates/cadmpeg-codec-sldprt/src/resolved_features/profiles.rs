@@ -2242,7 +2242,7 @@ fn sketch_block_assembly_frame(
     if !first.is_proper_rigid() {
         return None;
     }
-    let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0))?;
+    let origin = first.apply_point(Point3::new(0.0, 0.0, 0.0))?.get();
     let u_axis = first.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.unit()?;
     let first_v = first.apply_vector(Vector3::new(0.0, 1.0, 0.0))?.unit()?;
     let normal = u_axis.cross(first_v).unit()?;
@@ -2257,7 +2257,7 @@ fn sketch_block_assembly_frame(
         if !placement.is_proper_rigid() {
             return None;
         }
-        let instance_origin = placement.apply_point(Point3::new(0.0, 0.0, 0.0))?;
+        let instance_origin = placement.apply_point(Point3::new(0.0, 0.0, 0.0))?.get();
         let origin_delta = instance_origin.vector_from(origin);
         if origin_delta.dot(normal).abs()
             > TOLERANCE * (1.0 + origin.distance(Point3::new(0.0, 0.0, 0.0)))

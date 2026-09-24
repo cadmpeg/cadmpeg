@@ -265,7 +265,8 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
         &ir.model.sketch_entities[result_ordinal].geometry,
         ir.tolerances.linear.get(),
     )
-    .expect("reversed fitted offset frame");
+    .expect("reversed fitted offset frame")
+    .get();
     assert!(
         (reversed_distance - 2.0).abs() <= 1.0e-9,
         "reversed fitted offset distance {reversed_distance}"
@@ -1028,7 +1029,8 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
     assert!(super::planar_parallel_line_distance(&horizontal, &perpendicular).is_none());
     let separated = line(Point2::new(2e200, 1.0), Point2::new(3e200, 1.0));
     assert_eq!(
-        super::planar_parallel_line_distance(&horizontal, &separated),
+        super::planar_parallel_line_distance(&horizontal, &separated)
+            .map(crate::scalar::FiniteReal::get),
         Some(1.0)
     );
     assert!(super::planar_parallel_line_span_distance(
@@ -1039,7 +1041,8 @@ fn extreme_lines_preserve_parallelism_and_span_separation() {
     .is_none());
     let overlapping = line(Point2::new(0.5e200, 1.0), Point2::new(1.5e200, 1.0));
     assert_eq!(
-        super::planar_parallel_line_span_distance(&horizontal, &overlapping, TEST_LINEAR_TOLERANCE),
+        super::planar_parallel_line_span_distance(&horizontal, &overlapping, TEST_LINEAR_TOLERANCE)
+            .map(crate::scalar::FiniteReal::get),
         Some(1.0)
     );
 }

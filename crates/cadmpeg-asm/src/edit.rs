@@ -936,25 +936,22 @@ impl AsmEditSet {
                     1.0 / LEN_TO_MM,
                     header_scale,
                 )
-                .ok_or_else(|| {
-                    CodecError::malformed("native transform translation is non-finite")
-                })?,
+                .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
+                .get(),
                 cadmpeg_ir::math::multiply_divide(
                     transform.rows()[1][3],
                     1.0 / LEN_TO_MM,
                     header_scale,
                 )
-                .ok_or_else(|| {
-                    CodecError::malformed("native transform translation is non-finite")
-                })?,
+                .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
+                .get(),
                 cadmpeg_ir::math::multiply_divide(
                     transform.rows()[2][3],
                     1.0 / LEN_TO_MM,
                     header_scale,
                 )
-                .ok_or_else(|| {
-                    CodecError::malformed("native transform translation is non-finite")
-                })?,
+                .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
+                .get(),
             ],
         ];
         for (index, vector) in vectors.into_iter().enumerate() {

@@ -2,6 +2,7 @@
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::math::Point3;
+use crate::scalar::FiniteReal;
 
 #[derive(Clone, Copy)]
 pub(super) struct Homogeneous {
@@ -60,7 +61,7 @@ impl Homogeneous {
             .collect::<Option<Vec<_>>>()?;
         let original = weights
             .iter()
-            .map(|weight| weight.finite())
+            .map(|weight| weight.finite().map(FiniteReal::get))
             .collect::<Option<Vec<_>>>();
         if original
             .as_ref()
@@ -89,7 +90,12 @@ impl Homogeneous {
         let exponent = 0_i32.clamp(lower, upper);
         weights
             .into_iter()
-            .map(|weight| weight.rescale(exponent).filter(|weight| *weight != 0.0))
+            .map(|weight| {
+                weight
+                    .rescale(exponent)
+                    .map(FiniteReal::get)
+                    .filter(|weight| *weight != 0.0)
+            })
             .collect()
     }
 
@@ -118,7 +124,7 @@ impl Homogeneous {
                 sum.finish()
             };
             *coordinate = match numerator {
-                Some(value) => value.quotient(denominator)?,
+                Some(value) => value.quotient(denominator)?.get(),
                 None => 0.0,
             };
         }

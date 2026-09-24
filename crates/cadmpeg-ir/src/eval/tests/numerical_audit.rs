@@ -124,7 +124,9 @@ fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
     assert!((point.x - expected).abs() <= 8.0 * f64::EPSILON * expected);
     assert_eq!((point.y, point.z), (0.0, 0.0));
     let knots = [-1.0e308, -1.0e308, -9.0e307, -9.0e307];
-    let wrapped = periodic_parameter(&knots, 1, 2, true, 1.0e308).unwrap();
+    let wrapped = periodic_parameter(&knots, 1, 2, true, 1.0e308)
+        .unwrap()
+        .get();
     assert!(wrapped.is_finite() && (knots[1]..=knots[2]).contains(&wrapped));
 }
 

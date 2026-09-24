@@ -31,7 +31,7 @@ use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
-use crate::scalar::{NonNegativeLength, NonNegativeReal, NonZeroReal};
+use crate::scalar::{FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroReal};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
@@ -132,7 +132,7 @@ pub fn analytic_surface_parameters_solved(
             let normal = plane_surface.frame().axis().as_raw();
             let u_axis = plane_surface.frame().reference().as_raw();
             let (u, v, _) = components(origin, *normal, *u_axis);
-            Point2::new(u?, v?)
+            return Some(FinitePoint2::from_coordinates(u?, v?));
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
@@ -140,7 +140,7 @@ pub fn analytic_surface_parameters_solved(
             let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
-            let (x, y, v) = (x?, y?, v?);
+            let (x, y, v) = (x?.get(), y?.get(), v?.get());
             Point2::new((y / radius).atan2(x / radius), v)
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
@@ -151,7 +151,7 @@ pub fn analytic_surface_parameters_solved(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
-            let (x, y, v) = (x?, y?, v?);
+            let (x, y, v) = (x?.get(), y?.get(), v?.get());
             let local_radius = radius + v * half_angle.tan();
             if local_radius == 0.0 {
                 return None;
@@ -163,7 +163,7 @@ pub fn analytic_surface_parameters_solved(
             let axis = sphere_surface.frame().axis().as_raw();
             let ref_direction = sphere_surface.frame().reference().as_raw();
             let (x, y, z) = components(center, *axis, *ref_direction);
-            let (x, y, z) = (x?, y?, z?);
+            let (x, y, z) = (x?.get(), y?.get(), z?.get());
             Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -173,7 +173,7 @@ pub fn analytic_surface_parameters_solved(
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let (x, y, z) = components(center, *axis, *ref_direction);
-            let (x, y, z) = (x?, y?, z?);
+            let (x, y, z) = (x?.get(), y?.get(), z?.get());
             Point2::new(
                 y.atan2(x),
                 (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
@@ -439,8 +439,11 @@ fn rational_patch_parameter_segment(
     end: Point2,
 ) -> Option<Vec<[f64; 4]>> {
     let normalize = |value: f64, domain: [f64; 2]| {
-        let parameter = difference_quotient(value, domain[0], domain[1], domain[0])?;
-        parameter.is_finite().then(|| parameter.clamp(0.0, 1.0))
+        Some(
+            difference_quotient(value, domain[0], domain[1], domain[0])?
+                .get()
+                .clamp(0.0, 1.0),
+        )
     };
     let u_range = [
         normalize(start.u, patch.u_domain)?,
@@ -578,8 +581,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
             (patch.v_domain[1], parameters[0].v, parameters[1].v),
         ] {
             if start.min(end) < boundary && boundary < start.max(end) {
-                let parameter = difference_quotient(boundary, start, end, start)?;
-                if parameter.is_finite() && 0.0 < parameter && parameter < 1.0 {
+                let parameter = difference_quotient(boundary, start, end, start)?.get();
+                if 0.0 < parameter && parameter < 1.0 {
                     splits.push(parameter);
                 }
             }
@@ -591,8 +594,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
         let middle = 0.5 * (range[0] + range[1]);
         let parameter_point = |parameter: f64| {
             Some(Point2::new(
-                crate::math::interpolate(parameters[0].u, parameters[1].u, parameter)?,
-                crate::math::interpolate(parameters[0].v, parameters[1].v, parameter)?,
+                crate::math::interpolate(parameters[0].u, parameters[1].u, parameter)?.get(),
+                crate::math::interpolate(parameters[0].v, parameters[1].v, parameter)?.get(),
             ))
         };
         let midpoint = parameter_point(middle)?;
@@ -760,7 +763,7 @@ fn refine_nurbs_surface_parameters(
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
-        let step = Point2::new(step_u, step_v);
+        let step = Point2::new(step_u.get(), step_v.get());
         let current_distance = distance(position.get());
         let mut scale = 1.0;
         let mut accepted = None;
@@ -1183,13 +1186,15 @@ pub fn nurbs_surface_parameter_near_point(
                     u_domain[0],
                     u_domain[1],
                     u_index as f64 / COARSE_GRID as f64,
-                )?;
+                )?
+                .get();
                 for v_index in 0..=COARSE_GRID {
                     let v = crate::math::interpolate(
                         v_domain[0],
                         v_domain[1],
                         v_index as f64 / COARSE_GRID as f64,
-                    )?;
+                    )?
+                    .get();
                     let candidate = nurbs_surface_point(surface, u, v)?;
                     let distance = candidate.distance(point);
                     if best.is_none_or(|(_, best_distance)| distance < best_distance) {
@@ -1215,7 +1220,7 @@ pub fn nurbs_surface_parameter_near_point(
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
-        let step = Point2::new(step_u, step_v);
+        let step = Point2::new(step_u.get(), step_v.get());
         let mut scale = 1.0;
         let mut accepted = false;
         for _ in 0..MAX_LINE_SEARCH_STEPS {
@@ -1295,7 +1300,9 @@ fn offset(base: Point3, terms: &[(f64, Vector3)]) -> Point3 {
                 .map(|(factor, vector)| Some([*factor, component(vector)])),
         ),
     ) {
-        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Value(value) => {
+            value.finite().map_or(f64::NAN, FiniteReal::get)
+        }
         crate::math::sum::ProductSum::Zero => 0.0,
         crate::math::sum::ProductSum::Undefined => f64::NAN,
     };
@@ -1347,12 +1354,13 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
             let denominator = right[r + 1] + left[j - r];
             let [right_term, left_term] = if denominator.is_finite() {
                 scaled_ratio_products(value, denominator, [right[r + 1], left[j - r]])?
+                    .map(FiniteReal::get)
             } else {
                 let right_knot = knots[span + r + 1];
                 let left_knot = knots[span + 1 - j + r];
                 [
-                    value * difference_quotient(right_knot, t, right_knot, left_knot)?,
-                    value * difference_quotient(t, left_knot, right_knot, left_knot)?,
+                    value * difference_quotient(right_knot, t, right_knot, left_knot)?.get(),
+                    value * difference_quotient(t, left_knot, right_knot, left_knot)?.get(),
                 ]
             };
             next[r] = saved + right_term;
@@ -1393,7 +1401,7 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
                     knots[index + degree],
                     knots[index],
                 )
-                .unwrap_or(f64::NAN)
+                .map_or(f64::NAN, FiniteReal::get)
             };
             let right = if right_denominator == 0.0 {
                 0.0
@@ -1406,7 +1414,7 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
                     knots[index + degree + 1],
                     knots[index + 1],
                 )
-                .unwrap_or(f64::NAN)
+                .map_or(f64::NAN, FiniteReal::get)
             };
             left - right
         })
@@ -1453,7 +1461,7 @@ fn bspline_basis_second_derivative(
                     knots[index + degree],
                     knots[index],
                 )
-                .unwrap_or(f64::NAN)
+                .map_or(f64::NAN, FiniteReal::get)
             };
             let right = if right_denominator == 0.0 {
                 0.0
@@ -1466,7 +1474,7 @@ fn bspline_basis_second_derivative(
                     knots[index + degree + 1],
                     knots[index + 1],
                 )
-                .unwrap_or(f64::NAN)
+                .map_or(f64::NAN, FiniteReal::get)
             };
             left - right
         })
@@ -1527,7 +1535,7 @@ fn bspline_basis_scaled_derivative_level(
             if knots[hi] == knots[lo] {
                 Some(0.0)
             } else {
-                difference_quotient(scale, 0.0, knots[hi], knots[lo])
+                difference_quotient(scale, 0.0, knots[hi], knots[lo]).map(FiniteReal::get)
             }
         };
         let left = ratio(index + degree, index)?;
@@ -1641,7 +1649,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         return None;
     }
     let weights = validated_nurbs_curve_weights(curve)?;
-    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?;
+    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?.get();
     let distance = |parameter| {
         let position = nurbs_curve_point(
             curve.degree(),
@@ -1751,7 +1759,7 @@ fn nurbs_curve_parameter_near_point_newton(
 
 /// Global model-space speed bound for a structurally valid rational NURBS
 /// curve over its effective knot domain.
-pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<f64> {
+pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<FiniteReal> {
     let weights = validated_nurbs_curve_weights(curve)?;
     nurbs_curve_speed_bound_about(curve, weights.as_ref(), Point3::new(0.0, 0.0, 0.0))
 }
@@ -1775,7 +1783,7 @@ fn nurbs_curve_speed_bound_about(
     curve: &NurbsCurve,
     weights: &[f64],
     origin: Point3,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let points = curve
         .pole_rows()
         .points()
@@ -1924,8 +1932,9 @@ fn parameter_interval_containing(boundaries: &[f64], parameter: f64) -> Option<[
 ///
 /// Periodic parameters retain their serialized phase outside this operation
 /// and are interpreted modulo the positive knot-domain period.
-pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f64> {
-    let [lower, upper] = nurbs_curve_parameter_domain(curve)?.endpoints();
+pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<FiniteReal> {
+    let domain = nurbs_curve_parameter_domain(curve)?;
+    let [lower, upper] = domain.endpoints();
     if !parameter.is_finite() {
         return None;
     }
@@ -1939,8 +1948,8 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f
         curve.periodic(),
         parameter,
     )?;
-    Some(if curve.periodic() && mapped == upper {
-        lower
+    Some(if curve.periodic() && mapped.get() == upper {
+        domain.finite_endpoints()[0]
     } else {
         mapped
     })
@@ -1971,7 +1980,7 @@ pub fn fitted_nurbs_offset_frame_distance(
     source: &crate::sketches::SketchGeometry,
     result: &crate::sketches::SketchGeometry,
     linear_tolerance: f64,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     use crate::sketches::SketchGeometryDefinition;
 
     if !linear_tolerance.is_finite() || linear_tolerance < 0.0 {
@@ -2052,7 +2061,7 @@ fn fitted_nurbs_offset_candidate(
     source: [(Point2, Point2); 2],
     result: [(Point2, Point2); 2],
     linear_tolerance: f64,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     let mut distances = [0.0; 2];
     for ordinal in 0..2 {
         let (source_point, source_tangent) = source[ordinal];
@@ -2080,7 +2089,7 @@ fn fitted_nurbs_offset_candidate(
                 [x, x, y, y],
             )
         };
-        let tangential = offset_projection(source_unit.x, source_unit.y)?;
+        let tangential = offset_projection(source_unit.x, source_unit.y)?.get();
         let coordinate_scale = 1.0
             + source_point
                 .u
@@ -2093,7 +2102,7 @@ fn fitted_nurbs_offset_candidate(
         {
             return None;
         }
-        distances[ordinal] = offset_projection(-source_unit.y, source_unit.x)?;
+        distances[ordinal] = offset_projection(-source_unit.y, source_unit.x)?.get();
     }
     let scale = 1.0 + distances[0].abs().max(distances[1].abs());
     // Both thresholds are comparison thresholds of this predicate, not the
@@ -2210,9 +2219,9 @@ fn nurbs_pcurve_differential(
         if scale == 1.0 {
             Some(value)
         } else {
-            let value = difference_quotient(value, 0.0, scale, 0.0)?;
+            let value = difference_quotient(value, 0.0, scale, 0.0)?.get();
             if twice {
-                difference_quotient(value, 0.0, scale, 0.0)
+                difference_quotient(value, 0.0, scale, 0.0).map(FiniteReal::get)
             } else {
                 Some(value)
             }
@@ -2286,7 +2295,7 @@ pub fn nurbs_pcurve_contains_point(
         .iter()
         .map(|p| [p.u, p.v])
         .collect::<Vec<_>>();
-    let speed_bound = speed_bound(degree, knots, &points, weights, [point.u, point.v])?;
+    let speed_bound = speed_bound(degree, knots, &points, weights, [point.u, point.v])?.get();
 
     let domain = [knots[degree_usize], knots[count]];
     if domain[0] > domain[1] {
@@ -2340,14 +2349,16 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
         u_count,
         surface.u_periodic(),
         u_at,
-    )?;
+    )?
+    .get();
     let v_at = periodic_parameter(
         surface.v_knots(),
         v_degree,
         v_count,
         surface.v_periodic(),
         v_at,
-    )?;
+    )?
+    .get();
     let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
     let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
@@ -2441,7 +2452,8 @@ pub fn nurbs_surface_isocurve(
         fixed_count,
         fixed_periodic,
         fixed_parameter,
-    )?;
+    )?
+    .get();
     let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
     let fixed_basis = bspline_basis(fixed_knots, fixed_degree, fixed_span, fixed_parameter)?;
     let varying_count = match fixed_axis {
@@ -2565,14 +2577,16 @@ pub fn nurbs_surface_second_partials(
         u_count,
         surface.u_periodic(),
         u_at,
-    )?;
+    )?
+    .get();
     let v_at = periodic_parameter(
         surface.v_knots(),
         v_degree,
         v_count,
         surface.v_periodic(),
         v_at,
-    )?;
+    )?
+    .get();
     let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
     let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
     let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
@@ -2659,12 +2673,12 @@ fn periodic_parameter(
     count: usize,
     periodic: bool,
     parameter: f64,
-) -> Option<f64> {
-    parameter.is_finite().then_some(())?;
+) -> Option<FiniteReal> {
+    let admitted = FiniteReal::new(parameter)?;
     let start = *knots.get(degree)?;
     let end = *knots.get(count)?;
     if !periodic || (start..=end).contains(&parameter) {
-        return Some(parameter);
+        return Some(admitted);
     }
     crate::math::wrap_parameter(parameter, start, end)
 }
@@ -2719,7 +2733,7 @@ pub fn curve_point_with_budget_solved(
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
                 evaluate(placed.basis(), t, budget)
-                    .and_then(|point| point.transformed(*placed.transform()))
+                    .and_then(|point| placed.transform().apply_point(point.get()))
             }
             _ => curve_point_solved(geometry, t),
         }
@@ -2756,7 +2770,7 @@ pub fn curve_tangent_with_budget_solved(
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
                 evaluate(placed.basis(), t, budget)
-                    .and_then(|tangent| tangent.transformed(*placed.transform()))
+                    .and_then(|tangent| placed.transform().apply_vector(tangent.get()))
             }
             _ => curve_tangent_solved(geometry, t),
         }
@@ -2793,7 +2807,7 @@ pub fn curve_second_derivative_with_budget_solved(
             SolvedCurveGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
                 evaluate(placed.basis(), t, budget)
-                    .and_then(|derivative| derivative.transformed(*placed.transform()))
+                    .and_then(|derivative| placed.transform().apply_vector(derivative.get()))
             }
             _ => curve_second_derivative_solved(geometry, t),
         }
@@ -2844,11 +2858,11 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             let focal_distance = parabola_curve.focal_distance().get();
             Some(vector_sum(&[
                 (
-                    product_quotient([2.0, focal_distance, t], [])?,
+                    product_quotient([2.0, focal_distance, t], [])?.get(),
                     *major_direction,
                 ),
                 (
-                    product_quotient([2.0, focal_distance], [])?,
+                    product_quotient([2.0, focal_distance], [])?.get(),
                     axis.cross(*major_direction),
                 ),
             ]))
@@ -2859,15 +2873,15 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             Some(vector_sum(&[
-                (scaled_sinh_cosh(major_radius, t)?.0, *major_direction),
+                (scaled_sinh_cosh(major_radius, t)?.0.get(), *major_direction),
                 (
-                    scaled_sinh_cosh(minor_radius, t)?.1,
+                    scaled_sinh_cosh(minor_radius, t)?.1.get(),
                     axis.cross(*major_direction),
                 ),
             ]))
         }
         SolvedCurveGeometry::Nurbs(nurbs) => {
-            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?.get();
             nurbs_curve_tangent(
                 nurbs.degree(),
                 nurbs.knots(),
@@ -2881,7 +2895,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             polyline_tangent(&points, &parameters, t)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_tangent_inner(placed.basis(), t)
-            .and_then(|tangent| placed.transform().apply_vector(tangent)),
+            .and_then(|tangent| placed.transform().apply_vector(tangent))
+            .map(FiniteVector3::get),
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
         SolvedCurveGeometry::Unknown { .. } => None,
@@ -2917,7 +2932,7 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             Some(vector_sum(&[(
-                product_quotient([2.0, focal_distance], [])?,
+                product_quotient([2.0, focal_distance], [])?.get(),
                 *major_direction,
             )]))
         }
@@ -2927,15 +2942,15 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             Some(vector_sum(&[
-                (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
+                (scaled_sinh_cosh(major_radius, t)?.1.get(), *major_direction),
                 (
-                    scaled_sinh_cosh(minor_radius, t)?.0,
+                    scaled_sinh_cosh(minor_radius, t)?.0.get(),
                     axis.cross(*major_direction),
                 ),
             ]))
         }
         SolvedCurveGeometry::Nurbs(nurbs) => {
-            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?.get();
             nurbs_curve_second_derivative(
                 nurbs.degree(),
                 nurbs.knots(),
@@ -2951,6 +2966,7 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
         SolvedCurveGeometry::Transformed(placed) => {
             curve_second_derivative_inner(placed.basis(), t)
                 .and_then(|derivative| placed.transform().apply_vector(derivative))
+                .map(FiniteVector3::get)
         }
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
@@ -3002,7 +3018,7 @@ fn nurbs_curve_tangent(
         if scale == 1.0 {
             Some(value)
         } else {
-            difference_quotient(value, 0.0, scale, 0.0)
+            difference_quotient(value, 0.0, scale, 0.0).map(FiniteReal::get)
         }
     };
     Some(Vector3::new(
@@ -3068,11 +3084,12 @@ fn nurbs_curve_second_derivative(
             Some(value)
         } else {
             difference_quotient(
-                difference_quotient(value, 0.0, scale, 0.0)?,
+                difference_quotient(value, 0.0, scale, 0.0)?.get(),
                 0.0,
                 scale,
                 0.0,
             )
+            .map(FiniteReal::get)
         }
     };
     Some(Vector3::new(
@@ -3122,12 +3139,15 @@ fn linear_nurbs_derivative(
             sum.finish().map_or(Some(0.0), |numerator| {
                 numerator
                     .quotient_by_factors(&[base_weight, base_weight, base_weight, width, width], 1)
+                    .map(FiniteReal::get)
             })
         } else {
             sum.add_factors([weight0, weight1, right]);
             sum.add_factors([-weight0, weight1, left]);
             sum.finish().map_or(Some(0.0), |numerator| {
-                numerator.quotient_by_factors(&[base_weight, base_weight, width], 0)
+                numerator
+                    .quotient_by_factors(&[base_weight, base_weight, width], 0)
+                    .map(FiniteReal::get)
             })
         }
     };
@@ -3192,7 +3212,8 @@ fn helix_differential(
     }
 
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction = difference_quotient(parameter, start, std::f64::consts::TAU, 0.0)?;
+    let revolution_fraction =
+        difference_quotient(parameter, start, std::f64::consts::TAU, 0.0)?.get();
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
     let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
     let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
@@ -3260,9 +3281,9 @@ fn model_curve_differential_by_id_inner(
                     budget,
                 )?;
                 return Some(ModelCurveDifferential {
-                    point: differential.point.transformed(*transform)?,
-                    tangent: transform.apply_vector(differential.tangent)?,
-                    acceleration: transform.apply_vector(differential.acceleration)?,
+                    point: transform.apply_point(differential.point.get())?,
+                    tangent: transform.apply_vector(differential.tangent)?.get(),
+                    acceleration: transform.apply_vector(differential.acceleration)?.get(),
                 });
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
@@ -3541,7 +3562,8 @@ fn construction_curve_parameter(
     if !curve_width.is_finite() || curve_width <= 0.0 || surface_width <= 0.0 {
         return None;
     }
-    let derivative = scaled_ratio_products(curve_width, surface_width, [surface_derivative])?[0];
+    let derivative =
+        scaled_ratio_products(curve_width, surface_width, [surface_derivative])?[0].get();
     let derivative = if reversed { -derivative } else { derivative };
     let fraction = if reversed {
         (surface_end - parameter) / surface_width
@@ -3585,7 +3607,7 @@ fn model_native_extrusion_partials(
             derivative, derivative, component,
         ]))) {
             crate::math::sum::ProductSum::Zero => Some(0.0),
-            crate::math::sum::ProductSum::Value(value) => value.finite(),
+            crate::math::sum::ProductSum::Value(value) => value.finite().map(FiniteReal::get),
             crate::math::sum::ProductSum::Undefined => None,
         };
     let duu = Vector3::new(
@@ -3713,7 +3735,7 @@ fn model_curve_point_by_id_inner(
     match procedural.definition() {
         ProceduralCurveDefinition::Replica { source, transform } => {
             model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget)
-                .and_then(|point| point.transformed(*transform))
+                .and_then(|point| transform.apply_point(point.get()))
         }
         ProceduralCurveDefinition::Subset(definition_payload) => {
             let source = definition_payload.source();
@@ -4254,7 +4276,7 @@ fn direct_curve_parameter_near_point(
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             let (_, transverse, _) = components(vertex, *axis, *major_direction);
-            crate::math::multiply_divide(transverse, 0.5, focal_distance)?
+            crate::math::multiply_divide(transverse, 0.5, focal_distance)?.get()
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
@@ -4307,7 +4329,7 @@ fn inverse_affine_point(transform: Transform, point: Point3) -> Option<(Point3, 
         .fold(0.0_f64, |length, &value| length.hypot(value));
     tolerance_scale
         .is_finite()
-        .then_some((coordinates, tolerance_scale))
+        .then_some((coordinates.get(), tolerance_scale))
 }
 
 fn polyline_parameter_near_point(
@@ -4414,11 +4436,11 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
                 vertex,
                 &[
                     (
-                        product_quotient([focal_distance, t, t], [])?,
+                        product_quotient([focal_distance, t, t], [])?.get(),
                         *major_direction,
                     ),
                     (
-                        product_quotient([2.0, focal_distance, t], [])?,
+                        product_quotient([2.0, focal_distance, t], [])?.get(),
                         axis.cross(*major_direction),
                     ),
                 ],
@@ -4433,9 +4455,9 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
             FinitePoint3::new(offset(
                 center,
                 &[
-                    (scaled_sinh_cosh(major_radius, t)?.1, *major_direction),
+                    (scaled_sinh_cosh(major_radius, t)?.1.get(), *major_direction),
                     (
-                        scaled_sinh_cosh(minor_radius, t)?.0,
+                        scaled_sinh_cosh(minor_radius, t)?.0.get(),
                         axis.cross(*major_direction),
                     ),
                 ],
@@ -4443,7 +4465,7 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => Some(degenerate_curve.point()),
         SolvedCurveGeometry::Nurbs(nurbs) => {
-            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?.get();
             nurbs_curve_point(
                 nurbs.degree(),
                 nurbs.knots(),
@@ -4457,7 +4479,7 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
             polyline_point(&points, &parameters, t).and_then(FinitePoint3::new)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_point_solved(placed.basis(), t)
-            .and_then(|point| point.transformed(*placed.transform())),
+            .and_then(|point| placed.transform().apply_point(point.get())),
         SolvedCurveGeometry::Composite { .. } | SolvedCurveGeometry::Unknown { .. } => None,
     }
 }
@@ -4574,6 +4596,7 @@ pub fn surface_point_with_budget_solved(
             budget.charge().then_some(())?;
             surface_point_with_budget_solved(placed.basis(), u, v, budget)
                 .and_then(|point| placed.transform().apply_point(point))
+                .map(FinitePoint3::get)
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -4763,7 +4786,9 @@ fn rolling_ball_jet_interpolate_scalar(
         .into_iter(),
     ) {
         crate::math::sum::ProductSum::Zero => 0.0,
-        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Value(value) => {
+            value.finite().map_or(f64::NAN, FiniteReal::get)
+        }
         crate::math::sum::ProductSum::Undefined => f64::NAN,
     }
 }
@@ -5094,6 +5119,15 @@ fn finite_sweep_differential(value: f64, derivative: f64) -> Option<ScalarSweepD
         .then_some(ScalarSweepDifferential { value, derivative })
 }
 
+/// [`finite_sweep_differential`] for an admitted derivative, which leaves the
+/// value as the only condition to test.
+fn sweep_differential_of(value: f64, derivative: FiniteReal) -> Option<ScalarSweepDifferential> {
+    value.is_finite().then_some(ScalarSweepDifferential {
+        value,
+        derivative: derivative.get(),
+    })
+}
+
 fn scalar_sweep_law_differential(
     expression: &LawExpression,
     parameter: f64,
@@ -5163,9 +5197,9 @@ fn scalar_sweep_law_differential(
                     denominator.add_product(right.value, right.value);
                     let derivative = match numerator.finish() {
                         Some(value) => value.quotient(denominator.finish()?)?,
-                        None => 0.0,
+                        None => FiniteReal::ZERO,
                     };
-                    finite_sweep_differential(left.value / right.value, derivative)
+                    sweep_differential_of(left.value / right.value, derivative)
                 }
                 _ => None,
             }
@@ -5198,10 +5232,13 @@ fn scalar_unary_sweep_law_differential(
             let half = (0.5 * x).exp();
             let mut product = ExactSignedSum::default();
             product.add_factors([half, half, operand.derivative]);
-            return finite_sweep_differential(
+            let derivative = product
+                .finish()
+                .map_or(Some(FiniteReal::ZERO), ScaledValue::finite)?;
+            return Some(ScalarSweepDifferential {
                 value,
-                product.finish().map_or(Some(0.0), ScaledValue::finite)?,
-            );
+                derivative: derivative.get(),
+            });
         }
         "COT" | "CSC" | "TAN" | "SEC" | "ARCSECH" => {
             let mut denominator = ExactSignedSum::default();
@@ -5242,11 +5279,11 @@ fn scalar_unary_sweep_law_differential(
             let mut numerator = ExactSignedSum::default();
             numerator.add_product(factor, operand.derivative);
             let denominator = denominator.finish()?;
-            return finite_sweep_differential(
+            return sweep_differential_of(
                 value,
                 numerator
                     .finish()
-                    .map_or(Some(0.0), |value| value.quotient(denominator))?,
+                    .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))?,
             );
         }
         "ARCTAN" | "ARCOT" | "ARCSEC" | "ARCCSC" | "ARCCSCH" => {
@@ -5288,11 +5325,18 @@ fn scalar_unary_sweep_law_differential(
                 }
             };
             let derivative = match crate::math::sum::scaled_finite(operand.derivative) {
-                Some(numerator) => sign * numerator.quotient(denominator.finish()?)?,
-                None if operand.derivative == 0.0 => 0.0,
+                Some(numerator) => {
+                    let quotient = numerator.quotient(denominator.finish()?)?;
+                    if sign < 0.0 {
+                        quotient.negated()
+                    } else {
+                        quotient
+                    }
+                }
+                None if operand.derivative == 0.0 => FiniteReal::ZERO,
                 None => return None,
             };
-            return finite_sweep_differential(value, derivative);
+            return sweep_differential_of(value, derivative);
         }
         "COTH" | "SECH" | "CSCH" => {
             if x == 0.0 && operator != "SECH" {
@@ -5333,9 +5377,9 @@ fn scalar_unary_sweep_law_differential(
             };
             let derivative = match numerator.finish() {
                 Some(value) => value.quotient(denominator.finish()?)?,
-                None => 0.0,
+                None => FiniteReal::ZERO,
             };
-            return finite_sweep_differential(value, derivative);
+            return sweep_differential_of(value, derivative);
         }
         "TANH" => {
             let exponential = (-x.abs()).exp();
@@ -5345,9 +5389,9 @@ fn scalar_unary_sweep_law_differential(
                 crate::math::sum::scaled_finite((1.0 + exponential * exponential).powi(2))?;
             let derivative = match numerator.finish() {
                 Some(value) => value.quotient(denominator)?,
-                None => 0.0,
+                None => FiniteReal::ZERO,
             };
-            return finite_sweep_differential(x.tanh(), derivative);
+            return sweep_differential_of(x.tanh(), derivative);
         }
         "ARCSINH" => {
             return finite_sweep_differential(x.asinh(), operand.derivative / x.hypot(1.0))
@@ -5371,7 +5415,7 @@ fn scalar_unary_sweep_law_differential(
             let denominator = ((x - 1.0) / x) * ((x + 1.0) / x);
             let derivative =
                 crate::math::multiply_divide(operand.derivative / x, -inverse, denominator)?;
-            return finite_sweep_differential(inverse.atanh(), derivative);
+            return sweep_differential_of(inverse.atanh(), derivative);
         }
         _ => {}
     }
@@ -5605,9 +5649,9 @@ fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(
                 numerator.add_factors([-components[index], components[other], derivatives[other]]);
             }
         }
-        numerator
-            .finish()
-            .map_or(Some(0.0), |value| value.quotient(denominator))
+        numerator.finish().map_or(Some(0.0), |value| {
+            value.quotient(denominator).map(FiniteReal::get)
+        })
     };
     Some((
         unit,
@@ -5712,9 +5756,9 @@ fn cacheless_law_sweep_differentials(
     let profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
     let frame_point = profile_frame.map_or(*origin, |(point, _)| point);
     let mut profile = scale_sweep_profile(profile, frame_point, scale)?;
-    profile.point = profile.point.transformed(rail_transform)?;
-    profile.tangent = rail_transform.apply_vector(profile.tangent)?;
-    profile.acceleration = rail_transform.apply_vector(profile.acceleration)?;
+    profile.point = rail_transform.apply_point(profile.point.get())?;
+    profile.tangent = rail_transform.apply_vector(profile.tangent)?.get();
+    profile.acceleration = rail_transform.apply_vector(profile.acceleration)?.get();
     let law = scalar_sweep_law_differential(first_law, v)?;
     Some((profile, spine, law, path_origin))
 }
@@ -6471,6 +6515,7 @@ fn model_surface_point_with_budget_solved(
             budget.charge().then_some(())?;
             model_surface_point_with_budget_solved(placed.basis(), u, v, Some(budget))
                 .and_then(|point| placed.transform().apply_point(point))
+                .map(FinitePoint3::get)
         }
         _ => surface_point_solved(geometry, u, v),
     }
@@ -6500,9 +6545,9 @@ fn surface_partials_with_budget_solved(
                 evaluate(placed.basis(), u, v, budget).and_then(|partials| {
                     let transform = placed.transform();
                     Some(SurfacePartials {
-                        point: transform.apply_point(partials.point)?,
-                        du: transform.apply_vector(partials.du)?,
-                        dv: transform.apply_vector(partials.dv)?,
+                        point: transform.apply_point(partials.point)?.get(),
+                        du: transform.apply_vector(partials.du)?.get(),
+                        dv: transform.apply_vector(partials.dv)?.get(),
                     })
                 })
             }
@@ -6884,7 +6929,8 @@ fn model_surface_point_by_id_inner(
                         .and_then(|partials| {
                             let normal = transform
                                 .apply_vector(partials.du)?
-                                .cross(transform.apply_vector(partials.dv)?);
+                                .get()
+                                .cross(transform.apply_vector(partials.dv)?.get());
                             normal.unit()
                         })
                         .or_else(|| {
@@ -6892,10 +6938,10 @@ fn model_surface_point_by_id_inner(
                                 .oriented_normal
                                 .and_then(|normal| transform.apply_normal(normal))
                                 .and_then(|normal| {
-                                    Some(scale_vector(normal, transform.orientation()?))
+                                    Some(scale_vector(*normal.as_raw(), transform.orientation()?))
                                 })
                         });
-                evaluation.point = transform.apply_point(evaluation.point)?;
+                evaluation.point = transform.apply_point(evaluation.point)?.get();
                 evaluation.oriented_normal = transformed_normal;
                 Some(evaluation)
             }
@@ -7421,7 +7467,12 @@ fn polyline_samples(polyline: &PolylineCurve) -> (Vec<Point3>, Vec<f64>) {
     (points, parameters)
 }
 
-fn difference_quotient(end: f64, start: f64, domain_end: f64, domain_start: f64) -> Option<f64> {
+fn difference_quotient(
+    end: f64,
+    start: f64,
+    domain_end: f64,
+    domain_start: f64,
+) -> Option<FiniteReal> {
     if [end, start, domain_end, domain_start]
         .iter()
         .any(|value| !value.is_finite())
@@ -7437,7 +7488,7 @@ fn difference_quotient(end: f64, start: f64, domain_end: f64, domain_start: f64)
     numerator.add_product(start, -1.0);
     numerator
         .finish()
-        .map_or(Some(0.0), |value| value.quotient(denominator))
+        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
 }
 
 fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<Point3> {
@@ -7452,14 +7503,15 @@ fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<Point
         parameters[segment],
         parameters[segment + 1],
         parameters[segment],
-    )?;
+    )?
+    .get();
     let start = points[segment];
     let end = points[segment + 1];
     let lerp = |start, end| crate::math::sum::finite_dot([1.0 - fraction, fraction], [start, end]);
     Some(Point3::new(
-        lerp(start.x, end.x)?,
-        lerp(start.y, end.y)?,
-        lerp(start.z, end.z)?,
+        lerp(start.x, end.x)?.get(),
+        lerp(start.y, end.y)?.get(),
+        lerp(start.z, end.z)?.get(),
     ))
 }
 
@@ -7475,9 +7527,9 @@ fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<Vec
         let start = points[segment];
         let end = points[segment + 1];
         let candidate = Vector3::new(
-            difference_quotient(end.x, start.x, window[1], window[0])?,
-            difference_quotient(end.y, start.y, window[1], window[0])?,
-            difference_quotient(end.z, start.z, window[1], window[0])?,
+            difference_quotient(end.x, start.x, window[1], window[0])?.get(),
+            difference_quotient(end.y, start.y, window[1], window[0])?.get(),
+            difference_quotient(end.z, start.z, window[1], window[0])?.get(),
         );
         if tangent.is_some_and(|tangent| tangent != candidate) {
             return None;
@@ -7492,12 +7544,12 @@ fn transform_surface_second_partials(
     transform: Transform,
 ) -> Option<SurfaceSecondPartials> {
     Some(SurfaceSecondPartials {
-        point: transform.apply_point(partials.point)?,
-        du: transform.apply_vector(partials.du)?,
-        dv: transform.apply_vector(partials.dv)?,
-        duu: transform.apply_vector(partials.duu)?,
-        duv: transform.apply_vector(partials.duv)?,
-        dvv: transform.apply_vector(partials.dvv)?,
+        point: transform.apply_point(partials.point)?.get(),
+        du: transform.apply_vector(partials.du)?.get(),
+        dv: transform.apply_vector(partials.dv)?.get(),
+        duu: transform.apply_vector(partials.duu)?.get(),
+        duv: transform.apply_vector(partials.duv)?.get(),
+        dvv: transform.apply_vector(partials.dvv)?.get(),
     })
 }
 
@@ -7549,9 +7601,9 @@ fn polar_angle_differential(
         let mut cross = ExactSignedSum::default();
         cross.add_product(point.u, tangent.v);
         cross.add_product(-point.v, tangent.u);
-        cross
-            .finish()
-            .map_or(Some(0.0), |cross| cross.quotient(radius))
+        cross.finish().map_or(Some(0.0), |cross| {
+            cross.quotient(radius).map(FiniteReal::get)
+        })
     });
     let second =
         tangent
@@ -7569,9 +7621,9 @@ fn polar_angle_differential(
                 numerator.add_product(-point.v, acceleration.u);
                 numerator.add_scaled_product(dot.finish(), -first)?;
                 numerator.add_scaled_product(dot.finish(), -first)?;
-                numerator
-                    .finish()
-                    .map_or(Some(0.0), |value| value.quotient(radius))
+                numerator.finish().map_or(Some(0.0), |value| {
+                    value.quotient(radius).map(FiniteReal::get)
+                })
             });
     Some((point.v.atan2(point.u), first, second))
 }
@@ -7676,10 +7728,13 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let x = parabola.x_axis();
             let y = parabola.y_axis();
             let focal = parabola.focal_distance();
-            let axial = product_quotient([t, t], [4.0, focal.get()])?;
-            let derivative =
-                |axis| product_quotient([t, axis], [2.0, focal.get()]).unwrap_or(f64::NAN);
-            let second = |axis| product_quotient([axis], [2.0, focal.get()]).unwrap_or(f64::NAN);
+            let axial = product_quotient([t, t], [4.0, focal.get()])?.get();
+            let derivative = |axis| {
+                product_quotient([t, axis], [2.0, focal.get()]).map_or(f64::NAN, FiniteReal::get)
+            };
+            let second = |axis| {
+                product_quotient([axis], [2.0, focal.get()]).map_or(f64::NAN, FiniteReal::get)
+            };
             (
                 offset2(vertex.get(), &[(axial, x.get()), (t, y.get())]),
                 Point2::new(derivative(x.u) + y.u, derivative(x.v) + y.v),
@@ -7690,7 +7745,9 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let x = hyperbola.x_axis();
             let y = hyperbola.y_axis();
             let (major_sinh, major_cosh) = scaled_sinh_cosh(hyperbola.major_radius().get(), t)?;
+            let (major_sinh, major_cosh) = (major_sinh.get(), major_cosh.get());
             let (minor_sinh, minor_cosh) = scaled_sinh_cosh(hyperbola.minor_radius().get(), t)?;
+            let (minor_sinh, minor_cosh) = (minor_sinh.get(), minor_cosh.get());
             let zero = Point2::new(0.0, 0.0);
             (
                 offset2(
@@ -7706,13 +7763,15 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let sine = hyperbolic.sine();
             let coordinate = |center, cosine, sine| -> Option<[f64; 3]> {
                 let (cosine_sinh, cosine_cosh) = scaled_sinh_cosh(cosine, t)?;
+                let (cosine_sinh, cosine_cosh) = (cosine_sinh.get(), cosine_cosh.get());
                 let (sine_sinh, sine_cosh) = scaled_sinh_cosh(sine, t)?;
+                let (sine_sinh, sine_cosh) = (sine_sinh.get(), sine_cosh.get());
                 Some([
-                    crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?,
+                    crate::math::sum::finite_dot([1.0; 3], [center, cosine_cosh, sine_sinh])?.get(),
                     crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh])
-                        .unwrap_or(f64::NAN),
+                        .map_or(f64::NAN, FiniteReal::get),
                     crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh])
-                        .unwrap_or(f64::NAN),
+                        .map_or(f64::NAN, FiniteReal::get),
                 ])
             };
             let u = coordinate(hyperbolic.center().u, cosine.u, sine.u)?;
@@ -7812,14 +7871,16 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 .and_then(|first| {
                     let mut sum = ExactSignedSum::default();
                     sum.add_product(first, azimuth_rate);
-                    sum.finish().map_or(Some(0.0), ScaledValue::finite)
+                    sum.finish()
+                        .map_or(Some(0.0), |value| value.finite().map(FiniteReal::get))
                 })
                 .map(|value| Point2::new(azimuth_rate, value));
             let acceleration = second
                 .and_then(|second| {
                     let mut sum = ExactSignedSum::default();
                     sum.add_factors([second, azimuth_rate, azimuth_rate]);
-                    sum.finish().map_or(Some(0.0), ScaledValue::finite)
+                    sum.finish()
+                        .map_or(Some(0.0), |value| value.finite().map(FiniteReal::get))
                 })
                 .map(|value| Point2::new(0.0, value));
             return point.is_finite().then_some(PcurveDifferential {
@@ -7908,7 +7969,9 @@ fn offset2(base: Point2, terms: &[(f64, Point2)]) -> Point2 {
                 .map(|(factor, vector)| Some([*factor, component(vector)])),
         ),
     ) {
-        crate::math::sum::ProductSum::Value(value) => value.finite().unwrap_or(f64::NAN),
+        crate::math::sum::ProductSum::Value(value) => {
+            value.finite().map_or(f64::NAN, FiniteReal::get)
+        }
         crate::math::sum::ProductSum::Zero => 0.0,
         crate::math::sum::ProductSum::Undefined => f64::NAN,
     };

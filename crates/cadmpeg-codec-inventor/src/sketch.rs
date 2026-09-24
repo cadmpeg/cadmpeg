@@ -1625,9 +1625,10 @@ fn line_carrier_matches(
     else {
         return false;
     };
-    let [Some(dx), Some(dy)] =
-        direction.map(|value| cadmpeg_ir::math::scale_power_of_two(value, -exponent))
-    else {
+    let [Some(dx), Some(dy)] = direction.map(|value| {
+        cadmpeg_ir::math::scale_power_of_two(value, -exponent)
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+    }) else {
         return false;
     };
     // Scale position and span separately so a subnormal perpendicular offset
@@ -1638,19 +1639,22 @@ fn line_carrier_matches(
     ) else {
         return false;
     };
-    let [Some(x), Some(y)] = [from_origin.x, from_origin.y]
-        .map(|value| cadmpeg_ir::math::scale_power_of_two(value, -offset_exponent))
-    else {
+    let [Some(x), Some(y)] = [from_origin.x, from_origin.y].map(|value| {
+        cadmpeg_ir::math::scale_power_of_two(value, -offset_exponent)
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+    }) else {
         return false;
     };
-    let Some(scaled_span) = cadmpeg_ir::math::scale_power_of_two(span_scale, -span_exponent) else {
+    let Some(scaled_span) = cadmpeg_ir::math::scale_power_of_two(span_scale, -span_exponent)
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+    else {
         return false;
     };
     let right = dy * x;
     let determinant = dx.mul_add(y, -right) - dy.mul_add(x, -right);
     let carrier_error = determinant.abs() / dx.hypot(dy) / scaled_span;
     cadmpeg_ir::math::scale_power_of_two(carrier_error, offset_exponent - span_exponent)
-        .is_some_and(|error| error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10)
+        .is_some_and(|error| error.get() <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10)
 }
 
 fn resolve_point(

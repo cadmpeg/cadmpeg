@@ -26,9 +26,9 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_OFFSET_FRAME: f64 = 1.0e-10;
 
 fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
-    let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0))?;
-    let y = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0))?;
-    let z = transform.apply_vector(Vector3::new(0.0, 0.0, 1.0))?;
+    let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0))?.get();
+    let y = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0))?.get();
+    let z = transform.apply_vector(Vector3::new(0.0, 0.0, 1.0))?.get();
     let determinant = x.cross(y).dot(z);
     (determinant.is_finite() && determinant != 0.0).then_some(determinant.signum())
 }
@@ -51,17 +51,25 @@ fn placed_offset_source(
             let direction = *line_curve.direction().as_raw();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
-                    line_curve.origin().transformed(transform)?,
-                    UnitVector3::new(unit_vector(transform.apply_vector(direction)?)?)?,
+                    transform.apply_point(line_curve.origin().get())?,
+                    UnitVector3::new(unit_vector(transform.apply_vector(direction)?.get())?)?,
                 ),
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-            let center = circle_curve.center().transformed(transform)?;
+            let center = transform.apply_point(circle_curve.center().get())?;
             let frame = OrthonormalFrame3::new(
-                unit_vector(transform.apply_vector(*circle_curve.frame().axis().as_raw())?)?
-                    .scale(orientation),
-                unit_vector(transform.apply_vector(*circle_curve.frame().reference().as_raw())?)?,
+                unit_vector(
+                    transform
+                        .apply_vector(*circle_curve.frame().axis().as_raw())?
+                        .get(),
+                )?
+                .scale(orientation),
+                unit_vector(
+                    transform
+                        .apply_vector(*circle_curve.frame().reference().as_raw())?
+                        .get(),
+                )?,
             )?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(

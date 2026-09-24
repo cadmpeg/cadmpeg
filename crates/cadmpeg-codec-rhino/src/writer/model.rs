@@ -63,7 +63,7 @@ impl WritableEdgeCurve<'_> {
                     nurbs.knots(),
                     &control_points,
                     weights.as_deref(),
-                    cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?,
+                    cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?.get(),
                 )
                 .map(cadmpeg_ir::features::FinitePoint3::get)
             }

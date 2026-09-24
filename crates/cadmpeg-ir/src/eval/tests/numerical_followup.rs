@@ -93,7 +93,10 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
             false,
         )
         .unwrap();
-        assert_eq!(nurbs_curve_speed_bound(&curve), Some(1.0));
+        assert_eq!(
+            nurbs_curve_speed_bound(&curve).map(crate::scalar::FiniteReal::get),
+            Some(1.0)
+        );
         assert_eq!(
             nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.),
             Some(0.0)
@@ -122,9 +125,12 @@ fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
         true,
     )
     .unwrap();
-    let mapped = map_nurbs_curve_parameter(&curve, 1e308).unwrap();
+    let mapped = map_nurbs_curve_parameter(&curve, 1e308).unwrap().get();
     assert!((-1e308..-9e307).contains(&mapped));
-    assert_eq!(map_nurbs_curve_parameter(&curve, -9e307), Some(-1e308));
+    assert_eq!(
+        map_nurbs_curve_parameter(&curve, -9e307).map(crate::scalar::FiniteReal::get),
+        Some(-1e308)
+    );
 }
 
 #[test]

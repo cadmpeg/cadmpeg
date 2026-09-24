@@ -115,7 +115,7 @@ impl CompositePointContext<'_, '_, '_, '_> {
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
         ))?;
-        Some(point)
+        Some(point.get())
     }
 }
 
@@ -521,12 +521,12 @@ fn reverse_nurbs(
         });
     }
     let reflect = |parameter| {
-        cadmpeg_ir::math::reflect_parameter(parameter, domain_start, domain_end).ok_or(
-            CompositeCurveError::ReversedChildReflectionNonFinite {
+        cadmpeg_ir::math::reflect_parameter(parameter, domain_start, domain_end)
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .ok_or(CompositeCurveError::ReversedChildReflectionNonFinite {
                 domain_start,
                 domain_end,
-            },
-        )
+            })
     };
     let reversed_range = [reflect(end)?, reflect(start)?];
     let knots = curve
@@ -1216,8 +1216,9 @@ fn concatenate_nurbs<T>(
                 scaled
             } else {
                 cadmpeg_ir::math::multiply_divide(*weight, previous_weight, join_weight)
-                    .filter(|weight| *weight > 0.0)
+                    .filter(|weight| weight.get() > 0.0)
                     .ok_or(CompositeCurveError::JoinWeightScale { scale })?
+                    .get()
             };
         }
         if degree_usize == 0 {

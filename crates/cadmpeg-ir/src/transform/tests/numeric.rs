@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::{Transform, Transform2, TransformError};
 
@@ -54,7 +55,9 @@ fn normal_does_not_need_unused_inverse_entries_to_be_representable() {
         Err(TransformError::NonFinite)
     );
     assert_eq!(
-        transform.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        transform
+            .apply_normal(Vector3::new(0.0, 1.0, 0.0))
+            .map(Vector3::from),
         Some(Vector3::new(0.0, 1.0, 0.0))
     );
 }
@@ -124,16 +127,21 @@ fn normal_direction_ignores_translation_and_avoids_squared_length_overflow() {
         Err(TransformError::NonFinite)
     );
     assert_eq!(
-        translation_overflow.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        translation_overflow
+            .apply_normal(Vector3::new(0.0, 1.0, 0.0))
+            .map(Vector3::from),
         Some(Vector3::new(0.0, 1.0, 0.0))
     );
     for scale in [f64::from_bits(1), f64::MIN_POSITIVE, 1.0, f64::MAX] {
         assert_eq!(
-            Transform::identity().apply_normal(Vector3::new(scale, 0.0, 0.0)),
+            Transform::identity()
+                .apply_normal(Vector3::new(scale, 0.0, 0.0))
+                .map(Vector3::from),
             Some(Vector3::new(1.0, 0.0, 0.0))
         );
         let actual = Transform::identity()
             .apply_normal(Vector3::new(scale, scale, 0.0))
+            .map(Vector3::from)
             .unwrap();
         let component = 1.0 / 2.0_f64.sqrt();
         assert_eq!(actual, Vector3::new(component, component, 0.0));
@@ -147,7 +155,9 @@ fn normal_direction_ignores_translation_and_avoids_squared_length_overflow() {
         ])
         .unwrap();
         assert_eq!(
-            transform.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+            transform
+                .apply_normal(Vector3::new(0.0, 1.0, 0.0))
+                .map(Vector3::from),
             Some(Vector3::new(0.0, 1.0, 0.0))
         );
     }
@@ -156,7 +166,10 @@ fn normal_direction_ignores_translation_and_avoids_squared_length_overflow() {
         Vector3::new(f64::NAN, 1.0, 0.0),
         Vector3::new(1.0, f64::INFINITY, 0.0),
     ] {
-        assert!(Transform::identity().apply_normal(normal).is_none());
+        assert!(Transform::identity()
+            .apply_normal(normal)
+            .map(Vector3::from)
+            .is_none());
     }
     let singular = Transform::affine([[0.0; 4]; 3]).unwrap();
     assert_eq!(singular.try_inverse_affine(), Err(TransformError::Singular));
@@ -181,7 +194,9 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     ])
     .unwrap();
     assert_eq!(
-        overflow.apply_normal(Vector3::new(f64::MAX, 0.0, 0.0)),
+        overflow
+            .apply_normal(Vector3::new(f64::MAX, 0.0, 0.0))
+            .map(Vector3::from),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
 
@@ -192,7 +207,9 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     ])
     .unwrap();
     assert_eq!(
-        underflow.apply_normal(Vector3::new(2.0_f64.powi(-800), 0.0, 0.0)),
+        underflow
+            .apply_normal(Vector3::new(2.0_f64.powi(-800), 0.0, 0.0))
+            .map(Vector3::from),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
 
@@ -203,12 +220,16 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     ])
     .unwrap();
     assert_eq!(
-        anisotropic.apply_normal(Vector3::new(0.0, 1.0, 0.0)),
+        anisotropic
+            .apply_normal(Vector3::new(0.0, 1.0, 0.0))
+            .map(Vector3::from),
         Some(Vector3::new(0.0, 1.0, 0.0))
     );
     let diagonal_component = 1.0 / 2.0_f64.sqrt();
     assert_eq!(
-        anisotropic.apply_normal(Vector3::new(2.0_f64.powi(800), 2.0_f64.powi(-800), 0.0,)),
+        anisotropic
+            .apply_normal(Vector3::new(2.0_f64.powi(800), 2.0_f64.powi(-800), 0.0,))
+            .map(Vector3::from),
         Some(Vector3::new(diagonal_component, diagonal_component, 0.0))
     );
 
@@ -221,6 +242,7 @@ fn normal_transform_preserves_product_range_and_cancellation() {
     let component = 1.0 / 3.0_f64.sqrt();
     let transformed = cancellation
         .apply_normal(Vector3::new(1.0, 1.0, 1.0))
+        .map(Vector3::from)
         .expect("finite normal direction");
     for value in [transformed.x, transformed.y, transformed.z] {
         assert!((value - component).abs() <= EPS_NORMAL_DIRECTION);
@@ -253,6 +275,7 @@ fn normal_transform_preserves_nonzero_subnormal_products() {
     let expected = 34.0_f64.sqrt();
     let actual = transform
         .apply_normal(normal)
+        .map(Vector3::from)
         .expect("finite transformed normal");
     assert!((actual.x - 3.0 / expected).abs() < EPS_NORMAL_DIRECTION);
     assert!((actual.y - 5.0 / expected).abs() < EPS_NORMAL_DIRECTION);
@@ -269,9 +292,14 @@ fn numerical_audit_affine_cancellation_keeps_representable_results() {
     ])
     .unwrap();
     let point = Point3::new(f64::MAX, f64::MAX, f64::MAX);
-    assert_eq!(matrix.apply_point(point), Some(point));
     assert_eq!(
-        matrix.apply_vector(Vector3::from(<[f64; 3]>::from(point))),
+        matrix.apply_point(point).map(FinitePoint3::get),
+        Some(point)
+    );
+    assert_eq!(
+        matrix
+            .apply_vector(Vector3::from(<[f64; 3]>::from(point)))
+            .map(FiniteVector3::get),
         Some(Vector3::new(f64::MAX, f64::MAX, f64::MAX))
     );
     let translation = Transform::affine([
@@ -284,7 +312,8 @@ fn numerical_audit_affine_cancellation_keeps_representable_results() {
         matrix
             .compose(translation)
             .unwrap()
-            .apply_point(Point3::new(0.0, 0.0, 0.0)),
+            .apply_point(Point3::new(0.0, 0.0, 0.0))
+            .map(FinitePoint3::get),
         Some(point)
     );
     let source = Transform::affine([
