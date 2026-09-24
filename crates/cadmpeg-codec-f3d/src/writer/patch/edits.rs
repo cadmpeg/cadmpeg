@@ -859,18 +859,15 @@ pub(super) fn validate_material_assignment_appearances(
             edit.color = Some(color);
         }
         for (name, before_value) in &before.properties {
-            let after_value = after.properties[name];
-            if after_value == *before_value {
+            let after_value = after.properties[name].get();
+            if after_value == before_value.get() {
                 continue;
             }
-            let valid = after_value.is_finite()
-                && match name.as_str() {
-                    "reflectivity_at_0deg" | "surface_roughness" => {
-                        (0.0..=1.0).contains(&after_value)
-                    }
-                    "refraction_index" => (1.0..=4.0).contains(&after_value),
-                    _ => false,
-                };
+            let valid = match name.as_str() {
+                "reflectivity_at_0deg" | "surface_roughness" => (0.0..=1.0).contains(&after_value),
+                "refraction_index" => (1.0..=4.0).contains(&after_value),
+                _ => false,
+            };
             if !valid {
                 return Err(CodecError::NotImplemented(format!(
                     "F3D Protein property {id}.{name} is outside its writable range"

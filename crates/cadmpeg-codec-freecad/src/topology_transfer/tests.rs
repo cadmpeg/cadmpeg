@@ -907,8 +907,9 @@ Co 1001000 +2 0 *
             .iter()
             .find(|appearance| appearance.schema.as_deref()
                 == Some("FCStd ViewProvider line style"))
-            .and_then(|appearance| appearance.properties.get("line_width")),
-        Some(&2.5)
+            .and_then(|appearance| appearance.properties.get("line_width"))
+            .map(|value| value.get()),
+        Some(2.5)
     );
     assert_eq!(
         result
@@ -919,8 +920,9 @@ Co 1001000 +2 0 *
             .find(
                 |appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider point style")
             )
-            .and_then(|appearance| appearance.properties.get("point_size")),
-        Some(&4.0)
+            .and_then(|appearance| appearance.properties.get("point_size"))
+            .map(|value| value.get()),
+        Some(4.0)
     );
     assert_eq!(result.ir().model.bodies[0].visible, Some(false));
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
@@ -955,8 +957,20 @@ Co 1001000 +2 0 *
         .iter()
         .find(|appearance| appearance.schema.as_deref() == Some("FCStd ShapeAppearance"))
         .expect("shape material");
-    assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
-    assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
+    assert_eq!(
+        shape_material
+            .properties
+            .get("shininess")
+            .map(|value| value.get()),
+        Some(0.75)
+    );
+    assert_eq!(
+        shape_material
+            .properties
+            .get("transparency")
+            .map(|value| value.get()),
+        Some(0.25)
+    );
     let namespace = result.ir().native.namespace("fcstd").expect("native");
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")

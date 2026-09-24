@@ -54,9 +54,12 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         properties: BTreeMap::from([
             (
                 cadmpeg_core::nonblank_literal!("reflectivity_at_0deg"),
-                0.25,
+                cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite scalar"),
             ),
-            (cadmpeg_core::nonblank_literal!("refraction_index"), 1.5),
+            (
+                cadmpeg_core::nonblank_literal!("refraction_index"),
+                cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite scalar"),
+            ),
         ]),
         textures: Vec::new(),
     }];
@@ -79,10 +82,19 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color"))
     );
     assert_eq!(
-        appearance.properties.get("reflectivity_at_0deg"),
-        Some(&0.25)
+        appearance
+            .properties
+            .get("reflectivity_at_0deg")
+            .map(|value| value.get()),
+        Some(0.25)
     );
-    assert_eq!(appearance.properties.get("refraction_index"), Some(&1.5));
+    assert_eq!(
+        appearance
+            .properties
+            .get("refraction_index")
+            .map(|value| value.get()),
+        Some(1.5)
+    );
     assert!(round_trip.ir().model.appearance_bindings.is_empty());
     assert!(crate::validate::validate_native(round_trip.ir()).is_empty());
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
@@ -210,9 +222,10 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     );
 
     let mut invalid = decoded.ir().clone();
-    invalid.model.appearances[0]
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 0.5);
+    invalid.model.appearances[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("refraction_index"),
+        cadmpeg_ir::scalar::FiniteReal::HALF,
+    );
     let error = crate::test_support::plan_inherited_write(
         &invalid,
         decoded.source_fidelity(),
@@ -226,7 +239,7 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
     let (mut structural, _, fidelity) = decoded.into_parts();
     structural.model.appearances[0].properties.insert(
         cadmpeg_core::nonblank_literal!("unserialized_property"),
-        0.5,
+        cadmpeg_ir::scalar::FiniteReal::HALF,
     );
     let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
         .expect_err("new Protein property must be refused");
@@ -288,18 +301,20 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .iter_mut()
         .find(|appearance| appearance.schema.as_deref() == Some("PrismOpaqueSchema"))
         .expect("opaque appearance");
-    opaque
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("surface_roughness"), 0.75);
+    opaque.properties.insert(
+        cadmpeg_core::nonblank_literal!("surface_roughness"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("finite scalar"),
+    );
     let transparent = edited
         .model
         .appearances
         .iter_mut()
         .find(|appearance| appearance.schema.as_deref() == Some("PrismTransparentSchema"))
         .expect("transparent appearance");
-    transparent
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 2.25);
+    transparent.properties.insert(
+        cadmpeg_core::nonblank_literal!("refraction_index"),
+        cadmpeg_ir::scalar::FiniteReal::new(2.25).expect("finite scalar"),
+    );
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, &fidelity, &mut regenerated)
@@ -309,10 +324,18 @@ fn generated_f3d_rewrites_prism_scalar_properties() {
         .expect("regenerated Prism decode");
     assert!(round_trip.ir().model.appearances.iter().any(|appearance| {
         appearance.schema.as_deref() == Some("PrismOpaqueSchema")
-            && appearance.properties.get("surface_roughness") == Some(&0.75)
+            && appearance
+                .properties
+                .get("surface_roughness")
+                .map(|value| value.get())
+                == Some(0.75)
     }));
     assert!(round_trip.ir().model.appearances.iter().any(|appearance| {
         appearance.schema.as_deref() == Some("PrismTransparentSchema")
-            && appearance.properties.get("refraction_index") == Some(&2.25)
+            && appearance
+                .properties
+                .get("refraction_index")
+                .map(|value| value.get())
+                == Some(2.25)
     }));
 }

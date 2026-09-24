@@ -559,6 +559,7 @@ fn transfer_schema_one(
                 if let Some(value) = material
                     .attribute(source)
                     .and_then(|value| value.parse::<f64>().ok())
+                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
                 {
                     material_properties.insert(target, value);
                 }
@@ -986,7 +987,8 @@ fn transfer_primitive_appearance(
         )),
         textures: Vec::new(),
         properties: size
-            .filter(|width| width.is_finite() && *width >= 0.0)
+            .filter(|width| *width >= 0.0)
+            .and_then(cadmpeg_ir::scalar::FiniteReal::new)
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
     });
@@ -3801,6 +3803,10 @@ fn material_appearance(
     index: usize,
     material: &GuiMaterial,
 ) -> Result<Appearance, CodecError> {
+    let scalar = |name: &str, value: f64| {
+        cadmpeg_ir::scalar::FiniteReal::new(value)
+            .ok_or_else(|| CodecError::malformed(format_args!("GUI material {name} is non-finite")))
+    };
     Ok(Appearance {
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
@@ -3815,23 +3821,23 @@ fn material_appearance(
         properties: [
             (
                 cadmpeg_core::nonblank_literal!("ambient_packed"),
-                f64::from(material.ambient),
+                scalar("ambient_packed", f64::from(material.ambient))?,
             ),
             (
                 cadmpeg_core::nonblank_literal!("specular_packed"),
-                f64::from(material.specular),
+                scalar("specular_packed", f64::from(material.specular))?,
             ),
             (
                 cadmpeg_core::nonblank_literal!("emissive_packed"),
-                f64::from(material.emissive),
+                scalar("emissive_packed", f64::from(material.emissive))?,
             ),
             (
                 cadmpeg_core::nonblank_literal!("shininess"),
-                f64::from(material.shininess),
+                scalar("shininess", f64::from(material.shininess))?,
             ),
             (
                 cadmpeg_core::nonblank_literal!("transparency"),
-                f64::from(material.transparency),
+                scalar("transparency", f64::from(material.transparency))?,
             ),
         ]
         .into(),

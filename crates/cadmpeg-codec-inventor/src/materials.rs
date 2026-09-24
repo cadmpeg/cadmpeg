@@ -60,7 +60,10 @@ pub(crate) fn project_catalog(
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
-                    properties.insert(neutral_property_name(id).to_owned(), *value);
+                    properties.insert(
+                        neutral_property_name(id).to_owned(),
+                        cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
+                    );
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {

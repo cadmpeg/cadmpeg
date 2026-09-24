@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
+use crate::scalar::{Angle, FiniteReal, Length};
 use crate::topology::Color;
 use cadmpeg_core::text::NonBlankString;
 
@@ -78,7 +79,8 @@ pub struct Appearance {
     /// Additional byte-decoded shader scalars keyed by schema property name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub properties: BTreeMap<NonBlankString, f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<NonBlankString, f64>"))]
+    pub properties: BTreeMap<NonBlankString, FiniteReal>,
     /// Texture assets connected to shader input slots.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub textures: Vec<TextureRef>,
@@ -126,27 +128,36 @@ pub struct TextureMap2d {
     /// Source UVW mapping mode.
     pub uvw_source: u32,
     /// U-coordinate offset.
-    pub u_offset: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub u_offset: FiniteReal,
     /// V-coordinate offset.
-    pub v_offset: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub v_offset: FiniteReal,
     /// U-coordinate scale.
-    pub u_scale: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub u_scale: FiniteReal,
     /// V-coordinate scale.
-    pub v_scale: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub v_scale: FiniteReal,
     /// Counterclockwise texture rotation in radians.
-    pub rotation: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub rotation: Angle,
     /// Whether the texture repeats along U.
     pub repeat_u: bool,
     /// Whether the texture repeats along V.
     pub repeat_v: bool,
     /// Real-world X offset in millimetres.
-    pub real_world_offset_x: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub real_world_offset_x: Length,
     /// Real-world Y offset in millimetres.
-    pub real_world_offset_y: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub real_world_offset_y: Length,
     /// Real-world X scale in millimetres.
-    pub real_world_scale_x: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub real_world_scale_x: Length,
     /// Real-world Y scale in millimetres.
-    pub real_world_scale_y: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub real_world_scale_y: Length,
 }
 
 /// Bump-map interpretation and amplitudes.
@@ -157,9 +168,11 @@ pub struct BumpMap {
     /// Whether the bitmap stores tangent-space normals instead of heights.
     pub normal_map: bool,
     /// Height-map depth in millimetres.
-    pub depth: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub depth: Length,
     /// Unitless normal-map amplitude.
-    pub normal_scale: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    pub normal_scale: FiniteReal,
 }
 
 /// A topology entity which receives an appearance.

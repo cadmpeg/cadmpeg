@@ -21,6 +21,7 @@ use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_protein::appearance::{is_physical_schema, neutral_property_name, texture_asset};
 use cadmpeg_protein::{
@@ -76,11 +77,13 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
             write_color(&mut logical, value_block + 112, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("reflectivity_at_0deg") {
                 logical[value_block + 171..value_block + 175].copy_from_slice(b"\x0c\x00\x00\x00");
-                logical[value_block + 175..value_block + 183].copy_from_slice(&value.to_le_bytes());
+                logical[value_block + 175..value_block + 183]
+                    .copy_from_slice(&value.get().to_le_bytes());
             }
             if let Some(value) = appearance.properties.get("refraction_index") {
                 logical[value_block + 197..value_block + 201].copy_from_slice(b"\x0c\x00\x00\x00");
-                logical[value_block + 201..value_block + 209].copy_from_slice(&value.to_le_bytes());
+                logical[value_block + 201..value_block + 209]
+                    .copy_from_slice(&value.get().to_le_bytes());
             }
         }
         "PrismOpaqueSchema" | "PrismMetalSchema" => {
@@ -88,14 +91,16 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
             write_color(&mut logical, value_block + 8, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("surface_roughness") {
                 logical[value_block + 64..value_block + 68].copy_from_slice(b"\x0e\x20\x00\x00");
-                logical[value_block + 68..value_block + 76].copy_from_slice(&value.to_le_bytes());
+                logical[value_block + 68..value_block + 76]
+                    .copy_from_slice(&value.get().to_le_bytes());
             }
         }
         "PrismTransparentSchema" => {
             logical.resize(value_block + 177, 0);
             write_color(&mut logical, value_block + 121, appearance.base_color)?;
             if let Some(value) = appearance.properties.get("refraction_index") {
-                logical[value_block + 169..value_block + 177].copy_from_slice(&value.to_le_bytes());
+                logical[value_block + 169..value_block + 177]
+                    .copy_from_slice(&value.get().to_le_bytes());
             }
         }
         "PhysMatSchema"
@@ -728,7 +733,10 @@ fn appearances_from_schema_records(
                 if let Some(cadmpeg_protein::property::PropertyValue::Float(value)) =
                     property.value()
                 {
-                    properties.insert(neutral_property_name(id).to_owned(), *value);
+                    properties.insert(
+                        neutral_property_name(id).to_owned(),
+                        cadmpeg_protein::appearance::finite_scalar(record, id, *value)?,
+                    );
                 }
                 for guid in property.connections() {
                     if let Some(texture) = textures.get(guid) {
@@ -1959,16 +1967,18 @@ fn decode_fixed_record(record: &[u8]) -> Result<Option<Appearance>, CodecError> 
     }))
 }
 
-fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
-    let Some(value) = View::f64_le_at(bytes, offset) else {
-        return;
-    };
-    if value.is_finite() {
+fn fixed_scalar(out: &mut BTreeMap<String, FiniteReal>, name: &str, bytes: &[u8], offset: usize) {
+    if let Some(value) = View::f64_le_at(bytes, offset).and_then(FiniteReal::new) {
         out.insert(name.to_owned(), value);
     }
 }
 
-fn fixed_tagged_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
+fn fixed_tagged_scalar(
+    out: &mut BTreeMap<String, FiniteReal>,
+    name: &str,
+    bytes: &[u8],
+    offset: usize,
+) {
     if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
         fixed_scalar(out, name, bytes, offset + 4);
     }

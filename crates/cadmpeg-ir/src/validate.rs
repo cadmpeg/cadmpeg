@@ -45,7 +45,7 @@ use geometry_consistency::{
 use geometry_payloads::check_tessellations;
 use identity_order::check_identity_and_order;
 use pmi::check_pmi;
-use presentation::{check_appearances, check_presentation};
+use presentation::check_presentation;
 use products::check_products;
 use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
@@ -158,7 +158,6 @@ fn validate_model_with_index(
     check_spreadsheets(ir, &mut findings);
     check_products(ir, &mut findings);
     check_presentation(ir, ids, &mut findings);
-    check_appearances(ir, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ir, ids, &mut findings);

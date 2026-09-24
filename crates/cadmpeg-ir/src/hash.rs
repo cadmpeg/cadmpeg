@@ -45,10 +45,9 @@ pub fn canonical_json_sha256<T: Serialize>(value: &T) -> Result<String, DigestEr
 
 /// A digest could not be computed.
 ///
-/// The IR carries raw `f64` in places. `serde_json` writes a non-finite one as
-/// `null`, so the digest serializes through the same adapter the document write
-/// route uses, which refuses it instead: see
-/// [`CanonicalJsonError`].
+/// A digested value can carry a raw `f64`. `serde_json` writes a non-finite one
+/// as `null`, so the digest serializes through the same adapter the document
+/// write route uses, which refuses it instead: see [`CanonicalJsonError`].
 #[derive(Debug, thiserror::Error)]
 pub enum DigestError {
     /// A record the unknown arena cannot state.
