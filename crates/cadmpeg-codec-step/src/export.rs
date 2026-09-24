@@ -75,8 +75,10 @@ pub(crate) struct StepWriteOutcome {
 
 /// Writes STEP bytes and returns the facts measured by the writer.
 ///
-/// A real the writer computes that is not finite refuses the file before
-/// any byte is written: Part 21 states no such number.
+/// A real the writer computes that is not finite, and a replica transform
+/// that is not a similarity, refuse the file before any byte is written:
+/// Part 21 states no such number, and its transformation operator states
+/// only a similarity.
 pub(crate) fn write_step_outcome(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),

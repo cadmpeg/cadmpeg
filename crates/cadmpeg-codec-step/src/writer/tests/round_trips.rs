@@ -1519,3 +1519,137 @@ fn the_part21_real_formatter_refuses_a_non_finite_value() {
         );
     }
 }
+
+/// Decodes `records`, gives each procedural replica `transform`, and writes
+/// the model.
+fn replica_written_with(
+    records: &str,
+    transform: Transform,
+) -> Result<String, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, ProceduralSurfaceDefinition};
+
+    let source = crate::test_support::exchange::decode_inline(records);
+    let mut ir = source.ir().clone();
+    let mut replicas = 0;
+    for surface in &mut ir.model.procedural_surfaces {
+        surface.edit_definition(|definition| {
+            if let ProceduralSurfaceDefinition::Replica {
+                transform: held, ..
+            } = definition
+            {
+                *held = transform;
+                replicas += 1;
+            }
+        });
+    }
+    for curve in &mut ir.model.procedural_curves {
+        curve.edit_definition(|definition| {
+            if let ProceduralCurveDefinition::Replica {
+                transform: held, ..
+            } = definition
+            {
+                *held = transform;
+                replicas += 1;
+            }
+        });
+    }
+    assert_eq!(replicas, 1, "the exchange states one replica");
+    let mut bytes = Vec::new();
+    crate::export::write_step_outcome(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )?;
+    Ok(String::from_utf8(bytes).expect("STEP output is UTF-8"))
+}
+
+const SURFACE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,2.,#4);
+#8=SURFACE_REPLICA('',#6,#7);
+#9=RECTANGULAR_TRIMMED_SURFACE('',#8,0.,1.,0.,1.,.T.,.T.);
+#10=GEOMETRIC_SET('',(#9));
+#11=SHAPE_REPRESENTATION('',(#10),#12);
+#12=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));";
+
+const CURVE_REPLICA_EXCHANGE: &str = "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,2.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,3.,#4);
+#8=CURVE_REPLICA('',#6,#7);
+#9=TRIMMED_CURVE('',#8,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);
+#10=GEOMETRIC_CURVE_SET('',(#9));
+#11=SHAPE_REPRESENTATION('',(#10),$);";
+
+/// A procedural replica refuses the file for `rows`.
+fn assert_replica_is_refused(exchange: &str, rows: [[f64; 4]; 3]) {
+    let written = replica_written_with(exchange, Transform::affine(rows).expect("affine"));
+    let Err(error) = written else {
+        panic!("{written:?}");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
+        "{error}"
+    );
+}
+
+const SHEAR: [[f64; 4]; 3] = [
+    [1.0, 0.5, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+];
+
+/// A procedural replica whose transform is a similarity is written as a
+/// replica.
+#[test]
+fn a_procedural_replica_with_a_similarity_is_written() {
+    let similarity = Transform::affine([
+        [0.0, -2.0, 0.0, 10.0],
+        [2.0, 0.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ])
+    .expect("affine transform");
+    for (exchange, replica) in [
+        (SURFACE_REPLICA_EXCHANGE, "SURFACE_REPLICA"),
+        (CURVE_REPLICA_EXCHANGE, "CURVE_REPLICA"),
+    ] {
+        let text = replica_written_with(exchange, similarity).expect("a similarity is written");
+        assert!(text.contains(replica), "{text}");
+    }
+}
+
+/// A sheared surface replica refuses the file, where it was written as a
+/// different transform.
+#[test]
+fn a_surface_replica_refuses_a_shear() {
+    assert_replica_is_refused(SURFACE_REPLICA_EXCHANGE, SHEAR);
+}
+
+/// A sheared curve replica refuses the file, where it was written as a
+/// different transform.
+#[test]
+fn a_curve_replica_refuses_a_shear() {
+    assert_replica_is_refused(CURVE_REPLICA_EXCHANGE, SHEAR);
+}
+
+/// A replica transform with a zero column refuses the file, where the column
+/// was written as the direction `(0,0,1)`.
+#[test]
+fn a_replica_refuses_a_zero_column() {
+    assert_replica_is_refused(
+        CURVE_REPLICA_EXCHANGE,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ],
+    );
+}
