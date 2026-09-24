@@ -379,13 +379,18 @@ impl JsonSchema for IrDiff {
 ///
 /// A field present on one side and absent on the other always counts as
 /// differing, so an `Option` that gained or lost a value is reported even when
-/// the value would have agreed.
+/// the value would have agreed. The caller has found the two entities unequal,
+/// so when their JSON values are identical the difference is one JSON does not
+/// state, and the whole value is reported.
 fn differing_fields<T: Serialize>(left: &T, right: &T) -> Vec<String> {
     let (Ok(Value::Object(left)), Ok(Value::Object(right))) =
         (serde_json::to_value(left), serde_json::to_value(right))
     else {
         return vec!["value".to_string()];
     };
+    if left == right {
+        return vec!["value".to_string()];
+    }
     left.keys()
         .chain(right.keys())
         .collect::<std::collections::BTreeSet<_>>()
@@ -426,7 +431,8 @@ where
         .iter()
         .filter_map(|(id, before)| {
             let after = right.get(id)?;
-            // Empty differing_fields means every difference was below tolerance.
+            // Empty differing_fields means every difference JSON states was
+            // below tolerance.
             if *before == *after {
                 return None;
             }
@@ -773,6 +779,41 @@ mod tests {
             modified(&result, "curves"),
             ["synthetic:tolerance:curve#nurbs"]
         );
+    }
+
+    /// `NaN` and infinity both serialize as `null`, so the JSON projection of
+    /// these entities is identical although the entities differ.
+    #[test]
+    fn a_difference_json_cannot_state_is_reported_modified() {
+        #[derive(PartialEq, serde::Serialize)]
+        struct Entity {
+            id: &'static str,
+            value: f64,
+        }
+
+        let left = [Entity {
+            id: "test:entity#0",
+            value: f64::NAN,
+        }];
+        let right = [Entity {
+            id: "test:entity#0",
+            value: f64::INFINITY,
+        }];
+        let result = super::arena(
+            super::ArenaKind::native("test", "entities"),
+            &left,
+            &right,
+            |entity| entity.id,
+        );
+        assert_eq!(
+            result
+                .modified
+                .iter()
+                .map(|entity| entity.id.as_str())
+                .collect::<Vec<_>>(),
+            ["test:entity#0"]
+        );
+        assert_eq!(result.modified[0].fields, ["value"]);
     }
 
     /// A cube carrying source metadata with the given attributes.
