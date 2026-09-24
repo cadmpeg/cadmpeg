@@ -9,6 +9,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
@@ -115,9 +116,9 @@ pub(crate) enum DecodedCurve {
     /// Polycurve with one start parameter per child and a closing end parameter.
     Compound {
         /// Child curve trees with their start parameters.
-        children: Vec<(f64, DecodedCurve)>,
+        children: Vec<(FiniteReal, DecodedCurve)>,
         /// End parameter of the last child.
-        end_parameter: f64,
+        end_parameter: FiniteReal,
         /// Non-fatal source warnings.
         warnings: Diagnostics,
     },
@@ -733,8 +734,8 @@ pub(crate) fn exact_nurbs(
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
-                let target = [*start, end];
-                if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+                let target = [start.get(), end.get()];
+                if target[0] >= target[1] {
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
                 segments.push(remap_nurbs_domain(
@@ -1386,7 +1387,7 @@ fn read_line(
     let to = crate::wire::scaled_point(native_point(reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
         .get();
-    let domain = interval(reader)?.0;
+    let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
     if expected_dimension.is_some_and(|expected| dimension != expected)
         || !(dimension == 2 || dimension == 3)
@@ -1471,8 +1472,8 @@ fn read_arc(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let circle = read_circle(reader, scale)?;
-    let angle = interval(reader)?.0;
-    let domain = interval(reader)?.0;
+    let angle = interval(reader)?.0.get();
+    let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
     let mut warnings = Diagnostics::new();
     if expected_dimension.is_some_and(|expected| dimension != expected) {
@@ -1655,7 +1656,7 @@ fn read_polycurve_parameters(
     reader: &mut BoundedReader<'_>,
     segment_count: usize,
     label: &str,
-) -> Result<(Vec<f64>, f64), GeometryError> {
+) -> Result<(Vec<FiniteReal>, FiniteReal), GeometryError> {
     let parameter_count = crate::wire::element_count(reader, 8)?;
     if parameter_count != segment_count + 1 {
         return Err(GeometryError::malformed(
@@ -1680,18 +1681,14 @@ fn read_polycurve_parameters(
 }
 
 fn checked_polycurve_parameter(
-    previous: Option<f64>,
+    previous: Option<FiniteReal>,
     value: f64,
     offset: usize,
     label: &str,
-) -> Result<f64, GeometryError> {
-    if !value.is_finite() || previous.is_some_and(|previous| value <= previous) {
-        return Err(GeometryError::malformed(
-            offset,
-            format!("{label} parameters are invalid"),
-        ));
-    }
-    Ok(value)
+) -> Result<FiniteReal, GeometryError> {
+    FiniteReal::new(value)
+        .filter(|value| previous.is_none_or(|previous| value.get() > previous.get()))
+        .ok_or_else(|| GeometryError::malformed(offset, format!("{label} parameters are invalid")))
 }
 
 fn arc_nurbs(
@@ -1917,6 +1914,7 @@ mod tests {
     use crate::settings::MillimeterScale;
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::FiniteReal;
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
 
@@ -2179,12 +2177,14 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
-        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "polycurve").is_err());
+        let previous = FiniteReal::new(1.0);
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
-        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "C2 polycurve").is_err());
+        let previous = FiniteReal::new(1.0);
+        assert!(checked_polycurve_parameter(previous, 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]
@@ -2231,9 +2231,10 @@ mod tests {
                 Diagnostics::new(),
             )
         };
+        let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
         let nested = DecodedCurve::Compound {
-            children: vec![(2.0, line(0.0, 1.0)), (3.0, line(0.0, 1.0))],
-            end_parameter: 5.0,
+            children: vec![(finite(2.0), line(0.0, 1.0)), (finite(3.0), line(0.0, 1.0))],
+            end_parameter: finite(5.0),
             warnings: Diagnostics::new(),
         };
         let converted = exact_nurbs(&nested, 0).expect("required invariant");

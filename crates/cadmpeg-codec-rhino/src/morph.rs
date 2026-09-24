@@ -231,7 +231,7 @@ fn localizer(
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
     let offset = value.position();
-    let interval = scale_interval(interval(&mut value)?.0, scale, offset)?;
+    let interval = scale_interval(interval(&mut value)?.0.get(), scale, offset)?;
     let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
         crate::surfaces::read_nurbs_curve(child, scale)
     })?;

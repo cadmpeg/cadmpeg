@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
@@ -1558,7 +1559,7 @@ fn legacy_curve_shape(
             let first = children
                 .first()
                 .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
-            Interval([first.0, *end_parameter])
+            Interval(FiniteVector::from([first.0, *end_parameter]))
         }
         crate::curves::DecodedCurve::Leaf { .. } => {
             return Err(error(
@@ -2760,12 +2761,8 @@ fn unique(values: &[i32], label: &str) -> Result<(), GeometryError> {
 }
 
 /// Refuses a decoded interval that is neither an `ON_UNSET` pair nor ordered.
-/// Every interval that reaches here is finite: the wire routes read it through
-/// `settings::interval`, and the legacy route builds it from polycurve
-/// parameters that `curves::checked_polycurve_parameter` already refused when
-/// non-finite.
 fn ordered_interval(value: Interval, label: &str) -> Result<(), GeometryError> {
-    let [low, high] = value.0;
+    let [low, high] = value.0.get();
     let unset = (low == ON_UNSET_VALUE && high == ON_UNSET_VALUE)
         || (low == ON_UNSET_POSITIVE_VALUE && high == ON_UNSET_POSITIVE_VALUE);
     let empty = (low == ON_UNSET_VALUE && high == ON_UNSET_POSITIVE_VALUE)
@@ -2924,17 +2921,17 @@ mod tests {
     }
 
     use super::{
-        body_kind_rests_on_missing_stamp, finite_tolerance, legacy_decoded_curve_endpoints,
-        ordered_interval, parse, read_children, read_faces, read_legacy_mesh_sides,
-        read_mesh_sides, read_region_records, read_region_topology_userdata, read_regions,
-        read_trims, read_vertices, serialized_body_kind, supported_class, validate_rings,
-        BrepBodyKind, RawBrep, RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge,
-        RawBrepFace, RawBrepFaceSide, RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex,
-        RawLoopKind, RawSolidFlag, RawTrimIso, RawTrimKind, ResolvedBrep, ResolvedFace,
-        ResolvedLoop, ResolvedTrim, ResolvedVertex, SolidState, ValidatedRawBrep, LEGACY_BREP,
-        LEGACY_TRIMMED_SURFACE, ON_BREP, ON_BREP_FACE_SIDE, ON_BREP_REGION,
-        ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4, TL_BREP,
-        V5_BREP_REGION_TOPOLOGY_USERDATA,
+        body_kind_rests_on_missing_stamp, finite_tolerance, legacy_curve_shape,
+        legacy_decoded_curve_endpoints, ordered_interval, parse, read_children, read_faces,
+        read_legacy_mesh_sides, read_mesh_sides, read_region_records,
+        read_region_topology_userdata, read_regions, read_trims, read_vertices,
+        serialized_body_kind, supported_class, validate_rings, BrepBodyKind, RawBrep,
+        RawBrepBaseType, RawBrepChild, RawBrepChildren, RawBrepEdge, RawBrepFace, RawBrepFaceSide,
+        RawBrepLoop, RawBrepRegion, RawBrepTrim, RawBrepVertex, RawLoopKind, RawSolidFlag,
+        RawTrimIso, RawTrimKind, ResolvedBrep, ResolvedFace, ResolvedLoop, ResolvedTrim,
+        ResolvedVertex, SolidState, ValidatedRawBrep, LEGACY_BREP, LEGACY_TRIMMED_SURFACE, ON_BREP,
+        ON_BREP_FACE_SIDE, ON_BREP_REGION, ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4,
+        TL_BREP, V5_BREP_REGION_TOPOLOGY_USERDATA,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
@@ -2943,7 +2940,12 @@ mod tests {
     use crate::settings::{BoundingBox, Interval, Point3};
     use crate::wire::Uuid;
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::units::FiniteVector;
     use std::ops::Range;
+
+    fn finite_interval(endpoints: [f64; 2]) -> Interval {
+        Interval(FiniteVector::new(endpoints).expect("finite interval"))
+    }
 
     #[test]
     fn registered_brep_aliases_share_the_brep_payload_reader() {
@@ -3228,7 +3230,7 @@ mod tests {
     }
 
     fn one_face_raw() -> RawBrep {
-        let interval = Interval([0.0, 1.0]);
+        let interval = finite_interval([0.0, 1.0]);
         let vertices = [[0, 2], [0, 1], [1, 2]]
             .into_iter()
             .enumerate()
@@ -3448,7 +3450,7 @@ mod tests {
     }
 
     fn degenerate_trim_raw(trim_type: RawTrimKind, curve: Option<i32>) -> RawBrep {
-        let interval = Interval([0.0, 1.0]);
+        let interval = finite_interval([0.0, 1.0]);
         RawBrep {
             losses: Vec::new(),
             minor: 0,
@@ -3561,6 +3563,34 @@ mod tests {
     }
 
     #[test]
+    fn a_legacy_polycurve_domain_spans_its_admitted_parameters() {
+        let point = |x: f64| {
+            crate::curves::DecodedCurve::leaf(
+                CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
+                    cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(
+                        cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                Diagnostics::new(),
+            )
+        };
+        let finite = |value: f64| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
+        let polycurve = crate::curves::DecodedCurve::Compound {
+            children: vec![(finite(-1.5), point(1.0)), (finite(2.0), point(2.0))],
+            end_parameter: finite(6.25),
+            warnings: Diagnostics::new(),
+        };
+        let polycurve = crate::curves::DecodedGeometry::Curve { curve: polycurve };
+        let (domain, endpoints) = legacy_curve_shape(&polycurve, 0).expect("polycurve shape");
+        assert_eq!(domain, finite_interval([-1.5, 6.25]));
+        assert_eq!(
+            endpoints,
+            [Point3([1.0, 0.0, 0.0]), Point3([2.0, 0.0, 0.0])]
+        );
+    }
+
+    #[test]
     fn negative_array_count_is_rejected_before_allocation() {
         let mut bytes = vec![0x30, 0x10];
         bytes.extend_from_slice(&(-1_i32).to_le_bytes());
@@ -3650,7 +3680,8 @@ mod tests {
     /// the file locates, so their refusals name no offset instead of byte 0.
     #[test]
     fn an_interval_or_tolerance_refusal_names_no_byte() {
-        let error = ordered_interval(Interval([0.0, 0.0]), "interval").expect_err("ordering");
+        let error =
+            ordered_interval(finite_interval([0.0, 0.0]), "interval").expect_err("ordering");
         assert!(matches!(
             error,
             GeometryError::Malformed(crate::chunks::FramingError::Unpositioned { ref message })
@@ -3668,14 +3699,14 @@ mod tests {
     #[test]
     fn interval_accepts_explicit_signed_unset_values() {
         for value in [
-            Interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
-            Interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
-            Interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
-            Interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
+            finite_interval([ON_UNSET_VALUE, ON_UNSET_VALUE]),
+            finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_POSITIVE_VALUE]),
+            finite_interval([ON_UNSET_VALUE, ON_UNSET_POSITIVE_VALUE]),
+            finite_interval([ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE]),
         ] {
             assert!(ordered_interval(value, "interval").is_ok());
         }
-        assert!(ordered_interval(Interval([0.0, 0.0]), "interval").is_err());
+        assert!(ordered_interval(finite_interval([0.0, 0.0]), "interval").is_err());
     }
 
     /// The one-trim fixture resolved the way validation resolves it.

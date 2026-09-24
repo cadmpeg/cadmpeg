@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::units::FiniteVector;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{decode_embedded_curve_2d, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -848,11 +849,12 @@ fn require_anonymous_version(
 }
 
 fn increasing_interval(
-    value: [f64; 2],
+    value: FiniteVector<2>,
     offset: usize,
     name: &str,
 ) -> Result<[f64; 2], GeometryError> {
-    if value.iter().all(|entry| entry.is_finite()) && value[0] < value[1] {
+    let value = value.get();
+    if value[0] < value[1] {
         Ok(value)
     } else {
         Err(error(offset, format!("extrusion {name} is invalid")))
@@ -920,6 +922,7 @@ pub(crate) mod tests {
     };
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::scalar::FiniteReal;
 
     /// Every fixture this module builds is decoded at an archive word of 50,
     /// so its chunks use the eight-byte value grammar.
@@ -1391,9 +1394,10 @@ pub(crate) mod tests {
     fn multiple_profiles_require_exact_polycurve_count_and_outer_hole_orientation() {
         let outer = decoded_polygon(false, true);
         let inner = decoded_polygon(true, true);
+        let finite = |value: f64| FiniteReal::new(value).expect("finite parameter");
         let profile = DecodedCurve::Compound {
-            children: vec![(0.0, outer), (1.0, inner)],
-            end_parameter: 2.0,
+            children: vec![(finite(0.0), outer), (finite(1.0), inner)],
+            end_parameter: finite(2.0),
             warnings: Diagnostics::new(),
         };
         assert_eq!(

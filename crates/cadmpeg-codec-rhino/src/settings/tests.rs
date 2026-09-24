@@ -418,6 +418,30 @@ fn a_nonfinite_point_component_is_refused_at_the_point_first_byte() {
     );
 }
 
+/// The interval reader hands back the finite endpoints it admitted and refuses a
+/// nonfinite endpoint at the interval's first byte.
+#[test]
+fn an_interval_holds_its_admitted_finite_endpoints() {
+    let interval_bytes = |values: [f64; 2]| {
+        let mut bytes = vec![0xa5];
+        for value in values {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes
+    };
+    let bytes = interval_bytes([-2.5, 7.0]);
+    let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("interval reader");
+    let interval = settings::interval(&mut reader).expect("finite interval");
+    assert_eq!(interval.0.get(), [-2.5, 7.0]);
+    let bytes = interval_bytes([0.0, f64::INFINITY]);
+    let mut reader = BoundedReader::new(&bytes, 1, bytes.len()).expect("interval reader");
+    let error = settings::interval(&mut reader).expect_err("nonfinite interval");
+    assert_eq!(
+        error,
+        crate::chunks::FramingError::structural(1, "interval contains a nonfinite value")
+    );
+}
+
 /// The mesh-parameters route reads each value through the shared reader, so its
 /// refusal names the value's first byte.
 #[test]

@@ -4602,7 +4602,7 @@ fn scale_plane_pcurves(
 }
 
 fn edge_param_range(edge: &crate::brep::RawBrepEdge) -> [f64; 2] {
-    edge.proxy_domain.0
+    edge.proxy_domain.0.get()
 }
 
 fn edge_vertices(
@@ -4706,6 +4706,7 @@ fn stage_curve_tree(
             let mut parameters = Vec::with_capacity(children.len() + 1);
             let mut components = Vec::with_capacity(children.len());
             for (index, (parameter, child)) in children.into_iter().enumerate() {
+                let parameter = parameter.get();
                 parameters.push(parameter);
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
                     parameter,
@@ -4719,7 +4720,7 @@ fn stage_curve_tree(
                     )?,
                 });
             }
-            parameters.push(end_parameter);
+            parameters.push(end_parameter.get());
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                     record: Some(unknown.clone()),
@@ -4894,19 +4895,12 @@ fn decode_pcurves(
                 continue;
             }
         };
-        let Some(domain) = cadmpeg_ir::units::FiniteVector::new(trim.domain.0) else {
-            warnings.push(format!(
-                "trim {index}: {}",
-                cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE
-            ));
-            continue;
-        };
         values.push(Pcurve {
             id: id.clone(),
             geometry: PcurveGeometry::Nurbs { nurbs },
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 Some(trim.proxy_reversed),
-                Some(domain),
+                Some(trim.domain.0),
                 finite_tolerance(trim.tolerances[0]),
             ),
         });
@@ -4942,8 +4936,8 @@ fn c2_curve_to_nurbs_join(
             let mut children = children.into_iter().peekable();
             while let Some((start, child)) = children.next() {
                 let end = children.peek().map_or(end_parameter, |(start, _)| *start);
-                let target = [start, end];
-                if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+                let target = [start.get(), end.get()];
+                if target[0] >= target[1] {
                     return Err(crate::curves::error(
                         offset,
                         "C2 polycurve segment domain is invalid",
@@ -5203,6 +5197,7 @@ fn commit_curve_tree(
             let mut parameters = Vec::with_capacity(children.len() + 1);
             let mut components = Vec::with_capacity(children.len());
             for (index, (parameter, child)) in children.into_iter().enumerate() {
+                let parameter = parameter.get();
                 parameters.push(parameter);
                 let child_path = format!("{path}.component-{index}");
                 components.push(cadmpeg_ir::geometry::CompoundComponent {
@@ -5218,7 +5213,7 @@ fn commit_curve_tree(
                     )?,
                 });
             }
-            parameters.push(end_parameter);
+            parameters.push(end_parameter.get());
             (
                 CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record }),
                 Some(ProceduralCurveDefinition::Compound(

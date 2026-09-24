@@ -275,7 +275,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
         append_line_payload(&mut data, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], 2),
     ];
     let surface_range = append_plane_payload(&mut data);
-    let interval = crate::settings::Interval([0.0, 1.0]);
+    let interval = finite_interval([0.0, 1.0]);
     let endpoints = [[0, 1], [1, 2], [2, 0]];
     let vertices = [[0, 2], [0, 1], [1, 2]]
         .into_iter()
@@ -749,11 +749,11 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
         index: 0,
         curve: 0,
         proxy_reversed: false,
-        proxy_domain: crate::settings::Interval([3.0, 7.0]),
+        proxy_domain: finite_interval([3.0, 7.0]),
         vertices: [0, 1],
         trims: Vec::new(),
         tolerance: 0.0,
-        domain: crate::settings::Interval([100.0, 200.0]),
+        domain: finite_interval([100.0, 200.0]),
         source_range: 0..0,
     };
     let resolved = crate::brep::ResolvedEdge {
@@ -889,10 +889,16 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
     let compound = crate::curves::DecodedCurve::Compound {
         children: vec![
-            (10.0, decoded_nurbs(line_nurbs(0.0, 1.0, true))),
-            (20.0, decoded_nurbs(line_nurbs(-2.0, 2.0, false))),
+            (
+                finite_parameter(10.0),
+                decoded_nurbs(line_nurbs(0.0, 1.0, true)),
+            ),
+            (
+                finite_parameter(20.0),
+                decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
+            ),
         ],
-        end_parameter: 40.0,
+        end_parameter: finite_parameter(40.0),
         warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
@@ -906,15 +912,21 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
     let nested = crate::curves::DecodedCurve::Compound {
         children: vec![
-            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
-            (1.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+            (
+                finite_parameter(0.0),
+                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            ),
+            (
+                finite_parameter(1.0),
+                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            ),
         ],
-        end_parameter: 2.0,
+        end_parameter: finite_parameter(2.0),
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
-        children: vec![(5.0, nested)],
-        end_parameter: 9.0,
+        children: vec![(finite_parameter(5.0), nested)],
+        end_parameter: finite_parameter(9.0),
         warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(outer, 0)
@@ -939,10 +951,13 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
     .expect("valid quadratic");
     let compound = crate::curves::DecodedCurve::Compound {
         children: vec![
-            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
-            (1.0, decoded_nurbs(quadratic)),
+            (
+                finite_parameter(0.0),
+                decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+            ),
+            (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
-        end_parameter: 2.0,
+        end_parameter: finite_parameter(2.0),
         warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0)
@@ -1629,4 +1644,14 @@ fn a_dropped_brep_mesh_cache_slot_carries_the_mesh_cache_code() {
             "invalid render mesh cache slot 2: payload is truncated"
         )]
     );
+}
+
+fn finite_interval(endpoints: [f64; 2]) -> crate::settings::Interval {
+    crate::settings::Interval(
+        cadmpeg_ir::units::FiniteVector::new(endpoints).expect("finite interval"),
+    )
+}
+
+fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite parameter")
 }
