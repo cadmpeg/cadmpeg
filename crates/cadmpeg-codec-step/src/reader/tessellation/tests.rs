@@ -141,7 +141,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .find(|mesh| mesh.id.as_str().ends_with("#7"))
         .unwrap();
     assert_eq!(complex.triangles(), [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
-    assert_point3_close(complex.vertices()[0], Point3::new(10.0, 10.0, 0.0));
+    assert_point3_close(complex.vertices()[0].get(), Point3::new(10.0, 10.0, 0.0));
     assert_eq!(complex.vertex_normals().len(), 4);
     assert!((complex.vertex_normals()[0].x - 1.0).abs() < EPS_SAME_POINT);
     assert!(result
@@ -234,7 +234,7 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         .find(|mesh| mesh.id.as_str().ends_with("#4"))
         .expect("complex tessellated face");
     assert_eq!(mesh.vertices().len(), 3);
-    assert_point3_close(mesh.vertices()[1], Point3::new(10.0, 0.0, 0.0));
+    assert_point3_close(mesh.vertices()[1].get(), Point3::new(10.0, 0.0, 0.0));
     assert_eq!(mesh.triangles(), [[0, 1, 2]]);
     assert_eq!(mesh.vertex_normals().len(), 3);
     assert_eq!(
@@ -449,8 +449,8 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("repositioned annotation mesh");
-    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
-    assert_vector3_close(mesh.vertex_normals()[0], Vector3::new(1.0, 0.0, 0.0));
+    assert_point3_close(mesh.vertices()[0].get(), Point3::new(110.0, 210.0, 300.0));
+    assert_vector3_close(mesh.vertex_normals()[0].get(), Vector3::new(1.0, 0.0, 0.0));
     assert!(mesh.body.is_none());
     let exact_mesh = decoded
         .ir()
@@ -459,7 +459,7 @@ fn repositioned_annotation_mesh_transfers_one_placement() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
         .expect("exact body mesh");
-    assert_point3_close(exact_mesh.vertices()[0], Point3::new(0.0, 0.0, 0.0));
+    assert_point3_close(exact_mesh.vertices()[0].get(), Point3::new(0.0, 0.0, 0.0));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationItemUndeclared.kind()
             && loss.message.contains("tessellation item #7")
@@ -500,8 +500,8 @@ fn repositioned_annotation_mesh_preserves_extreme_source_normals() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("repositioned extreme-normal mesh");
-    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
-    assert_vector3_close(mesh.vertex_normals()[0], Vector3::new(1.0, 0.0, 0.0));
+    assert_point3_close(mesh.vertices()[0].get(), Point3::new(110.0, 210.0, 300.0));
+    assert_vector3_close(mesh.vertex_normals()[0].get(), Vector3::new(1.0, 0.0, 0.0));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DecodeWarning.kind()
             && loss
@@ -536,7 +536,7 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
             .iter()
             .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#4")
             .expect("invalid-placement tessellation");
-        assert_point3_close(mesh.vertices()[1], Point3::new(10.0, 0.0, 0.0));
+        assert_point3_close(mesh.vertices()[1].get(), Point3::new(10.0, 0.0, 0.0));
         assert!(decoded.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
                 && loss.message.contains("repositioned tessellated item #5")
@@ -582,7 +582,7 @@ fn unresolved_outer_repositioning_preserves_inner_valid_placement() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("nested repositioned annotation mesh");
-    assert_point3_close(mesh.vertices()[0], Point3::new(110.0, 210.0, 300.0));
+    assert_point3_close(mesh.vertices()[0].get(), Point3::new(110.0, 210.0, 300.0));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationPlacementUnresolved.kind()
             && loss.message.contains("repositioned tessellated item #88")
@@ -616,7 +616,7 @@ fn repositioned_annotation_mesh_rejects_conflicting_placements() {
         .iter()
         .find(|mesh| mesh.id.as_str() == "step:tessellation:mesh#7")
         .expect("conflicting repositioned annotation mesh");
-    assert_point3_close(mesh.vertices()[0], Point3::new(10.0, 10.0, 0.0));
+    assert_point3_close(mesh.vertices()[0].get(), Point3::new(10.0, 10.0, 0.0));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TessellationPlacementAmbiguous.kind()
             && loss.message.contains("tessellation item #7")

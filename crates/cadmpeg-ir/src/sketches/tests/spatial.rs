@@ -868,6 +868,14 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
     }];
     let mut profile =
         SpatialSketchProfile::try_new(origin, normal, u_axis, boundary.clone()).unwrap();
+    assert_eq!(profile.origin(), origin);
+    assert_eq!(
+        [profile.normal(), profile.u_axis()],
+        [
+            crate::units::UnitVector3::Z_AXIS,
+            crate::units::UnitVector3::X_AXIS
+        ]
+    );
     let wire = serde_json::json!({
         "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
         "normal": {"x": 0.0, "y": 0.0, "z": 1.0},

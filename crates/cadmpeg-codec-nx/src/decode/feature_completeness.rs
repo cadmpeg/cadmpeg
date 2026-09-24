@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{
     features::{
         BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, CurveProjectionDirection,
@@ -25,8 +26,6 @@ use operands::{
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
 const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
-/// Unit-length acceptance for authored feature directions.
-const EPS_UNIT_DIRECTION: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
 const EPS_PERPENDICULAR: f64 = 1.0e-9;
 
@@ -146,22 +145,24 @@ pub(crate) fn active_configuration_state_is_incomplete(
         })
 }
 
+/// Whether an admitted frame misses the NX datum contract: perpendicular
+/// axes within a bound scaled by their lengths, and a handedness within the
+/// frame tolerance of one on both sides. The axes are unit directions, so
+/// every length and product below is finite.
 pub(super) fn datum_coordinate_system_is_incomplete(
-    x_axis: Vector3,
-    y_axis: Vector3,
-    z_axis: Vector3,
+    x_axis: UnitVector3,
+    y_axis: UnitVector3,
+    z_axis: UnitVector3,
 ) -> bool {
-    if !unit_feature_direction(x_axis)
-        || !unit_feature_direction(y_axis)
-        || !unit_feature_direction(z_axis)
-        || !directions_are_perpendicular(x_axis, y_axis)
+    let [x_axis, y_axis, z_axis] = [x_axis, y_axis, z_axis].map(Vector3::from);
+    if !directions_are_perpendicular(x_axis, y_axis)
         || !directions_are_perpendicular(y_axis, z_axis)
         || !directions_are_perpendicular(z_axis, x_axis)
     {
         return true;
     }
     let handedness = x_axis.cross(y_axis).dot(z_axis);
-    !handedness.is_finite() || (handedness - 1.0).abs() > EPS_ORTHONORMAL_FRAME
+    (handedness - 1.0).abs() > EPS_ORTHONORMAL_FRAME
 }
 
 pub(super) fn projected_curve_direction_is_incomplete(direction: CurveProjectionDirection) -> bool {
@@ -172,13 +173,8 @@ pub(super) fn projected_curve_direction_is_incomplete(direction: CurveProjection
     }
 }
 
-fn unit_feature_direction(direction: Vector3) -> bool {
-    valid_feature_direction(direction) && (direction.norm() - 1.0).abs() <= EPS_UNIT_DIRECTION
-}
-
 fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
-    let scale = first.norm() * second.norm();
-    scale.is_finite() && first.dot(second).abs() <= EPS_PERPENDICULAR * scale
+    first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
 pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<ParameterId> {
@@ -681,10 +677,6 @@ pub(crate) fn sweep_definition_is_incomplete(feature: &Feature) -> bool {
 
 fn positive_feature_length(length: Length) -> bool {
     length.get() > 0.0
-}
-
-fn valid_feature_direction(direction: Vector3) -> bool {
-    direction.norm().is_finite() && direction.norm() > 0.0
 }
 
 fn has_no_body_result_or_reference(feature: &cadmpeg_ir::features::Feature) -> bool {

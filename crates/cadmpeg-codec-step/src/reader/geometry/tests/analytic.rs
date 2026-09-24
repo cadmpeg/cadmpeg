@@ -33,7 +33,7 @@ fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]
         panic!("expected tessellated curve to transfer as a polyline");
     };
     assert!(polyline.parameters().is_none());
-    assert!(polyline.chordal_deflection().abs() < EPS_TESSELLATED_CURVE_POINT);
+    assert!(polyline.chordal_deflection().get().abs() < EPS_TESSELLATED_CURVE_POINT);
     assert_eq!(polyline.point_count(), expected.len());
     for (point, &(x, y, z)) in polyline.points().zip(expected) {
         assert!((point.x - x).abs() < EPS_TESSELLATED_CURVE_POINT);

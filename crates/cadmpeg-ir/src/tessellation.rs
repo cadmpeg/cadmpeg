@@ -6,9 +6,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::AssetId;
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::scalar::NonNegativeReal;
 
 crate::ids::id_type!(
     /// Stable tessellation identity.
@@ -41,25 +43,29 @@ fn tessellation_error(message: impl Into<String>) -> TessellationError {
 }
 
 /// One mesh vertex carrying its shading normal.
+// A source states raw coordinates; a `Tessellation` holds the admitted row,
+// whose position is a `FinitePoint3` and whose normal is a `FiniteVector3`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct ShadedVertex {
+pub struct ShadedVertex<P = Point3, N = Vector3> {
     /// Vertex position in document units.
-    pub position: Point3,
+    pub position: P,
     /// Shading normal at this vertex.
-    pub normal: Vector3,
+    pub normal: N,
 }
 
 /// One triangle carrying a shading normal at each of its corners.
+// A source states raw normals; a `Tessellation` holds the admitted row, whose
+// normals are `FiniteVector3` values.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct ShadedTriangle {
+pub struct ShadedTriangle<N = Vector3> {
     /// Zero-based vertex indices, with source winding preserved.
     pub corners: [u32; 3],
     /// Shading normal at each corner, in corner order.
-    pub normals: [Vector3; 3],
+    pub normals: [N; 3],
 }
 
 /// The position every mesh vertex carries, whatever else it carries.
@@ -175,6 +181,25 @@ impl<V> Strips<V> {
     pub fn vertices_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.0.iter_mut().flat_map(Strip::vertices_mut)
     }
+
+    /// Map every vertex in strip order, keeping each strip's vertex count.
+    ///
+    /// Every strip keeps the count the mint proved, so the mapped strips
+    /// satisfy the same proof without a second check.
+    fn try_map<W, E>(self, mut map: impl FnMut(V) -> Result<W, E>) -> Result<Strips<W>, E> {
+        self.0
+            .into_iter()
+            .map(|strip| {
+                strip
+                    .0
+                    .into_iter()
+                    .map(&mut map)
+                    .collect::<Result<Vec<_>, E>>()
+                    .map(Strip)
+            })
+            .collect::<Result<Vec<_>, E>>()
+            .map(Strips)
+    }
 }
 
 impl<V> Strips<V> {
@@ -219,41 +244,44 @@ impl<'de, V: Deserialize<'de>> Deserialize<'de> for Strips<V> {
 /// per-corner normals and never both, and never a normal run that does not
 /// cover the mesh. A strip owns the vertices it spans, so a strip mesh states
 /// neither a triangle list nor a vertex total: both are derived.
+// A source states raw positions and normals. A `Tessellation` holds the
+// admitted mesh, whose positions are `FinitePoint3` values and whose normals
+// are `FiniteVector3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum TessellationMesh {
+pub enum TessellationMesh<P = Point3, N = Vector3> {
     /// Independent triangle list carrying no shading normals.
     List {
         /// Vertex positions in document units.
-        vertices: Vec<Point3>,
+        vertices: Vec<P>,
         /// Zero-based vertex indices, with source winding preserved.
         triangles: Vec<[u32; 3]>,
     },
     /// Independent triangle list with one shading normal per vertex.
     ShadedList {
         /// Vertex rows, each carrying its shading normal.
-        vertices: Vec<ShadedVertex>,
+        vertices: Vec<ShadedVertex<P, N>>,
         /// Zero-based vertex indices, with source winding preserved.
         triangles: Vec<[u32; 3]>,
     },
     /// Independent triangle list with one shading normal per triangle corner.
     CornerShadedList {
         /// Vertex positions in document units.
-        vertices: Vec<Point3>,
+        vertices: Vec<P>,
         /// Triangle rows, each carrying its three corner normals.
-        triangles: Vec<ShadedTriangle>,
+        triangles: Vec<ShadedTriangle<N>>,
     },
     /// Triangle strips carrying no shading normals.
     Strips {
         /// Strips in mesh order; each spans the vertices it owns.
-        strips: Strips<Point3>,
+        strips: Strips<P>,
     },
     /// Triangle strips with one shading normal per vertex.
     ShadedStrips {
         /// Strips in mesh order; each spans the vertex rows it owns.
-        strips: Strips<ShadedVertex>,
+        strips: Strips<ShadedVertex<P, N>>,
     },
 }
 
@@ -449,10 +477,12 @@ impl TessellationMesh {
             triangles: rows,
         })
     }
+}
 
+impl<P: Copy, N: Copy> TessellationMesh<P, N> {
     /// Vertex positions in mesh order.
     #[must_use]
-    pub fn vertices(&self) -> Vec<Point3> {
+    pub fn vertices(&self) -> Vec<P> {
         match self {
             Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
                 vertices.clone()
@@ -522,7 +552,7 @@ impl TessellationMesh {
 
     /// Per-vertex shading normals; empty when the mesh carries none.
     #[must_use]
-    pub fn vertex_normals(&self) -> Vec<Vector3> {
+    pub fn vertex_normals(&self) -> Vec<N> {
         match self {
             Self::List { .. } | Self::CornerShadedList { .. } | Self::Strips { .. } => Vec::new(),
             Self::ShadedList { vertices, .. } => {
@@ -539,7 +569,7 @@ impl TessellationMesh {
     /// Per-corner shading normals in flattened triangle order; empty when the
     /// mesh carries none.
     #[must_use]
-    pub fn corner_normals(&self) -> Vec<Vector3> {
+    pub fn corner_normals(&self) -> Vec<N> {
         match self {
             Self::List { .. }
             | Self::ShadedList { .. }
@@ -588,7 +618,7 @@ impl TessellationMesh {
     /// that states the prior positions.
     fn apply_positions(
         &mut self,
-        mut edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
+        mut edit: impl FnMut(&mut P) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
         match self {
             Self::List { vertices, .. } | Self::CornerShadedList { vertices, .. } => {
@@ -621,7 +651,7 @@ impl TessellationMesh {
     /// that states the prior normals.
     fn apply_normals(
         &mut self,
-        mut edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
+        mut edit: impl FnMut(&mut N) -> Result<(), TessellationError>,
     ) -> Result<bool, TessellationError> {
         match self {
             Self::List { .. } | Self::Strips { .. } => return Ok(false),
@@ -645,6 +675,140 @@ impl TessellationMesh {
         }
         Ok(true)
     }
+}
+
+impl<P, N> TessellationMesh<P, N> {
+    /// Map every vertex position in mesh order, keeping the triangles, the
+    /// strip spans and the normals.
+    fn try_map_points<Q, E>(
+        self,
+        mut point: impl FnMut(P) -> Result<Q, E>,
+    ) -> Result<TessellationMesh<Q, N>, E> {
+        Ok(match self {
+            Self::List {
+                vertices,
+                triangles,
+            } => TessellationMesh::List {
+                vertices: vertices.into_iter().map(point).collect::<Result<_, E>>()?,
+                triangles,
+            },
+            Self::ShadedList {
+                vertices,
+                triangles,
+            } => TessellationMesh::ShadedList {
+                vertices: vertices
+                    .into_iter()
+                    .map(|vertex| {
+                        Ok(ShadedVertex {
+                            position: point(vertex.position)?,
+                            normal: vertex.normal,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+                triangles,
+            },
+            Self::CornerShadedList {
+                vertices,
+                triangles,
+            } => TessellationMesh::CornerShadedList {
+                vertices: vertices.into_iter().map(point).collect::<Result<_, E>>()?,
+                triangles,
+            },
+            Self::Strips { strips } => TessellationMesh::Strips {
+                strips: strips.try_map(point)?,
+            },
+            Self::ShadedStrips { strips } => TessellationMesh::ShadedStrips {
+                strips: strips.try_map(|vertex| {
+                    Ok(ShadedVertex {
+                        position: point(vertex.position)?,
+                        normal: vertex.normal,
+                    })
+                })?,
+            },
+        })
+    }
+
+    /// Map every shading normal in mesh order, keeping the positions, the
+    /// triangles and the strip spans.
+    fn try_map_normals<M, E>(
+        self,
+        mut normal: impl FnMut(N) -> Result<M, E>,
+    ) -> Result<TessellationMesh<P, M>, E> {
+        Ok(match self {
+            Self::List {
+                vertices,
+                triangles,
+            } => TessellationMesh::List {
+                vertices,
+                triangles,
+            },
+            Self::ShadedList {
+                vertices,
+                triangles,
+            } => TessellationMesh::ShadedList {
+                vertices: vertices
+                    .into_iter()
+                    .map(|vertex| {
+                        Ok(ShadedVertex {
+                            position: vertex.position,
+                            normal: normal(vertex.normal)?,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+                triangles,
+            },
+            Self::CornerShadedList {
+                vertices,
+                triangles,
+            } => TessellationMesh::CornerShadedList {
+                vertices,
+                triangles: triangles
+                    .into_iter()
+                    .map(|triangle| {
+                        let [first, second, third] = triangle.normals;
+                        Ok(ShadedTriangle {
+                            corners: triangle.corners,
+                            normals: [normal(first)?, normal(second)?, normal(third)?],
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+            Self::Strips { strips } => TessellationMesh::Strips { strips },
+            Self::ShadedStrips { strips } => TessellationMesh::ShadedStrips {
+                strips: strips.try_map(|vertex| {
+                    Ok(ShadedVertex {
+                        position: vertex.position,
+                        normal: normal(vertex.normal)?,
+                    })
+                })?,
+            },
+        })
+    }
+}
+
+impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// The mesh with raw positions and normals, for a reader that edits or
+    /// writes them.
+    #[must_use]
+    pub fn into_raw(self) -> TessellationMesh {
+        let Ok(positions) =
+            self.try_map_points(|point| Ok::<_, std::convert::Infallible>(point.get()));
+        let Ok(raw) =
+            positions.try_map_normals(|normal| Ok::<_, std::convert::Infallible>(normal.get()));
+        raw
+    }
+}
+
+/// Admit one mesh position whose every coordinate is finite.
+fn admit_vertex(point: Point3) -> Result<FinitePoint3, TessellationError> {
+    FinitePoint3::new(point)
+        .ok_or_else(|| tessellation_error("vertices contain a non-finite coordinate"))
+}
+
+/// Admit one shading normal whose every component is finite.
+fn admit_normal(normal: Vector3) -> Result<FiniteVector3, TessellationError> {
+    FiniteVector3::new(normal)
+        .ok_or_else(|| tessellation_error("normals contain a non-finite coordinate"))
 }
 
 /// Index table that addresses a tessellation channel payload.
@@ -757,10 +921,10 @@ pub struct Tessellation {
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
     pub faces: Vec<FaceId>,
     /// Source chordal deflection tolerance, when carried.
-    chordal_deflection: Option<f64>,
+    chordal_deflection: Option<NonNegativeReal>,
     /// Native source-object identity and effective display metadata.
     pub source_object: Option<SourceObjectAssociation>,
-    mesh: TessellationMesh,
+    mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
     /// Undirected geometric feature edges.
     feature_edges: Vec<[u32; 2]>,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
@@ -816,24 +980,6 @@ pub struct TessellationChannel {
     /// Element count, computed and bounded at construction. The channel is
     /// immutable once built, so this is the count [`Self::data`] holds.
     count: u32,
-}
-
-fn require_finite_vertices(vertices: &[Point3]) -> Result<(), TessellationError> {
-    if vertices.iter().any(|point| !point.is_finite()) {
-        return Err(tessellation_error(
-            "vertices contain a non-finite coordinate",
-        ));
-    }
-    Ok(())
-}
-
-fn require_finite_normals(normals: &[Vector3]) -> Result<(), TessellationError> {
-    if normals.iter().any(|normal| !normal.is_finite()) {
-        return Err(tessellation_error(
-            "normals contain a non-finite coordinate",
-        ));
-    }
-    Ok(())
 }
 
 fn require_triangle_indices(
@@ -981,16 +1127,11 @@ impl Tessellation {
         mesh: TessellationMesh,
         channels: Vec<TessellationChannel>,
     ) -> Result<Self, TessellationError> {
-        let vertices = mesh.vertices();
-        if vertices.iter().any(|point| !point.is_finite()) {
-            return Err(tessellation_error(
-                "vertices contain a non-finite coordinate",
-            ));
-        }
-        require_finite_normals(&mesh.vertex_normals())?;
-        require_finite_normals(&mesh.corner_normals())?;
+        let mesh = mesh
+            .try_map_points(admit_vertex)?
+            .try_map_normals(admit_normal)?;
         let triangles = mesh.triangles();
-        require_triangle_indices(vertices.len(), &triangles)?;
+        require_triangle_indices(mesh.vertex_count(), &triangles)?;
         require_channel_indices(triangles.len(), &channels)?;
         Ok(Self {
             id: TessellationId::mint(id).map_err(|error| tessellation_error(error.to_string()))?,
@@ -1006,15 +1147,38 @@ impl Tessellation {
         })
     }
 
+    /// Replace the mesh and its channels, keeping the identity, the owners,
+    /// the chordal deflection and the source association. The mesh holds
+    /// admitted positions and normals, so only the indices, the channels, the
+    /// feature edges, the triangle groups and the texture assignments are
+    /// checked against it.
+    pub fn with_mesh(
+        self,
+        mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
+        channels: Vec<TessellationChannel>,
+    ) -> Result<Self, TessellationError> {
+        let triangles = mesh.triangles();
+        require_triangle_indices(mesh.vertex_count(), &triangles)?;
+        require_channel_indices(triangles.len(), &channels)?;
+        require_feature_edges(mesh.vertex_count(), &self.feature_edges)?;
+        require_triangle_groups(triangles.len(), &self.triangle_groups)?;
+        require_texture_assignments(triangles.len(), &self.texture_assignments)?;
+        Ok(Self {
+            mesh,
+            channels,
+            ..self
+        })
+    }
+
     /// The mesh's vertices, triangles and shading normals.
     #[must_use]
-    pub const fn mesh(&self) -> &TessellationMesh {
+    pub const fn mesh(&self) -> &TessellationMesh<FinitePoint3, FiniteVector3> {
         &self.mesh
     }
 
     /// Vertex positions in document units.
     #[must_use]
-    pub fn vertices(&self) -> Vec<Point3> {
+    pub fn vertices(&self) -> Vec<FinitePoint3> {
         self.mesh.vertices()
     }
 
@@ -1031,10 +1195,12 @@ impl Tessellation {
         &mut self,
         edit: impl FnMut(&mut Point3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
-        let mut mesh = self.mesh.clone();
+        let Ok(mut mesh) = self
+            .mesh
+            .clone()
+            .try_map_points(|point| Ok::<_, std::convert::Infallible>(point.get()));
         mesh.apply_positions(edit)?;
-        require_finite_vertices(&mesh.vertices())?;
-        self.mesh = mesh;
+        self.mesh = mesh.try_map_points(admit_vertex)?;
         Ok(())
     }
 
@@ -1060,7 +1226,7 @@ impl Tessellation {
 
     /// Per-vertex normals; empty when the source carried none or corner normals.
     #[must_use]
-    pub fn vertex_normals(&self) -> Vec<Vector3> {
+    pub fn vertex_normals(&self) -> Vec<FiniteVector3> {
         self.mesh.vertex_normals()
     }
 
@@ -1071,19 +1237,20 @@ impl Tessellation {
         &mut self,
         edit: impl FnMut(&mut Vector3) -> Result<(), TessellationError>,
     ) -> Result<(), TessellationError> {
-        let mut mesh = self.mesh.clone();
+        let Ok(mut mesh) = self
+            .mesh
+            .clone()
+            .try_map_normals(|normal| Ok::<_, std::convert::Infallible>(normal.get()));
         if !mesh.apply_normals(edit)? {
             return Err(tessellation_error("mesh has no shading normals to edit"));
         }
-        require_finite_normals(&mesh.vertex_normals())?;
-        require_finite_normals(&mesh.corner_normals())?;
-        self.mesh = mesh;
+        self.mesh = mesh.try_map_normals(admit_normal)?;
         Ok(())
     }
 
     /// Per-triangle-corner normals; empty when the source carried none or vertex normals.
     #[must_use]
-    pub fn per_corner_normals(&self) -> Vec<Vector3> {
+    pub fn per_corner_normals(&self) -> Vec<FiniteVector3> {
         self.mesh.corner_normals()
     }
 
@@ -1127,7 +1294,7 @@ impl Tessellation {
 
     /// Source chordal deflection tolerance.
     #[must_use]
-    pub const fn chordal_deflection(&self) -> Option<f64> {
+    pub const fn chordal_deflection(&self) -> Option<NonNegativeReal> {
         self.chordal_deflection
     }
 
@@ -1136,12 +1303,13 @@ impl Tessellation {
         &mut self,
         chordal_deflection: Option<f64>,
     ) -> Result<(), TessellationError> {
-        if chordal_deflection.is_some_and(|value| !value.is_finite() || value < 0.0) {
-            return Err(tessellation_error(
-                "chordal_deflection must be finite and non-negative",
-            ));
-        }
-        self.chordal_deflection = chordal_deflection;
+        self.chordal_deflection = chordal_deflection
+            .map(|value| {
+                NonNegativeReal::new(value).ok_or_else(|| {
+                    tessellation_error("chordal_deflection must be finite and non-negative")
+                })
+            })
+            .transpose()?;
         Ok(())
     }
 
@@ -1290,9 +1458,9 @@ impl From<Tessellation> for TessellationWire {
             id: tessellation.id,
             body: tessellation.body,
             faces: tessellation.faces,
-            chordal_deflection: tessellation.chordal_deflection,
+            chordal_deflection: tessellation.chordal_deflection.map(NonNegativeReal::get),
             source_object: tessellation.source_object,
-            mesh: tessellation.mesh,
+            mesh: tessellation.mesh.into_raw(),
             feature_edges: tessellation.feature_edges,
             triangle_groups: tessellation.triangle_groups,
             texture_assignments: tessellation.texture_assignments,

@@ -438,16 +438,16 @@ fn exact_rectangular_pattern_instances(
                     let translation = Point2::new(
                         f64::from(indices[0])
                             * directions[0].spacing().get()
-                            * directions[0].direction()[0]
+                            * directions[0].direction().get()[0]
                             + f64::from(indices[1])
                                 * directions[1].spacing().get()
-                                * directions[1].direction()[0],
+                                * directions[1].direction().get()[0],
                         f64::from(indices[0])
                             * directions[0].spacing().get()
-                            * directions[0].direction()[1]
+                            * directions[0].direction().get()[1]
                             + f64::from(indices[1])
                                 * directions[1].spacing().get()
-                                * directions[1].direction()[1],
+                                * directions[1].direction().get()[1],
                     );
                     seed.iter().zip(instance).all(|(source, result)| {
                         translated_sketch_geometry_matches(

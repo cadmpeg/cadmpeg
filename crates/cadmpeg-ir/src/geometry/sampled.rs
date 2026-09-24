@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sampled curves and polygonal surfaces with checked sample layouts.
 
+use crate::features::FinitePoint3;
 use crate::math::Point3;
+use crate::scalar::NonNegativeReal;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,13 +33,32 @@ fn geometry_layout_error(message: impl Into<String>) -> GeometryLayoutError {
     GeometryLayoutError::Layout(message.into())
 }
 
+/// Admit a recorded chordal deviation that is finite and non-negative.
+fn admit_chordal_deflection(
+    chordal_deflection: f64,
+) -> Result<NonNegativeReal, GeometryLayoutError> {
+    NonNegativeReal::new(chordal_deflection)
+        .ok_or_else(|| geometry_layout_error("chordal_deflection must be finite and non-negative"))
+}
+
+/// Admit polygonal-surface vertices whose every coordinate is finite.
+fn admit_finite_vertices(vertices: Vec<Point3>) -> Result<Vec<FinitePoint3>, GeometryLayoutError> {
+    vertices
+        .into_iter()
+        .map(FinitePoint3::new)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| geometry_layout_error("vertices must be finite"))
+}
+
 /// Source-native polygonal surface with an explicit chordal error bound.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PolygonalSurface {
-    vertices: Vec<Point3>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<Point3>"))]
+    vertices: Vec<FinitePoint3>,
     triangles: Vec<[u32; 3]>,
-    chordal_deflection: f64,
+    #[cfg_attr(feature = "schema", schemars(with = "f64"))]
+    chordal_deflection: NonNegativeReal,
 }
 
 impl PolygonalSurface {
@@ -66,14 +87,8 @@ impl PolygonalSurface {
                 "polygonal surface contains an out-of-range triangle index",
             ));
         }
-        if vertices.iter().any(|point| !point.is_finite()) {
-            return Err(geometry_layout_error("vertices must be finite"));
-        }
-        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
-            return Err(geometry_layout_error(
-                "chordal_deflection must be finite and non-negative",
-            ));
-        }
+        let vertices = admit_finite_vertices(vertices)?;
+        let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(Self {
             vertices,
             triangles,
@@ -84,19 +99,21 @@ impl PolygonalSurface {
     /// Edit finite vertices transactionally.
     ///
     /// The closure states its own refusal, which discards the whole edit.
+    /// The edit keeps the vertex count and the triangles, so only the edited
+    /// coordinates are admitted again.
     pub fn edit_vertices(
         &mut self,
         edit: impl FnOnce(&mut [Point3]) -> Result<(), GeometryLayoutError>,
     ) -> Result<(), GeometryLayoutError> {
-        let mut candidate = self.vertices.clone();
+        let mut candidate: Vec<Point3> = self.vertices.iter().map(|point| point.get()).collect();
         edit(&mut candidate)?;
-        *self = Self::new(candidate, self.triangles.clone(), self.chordal_deflection)?;
+        self.vertices = admit_finite_vertices(candidate)?;
         Ok(())
     }
 
     /// Maximum chordal deviation recorded by the source.
     #[must_use]
-    pub const fn chordal_deflection(&self) -> f64 {
+    pub const fn chordal_deflection(&self) -> NonNegativeReal {
         self.chordal_deflection
     }
 
@@ -105,12 +122,7 @@ impl PolygonalSurface {
         &mut self,
         chordal_deflection: f64,
     ) -> Result<(), GeometryLayoutError> {
-        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
-            return Err(geometry_layout_error(
-                "chordal_deflection must be finite and non-negative",
-            ));
-        }
-        self.chordal_deflection = chordal_deflection;
+        self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
     }
 }
@@ -174,7 +186,7 @@ pub enum PolylineSamples {
 #[serde(try_from = "PolylineCurveWire", into = "PolylineCurveWire")]
 pub struct PolylineCurve {
     samples: PolylineSamples,
-    chordal_deflection: f64,
+    chordal_deflection: NonNegativeReal,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -191,7 +203,7 @@ impl From<PolylineCurve> for PolylineCurveWire {
     fn from(curve: PolylineCurve) -> Self {
         Self {
             samples: curve.samples,
-            chordal_deflection: curve.chordal_deflection,
+            chordal_deflection: curve.chordal_deflection.get(),
         }
     }
 }
@@ -271,6 +283,17 @@ impl PolylineCurve {
         samples: PolylineSamples,
         chordal_deflection: f64,
     ) -> Result<Self, GeometryLayoutError> {
+        Self::admit_sample_points(&samples)?;
+        let chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
+        Self::admit_sample_parameters(&samples)?;
+        Ok(Self {
+            samples,
+            chordal_deflection,
+        })
+    }
+
+    /// Admit at least two samples whose every coordinate is finite.
+    fn admit_sample_points(samples: &PolylineSamples) -> Result<(), GeometryLayoutError> {
         if samples.count() < 2 {
             return Err(geometry_layout_error(
                 "polyline must contain at least two points",
@@ -279,11 +302,11 @@ impl PolylineCurve {
         if samples.points().any(|point| !point.is_finite()) {
             return Err(geometry_layout_error("points must be finite"));
         }
-        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
-            return Err(geometry_layout_error(
-                "chordal_deflection must be finite and non-negative",
-            ));
-        }
+        Ok(())
+    }
+
+    /// Admit source parameters that are finite and strictly monotonic.
+    fn admit_sample_parameters(samples: &PolylineSamples) -> Result<(), GeometryLayoutError> {
         if let Some(parameters) = samples.parameters() {
             let parameters: Vec<f64> = parameters.collect();
             if !parameters.iter().all(|value| value.is_finite())
@@ -295,10 +318,7 @@ impl PolylineCurve {
                 ));
             }
         }
-        Ok(Self {
-            samples,
-            chordal_deflection,
-        })
+        Ok(())
     }
 
     /// Ordered model-space samples.
@@ -326,13 +346,15 @@ impl PolylineCurve {
     ) -> Result<(), GeometryLayoutError> {
         let mut candidate = self.samples.clone();
         edit(&mut candidate)?;
-        *self = Self::new(candidate, self.chordal_deflection)?;
+        Self::admit_sample_points(&candidate)?;
+        Self::admit_sample_parameters(&candidate)?;
+        self.samples = candidate;
         Ok(())
     }
 
     /// Maximum chordal deviation recorded by the source.
     #[must_use]
-    pub const fn chordal_deflection(&self) -> f64 {
+    pub const fn chordal_deflection(&self) -> NonNegativeReal {
         self.chordal_deflection
     }
 
@@ -341,12 +363,7 @@ impl PolylineCurve {
         &mut self,
         chordal_deflection: f64,
     ) -> Result<(), GeometryLayoutError> {
-        if !chordal_deflection.is_finite() || chordal_deflection < 0.0 {
-            return Err(geometry_layout_error(
-                "chordal_deflection must be finite and non-negative",
-            ));
-        }
-        self.chordal_deflection = chordal_deflection;
+        self.chordal_deflection = admit_chordal_deflection(chordal_deflection)?;
         Ok(())
     }
 }

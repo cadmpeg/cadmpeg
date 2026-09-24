@@ -4,8 +4,9 @@
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::{
-    features::ParameterId,
+    features::{FinitePoint3, FiniteVector3, ParameterId},
     scalar::{Angle, Length, PositiveAngle},
+    units::{UnitVector2, UnitVector3},
 };
 use cadmpeg_core::text::NonBlankString;
 #[cfg(feature = "schema")]
@@ -185,9 +186,9 @@ const EPS_SKETCH_PLANE_ORTHOGONALITY: f64 = 1.0e-9;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SketchPlaneFrameWire")]
 pub struct SketchPlaneFrame {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
+    origin: FinitePoint3,
+    normal: FiniteVector3,
+    u_axis: FiniteVector3,
 }
 
 #[derive(Deserialize)]
@@ -206,24 +207,24 @@ impl TryFrom<SketchPlaneFrameWire> for SketchPlaneFrame {
     type Error = &'static str;
 
     fn try_from(wire: SketchPlaneFrameWire) -> Result<Self, Self::Error> {
-        let normal = wire
-            .normal
+        let normal =
+            FiniteVector3::new(wire.normal).ok_or("sketch normal must be finite and nonzero")?;
+        let unit_normal = normal
             .unit_nonzero()
             .ok_or("sketch normal must be finite and nonzero")?;
-        let u_axis = wire
-            .u_axis
+        let u_axis =
+            FiniteVector3::new(wire.u_axis).ok_or("sketch u_axis must be finite and nonzero")?;
+        let unit_u_axis = u_axis
             .unit_nonzero()
             .ok_or("sketch u_axis must be finite and nonzero")?;
-        if normal.dot(u_axis).abs() > EPS_SKETCH_PLANE_ORTHOGONALITY {
+        if unit_normal.dot(unit_u_axis).abs() > EPS_SKETCH_PLANE_ORTHOGONALITY {
             return Err("sketch normal and u_axis must be perpendicular");
         }
-        if !wire.origin.is_finite() {
-            return Err("sketch origin must be finite");
-        }
+        let origin = FinitePoint3::new(wire.origin).ok_or("sketch origin must be finite")?;
         Ok(Self {
-            origin: wire.origin,
-            normal: wire.normal,
-            u_axis: wire.u_axis,
+            origin,
+            normal,
+            u_axis,
         })
     }
 }
@@ -245,8 +246,21 @@ impl SketchPlacement {
         })
     }
 
+    /// Replace the origin of a resolved frame and keep its admitted axes.
+    /// The axes alone satisfy the frame contract, so the result needs no new
+    /// admission. An unresolved placement has no origin and stays unresolved.
+    #[must_use]
+    pub fn with_origin(self, origin: FinitePoint3) -> Self {
+        match self {
+            Self::Unresolved {} => Self::Unresolved {},
+            Self::Resolved { frame } => Self::Resolved {
+                frame: SketchPlaneFrame { origin, ..frame },
+            },
+        }
+    }
+
     /// Return the complete frame when placement is resolved.
-    pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
+    pub fn resolved(self) -> Option<(FinitePoint3, FiniteVector3, FiniteVector3)> {
         match self {
             Self::Unresolved {} => None,
             Self::Resolved { frame } => Some((frame.origin, frame.normal, frame.u_axis)),
@@ -348,7 +362,7 @@ impl SketchProfiles {
 
 impl Sketch {
     /// Return the complete model-space frame when placement is resolved.
-    pub fn resolved_placement(&self) -> Option<(Point3, Vector3, Vector3)> {
+    pub fn resolved_placement(&self) -> Option<(FinitePoint3, FiniteVector3, FiniteVector3)> {
         self.placement.resolved()
     }
 }
@@ -814,9 +828,9 @@ const EPS_SPATIAL_PROFILE_FRAME: f64 = 1.0e-9;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SpatialSketchProfileWire")]
 pub struct SpatialSketchProfile {
-    origin: Point3,
-    normal: Vector3,
-    u_axis: Vector3,
+    origin: FinitePoint3,
+    normal: UnitVector3,
+    u_axis: UnitVector3,
     boundary: Vec<SpatialSketchEntityUse>,
 }
 
@@ -850,20 +864,14 @@ impl SpatialSketchProfile {
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
     ) -> Result<Self, &'static str> {
-        if !origin.is_finite() {
-            return Err("spatial profile origin must be finite");
-        }
-        let normal_length = normal.norm();
-        let u_length = u_axis.norm();
-        let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
-        if !normal_length.is_finite()
-            || !u_length.is_finite()
-            || !dot.is_finite()
-            || (normal_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
-            || (u_length - 1.0).abs() > EPS_SPATIAL_PROFILE_FRAME
-            || dot.abs() > EPS_SPATIAL_PROFILE_FRAME
-        {
-            return Err("spatial profile normal and u_axis must be unit and orthogonal");
+        let origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
+        const AXES_ERROR: &str = "spatial profile normal and u_axis must be unit and orthogonal";
+        let normal = UnitVector3::new(normal).ok_or(AXES_ERROR)?;
+        let u_axis = UnitVector3::new(u_axis).ok_or(AXES_ERROR)?;
+        let [n, u] = [normal.as_raw(), u_axis.as_raw()];
+        let dot = n.x * u.x + n.y * u.y + n.z * u.z;
+        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
+            return Err(AXES_ERROR);
         }
         let unique = boundary
             .iter()
@@ -882,19 +890,19 @@ impl SpatialSketchProfile {
 
     /// Profile-plane origin in model space.
     #[must_use]
-    pub fn origin(&self) -> Point3 {
+    pub fn origin(&self) -> FinitePoint3 {
         self.origin
     }
 
     /// Profile-plane unit normal.
     #[must_use]
-    pub fn normal(&self) -> Vector3 {
+    pub fn normal(&self) -> UnitVector3 {
         self.normal
     }
 
     /// Profile-plane unit u-axis.
     #[must_use]
-    pub fn u_axis(&self) -> Vector3 {
+    pub fn u_axis(&self) -> UnitVector3 {
         self.u_axis
     }
 
@@ -906,10 +914,7 @@ impl SpatialSketchProfile {
 
     /// Replace the origin after finite-coordinate admission.
     pub fn set_origin(&mut self, origin: Point3) -> Result<(), &'static str> {
-        if !origin.is_finite() {
-            return Err("spatial profile origin must be finite");
-        }
-        self.origin = origin;
+        self.origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
         Ok(())
     }
 }
@@ -1689,7 +1694,7 @@ pub struct OffsetParameter {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
-    direction: [f64; 2],
+    direction: UnitVector2,
     /// Adjacent-instance spacing along `direction`.
     spacing: Length,
     /// Driving distance parameter and the distance form it controls.
@@ -1698,7 +1703,6 @@ pub struct SketchPatternDirection {
     pub count_parameter: Option<ParameterId>,
 }
 
-const EPS_PATTERN_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_PATTERN_DIRECTION_ORTHOGONALITY: f64 = 1.0e-9;
 
 impl SketchPatternDirection {
@@ -1709,11 +1713,7 @@ impl SketchPatternDirection {
         distance: Option<SketchPatternDistance>,
         count_parameter: Option<ParameterId>,
     ) -> Option<Self> {
-        if !direction.iter().all(|value| value.is_finite())
-            || (direction[0].hypot(direction[1]) - 1.0).abs() > EPS_PATTERN_DIRECTION_UNIT
-        {
-            return None;
-        }
+        let direction = UnitVector2::new(direction)?;
         Some(Self {
             direction,
             spacing,
@@ -1724,7 +1724,7 @@ impl SketchPatternDirection {
 
     /// Unit direction in sketch coordinates.
     #[must_use]
-    pub fn direction(&self) -> [f64; 2] {
+    pub fn direction(&self) -> UnitVector2 {
         self.direction
     }
 
@@ -1819,8 +1819,8 @@ impl SketchRectangularPattern {
         {
             return None;
         }
-        let dot = directions[0].direction[0] * directions[1].direction[0]
-            + directions[0].direction[1] * directions[1].direction[1];
+        let [first, second] = [directions[0].direction.get(), directions[1].direction.get()];
+        let dot = first[0] * second[0] + first[1] * second[1];
         let mut entities = std::collections::HashSet::new();
         if dot.abs() > EPS_PATTERN_DIRECTION_ORTHOGONALITY
             || rows.iter().flatten().any(|instance| {
@@ -2048,7 +2048,7 @@ struct SketchPatternDirectionWire {
 impl SketchPatternDirectionWire {
     fn from_direction(value: &SketchPatternDirection) -> Self {
         Self {
-            direction: value.direction,
+            direction: value.direction.get(),
             spacing: value.spacing,
             distance: value.distance.clone(),
             count_parameter: value.count_parameter.clone(),

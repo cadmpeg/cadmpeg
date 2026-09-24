@@ -3,6 +3,7 @@
 
 use crate::ids::SubdId;
 use crate::math::{Point3, Vector3};
+use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripWedge, SubdPlaneFrame,
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSurface, SubdSymmetry,
@@ -443,9 +444,9 @@ fn edge_admission_preserves_signed_coefficients_and_optional_intervals() {
         )
         .unwrap();
         assert_eq!(edge.vertices, [1, 0]);
-        assert_eq!(edge.sharpness, [0.0, f64::MAX]);
-        assert_eq!(edge.knot_interval, interval);
-        assert_eq!(edge.sector_coefficients, [-2.0, 3.0]);
+        assert_eq!(edge.sharpness.map(NonNegativeReal::get), [0.0, f64::MAX]);
+        assert_eq!(edge.knot_interval.map(PositiveReal::get), interval);
+        assert_eq!(edge.sector_coefficients.map(FiniteReal::get), [-2.0, 3.0]);
         let wire = serde_json::to_value(&edge).unwrap();
         assert_eq!(serde_json::from_value::<SubdEdge>(wire).unwrap(), edge);
     }
@@ -476,7 +477,7 @@ fn secondary_grip_admission_requires_finite_points_and_positive_weights() {
     for weight in [f64::MIN_POSITIVE, 1.0, f64::MAX] {
         let grip = super::SubdSecondaryGrip::new(u32::MAX, point, weight).unwrap();
         assert_eq!(grip.point, point);
-        assert_eq!(grip.weight, weight);
+        assert_eq!(grip.weight.get(), weight);
         let wire = serde_json::to_value(&grip).unwrap();
         assert_eq!(
             wire,
@@ -531,4 +532,36 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
             layout
         );
     }
+}
+
+#[test]
+fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
+    use crate::features::FinitePoint3;
+    use crate::units::UnitVector3;
+
+    let point = Point3::new(-1.0, 2.0, 3.0);
+    let vertex = super::SubdVertex::new(point, super::SubdVertexTag::Crease, None).unwrap();
+    assert_eq!(vertex.point(), FinitePoint3::new(point).unwrap());
+    let grip = super::SubdSecondaryGrip::new(4, point, 0.5).unwrap();
+    assert_eq!(grip.point, FinitePoint3::new(point).unwrap());
+    assert_eq!(grip.weight, PositiveReal::new(0.5).unwrap());
+    let frame = super::SubdPlaneFrame::new(
+        point,
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    assert_eq!(frame.origin, FinitePoint3::new(point).unwrap());
+    assert_eq!(
+        [frame.first_axis, frame.second_axis],
+        [UnitVector3::X_AXIS, UnitVector3::Y_AXIS]
+    );
+    assert_eq!(
+        serde_json::to_value(frame).unwrap(),
+        serde_json::json!({
+            "origin": point,
+            "first_axis": Vector3::new(1.0, 0.0, 0.0),
+            "second_axis": Vector3::new(0.0, 1.0, 0.0),
+        })
+    );
 }

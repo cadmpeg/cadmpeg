@@ -2243,17 +2243,9 @@ fn sequential_tessellation(
             |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
         )
     };
-    Ok(
-        cadmpeg_ir::tessellation::Tessellation::new(mesh.id.to_string(), rows, channels)
-            .map_err(|err| CodecError::Malformed(err.to_string()))?
-            .with_body(mesh.body.clone())
-            .with_faces(mesh.faces.clone())
-            .with_chordal_deflection(mesh.chordal_deflection())
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid tessellation deflection: {error}"))
-            })?
-            .with_source_object(mesh.source_object.clone()),
-    )
+    mesh.clone()
+        .with_mesh(rows, channels)
+        .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
 /// Cut a corner-expanded vertex run into one three-vertex strip per triangle.

@@ -319,15 +319,15 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
                 x: 125.0,
                 y: -250.0,
                 z: 500.0
-            }) && matches!(frame.x_axis(), Vector3 {
+            }) && matches!(*frame.x_axis().as_raw(), Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0
-            }) && matches!(frame.y_axis(), Vector3 {
+            }) && matches!(*frame.y_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: -1.0,
                 z: 0.0
-            }) && matches!(frame.z_axis(), Vector3 {
+            }) && matches!(*frame.z_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0

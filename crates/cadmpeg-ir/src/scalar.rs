@@ -423,6 +423,23 @@ impl FiniteReal {
             .then(|| lanes.map(|lane| lane.into_iter().map(Self).collect()))
     }
 
+    /// Admit every present value, or none of them.
+    pub(crate) fn optional<const N: usize>(values: [Option<f64>; N]) -> Option<[Option<Self>; N]> {
+        values
+            .iter()
+            .flatten()
+            .all(|value| value.is_finite())
+            .then(|| values.map(|value| value.map(Self)))
+    }
+
+    /// Admit every value, or none of them.
+    pub(crate) fn array<const N: usize>(values: [f64; N]) -> Option<[Self; N]> {
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then(|| values.map(Self))
+    }
+
     /// The raw values of each lane, for a reader that writes or edits them.
     #[must_use]
     pub fn raw_lanes<const N: usize>(lanes: &[Vec<Self>; N]) -> [Vec<f64>; N] {

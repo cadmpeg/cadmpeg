@@ -891,7 +891,7 @@ pub(crate) fn assign_unique_surface_owners(
                 mesh.vertices().iter().all(|point| {
                     candidate
                         .inverse
-                        .apply_point(*point)
+                        .apply_point(point.get())
                         .and_then(|point| surface_measure(surface, point, Some(tolerance)))
                         .is_some_and(|measure| measure.residual <= tolerance)
                 })
@@ -957,11 +957,11 @@ fn approximate_surface_owner(
         .filter_map(|(index, candidate)| {
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
-                let local_point = candidate.inverse.apply_point(point)?;
+                let local_point = candidate.inverse.apply_point(point.get())?;
                 let measure = surface_measure(candidate.surface.solved()?, local_point, None)?;
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
-                let mesh_normal = candidate.inverse.apply_vector(normal)?.unit()?;
+                let mesh_normal = candidate.inverse.apply_vector(normal.get())?.unit()?;
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
                 }
@@ -1016,7 +1016,7 @@ fn approximate_trimmed_surface_owner(
             for point in mesh.vertices() {
                 let measure = surface_measure(
                     candidate.surface.solved()?,
-                    candidate.inverse.apply_point(point)?,
+                    candidate.inverse.apply_point(point.get())?,
                     None,
                 )?;
                 max_residual = max_residual.max(measure.residual);
@@ -1266,7 +1266,7 @@ impl CylindricalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let Some(point) = inverse_body.apply_point(*point) else {
+            let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
             let axial = point
@@ -1297,7 +1297,7 @@ impl ConicalTrim {
         tolerance: f64,
     ) -> bool {
         mesh.vertices().iter().all(|point| {
-            let Some(point) = inverse_body.apply_point(*point) else {
+            let Some(point) = inverse_body.apply_point(point.get()) else {
                 return false;
             };
             let axial = point
@@ -1337,7 +1337,7 @@ impl PlanarTrim {
             .iter()
             .map(|point| {
                 inverse_body
-                    .apply_point(*point)
+                    .apply_point(point.get())
                     .map(|point| self.frame.project(point))
             })
             .collect::<Option<Vec<_>>>()

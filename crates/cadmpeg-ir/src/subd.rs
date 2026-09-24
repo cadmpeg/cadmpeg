@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Subdivision-surface control cages.
 
+use crate::features::FinitePoint3;
 use crate::ids::SubdId;
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use crate::units::UnitVector3;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -51,11 +54,8 @@ impl std::error::Error for SubdError {}
 
 const EPS_SUBD_SYMMETRY_FRAME: f64 = 1.0e-9;
 
-fn require_finite_point(field: &str, point: Point3) -> Result<(), SubdError> {
-    if !point.is_finite() {
-        return Err(SubdError::Admission(format!("{field} must be finite")));
-    }
-    Ok(())
+fn require_finite_point(field: &str, point: Point3) -> Result<FinitePoint3, SubdError> {
+    FinitePoint3::new(point).ok_or_else(|| SubdError::Admission(format!("{field} must be finite")))
 }
 
 /// A subdivision cage with valid local topology and numeric payloads.
@@ -241,11 +241,11 @@ impl SubdCage {
 #[serde(try_from = "SubdPlaneFrameWire")]
 pub struct SubdPlaneFrame {
     /// A point on the plane in document length units.
-    origin: Point3,
+    origin: FinitePoint3,
     /// First unit in-plane axis.
-    first_axis: Vector3,
+    first_axis: UnitVector3,
     /// Second unit in-plane axis.
-    second_axis: Vector3,
+    second_axis: UnitVector3,
 }
 
 #[derive(Deserialize)]
@@ -275,18 +275,14 @@ impl SubdPlaneFrame {
         first_axis: Vector3,
         second_axis: Vector3,
     ) -> Result<Self, SubdError> {
-        require_finite_point("origin", origin)?;
-        if !first_axis.is_finite() || (first_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
-            return Err(SubdError::Admission(
-                "first_axis must be finite and unit length".into(),
-            ));
-        }
-        if !second_axis.is_finite() || (second_axis.norm() - 1.0).abs() > EPS_SUBD_SYMMETRY_FRAME {
-            return Err(SubdError::Admission(
-                "second_axis must be finite and unit length".into(),
-            ));
-        }
-        if first_axis.dot(second_axis).abs() > EPS_SUBD_SYMMETRY_FRAME {
+        let origin = require_finite_point("origin", origin)?;
+        let first_axis = UnitVector3::new(first_axis).ok_or_else(|| {
+            SubdError::Admission("first_axis must be finite and unit length".into())
+        })?;
+        let second_axis = UnitVector3::new(second_axis).ok_or_else(|| {
+            SubdError::Admission("second_axis must be finite and unit length".into())
+        })?;
+        if first_axis.as_raw().dot(*second_axis.as_raw()).abs() > EPS_SUBD_SYMMETRY_FRAME {
             return Err(SubdError::Admission(
                 "first_axis and second_axis must be orthogonal".into(),
             ));
@@ -528,7 +524,7 @@ pub enum SubdScheme {
 #[serde(try_from = "SubdVertexWire")]
 pub struct SubdVertex {
     /// Vertex position.
-    point: Point3,
+    point: FinitePoint3,
     /// Subdivision vertex tag.
     pub tag: SubdVertexTag,
     /// Optional secondary-grip topology owned by this vertex.
@@ -568,7 +564,7 @@ impl SubdVertex {
         tag: SubdVertexTag,
         secondary_grips: Option<SubdVertexGripLayout>,
     ) -> Result<Self, SubdError> {
-        require_finite_point("point", point)?;
+        let point = require_finite_point("point", point)?;
         Ok(Self {
             point,
             tag,
@@ -577,15 +573,13 @@ impl SubdVertex {
     }
 
     /// Vertex position in document units.
-    pub const fn point(&self) -> Point3 {
+    pub const fn point(&self) -> FinitePoint3 {
         self.point
     }
 
-    /// Replace the vertex position with finite coordinates.
-    pub fn set_point(&mut self, point: Point3) -> Result<(), SubdError> {
-        require_finite_point("point", point)?;
+    /// Replace the vertex position.
+    pub fn set_point(&mut self, point: FinitePoint3) {
         self.point = point;
-        Ok(())
     }
 }
 
@@ -695,9 +689,9 @@ pub struct SubdSecondaryGrip {
     /// Index in the source cage's `0g` grip array.
     source_index: u32,
     /// Grip position in document units.
-    point: Point3,
+    point: FinitePoint3,
     /// Positive rational grip weight.
-    weight: f64,
+    weight: PositiveReal,
 }
 
 #[derive(Deserialize)]
@@ -723,12 +717,9 @@ impl TryFrom<SubdSecondaryGripWire> for SubdSecondaryGrip {
 impl SubdSecondaryGrip {
     /// Construct a finite grip point with a positive finite rational weight.
     pub fn new(source_index: u32, point: Point3, weight: f64) -> Result<Self, SubdError> {
-        require_finite_point("point", point)?;
-        if !weight.is_finite() || weight <= 0.0 {
-            return Err(SubdError::Admission(
-                "weight must be finite and positive".into(),
-            ));
-        }
+        let point = require_finite_point("point", point)?;
+        let weight = PositiveReal::new(weight)
+            .ok_or_else(|| SubdError::Admission("weight must be finite and positive".into()))?;
         Ok(Self {
             source_index,
             point,
@@ -761,7 +752,7 @@ pub struct SubdEdge {
     /// Indices of the two distinct endpoint vertices.
     vertices: [u32; 2],
     /// Sharpness at the start and end endpoints.
-    sharpness: [f64; 2],
+    sharpness: [NonNegativeReal; 2],
     /// Subdivision edge tag.
     pub tag: SubdEdgeTag,
     /// Parametric knot interval, when the source cage exposes one.
@@ -770,9 +761,9 @@ pub struct SubdEdge {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_knot_interval"
     )]
-    knot_interval: Option<f64>,
+    knot_interval: Option<PositiveReal>,
     /// Sector coefficients at the two endpoints.
-    sector_coefficients: [f64; 2],
+    sector_coefficients: [FiniteReal; 2],
 }
 
 #[derive(Deserialize)]
@@ -820,24 +811,28 @@ impl SubdEdge {
                 "vertices must name distinct endpoints".into(),
             ));
         }
-        if sharpness
-            .iter()
-            .any(|value| !value.is_finite() || *value < 0.0)
-        {
+        let [start_sharpness, end_sharpness] = sharpness.map(NonNegativeReal::new);
+        let (Some(start_sharpness), Some(end_sharpness)) = (start_sharpness, end_sharpness) else {
             return Err(SubdError::Admission(
                 "sharpness must be finite and non-negative".into(),
             ));
-        }
-        if knot_interval.is_some_and(|value| !value.is_finite() || value <= 0.0) {
-            return Err(SubdError::Admission(
-                "knot_interval must be finite and positive".into(),
-            ));
-        }
-        if sector_coefficients.iter().any(|value| !value.is_finite()) {
+        };
+        let sharpness = [start_sharpness, end_sharpness];
+        let knot_interval = knot_interval
+            .map(|value| {
+                PositiveReal::new(value).ok_or_else(|| {
+                    SubdError::Admission("knot_interval must be finite and positive".into())
+                })
+            })
+            .transpose()?;
+        let [start_coefficient, end_coefficient] = sector_coefficients.map(FiniteReal::new);
+        let (Some(start_coefficient), Some(end_coefficient)) = (start_coefficient, end_coefficient)
+        else {
             return Err(SubdError::Admission(
                 "sector_coefficients must be finite".into(),
             ));
-        }
+        };
+        let sector_coefficients = [start_coefficient, end_coefficient];
         Ok(Self {
             vertices,
             sharpness,

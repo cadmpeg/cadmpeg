@@ -473,9 +473,9 @@ fn transfers_datum_frames_from_persisted_placements() {
         definition("Frame"),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DatumCoordinateSystem { frame })
             if frame.origin() == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
-                && frame.x_axis() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
-                && frame.y_axis() == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-                && frame.z_axis() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && *frame.x_axis().as_raw() == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && *frame.y_axis().as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                && *frame.z_axis().as_raw() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
     assert!(result.report().losses.is_empty());
 }

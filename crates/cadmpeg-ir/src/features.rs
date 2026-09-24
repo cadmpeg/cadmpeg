@@ -226,6 +226,14 @@ impl From<UnitVector3> for FiniteVector3 {
     }
 }
 
+impl From<FeatureDirection3> for FiniteVector3 {
+    /// Carry an admitted direction as a finite displacement. A finite squared
+    /// norm states finite components, so no admission can refuse it.
+    fn from(value: FeatureDirection3) -> Self {
+        Self(value.0)
+    }
+}
+
 impl From<UnitVector3> for FeatureDirection3 {
     /// Carry an admitted unit direction. Its components are finite and its
     /// squared norm is within rounding of one, so no admission can refuse it.
@@ -272,8 +280,8 @@ const EPS_FEATURE_UNIT_FRAME: f64 = 1.0e-9;
 #[serde(try_from = "FeatureUnitPlaneFrameWire")]
 pub struct FeatureUnitPlaneFrame {
     origin: FinitePoint3,
-    u_axis: Vector3,
-    v_axis: Vector3,
+    u_axis: UnitVector3,
+    v_axis: UnitVector3,
 }
 
 #[derive(Deserialize)]
@@ -292,14 +300,13 @@ impl FeatureUnitPlaneFrame {
     /// Admit a finite origin and perpendicular unit axes within the feature tolerance.
     pub fn new(origin: Point3, u_axis: Vector3, v_axis: Vector3) -> Option<Self> {
         let origin = FinitePoint3::new(origin)?;
-        ((u_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
-            && (v_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
-            && u_axis.dot(v_axis).abs() <= EPS_FEATURE_UNIT_FRAME)
-            .then_some(Self {
-                origin,
-                u_axis,
-                v_axis,
-            })
+        let u_axis = UnitVector3::new(u_axis)?;
+        let v_axis = UnitVector3::new(v_axis)?;
+        (u_axis.as_raw().dot(*v_axis.as_raw()).abs() <= EPS_FEATURE_UNIT_FRAME).then_some(Self {
+            origin,
+            u_axis,
+            v_axis,
+        })
     }
 
     /// Replace the origin and keep the admitted axes. The axes alone satisfy
@@ -314,11 +321,11 @@ impl FeatureUnitPlaneFrame {
         self.origin
     }
     /// Return the first unit direction.
-    pub fn u_axis(self) -> Vector3 {
+    pub fn u_axis(self) -> UnitVector3 {
         self.u_axis
     }
     /// Return the second unit direction.
-    pub fn v_axis(self) -> Vector3 {
+    pub fn v_axis(self) -> UnitVector3 {
         self.v_axis
     }
 }
@@ -340,7 +347,7 @@ impl TryFrom<FeatureUnitPlaneFrameWire> for FeatureUnitPlaneFrame {
 )]
 pub struct FeatureCoordinateFrame {
     plane: FeatureUnitPlaneFrame,
-    z_axis: Vector3,
+    z_axis: UnitVector3,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -361,10 +368,11 @@ impl FeatureCoordinateFrame {
     /// Admit a finite right-handed frame within the feature unit-axis tolerance.
     pub fn new(origin: Point3, x_axis: Vector3, y_axis: Vector3, z_axis: Vector3) -> Option<Self> {
         let plane = FeatureUnitPlaneFrame::new(origin, x_axis, y_axis)?;
-        ((z_axis.norm() - 1.0).abs() <= EPS_FEATURE_UNIT_FRAME
-            && x_axis.dot(z_axis).abs() <= EPS_FEATURE_UNIT_FRAME
-            && y_axis.dot(z_axis).abs() <= EPS_FEATURE_UNIT_FRAME
-            && x_axis.cross(y_axis).dot(z_axis) >= 1.0 - EPS_FEATURE_UNIT_FRAME)
+        let z_axis = UnitVector3::new(z_axis)?;
+        let z = *z_axis.as_raw();
+        (x_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
+            && y_axis.dot(z).abs() <= EPS_FEATURE_UNIT_FRAME
+            && x_axis.cross(y_axis).dot(z) >= 1.0 - EPS_FEATURE_UNIT_FRAME)
             .then_some(Self { plane, z_axis })
     }
     /// Replace the origin and keep the admitted axes. The axes alone satisfy
@@ -381,15 +389,15 @@ impl FeatureCoordinateFrame {
         self.plane.origin()
     }
     /// Return the x-axis.
-    pub fn x_axis(self) -> Vector3 {
+    pub fn x_axis(self) -> UnitVector3 {
         self.plane.u_axis()
     }
     /// Return the y-axis.
-    pub fn y_axis(self) -> Vector3 {
+    pub fn y_axis(self) -> UnitVector3 {
         self.plane.v_axis()
     }
     /// Return the z-axis.
-    pub fn z_axis(self) -> Vector3 {
+    pub fn z_axis(self) -> UnitVector3 {
         self.z_axis
     }
 }
@@ -405,9 +413,9 @@ impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
     fn from(frame: FeatureCoordinateFrame) -> Self {
         Self {
             origin: frame.origin().get(),
-            x_axis: frame.x_axis(),
-            y_axis: frame.y_axis(),
-            z_axis: frame.z_axis(),
+            x_axis: frame.x_axis().into(),
+            y_axis: frame.y_axis().into(),
+            z_axis: frame.z_axis().into(),
         }
     }
 }
@@ -7078,8 +7086,8 @@ impl From<CoilPlacement> for CoilPlacementWire {
         match placement {
             CoilPlacement::Explicit { frame } => Self::Explicit {
                 origin: frame.origin().get(),
-                axis: frame.u_axis(),
-                radial: frame.v_axis(),
+                axis: frame.u_axis().into(),
+                radial: frame.v_axis().into(),
             },
             CoilPlacement::Native { native_ref } => Self::Native { native_ref },
         }

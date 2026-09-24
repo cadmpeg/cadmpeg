@@ -342,3 +342,22 @@ fn an_increasing_interval_hands_its_endpoints_on_as_finite_reals() {
         );
     }
 }
+
+#[test]
+fn finite_lanes_optional_bounds_and_arrays_admit_all_or_nothing() {
+    use super::FiniteReal;
+
+    let lanes = FiniteReal::lanes([vec![1.0, -2.0], vec![]]).unwrap();
+    assert_eq!(FiniteReal::raw_lanes(&lanes), [vec![1.0, -2.0], vec![]]);
+    assert!(FiniteReal::lanes([vec![1.0], vec![f64::NAN]]).is_none());
+    assert_eq!(
+        FiniteReal::optional([Some(3.0), None]),
+        Some([FiniteReal::new(3.0), None])
+    );
+    assert!(FiniteReal::optional([None, Some(f64::INFINITY)]).is_none());
+    assert_eq!(
+        FiniteReal::array([4.0, 5.0]),
+        Some([FiniteReal::new(4.0).unwrap(), FiniteReal::new(5.0).unwrap()])
+    );
+    assert!(FiniteReal::array([4.0, f64::NEG_INFINITY]).is_none());
+}

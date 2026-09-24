@@ -1300,7 +1300,11 @@ fn spatial_polyline_profile_containing_points(
     for (index, profile) in sketch.profiles.iter().enumerate() {
         let offsets = points
             .iter()
-            .map(|point| point.vector_from(profile.origin()).dot(profile.normal()))
+            .map(|point| {
+                point
+                    .vector_from(profile.origin().get())
+                    .dot(profile.normal().into())
+            })
             .collect::<Vec<_>>();
         if !offsets.first().is_some_and(|first| {
             offsets
@@ -1309,10 +1313,12 @@ fn spatial_polyline_profile_containing_points(
         }) {
             continue;
         }
-        let v_axis = profile.normal().cross(profile.u_axis());
+        let normal = Vector3::from(profile.normal());
+        let u_axis = Vector3::from(profile.u_axis());
+        let v_axis = normal.cross(u_axis);
         let project = |point: Point3| {
-            let offset = point.vector_from(profile.origin());
-            Point2::new(offset.dot(profile.u_axis()), offset.dot(v_axis))
+            let offset = point.vector_from(profile.origin().get());
+            Point2::new(offset.dot(u_axis), offset.dot(v_axis))
         };
         let polygon = profile
             .boundary()
@@ -1747,9 +1753,9 @@ fn resolved_selection_member_points(
         return None;
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
-    let v_axis = normal.cross(u_axis);
+    let v_axis = normal.cross(u_axis.get());
     Some(vec![origin
-        .translated(u_axis, position.u)
+        .translated(u_axis.get(), position.u)
         .translated(v_axis, position.v)])
 }
 

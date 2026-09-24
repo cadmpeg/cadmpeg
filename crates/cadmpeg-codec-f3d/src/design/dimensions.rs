@@ -3317,7 +3317,7 @@ fn spatial_counted_offset_dimension_definition(
     Some(Definition::Offset {
         sources,
         results,
-        normal,
+        normal: normal.into(),
         distance: Length::new(distance)?,
         parameter: Some(cadmpeg_ir::sketches::OffsetParameter {
             id: parameter.clone(),

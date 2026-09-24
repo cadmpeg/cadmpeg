@@ -1143,7 +1143,12 @@ fn feature_coordinate_frame_admission_preserves_wire_and_handedness_bound() {
     )
     .unwrap();
     assert!(
-        frame.x_axis().cross(frame.y_axis()).dot(frame.z_axis()) > 1.0 + EPS_FEATURE_UNIT_FRAME
+        frame
+            .x_axis()
+            .as_raw()
+            .cross(*frame.y_axis().as_raw())
+            .dot(*frame.z_axis().as_raw())
+            > 1.0 + EPS_FEATURE_UNIT_FRAME
     );
 }
 
@@ -1905,4 +1910,43 @@ fn wrap_depth_admits_only_a_positive_length_on_the_wire() {
     let admitted = wire(f64::MIN_POSITIVE);
     let operation: FeatureOperation = serde_json::from_value(admitted.clone()).unwrap();
     assert_eq!(serde_json::to_value(operation).unwrap(), admitted);
+}
+
+#[test]
+fn feature_frames_hold_their_admitted_unit_axes() {
+    use crate::features::{
+        FeatureCoordinateFrame, FeatureDirection3, FeatureUnitPlaneFrame, FiniteVector3,
+    };
+    use crate::units::UnitVector3;
+
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let u = Vector3::new(0.0, 1.0, 0.0);
+    let v = Vector3::new(0.0, 0.0, 1.0);
+    let plane = FeatureUnitPlaneFrame::new(origin, u, v).unwrap();
+    assert_eq!(plane.u_axis(), UnitVector3::new(u).unwrap());
+    assert_eq!(plane.v_axis(), UnitVector3::new(v).unwrap());
+    assert_eq!(
+        serde_json::to_value(plane).unwrap(),
+        serde_json::json!({"origin": origin, "u_axis": u, "v_axis": v})
+    );
+    let frame = FeatureCoordinateFrame::new(
+        origin,
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .unwrap();
+    assert_eq!(
+        [frame.x_axis(), frame.y_axis(), frame.z_axis()],
+        [
+            UnitVector3::X_AXIS,
+            UnitVector3::Y_AXIS,
+            UnitVector3::Z_AXIS
+        ]
+    );
+    let direction = FeatureDirection3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap();
+    assert_eq!(
+        FiniteVector3::from(direction),
+        FiniteVector3::new(Vector3::new(0.0, 3.0, 4.0)).unwrap()
+    );
 }

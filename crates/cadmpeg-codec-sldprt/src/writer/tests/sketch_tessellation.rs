@@ -936,7 +936,7 @@ fn semantic_writer_refuses_more_auxiliary_channels_than_the_table_carries() {
     channels.push(channels[5].clone());
     let mut extended = Tessellation::new(
         "synthetic:test:tessellation#extra-channel",
-        original.mesh().clone(),
+        original.mesh().clone().into_raw(),
         channels,
     )
     .unwrap();

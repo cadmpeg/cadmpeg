@@ -21,7 +21,7 @@ use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
 use cadmpeg_ir::sketches::{
-    SketchGeometry, SketchGeometryDefinition, SketchPlacement, SpatialSketchGeometry,
+    SketchGeometry, SketchGeometryDefinition, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition,
 };
 use cadmpeg_ir::transform::Transform;
@@ -138,7 +138,7 @@ pub(super) fn normalize_model_lengths(
             .set_chordal_deflection(
                 tessellation
                     .chordal_deflection()
-                    .map(|value| value * length_scale_mm),
+                    .map(|value| value.get() * length_scale_mm),
             )
             .map_err(|error| {
                 CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
@@ -166,10 +166,12 @@ pub(super) fn normalize_model_lengths(
         }
     }
     for sketch in &mut ir.model.sketches {
-        if let Some((mut origin, normal, u_axis)) = sketch.resolved_placement() {
+        if let Some((origin, _, _)) = sketch.resolved_placement() {
+            let mut origin = origin.get();
             scale_point3(&mut origin, length_scale_mm);
-            sketch.placement = SketchPlacement::try_resolved(origin, normal, u_axis)
-                .map_err(CodecError::malformed)?;
+            let origin = cadmpeg_ir::features::FinitePoint3::new(origin)
+                .ok_or_else(|| CodecError::malformed("sketch origin must be finite"))?;
+            sketch.placement = sketch.placement.with_origin(origin);
         }
     }
     for entity in &mut ir.model.sketch_entities {
@@ -177,7 +179,7 @@ pub(super) fn normalize_model_lengths(
     }
     for sketch in &mut ir.model.spatial_sketches {
         for profile in &mut sketch.profiles {
-            let mut origin = profile.origin();
+            let mut origin = profile.origin().get();
             scale_point3(&mut origin, length_scale_mm);
             profile.set_origin(origin).map_err(CodecError::malformed)?;
         }
@@ -1430,7 +1432,7 @@ fn scale_surface_geometry(
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             scaled
-                .set_chordal_deflection(scaled.chordal_deflection() * scale)
+                .set_chordal_deflection(scaled.chordal_deflection().get() * scale)
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *surface = scaled;
         }
@@ -1553,7 +1555,7 @@ fn scale_curve_geometry(geometry: &mut SolvedCurveGeometry, scale: f64) -> Resul
                 })
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             scaled
-                .set_chordal_deflection(scaled.chordal_deflection() * scale)
+                .set_chordal_deflection(scaled.chordal_deflection().get() * scale)
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             *polyline = scaled;
         }
