@@ -61,13 +61,14 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
     let mut emitter = crate::writer::Emitter::new();
     let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0e200, 0.0)).unwrap();
     assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_some());
-    let lines = emitter.into_lines();
+    let lines = emitter.into_lines().expect("finite reals");
     assert!(lines
         .iter()
         .any(|line| line.contains("DIRECTION('',(1.,0.))")));
-    assert!(lines
-        .iter()
-        .any(|line| line.contains(&format!("VECTOR('',#2,{})", crate::writer::real(1.0e200)))));
+    assert!(lines.iter().any(|line| line.contains(&format!(
+        "VECTOR('',#2,{})",
+        crate::writer::Emitter::new().real(1.0e200)
+    ))));
     let mut emitter = crate::writer::Emitter::new();
     let line = LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(f64::MAX, f64::MAX)).unwrap();
     assert!(super::pcurve(&mut emitter, &PcurveGeometry::Line(line)).is_none());
@@ -88,15 +89,15 @@ fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
     .unwrap();
     let mut emitter = crate::writer::Emitter::new();
     assert!(surface(&mut emitter, &SolvedSurfaceGeometry::Cone(cone)).is_some());
-    let lines = emitter.into_lines();
+    let lines = emitter.into_lines().expect("finite reals");
     let emitted = lines
         .iter()
         .find(|line| line.contains("CONICAL_SURFACE("))
         .expect("the cone emits a CONICAL_SURFACE carrier");
     assert!(emitted.ends_with(&format!(
         ",{},{});",
-        crate::writer::real(5.0),
-        crate::writer::real(-0.715_584_993_317_674_8)
+        crate::writer::Emitter::new().real(5.0),
+        crate::writer::Emitter::new().real(-0.715_584_993_317_674_8)
     )));
     assert!(lines
         .iter()
@@ -230,4 +231,31 @@ fn small_shears_are_not_similarities() {
             Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
         assert!(super::similarity_transform(&uniform));
     }
+}
+
+/// A vector of finite components whose length overflows keeps its
+/// orientation, where it became the zero `DIRECTION`.
+#[test]
+fn a_direction_whose_length_overflows_keeps_its_orientation() {
+    const EPS_UNIT_COMPONENT: f64 = 1.0e-15;
+    let mut emitter = crate::writer::Emitter::new();
+    super::direction(&mut emitter, Vector3::new(1.3e308, 1.3e308, 0.0));
+    let lines = emitter.into_lines().expect("finite reals");
+    let [line] = lines.as_slice() else {
+        panic!("one DIRECTION record: {lines:?}");
+    };
+    let components = line
+        .split_once("DIRECTION('',(")
+        .and_then(|(_, rest)| rest.split_once("))"))
+        .map(|(components, _)| {
+            components
+                .split(',')
+                .map(|value| value.parse::<f64>().expect("a Part 21 real"))
+                .collect::<Vec<_>>()
+        })
+        .expect("a DIRECTION record");
+    assert_eq!(components.len(), 3, "{line}");
+    assert!((components[0] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPS_UNIT_COMPONENT);
+    assert!((components[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < EPS_UNIT_COMPONENT);
+    assert_eq!(components[2], 0.0);
 }

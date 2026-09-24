@@ -30,7 +30,7 @@ use cadmpeg_ir::CadIr;
 use crate::geometry;
 use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepWriteOptions};
-use crate::writer::{real, refs, string, Emitter, Ref};
+use crate::writer::{refs, string, Emitter, Ref};
 
 const EPS_IDENTITY: f64 = 1.0e-12;
 
@@ -74,16 +74,19 @@ pub(crate) struct StepWriteOutcome {
 }
 
 /// Writes STEP bytes and returns the facts measured by the writer.
+///
+/// A real the writer computes that is not finite refuses the file before
+/// any byte is written: Part 21 states no such number.
 pub(crate) fn write_step_outcome(
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
-) -> std::io::Result<StepWriteOutcome> {
+) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
     let mut b = Builder::new(ir, schema);
     b.build();
     let outcome = b.finish_outcome();
-    let lines = b.emitter.into_lines();
+    let lines = b.emitter.into_lines()?;
 
     write_header(w, schema, opts)?;
     writeln!(w, "DATA;")?;
@@ -851,9 +854,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r())),
-            real(f64::from(color.g())),
-            real(f64::from(color.b()))
+            self.emitter.real(f64::from(color.r())),
+            self.emitter.real(f64::from(color.g())),
+            self.emitter.real(f64::from(color.b()))
         );
         let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
         if let Some(style) = cache.get(&key) {
@@ -875,7 +878,7 @@ impl<'a> Builder<'a> {
         if color.a() < 1.0 {
             let transparency = self.emitter.emit(
                 "SURFACE_STYLE_TRANSPARENT",
-                &real(1.0 - f64::from(color.a())),
+                &self.emitter.real(1.0 - f64::from(color.a())),
             );
             let rendering = self.emitter.emit(
                 "SURFACE_STYLE_RENDERING_WITH_PROPERTIES",
@@ -904,9 +907,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r())),
-            real(f64::from(color.g())),
-            real(f64::from(color.b()))
+            self.emitter.real(f64::from(color.r())),
+            self.emitter.real(f64::from(color.g())),
+            self.emitter.real(f64::from(color.b()))
         );
         let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -937,9 +940,9 @@ impl<'a> Builder<'a> {
     ) -> Ref {
         let rgb = format!(
             "{},{},{}",
-            real(f64::from(color.r())),
-            real(f64::from(color.g())),
-            real(f64::from(color.b()))
+            self.emitter.real(f64::from(color.r())),
+            self.emitter.real(f64::from(color.g())),
+            self.emitter.real(f64::from(color.b()))
         );
         let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
@@ -1418,7 +1421,7 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                real(self.ir.tolerances.linear.get()),
+                self.emitter.real(self.ir.tolerances.linear.get()),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -1944,7 +1947,14 @@ impl<'a> Builder<'a> {
             }
             let coordinates = mesh_vertices
                 .iter()
-                .map(|point| format!("({},{},{})", real(point.x), real(point.y), real(point.z)))
+                .map(|point| {
+                    format!(
+                        "({},{},{})",
+                        self.emitter.real(point.x),
+                        self.emitter.real(point.y),
+                        self.emitter.real(point.z)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             let coordinates = self.emitter.emit(
@@ -1964,9 +1974,9 @@ impl<'a> Builder<'a> {
                         .iter()
                         .map(|normal| format!(
                             "({},{},{})",
-                            real(normal.x),
-                            real(normal.y),
-                            real(normal.z)
+                            self.emitter.real(normal.x),
+                            self.emitter.real(normal.y),
+                            self.emitter.real(normal.z)
                         ))
                         .collect::<Vec<_>>()
                         .join(",")
@@ -2619,7 +2629,7 @@ impl<'a> Builder<'a> {
                 let direction_ref = geometry::direction(&mut self.emitter, direction.get());
                 let vector = self.emitter.emit(
                     "VECTOR",
-                    &format!("'',{direction_ref},{}", real(direction.norm())),
+                    &format!("'',{direction_ref},{}", self.emitter.real(direction.norm())),
                 );
                 Some(self.emitter.emit(
                     "SURFACE_OF_LINEAR_EXTRUSION",
@@ -2652,7 +2662,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_SURFACE",
                         &format!(
                             "'',{support},{},{}",
-                            real(distance.get()),
+                            self.emitter.real(distance.get()),
                             logical(*self_intersect)
                         ),
                     ))
@@ -2670,10 +2680,10 @@ impl<'a> Builder<'a> {
                     "RECTANGULAR_TRIMMED_SURFACE",
                     &format!(
                         "'',{support},{},{},{},{},{},{}",
-                        real(parameter_ranges[0][0]),
-                        real(parameter_ranges[0][1]),
-                        real(parameter_ranges[1][0]),
-                        real(parameter_ranges[1][1]),
+                        self.emitter.real(parameter_ranges[0][0]),
+                        self.emitter.real(parameter_ranges[0][1]),
+                        self.emitter.real(parameter_ranges[1][0]),
+                        self.emitter.real(parameter_ranges[1][1]),
                         if *u_sense { ".T." } else { ".F." },
                         if *v_sense { ".T." } else { ".F." },
                     ),
@@ -2702,8 +2712,8 @@ impl<'a> Builder<'a> {
                     "DEGENERATE_TOROIDAL_SURFACE",
                     &format!(
                         "'',{placement},{},{},{}",
-                        real(major_radius.abs()),
-                        real(minor_radius.abs()),
+                        self.emitter.real(major_radius.abs()),
+                        self.emitter.real(minor_radius.abs()),
                         if *select_outer { ".T." } else { ".F." }
                     ),
                 );
@@ -2806,8 +2816,8 @@ impl<'a> Builder<'a> {
                         "TRIMMED_CURVE",
                         &format!(
                         "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
-                        real(start),
-                        real(end),
+                        self.emitter.real(start),
+                        self.emitter.real(end),
                         if *sense { ".T." } else { ".F." }
                     ),
                     ))
@@ -2839,7 +2849,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_CURVE_3D",
                         &format!(
                             "'',{source},{},{self_intersect},{direction}",
-                            real(distance.get())
+                            self.emitter.real(distance.get())
                         ),
                     ))
                 }
@@ -3597,7 +3607,7 @@ impl<'a> Builder<'a> {
         };
         self.emitter.emit(
             entity,
-            &format!("{typed}({}),{unit}", real(value.value.get())),
+            &format!("{typed}({}),{unit}", self.emitter.real(value.value.get())),
         )
     }
 
@@ -3616,7 +3626,7 @@ impl<'a> Builder<'a> {
             &format!(
                 "{},{typed}({}),{unit}",
                 string(name),
-                real(value.value.get())
+                self.emitter.real(value.value.get())
             ),
         )
     }
