@@ -1240,7 +1240,9 @@ pub fn nurbs_surface_parameter_near_point(
             break;
         }
     }
-    parameters.u.is_finite().then_some(parameters)
+    // Every coordinate is clamped into the finite domain from a finite seed,
+    // a grid point or a finite step, so the pair is finite.
+    Some(parameters)
 }
 
 /// Find a NURBS surface parameter pair whose image is within `tolerance` of
@@ -5999,7 +6001,7 @@ fn cacheless_ruled_variable_blend_partials(
 fn variable_blend_radius(
     value: &crate::geometry::VariableBlendValue,
     parameter: f64,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
@@ -6011,15 +6013,15 @@ fn variable_blend_radius(
                 return None;
             }
             let fraction = (parameter - first_parameter) / width;
-            let radius = first_radius + fraction * (second_radius - first_radius);
-            radius.is_finite().then_some(radius)
+            FiniteReal::new(first_radius + fraction * (second_radius - first_radius))
         }
         crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
             variable_blend_radius(nested, parameter)
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            Some(pcurve_uv(function, parameter)?.u)
+            let [radius, _] = pcurve_uv(function, parameter)?.coordinates();
+            Some(radius)
         }
         _ => None,
     }
@@ -6153,9 +6155,9 @@ fn cacheless_circular_variable_blend_section(
     {
         return None;
     }
-    let signed_radius = variable_blend_radius(construction.radii.first(), v)?;
+    let signed_radius = variable_blend_radius(construction.radii.first(), v)?.get();
     let radius = signed_radius.abs();
-    if !radius.is_finite() || radius <= f64::EPSILON {
+    if radius <= f64::EPSILON {
         return None;
     }
     let radius_derivative = variable_blend_radius_differential(construction.radii.first(), v)

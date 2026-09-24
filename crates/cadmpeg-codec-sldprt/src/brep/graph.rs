@@ -4999,11 +4999,8 @@ fn nurbs_degree_one_cache_lanes(
         let parameters = seed
             .and_then(|seed| nurbs_surface_parameter_near_point(surface, *point, Some(seed)))
             .or_else(|| nurbs_surface_parameter_near_point(surface, *point, None))?;
-        if !parameters.is_finite() {
-            return None;
-        }
         seed = Some(parameters);
-        control_points.push(cadmpeg_ir::math::Point2::new(parameters.u, parameters.v));
+        control_points.push(parameters);
     }
     let uv_control_points = control_points
         .iter()

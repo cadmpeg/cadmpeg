@@ -42,6 +42,7 @@ use crate::ids::SurfaceId;
 use crate::math::Point2;
 use crate::math::Point3;
 use crate::math::Vector3;
+use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 use crate::CadIr;
 
@@ -751,9 +752,18 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
             radii: [5.0, 9.0],
         },
     };
-    assert_eq!(variable_blend_radius(&value, 2.0), Some(5.0));
-    assert_eq!(variable_blend_radius(&value, 3.0), Some(7.0));
-    assert_eq!(variable_blend_radius(&value, 5.0), Some(11.0));
+    assert_eq!(
+        variable_blend_radius(&value, 2.0).map(FiniteReal::get),
+        Some(5.0)
+    );
+    assert_eq!(
+        variable_blend_radius(&value, 3.0).map(FiniteReal::get),
+        Some(7.0)
+    );
+    assert_eq!(
+        variable_blend_radius(&value, 5.0).map(FiniteReal::get),
+        Some(11.0)
+    );
 }
 
 #[test]
@@ -775,5 +785,8 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
             terminal: crate::geometry::VariableBlendTerminal::Double(0.0),
         },
     };
-    assert_eq!(variable_blend_radius(&value, 0.5), Some(3.5));
+    assert_eq!(
+        variable_blend_radius(&value, 0.5).map(FiniteReal::get),
+        Some(3.5)
+    );
 }

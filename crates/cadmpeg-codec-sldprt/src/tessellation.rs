@@ -2253,18 +2253,23 @@ fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
     (middle.u - left.u) * (right.v - middle.v) - (middle.v - left.v) * (right.u - middle.u)
 }
 
-fn polygon_area_twice(polygon: &[Point2]) -> f64 {
-    cadmpeg_ir::math::planar::polygon_area_twice(polygon)
-        .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)
+fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+    simple_polygon_area_twice(polygon, tolerance).is_some()
 }
 
-fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+/// Twice the signed area of a simple polygon: at least three vertices, an
+/// area above the squared tolerance, and no two non-adjacent edges that
+/// meet.
+fn simple_polygon_area_twice(
+    polygon: &[Point2],
+    tolerance: f64,
+) -> Option<cadmpeg_ir::scalar::FiniteReal> {
     if polygon.len() < 3 {
-        return false;
+        return None;
     }
-    let area = polygon_area_twice(polygon);
-    if !area.is_finite() || area.abs() <= tolerance * tolerance {
-        return false;
+    let area = cadmpeg_ir::math::planar::polygon_area_twice(polygon)?;
+    if area.get().abs() <= tolerance * tolerance {
+        return None;
     }
     for left in 0..polygon.len() {
         for right in left + 1..polygon.len() {
@@ -2278,18 +2283,18 @@ fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
                 polygon[(right + 1) % polygon.len()],
                 tolerance,
             ) {
-                return false;
+                return None;
             }
         }
     }
-    true
+    Some(area)
 }
 
 fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
-    if !is_simple_polygon(polygon, tolerance) || !polygon.iter().all(Point2::is_finite) {
-        return None;
-    }
-    let orientation = polygon_area_twice(polygon).signum();
+    // The area admits only a polygon of finite vertices.
+    let orientation = simple_polygon_area_twice(polygon, tolerance)?
+        .get()
+        .signum();
     let mut remaining = (0..polygon.len()).collect::<Vec<_>>();
     let mut triangles = Vec::with_capacity(polygon.len() - 2);
     while remaining.len() > 3 {
