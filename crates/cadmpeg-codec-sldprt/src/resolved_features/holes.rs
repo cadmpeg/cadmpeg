@@ -1563,7 +1563,7 @@ pub(crate) fn project_hole_position_sketches(
                 break 'feature_edit;
             }
             let marker_transform = sketch_frame_marker_transform(sketch, QUANTUM);
-            let v_axis = normal.cross(u_axis);
+            let v_axis = normal.cross(u_axis.get());
             let mut resolved = Vec::with_capacity(authored_markers.len());
             for marker in &authored_markers {
                 let mut positions = sketch_entities.iter().filter_map(|entity| {
@@ -1610,7 +1610,7 @@ pub(crate) fn project_hole_position_sketches(
                         origin.y + position.u * u_axis.y + position.v * v_axis.y,
                         origin.z + position.u * u_axis.z + position.v * v_axis.z,
                     )),
-                    FeatureDirection3::new(normal),
+                    FeatureDirection3::new(normal.get()),
                 ) else {
                     resolved.clear();
                     break;

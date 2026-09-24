@@ -1240,7 +1240,7 @@ fn profile_roster_construction_axis(
     };
     let start = project(native_start)?;
     let end = project(native_end)?;
-    let v_axis = normal.cross(u_axis);
+    let v_axis = normal.cross(u_axis.get());
     let point = |point: Point2| {
         Point3::new(
             origin.x + point.u * u_axis.x + point.v * v_axis.x,
@@ -1284,8 +1284,8 @@ fn profile_generated_surface_axis(
         axis.origin.y - origin.y,
         axis.origin.z - origin.z,
     );
-    if axis.direction.dot(normal).abs() > EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9
-        || relative_origin.dot(normal).abs() > LINE_TOLERANCE
+    if axis.direction.dot(normal.get()).abs() > EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9
+        || relative_origin.dot(normal.get()).abs() > LINE_TOLERANCE
     {
         return None;
     }
@@ -1296,7 +1296,7 @@ fn profile_generated_surface_axis(
     );
     let perpendicular = origin_offset.cross(axis.direction.get());
     if perpendicular.norm() <= LINE_TOLERANCE {
-        axis.origin = cadmpeg_ir::features::FinitePoint3::new(origin)?;
+        axis.origin = origin;
     } else {
         let projection = origin_offset.dot(axis.direction.get());
         axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
@@ -1313,7 +1313,7 @@ fn profile_generated_surface_axis(
         .filter(|endpoint| endpoint.object_index().is_some())
         .collect::<Vec<_>>();
     let mut endpoint_ids = HashSet::new();
-    let v_axis = normal.cross(u_axis);
+    let v_axis = normal.cross(u_axis.get());
     let mut sides = Vec::new();
     for endpoint in curve_endpoints {
         if !endpoint_ids.insert(endpoint.id()) {
@@ -1334,7 +1334,7 @@ fn profile_generated_surface_axis(
             point.y - axis.origin.y,
             point.z - axis.origin.z,
         );
-        sides.push(axis.direction.cross(relative).dot(normal));
+        sides.push(axis.direction.cross(relative).dot(normal.get()));
     }
     if sides.len() < 2
         || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)

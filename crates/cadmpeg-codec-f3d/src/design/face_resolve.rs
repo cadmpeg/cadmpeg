@@ -1941,11 +1941,12 @@ pub(crate) fn bind_extrude_target_faces(
             };
             let sweep_direction = match direction {
                 ExtrudeDirection::ProfileNormal {} => profile_normal,
-                ExtrudeDirection::ReversedProfileNormal {} => profile_normal.scale(-1.0),
-                ExtrudeDirection::Explicit { vector, .. } => vector.get(),
+                ExtrudeDirection::ReversedProfileNormal {} => profile_normal.negated(),
+                ExtrudeDirection::Explicit { vector, .. } => (*vector).into(),
                 ExtrudeDirection::Unresolved {} => break 'feature_edit,
             };
-            if !sweep_direction.is_finite() || sweep_direction.norm() <= 0.0 {
+            let (sketch_origin, sweep_direction) = (sketch_origin.get(), sweep_direction.get());
+            if sweep_direction.norm() <= 0.0 {
                 break 'feature_edit;
             }
             match extent {
@@ -2154,8 +2155,9 @@ fn face_coincident_with_sketch(
     let Some((sketch_origin, sketch_normal, _)) = sketch.resolved_placement() else {
         return false;
     };
-    parallel_vectors(*normal, sketch_normal, angular_tolerance)
-        && point_plane_distance(origin, sketch_origin, sketch_normal) <= linear_tolerance
+    parallel_vectors(*normal, sketch_normal.get(), angular_tolerance)
+        && point_plane_distance(origin, sketch_origin.get(), sketch_normal.get())
+            <= linear_tolerance
 }
 
 fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {

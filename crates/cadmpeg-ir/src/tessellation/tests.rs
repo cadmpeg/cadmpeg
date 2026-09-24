@@ -7,6 +7,7 @@ use super::{
     TessellationWire,
 };
 use crate::math::{Point3, Vector3};
+use crate::scalar::NonNegativeReal;
 
 fn square() -> Vec<Point3> {
     vec![
@@ -42,7 +43,7 @@ fn per_corner_mesh_exposes_its_normals() {
     let value = Tessellation::new(
         "test:mesh:tessellation#corners",
         TessellationMesh::from_corner_lanes(
-            base.vertices(),
+            base.mesh().clone().into_raw().vertices(),
             base.triangles(),
             Some(normals.clone()),
         )
@@ -61,8 +62,12 @@ fn per_vertex_mesh_exposes_its_normals() {
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let value = Tessellation::new(
         "test:mesh:tessellation#vertices",
-        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(normals.clone()))
-            .unwrap(),
+        TessellationMesh::from_list_lanes(
+            base.mesh().clone().into_raw().vertices(),
+            base.triangles(),
+            Some(normals.clone()),
+        )
+        .unwrap(),
         Vec::new(),
     )
     .unwrap();
@@ -171,7 +176,7 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
     let value = Tessellation::new(
         "test:mesh:tessellation#auxiliary",
         TessellationMesh::List {
-            vertices: base.vertices(),
+            vertices: base.mesh().clone().into_raw().vertices(),
             triangles: base.triangles(),
         },
         vec![channel],
@@ -215,7 +220,7 @@ fn tessellation_identity_admission() {
 fn numeric_admission_rejects_non_finite_vertices_and_normals() {
     let base = mesh();
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let mut vertices = base.vertices();
+        let mut vertices = base.mesh().clone().into_raw().vertices();
         vertices[0].x = invalid;
         assert!(Tessellation::new(
             "test:mesh:tessellation#numeric",
@@ -244,13 +249,13 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
             normals[0].y = invalid;
             let rows = if corner {
                 TessellationMesh::from_corner_lanes(
-                    base.vertices(),
+                    base.mesh().clone().into_raw().vertices(),
                     base.triangles(),
                     Some(normals.clone()),
                 )
             } else {
                 TessellationMesh::from_list_lanes(
-                    base.vertices(),
+                    base.mesh().clone().into_raw().vertices(),
                     base.triangles(),
                     Some(normals.clone()),
                 )
@@ -271,9 +276,17 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
         let base = mesh();
         let normals = vec![Vector3::new(0.0, 0.0, 1.0); if corner { 6 } else { 4 }];
         let rows = if corner {
-            TessellationMesh::from_corner_lanes(base.vertices(), base.triangles(), Some(normals))
+            TessellationMesh::from_corner_lanes(
+                base.mesh().clone().into_raw().vertices(),
+                base.triangles(),
+                Some(normals),
+            )
         } else {
-            TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(normals))
+            TessellationMesh::from_list_lanes(
+                base.mesh().clone().into_raw().vertices(),
+                base.triangles(),
+                Some(normals),
+            )
         }
         .unwrap();
         let mut value =
@@ -344,7 +357,10 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
             .with_chordal_deflection(Some(invalid))
             .is_err());
         assert!(value.set_chordal_deflection(Some(invalid)).is_err());
-        assert_eq!(value.chordal_deflection(), Some(0.5));
+        assert_eq!(
+            value.chordal_deflection().map(NonNegativeReal::get),
+            Some(0.5)
+        );
         let mut wire = TessellationWire::from(value.clone());
         wire.chordal_deflection = Some(invalid);
         assert!(Tessellation::try_from(wire).is_err());
@@ -352,7 +368,10 @@ fn deflection_admission_and_edits_require_finite_non_negative_values() {
     rejects_wire_field("chordal_deflection", -1.0);
     for deflection in [Some(0.0), Some(f64::MAX), None] {
         value.set_chordal_deflection(deflection).unwrap();
-        assert_eq!(value.chordal_deflection(), deflection);
+        assert_eq!(
+            value.chordal_deflection().map(NonNegativeReal::get),
+            deflection
+        );
         let wire = serde_json::to_value(&value).unwrap();
         assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
     }
@@ -399,7 +418,7 @@ fn a_refused_vertex_edit_keeps_the_prior_vertices() {
 fn a_refused_normal_edit_keeps_the_prior_normals() {
     let base = mesh();
     let rows = TessellationMesh::from_list_lanes(
-        base.vertices(),
+        base.mesh().clone().into_raw().vertices(),
         base.triangles(),
         Some(vec![Vector3::new(0.0, 0.0, 1.0); 4]),
     )
@@ -437,7 +456,7 @@ fn the_wire_spells_the_shading_by_name() {
     let shaded = Tessellation::new(
         "test:mesh:tessellation#shaded",
         TessellationMesh::from_list_lanes(
-            base.vertices(),
+            base.mesh().clone().into_raw().vertices(),
             base.triangles(),
             Some(vec![Vector3::new(0.0, 0.0, 1.0); 4]),
         )
@@ -456,13 +475,13 @@ fn the_wire_spells_the_shading_by_name() {
     // A lane of normals that does not cover the mesh has no rows to become, so
     // the pairing refuses it before a mesh exists.
     assert!(TessellationMesh::from_list_lanes(
-        base.vertices(),
+        base.mesh().clone().into_raw().vertices(),
         base.triangles(),
         Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),
     )
     .is_err());
     assert!(TessellationMesh::from_corner_lanes(
-        base.vertices(),
+        base.mesh().clone().into_raw().vertices(),
         base.triangles(),
         Some(vec![Vector3::new(0.0, 0.0, 1.0); 5]),
     )
@@ -470,12 +489,18 @@ fn the_wire_spells_the_shading_by_name() {
 
     // An unshaded mesh is stated by absence. An empty lane against a non-empty
     // vertex lane is a length mismatch, not a shading form.
-    assert!(
-        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), Some(Vec::new()),)
-            .is_err()
-    );
+    assert!(TessellationMesh::from_list_lanes(
+        base.mesh().clone().into_raw().vertices(),
+        base.triangles(),
+        Some(Vec::new()),
+    )
+    .is_err());
     assert!(matches!(
-        TessellationMesh::from_list_lanes(base.vertices(), base.triangles(), None),
+        TessellationMesh::from_list_lanes(
+            base.mesh().clone().into_raw().vertices(),
+            base.triangles(),
+            None
+        ),
         Ok(TessellationMesh::List { .. })
     ));
 }
@@ -594,4 +619,58 @@ fn a_channel_states_its_addressing_by_name() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("count"), "{error}");
+}
+
+#[test]
+fn a_tessellation_holds_its_admitted_mesh_and_takes_an_admitted_replacement() {
+    use crate::features::{FinitePoint3, FiniteVector3};
+
+    let base = mesh();
+    let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
+    let shaded = Tessellation::new(
+        "test:mesh:tessellation#admitted",
+        TessellationMesh::from_list_lanes(square(), base.triangles(), Some(normals.clone()))
+            .unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .with_chordal_deflection(Some(0.25))
+    .unwrap();
+    assert_eq!(
+        shaded.vertices(),
+        square()
+            .into_iter()
+            .map(|point| FinitePoint3::new(point).unwrap())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        shaded.vertex_normals(),
+        vec![FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(); 4]
+    );
+    assert_eq!(shaded.chordal_deflection(), NonNegativeReal::new(0.25));
+    assert_eq!(
+        shaded.mesh().clone().into_raw(),
+        TessellationMesh::from_list_lanes(square(), base.triangles(), Some(normals)).unwrap()
+    );
+
+    let reduced = TessellationMesh::<FinitePoint3, FiniteVector3>::List {
+        vertices: shaded.vertices()[..3].to_vec(),
+        triangles: vec![[0, 1, 2]],
+    };
+    let replaced = shaded
+        .clone()
+        .with_mesh(reduced.clone(), Vec::new())
+        .unwrap();
+    assert_eq!(replaced.id, shaded.id);
+    assert_eq!(replaced.chordal_deflection(), shaded.chordal_deflection());
+    assert_eq!(replaced.mesh(), &reduced);
+    assert!(shaded
+        .with_mesh(
+            TessellationMesh::List {
+                vertices: reduced.vertices(),
+                triangles: vec![[0, 1, 3]],
+            },
+            Vec::new(),
+        )
+        .is_err());
 }

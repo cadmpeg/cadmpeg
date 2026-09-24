@@ -1047,12 +1047,12 @@ So 1001000 +2 0 *
     assert!(matches!(
         result.ir().model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(ref surface))
-            if (surface.chordal_deflection() - 0.02).abs() < f64::EPSILON
+            if (surface.chordal_deflection().get() - 0.02).abs() < f64::EPSILON
     ));
     assert!(matches!(
         result.ir().model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Polyline(ref polyline))
-            if (polyline.chordal_deflection() - 0.01).abs() < f64::EPSILON
+            if (polyline.chordal_deflection().get() - 0.01).abs() < f64::EPSILON
     ));
     assert_eq!(
         result.ir().model.edges[0]

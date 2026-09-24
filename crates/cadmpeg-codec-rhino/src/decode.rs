@@ -1949,13 +1949,13 @@ impl<'a> DecodeContext<'a> {
             subd.cage
                 .edit_vertices(|vertices| {
                     for vertex in vertices {
-                        let moved = transform.apply_point(vertex.point()).ok_or_else(|| {
+                        let moved = vertex.point().transformed(transform).ok_or_else(|| {
                             cadmpeg_ir::subd::SubdError::EditRefused(
                                 "instance cage vertex transform produced a non-finite coordinate"
                                     .to_string(),
                             )
                         })?;
-                        vertex.set_point(moved)?;
+                        vertex.set_point(moved);
                     }
                     Ok(())
                 })

@@ -2434,9 +2434,9 @@ pub(super) fn project_to_sketch(
     point: Point3,
 ) -> Option<Point2> {
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
-    let offset = point.vector_from(origin);
-    let v_axis = normal.cross(u_axis);
-    Some(Point2::new(offset.dot(u_axis), offset.dot(v_axis)))
+    let offset = point.vector_from(origin.get());
+    let v_axis = normal.cross(u_axis.get());
+    Some(Point2::new(offset.dot(u_axis.get()), offset.dot(v_axis)))
 }
 
 pub(super) fn point_on_sketch_entity(

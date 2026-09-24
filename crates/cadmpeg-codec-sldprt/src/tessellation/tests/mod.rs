@@ -902,7 +902,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
         .chordal_deflection()
-        .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
+        .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
 #[test]
@@ -940,7 +940,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert!(model.tessellations[0]
         .chordal_deflection()
-        .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
+        .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
 #[test]
@@ -1142,7 +1142,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
     assert!(model.tessellations[0]
         .chordal_deflection()
-        .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
+        .is_some_and(|deflection| deflection.get() > 0.09 && deflection.get() < 0.11));
 }
 
 #[test]

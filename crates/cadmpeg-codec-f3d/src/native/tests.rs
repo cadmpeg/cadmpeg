@@ -560,7 +560,7 @@ fn stamped_law_intcurve_round_trips_byte_exactly() {
     let version = version.as_ref().expect("version stamp");
     assert_eq!(version.stamp(), 20900);
     assert_eq!(version.post_enum(), 0);
-    assert_eq!(*version.parameter_range(), [None, None]);
+    assert_eq!(version.parameter_range(), [None, None]);
     assert!(
         matches!(primary.formula(), LawFormula::Named { name, .. } if name.as_str() == primary_name)
     );

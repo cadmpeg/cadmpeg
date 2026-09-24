@@ -248,7 +248,9 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
-        sketches[0].resolved_placement(),
+        sketches[0]
+            .resolved_placement()
+            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get())),
         Some((
             Point3::new(260.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -279,7 +281,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     assert_eq!(
         sketches[0]
             .resolved_placement()
-            .map(|(origin, _, _)| origin),
+            .map(|(origin, _, _)| origin.get()),
         Some(Point3::new(26.0, 0.0, 0.0))
     );
 }

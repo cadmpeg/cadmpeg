@@ -3874,7 +3874,7 @@ fn extrusion_shape(
                         .iter()
                         .find(|sketch| sketch.id == *sketch_id)
                         .and_then(Sketch::resolved_placement)
-                        .map(|(_, normal, _)| normal)
+                        .map(|(_, normal, _)| normal.get())
                         .or(profile_normal),
                     _ => profile_normal,
                 }?;
@@ -4132,7 +4132,7 @@ fn extrusion_shape(
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .and_then(Sketch::resolved_placement)
-                .map(|(_, normal, _)| normal)
+                .map(|(_, normal, _)| normal.get())
                 .or(profile_normal),
             ProfileRef::Planar(PlanarProfileRef::Native(_)) => profile_normal,
             _ => return None,

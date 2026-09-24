@@ -4985,7 +4985,7 @@ pub struct RevisionCompoundLoftConstruction {
     revision: PositiveI64,
     cache: RevisionCacheForm,
     #[serde(default)]
-    discontinuities: [Vec<f64>; 6],
+    discontinuities: [Vec<FiniteReal>; 6],
     tail_flag: bool,
     base_profile: Vec<LoftProfileMember>,
     base_path: LoftPath,
@@ -4993,7 +4993,7 @@ pub struct RevisionCompoundLoftConstruction {
     flags: [bool; 2],
     kind_flags: [bool; 2],
     direction: CompoundLoftDirection,
-    tail: RevisionCompoundLoftTail<CurveId>,
+    tail: RevisionCompoundLoftTail<CurveId, FiniteReal>,
 }
 
 /// Stored fields of a revision-gated `cl_loft_spl_sur` construction before
@@ -5042,10 +5042,20 @@ impl RevisionCompoundLoftConstruction {
     pub fn admit(
         wire: RevisionCompoundLoftConstructionWire,
     ) -> Result<Self, ProceduralGeometryError> {
+        let invalid = || {
+            ProceduralGeometryError::Payload(
+                "revision compound loft construction payload is invalid",
+            )
+        };
+        let (Some(discontinuities), Some(tail)) =
+            (FiniteReal::lanes(wire.discontinuities), wire.tail.admit())
+        else {
+            return Err(invalid());
+        };
         let construction = Self {
             revision: wire.revision,
             cache: wire.cache,
-            discontinuities: wire.discontinuities,
+            discontinuities,
             tail_flag: wire.tail_flag,
             base_profile: wire.base_profile,
             base_path: wire.base_path,
@@ -5053,14 +5063,12 @@ impl RevisionCompoundLoftConstruction {
             flags: wire.flags,
             kind_flags: wire.kind_flags,
             direction: wire.direction,
-            tail: wire.tail,
+            tail,
         };
         if construction.values_are_finite() {
             Ok(construction)
         } else {
-            Err(ProceduralGeometryError::Payload(
-                "revision compound loft construction payload is invalid",
-            ))
+            Err(invalid())
         }
     }
 
@@ -5078,7 +5086,7 @@ impl RevisionCompoundLoftConstruction {
 
     /// Return the six ordered discontinuity arrays.
     #[must_use]
-    pub const fn discontinuities(&self) -> &[Vec<f64>; 6] {
+    pub const fn discontinuities(&self) -> &[Vec<FiniteReal>; 6] {
         &self.discontinuities
     }
 
@@ -5126,19 +5134,15 @@ impl RevisionCompoundLoftConstruction {
 
     /// Return the trailing bounds and their dependent BS3 curve.
     #[must_use]
-    pub const fn tail(&self) -> &RevisionCompoundLoftTail<CurveId> {
+    pub const fn tail(&self) -> &RevisionCompoundLoftTail<CurveId, FiniteReal> {
         &self.tail
     }
 
-    /// Whether every scalar this construction carries is finite.
+    /// Whether every scalar of the raw fields this construction carries is
+    /// finite. The discontinuities and the tail hold admitted scalars.
     #[must_use]
     fn values_are_finite(&self) -> bool {
         self.cache.values_are_finite()
-            && self
-                .discontinuities
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite())
             && self
                 .base_profile
                 .iter()
@@ -5146,7 +5150,6 @@ impl RevisionCompoundLoftConstruction {
             && self.base_path.values_are_finite()
             && self.entries.iter().all(LoftSectionEntry::values_are_finite)
             && self.direction.values_are_finite()
-            && self.tail.values_are_finite()
     }
 }
 
@@ -5160,51 +5163,65 @@ impl TryFrom<RevisionCompoundLoftConstructionWire> for RevisionCompoundLoftConst
 
 /// Trailing parameter bounds of a revision compound loft.
 /// Both bounds select a trailing curve; all other forms contain no curve.
+// A source states raw bounds; a `RevisionCompoundLoftConstruction` holds the
+// admitted tail, whose bounds are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
     deny_unknown_fields,
-    bound(serialize = "T: Serialize", deserialize = "T: Deserialize<'de>")
+    bound(
+        serialize = "T: Serialize, S: Serialize",
+        deserialize = "T: Deserialize<'de>, S: Deserialize<'de>"
+    )
 )]
-pub enum RevisionCompoundLoftTail<T> {
+pub enum RevisionCompoundLoftTail<T, S = f64> {
     /// Neither parameter bound is present.
     Unbounded {},
     /// Only the lower parameter bound is present.
     LowerBound {
         /// Lower parameter bound.
-        lower: f64,
+        lower: S,
     },
     /// Only the upper parameter bound is present.
     UpperBound {
         /// Upper parameter bound.
-        upper: f64,
+        upper: S,
     },
     /// Both parameter bounds and their selected curve.
     Curve {
         /// Ordered lower and upper parameter bounds.
-        interval: [f64; 2],
+        interval: [S; 2],
         /// Curve selected by the complete parameter pair.
         curve: T,
     },
 }
 
 impl<T> RevisionCompoundLoftTail<T> {
-    /// Whether every stored parameter bound is finite.
-    #[must_use]
-    fn values_are_finite(&self) -> bool {
-        match self {
-            Self::Unbounded {} => true,
-            Self::LowerBound { lower } => lower.is_finite(),
-            Self::UpperBound { upper } => upper.is_finite(),
-            Self::Curve { interval, .. } => interval.iter().all(|value| value.is_finite()),
-        }
+    /// The tail with admitted bounds, absent when a stored bound is not
+    /// finite.
+    fn admit(self) -> Option<RevisionCompoundLoftTail<T, FiniteReal>> {
+        Some(match self {
+            Self::Unbounded {} => RevisionCompoundLoftTail::Unbounded {},
+            Self::LowerBound { lower } => RevisionCompoundLoftTail::LowerBound {
+                lower: FiniteReal::new(lower)?,
+            },
+            Self::UpperBound { upper } => RevisionCompoundLoftTail::UpperBound {
+                upper: FiniteReal::new(upper)?,
+            },
+            Self::Curve { interval, curve } => RevisionCompoundLoftTail::Curve {
+                interval: FiniteReal::array(interval)?,
+                curve,
+            },
+        })
     }
+}
 
+impl<T, S: Copy> RevisionCompoundLoftTail<T, S> {
     /// Optional bounds in native order.
     #[must_use]
-    pub const fn interval(&self) -> [Option<f64>; 2] {
+    pub const fn interval(&self) -> [Option<S>; 2] {
         match self {
             Self::Unbounded {} => [None, None],
             Self::LowerBound { lower } => [Some(*lower), None],
@@ -6472,7 +6489,7 @@ pub struct LawCurveVersionForm {
     /// Native enum following the version stamp.
     post_enum: i64,
     /// Solved-curve interval endpoints; `None` records an unbounded bound.
-    parameter_range: [Option<f64>; 2],
+    parameter_range: [Option<FiniteReal>; 2],
 }
 
 #[derive(Deserialize)]
@@ -6502,13 +6519,8 @@ impl LawCurveVersionForm {
         post_enum: i64,
         parameter_range: [Option<f64>; 2],
     ) -> Result<Self, &'static str> {
-        if !parameter_range
-            .iter()
-            .flatten()
-            .all(|value| value.is_finite())
-        {
-            return Err("law curve parameter_range bounds must be finite");
-        }
+        let parameter_range = FiniteReal::optional(parameter_range)
+            .ok_or("law curve parameter_range bounds must be finite")?;
         Ok(Self {
             stamp,
             post_enum,
@@ -6530,8 +6542,8 @@ impl LawCurveVersionForm {
 
     /// Solved-curve interval endpoints; `None` records an unbounded bound.
     #[must_use]
-    pub const fn parameter_range(&self) -> &[Option<f64>; 2] {
-        &self.parameter_range
+    pub const fn parameter_range(&self) -> [Option<FiniteReal>; 2] {
+        self.parameter_range
     }
 }
 

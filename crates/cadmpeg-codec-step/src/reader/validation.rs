@@ -372,7 +372,7 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
                     .entry((first.min(second), first.max(second)))
                     .or_default() += 1;
             }
-            let relative = |point: Point3| {
+            let relative = |point: cadmpeg_ir::features::FinitePoint3| {
                 Some(Point3::new(
                     cadmpeg_ir::math::scale_power_of_two(point.x - origin.x, -exponent)?,
                     cadmpeg_ir::math::scale_power_of_two(point.y - origin.y, -exponent)?,

@@ -28,12 +28,15 @@ pub(super) fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
 ) -> Result<cadmpeg_ir::CadIr, cadmpeg_core::CodecError> {
-    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(format!(
-            "source-less SLDPRT sketch {} requires resolved model-space placement",
-            sketch.id.as_str()
-        ))
-    })?;
+    let (origin, normal, u_axis) = sketch
+        .resolved_placement()
+        .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::NotImplemented(format!(
+                "source-less SLDPRT sketch {} requires resolved model-space placement",
+                sketch.id.as_str()
+            ))
+        })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
@@ -383,12 +386,15 @@ fn generated_sketch_curve(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> Result<GeneratedSketchCurve, cadmpeg_core::CodecError> {
-    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
-        cadmpeg_core::CodecError::NotImplemented(format!(
-            "source-less SLDPRT sketch {} requires resolved model-space placement",
-            sketch.id.as_str()
-        ))
-    })?;
+    let (origin, normal, u_axis) = sketch
+        .resolved_placement()
+        .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::NotImplemented(format!(
+                "source-less SLDPRT sketch {} requires resolved model-space placement",
+                sketch.id.as_str()
+            ))
+        })?;
     let lift = |point| lift_point(point, origin, u_axis, v_axis);
     let vector = |u: f64, v: f64| {
         Vector3::new(
@@ -573,12 +579,15 @@ pub(super) fn patch_line_profiles(
                 "SLDPRT sketch write-back requires native sketch provenance".into(),
             )
         })?;
-        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented(format!(
-                "SLDPRT sketch write-back requires resolved placement for {}",
-                sketch.id.as_str()
-            ))
-        })?;
+        let (origin, normal, u_axis) = sketch
+            .resolved_placement()
+            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::NotImplemented(format!(
+                    "SLDPRT sketch write-back requires resolved placement for {}",
+                    sketch.id.as_str()
+                ))
+            })?;
         let v_axis = normal.cross(u_axis);
         for entity in ir
             .model

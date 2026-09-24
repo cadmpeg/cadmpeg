@@ -151,3 +151,57 @@ fn a_refused_polygonal_vertex_edit_keeps_the_prior_vertices() {
         .is_err());
     assert_eq!(surface, original);
 }
+
+#[test]
+fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
+    use crate::scalar::NonNegativeReal;
+
+    let vertices = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let mut surface = PolygonalSurface::new(vertices.clone(), vec![[0, 1, 2]], 0.25).unwrap();
+    assert_eq!(
+        surface.chordal_deflection(),
+        NonNegativeReal::new(0.25).unwrap()
+    );
+    surface.set_chordal_deflection(0.5).unwrap();
+    assert_eq!(surface.chordal_deflection().get(), 0.5);
+    surface
+        .edit_vertices(|points| {
+            points[2].z = 2.0;
+            Ok(())
+        })
+        .unwrap();
+    let wire = serde_json::to_value(&surface).unwrap();
+    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.5));
+    assert_eq!(
+        wire["vertices"][2],
+        serde_json::to_value(FinitePoint3::new(Point3::new(0.0, 1.0, 2.0)).unwrap()).unwrap()
+    );
+    assert_eq!(
+        serde_json::from_value::<PolygonalSurface>(wire).unwrap(),
+        surface
+    );
+
+    let samples = PolylineSamples::Unparameterized {
+        points: vertices[..2]
+            .to_vec()
+            .try_into()
+            .expect("nonempty polyline fixture"),
+    };
+    let polyline = PolylineCurve::new(samples, 0.125).unwrap();
+    assert_eq!(
+        polyline.chordal_deflection(),
+        NonNegativeReal::new(0.125).unwrap()
+    );
+    let wire = serde_json::to_value(&polyline).unwrap();
+    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.125));
+    assert_eq!(
+        serde_json::from_value::<PolylineCurve>(wire).unwrap(),
+        polyline
+    );
+}

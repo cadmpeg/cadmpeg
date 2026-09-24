@@ -334,6 +334,10 @@ fn an_offset_side_states_its_carrier_and_denies_the_other_one() {
 fn the_law_curve_version_form_refuses_a_non_finite_interval_bound() {
     let admitted = crate::geometry::LawCurveVersionForm::try_new(20_900, 0, [Some(-1.0), None])
         .expect("finite law curve version form");
+    assert_eq!(
+        admitted.parameter_range(),
+        [crate::scalar::FiniteReal::new(-1.0), None]
+    );
     let wire = serde_json::to_value(&admitted).unwrap();
     assert_eq!(wire["stamp"], serde_json::json!(20_900));
     assert_eq!(wire["post_enum"], serde_json::json!(0));

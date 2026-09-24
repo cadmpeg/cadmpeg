@@ -258,15 +258,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("XAxis"),
-                format_vector3(frame.x_axis()),
+                format_vector3(frame.x_axis().into()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("YAxis"),
-                format_vector3(frame.y_axis()),
+                format_vector3(frame.y_axis().into()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("ZAxis"),
-                format_vector3(frame.z_axis()),
+                format_vector3(frame.z_axis().into()),
             );
             NeutralFeatureEncoding {
                 kind: existing

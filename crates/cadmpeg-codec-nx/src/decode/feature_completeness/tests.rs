@@ -189,10 +189,12 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
 #[test]
 fn nx_datum_completeness_requires_coherent_finite_frames() {
     use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::units::UnitVector3;
 
-    let x_axis = Vector3::new(1.0, 0.0, 0.0);
-    let y_axis = Vector3::new(0.0, 1.0, 0.0);
-    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+    let unit = |x, y, z| UnitVector3::new(Vector3::new(x, y, z));
+    let x_axis = UnitVector3::X_AXIS;
+    let y_axis = UnitVector3::Y_AXIS;
+    let z_axis = UnitVector3::Z_AXIS;
 
     assert!(!datum_coordinate_system_is_incomplete(
         x_axis, y_axis, z_axis,
@@ -200,16 +202,12 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
     assert!(datum_coordinate_system_is_incomplete(
         x_axis,
         y_axis,
-        Vector3::new(0.0, 0.0, -1.0),
+        unit(0.0, 0.0, -1.0).unwrap(),
     ));
-    assert!(datum_coordinate_system_is_incomplete(
-        Vector3::new(2.0, 0.0, 0.0),
-        y_axis,
-        z_axis,
-    ));
+    assert!(unit(2.0, 0.0, 0.0).is_none());
     assert!(datum_coordinate_system_is_incomplete(
         x_axis,
-        Vector3::new(1.0e-6, 1.0, 0.0),
+        unit(1.0e-6, 1.0, 0.0).unwrap(),
         z_axis,
     ));
 }

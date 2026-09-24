@@ -486,7 +486,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
-        sketches[0].resolved_placement(),
+        sketches[0]
+            .resolved_placement()
+            .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get())),
         Some((
             Point3::new(10.0, 20.0, 30.0),
             Vector3::new(1.0, 0.0, 0.0),

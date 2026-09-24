@@ -46,15 +46,15 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
                 x: 1.0,
                 y: 2.0,
                 z: 3.0
-            }) && matches!(frame.x_axis(), Vector3 {
+            }) && matches!(*frame.x_axis().as_raw(), Vector3 {
                 x: 1.0,
                 y: 0.0,
                 z: 0.0
-            }) && matches!(frame.y_axis(), Vector3 {
+            }) && matches!(*frame.y_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            }) && matches!(frame.z_axis(), Vector3 {
+            }) && matches!(*frame.z_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0
@@ -102,15 +102,15 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
-            }) && matches!(frame.x_axis(), Vector3 {
+            }) && matches!(*frame.x_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            }) && matches!(frame.y_axis(), Vector3 {
+            }) && matches!(*frame.y_axis().as_raw(), Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0
-            }) && matches!(frame.z_axis(), Vector3 {
+            }) && matches!(*frame.z_axis().as_raw(), Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0

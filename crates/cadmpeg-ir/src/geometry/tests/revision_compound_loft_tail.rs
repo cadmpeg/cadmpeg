@@ -102,3 +102,43 @@ fn a_compound_loft_direction_carries_a_selector_only_on_its_curve_form() {
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
 }
+
+#[test]
+fn an_admitted_loft_tail_holds_finite_bounds() {
+    use crate::scalar::FiniteReal;
+
+    let id = CurveId::mint("test:model:curve#tail").expect("valid identity");
+    let raw = RevisionCompoundLoftTail::Curve {
+        interval: [2.0, 3.0],
+        curve: id.clone(),
+    };
+    let admitted = raw.clone().admit().expect("finite bounds");
+    assert_eq!(
+        admitted.interval(),
+        [FiniteReal::new(2.0), FiniteReal::new(3.0)]
+    );
+    assert_eq!(admitted.curve(), Some(&id));
+    assert_eq!(
+        serde_json::to_value(&admitted).unwrap(),
+        serde_json::to_value(&raw).unwrap()
+    );
+    for tail in [
+        RevisionCompoundLoftTail::LowerBound { lower: f64::NAN },
+        RevisionCompoundLoftTail::UpperBound {
+            upper: f64::INFINITY,
+        },
+        RevisionCompoundLoftTail::Curve {
+            interval: [2.0, f64::NEG_INFINITY],
+            curve: id.clone(),
+        },
+    ] {
+        assert!(tail.admit().is_none());
+    }
+    assert_eq!(
+        RevisionCompoundLoftTail::<CurveId>::Unbounded {}
+            .admit()
+            .expect("no bound to admit")
+            .interval(),
+        [None, None]
+    );
+}

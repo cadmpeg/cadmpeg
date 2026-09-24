@@ -3753,7 +3753,10 @@ fn encode_native_revision_compound_loft(
         construction.cache(),
         solved_cache,
     )?;
-    native_revision_tail_discontinuities(bytes, construction.discontinuities())?;
+    native_revision_tail_discontinuities(
+        bytes,
+        &cadmpeg_ir::scalar::FiniteReal::raw_lanes(construction.discontinuities()),
+    )?;
     bytes.push(native_bool(construction.tail_flag()));
     native_revision_cl_scale(
         bytes,
@@ -3789,7 +3792,7 @@ fn encode_native_revision_compound_loft(
         }
     }
     for value in construction.tail().interval() {
-        native_optional_f64(bytes, value);
+        native_optional_f64(bytes, value.map(cadmpeg_ir::scalar::FiniteReal::get));
     }
     if let Some(curve) = construction.tail().curve() {
         let curve = native_loft_curve(target, curve, None)?;
@@ -6105,7 +6108,7 @@ fn native_law_version_context(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     context: &cadmpeg_ir::geometry::IntcurveSupportContext,
-    parameter_range: &[Option<f64>; 2],
+    parameter_range: [Option<cadmpeg_ir::scalar::FiniteReal>; 2],
 ) -> Result<(), CodecError> {
     if context
         .sides()
@@ -6157,7 +6160,7 @@ fn native_law_version_context(
         }
     }
     for bound in parameter_range {
-        native_optional_f64(bytes, *bound);
+        native_optional_f64(bytes, bound.map(cadmpeg_ir::scalar::FiniteReal::get));
     }
     for discontinuities in context.discontinuities() {
         native_i64(
