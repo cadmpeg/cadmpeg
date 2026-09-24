@@ -5,6 +5,7 @@ use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -35,7 +36,16 @@ fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
     exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
 }
 
-pub(super) fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+/// Admit a model point for the agreement test. A point outside the finite
+/// range has no admitted form, and agrees with no point.
+pub(super) fn finite_model_point(point: [f64; 3]) -> Option<FinitePoint3> {
+    FinitePoint3::new(Point3::from(point))
+}
+
+/// Whether two points agree within a tolerance relative to their largest
+/// coordinate. Both points are finite, so the tolerance is finite.
+pub(super) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> bool {
+    let [first, second] = [first, second].map(|point| <[f64; 3]>::from(point.get()));
     let scale = first
         .into_iter()
         .chain(second)
@@ -56,19 +66,25 @@ fn pcurve_candidate_agrees_with_fixed_points(
     let Some(ordered) = directed_pcurve_points(directions, points) else {
         return true;
     };
+    // A point outside the finite range agrees with no fixed point.
     vertices.into_iter().zip(ordered).all(|(vertex, point)| {
-        fixed_points
-            .get(&vertex)
-            .is_none_or(|known| model_points_agree(*known, point))
+        fixed_points.get(&vertex).is_none_or(|known| {
+            finite_model_point(*known)
+                .zip(finite_model_point(point))
+                .is_some_and(|(known, point)| model_points_agree(known, point))
+        })
     })
 }
 
+/// A vertex whose pcurve endpoint candidates do not all agree. A candidate
+/// outside the finite range agrees with no other candidate.
 fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
     candidates.first().is_some_and(|first| {
-        candidates
-            .iter()
-            .skip(1)
-            .any(|candidate| !model_points_agree(*first, *candidate))
+        candidates.iter().skip(1).any(|candidate| {
+            !finite_model_point(*first)
+                .zip(finite_model_point(*candidate))
+                .is_some_and(|(first, candidate)| model_points_agree(first, candidate))
+        })
     })
 }
 
@@ -106,17 +122,16 @@ fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Opti
         product.mul_add(second_relative, -(second_squared * first_relative)) / denominator;
     let second_parameter =
         first_squared.mul_add(second_relative, -(product * first_relative)) / denominator;
-    let first_point = std::array::from_fn(|axis| {
+    let first_point: [f64; 3] = std::array::from_fn(|axis| {
         first_direction[axis].mul_add(first_parameter, first_origin[axis])
     });
-    let second_point = std::array::from_fn(|axis| {
+    let second_point: [f64; 3] = std::array::from_fn(|axis| {
         second_direction[axis].mul_add(second_parameter, second_origin[axis])
     });
-    (first_point
-        .iter()
-        .chain(second_point.iter())
-        .all(|value| value.is_finite())
-        && model_points_agree(first_point, second_point))
+    model_points_agree(
+        finite_model_point(first_point)?,
+        finite_model_point(second_point)?,
+    )
     .then(|| std::array::from_fn(|axis| f64::midpoint(first_point[axis], second_point[axis])))
 }
 
@@ -386,10 +401,13 @@ fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3]> {
     candidates
         .into_iter()
         .fold(Vec::new(), |mut unique, point| {
-            if !unique
-                .iter()
-                .any(|candidate| model_points_agree(*candidate, point))
-            {
+            // A candidate outside the finite range agrees with no other
+            // candidate.
+            if !unique.iter().any(|candidate| {
+                finite_model_point(*candidate)
+                    .zip(finite_model_point(point))
+                    .is_some_and(|(candidate, point)| model_points_agree(candidate, point))
+            }) {
                 unique.push(point);
             }
             unique

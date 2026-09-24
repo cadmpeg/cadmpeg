@@ -3,6 +3,7 @@
 
 use crate::vecmath::normalize;
 use crate::vecmath::unit_length;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -10,6 +11,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use super::super::surfaces::intersection_resolve::curve_contains_points;
 
 use super::planes::valid_positive_nurbs_curve;
+use super::vertices::finite_model_point;
 use crate::vecmath::{cross, dot};
 
 const EPS_ON_CONIC: f64 = 1.0e-7;
@@ -68,7 +70,15 @@ pub(in crate::decode) fn exact_line_edge_parameter_range(
         })
 }
 
-pub(super) fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool; 2] {
+/// Whether the mapped pair aligns with the target pair in the same order and
+/// in reverse order, within a tolerance relative to the largest coordinate.
+/// Every point is finite, so the tolerance is finite.
+pub(super) fn point_pair_alignments(
+    mapped: [FinitePoint3; 2],
+    target: [FinitePoint3; 2],
+) -> [bool; 2] {
+    let coordinates = |point: FinitePoint3| <[f64; 3]>::from(point.get());
+    let (mapped, target) = (mapped.map(coordinates), target.map(coordinates));
     let mismatch = |left: [f64; 3], right: [f64; 3]| {
         dot(
             std::array::from_fn(|index| left[index] - right[index]),
@@ -171,13 +181,14 @@ fn nonperiodic_nurbs_edge_parameter_range(
         .then_some(parameters);
     }
 
-    let mapped = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
-    });
-    let [Some(first), Some(second)] = mapped else {
+    let mapped = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
+    // An edge endpoint outside the finite range aligns with no carrier end.
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) =
+        (mapped, points.map(finite_model_point))
+    else {
         return None;
     };
-    match point_pair_alignments([first, second], points) {
+    match point_pair_alignments([first, second], [start, end]) {
         [true, false] | [false, true] => Some(range),
         _ => None,
     }
@@ -237,14 +248,15 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
         ]);
     }
 
-    let mapped = intrinsic_range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(&*geometry, parameter.get())
-            .map(|point| [point.x, point.y, point.z])
-    });
-    let [Some(first), Some(second)] = mapped else {
+    let mapped =
+        intrinsic_range.map(|parameter| cadmpeg_ir::eval::curve_point(&*geometry, parameter.get()));
+    // An edge endpoint outside the finite range aligns with no carrier end.
+    let ([Some(first), Some(second)], [Some(start), Some(end)]) =
+        (mapped, points.map(finite_model_point))
+    else {
         return None;
     };
-    match point_pair_alignments([first, second], points) {
+    match point_pair_alignments([first, second], [start, end]) {
         [true, false] => Some(range),
         [false, true] => {
             let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
