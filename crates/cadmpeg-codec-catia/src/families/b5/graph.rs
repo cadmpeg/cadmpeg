@@ -299,13 +299,12 @@ pub(in crate::families) enum B5Surface {
     /// `b5 03 29`: a circular cone in its native arc-length/slant chart.
     Cone {
         /// Cone apex.
-        apex: [f64; 3],
-        /// First transverse unit direction.
-        direction_x: [f64; 3],
-        /// Second transverse unit direction.
-        direction_y: [f64; 3],
-        /// Cone-axis unit direction.
-        axis: [f64; 3],
+        apex: FinitePoint3,
+        /// The stored cone-axis unit direction and the stored first transverse
+        /// unit direction, the zero-angle ray.
+        frame: OrthonormalFrame3,
+        /// The stored second transverse unit direction.
+        direction_y: UnitVector3,
         /// Cone half-angle in radians.
         half_angle: f64,
         /// Reference radius of the conical surface, independent of the active chart ranges.
@@ -2791,16 +2790,22 @@ fn cone_frame(
     axis: [f64; 3],
     direction_x: [f64; 3],
     direction_y: [f64; 3],
-) -> Option<OrthonormalFrame3> {
+) -> Option<(OrthonormalFrame3, UnitVector3)> {
     let axis = UnitVector3::new(Vector3::from(axis))?;
     let direction_x = ExactUnitVector3::new(direction_x)?.into();
     let direction_y = ExactUnitVector3::new(direction_y)?.into();
-    OrthonormalFrame3::right_handed_euclidean(axis, direction_x, direction_y).or_else(|| {
-        let mut frame =
-            OrthonormalFrame3::right_handed_euclidean(axis.reversed(), direction_x, direction_y)?;
-        frame.reverse_axis();
-        Some(frame)
-    })
+    let frame = OrthonormalFrame3::right_handed_euclidean(axis, direction_x, direction_y).or_else(
+        || {
+            let mut frame = OrthonormalFrame3::right_handed_euclidean(
+                axis.reversed(),
+                direction_x,
+                direction_y,
+            )?;
+            frame.reverse_axis();
+            Some(frame)
+        },
+    )?;
+    Some((frame, direction_y))
 }
 
 fn parse_surface(record: &B5Record) -> Option<B5Surface> {
@@ -2879,7 +2884,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         }
         0x29 => {
             (record.payload.len() == 185 && record.payload.first() == Some(&0x80)).then_some(())?;
-            let apex = read_f64_array::<3>(&record.payload, 1)?.map(FiniteReal::get);
+            let apex = f64_point(&record.payload, 1)?;
             let direction_x = read_f64_array::<3>(&record.payload, 25)?.map(FiniteReal::get);
             let direction_y = read_f64_array::<3>(&record.payload, 49)?.map(FiniteReal::get);
             let axis = read_f64_array::<3>(&record.payload, 73)?.map(FiniteReal::get);
@@ -2901,7 +2906,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 f64_le(&record.payload, 169)?.get(),
                 f64_le(&record.payload, 177)?.get(),
             ];
-            let frame = cone_frame(axis, direction_x, direction_y)?;
+            let (frame, direction_y) = cone_frame(axis, direction_x, direction_y)?;
             let slant_start = NonNegativeLength::new(slant_range[0])?;
             (0.0 < half_angle.get()
                 && half_angle.get() < std::f64::consts::FRAC_PI_2
@@ -2910,13 +2915,15 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && f64_le(&record.payload, 153)?.get() == 1.0
                 && f64_le(&record.payload, 161)?.get() == 0.0)
                 .then_some(())?;
-            let origin = add(apex, scale(axis, slant_range[0] * half_angle.get().cos()));
+            let origin = add(
+                coordinates(apex),
+                scale(axis, slant_range[0] * half_angle.get().cos()),
+            );
             let half_angle_radians = Angle::from_assigned_real(half_angle);
             Some(B5Surface::Cone {
                 apex,
-                direction_x,
+                frame,
                 direction_y,
-                axis,
                 half_angle: half_angle.get(),
                 reference_radius,
                 angular_range,
@@ -4067,23 +4074,22 @@ fn lift_pcurve_endpoints(
         }
         B5Surface::Cone {
             apex,
-            direction_x,
+            frame,
             direction_y,
-            axis,
             half_angle,
             angular_scale,
             ..
         } => Some(endpoints.map(|[u, v]| {
             let angle = u / angular_scale.get();
             let radial = add(
-                scale(*direction_x, angle.cos()),
-                scale(*direction_y, angle.sin()),
+                scale(components(frame.reference()), angle.cos()),
+                scale(components(direction_y), angle.sin()),
             );
             add(
-                *apex,
+                coordinates(*apex),
                 scale(
                     add(
-                        scale(*axis, half_angle.cos()),
+                        scale(components(frame.axis()), half_angle.cos()),
                         scale(radial, half_angle.sin()),
                     ),
                     v,

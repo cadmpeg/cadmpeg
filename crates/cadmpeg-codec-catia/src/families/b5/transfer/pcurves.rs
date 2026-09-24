@@ -14,7 +14,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
+use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
@@ -26,6 +27,7 @@ use super::edges::ordered_subrange;
 use super::{
     annotate, dot, point3, subtract, vector, CurvePlan, HelixPlan, TransferPlan, POINT_TOLERANCE,
 };
+use crate::analytic::signed_reference_frame;
 use crate::math::{distance, unit_vector};
 
 const EPS_PCURVE_RESIDUAL: f64 = 1.0e-9;
@@ -345,15 +347,20 @@ pub(super) fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Poin
             Point2::new(point[0] / angular_scale.get(), point[1])
         }
         B5Surface::Cone {
-            direction_x,
+            frame,
             direction_y,
-            axis,
             half_angle,
             slant_range,
             angular_scale,
             ..
         } => Point2::new(
-            dot(cross(*direction_x, *direction_y), *axis).signum() * point[0] / angular_scale.get(),
+            dot(
+                cross(components(frame.reference()), components(direction_y)),
+                components(frame.axis()),
+            )
+            .signum()
+                * point[0]
+                / angular_scale.get(),
             (point[1] - slant_range[0]) * half_angle.cos(),
         ),
         B5Surface::Torus {
@@ -416,28 +423,25 @@ pub(super) fn lifted_curve_geometry(
             ..
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let first = pcurve.control_points.first()?;
-            let axis = components(frame.axis());
             let line_origin = cylinder_point(
                 coordinates(*origin),
                 components(frame.reference()),
-                axis,
+                components(frame.axis()),
                 radius.get(),
                 angular_scale.get(),
                 *first,
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    point3(line_origin),
-                    vector(axis),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    FinitePoint3::new(point3(line_origin))?,
+                    *frame.axis(),
+                ),
             )))
         }
         B5Surface::Cone {
             apex,
-            direction_x,
+            frame,
             direction_y,
-            axis,
             half_angle,
             angular_scale,
             ..
@@ -445,18 +449,17 @@ pub(super) fn lifted_curve_geometry(
             let [u, _] = *pcurve.control_points.first()?;
             let angle = u / angular_scale.get();
             let radial = add(
-                scale(*direction_x, angle.cos()),
-                scale(*direction_y, angle.sin()),
+                scale(components(frame.reference()), angle.cos()),
+                scale(components(direction_y), angle.sin()),
             );
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    point3(*apex),
-                    vector(add(
-                        scale(*axis, half_angle.cos()),
+                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                    *apex,
+                    UnitVector3::new(vector(add(
+                        scale(components(frame.axis()), half_angle.cos()),
                         scale(radial, half_angle.sin()),
-                    )),
-                )
-                .ok()?,
+                    )))?,
+                ),
             )))
         }
         B5Surface::Torus {
@@ -494,38 +497,35 @@ pub(super) fn lifted_curve_geometry(
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
             let angle = v / minor_scale.get();
-            let axis = components(frame.axis());
             let signed_radius = major_radius.get() + minor_radius.get() * angle.cos();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point3(add(
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(point3(add(
                         coordinates(*center),
-                        scale(axis, minor_radius.get() * angle.sin()),
-                    )),
-                    vector(axis),
-                    vector(scale(components(frame.reference()), signed_radius.signum())),
-                    signed_radius.abs(),
-                )
-                .ok()?,
+                        scale(components(frame.axis()), minor_radius.get() * angle.sin()),
+                    )))?,
+                    signed_reference_frame(*frame, signed_radius),
+                    PositiveLength::new(signed_radius.abs())?,
+                ),
             )))
         }
         B5Surface::Cone {
             apex,
-            direction_x,
-            axis,
+            frame,
             half_angle,
             ..
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
             let radius = slant * half_angle.sin();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
-                    vector(*axis),
-                    vector(scale(*direction_x, radius.signum())),
-                    radius.abs(),
-                )
-                .ok()?,
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    FinitePoint3::new(point3(add(
+                        coordinates(*apex),
+                        scale(components(frame.axis()), slant * half_angle.cos()),
+                    )))?,
+                    signed_reference_frame(*frame, radius),
+                    PositiveLength::new(radius.abs())?,
+                ),
             )))
         }
         B5Surface::Cylinder {

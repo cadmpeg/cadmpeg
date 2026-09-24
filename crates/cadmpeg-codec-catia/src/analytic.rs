@@ -21,6 +21,18 @@ use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::wire::cursor::Cursor;
 
+/// Keep the surface frame, with the reference reversed when the circle
+/// radius is negative: the circle then starts on the opposite side of the axis.
+pub(crate) fn signed_reference_frame(
+    mut frame: OrthonormalFrame3,
+    circle_radius: f64,
+) -> OrthonormalFrame3 {
+    if circle_radius.is_sign_negative() {
+        frame.reverse_reference();
+    }
+    frame
+}
+
 /// Validate an active angular interval and its centered full-turn chart domain.
 pub(crate) fn periodic_angular_range_is_valid(range: [f64; 2], domain: [f64; 2]) -> bool {
     const TOLERANCE: f64 = 1.0e-12;

@@ -327,10 +327,9 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
     .is_some());
 
     let cone = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: std::f64::consts::FRAC_PI_6,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
@@ -707,10 +706,9 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
 
     let half_angle = std::f64::consts::FRAC_PI_6;
     let cone = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
@@ -808,10 +806,9 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
 fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     let half_angle = std::f64::consts::FRAC_PI_6;
     let cone = B5Surface::Cone {
-        apex: [0.0, 0.0, 0.0],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
@@ -848,10 +845,10 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         ]
     );
     let mut opposite_handed = cone.clone();
-    let B5Surface::Cone { axis, .. } = &mut opposite_handed else {
+    let B5Surface::Cone { frame, .. } = &mut opposite_handed else {
         unreachable!();
     };
-    *axis = [0.0, 0.0, -1.0];
+    *frame = crate::test_support::test_b5::frame([0.0, 0.0, -1.0], [1.0, 0.0, 0.0]);
     assert_eq!(
         neutral_pcurve_point([3.0 * std::f64::consts::PI, 4.0], &opposite_handed),
         Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())

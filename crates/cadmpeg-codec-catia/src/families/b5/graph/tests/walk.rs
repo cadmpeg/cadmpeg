@@ -1092,10 +1092,9 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         scalars: [0.76, std::f64::consts::FRAC_PI_4],
     };
     let cone = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: std::f64::consts::FRAC_PI_4,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
@@ -1109,10 +1108,9 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         &cone
     ));
     let wrong_cone = B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: std::f64::consts::FRAC_PI_6,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
@@ -1217,10 +1215,9 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         scalars: [1.0, half_angle],
     };
     let cone = |carrier_half_angle| B5Surface::Cone {
-        apex: [0.0; 3],
-        direction_x: [1.0, 0.0, 0.0],
-        direction_y: [0.0, 1.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
+        apex: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
         half_angle: carrier_half_angle,
         reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],

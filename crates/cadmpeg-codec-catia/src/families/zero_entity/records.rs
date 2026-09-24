@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
+use crate::analytic::signed_reference_frame;
 use crate::layout::a9_03_frame as a9_03;
 use crate::layout::zero_entity_edge_stride_5e1a as edge_5e1a;
 use crate::layout::zero_entity_pcurve_2171 as pcurve_2171;
@@ -1666,18 +1667,6 @@ fn zero_entity_model_curve(
         .iter()
         .all(|parameter| parameter.is_finite())
         .then_some((curve, parameters))
-}
-
-/// Keep the surface frame, with the reference reversed when the circle
-/// radius is negative: the circle then starts on the opposite side of the axis.
-fn signed_reference_frame(
-    mut frame: cadmpeg_ir::units::OrthonormalFrame3,
-    circle_radius: f64,
-) -> cadmpeg_ir::units::OrthonormalFrame3 {
-    if circle_radius.is_sign_negative() {
-        frame.reverse_reference();
-    }
-    frame
 }
 
 fn zero_entity_model_curve_construction(
