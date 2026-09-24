@@ -374,8 +374,8 @@ fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
 fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, Vector3) {
     let partials = cadmpeg_ir::eval::nurbs_surface_partials(surface, u, v).unwrap();
     (
-        partials.point,
-        partials.du.cross(partials.dv).unit().unwrap(),
+        partials.point.get(),
+        partials.du.cross(partials.dv.get()).unit().unwrap(),
     )
 }
 

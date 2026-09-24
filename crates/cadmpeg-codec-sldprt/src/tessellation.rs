@@ -2776,13 +2776,13 @@ fn surface_measure(
         let tolerance = fit_tolerance?;
         let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
         let partials = cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v)?;
-        let residual = point.distance(partials.point);
+        let residual = point.distance(partials.point.get());
         if residual > tolerance {
             return None;
         }
         return Some(SurfaceMeasure {
             residual,
-            normal: partials.du.cross(partials.dv).unit(),
+            normal: partials.du.cross(partials.dv.get()).unit(),
         })
         .filter(|measure| measure.residual.is_finite());
     }

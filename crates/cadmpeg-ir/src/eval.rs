@@ -759,8 +759,10 @@ fn refine_nurbs_surface_parameters(
             position.z - point.z,
         );
         let partials =
-            budgeted_nurbs_surface_partials(surface, parameters.u, parameters.v, budget)?;
-        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
+            nurbs_surface_partials_with_budget(surface, parameters.u, parameters.v, budget)?;
+        let Some((step_u, step_v)) =
+            least_squares_step(partials.du.get(), partials.dv.get(), residual)
+        else {
             break;
         };
         let step = Point2::new(step_u.get(), step_v.get());
@@ -801,15 +803,6 @@ fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
     control_work
         .checked_add(u_support.checked_mul(u_support)?)?
         .checked_add(v_support.checked_mul(v_support)?)
-}
-
-fn budgeted_nurbs_surface_partials(
-    surface: &NurbsSurface,
-    u: f64,
-    v: f64,
-    budget: &WorkBudget<'_>,
-) -> Option<SurfacePartials> {
-    nurbs_surface_partials_with_budget(surface, u, v, budget)
 }
 
 fn complete_nurbs_surface_starts(
@@ -1208,7 +1201,7 @@ pub fn nurbs_surface_parameter_near_point(
     let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
         let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
-        let current_distance = distance(partials.point);
+        let current_distance = distance(partials.point.get());
         if current_distance == 0.0 {
             return Some(parameters);
         }
@@ -1217,7 +1210,9 @@ pub fn nurbs_surface_parameter_near_point(
             partials.point.y - point.y,
             partials.point.z - point.z,
         );
-        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
+        let Some((step_u, step_v)) =
+            least_squares_step(partials.du.get(), partials.dv.get(), residual)
+        else {
             break;
         };
         let step = Point2::new(step_u.get(), step_v.get());
@@ -2618,34 +2613,63 @@ fn admit_parameter_point(point: Point2) -> Result<FinitePoint2, EvaluationFailur
     FinitePoint2::new(point).ok_or(EvaluationFailure::NonFinite(point))
 }
 
-/// Point and first partial derivatives of a NURBS surface in its stored
-/// parameterization.
+/// Point and first partial derivatives of a surface in its stored
+/// parameterization. An evaluator that admits every lane returns the
+/// `SurfacePartials<FinitePoint3, FiniteVector3>` instantiation.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SurfacePartials {
+pub struct SurfacePartials<P = Point3, V = Vector3> {
     /// Surface point at `(u, v)`.
-    pub point: Point3,
+    pub point: P,
     /// First partial derivative with respect to `u`.
-    pub du: Vector3,
+    pub du: V,
     /// First partial derivative with respect to `v`.
-    pub dv: Vector3,
+    pub dv: V,
+}
+
+impl SurfacePartials<FinitePoint3, FiniteVector3> {
+    /// The partials with raw lanes, for a reader that computes with them.
+    #[must_use]
+    pub fn into_raw(self) -> SurfacePartials {
+        SurfacePartials {
+            point: self.point.get(),
+            du: self.du.get(),
+            dv: self.dv.get(),
+        }
+    }
 }
 
 /// Point, first partials, and second partials of a surface in its stored
-/// parameterization.
+/// parameterization. An evaluator that admits every lane returns the
+/// `SurfaceSecondPartials<FinitePoint3, FiniteVector3>` instantiation.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SurfaceSecondPartials {
+pub struct SurfaceSecondPartials<P = Point3, V = Vector3> {
     /// Surface point at `(u, v)`.
-    pub point: Point3,
+    pub point: P,
     /// First partial derivative with respect to `u`.
-    pub du: Vector3,
+    pub du: V,
     /// First partial derivative with respect to `v`.
-    pub dv: Vector3,
+    pub dv: V,
     /// Second partial derivative with respect to `u`.
-    pub duu: Vector3,
+    pub duu: V,
     /// Mixed partial derivative.
-    pub duv: Vector3,
+    pub duv: V,
     /// Second partial derivative with respect to `v`.
-    pub dvv: Vector3,
+    pub dvv: V,
+}
+
+impl SurfaceSecondPartials<FinitePoint3, FiniteVector3> {
+    /// The partials with raw lanes, for a reader that computes with them.
+    #[must_use]
+    pub fn into_raw(self) -> SurfaceSecondPartials {
+        SurfaceSecondPartials {
+            point: self.point.get(),
+            du: self.du.get(),
+            dv: self.dv.get(),
+            duu: self.duu.get(),
+            duv: self.duv.get(),
+            dvv: self.dvv.get(),
+        }
+    }
 }
 
 /// Evaluate a tensor-product NURBS surface and its exact rational first
@@ -2654,7 +2678,7 @@ pub fn nurbs_surface_partials(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     nurbs_surface_second_partials(surface, u_at, v_at).map(|partials| SurfacePartials {
         point: partials.point,
         du: partials.du,
@@ -2669,7 +2693,7 @@ pub fn nurbs_surface_partials_with_budget(
     u_at: f64,
     v_at: f64,
     budget: &WorkBudget<'_>,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     budget
         .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
         .then_some(())?;
@@ -2682,7 +2706,7 @@ pub fn nurbs_surface_second_partials(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     let u_degree = usize::try_from(surface.u_degree()).ok()?;
     let v_degree = usize::try_from(surface.v_degree()).ok()?;
     let u_count = surface.u_count();
@@ -2742,14 +2766,14 @@ pub fn nurbs_surface_second_partials(
     let point = base.project(base, &[])?;
     let du = u.project(base, &[(u, point)])?;
     let dv = v.project(base, &[(v, point)])?;
-    let raw = |values: [FiniteReal; 3]| values.map(FiniteReal::get);
+    let vector = |[x, y, z]: [FiniteReal; 3]| FiniteVector3::from_components(x, y, z);
     Some(SurfaceSecondPartials {
-        point: Point3::from(raw(point)),
-        du: Vector3::from(raw(du)),
-        dv: Vector3::from(raw(dv)),
-        duu: Vector3::from(raw(uu.project(base, &[(uu, point), (u, du), (u, du)])?)),
-        duv: Vector3::from(raw(uv.project(base, &[(uv, point), (u, dv), (v, du)])?)),
-        dvv: Vector3::from(raw(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?)),
+        point: FinitePoint3::from_coordinates(point[0], point[1], point[2]),
+        du: vector(du),
+        dv: vector(dv),
+        duu: vector(uu.project(base, &[(uu, point), (u, du), (u, du)])?),
+        duv: vector(uv.project(base, &[(uv, point), (u, dv), (v, du)])?),
+        dvv: vector(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?),
     })
 }
 
@@ -2760,7 +2784,7 @@ pub fn nurbs_surface_second_partials_with_budget(
     u_at: f64,
     v_at: f64,
     budget: &WorkBudget<'_>,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     budget
         .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
         .then_some(())?;
@@ -3674,7 +3698,7 @@ fn model_native_extrusion_partials(
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     if !v.is_finite() {
         return None;
     }
@@ -3696,26 +3720,23 @@ fn model_native_extrusion_partials(
         |component| match crate::math::sum::product_sum(std::iter::once(Some([
             derivative, derivative, component,
         ]))) {
-            crate::math::sum::ProductSum::Zero => Some(0.0),
-            crate::math::sum::ProductSum::Value(value) => value.finite().map(FiniteReal::get),
+            crate::math::sum::ProductSum::Zero => Some(FiniteReal::ZERO),
+            crate::math::sum::ProductSum::Value(value) => value.finite(),
             crate::math::sum::ProductSum::Undefined => None,
         };
-    let duu = Vector3::new(
+    let duu = FiniteVector3::from_components(
         squared_derivative_component(differential.acceleration.x)?,
         squared_derivative_component(differential.acceleration.y)?,
         squared_derivative_component(differential.acceleration.z)?,
     );
-    let zero = Vector3::new(0.0, 0.0, 0.0);
-    let partials = SurfaceSecondPartials {
-        point: offset(differential.point.get(), &[(v, direction.get())]),
-        du: scale_vector(differential.tangent, derivative),
-        dv: direction.get(),
+    Some(SurfaceSecondPartials {
+        point: FinitePoint3::new(offset(differential.point.get(), &[(v, direction.get())]))?,
+        du: FiniteVector3::new(scale_vector(differential.tangent, derivative))?,
+        dv: direction,
         duu,
-        duv: zero,
-        dvv: zero,
-    };
-    (partials.point.is_finite() && partials.du.is_finite() && partials.duu.is_finite())
-        .then_some(partials)
+        duv: FiniteVector3::ZERO,
+        dvv: FiniteVector3::ZERO,
+    })
 }
 
 fn extrusion_directrix_reversed(
@@ -4591,9 +4612,35 @@ pub fn surface_point_solved(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let partials =
-        surface_second_partials_solved(geometry, u, v).ok_or(EvaluationFailure::NoValue)?;
-    admit_surface_point(partials.point)
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v)
+            .map(|partials| partials.point)
+            .ok_or(EvaluationFailure::NoValue),
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            transformed_surface_second_partials(placed, u, v)
+                .map(|partials| partials.point)
+                .ok_or(EvaluationFailure::NoValue)
+        }
+        _ => {
+            let partials =
+                surface_second_partials_solved(geometry, u, v).ok_or(EvaluationFailure::NoValue)?;
+            admit_surface_point(partials.point)
+        }
+    }
+}
+
+/// The second partials of a placed carrier: its basis partials under the
+/// placement. A non-finite basis lane, and a lane the placement leaves
+/// non-finite, leave the carrier without partials.
+fn transformed_surface_second_partials(
+    placed: &crate::geometry::PlacedSurface,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
+    transform_surface_second_partials(
+        surface_second_partials_solved(placed.basis(), u, v)?,
+        *placed.transform(),
+    )
 }
 
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
@@ -5107,11 +5154,11 @@ pub fn surface_second_partials_solved(
                 ]),
             })
         }
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_second_partials(nurbs, u, v),
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            nurbs_surface_second_partials(nurbs, u, v).map(SurfaceSecondPartials::into_raw)
+        }
         SolvedSurfaceGeometry::Transformed(placed) => {
-            surface_second_partials_solved(placed.basis(), u, v).and_then(|partials| {
-                transform_surface_second_partials(partials, *placed.transform())
-            })
+            transformed_surface_second_partials(placed, u, v).map(SurfaceSecondPartials::into_raw)
         }
         SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -5141,7 +5188,7 @@ pub fn model_surface_point(
     let index = crate::index::ModelIndex::new(ir);
     let point = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            model_native_extrusion_partials(
+            return model_native_extrusion_partials(
                 &index,
                 definition_payload,
                 carrier_interval,
@@ -5150,6 +5197,7 @@ pub fn model_surface_point(
                 None,
             )
             .map(|partials| partials.point)
+            .ok_or(EvaluationFailure::NoValue);
         }
         ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
             model_curve_point_by_id(&index, definition_payload.directrix(), u)
@@ -5178,11 +5226,14 @@ pub fn model_surface_point(
             )
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-            model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
+            return model_ruled_surface_partials(&index, first, second, u, v)
+                .map(|partials| partials.point)
+                .ok_or(EvaluationFailure::NoValue);
         }
         ProceduralSurfaceDefinition::Sum(definition_payload) => {
-            model_sum_surface_partials(&index, definition_payload, u, v)
+            return model_sum_surface_partials(&index, definition_payload, u, v)
                 .map(|partials| partials.point)
+                .ok_or(EvaluationFailure::NoValue);
         }
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
             if let Some(construction) = definition_payload.native() {
@@ -6479,7 +6530,7 @@ fn cacheless_circular_variable_blend_partials(
     >,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     let section = cacheless_circular_variable_blend_section(index, construction, u, v)?;
     let radius_derivative = section.radius_derivative?;
     let first_normal_derivative = section.first.normal_derivative?;
@@ -6522,7 +6573,7 @@ fn cacheless_constant_rolling_ball_partials(
     native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     let section = cacheless_constant_rolling_ball_section(
         index,
         supports,
@@ -6538,7 +6589,7 @@ fn cacheless_constant_rolling_ball_partials(
 fn constant_rolling_ball_partials(
     section: &ConstantRollingBallSection,
     u: f64,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     let center_tangent = section.center_tangent?;
     circular_arc_partials(
         section.center,
@@ -6559,7 +6610,7 @@ fn circular_arc_partials(
     radius: f64,
     radius_derivative: f64,
     u: f64,
-) -> Option<SurfacePartials> {
+) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
     let first_delta = point_displacement(first.point, center);
     let second_delta = point_displacement(second.point, center);
     let first_delta_v = vector_sum(&[(1.0, first.tangent), (-1.0, center_tangent)]);
@@ -6594,17 +6645,15 @@ fn circular_arc_partials(
         (section_sine, transverse_v),
         (u * angle_v, angular_direction),
     ]);
-    let partials = SurfacePartials {
-        point: offset(center, &[(radius, radial)]),
-        du: angular_direction.scale(radius * angle),
-        dv: vector_sum(&[
+    Some(SurfacePartials {
+        point: FinitePoint3::new(offset(center, &[(radius, radial)]))?,
+        du: FiniteVector3::new(angular_direction.scale(radius * angle))?,
+        dv: FiniteVector3::new(vector_sum(&[
             (1.0, center_tangent),
             (radius_derivative, radial),
             (radius, radial_v),
-        ]),
-    };
-    (partials.point.is_finite() && partials.du.is_finite() && partials.dv.is_finite())
-        .then_some(partials)
+        ]))?,
+    })
 }
 
 fn cacheless_variable_blend_point(
@@ -6628,7 +6677,7 @@ fn model_ruled_surface_partials(
     second: &crate::ids::CurveId,
     u: f64,
     v: f64,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     if !v.is_finite() {
         return None;
     }
@@ -6639,15 +6688,14 @@ fn model_ruled_surface_partials(
         &[(v, point_displacement(second.point.get(), first.point.get()))],
     );
     let blend = |first: Vector3, second: Vector3| vector_sum(&[(1.0 - v, first), (v, second)]);
-    let partials = SurfaceSecondPartials {
-        point,
-        du: blend(first.tangent, second.tangent),
-        dv: point_displacement(second.point.get(), first.point.get()),
-        duu: blend(first.acceleration, second.acceleration),
-        duv: vector_sum(&[(-1.0, first.tangent), (1.0, second.tangent)]),
-        dvv: Vector3::new(0.0, 0.0, 0.0),
-    };
-    surface_second_partials_are_finite(partials).then_some(partials)
+    Some(SurfaceSecondPartials {
+        point: FinitePoint3::new(point)?,
+        du: FiniteVector3::new(blend(first.tangent, second.tangent))?,
+        dv: FiniteVector3::new(point_displacement(second.point.get(), first.point.get()))?,
+        duu: FiniteVector3::new(blend(first.acceleration, second.acceleration))?,
+        duv: FiniteVector3::new(vector_sum(&[(-1.0, first.tangent), (1.0, second.tangent)]))?,
+        dvv: FiniteVector3::ZERO,
+    })
 }
 
 fn model_sum_surface_partials(
@@ -6655,7 +6703,7 @@ fn model_sum_surface_partials(
     construction: &crate::geometry::surface_payloads::SumSurfaceConstruction,
     u: f64,
     v: f64,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     let basepoint = *construction.basepoint();
     let first = model_curve_differential_by_id(index, construction.first(), u)?;
     let second = model_curve_differential_by_id(index, construction.second(), v)?;
@@ -6664,24 +6712,14 @@ fn model_sum_surface_partials(
         first.point.y + second.point.y - basepoint.y,
         first.point.z + second.point.z - basepoint.z,
     );
-    let partials = SurfaceSecondPartials {
-        point,
-        du: first.tangent,
-        dv: second.tangent,
-        duu: first.acceleration,
-        duv: Vector3::new(0.0, 0.0, 0.0),
-        dvv: second.acceleration,
-    };
-    surface_second_partials_are_finite(partials).then_some(partials)
-}
-
-fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
-    partials.point.is_finite()
-        && partials.du.is_finite()
-        && partials.dv.is_finite()
-        && partials.duu.is_finite()
-        && partials.duv.is_finite()
-        && partials.dvv.is_finite()
+    Some(SurfaceSecondPartials {
+        point: FinitePoint3::new(point)?,
+        du: FiniteVector3::new(first.tangent)?,
+        dv: FiniteVector3::new(second.tangent)?,
+        duu: FiniteVector3::new(first.acceleration)?,
+        duv: FiniteVector3::ZERO,
+        dvv: FiniteVector3::new(second.acceleration)?,
+    })
 }
 
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
@@ -6730,6 +6768,7 @@ fn surface_partials_with_budget_solved(
         match geometry {
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_partials_with_budget(nurbs, u, v, budget)
+                    .map(SurfacePartials::into_raw)
             }
             SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
@@ -6770,12 +6809,15 @@ fn surface_second_partials_with_budget_solved(
         match geometry {
             SolvedSurfaceGeometry::Nurbs(nurbs) => {
                 nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
+                    .map(SurfaceSecondPartials::into_raw)
             }
             SolvedSurfaceGeometry::Transformed(placed) => {
                 budget.charge().then_some(())?;
-                evaluate(placed.basis(), u, v, budget).and_then(|partials| {
-                    transform_surface_second_partials(partials, *placed.transform())
-                })
+                evaluate(placed.basis(), u, v, budget)
+                    .and_then(|partials| {
+                        transform_surface_second_partials(partials, *placed.transform())
+                    })
+                    .map(SurfaceSecondPartials::into_raw)
             }
             _ => surface_second_partials_solved(geometry, u, v),
         }
@@ -6818,9 +6860,22 @@ fn model_surface_point_by_id_inner(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    /// An arm's point, admitted where the arm computes it raw, and the
+    /// support's oriented normal.
     struct SurfaceEvaluation {
-        point: Point3,
+        /// The point, or the non-finite point the arm reached.
+        point: Result<FinitePoint3, Point3>,
         oriented_normal: Option<Vector3>,
+    }
+
+    /// Admit a point an arm computes raw, keeping the non-finite point.
+    fn evaluated(point: Point3) -> Result<FinitePoint3, Point3> {
+        FinitePoint3::new(point).ok_or(point)
+    }
+
+    /// The point of an evaluation, finite or not.
+    fn reached(point: Result<FinitePoint3, Point3>) -> Point3 {
+        point.map_or_else(|point| point, FinitePoint3::get)
     }
 
     fn linear_nurbs_support_extension(
@@ -6870,11 +6925,11 @@ fn model_surface_point_by_id_inner(
         let du = u - boundary_u;
         let dv = v - boundary_v;
         Some(SurfaceEvaluation {
-            point: Point3::new(
+            point: evaluated(Point3::new(
                 partials.point.x + du * partials.du.x + dv * partials.dv.x,
                 partials.point.y + du * partials.du.y + dv * partials.dv.y,
                 partials.point.z + du * partials.du.z + dv * partials.dv.z,
-            ),
+            )),
             oriented_normal: Some(oriented_normal),
         })
     }
@@ -6910,7 +6965,7 @@ fn model_surface_point_by_id_inner(
                     budget,
                 )
                 .map(|point| SurfaceEvaluation {
-                    point,
+                    point: evaluated(point),
                     oriented_normal: None,
                 })
             }
@@ -6924,7 +6979,7 @@ fn model_surface_point_by_id_inner(
                     budget,
                 )
                 .map(|partials| SurfaceEvaluation {
-                    point: partials.point,
+                    point: Ok(partials.point),
                     oriented_normal: None,
                 })
             }
@@ -6936,7 +6991,10 @@ fn model_surface_point_by_id_inner(
                         |budget| model_curve_point_by_id_with_budget(index, directrix, u, budget),
                     )
                     .map(|point| SurfaceEvaluation {
-                        point: offset(point.get(), &[(v, definition_payload.direction().get())]),
+                        point: evaluated(offset(
+                            point.get(),
+                            &[(v, definition_payload.direction().get())],
+                        )),
                         oriented_normal: None,
                     })
             }
@@ -6950,14 +7008,14 @@ fn model_surface_point_by_id_inner(
                     budget,
                 )
                 .map(|partials| SurfaceEvaluation {
-                    point: partials.point,
+                    point: evaluated(partials.point),
                     oriented_normal: None,
                 })
             }
             Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
                 model_ruled_surface_partials(index, first, second, u, v).map(|partials| {
                     SurfaceEvaluation {
-                        point: partials.point,
+                        point: Ok(partials.point),
                         oriented_normal: None,
                     }
                 })
@@ -6965,7 +7023,7 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
                 model_sum_surface_partials(index, definition_payload, u, v).map(|partials| {
                     SurfaceEvaluation {
-                        point: partials.point,
+                        point: Ok(partials.point),
                         oriented_normal: None,
                     }
                 })
@@ -6977,7 +7035,7 @@ fn model_surface_point_by_id_inner(
 
                     cacheless_law_sweep_point(index, profile, spine, construction, u, v)
                         .map(|point| SurfaceEvaluation {
-                            point,
+                            point: evaluated(point),
                             oriented_normal: None,
                         })
                         .or_else(|| {
@@ -6987,7 +7045,7 @@ fn model_surface_point_by_id_inner(
                             let (point, oriented_normal) =
                                 surface_cache_evaluation(&surface.geometry, u, v)?;
                             Some(SurfaceEvaluation {
-                                point,
+                                point: evaluated(point),
                                 oriented_normal,
                             })
                         })
@@ -7012,7 +7070,7 @@ fn model_surface_point_by_id_inner(
                                 )
                             });
                         SurfaceEvaluation {
-                            point: partials.point,
+                            point: evaluated(partials.point),
                             oriented_normal,
                         }
                     })
@@ -7023,7 +7081,7 @@ fn model_surface_point_by_id_inner(
 
                 cacheless_variable_blend_point(index, construction, u, v)
                     .map(|point| SurfaceEvaluation {
-                        point,
+                        point: evaluated(point),
                         oriented_normal: None,
                     })
                     .or_else(|| {
@@ -7033,7 +7091,7 @@ fn model_surface_point_by_id_inner(
                         let (point, oriented_normal) =
                             surface_cache_evaluation(&surface.geometry, u, v)?;
                         Some(SurfaceEvaluation {
-                            point,
+                            point: evaluated(point),
                             oriented_normal,
                         })
                     })
@@ -7062,16 +7120,16 @@ fn model_surface_point_by_id_inner(
                             u,
                             v,
                         )
-                        .and_then(|partials| partials.du.cross(partials.dv).unit());
+                        .and_then(|partials| partials.du.cross(partials.dv.get()).unit());
                         Some(SurfaceEvaluation {
-                            point,
+                            point: evaluated(point),
                             oriented_normal,
                         })
                     } else if revision_surface_tail_has_current_cache(&native.cache) {
                         let (point, oriented_normal) =
                             surface_cache_evaluation(&surface.geometry, u, v)?;
                         Some(SurfaceEvaluation {
-                            point,
+                            point: evaluated(point),
                             oriented_normal,
                         })
                     } else {
@@ -7098,7 +7156,7 @@ fn model_surface_point_by_id_inner(
                                 )
                             });
                         SurfaceEvaluation {
-                            point: partials.point,
+                            point: evaluated(partials.point),
                             oriented_normal,
                         }
                     })
@@ -7107,7 +7165,7 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::RollingBallJet(_)) => procedural
                 .and_then(|procedural| rolling_ball_jet_point(procedural.definition(), u, v))
                 .map(|point| SurfaceEvaluation {
-                    point: point.get(),
+                    point: Ok(point),
                     oriented_normal: None,
                 }),
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
@@ -7132,7 +7190,7 @@ fn model_surface_point_by_id_inner(
                                     Some(scale_vector(*normal.as_raw(), transform.orientation()?))
                                 })
                         });
-                evaluation.point = transform.apply_point(evaluation.point)?.get();
+                evaluation.point = Ok(transform.apply_point(reached(evaluation.point))?);
                 evaluation.oriented_normal = transformed_normal;
                 Some(evaluation)
             }
@@ -7169,7 +7227,10 @@ fn model_surface_point_by_id_inner(
                     let support = evaluate(index, support, u, v, visiting, budget)?;
                     let normal = support.oriented_normal?;
                     Some(SurfaceEvaluation {
-                        point: offset(support.point, &[(distance.get(), normal)]),
+                        point: evaluated(offset(
+                            reached(support.point),
+                            &[(distance.get(), normal)],
+                        )),
                         oriented_normal: Some(normal),
                     })
                 }
@@ -7185,7 +7246,10 @@ fn model_surface_point_by_id_inner(
                         .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
                     let normal = support.oriented_normal?;
                     Some(SurfaceEvaluation {
-                        point: offset(support.point, &[(distance.get(), normal)]),
+                        point: evaluated(offset(
+                            reached(support.point),
+                            &[(distance.get(), normal)],
+                        )),
                         oriented_normal: Some(normal),
                     })
                 }
@@ -7194,8 +7258,8 @@ fn model_surface_point_by_id_inner(
                 // A non-finite point enters the evaluation as a finite one
                 // does.
                 match model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget) {
-                    Ok(point) => Some(point.get()),
-                    Err(failure) => failure.non_finite(),
+                    Ok(point) => Some(Ok(point)),
+                    Err(failure) => failure.non_finite().map(Err),
                 }
                 .map(|point| SurfaceEvaluation {
                     point,
@@ -7221,7 +7285,7 @@ fn model_surface_point_by_id_inner(
                     )
                 });
                 SurfaceEvaluation {
-                    point: partials.point,
+                    point: evaluated(partials.point),
                     oriented_normal,
                 }
             }),
@@ -7246,9 +7310,9 @@ fn model_surface_point_by_id_inner(
         }
     }
     evaluate(index, surface, u, v, &mut Vec::new(), budget)
-        .map_or(Err(EvaluationFailure::NoValue), |evaluation| {
-            admit_surface_point(evaluation.point)
-        })
+        .ok_or(EvaluationFailure::NoValue)?
+        .point
+        .map_err(EvaluationFailure::NonFinite)
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
@@ -7281,7 +7345,7 @@ pub fn model_surface_partials_by_id(
                 u,
                 v,
             ) {
-                return Some(partials);
+                return Some(partials.into_raw());
             }
             if !revision_surface_tail_has_current_cache(&native.cache) {
                 return None;
@@ -7300,7 +7364,7 @@ pub fn model_surface_partials_by_id(
         if let Some(partials) =
             cacheless_circular_variable_blend_partials(index, construction, u, v)
         {
-            return Some(partials);
+            return Some(partials.into_raw());
         }
         if !variable_blend_has_current_cache(construction) {
             return None;
@@ -7440,7 +7504,8 @@ fn model_surface_mapping(
                 u,
                 v,
                 budget,
-            )?,
+            )?
+            .into_raw(),
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,
@@ -7484,14 +7549,14 @@ fn model_surface_mapping(
             orientation: 1.0,
         }),
         Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => Some(SurfaceMapping {
-            base: model_ruled_surface_partials(index, first, second, u, v)?,
+            base: model_ruled_surface_partials(index, first, second, u, v)?.into_raw(),
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,
             orientation: 1.0,
         }),
         Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => Some(SurfaceMapping {
-            base: model_sum_surface_partials(index, definition_payload, u, v)?,
+            base: model_sum_surface_partials(index, definition_payload, u, v)?.into_raw(),
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,
@@ -7508,7 +7573,7 @@ fn model_surface_mapping(
                 offset_surface_second_partials(source.base, source.offset_distance)?
             };
             Some(SurfaceMapping {
-                base: transform_surface_second_partials(base, *transform)?,
+                base: transform_surface_second_partials(base, *transform)?.into_raw(),
                 offset_distance: 0.0,
                 u_scale: source.u_scale,
                 v_scale: source.v_scale,
@@ -7744,14 +7809,14 @@ fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<Fin
 fn transform_surface_second_partials(
     partials: SurfaceSecondPartials,
     transform: Transform,
-) -> Option<SurfaceSecondPartials> {
+) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
     Some(SurfaceSecondPartials {
-        point: transform.apply_point(partials.point)?.get(),
-        du: transform.apply_vector(partials.du)?.get(),
-        dv: transform.apply_vector(partials.dv)?.get(),
-        duu: transform.apply_vector(partials.duu)?.get(),
-        duv: transform.apply_vector(partials.duv)?.get(),
-        dvv: transform.apply_vector(partials.dvv)?.get(),
+        point: transform.apply_point(partials.point)?,
+        du: transform.apply_vector(partials.du)?,
+        dv: transform.apply_vector(partials.dv)?,
+        duu: transform.apply_vector(partials.duu)?,
+        duv: transform.apply_vector(partials.duv)?,
+        dvv: transform.apply_vector(partials.dvv)?,
     })
 }
 
