@@ -76,7 +76,7 @@ fn semantic_writer_preserves_transformed_reference_plane_prefix() {
         let AttributeValue::Vector(center) = &mut transformed.values[0] else {
             panic!("transformed plane center");
         };
-        center[0] = 25.0;
+        center[0] = cadmpeg_ir::scalar::FiniteReal::new(25.0).unwrap();
     }
 
     let mut written = Vec::new();
@@ -202,7 +202,10 @@ fn decode_extracts_document_envelope() {
     let AttributeValue::Vector(values) = &envelope.values[0] else {
         panic!("vector")
     };
-    assert_eq!(values, &[10.0, 20.0, -30.0, 40.0]);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(values),
+        [10.0, 20.0, -30.0, 40.0]
+    );
     let plane = result
         .ir()
         .model
@@ -216,8 +219,11 @@ fn decode_extracts_document_envelope() {
     let AttributeValue::Vector(frame) = &plane.values[1] else {
         panic!("frame")
     };
-    assert_eq!(origin, &[1.0, 2.0, 3.0]);
-    assert_eq!(frame[2], 1.0);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_lane(origin),
+        [1.0, 2.0, 3.0]
+    );
+    assert_eq!(frame[2].get(), 1.0);
     let transformed = result
         .ir()
         .model
@@ -229,10 +235,10 @@ fn decode_extracts_document_envelope() {
     assert_eq!(
         transformed.values,
         vec![
-            AttributeValue::Vector(vec![10.0, 20.0, 30.0]),
-            AttributeValue::Vector(vec![100.0, 200.0]),
-            AttributeValue::Vector(vec![1.0, 0.0, -1.0]),
-            AttributeValue::Float(500.0),
+            AttributeValue::vector([10.0, 20.0, 30.0]).unwrap(),
+            AttributeValue::vector([100.0, 200.0]).unwrap(),
+            AttributeValue::vector([1.0, 0.0, -1.0]).unwrap(),
+            AttributeValue::float(500.0).unwrap(),
         ]
     );
     let part = result
@@ -270,4 +276,45 @@ fn decode_extracts_document_envelope() {
         .find(|attribute| attribute.name == "source_linear_unit_name")
         .unwrap();
     assert_eq!(unit_name.values, vec![AttributeValue::String("IN".into())]);
+}
+
+/// The metadata attributes a single `SWObjects` block holding `payload` yields.
+fn scanned_metadata(payload: &[u8]) -> Vec<cadmpeg_ir::attributes::SourceAttribute> {
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "SWObjects", payload));
+    let scan = container::scan_bytes(&source);
+    super::attributes(&scan, &mut cadmpeg_ir::annotations::Annotations::default())
+}
+
+#[test]
+fn a_bounding_envelope_that_overflows_in_millimetres_is_not_admitted() {
+    let mut payload = b"moBBoxCenterData_c".to_vec();
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    for value in [1.0e306f64, 0.02, -0.03, 0.04] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let attributes = scanned_metadata(&payload);
+    assert!(
+        !attributes
+            .iter()
+            .any(|attribute| attribute.name == "bounding_envelope"),
+        "{attributes:?}"
+    );
+}
+
+#[test]
+fn a_reference_plane_origin_that_overflows_in_millimetres_is_not_admitted() {
+    let mut payload = b"moDefaultRefPlnData_c".to_vec();
+    for value in [0.001f64, -1.0e306, 0.003, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let attributes = scanned_metadata(&payload);
+    assert!(
+        !attributes
+            .iter()
+            .any(|attribute| attribute.name == "default_reference_plane"),
+        "{attributes:?}"
+    );
 }

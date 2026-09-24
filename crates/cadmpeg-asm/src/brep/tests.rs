@@ -659,7 +659,8 @@ fn standard_attribute_chain_uses_forward_links_and_first_exact_color() {
         &mut emitted,
         &mut source,
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
     assert_eq!(
         source
             .iter()
@@ -747,7 +748,8 @@ fn legacy_attribute_chain_uses_second_field_forward_link() {
         &mut emitted,
         &mut source,
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
     assert_eq!(
         source
             .iter()
@@ -813,7 +815,8 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
     };
 
     assert_eq!(
-        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT),
+        emit_attributes(&mut brep, &records, &by_index, &reach, FORMAT)
+            .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
     assert!(brep.attributes.iter().any(|attribute| attribute.target
@@ -900,7 +903,8 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         &by_index,
         &Reachable::default(),
         FORMAT,
-    );
+    )
+    .expect("finite attribute values");
 
     assert_eq!(emitted, HashSet::from([3]));
     assert_eq!(
@@ -1205,4 +1209,32 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
         .unwrap();
         assert!(rational_four_arc_circle(&polynomial).is_none());
     }
+}
+
+#[test]
+fn a_non_finite_attribute_double_is_refused() {
+    use super::attributes::source_attribute;
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let record = Record {
+        index: 1,
+        name: "real-st-attrib".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Double(f64::NAN),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    };
+    let error = source_attribute(&record, AttributeTarget::Document, FORMAT)
+        .expect_err("a NaN attribute double is refused");
+    assert_eq!(
+        error.to_string(),
+        "malformed container: attribute record 1 (real-st-attrib) holds a non-finite number"
+    );
 }

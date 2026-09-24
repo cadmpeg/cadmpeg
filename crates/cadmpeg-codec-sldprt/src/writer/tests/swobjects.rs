@@ -939,3 +939,29 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         .to_string()
         .contains("requires an owning sketch feature"));
 }
+
+/// A finite millimetre length whose product with the length scale is not
+/// finite has no source-unit value.
+#[test]
+fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let attribute = SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:default_reference_plane#0")
+            .unwrap(),
+        target: AttributeTarget::Document,
+        name: "default_reference_plane".into(),
+        values: vec![
+            AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
+            AttributeValue::vector([0.0, 0.0, 1.0, 1.0, 0.0, 0.0]).unwrap(),
+        ],
+    };
+    assert!(crate::writer::MetadataRecord::project(&attribute, 0.001).is_ok());
+    let Err(error) = crate::writer::MetadataRecord::project(&attribute, 1.0e300) else {
+        panic!("an overflowing origin has no source-unit value");
+    };
+    assert_eq!(
+        error.to_string(),
+        "malformed container: invalid default reference plane"
+    );
+}

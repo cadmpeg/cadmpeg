@@ -599,14 +599,11 @@ fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> 
     let AttributeValue::Float(unix_microseconds) = attribute.values.get(family + 2)? else {
         return None;
     };
-    if !unix_microseconds.is_finite() {
-        return None;
-    }
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
         target: attribute.target.clone(),
         record_index: attribute_key(attribute).parse().ok()?,
-        unix_microseconds: *unix_microseconds,
+        unix_microseconds: unix_microseconds.get(),
     })
 }
 

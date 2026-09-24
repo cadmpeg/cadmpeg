@@ -77,17 +77,20 @@ fn scan_transformed_reference_plane(
         {
             continue;
         }
+        let (Some(center), Some(extents), Some(auxiliary), Some(diagonal)) = (
+            millimetres(&values[..3]),
+            millimetres(&values[3..5]),
+            AttributeValue::vector(values[5..8].iter().copied()),
+            AttributeValue::float(values[8] * 1000.0),
+        ) else {
+            continue;
+        };
         out.push(attribute(
             section,
             offset,
             &cadmpeg_ir::identity_component!("transformed_reference_plane"),
             TOKEN,
-            vec![
-                AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[3..5].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[5..8].to_vec()),
-                AttributeValue::Float(values[8] * 1000.0),
-            ],
+            vec![center, extents, auxiliary, diagonal],
             annotations,
         ));
     }
@@ -201,18 +204,17 @@ fn scan_vectors(
         else {
             continue;
         };
-        if !values.iter().all(|value| value.is_finite()) {
-            continue;
-        }
+        // A source number that is not finite, or a length that is not finite
+        // in millimetres, admits no attribute.
         let values = if all_lengths {
-            vec![AttributeValue::Vector(
-                values.into_iter().map(|value| value * 1000.0).collect(),
-            )]
+            millimetres(&values).map(|lengths| vec![lengths])
         } else {
-            vec![
-                AttributeValue::Vector(values[..3].iter().map(|value| value * 1000.0).collect()),
-                AttributeValue::Vector(values[3..].to_vec()),
-            ]
+            millimetres(&values[..3])
+                .zip(AttributeValue::vector(values[3..].iter().copied()))
+                .map(|(lengths, ratios)| vec![lengths, ratios])
+        };
+        let Some(values) = values else {
+            continue;
         };
         out.push(attribute(section, offset, name, token, values, annotations));
     }
@@ -283,6 +285,12 @@ fn scan_configuration_manager(
             annotations,
         ));
     }
+}
+
+/// Source lengths in metres as a millimetre vector, or `None` when a value
+/// is not finite in millimetres.
+fn millimetres(values: &[f64]) -> Option<AttributeValue> {
+    AttributeValue::vector(values.iter().map(|value| value * 1000.0))
 }
 
 fn attribute(

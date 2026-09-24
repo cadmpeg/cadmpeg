@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
+use crate::scalar::FiniteReal;
 
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -40,7 +41,7 @@ pub enum AttributeValue {
     /// A signed integer value.
     Integer(i64),
     /// A floating-point value.
-    Float(f64),
+    Float(#[cfg_attr(feature = "schema", schemars(with = "f64"))] FiniteReal),
     /// A text value.
     String(String),
     /// A boolean value.
@@ -48,7 +49,24 @@ pub enum AttributeValue {
     /// A string-encoded reference to another entity, opaque to this crate.
     Reference(String),
     /// A fixed- or variable-length numeric vector value.
-    Vector(Vec<f64>),
+    Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
+}
+
+impl AttributeValue {
+    /// A float value, or `None` when `value` is not finite.
+    #[must_use]
+    pub fn float(value: f64) -> Option<Self> {
+        FiniteReal::new(value).map(Self::Float)
+    }
+
+    /// A vector value, or `None` when a component is not finite.
+    pub fn vector(values: impl IntoIterator<Item = f64>) -> Option<Self> {
+        values
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .map(Self::Vector)
+    }
 }
 
 /// A linked source attribute record.
