@@ -907,8 +907,9 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
-                        |[lower, upper]| {
+                    valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
+                        .map(crate::topology::IncreasingParameterInterval::endpoints)
+                        .is_some_and(|[lower, upper]| {
                             if nurbs.periodic() {
                                 let period = upper - lower;
                                 let tolerance = 1.0e-9_f64.max(
@@ -920,8 +921,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 parameter_in_domain(start, [lower, upper])
                                     && parameter_in_domain(end, [lower, upper])
                             }
-                        },
-                    );
+                        });
                 }
                 _ => {}
             }
@@ -947,9 +947,11 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let geometry = curves.get(use_curve.curve.as_str());
             let mut valid = geometry.is_some();
             if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = geometry {
-                valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(|domain| {
-                    parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
-                });
+                valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
+                    .map(crate::topology::IncreasingParameterInterval::endpoints)
+                    .is_some_and(|domain| {
+                        parameter_in_domain(start, domain) && parameter_in_domain(end, domain)
+                    });
             }
             if !valid {
                 findings.push(Finding {

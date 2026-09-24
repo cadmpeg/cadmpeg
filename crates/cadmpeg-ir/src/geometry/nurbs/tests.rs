@@ -192,6 +192,15 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
         curve.pole_rows().weights()
     );
     assert_eq!(curve.full_knot_endpoints().endpoints(), [2.0, 5.0]);
+    assert_eq!(
+        crate::eval::nurbs_curve_parameter_domain(&curve)
+            .map(crate::topology::IncreasingParameterInterval::endpoints),
+        Some([2.0, 5.0])
+    );
+    assert_eq!(
+        crate::eval::nurbs_pcurve_parameter_domain(1, &[0.0, 1.0, 1.0, 2.0], 2),
+        None
+    );
     let mut reversed = curve.clone();
     reversed.reverse_parameterization();
     assert_eq!(reversed.knots().as_slice(), [-5.0, -5.0, -2.0, -2.0]);

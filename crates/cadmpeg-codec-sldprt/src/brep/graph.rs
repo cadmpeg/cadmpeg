@@ -3219,7 +3219,9 @@ fn nurbs_parameter_at_point(
                 + (point.z - target.z).powi(2),
         )
     };
-    let Some(domain) = nurbs_curve_parameter_domain(nurbs) else {
+    let Some(domain) = nurbs_curve_parameter_domain(nurbs)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         return InverseResolution::NoMatch;
     };
     let Some(candidates) = sampled_parameter_minima(nurbs.knots(), domain, squared_distance) else {
@@ -3944,7 +3946,7 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    let parameter_range = nurbs_curve_parameter_domain(chart)?;
+    let parameter_range = nurbs_curve_parameter_domain(chart)?.endpoints();
     let support_index = match support_data.supports.map(|support| support == surface_attr) {
         [true, false] => 0,
         [false, true] => 1,
@@ -4635,7 +4637,7 @@ fn clamp_nurbs_curve_to_domain_lanes(
         return None;
     }
     let degree = usize::try_from(curve.degree()).ok()?;
-    let original_domain = nurbs_curve_parameter_domain(curve)?;
+    let original_domain = nurbs_curve_parameter_domain(curve)?.endpoints();
     if domain[0] < original_domain[0] || domain[1] > original_domain[1] {
         return None;
     }
@@ -4743,7 +4745,9 @@ fn extended_nurbs_isocurve_axis_candidate(
     else {
         return Ok(InverseResolution::NoMatch);
     };
-    let Some(curve_domain) = nurbs_curve_parameter_domain(curve) else {
+    let Some(curve_domain) = nurbs_curve_parameter_domain(curve)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
         return Ok(InverseResolution::NoMatch);
     };
     if curve_domain[0] > varying_domain[0] || curve_domain[1] < varying_domain[1] {
@@ -4879,7 +4883,7 @@ fn nurbs_curve_sample_parameters(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
-    let domain = nurbs_curve_parameter_domain(curve)?;
+    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
     if !range[0].is_finite()
         || !range[1].is_finite()
         || range[0] >= range[1]
@@ -5039,7 +5043,7 @@ fn nurbs_edge_parameter_range(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Option<[f64; 2]> {
-    let domain = nurbs_curve_parameter_domain(curve)?;
+    let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
     let range = if let Some(range) = edge.param_range() {
         range.get()
     } else {

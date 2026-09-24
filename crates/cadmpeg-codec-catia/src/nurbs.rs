@@ -355,7 +355,7 @@ pub(crate) fn canonical_model_curve_range(
             normalized
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
+            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
             let tolerance = EPS_NURBS_GEOMETRY.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
             if nurbs.periodic() {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)

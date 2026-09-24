@@ -2,6 +2,7 @@
 use crate::geometry::{
     pcurve::PcurveGeometry, DirectedParameterRange, IntcurveSupportSide, SupportPcurve,
 };
+use crate::scalar::FiniteReal;
 use crate::test_support::nurbs::pcurve;
 
 #[test]
@@ -14,7 +15,10 @@ fn numerical_audit_identity_map_keeps_a_small_finite_parameter() {
         )),
     };
     let parameter = 1e-308;
-    let mapped = side.pcurve_parameter([0.0, 1e308], parameter).unwrap();
+    let mapped = side
+        .pcurve_parameter([0.0, 1e308], parameter)
+        .unwrap()
+        .get();
     assert!((mapped / parameter - 1.0).abs() <= 8.0 * f64::EPSILON);
 }
 
@@ -31,8 +35,19 @@ fn support_mapping_preserves_decreasing_parameter_direction() {
             Some(DirectedParameterRange::new([5.0, 2.0]).unwrap()),
         )),
     };
-    assert_eq!(side.pcurve_parameter([0.0, 1.0], 0.0), Some(5.0));
-    assert_eq!(side.pcurve_parameter([0.0, 1.0], 1.0), Some(2.0));
+    assert_eq!(
+        side.pcurve_parameter([0.0, 1.0], 0.0).map(FiniteReal::get),
+        Some(5.0)
+    );
+    assert_eq!(
+        side.pcurve_parameter([0.0, 1.0], 1.0).map(FiniteReal::get),
+        Some(2.0)
+    );
+    let range = side
+        .pcurve_parameter_range()
+        .expect("the side states its pcurve range");
+    assert_eq!(range.endpoints(), [5.0, 2.0]);
+    assert_eq!(range.finite_endpoints().map(FiniteReal::get), [5.0, 2.0]);
     assert_eq!(
         serde_json::from_value::<IntcurveSupportSide>(serde_json::to_value(&side).unwrap())
             .unwrap(),
@@ -54,10 +69,24 @@ fn finite_support_endpoints_do_not_require_a_representable_span() {
                 Some(DirectedParameterRange::new(mapped).unwrap()),
             )),
         };
-        assert_eq!(side.pcurve_parameter(solved, solved[0]), Some(mapped[0]));
-        assert_eq!(side.pcurve_parameter(solved, 0.0), Some(midpoint));
-        assert_eq!(side.pcurve_parameter(solved, solved[1]), Some(mapped[1]));
-        assert_eq!(side.pcurve_parameter(solved, f64::NAN), None);
+        assert_eq!(
+            side.pcurve_parameter(solved, solved[0])
+                .map(FiniteReal::get),
+            Some(mapped[0])
+        );
+        assert_eq!(
+            side.pcurve_parameter(solved, 0.0).map(FiniteReal::get),
+            Some(midpoint)
+        );
+        assert_eq!(
+            side.pcurve_parameter(solved, solved[1])
+                .map(FiniteReal::get),
+            Some(mapped[1])
+        );
+        assert_eq!(
+            side.pcurve_parameter(solved, f64::NAN).map(FiniteReal::get),
+            None
+        );
     }
 }
 
@@ -70,8 +99,14 @@ fn support_mapping_preserves_endpoints_despite_subtraction_cancellation() {
             Some(DirectedParameterRange::new([1e16, 1.0]).unwrap()),
         )),
     };
-    assert_eq!(side.pcurve_parameter([0.0, 1.0], 0.0), Some(1e16));
-    assert_eq!(side.pcurve_parameter([0.0, 1.0], 1.0), Some(1.0));
+    assert_eq!(
+        side.pcurve_parameter([0.0, 1.0], 0.0).map(FiniteReal::get),
+        Some(1e16)
+    );
+    assert_eq!(
+        side.pcurve_parameter([0.0, 1.0], 1.0).map(FiniteReal::get),
+        Some(1.0)
+    );
 }
 
 #[test]

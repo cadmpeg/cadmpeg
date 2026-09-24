@@ -3683,10 +3683,7 @@ pub(super) fn linear_nurbs_curve_endpoint_witness_with_index(
     }
     let first = *curve.control_points().first()?;
     let last = *curve.control_points().last()?;
-    [first, last]
-        .into_iter()
-        .all(|point| point.is_finite())
-        .then_some([first.get(), last.get()])
+    Some([first.get(), last.get()])
 }
 
 pub(super) fn pcurve_matches_edge_endpoint_contract(
