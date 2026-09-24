@@ -856,10 +856,10 @@ impl CompoundCurveConstruction {
         components: Vec<CompoundComponent<CurveId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, &'static str> {
+        const INVALID: &str = "compound curve parameters must be finite";
         if components.is_empty() {
             return Err("compound curve components must not be empty");
         }
-        const INVALID: &str = "compound curve parameters must be finite";
         let [parameters] = FiniteReal::lanes([parameters]).ok_or(INVALID)?;
         if components.iter().any(|item| !item.parameter.is_finite()) {
             return Err(INVALID);

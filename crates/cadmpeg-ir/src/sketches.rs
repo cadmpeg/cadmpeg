@@ -864,8 +864,8 @@ impl SpatialSketchProfile {
         u_axis: Vector3,
         boundary: Vec<SpatialSketchEntityUse>,
     ) -> Result<Self, &'static str> {
-        let origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
         const AXES_ERROR: &str = "spatial profile normal and u_axis must be unit and orthogonal";
+        let origin = FinitePoint3::new(origin).ok_or("spatial profile origin must be finite")?;
         let normal = UnitVector3::new(normal).ok_or(AXES_ERROR)?;
         let u_axis = UnitVector3::new(u_axis).ok_or(AXES_ERROR)?;
         let [n, u] = [normal.as_raw(), u_axis.as_raw()];
