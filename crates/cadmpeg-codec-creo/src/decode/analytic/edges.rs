@@ -2,6 +2,7 @@
 //! Edge parameter ranges for lines, NURBS, and conics.
 
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -473,13 +474,11 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
     let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola_curve)) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.frame().axis().as_raw();
-            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             (
                 [vertex.x, vertex.y, vertex.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                unit_length(*parabola_curve.frame().axis()),
+                unit_length(*parabola_curve.frame().reference()),
                 focal_distance,
                 2.0 * focal_distance,
                 NonperiodicConicFamily::Parabola,
@@ -487,14 +486,12 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(hyperbola_curve)) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.frame().axis().as_raw();
-            let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             (
                 [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                unit_length(*hyperbola_curve.frame().axis()),
+                unit_length(*hyperbola_curve.frame().reference()),
                 major_radius,
                 minor_radius,
                 NonperiodicConicFamily::Hyperbola,
@@ -502,8 +499,6 @@ fn nonperiodic_conic_frame(geometry: &CurveGeometry) -> Option<NonperiodicConicF
         }
         _ => return None,
     };
-    let normal = normalize(normal)?;
-    let x_axis = normalize(x_axis)?;
     (dot(normal, x_axis).abs() <= EPS_AGREE).then_some(())?;
     let y_axis = normalize(cross(normal, x_axis))?;
     (origin.into_iter().all(f64::is_finite)
@@ -529,33 +524,27 @@ pub(in crate::decode) fn periodic_conic_frame(
     let (center, axis, x_axis, radii) = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             (
                 [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [ref_direction.x, ref_direction.y, ref_direction.z],
+                unit_length(*circle_curve.frame().axis()),
+                unit_length(*circle_curve.frame().reference()),
                 [radius, radius],
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
             (
                 [center.x, center.y, center.z],
-                [axis.x, axis.y, axis.z],
-                [major_direction.x, major_direction.y, major_direction.z],
+                unit_length(*ellipse_curve.frame().axis()),
+                unit_length(*ellipse_curve.frame().reference()),
                 [major_radius, minor_radius],
             )
         }
         _ => return None,
     };
-    let axis = normalize(axis)?;
-    let x_axis = normalize(x_axis)?;
     (dot(axis, x_axis).abs() <= EPS_AGREE).then_some(())?;
     let y_axis = normalize(cross(axis, x_axis))?;
     (center.into_iter().all(f64::is_finite)

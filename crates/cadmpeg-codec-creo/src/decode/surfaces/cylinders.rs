@@ -4,6 +4,7 @@
 use crate::feature::rows::agreed_feature_affected_ids;
 use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -647,7 +648,7 @@ fn unique_tangent_axial_interval_corner_frame(
         .iter()
         .copied()
         .filter_map(|candidate| {
-            let axis = normalize(candidate.frame().axis())?;
+            let axis = unit_length(*candidate.frame().orthonormal_frame().axis());
             let score = support_planes
                 .iter()
                 .filter(|plane| {
@@ -678,7 +679,7 @@ fn unique_support_tangent_cylinder_frame(
     stored: crate::surface::PositionalCylinderFrame,
     support_planes: &[PlaneEquation],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
-    let axis = normalize(stored.frame().axis())?;
+    let axis = unit_length(*stored.frame().orthonormal_frame().axis());
     let mut origins = vec![stored.frame().origin()];
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();

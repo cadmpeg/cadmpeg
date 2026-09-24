@@ -2,6 +2,7 @@
 //! `[f64; 3]` storage facade over [`cadmpeg_ir::math::Vector3`].
 
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
 
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
@@ -26,6 +27,13 @@ pub(crate) fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
 
 pub(crate) fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
     <[f64; 3]>::from(Vector3::from(vector).scale(factor))
+}
+
+/// The components of an admitted direction divided by its length. This is the
+/// arithmetic of [`normalize`]; an admitted direction's length is within `1e-9`
+/// of one, so there is no degenerate length to refuse.
+pub(crate) fn unit_length(direction: UnitVector3) -> [f64; 3] {
+    <[f64; 3]>::from(*direction.to_unit_length().as_raw())
 }
 
 pub(crate) fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {

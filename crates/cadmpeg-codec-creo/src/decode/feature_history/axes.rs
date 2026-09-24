@@ -6,6 +6,7 @@ use super::super::sketch::intersect::section_point_in_model;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
 use crate::vecmath::normalize;
+use crate::vecmath::unit_length;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -105,22 +106,18 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                let axis = *cylinder_surface.frame().axis().as_raw();
-                axes.push((origin, axis));
+                axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                let axis = *cone_surface.frame().axis().as_raw();
-                axes.push((origin, axis));
+                axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                let axis = *torus_surface.frame().axis().as_raw();
-                axes.push((center, axis));
+                axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                let normal = *plane_surface.frame().axis().as_raw();
-                plane_normals.push(normal);
+                plane_normals.push(*plane_surface.frame().axis());
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
@@ -132,7 +129,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let [(first_origin, first_direction), rest @ ..] = axes.as_slice() else {
         return None;
     };
-    let mut direction = normalize([first_direction.x, first_direction.y, first_direction.z])?;
+    let mut direction = unit_length(*first_direction);
     if direction
         .iter()
         .find(|component| component.abs() > EPS_DIRECTION_COMPONENT)
@@ -157,11 +154,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         .map(f64::abs)
         .fold(1.0, f64::max);
     for (candidate_origin, candidate_direction) in rest {
-        let candidate_direction = normalize([
-            candidate_direction.x,
-            candidate_direction.y,
-            candidate_direction.z,
-        ])?;
+        let candidate_direction = unit_length(*candidate_direction);
         ((dot(direction, candidate_direction).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT)
             .then_some(())?;
         let displacement = [
@@ -173,7 +166,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     for normal in plane_normals {
-        let normal = normalize([normal.x, normal.y, normal.z])?;
+        let normal = unit_length(normal);
         ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     }
     for center in sphere_centers {

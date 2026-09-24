@@ -14,8 +14,9 @@ use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
-use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale};
+use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale, unit_length};
 use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::BTreeSet;
 
 /// Tolerance of every placement quantity this module reconstructs by arithmetic.
@@ -158,7 +159,7 @@ fn generated_cylinder_section_transform(
     definition.segments.as_ref()?.is_complete().then_some(())?;
     let points = definition.variables.as_ref()?.reconciled_points();
     points.1.is_empty().then_some(())?;
-    let mut correspondences = Vec::<([f64; 2], [f64; 3], [f64; 3], usize)>::new();
+    let mut correspondences = Vec::<([f64; 2], [f64; 3], UnitVector3, usize)>::new();
     for (_, entry) in entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
@@ -199,12 +200,12 @@ fn generated_cylinder_section_transform(
         correspondences.push((
             [u, v],
             frame.frame().origin(),
-            frame.frame().axis(),
+            *frame.frame().orthonormal_frame().axis(),
             parameters.offset,
         ));
     }
     let first = correspondences.first()?;
-    let normal = normalize(first.2)?;
+    let normal = unit_length(first.2);
     let scale = correspondences
         .iter()
         .flat_map(|(local, model, _, _)| local.iter().chain(model))
@@ -216,11 +217,10 @@ fn generated_cylinder_section_transform(
     correspondences
         .iter()
         .all(|(_, _, axis, _)| {
-            normalize(*axis).is_some_and(|axis| {
-                axis.iter()
-                    .zip(normal)
-                    .all(|(left, right)| close(*left, right))
-            })
+            unit_length(*axis)
+                .iter()
+                .zip(normal)
+                .all(|(left, right)| close(*left, right))
         })
         .then_some(())?;
 
