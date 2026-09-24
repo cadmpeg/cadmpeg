@@ -2925,17 +2925,14 @@ fn rechart_equivalent_surface_pcurve(
     match pcurve {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
-            let direction = line_pcurve.direction().as_raw();
-            let shifted_v = origin.v + v_shift;
-            if !shifted_v.is_finite() {
-                return Err(RechartFailure::NonFinite);
-            }
+            let shifted_origin =
+                cadmpeg_ir::units::FinitePoint2::new(Point2::new(origin.u, origin.v + v_shift))
+                    .ok_or(RechartFailure::NonFinite)?;
             Ok(Some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                    Point2::new(origin.u, shifted_v),
-                    *direction,
-                )
-                .map_err(|_| RechartFailure::NonFinite)?,
+                cadmpeg_ir::geometry::pcurve::LinePcurve::new(
+                    shifted_origin,
+                    *line_pcurve.direction(),
+                ),
             )))
         }
         PcurveGeometry::Nurbs { nurbs } => {

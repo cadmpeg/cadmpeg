@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3};
 
 const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
@@ -170,16 +170,15 @@ pub(crate) fn reverse_pcurve_geometry(
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
-            let origin = Point2::new(
+            let origin = FinitePoint2::new(Point2::new(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
-            );
-            origin.is_finite().then_some(PcurveGeometry::Line(
-                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            ))?;
+            Some(PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     origin,
-                    Point2::new(-direction.u, -direction.v),
-                )
-                .ok()?,
+                    line_pcurve.direction().reversed(),
+                ),
             ))
         }
         PcurveGeometry::Nurbs { nurbs } => {

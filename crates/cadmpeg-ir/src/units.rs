@@ -699,6 +699,12 @@ impl NonzeroPoint2 {
     pub const fn as_raw(&self) -> &Point2 {
         &self.0
     }
+    /// The opposite direction. Negation keeps the coordinates finite and the
+    /// squared norm unchanged, so nothing is checked.
+    #[must_use]
+    pub fn reversed(self) -> Self {
+        Self(Point2::new(-self.0.u, -self.0.v))
+    }
 }
 impl TryFrom<Point2> for NonzeroPoint2 {
     type Error = &'static str;
