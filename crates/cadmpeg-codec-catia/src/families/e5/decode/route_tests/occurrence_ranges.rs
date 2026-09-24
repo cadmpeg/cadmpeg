@@ -69,7 +69,8 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     assert_eq!(
         context.sides()[0]
             .pcurve_parameter(
-                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0]).unwrap(),
+                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0])
+                    .expect("finite ordered range"),
                 15.0,
             )
             .expect("left mapped parameter")
@@ -79,7 +80,8 @@ fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     assert_eq!(
         context.sides()[1]
             .pcurve_parameter(
-                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0]).unwrap(),
+                cadmpeg_ir::topology::ParameterInterval::new([10.0, 20.0])
+                    .expect("finite ordered range"),
                 15.0,
             )
             .expect("right mapped parameter")
