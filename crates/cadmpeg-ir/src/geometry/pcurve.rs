@@ -622,6 +622,17 @@ impl EllipsePcurve {
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
     }
+
+    /// The same ellipse traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
 }
 
 impl TryFrom<EllipsePcurveWire> for EllipsePcurve {
@@ -776,6 +787,17 @@ impl ParabolaPcurve {
     pub const fn focal_distance(&self) -> f64 {
         self.focal_distance.get()
     }
+
+    /// The same parabola traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
+    }
 }
 
 impl TryFrom<ParabolaPcurveWire> for ParabolaPcurve {
@@ -872,6 +894,17 @@ impl HyperbolaPcurve {
     #[must_use]
     pub const fn minor_radius(&self) -> f64 {
         self.minor_radius.get()
+    }
+
+    /// The same hyperbola traversed as `-t`: the second axis changes sign.
+    /// Negation keeps the axis finite and nonzero and every other field is
+    /// kept, so nothing is checked.
+    #[must_use]
+    pub fn reversed_about_zero(&self) -> Self {
+        Self {
+            y_axis: self.y_axis.negated(),
+            ..*self
+        }
     }
 }
 
