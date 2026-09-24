@@ -135,10 +135,10 @@ fn variable_blend_eval_fixture(
         definition: ProceduralSurfaceDefinition::VariableBlend(crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(VariableBlendConstruction {
                 subtype: VariableBlendSurfaceSubtype::VariableBlend,
                 revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
-                sides: Box::new([
+                sides: [
                     side(first_surface, pcurves[0].0, pcurves[0].1),
                     side(second_surface, pcurves[1].0, pcurves[1].1),
-                ]),
+                ],
                 slice,
                 slice_range: [Some(0.0), Some(1.0)],
                 offsets: [0.0, 0.0],

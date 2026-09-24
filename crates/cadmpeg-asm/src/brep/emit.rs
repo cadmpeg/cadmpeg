@@ -1168,14 +1168,14 @@ fn emit_compound_loft_surface(
     };
     Ok(ProceduralSurfaceDefinition::CompoundLoft(
         cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
-            Box::new(cadmpeg_ir::geometry::CompoundLoftConstruction {
+            cadmpeg_ir::geometry::CompoundLoftConstruction {
                 scales: cadmpeg_ir::geometry::CompoundLoftScales::try_from_slots(
                     scales.into_iter().chain([fifth_scale.map(|scale| *scale)]),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
                 flags: embedded.flags,
                 tail,
-            }),
+            },
             None,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2401,7 +2401,7 @@ fn emit_variable_blend_surface(
             VariableBlendConstruction {
                 subtype: construction.subtype,
                 revision: construction.revision,
-                sides: Box::new(sides),
+                sides,
                 slice,
                 slice_range: construction.slice_range,
                 offsets: construction.offsets,
@@ -2757,14 +2757,14 @@ fn emit_vertex_blend_surface(
         });
     }
     Ok(ProceduralSurfaceDefinition::VertexBlend(
-        cadmpeg_ir::geometry::surface_payloads::VertexBlendSurfacePayload::try_new(Box::new(
+        cadmpeg_ir::geometry::surface_payloads::VertexBlendSurfacePayload::try_new(
             VertexBlendConstruction {
                 revision: construction.revision,
                 boundaries,
                 grid_size: construction.grid_size,
                 fit_tolerance: construction.fit_tolerance,
             },
-        ))
+        )
         .map_err(cadmpeg_core::CodecError::malformed)?,
     ))
 }
@@ -2887,7 +2887,7 @@ fn emit_blend_surface(
         });
         Box::new(RollingBallConstruction {
             revision: native.revision,
-            sides: Box::new(resolved_sides),
+            sides: resolved_sides,
             slice,
             slice_range: native.slice_range,
             offsets: native.offsets,

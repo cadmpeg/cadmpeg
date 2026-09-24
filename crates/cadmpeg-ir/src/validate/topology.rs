@@ -740,7 +740,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                for side in construction.sides.iter() {
+                for side in &construction.sides {
                     if let Some(surface) = &side.surface {
                         if ids.surfaces(surface.surface.as_str()).is_none() {
                             ref_error(
@@ -1101,7 +1101,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                             }
                         };
                     check_curve(&native.slice, findings);
-                    for side in native.sides.iter() {
+                    for side in &native.sides {
                         if let Some(curve) = &side.curve {
                             check_curve(&curve.curve, findings);
                         }

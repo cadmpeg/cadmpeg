@@ -307,7 +307,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             let restored_cache = definition_payload.legacy_cache();
             *definition_payload =
                 cadmpeg_ir::geometry::surface_payloads::CompoundLoftSurfacePayload::try_new(
-                    edited_construction,
+                    *edited_construction,
                     None,
                 )
                 .unwrap();

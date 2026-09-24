@@ -342,7 +342,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         };
 
         assert_eq!(&actual, &expected);
-        for side in actual.sides.iter() {
+        for side in &actual.sides {
             assert!(matches!(
                 round_trip
                     .ir()
@@ -1021,7 +1021,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
         ));
-        for side in actual.sides.iter() {
+        for side in &actual.sides {
             assert!(matches!(
                 round_trip
                     .ir()

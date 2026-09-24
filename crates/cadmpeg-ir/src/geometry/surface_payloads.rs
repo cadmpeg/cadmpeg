@@ -1472,10 +1472,10 @@ struct CompoundLoftSurfacePayloadWire {
 impl CompoundLoftSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(
-        construction: Box<CompoundLoftConstruction>,
+        construction: CompoundLoftConstruction,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let construction = (*construction)
+        let construction = construction
             .admit()
             .filter(|construction| match &construction.tail {
                 CompoundLoftTail::Six {
@@ -1499,7 +1499,7 @@ impl CompoundLoftSurfacePayload {
 impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: CompoundLoftSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction, wire.cache)
+        Self::try_new(*wire.construction, wire.cache)
     }
 }
 
@@ -1951,10 +1951,8 @@ struct VertexBlendSurfacePayloadWire {
 }
 impl VertexBlendSurfacePayload {
     /// Admit the construction parameters.
-    pub fn try_new(
-        construction: Box<VertexBlendConstruction>,
-    ) -> Result<Self, ProceduralGeometryError> {
-        let construction = (*construction)
+    pub fn try_new(construction: VertexBlendConstruction) -> Result<Self, ProceduralGeometryError> {
+        let construction = construction
             .admit()
             .filter(|construction| {
                 construction
@@ -1988,7 +1986,7 @@ impl VertexBlendSurfacePayload {
 impl TryFrom<VertexBlendSurfacePayloadWire> for VertexBlendSurfacePayload {
     type Error = ProceduralGeometryError;
     fn try_from(wire: VertexBlendSurfacePayloadWire) -> Result<Self, Self::Error> {
-        Self::try_new(wire.construction)
+        Self::try_new(*wire.construction)
     }
 }
 

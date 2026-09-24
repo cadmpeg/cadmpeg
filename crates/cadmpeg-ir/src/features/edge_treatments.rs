@@ -209,7 +209,7 @@ impl VariableRadii {
             .map(|point| {
                 Some(VariableRadius {
                     parameter: Fraction::new(point.parameter)?,
-                    radius: NonNegativeLength::new(point.radius.get())?,
+                    radius: NonNegativeLength::try_from(point.radius).ok()?,
                 })
             })
             .collect::<Option<Vec<_>>>()

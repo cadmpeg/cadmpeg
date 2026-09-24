@@ -357,7 +357,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
                 let construction = definition_payload.construction();
 
-                for side in construction.sides.iter() {
+                for side in &construction.sides {
                     if let Some(surface) = &side.surface {
                         surfaces.insert(surface.surface.as_str());
                     }
@@ -560,7 +560,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
                 if let Some(native) = native {
                     curves.insert(native.slice.as_str());
-                    for side in native.sides.iter() {
+                    for side in &native.sides {
                         if let Some(curve) = &side.curve {
                             curves.insert(curve.curve.as_str());
                         }
