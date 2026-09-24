@@ -182,7 +182,8 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 10.0, 0.0),
+        model_surface_point_by_id(&index, &surface_id, 10.0, 0.0)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(10.0, 0.0, 0.0))
     );
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -313,7 +314,8 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
+        model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
@@ -344,7 +346,8 @@ fn swept_surface_chart_ignores_pcurve_population() {
         let surface_id = SurfaceId::mint("step:data:surface#9").expect("identity grammar");
         let index = ModelIndex::new(decoded.ir());
         assert_eq!(
-            model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
+            model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(Point3::new(5.0, 0.0, 0.0))
         );
         let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
@@ -386,7 +389,8 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
     let surface_id = SurfaceId::mint("step:data:surface#28").expect("identity grammar");
     let index = ModelIndex::new(decoded.ir());
     assert_eq!(
-        model_surface_point_by_id(&index, &surface_id, 0.0, 10.0),
+        model_surface_point_by_id(&index, &surface_id, 0.0, 10.0)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(10.0, 0.0, 0.0))
     );
     assert_eq!(decoded.ir().model.pcurves.len(), 1);

@@ -427,6 +427,13 @@ impl FiniteReal {
         Self(if negative { -magnitude } else { magnitude })
     }
 
+    /// The four-quadrant arctangent of `self / x`, an angle in `[-π, π]`.
+    /// The arctangent of two finite values is finite, so nothing is checked.
+    #[must_use]
+    pub fn atan2(self, x: Self) -> Self {
+        Self(self.0.atan2(x.0))
+    }
+
     /// Admit a normal value or a zero. Every normal value and every zero is
     /// finite, so the one predicate states the whole admission.
     pub(crate) fn normal_or_zero(value: f64) -> Option<Self> {
@@ -510,6 +517,21 @@ impl crate::features::FinitePoint3 {
             FiniteReal(point.x),
             FiniteReal(point.y),
             FiniteReal(point.z),
+        ]
+    }
+}
+
+impl crate::features::FiniteVector3 {
+    /// Return the components as finite reals. The vector admits only finite
+    /// components, so nothing is checked. The route lives beside
+    /// [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub const fn components(self) -> [FiniteReal; 3] {
+        let vector = self.get();
+        [
+            FiniteReal(vector.x),
+            FiniteReal(vector.y),
+            FiniteReal(vector.z),
         ]
     }
 }

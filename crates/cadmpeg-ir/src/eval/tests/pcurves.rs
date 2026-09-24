@@ -109,7 +109,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
     );
     let angle = std::f64::consts::FRAC_PI_3;
     assert_eq!(
-        pcurve_uv(&harmonic, angle),
+        pcurve_uv(&harmonic, angle).map(crate::units::FinitePoint2::get),
         Some(Point2::new(
             2.0 + 4.0 * angle.cos() + 2.0 * angle.sin(),
             3.0 - angle.cos() + 5.0 * angle.sin(),
@@ -117,7 +117,7 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
     );
     let parameter = 0.75_f64;
     assert_eq!(
-        pcurve_uv(&hyperbolic, parameter),
+        pcurve_uv(&hyperbolic, parameter).map(crate::units::FinitePoint2::get),
         Some(Point2::new(
             -3.0 + 2.5 * parameter.cosh() + 1.5 * parameter.sinh(),
             7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
@@ -143,11 +143,22 @@ fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
         .expect("placed pcurve"),
     );
 
-    assert_eq!(pcurve_uv(&geometry, 2.0), Some(Point2::new(2.0, 26.0)));
-    assert_eq!(pcurve_tangent(&geometry, 2.0), Some(Point2::new(-2.0, 4.0)));
+    assert_eq!(
+        pcurve_uv(&geometry, 2.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(2.0, 26.0))
+    );
+    assert_eq!(
+        pcurve_tangent(&geometry, 2.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(-2.0, 4.0))
+    );
     let differential =
         pcurve_uv_differential(&geometry, 2.0).expect("transformed pcurve differential");
-    assert_eq!(differential.acceleration, Some(Point2::new(0.0, 2.0)));
+    assert_eq!(
+        differential
+            .acceleration
+            .map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 2.0))
+    );
 }
 
 #[test]
@@ -183,9 +194,18 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
     let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
     assert!((point.u - 0.9).abs() < 1.0e-12);
     assert!((point.v - 5.2).abs() < 1.0e-12);
-    assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
-    assert_eq!(pcurve_tangent(&line, 0.5), Some(Point2::new(3.0, 4.0)));
-    assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
+    assert_eq!(
+        pcurve_uv(&circle, 0.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(3.0, 0.0))
+    );
+    assert_eq!(
+        pcurve_tangent(&line, 0.5).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(3.0, 4.0))
+    );
+    assert_eq!(
+        pcurve_tangent(&circle, 0.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 3.0))
+    );
 
     let rational_arc = PcurveGeometry::Offset(
         crate::geometry::pcurve::OffsetPcurve::try_new(
@@ -249,10 +269,22 @@ fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
 
     // The bare NURBS extrapolates its end span on both sides of the knot
     // interval, so out-of-domain is not a refusal anywhere in this evaluator.
-    assert_eq!(pcurve_uv(&nurbs, 0.5), Some(Point2::new(0.5, 1.0)));
-    assert_eq!(pcurve_uv(&nurbs, 2.0), Some(Point2::new(2.0, 4.0)));
-    assert_eq!(pcurve_uv(&nurbs, -1.0), Some(Point2::new(-1.0, -2.0)));
-    assert_eq!(pcurve_tangent(&nurbs, 2.0), Some(Point2::new(1.0, 2.0)));
+    assert_eq!(
+        pcurve_uv(&nurbs, 0.5).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.5, 1.0))
+    );
+    assert_eq!(
+        pcurve_uv(&nurbs, 2.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(2.0, 4.0))
+    );
+    assert_eq!(
+        pcurve_uv(&nurbs, -1.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(-1.0, -2.0))
+    );
+    assert_eq!(
+        pcurve_tangent(&nurbs, 2.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(1.0, 2.0))
+    );
 
     // The trim declares [0.25, 0.75] and reparameterizes nothing, so it
     // answers exactly what its basis answers at every parameter, inside the
@@ -264,4 +296,35 @@ fn evaluation_extrapolates_past_a_declared_domain_for_every_carrier() {
             pcurve_tangent(&nurbs, parameter)
         );
     }
+}
+
+#[test]
+fn an_offset_pcurve_whose_point_overflows_has_no_point() {
+    let offset = |distance: f64| {
+        PcurveGeometry::Offset(
+            crate::geometry::pcurve::OffsetPcurve::try_new(
+                distance,
+                Box::new(PcurveGeometry::Line(
+                    crate::geometry::pcurve::LinePcurve::try_new(
+                        Point2::new(f64::MAX, 0.0),
+                        Point2::new(0.0, 1.0),
+                    )
+                    .unwrap(),
+                )),
+            )
+            .unwrap(),
+        )
+    };
+    // The left normal of the upward line is -u, so a negative distance moves
+    // the finite basis point past the largest finite u.
+    assert!(pcurve_uv(&offset(-f64::MAX), 0.0).is_none());
+    assert!(pcurve_uv_differential(&offset(-f64::MAX), 0.0).is_none());
+    assert_eq!(
+        pcurve_uv(&offset(f64::MAX), 0.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        pcurve_tangent(&offset(f64::MAX), 0.0).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.0, 1.0))
+    );
 }

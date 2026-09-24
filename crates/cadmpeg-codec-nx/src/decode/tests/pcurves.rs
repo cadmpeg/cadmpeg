@@ -287,14 +287,17 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 .find(|candidate| &candidate.id == curve)
                 .unwrap();
             let expected = cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).unwrap();
-            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)
+                .unwrap()
+                .get();
             let actual = cadmpeg_ir::eval::model_surface_point_by_id(
                 &cadmpeg_ir::index::ModelIndex::new(&ir),
                 surface,
                 uv.u,
                 uv.v,
             )
-            .unwrap();
+            .unwrap()
+            .get();
             assert!(Point3::distance(expected.get(), actual) < EPS_PCURVE_POINT_MATCH);
         }
     }

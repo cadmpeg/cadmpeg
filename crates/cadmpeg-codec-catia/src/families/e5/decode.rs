@@ -2160,10 +2160,7 @@ fn e5_pcurve_on_surface(
                 return None;
             }
             let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
-            let endpoints = [lifted[0]?, lifted[1]?];
-            if !endpoints.iter().copied().all(|point| point.is_finite()) {
-                return None;
-            }
+            let endpoints = [lifted[0]?.get(), lifted[1]?.get()];
             Some((
                 PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).ok()?,
@@ -2208,10 +2205,7 @@ fn e5_pcurve_on_surface(
                     (center[1] + radius * angle.sin()) * scale[1],
                 )
             });
-            let endpoints = [endpoints[0]?, endpoints[1]?];
-            if !endpoints.iter().copied().all(|point| point.is_finite()) {
-                return None;
-            }
+            let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, angular_range, endpoints))
         }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
@@ -2259,10 +2253,7 @@ fn e5_pcurve_on_surface(
             )?;
             let endpoints = [*points.first()?, *points.last()?]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
-            let endpoints = [endpoints[0]?, endpoints[1]?];
-            if !endpoints.iter().copied().all(|point| point.is_finite()) {
-                return None;
-            }
+            let endpoints = [endpoints[0]?.get(), endpoints[1]?.get()];
             Some((geometry, range.map(FiniteReal::get), endpoints))
         }
         crate::families::e5::graph::E5Pcurve::Nurbs {
@@ -2306,10 +2297,7 @@ fn e5_pcurve_on_surface(
             let uv = [uv.0, uv.1];
             let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
             let endpoints = lifted[0].zip(lifted[1])?;
-            let endpoints = [endpoints.0, endpoints.1];
-            if !endpoints.iter().copied().all(|point| point.is_finite()) {
-                return None;
-            }
+            let endpoints = [endpoints.0.get(), endpoints.1.get()];
             Some((geometry, range, endpoints))
         }
     }
@@ -4755,7 +4743,9 @@ mod route_tests {
                 && (last.v - 3.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
         );
         let expected = [Point2::new(2.4, 2.0), Point2::new(2.0, 3.0)].map(|uv| {
-            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).expect("torus point")
+            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v)
+                .expect("torus point")
+                .get()
         });
         assert!(endpoints[0].distance(expected[0]) < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(endpoints[1].distance(expected[1]) < EPS_E5_DECODE_EXACT_GEOMETRY);

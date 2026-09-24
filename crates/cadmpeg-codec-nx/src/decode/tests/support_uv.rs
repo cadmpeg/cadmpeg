@@ -256,8 +256,12 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
         parameter_range
             .map(|parameter| {
-                let uv = pcurve_uv(&pcurve.geometry, parameter).expect("pcurve endpoint");
-                model_surface_point_by_id(&index, &surface, uv.u, uv.v).expect("surface endpoint")
+                let uv = pcurve_uv(&pcurve.geometry, parameter)
+                    .expect("pcurve endpoint")
+                    .get();
+                model_surface_point_by_id(&index, &surface, uv.u, uv.v)
+                    .expect("surface endpoint")
+                    .get()
             })
             .to_vec()
     };
@@ -432,6 +436,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         .map(|parameter| {
             cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, parameter.u, parameter.v)
                 .expect("offset chart point")
+                .get()
         })
         .collect::<Vec<_>>();
     let pending = vec![(

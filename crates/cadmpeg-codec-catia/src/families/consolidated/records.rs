@@ -1327,6 +1327,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                                 let geometry = b2_sphere_geometry(sphere);
                                 pcurve_endpoints_match(pcurve, &points, |[u, v]| {
                                     cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                        .map(cadmpeg_ir::features::FinitePoint3::get)
                                 })
                             })
                             .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
@@ -1347,6 +1348,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                                 b2_plane_geometry(plane).is_some_and(|geometry| {
                                     pcurve_endpoints_match(pcurve, &points, |[u, v]| {
                                         cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                                            .map(cadmpeg_ir::features::FinitePoint3::get)
                                     })
                                 })
                             })
@@ -1529,6 +1531,7 @@ fn support_points(
                 .map(|site| {
                     let [u, v] = site.point;
                     cadmpeg_ir::eval::surface_point(&b2_sphere_geometry(carrier), u, v)
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
                 .collect()
         }
@@ -1549,6 +1552,7 @@ fn support_points(
                 .map(|site| {
                     let [u, v] = site.point;
                     cadmpeg_ir::eval::surface_point(&geometry, u, v)
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
                 .collect()
         }
@@ -1583,6 +1587,7 @@ fn b2_torus_point(torus: &B2Torus, [u, v]: [f64; 2]) -> Option<Point3> {
         u / torus.major_scale.get(),
         v / torus.minor_scale.get(),
     )
+    .map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 fn nurbs_carrier_offset(

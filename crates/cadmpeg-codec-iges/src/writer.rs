@@ -3810,9 +3810,7 @@ impl PcurveOrientationContext<'_> {
                     ))
                 },
             )?;
-            admitted_point(start, &format!("{} pcurve {} start", self.owner, pcurve.id))?;
-            admitted_point(end, &format!("{} pcurve {} end", self.owner, pcurve.id))?;
-            mapped.push((start, end));
+            mapped.push((start.get(), end.get()));
         }
         Ok(mapped)
     }

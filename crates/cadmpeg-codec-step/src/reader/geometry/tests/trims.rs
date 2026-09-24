@@ -64,11 +64,13 @@ fn rectangular_trimmed_surface_preserves_basis_ranges_and_senses() {
     let index = ModelIndex::new(decoded.ir());
     let trimmed_id = SurfaceId::mint("step:data:surface#8").expect("identity grammar");
     assert_eq!(
-        model_surface_point_by_id(&index, &trimmed_id, 0.0, 0.0),
+        model_surface_point_by_id(&index, &trimmed_id, 0.0, 0.0)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(3.0, 4.0, 0.0))
     );
     assert_eq!(
-        model_surface_point_by_id(&index, &trimmed_id, 2.0, 2.0),
+        model_surface_point_by_id(&index, &trimmed_id, 2.0, 2.0)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(1.0, 2.0, 0.0))
     );
     let partials = model_surface_partials_by_id(&index, &trimmed_id, 1.0, 1.0)

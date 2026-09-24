@@ -63,7 +63,8 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
                 Some(Point3::new(expected_x, 0.0, 0.0))
             );
             assert_eq!(
-                cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter),
+                cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter)
+                    .map(cadmpeg_ir::units::FinitePoint2::get),
                 Some(Point2::new(expected_x, 0.0))
             );
         }

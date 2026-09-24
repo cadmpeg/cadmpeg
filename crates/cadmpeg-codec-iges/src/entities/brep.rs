@@ -262,7 +262,7 @@ fn resolve_pcurve_uses<'a>(
             return Ok(None);
         };
         resolved.push((geometry, range));
-        mapped.push((start, end));
+        mapped.push((start.get(), end.get()));
     }
     Ok(
         (cadmpeg_ir::math::Point3::distance(mapped[0].0, expected_start) <= tolerance

@@ -277,8 +277,8 @@ fn check_support_sides(
             let distance = Point3::distance(constrained, support);
             expected_distance.map_or(distance, |expected| (distance - expected).abs())
         };
-        let mismatch = endpoint_mismatch(constrained[0], support_start)
-            .max(endpoint_mismatch(constrained[1], support_end));
+        let mismatch = endpoint_mismatch(constrained[0], support_start.get())
+            .max(endpoint_mismatch(constrained[1], support_end.get()));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -634,8 +634,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     pcurve_uv(&last.geometry, t1)?,
                 );
                 let (p0, p1) = (
-                    model_surface_point_by_id(&index, &face.surface, uv0.u, uv0.v)?,
-                    model_surface_point_by_id(&index, &face.surface, uv1.u, uv1.v)?,
+                    model_surface_point_by_id(&index, &face.surface, uv0.u, uv0.v)?.get(),
+                    model_surface_point_by_id(&index, &face.surface, uv1.u, uv1.v)?.get(),
                 );
                 let forward = Point3::distance(p0, *start).max(Point3::distance(p1, *end));
                 let reversed = Point3::distance(p0, *end).max(Point3::distance(p1, *start));
@@ -787,7 +787,7 @@ fn mapped_pcurve_parameter_near_point(
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate = |parameter: f64| {
         let uv = pcurve_uv(pcurve_geometry, parameter)?;
-        let point = model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v)?;
+        let point = model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v)?.get();
         let tangent_uv = pcurve_tangent(pcurve_geometry, parameter)?;
         let partials = model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v)?;
         let tangent = Vector3::new(

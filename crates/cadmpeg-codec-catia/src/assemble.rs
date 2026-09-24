@@ -314,10 +314,8 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     if !midpoint_uv.is_finite() {
         return None;
     }
-    let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
-    if !surface_midpoint.is_finite() {
-        return None;
-    }
+    let surface_midpoint =
+        cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?.get();
     let candidates = [short_end, long_end]
         .into_iter()
         .filter(|end| {

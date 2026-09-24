@@ -33,7 +33,10 @@ fn numerical_ranges_parabola_point_and_tangent_stay_finite() {
     let point = pcurve_uv(&pcurve, 1e200).unwrap();
     assert!((point.u / 2.5e199 - 1.).abs() < EPS_RELATIVE);
     assert_eq!(point.v, 1e200);
-    assert_eq!(pcurve_tangent(&pcurve, 1e200), Some(Point2::new(0.5, 1.)));
+    assert_eq!(
+        pcurve_tangent(&pcurve, 1e200).map(crate::units::FinitePoint2::get),
+        Some(Point2::new(0.5, 1.))
+    );
 }
 #[test]
 fn numerical_ranges_hyperbolas_scale_before_exponentiation_overflows() {
@@ -141,7 +144,7 @@ fn numerical_ranges_nurbs_basis_supports_spans_wider_than_f64() {
     };
     for (parameter, expected) in [(-1e308, 0.), (0., 0.5), (1e308, 1.)] {
         assert_eq!(
-            pcurve_uv(&pcurve, parameter),
+            pcurve_uv(&pcurve, parameter).map(crate::units::FinitePoint2::get),
             Some(Point2::new(expected, 0.))
         );
         let tangent = pcurve_tangent(&pcurve, parameter).unwrap();

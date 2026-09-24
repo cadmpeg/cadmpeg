@@ -222,7 +222,7 @@ fn transformed_carriers_preserve_basis_parameters() {
         .expect("placed surface"),
     ));
     assert_eq!(
-        crate::eval::surface_point(&surface, 2.0, 3.0),
+        crate::eval::surface_point(&surface, 2.0, 3.0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.0, 11.0, 6.0))
     );
 }
@@ -267,6 +267,34 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
     assert_eq!(
         crate::eval::curve_point(&decreasing, 2.5).map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.5, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn analytic_surface_points_are_absent_when_they_overflow() {
+    use crate::eval::{surface_point, surface_point_with_budget};
+
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let budget = cadmpeg_core::decode::WorkBudget::new(64);
+    // A finite origin and a finite in-plane displacement sum past the finite
+    // range on every surface route.
+    assert!(surface_point(&plane, f64::MAX, 0.0).is_none());
+    assert!(surface_point_with_budget(&plane, f64::MAX, 0.0, &budget).is_none());
+    assert_eq!(
+        surface_point(&plane, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
+        Some(Point3::new(0.0, 0.0, 0.0))
+    );
+    assert_eq!(
+        surface_point_with_budget(&plane, -f64::MAX, 0.0, &budget)
+            .map(crate::features::FinitePoint3::get),
+        Some(Point3::new(0.0, 0.0, 0.0))
     );
 }
 
