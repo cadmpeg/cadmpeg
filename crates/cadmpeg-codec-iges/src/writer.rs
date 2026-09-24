@@ -26,7 +26,7 @@ use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
 };
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::topology::{
     BodyKind, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region, Sense,
 };
@@ -3509,34 +3509,29 @@ fn reverse_nurbs(
     nurbs: &NurbsCurve,
     range: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CodecError> {
-    let domain = nurbs_domain(nurbs)?;
-    if range.iter().any(|value| !value.is_finite())
-        || range[0] > range[1]
-        || range[0] < domain[0]
-        || range[1] > domain[1]
-    {
-        return Err(CodecError::Malformed(
-            "IGES reversed NURBS domain or parameter range is invalid".into(),
-        ));
+    let [start, end] = nurbs_domain(nurbs)?;
+    let invalid =
+        || CodecError::Malformed("IGES reversed NURBS domain or parameter range is invalid".into());
+    let [Some(range_start), Some(range_end)] = range.map(FiniteReal::new) else {
+        return Err(invalid());
+    };
+    if range_start > range_end || range_start < start || range_end > end {
+        return Err(invalid());
     }
     let reflect = |parameter| {
-        match [parameter, domain[0], domain[1]].map(cadmpeg_ir::scalar::FiniteReal::new) {
-            [Some(parameter), Some(start), Some(end)] => {
-                cadmpeg_ir::math::reflect_parameter(parameter, start, end)
-            }
-            _ => None,
-        }
-        .map(cadmpeg_ir::scalar::FiniteReal::get)
-        .ok_or_else(|| CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite"))
+        cadmpeg_ir::math::reflect_parameter(parameter, start, end)
+            .map(FiniteReal::get)
+            .ok_or_else(|| {
+                CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
+            })
     };
     let knots = nurbs
         .knots()
-        .iter()
+        .finite_knots()
         .rev()
-        .copied()
         .map(reflect)
         .collect::<Result<Vec<_>, _>>()?;
-    let reversed_range = [reflect(range[1])?, reflect(range[0])?];
+    let reversed_range = [reflect(range_end)?, reflect(range_start)?];
     let mut poles = nurbs.pole_rows().clone();
     poles.reverse();
     let reversed = NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic())
@@ -3752,7 +3747,7 @@ impl PcurveOrientationContext<'_> {
                     self.owner, pcurve.id
                 ))
             })?;
-            if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
+            if range[0] > range[1] {
                 return Err(CodecError::malformed(format_args!(
                     "IGES {} pcurve {} has an invalid parameter range",
                     self.owner, pcurve.id
@@ -5637,7 +5632,7 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
     match geometry {
         SolvedCurveGeometry::Circle(_) => Ok([0.0, TAU]),
         SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
-        SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs),
+        SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs).map(FiniteReal::raw_array),
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
             Ok([values.first, values.last])
@@ -5877,8 +5872,12 @@ fn curve_entity(
             }
             let (axis, major) = orthonormal_pair(hyperbola_curve.frame());
             let y_axis = axis.cross(major);
-            let start_xy = hyperbola_point(major_radius, minor_radius, range[0])?;
-            let end_xy = hyperbola_point(major_radius, minor_radius, range[1])?;
+            let radius_scales = [
+                hyperbola_curve.major_radius().magnitude(),
+                Length::from(hyperbola_curve.minor_radius()).magnitude(),
+            ];
+            let start_xy = hyperbola_point(radius_scales[0], radius_scales[1], range[0])?;
+            let end_xy = hyperbola_point(radius_scales[0], radius_scales[1], range[1])?;
             let coefficients = conic_coefficients(major_radius, minor_radius)?;
             Ok(Entity {
                 type_code: 104,
@@ -6367,24 +6366,30 @@ fn parabola_point(focal_distance: f64, parameter: f64) -> Result<[FiniteReal; 2]
 }
 
 fn hyperbola_point(
-    major_radius: f64,
-    minor_radius: f64,
+    major_radius: FiniteReal,
+    minor_radius: FiniteReal,
     parameter: f64,
 ) -> Result<[FiniteReal; 2], CodecError> {
     (|| {
+        let parameter = FiniteReal::new(parameter)?;
         Some([
-            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)?.1,
-            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)?.0,
+            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)
+                .ok()?
+                .1,
+            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)
+                .ok()?
+                .0,
         ])
     })()
     .ok_or_else(|| CodecError::NotImplemented("IGES hyperbola endpoint is non-finite".into()))
 }
 
-fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[f64; 2], CodecError> {
+fn nurbs_domain(nurbs: &NurbsCurve) -> Result<[FiniteReal; 2], CodecError> {
     let degree = usize::try_from(nurbs.degree())
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
     let end = nurbs.control_points().len();
-    Ok([nurbs.knots()[degree], nurbs.knots()[end]])
+    let knots = nurbs.knots().finite_knots().collect::<Vec<_>>();
+    Ok([knots[degree], knots[end]])
 }
 
 struct PolylineParameters {

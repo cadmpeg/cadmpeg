@@ -132,3 +132,71 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     );
     assert!(error < 1e300, "{error}");
 }
+
+#[test]
+fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_distance() {
+    // The plane through the origin, placed by a transform that adds the
+    // largest finite x coordinate: the line end u = MAX has no finite point
+    // and the start u = -MAX maps to the model origin.
+    let (mut ir, id) = plane();
+    let SurfaceGeometry::Solved(plane) = ir.model.surfaces[0].geometry.clone() else {
+        panic!("the plane fixture is solved");
+    };
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(plane),
+            cadmpeg_ir::transform::Transform::affine([
+                [1., 0., 0., f64::MAX],
+                [0., 1., 0., 0.],
+                [0., 0., 1., 0.],
+            ])
+            .unwrap(),
+        )
+        .unwrap(),
+    ));
+    let index = ModelIndex::new_model_only(&ir);
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0., 0.),
+            Point2::new(f64::MAX, 0.),
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        pcurve_declared_endpoint_fit_directed(
+            &index,
+            &id,
+            &pcurve,
+            [-1., 1.],
+            Point3::new(0., 0., 0.),
+            Point3::new(7., 7., 7.),
+        ),
+        Some(f64::INFINITY)
+    );
+}
+
+#[test]
+fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_end() {
+    // The line reaches u = MAX + MAX at its end, which the plane maps to no
+    // finite point, and u = 0 at its start, which it maps to the origin.
+    let (ir, id) = plane();
+    let index = ModelIndex::new_model_only(&ir);
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(f64::MAX, 0.),
+            Point2::new(f64::MAX, 0.),
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        pcurve_declared_endpoint_fit_directed(
+            &index,
+            &id,
+            &pcurve,
+            [-1., 1.],
+            Point3::new(0., 0., 0.),
+            Point3::new(7., 7., 7.),
+        ),
+        Some(0.)
+    );
+}

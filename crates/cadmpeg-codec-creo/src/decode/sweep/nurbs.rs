@@ -514,7 +514,8 @@ pub(super) fn oriented_sketch_nurbs_curve(
     if !reversed {
         return Some(nurbs);
     }
-    let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+    let [lower, upper] =
+        cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
     let mut reversed = nurbs;
     let knots = reversed
         .knots()

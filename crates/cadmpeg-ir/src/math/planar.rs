@@ -56,21 +56,22 @@ pub fn polygon_area_twice(points: &[Point2]) -> Option<FiniteReal> {
         area.add_product(-first.v, second.u);
     }
     area.finish()
-        .map_or(Some(FiniteReal::ZERO), super::sum::ScaledValue::finite)
+        .map_or(Some(FiniteReal::ZERO), |value| value.finite().ok())
 }
 
 /// Distance to a closed segment, with projection from the nearer endpoint.
 /// Reversing that origin retains short offsets when the other endpoint is distant.
 /// Interior distances use the line determinant, without reconstructing a rounded point.
 pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: FinitePoint2) -> f64 {
-    let (point, mut start, mut end) = (point.get(), start.get(), end.get());
-    let distance = |a: Point2, b: Point2| (a.u - b.u).hypot(a.v - b.v);
+    let distance = |a: FinitePoint2, b: FinitePoint2| (a.u - b.u).hypot(a.v - b.v);
     let first_distance = distance(point, start);
     let last_distance = distance(point, end);
-    if last_distance < first_distance {
-        std::mem::swap(&mut start, &mut end);
-    }
-    let Some(parameter) = line_projection_parameter(start, end, point) else {
+    let (start, end) = if last_distance < first_distance {
+        (end, start)
+    } else {
+        (start, end)
+    };
+    let Some(parameter) = finite_line_projection_parameter(start, end, point) else {
         return first_distance.min(last_distance);
     };
     if parameter.get() <= 0.0 {
@@ -79,6 +80,7 @@ pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: Fin
     if parameter.get() >= 1.0 {
         return distance(point, end);
     }
+    let (point, start, end) = (point.get(), start.get(), end.get());
     let (direction, scale) = scaled_displacement(start, end, 0.0);
     let mut length = ExactSignedSum::default();
     length.add_product(direction.u.hypot(direction.v), scale);
@@ -87,7 +89,7 @@ pub fn point_segment_distance(point: FinitePoint2, start: FinitePoint2, end: Fin
     };
     line_offset_determinant(start, end, point)
         .finish()
-        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(length))
+        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(length).ok())
         .map_or(f64::NAN, |distance| distance.abs().get())
 }
 
@@ -235,7 +237,7 @@ pub fn line_circle_intersections(
     let determinant = line_offset_determinant(start, end, center);
     let perpendicular = determinant
         .finish()
-        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(segment))?
+        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(segment).ok())?
         .get();
     // Only radial quantities contribute to this comparison. A distant line origin
     // must not widen the circle into a false tangent.
@@ -253,20 +255,22 @@ pub fn line_circle_intersections(
             numerator.add_product(coordinate, component);
         }
         numerator.add_factors([sign * half_chord, radial_scale, length]);
-        numerator
-            .finish()
-            .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
+        numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).ok()
+        })
     };
     let intersection = |sign| {
         let along = sign * half_chord * radial_scale;
         let mut u = super::sum::finite_dot(
             [1.0, -perpendicular, along],
             [center.u, direction.v / length, direction.u / length],
-        )?;
+        )
+        .ok()?;
         let mut v = super::sum::finite_dot(
             [1.0, perpendicular, along],
             [center.v, direction.u / length, direction.v / length],
-        )?;
+        )
+        .ok()?;
         // A constant line coordinate is exact input evidence. Retain it
         // instead of rounding it through the determinant-distance quotient.
         if start.u == end.u {
@@ -282,10 +286,21 @@ pub fn line_circle_intersections(
 
 /// Projection parameter on a nondegenerate infinite line. Exact products retain
 /// the quotient when direction differences or their squares exceed f64 range.
+/// A point that is not finite has no projection.
 pub fn line_projection_parameter(start: Point2, end: Point2, point: Point2) -> Option<FiniteReal> {
-    if !start.is_finite() || !end.is_finite() || !point.is_finite() {
+    let [Some(start), Some(end), Some(point)] = [start, end, point].map(FinitePoint2::new) else {
         return None;
-    }
+    };
+    finite_line_projection_parameter(start, end, point)
+}
+
+/// [`line_projection_parameter`] over points admitted finite.
+fn finite_line_projection_parameter(
+    start: FinitePoint2,
+    end: FinitePoint2,
+    point: FinitePoint2,
+) -> Option<FiniteReal> {
+    let (start, end, point) = (start.get(), end.get(), point.get());
     let delta = Point2::new(end.u - start.u, end.v - start.v);
     let relative = Point2::new(point.u - start.u, point.v - start.v);
     let denominator = fast_dot(
@@ -316,9 +331,9 @@ pub fn line_projection_parameter(start: Point2, end: Point2, point: Point2) -> O
         denominator.add_factors([-2.0, start, end]);
     }
     let denominator = denominator.finish()?;
-    numerator
-        .finish()
-        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
+    numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+        value.quotient(denominator).ok()
+    })
 }
 
 /// Parameters at the intersection of two finite nonparallel infinite lines.
@@ -369,8 +384,12 @@ pub fn line_line_parameters(a: Point2, b: Point2, c: Point2, d: Point2) -> Optio
     };
     let denominator = cross(a, b, c, d)?;
     Some([
-        cross(a, c, c, d).map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))?,
-        cross(a, c, a, b).map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))?,
+        cross(a, c, c, d).map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).ok()
+        })?,
+        cross(a, c, a, b).map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).ok()
+        })?,
     ])
 }
 
@@ -413,10 +432,9 @@ pub fn circle_intersections(
     }
     numerator.add_product(first_radius, first_radius);
     numerator.add_product(-second_radius, second_radius);
-    let Some(along) = numerator
-        .finish()
-        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
-    else {
+    let Some(along) = numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+        value.quotient(denominator).ok()
+    }) else {
         return Some(Vec::new());
     };
     let along = along.get();
@@ -436,8 +454,8 @@ pub fn circle_intersections(
     let mut points = Vec::new();
     for height in [height, -height] {
         let point = FinitePoint2::from_coordinates(
-            super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v])?,
-            super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u])?,
+            super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v]).ok()?,
+            super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u]).ok()?,
         );
         if !points.contains(&point) {
             points.push(point);

@@ -127,9 +127,13 @@ fn numerical_ranges_hyperbolic_point_survives_unrepresentable_derivatives() {
     let expected = (1.0_f64.exp() - 1.) * 1e308;
     assert!((point.u / expected - 1.).abs() < EPS_RELATIVE);
     assert_eq!(point.v, 0.);
+    // The derivative's u coordinate `cosine_sinh + sine_cosh` overflows.
     assert_eq!(
         pcurve_tangent(&curve, 1.),
-        Err(crate::eval::EvaluationFailure::NoValue)
+        Err(crate::eval::EvaluationFailure::NonFinite(Point2::new(
+            f64::INFINITY,
+            0.
+        )))
     );
 }
 

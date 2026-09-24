@@ -130,3 +130,83 @@ fn cacheless_sum_surface_adds_independent_curve_parameters() {
     assert_eq!(partials.du, Vector3::new(2.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 3.0, 0.0));
 }
+
+#[test]
+fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
+    // At v = MAX the displacement between the profiles carries every
+    // coordinate past the finite range.
+    let (ir, surface_id) = direct_surface_fixture(
+        ProceduralSurfaceDefinition::Ruled {
+            first: CurveId::mint("test:model:entity#first").expect("valid identity"),
+            second: CurveId::mint("test:model:entity#second").expect("valid identity"),
+            cache: None,
+        },
+        "ruled",
+    );
+    let index = crate::index::ModelIndex::new(&ir);
+    let reached =
+        |point: Result<crate::features::FinitePoint3, crate::eval::EvaluationFailure<Point3>>| {
+            matches!(point, Err(crate::eval::EvaluationFailure::NonFinite(point))
+            if point.x.is_nan() && point.y.is_nan() && point.z.is_nan())
+        };
+    assert!(reached(model_surface_point_by_id(
+        &index,
+        &surface_id,
+        0.25,
+        f64::MAX
+    )));
+    assert!(reached(model_surface_point(
+        &ir,
+        &ir.model.surfaces[0].geometry,
+        0.25,
+        f64::MAX
+    )));
+}
+
+#[test]
+fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
+    let (mut ir, surface_id) = direct_surface_fixture(
+        ProceduralSurfaceDefinition::Sum(
+            crate::geometry::surface_payloads::SumSurfaceConstruction::try_new(
+                CurveId::mint("test:model:entity#first").expect("valid identity"),
+                CurveId::mint("test:model:entity#second").expect("valid identity"),
+                Vector3::new(0.5, 1.0, 2.0),
+                crate::geometry::CacheContract::from_form(None),
+            )
+            .expect("valid sum"),
+        ),
+        "sum",
+    );
+    // Both profiles lie at x = MAX, so their sum leaves the finite range in
+    // x only.
+    for (curve, poles) in ir.model.curves.iter_mut().zip([
+        [
+            Point3::new(f64::MAX, 2.0, 3.0),
+            Point3::new(f64::MAX, 4.0, 3.0),
+        ],
+        [
+            Point3::new(f64::MAX, 10.0, 13.0),
+            Point3::new(f64::MAX, 13.0, 13.0),
+        ],
+    ]) {
+        curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            crate::geometry::nurbs::NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                poles.to_vec(),
+                None,
+                false,
+            )
+            .unwrap(),
+        ));
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
+            f64::INFINITY,
+            13.0,
+            14.0
+        )))
+    );
+}

@@ -76,7 +76,10 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                 source: &source,
                 start: 0,
                 end: 1,
-                domain: [0., 1.],
+                domain: [
+                    cadmpeg_ir::scalar::FiniteReal::ZERO,
+                    cadmpeg_ir::scalar::FiniteReal::ONE,
+                ],
                 curve_id: "audit-line",
                 curve: WritableEdgeCurve::Nurbs(&curve),
                 uses: vec![],
@@ -94,10 +97,8 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
     }
 }
 
-#[test]
-fn a_trim_pcurve_whose_offset_point_overflows_leaves_the_surface_domain() {
-    // The offset of the vertical line at the largest finite u by the largest
-    // finite distance reaches u = +inf, which no surface domain contains.
+/// The refusal of a trim over the unit NURBS square whose pcurve is `geometry`.
+fn trim_error(geometry: PcurveGeometry) -> String {
     let source = Edge {
         id: EdgeId::mint("test:overflow:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
@@ -132,26 +133,17 @@ fn a_trim_pcurve_whose_offset_point_overflows_leaves_the_surface_domain() {
     .unwrap();
     let p = Pcurve {
         id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
-        geometry: PcurveGeometry::Offset(
-            cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
-                -f64::MAX,
-                Box::new(PcurveGeometry::Line(
-                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                        Point2::new(f64::MAX, 0.),
-                        Point2::new(0., 1.),
-                    )
-                    .unwrap(),
-                )),
-            )
-            .unwrap(),
-        ),
+        geometry,
         metadata: PcurveMetadata::default(),
     };
     let edge = WritableEdge {
         source: &source,
         start: 0,
         end: 1,
-        domain: [0., 1.],
+        domain: [
+            cadmpeg_ir::scalar::FiniteReal::ZERO,
+            cadmpeg_ir::scalar::FiniteReal::ONE,
+        ],
         curve_id: "overflow-line",
         curve: WritableEdgeCurve::Nurbs(&curve),
         uses: vec![],
@@ -161,12 +153,51 @@ fn a_trim_pcurve_whose_offset_point_overflows_leaves_the_surface_domain() {
         payload: ([0; 16], vec![]),
         domain_extent_points: vec![Point2::new(0.5, 0.), Point2::new(0.5, 1.)],
     };
-    let error = validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit)
-        .expect_err("the pcurve has no point in the surface domain");
+    validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit)
+        .expect_err("the pcurve has no point in the surface domain")
+        .to_string()
+}
+
+fn vertical_line_at_max() -> PcurveGeometry {
+    PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(f64::MAX, 0.),
+            Point2::new(0., 1.),
+        )
+        .unwrap(),
+    )
+}
+
+#[test]
+fn a_trim_pcurve_whose_offset_point_overflows_leaves_the_surface_domain() {
+    // The offset of the vertical line at the largest finite u by the largest
+    // finite distance reaches u = +inf, which no surface domain contains.
+    let error = trim_error(PcurveGeometry::Offset(
+        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
+            -f64::MAX,
+            Box::new(vertical_line_at_max()),
+        )
+        .unwrap(),
+    ));
     assert!(
-        error
-            .to_string()
-            .contains("pcurve test:overflow:pcurve#1 leaves its NURBS surface parameter domain"),
+        error.contains("pcurve test:overflow:pcurve#1 leaves its NURBS surface parameter domain"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_trim_pcurve_whose_placed_point_overflows_leaves_the_surface_domain() {
+    // The vertical line at the largest finite u, placed by a transform that
+    // doubles u, reaches u = +inf, which no surface domain contains.
+    let error = trim_error(PcurveGeometry::Transformed(
+        cadmpeg_ir::geometry::pcurve::PlacedPcurve::try_new(
+            Box::new(vertical_line_at_max()),
+            cadmpeg_ir::transform::Transform2::affine([[2., 0., 0.], [0., 1., 0.]]).unwrap(),
+        )
+        .unwrap(),
+    ));
+    assert!(
+        error.contains("pcurve test:overflow:pcurve#1 leaves its NURBS surface parameter domain"),
         "{error}"
     );
 }

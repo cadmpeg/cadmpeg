@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
 use super::{
@@ -35,7 +36,7 @@ pub(super) struct WritableEdge<'a> {
     pub(super) source: &'a Edge,
     pub(super) start: usize,
     pub(super) end: usize,
-    pub(super) domain: [f64; 2],
+    pub(super) domain: [FiniteReal; 2],
     pub(super) curve_id: &'a str,
     pub(super) curve: WritableEdgeCurve<'a>,
     pub(super) uses: Vec<usize>,
@@ -436,8 +437,8 @@ impl<'a> WritableModel<'a> {
                         edge.id.as_str()
                     ))
                 })?
-                .get();
-            let [lo, hi] = domain;
+                .finite_components();
+            let [lo, hi] = FiniteReal::raw_array(domain);
             if lo == hi {
                 return Err(CodecError::NotImplemented(format!(
                     "edge {} has a zero-length parameter range",
@@ -472,7 +473,8 @@ impl<'a> WritableModel<'a> {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
-                        || [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]] != domain
+                        || [nurbs.knots()[nurbs.degree() as usize], nurbs.knots()[count]]
+                            != [lo, hi]
                     {
                         return Err(CodecError::NotImplemented(format!(
                             "edge {} requires a nonperiodic full-domain NURBS curve",

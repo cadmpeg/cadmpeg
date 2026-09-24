@@ -29,7 +29,11 @@ fn numerical_0922_hyperbola_loci_remain_finite() {
     println!("SW tiny-radius hyperbola endpoints t710,711: {r:?}");
     assert_eq!(r.len(), 3);
     assert!(r.iter().all(|(p, _)| p.is_finite()));
-    let reference = cadmpeg_ir::math::scaled_sinh_cosh(1e-100, 711.).unwrap();
+    let reference = cadmpeg_ir::math::scaled_sinh_cosh(
+        cadmpeg_ir::scalar::FiniteReal::new(1e-100).unwrap(),
+        cadmpeg_ir::scalar::FiniteReal::new(711.).unwrap(),
+    )
+    .unwrap();
     assert_eq!(r[2].0, Point2::new(reference.1.get(), reference.0.get()));
     assert!(super::super::typed_relations::sketch_entity_contains_point(
         &e, r[2].0

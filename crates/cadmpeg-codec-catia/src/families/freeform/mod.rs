@@ -4396,4 +4396,43 @@ mod tests {
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
         ));
     }
+
+    /// The overflowing cone lift with the cone under the identity placement.
+    fn placed_overflowing_cone_lift() -> (SurfaceGeometry, PcurveGeometry) {
+        let (cone, pcurve) = overflowing_cone_lift();
+        let SurfaceGeometry::Solved(cone) = cone else {
+            panic!("the cone fixture is solved");
+        };
+        (
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(cone),
+                    cadmpeg_ir::transform::Transform::identity(),
+                )
+                .expect("valid PlacedSurface fixture"),
+            )),
+            pcurve,
+        )
+    }
+
+    #[test]
+    fn standard_carrier_endpoint_loci_keep_an_overflowing_placed_lift() {
+        let (cone, pcurve) = placed_overflowing_cone_lift();
+        let loci = super::standard_carrier_endpoint_loci(&pcurve, &cone, [0.0, 1.0])
+            .expect("both ends lift");
+        assert!(!loci[0].is_finite());
+        assert_eq!(loci[1], Point3::new(1.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn a_pcurve_lift_with_an_overflowing_placed_end_is_measured_at_its_finite_end() {
+        let (cone, pcurve) = placed_overflowing_cone_lift();
+        assert!(pcurve_lift_reaches_endpoints(
+            &pcurve,
+            cone.solved().expect("solved carrier"),
+            [0.0, 1.0],
+            [Point3::new(5.0, 5.0, 5.0), Point3::new(1.0, 0.0, 0.0)],
+            cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
+        ));
+    }
 }

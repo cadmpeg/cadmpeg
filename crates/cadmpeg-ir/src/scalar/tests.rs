@@ -529,3 +529,53 @@ fn an_ordered_pair_scales_and_refuses_the_first_failing_value() {
         Err(1)
     );
 }
+
+#[test]
+fn checked_knots_and_vectors_hand_out_finite_reals_without_a_check() {
+    let knots = crate::geometry::nurbs::KnotVector::new(vec![0.0, 0.0, 1.0, 2.5])
+        .expect("non-decreasing knots");
+    assert_eq!(
+        knots
+            .finite_knots()
+            .rev()
+            .map(crate::scalar::FiniteReal::get)
+            .collect::<Vec<_>>(),
+        vec![2.5, 1.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        crate::units::FiniteVector::new([1.5, -2.0])
+            .expect("finite vector")
+            .finite_components()
+            .map(crate::scalar::FiniteReal::get),
+        [1.5, -2.0]
+    );
+    assert_eq!(
+        crate::scalar::Length::new(-3.0)
+            .expect("finite length")
+            .magnitude()
+            .get(),
+        -3.0
+    );
+}
+
+#[test]
+fn a_vector_charts_by_the_binade_of_its_largest_component() {
+    use crate::features::FiniteVector3;
+    use crate::math::Vector3;
+
+    // 4 lies in [2^2, 2^3), so the chart divides by 8.
+    let ([x, y, z], exponent) = FiniteVector3::new(Vector3::new(3.0, -4.0, 0.5))
+        .expect("finite vector")
+        .binade_chart()
+        .expect("a nonzero vector has a chart");
+    assert_eq!(exponent, 3);
+    assert_eq!([x.get(), y.get(), z.get()], [0.375, -0.5, 0.0625]);
+    // The largest finite magnitude charts into [0.5, 1).
+    let ([x, _, _], exponent) = FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
+        .expect("finite vector")
+        .binade_chart()
+        .expect("a nonzero vector has a chart");
+    assert_eq!(exponent, 1024);
+    assert!((0.5..1.0).contains(&x.get()));
+    assert!(FiniteVector3::ZERO.binade_chart().is_none());
+}

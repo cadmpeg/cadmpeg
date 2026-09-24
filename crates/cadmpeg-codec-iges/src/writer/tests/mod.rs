@@ -779,8 +779,9 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
             [0.0, 0.0, -1.0, 3.0]
         ]
     );
-    let start = hyperbola_point(2.0, 3.0, -range[1]).expect("reflected start evaluates");
-    let end = hyperbola_point(2.0, 3.0, -range[0]).expect("reflected end evaluates");
+    let start =
+        hyperbola_point(real(2.0), real(3.0), -range[1]).expect("reflected start evaluates");
+    let end = hyperbola_point(real(2.0), real(3.0), -range[0]).expect("reflected end evaluates");
     assert_eq!(
         String::from_utf8(entity.parameter_text()).expect("parameters are ASCII"),
         format!(
@@ -1182,13 +1183,13 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
 fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
     let expected = (720.0 + 1e-10_f64.ln()).exp() * 0.5;
     for parameter in [-720.0_f64, 720.0] {
-        let point = hyperbola_point(1e-10, 1e-10, parameter)
+        let point = hyperbola_point(real(1e-10), real(1e-10), parameter)
             .expect("a hyperbola endpoint at parameter magnitude 720 stays finite")
             .map(FiniteReal::get);
         assert!((point[0] / expected - 1.).abs() < 1024.0 * f64::EPSILON);
         assert_eq!(point[1], point[0] * parameter.signum());
     }
-    assert!(hyperbola_point(1., 1., 2000.).is_err());
+    assert!(hyperbola_point(real(1.), real(1.), 2000.).is_err());
 }
 
 #[test]

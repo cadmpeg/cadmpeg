@@ -212,7 +212,7 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
     .unwrap();
     assert_eq!(result.point, Point2::new(width / 2.0, 0.0));
     assert_eq!(
-        result.tangent.map(crate::units::FinitePoint2::get),
+        result.tangent.ok().map(crate::units::FinitePoint2::get),
         Some(Point2::new(1.0, 0.0))
     );
     assert_eq!(
@@ -234,7 +234,7 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
     .unwrap();
     assert_eq!(quadratic.point, Point2::new(width / 2.0, 0.0));
     assert_eq!(
-        quadratic.tangent.map(crate::units::FinitePoint2::get),
+        quadratic.tangent.ok().map(crate::units::FinitePoint2::get),
         Some(Point2::new(1.0, 0.0))
     );
     assert_eq!(
@@ -261,7 +261,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             )
             .unwrap(),
         );
-        let result = pcurve_uv_differential(&curve, 0.5).unwrap();
+        let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
         assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
@@ -269,7 +269,7 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let curve = PcurveGeometry::SphericalGreatCircle(
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
-    let result = pcurve_uv_differential(&curve, 0.5).unwrap();
+    let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
     let (sin, cos) = 0.5_f64.sin_cos();
     let expected_first = -sin / (1e200 * cos * cos);
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);

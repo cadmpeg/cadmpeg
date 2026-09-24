@@ -64,7 +64,7 @@ pub fn speed_bound<const N: usize>(
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_product(delta, f64::from(degree));
                     numerator.finish().map_or(Some(0.0), |value| {
-                        value.quotient(width).map(FiniteReal::get)
+                        value.quotient(width).ok().map(FiniteReal::get)
                     })
                 };
                 let delta = weighted
@@ -86,7 +86,7 @@ pub fn speed_bound<const N: usize>(
     let mut denominator = ExactSignedSum::default();
     denominator.add_product(minimum, minimum);
     let correction = match numerator.finish() {
-        Some(value) => value.quotient(denominator.finish()?)?.get(),
+        Some(value) => value.quotient(denominator.finish()?).ok()?.get(),
         None => 0.0,
     };
     FiniteReal::new(numerator_speed / minimum + correction)

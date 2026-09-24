@@ -6551,9 +6551,9 @@ impl IntcurveSupportSide {
         denominator.add_product(solved_parameter_range[1], 1.0);
         denominator.add_product(-solved_parameter_range[0], 1.0);
         let denominator = denominator.finish()?;
-        numerator
-            .finish()
-            .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
+        numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+            value.quotient(denominator).ok()
+        })
     }
 }
 

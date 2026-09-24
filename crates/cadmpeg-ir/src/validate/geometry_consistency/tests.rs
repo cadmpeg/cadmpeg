@@ -64,6 +64,20 @@ macro_rules! procedural_curve {
 }
 
 fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
+    mapped_surface_curve_with_pcurve(
+        PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        mapping,
+    )
+}
+
+/// The mapped surface curve whose first support side carries `pcurve`.
+fn mapped_surface_curve_with_pcurve(pcurve: PcurveGeometry, mapping: [f64; 2]) -> CadIr {
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:curve#curve".to_string()).expect("valid identity");
     let surface =
@@ -99,7 +113,7 @@ fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
                    IntcurveSupportSide {
                        surface: Some(surface),
                        pcurve: Some(SupportPcurve::new(
-                           PcurveGeometry::Line(crate::geometry::pcurve::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap()),
+                           pcurve,
                            Some(DirectedParameterRange::new(mapping).unwrap()),
                        )),
                    },
@@ -1191,6 +1205,7 @@ fn pcurve_trim_range_stops_at_the_admitted_nesting_depth() {
     );
 }
 
+mod overflowing_arms;
 mod parameter_scaling;
 
 /// A plane whose points at `u` beyond `2^970` overflow: its origin is the

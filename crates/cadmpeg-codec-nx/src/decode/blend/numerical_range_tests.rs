@@ -374,3 +374,51 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
         );
     }
 }
+
+#[test]
+fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback() {
+    // The plane through the origin, placed by a transform that adds the
+    // largest finite x coordinate: its point at u = MAX has no finite x.
+    let surface_id = SurfaceId::mint("test:nx:surface#placed-overflow").expect("identity grammar");
+    let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            )),
+            cadmpeg_ir::transform::Transform::affine([
+                [1.0, 0.0, 0.0, f64::MAX],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("valid PlacedSurface fixture"),
+    ));
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: surface_id.clone(),
+        geometry: geometry.clone(),
+        source_object: None,
+    });
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let budget = GeometryWorkBudget::new(1024);
+    for point in [
+        decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget),
+        decoded_surface_point_with_geometry_and_budget(
+            &index,
+            &surface_id,
+            &geometry,
+            f64::MAX,
+            3.0,
+            0,
+            &budget,
+        ),
+    ] {
+        assert_eq!(point, Some(Point3::new(f64::INFINITY, 3.0, 0.0)));
+    }
+}

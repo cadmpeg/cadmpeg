@@ -908,7 +908,11 @@ fn brep_payload(
             let mut record = index.to_le_bytes().to_vec();
             record.extend(index.to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.domain
+                    .into_iter()
+                    .flat_map(|value| value.get().to_le_bytes()),
+            );
             record.extend(wire_index(edge.start)?.to_le_bytes());
             record.extend(wire_index(edge.end)?.to_le_bytes());
             record.extend(indexes(&wire_indexes(edge.uses.iter().copied())?)?);
@@ -918,7 +922,11 @@ fn brep_payload(
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                     .to_le_bytes(),
             );
-            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.domain
+                    .into_iter()
+                    .flat_map(|value| value.get().to_le_bytes()),
+            );
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -933,7 +941,11 @@ fn brep_payload(
             let index = wire_index(index)?;
             let mut record = index.to_le_bytes().to_vec();
             record.extend(index.to_le_bytes());
-            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.domain
+                    .into_iter()
+                    .flat_map(|value| value.get().to_le_bytes()),
+            );
             record.extend(wire_index(coedge.edge)?.to_le_bytes());
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
@@ -948,7 +960,11 @@ fn brep_payload(
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend(edge.domain.into_iter().flat_map(f64::to_le_bytes));
+            record.extend(
+                edge.domain
+                    .into_iter()
+                    .flat_map(|value| value.get().to_le_bytes()),
+            );
             record.push(0);
             record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
@@ -1121,7 +1137,12 @@ fn brep_c3_curve(
             let to = model.vertices[edge.end].point;
             (
                 LINE_CLASS,
-                bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], edge.domain, 3)?,
+                bounded_line_payload(
+                    [from.x, from.y, from.z],
+                    [to.x, to.y, to.z],
+                    FiniteReal::raw_array(edge.domain),
+                    3,
+                )?,
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
@@ -1152,7 +1173,7 @@ fn generated_projected_brep_c2_curve(
                 bounded_line_payload(
                     plane_uv(from, origin, u_axis, v_axis),
                     plane_uv(to, origin, u_axis, v_axis),
-                    edge.domain,
+                    FiniteReal::raw_array(edge.domain),
                     2,
                 )?,
             )
@@ -1210,14 +1231,14 @@ fn admit_pcurve<'a>(
         || pcurve.native_tail_flags().is_some()
         || pcurve
             .parameter_range()
-            .is_some_and(|range| range.get() != edge.domain)
+            .is_some_and(|range| range.finite_components() != edge.domain)
     {
         return Err(CodecError::NotImplemented(format!(
             "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
             pcurve.id.as_str()
         )));
     }
-    let domain = edge.domain;
+    let domain = FiniteReal::raw_array(edge.domain);
     let (payload, domain_extent_points) = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin().as_raw();
@@ -1316,26 +1337,22 @@ fn validate_nurbs_trim(
             pcurve.id.as_str()
         )));
     }
-    let mut breaks = vec![domain[0], domain[1]];
+    let mut breaks = vec![domain[0].get(), domain[1].get()];
     if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
         breaks.extend(
             nurbs
                 .knots()
-                .iter()
-                .copied()
+                .finite_knots()
                 .filter(|value| *value > domain[0] && *value < domain[1])
                 .map(|value| {
                     if sense == Sense::Forward {
-                        Ok(value)
+                        Ok(value.get())
                     } else {
-                        match [value, domain[0], domain[1]].map(FiniteReal::new) {
-                            [Some(value), Some(start), Some(end)] => {
-                                cadmpeg_ir::math::reflect_parameter(value, start, end)
-                            }
-                            _ => None,
-                        }
-                        .map(FiniteReal::get)
-                        .ok_or_else(|| CodecError::malformed("reversed edge knot is non-finite"))
+                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
+                            .map(FiniteReal::get)
+                            .ok_or_else(|| {
+                                CodecError::malformed("reversed edge knot is non-finite")
+                            })
                     }
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?,
@@ -1347,7 +1364,7 @@ fn validate_nurbs_trim(
                 .knots()
                 .iter()
                 .copied()
-                .filter(|value| *value > domain[0] && *value < domain[1]),
+                .filter(|value| *value > domain[0].get() && *value < domain[1].get()),
         );
     }
     breaks.sort_by(f64::total_cmp);
@@ -1395,14 +1412,9 @@ fn validate_nurbs_trim(
             let curve_parameter = if sense == Sense::Forward {
                 parameter
             } else {
-                match [domain[0], domain[1]].map(FiniteReal::new) {
-                    [Some(start), Some(end)] => {
-                        cadmpeg_ir::math::reflect_parameter(sample, start, end)
-                    }
-                    _ => None,
-                }
-                .map(FiniteReal::get)
-                .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
+                cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+                    .map(FiniteReal::get)
+                    .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
             };
             let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {
                 CodecError::malformed(format_args!(
