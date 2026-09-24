@@ -156,12 +156,14 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
     edited.model.appearances[0].base_color =
         Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"));
-    edited.model.appearances[0]
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("reflectivity_at_0deg"), 0.7);
-    edited.model.appearances[0]
-        .properties
-        .insert(cadmpeg_core::nonblank_literal!("refraction_index"), 1.8);
+    edited.model.appearances[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("reflectivity_at_0deg"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.7).expect("finite scalar"),
+    );
+    edited.model.appearances[0].properties.insert(
+        cadmpeg_core::nonblank_literal!("refraction_index"),
+        cadmpeg_ir::scalar::FiniteReal::new(1.8).expect("finite scalar"),
+    );
     assert_eq!(
         native.act_entities[0].entity_id(),
         native.design_material_assignments[0].entity_id.as_str()
@@ -304,13 +306,15 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(
         round_trip.ir().model.appearances[0]
             .properties
-            .get("reflectivity_at_0deg"),
-        Some(&0.7)
+            .get("reflectivity_at_0deg")
+            .map(|value| value.get()),
+        Some(0.7)
     );
     assert_eq!(
         round_trip.ir().model.appearances[0]
             .properties
-            .get("refraction_index"),
-        Some(&1.8)
+            .get("refraction_index")
+            .map(|value| value.get()),
+        Some(1.8)
     );
 }

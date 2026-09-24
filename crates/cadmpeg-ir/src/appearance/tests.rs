@@ -10,7 +10,10 @@ fn appearance_asset_and_binding_round_trip() {
         Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
     };
     use crate::ids::AppearanceId;
+    use crate::scalar::{Angle, FiniteReal, Length};
 
+    let real = |value| FiniteReal::new(value).unwrap();
+    let length = |value| Length::new(value).unwrap();
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let body = ir.model.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
@@ -33,22 +36,22 @@ fn appearance_asset_and_binding_round_trip() {
             mapping: TextureMap2d {
                 map_channel: 1,
                 uvw_source: 0,
-                u_offset: 0.25,
-                v_offset: -0.5,
-                u_scale: 2.0,
-                v_scale: 3.0,
-                rotation: std::f64::consts::FRAC_PI_2,
+                u_offset: real(0.25),
+                v_offset: real(-0.5),
+                u_scale: real(2.0),
+                v_scale: real(3.0),
+                rotation: Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
                 repeat_u: true,
                 repeat_v: false,
-                real_world_offset_x: 12.7,
-                real_world_offset_y: 25.4,
-                real_world_scale_x: 304.8,
-                real_world_scale_y: 609.6,
+                real_world_offset_x: length(12.7),
+                real_world_offset_y: length(25.4),
+                real_world_scale_x: length(304.8),
+                real_world_scale_y: length(609.6),
             },
             bump: Some(BumpMap {
                 normal_map: true,
-                depth: 2.54,
-                normal_scale: 0.75,
+                depth: length(2.54),
+                normal_scale: real(0.75),
             }),
         }],
     });
@@ -96,57 +99,4 @@ fn appearance_asset_and_binding_round_trip() {
         decoded.model.appearance_bindings,
         ir.model.appearance_bindings
     );
-}
-
-/// `TextureMap2d` carries nine plain public `f64` fields with no refusing
-/// constructor, so validation is the one route that states a non-finite
-/// mapping value is illegal.
-#[test]
-fn a_non_finite_texture_mapping_value_is_refused_by_validation() {
-    use crate::report::check::Check;
-    use crate::validate::validate_neutral;
-
-    let mut ir = CadIr::empty();
-    crate::test_support::push_texture_offset(&mut ir, 0.25);
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-
-    ir.model.appearances[0].textures[0].mapping.u_scale = f64::INFINITY;
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(!report.is_ok());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Presentation
-            && finding.message == "non-finite texture mapping value"));
-}
-
-/// `BumpMap::depth` and `BumpMap::normal_scale` are plain public `f64` fields
-/// on the same carrier chain and are refused by the same validation.
-#[test]
-fn a_non_finite_bump_map_value_is_refused_by_validation() {
-    use crate::appearance::BumpMap;
-    use crate::report::check::Check;
-    use crate::validate::validate_neutral;
-
-    let mut ir = CadIr::empty();
-    crate::test_support::push_texture_offset(&mut ir, 0.25);
-    ir.model.appearances[0].textures[0].bump = Some(BumpMap {
-        normal_map: false,
-        depth: 1.0,
-        normal_scale: 1.0,
-    });
-    assert!(validate_neutral(&ir, Vec::new()).is_ok());
-
-    ir.model.appearances[0].textures[0].bump = Some(BumpMap {
-        normal_map: false,
-        depth: f64::NAN,
-        normal_scale: 1.0,
-    });
-    let report = validate_neutral(&ir, Vec::new());
-    assert!(!report.is_ok());
-    assert!(report
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::Presentation
-            && finding.message == "non-finite texture bump-map value"));
 }
