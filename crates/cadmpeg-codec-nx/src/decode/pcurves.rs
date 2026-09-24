@@ -673,11 +673,9 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             // missing surface chart or a tie states no selection.
             let selected_forward = (|| {
                 let curve = index.curves(curve.as_str())?;
-                let curve_tangent = Vector3::unit_nonzero(curve_tangent_with_budget(
-                    &curve.geometry,
-                    range[0],
-                    geometry_budget,
-                )?)?;
+                let curve_tangent = Vector3::unit_nonzero(
+                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)?.get(),
+                )?;
                 let alignment = |candidate: &PcurveGeometry| {
                     let uv = pcurve_uv(candidate, range[0])?;
                     let uv_tangent = pcurve_tangent(candidate, range[0])?;
@@ -1663,11 +1661,8 @@ fn exact_boundary_pcurve_with_index(
     ) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
-        let [first, second] = [first?, second?];
+        let [first, second] = [first?, second?].map(Point2::from);
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
-            if !parameter.is_finite() {
-                return None;
-            }
             if !geometry_budget.charge() {
                 return None;
             }
@@ -1723,13 +1718,7 @@ fn exact_boundary_pcurve_with_index(
     ) {
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
-        let [first, second] = [first?, second?];
-        if [first.u, first.v, second.u, second.v]
-            .into_iter()
-            .any(|value| !value.is_finite())
-        {
-            return None;
-        }
+        let [first, second] = [first?, second?].map(Point2::from);
         let parameter_span = range[1] - range[0];
         let varying_scale = (second.v - first.v) / parameter_span;
         (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
@@ -1817,7 +1806,7 @@ fn exact_boundary_pcurve_with_index(
             parameters[index].v,
             geometry_budget,
         )?;
-        let error = Point3::distance(point, endpoints[index]);
+        let error = Point3::distance(point.get(), endpoints[index]);
         if !error.is_finite() || error > tolerance {
             return None;
         }
@@ -1910,7 +1899,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         else {
             return false;
         };
-        let error = Point3::distance(expected, actual);
+        let error = Point3::distance(expected, actual.get());
         error.is_finite() && error <= tolerance
     })
 }
@@ -2007,7 +1996,10 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     for index in 0..=SAMPLE_INTERVALS {
         let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
         let point = curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
-        let mut uv = analytic_surface_parameters(&surface_carrier.geometry, point)?;
+        let mut uv = Point2::from(analytic_surface_parameters(
+            &surface_carrier.geometry,
+            point.get(),
+        )?);
         if let Some(previous) = samples.last().map(|(_, uv): &(f64, Point2)| *uv) {
             if let Some(period) = periods[0] {
                 uv.u = lift_periodic_parameter(uv.u, previous.u, period);
@@ -2085,9 +2077,9 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
             .sqrt()
     };
-    (Point3::distance(curve_position, surface_jet.point) <= tolerance
-        && vector_error(curve_tangent, surface_tangent) <= tolerance
-        && vector_error(curve_acceleration, surface_acceleration) <= tolerance)
+    (Point3::distance(curve_position.get(), surface_jet.point) <= tolerance
+        && vector_error(curve_tangent.get(), surface_tangent) <= tolerance
+        && vector_error(curve_acceleration.get(), surface_acceleration) <= tolerance)
         .then_some(())?;
     Some(candidate)
 }
@@ -2697,6 +2689,7 @@ fn transferred_pcurve_sample_with_budget(
         })
         .or_else(|| {
             model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         })?;
     let target = BoundaryInverseTarget {
         point,
@@ -2946,7 +2939,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
         return false;
     };
     let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
-        .and_then(Vector3::unit_nonzero)
+        .and_then(|tangent| tangent.unit_nonzero())
     else {
         return false;
     };
@@ -3037,6 +3030,7 @@ fn append_transferred_pcurve_segment_with_budget(
                 })
                 .or_else(|| {
                     model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+                        .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
             else {
                 return false;
@@ -3223,9 +3217,11 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                 geometry_budget,
             )
         }
-        geometry => geometry.and_then(|geometry| {
-            cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, point)
-        }),
+        geometry => geometry
+            .and_then(|geometry| {
+                cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, point)
+            })
+            .map(Point2::from),
     }
 }
 

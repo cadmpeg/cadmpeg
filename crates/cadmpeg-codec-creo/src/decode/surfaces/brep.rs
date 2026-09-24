@@ -889,7 +889,10 @@ fn ordered_two_edge_circle_loops<'a>(
     }) {
         return None;
     }
-    let center_uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, reference.center.get())?;
+    let center_uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
+        surface,
+        reference.center.get(),
+    )?);
     for (circle, polygon) in circle_loops.iter().zip(polygons) {
         let [first, second] = polygon.as_slice() else {
             return None;

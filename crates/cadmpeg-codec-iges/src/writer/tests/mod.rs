@@ -750,8 +750,12 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
     let range = [0.2, 1.1];
     let span = CurveSpan {
         range,
-        start: curve_point(&geometry, range[0]).expect("start evaluates"),
-        end: curve_point(&geometry, range[1]).expect("end evaluates"),
+        start: curve_point(&geometry, range[0])
+            .expect("start evaluates")
+            .get(),
+        end: curve_point(&geometry, range[1])
+            .expect("end evaluates")
+            .get(),
     };
     let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
         .expect("a bounded hyperbola can be reversed exactly");

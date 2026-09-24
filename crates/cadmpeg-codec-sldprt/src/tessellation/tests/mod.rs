@@ -364,8 +364,11 @@ fn flat_test_nurbs_surface() -> NurbsSurface {
 }
 
 fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
-    [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-        .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).unwrap())
+    [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| {
+        cadmpeg_ir::eval::nurbs_surface_point(surface, u, v)
+            .unwrap()
+            .get()
+    })
 }
 
 fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, Vector3) {
@@ -1209,7 +1212,11 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     );
     set_shell_faces(&mut model, vec![face.clone()]);
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
-        .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+        .map(|(u, v)| {
+            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+                .unwrap()
+                .get()
+        })
         .to_vec();
     model.tessellations.push(mesh_from(
         "synthetic:test:tessellation#nurbs-exact-mesh",
@@ -1293,7 +1300,11 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
             "synthetic:test:tessellation#nurbs-ambiguous-mesh",
             cadmpeg_ir::tessellation::TessellationMesh::List {
                 vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
-                    .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+                    .map(|(u, v)| {
+                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+                            .unwrap()
+                            .get()
+                    })
                     .to_vec(),
                 triangles: vec![[0, 1, 2]],
             },
@@ -1341,7 +1352,11 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
             "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
             cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
                 [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
-                    .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+                    .map(|(u, v)| {
+                        cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v)
+                            .unwrap()
+                            .get()
+                    })
                     .to_vec(),
                 vec![[0, 1, 2]],
                 Some(vec![Vector3::new(0.0, 0.0, 1.0); 3]),

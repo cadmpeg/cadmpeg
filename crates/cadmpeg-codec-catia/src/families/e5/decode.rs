@@ -758,9 +758,9 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
                     None,
                     parameter.get(),
                 )
-                .map(|point| [point.u, point.v])
+                .map(|point| [point.as_raw().u, point.as_raw().v])
             });
-            Some([endpoints[0]?, endpoints[1]?]).and_then(finite)
+            Some([endpoints[0]?, endpoints[1]?])
         }
     }
 }
@@ -2742,8 +2742,8 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     let Some(right_end) = cadmpeg_ir::eval::curve_point(right, right_range[1]) else {
         return false;
     };
-    left_start.distance(right_start) <= E5_ENDPOINT_MATCH_TOLERANCE
-        && left_end.distance(right_end) <= E5_ENDPOINT_MATCH_TOLERANCE
+    left_start.distance(right_start.get()) <= E5_ENDPOINT_MATCH_TOLERANCE
+        && left_end.distance(right_end.get()) <= E5_ENDPOINT_MATCH_TOLERANCE
 }
 
 fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {

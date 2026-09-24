@@ -1337,7 +1337,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
         return None;
     }
     let tangent = Vector3::new(velocity.x / speed, velocity.y / speed, velocity.z / speed);
-    let tangential_acceleration = tangent.dot(acceleration);
+    let tangential_acceleration = tangent.dot(acceleration.get());
     let tangent_derivative = Vector3::new(
         (acceleration.x - tangential_acceleration * tangent.x) / speed,
         (acceleration.y - tangential_acceleration * tangent.y) / speed,
@@ -1347,8 +1347,8 @@ fn blend_surface_u_derivative_with_index_and_budget(
         index,
         spine: &spine,
         parameter: u,
-        center,
-        center_derivative: velocity,
+        center: center.get(),
+        center_derivative: velocity.get(),
         radius,
         depth: depth + 1,
     };
@@ -3414,9 +3414,11 @@ fn surface_contact_direction_with_index_and_budget(
                 geometry_budget,
             )
         }),
-        geometry => geometry.and_then(|geometry| {
-            cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, center)
-        }),
+        geometry => geometry
+            .and_then(|geometry| {
+                cadmpeg_ir::eval::analytic_surface_parameters_solved(geometry, center)
+            })
+            .map(Point2::from),
     }?;
     let contact = decoded_surface_point_inner_with_budget(
         index,
@@ -3485,6 +3487,7 @@ fn model_curve_point_with_index_and_budget(
 ) -> Option<Point3> {
     let carrier = index.curves(curve.as_str())?;
     curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 fn model_curve_tangent_with_index_and_budget(
@@ -3494,11 +3497,9 @@ fn model_curve_tangent_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
     let carrier = index.curves(curve.as_str())?;
-    Vector3::unit_nonzero(curve_tangent_with_budget(
-        &carrier.geometry,
-        parameter,
-        geometry_budget,
-    )?)
+    Vector3::unit_nonzero(
+        curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)?.get(),
+    )
 }
 
 #[cfg(test)]

@@ -510,14 +510,14 @@ pub(super) fn project(
         // CADIR decision: IGES defines the carrier and ordered endpoints but
         // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
-        if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start, resolution) {
+        if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start.get(), resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
             ));
             continue;
         }
-        if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end, resolution) {
+        if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end.get(), resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",

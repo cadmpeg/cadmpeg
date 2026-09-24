@@ -113,8 +113,8 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
             super::model_curve_point_by_id(&index, &curve_id, parameter).expect("helix point");
         let actual = super::model_curve_differential_by_id(&index, &curve_id, parameter)
             .expect("helix differential");
-        assert_point_close(actual_point, expected_point);
-        assert_point_close(actual.point, expected_point);
+        assert_point_close(actual_point.get(), expected_point);
+        assert_point_close(actual.point.get(), expected_point);
         assert_vector_close(actual.tangent, expected_tangent);
         assert_vector_close(actual.acceleration, expected_acceleration);
     }
@@ -136,7 +136,7 @@ fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
     for parameter in [0.25, 0.75, 1.7, 2.0] {
         let before = super::super::helix_differential(&original, parameter).unwrap();
         let after = super::super::helix_differential(&reversed, -parameter).unwrap();
-        assert_point_close(after.point, before.point);
+        assert_point_close(after.point.get(), before.point.get());
         assert_vector_close(after.tangent, before.tangent.scale(-1.0));
         assert_vector_close(after.acceleration, before.acceleration);
     }
@@ -195,7 +195,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
         &crate::index::ModelIndex::new(&ir),
         &curve_id,
-        target,
+        target.get(),
         1.5,
     )
     .expect("helix inverse");
@@ -215,7 +215,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
         &crate::index::ModelIndex::new(&ir),
         &curve_id,
-        target,
+        target.get(),
         0.24
     )
     .is_none());

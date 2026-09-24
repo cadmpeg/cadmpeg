@@ -1010,9 +1010,6 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
-        let (Some(end), Some(start)) = (FinitePoint3::new(end), FinitePoint3::new(start)) else {
-            return false;
-        };
         ir.model.points.extend([
             Point::new(point_ids[1].clone(), end, None),
             Point::new(point_ids[0].clone(), start, None),
@@ -2619,7 +2616,9 @@ fn solve_planar_chart_rechart(
     let images = loci
         .iter()
         .map(|locus| {
-            let uv = cadmpeg_ir::eval::analytic_surface_parameters(target, *locus)?;
+            let uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
+                target, *locus,
+            )?);
             let back = cadmpeg_ir::eval::surface_point(target, uv.u, uv.v)?;
             ((back.x - locus.x)
                 .hypot(back.y - locus.y)

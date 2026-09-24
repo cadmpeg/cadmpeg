@@ -2076,8 +2076,7 @@ pub(crate) fn project_geometry(
             &nurbs_points,
             nurbs_weights.as_deref(),
             parameter_range[0],
-        )
-        .filter(Point3::is_finite) else {
+        ) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
@@ -2087,12 +2086,11 @@ pub(crate) fn project_geometry(
             &nurbs_points,
             nurbs_weights.as_deref(),
             parameter_range[1],
-        )
-        .filter(Point3::is_finite) else {
+        ) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
-        let endpoint_distance = start.distance(end);
+        let endpoint_distance = start.distance(end.get());
         let resolution = global.minimum_resolution_mm();
         let closed = endpoint_distance == 0.0 || endpoint_distance < resolution;
         if flags[1] != Some(i64::from(closed)) {
@@ -2111,12 +2109,6 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
-        let start = FinitePoint3::new(start)
-            .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        let end = FinitePoint3::new(end)
-            .ok_or(Point::NON_FINITE_POSITION)
-            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),

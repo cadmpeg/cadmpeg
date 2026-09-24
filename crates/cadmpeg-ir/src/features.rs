@@ -151,6 +151,15 @@ impl FiniteVector3 {
     pub fn negated(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+
+    /// Apply the linear part of an affine transform.
+    /// [`Transform::apply_vector`] returns a vector only when every component
+    /// is finite, so its result stays admitted. The result is absent when the
+    /// transform overflows a component.
+    #[must_use]
+    pub fn transformed(self, transform: Transform) -> Option<Self> {
+        transform.apply_vector(self.0).map(Self)
+    }
 }
 
 checked_feature_geometry!(

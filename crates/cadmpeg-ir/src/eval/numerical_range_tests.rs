@@ -284,6 +284,6 @@ fn numerical_audit_plane_inverse_projects_before_displacement_overflow() {
         .unwrap(),
     );
     let uv = analytic_surface_parameters_solved(&plane, Point3::new(1e308, 0., 0.)).unwrap();
-    assert!((uv.u / 1e308 - std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
-    assert!((uv.v / 1e308 + std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
+    assert!((uv.as_raw().u / 1e308 - std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
+    assert!((uv.as_raw().v / 1e308 + std::f64::consts::SQRT_2).abs() < 8. * f64::EPSILON);
 }

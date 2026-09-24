@@ -58,7 +58,8 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
                 .expect("reversed pcurve");
         for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
             assert_eq!(
-                cadmpeg_ir::eval::curve_point(&reversed, parameter),
+                cadmpeg_ir::eval::curve_point(&reversed, parameter)
+                    .map(cadmpeg_ir::features::FinitePoint3::get),
                 Some(Point3::new(expected_x, 0.0, 0.0))
             );
             assert_eq!(

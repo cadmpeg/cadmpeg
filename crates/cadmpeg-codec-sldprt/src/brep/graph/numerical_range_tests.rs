@@ -49,8 +49,11 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
         .unwrap();
         let samples = nurbs_curve_sample_parameters(&c, [0., d]).unwrap();
         let (uv, error) = nurbs_degree_one_cache_lanes(&s, &c, [0., d]).unwrap();
-        let observed = Point3::new(0.5, 0.5, 0.5)
-            .distance(cadmpeg_ir::eval::nurbs_surface_point(&s, 0.5, 0.5).unwrap());
+        let observed = Point3::new(0.5, 0.5, 0.5).distance(
+            cadmpeg_ir::eval::nurbs_surface_point(&s, 0.5, 0.5)
+                .unwrap()
+                .get(),
+        );
         println!("SW d{d:e} samples{samples:?} uv{uv:?} reported_error={error} actual_midpoint_error={observed}");
         assert_eq!(error, observed);
         assert_eq!(samples.len(), 9);
@@ -138,7 +141,7 @@ fn error_at(out: &Brep, t: f64) -> f64 {
     let uv = pcurve_uv(&out.pcurves[0].geometry, t).unwrap();
     let hit = surface_point(&out.surfaces[0].geometry, uv.u, uv.v).unwrap();
     let wanted = curve_point(&out.curves[0].geometry, t).unwrap();
-    hit.distance(wanted)
+    hit.distance(wanted.get())
 }
 #[test]
 fn numerical_0922b_sphere_circle_frames() {

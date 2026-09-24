@@ -1274,7 +1274,7 @@ fn complete_support_uv_wave(
                                 }
                                 geometry @ SurfaceGeometry::Solved(_) => {
                                     analytic_surface_parameters(geometry, *point)
-                                        .map(|parameters| (parameters, false))
+                                        .map(|parameters| (Point2::from(parameters), false))
                                 }
                             };
                             if candidate.is_some() {

@@ -1041,7 +1041,7 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         0.25,
     )
     .expect("valid rational quadratic NURBS evaluates after degree elevation");
-    assert!(before.distance(after) <= 1.0e-12);
+    assert!(before.distance(after.get()) <= 1.0e-12);
     assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
     assert_eq!(curve.weights(), Some(vec![1.0, 2.0, 3.0]));
 }
@@ -1092,7 +1092,7 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
             parameter,
         )
         .expect("trimmed NURBS evaluates");
-        assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+        assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
 }
 
@@ -1144,7 +1144,7 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
             parameter,
         )
         .expect("concatenated NURBS evaluates");
-        assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+        assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
 }
 
@@ -1197,7 +1197,7 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
                 parameter,
             )
             .expect("trimmed NURBS evaluates");
-            assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+            assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
     }
 }
@@ -1231,7 +1231,8 @@ fn concatenation_preserves_degree_zero_spans() {
                 &concatenated_points,
                 concatenated_weights.as_deref(),
                 parameter,
-            ),
+            )
+            .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(point)
         );
     }
@@ -1267,7 +1268,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     )
     .expect("valid multi-span linear NURBS evaluates after degree elevation");
     assert_eq!(curve.degree(), 3);
-    assert!(before.distance(after) <= 1.0e-12);
+    assert!(before.distance(after.get()) <= 1.0e-12);
 }
 
 #[test]
@@ -1341,7 +1342,7 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
             parameter,
         )
         .unwrap();
-        assert!(before.distance(after) <= EPS_DEGREE_ELEVATION);
+        assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
     }
 }
 
@@ -1509,7 +1510,8 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
             &reversed.control_points(),
             reversed.weights().as_deref(),
             range[0],
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -1519,7 +1521,8 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
             &reversed.control_points(),
             reversed.weights().as_deref(),
             range[1],
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
 }
@@ -1564,7 +1567,8 @@ fn decode_concatenates_ordered_composite_curve_children() {
     assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(nurbs.control_points().len(), 3);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(1, nurbs.knots(), &nurbs.control_points(), None, 1.5),
+        cadmpeg_ir::eval::nurbs_curve_point(1, nurbs.knots(), &nurbs.control_points(), None, 1.5)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());

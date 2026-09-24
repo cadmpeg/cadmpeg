@@ -155,9 +155,9 @@ fn source_edge_for_vertices<'a>(
     {
         let endpoints_agree = edge.param_range().is_some_and(|range| {
             cadmpeg_ir::eval::curve_point(curve_geometry, range[0]).is_some_and(|point| {
-                cadmpeg_ir::math::Point3::distance(point, natural_start) <= tolerance
+                cadmpeg_ir::math::Point3::distance(point.get(), natural_start) <= tolerance
             }) && cadmpeg_ir::eval::curve_point(curve_geometry, range[1]).is_some_and(|point| {
-                cadmpeg_ir::math::Point3::distance(point, natural_end) <= tolerance
+                cadmpeg_ir::math::Point3::distance(point.get(), natural_end) <= tolerance
             })
         });
         if endpoints_agree {

@@ -8683,14 +8683,16 @@ fn spatial_sketch_entity_endpoints(
                     &control_points,
                     weights.as_deref(),
                     start,
-                )?,
+                )?
+                .get(),
                 cadmpeg_ir::eval::nurbs_curve_point(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     end,
-                )?,
+                )?
+                .get(),
             ])
         }
         _ => None,

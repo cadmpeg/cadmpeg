@@ -129,7 +129,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
             &knots,
             &controls,
             Some(&weights),
-            interior,
+            *interior.as_raw(),
             1.0e-9,
         ),
         Some(true)
@@ -161,7 +161,7 @@ fn analytic_parabola_and_hyperbola_use_step_parameterization() {
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::curve_point(&parabola, 1.5),
+        crate::eval::curve_point(&parabola, 1.5).map(crate::features::FinitePoint3::get),
         Some(Point3::new(4.5, 6.0, 0.0))
     );
 
@@ -203,7 +203,7 @@ fn transformed_carriers_preserve_basis_parameters() {
         .expect("placed curve"),
     ));
     assert_eq!(
-        crate::eval::curve_point(&curve, 3.0),
+        crate::eval::curve_point(&curve, 3.0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(-4.0, 5.0, 6.0))
     );
 
@@ -245,7 +245,7 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::curve_point(&increasing, 2.0),
+        crate::eval::curve_point(&increasing, 2.0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 
@@ -265,7 +265,70 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
         .unwrap(),
     ));
     assert_eq!(
-        crate::eval::curve_point(&decreasing, 2.5),
+        crate::eval::curve_point(&decreasing, 2.5).map(crate::features::FinitePoint3::get),
         Some(Point3::new(0.5, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
+    use crate::features::{FinitePoint3, FiniteVector3};
+
+    let line = |origin: Point3| {
+        SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(origin, Vector3::new(1.0, 0.0, 0.0))
+                .unwrap(),
+        )
+    };
+    let near_edge = CurveGeometry::Solved(line(Point3::new(f64::MAX, 0.0, 0.0)));
+    assert_eq!(
+        crate::eval::curve_point(&near_edge, 0.0),
+        FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0))
+    );
+    assert_eq!(crate::eval::curve_point(&near_edge, f64::MAX), None);
+    assert_eq!(
+        crate::eval::curve_tangent(&near_edge, 0.0),
+        FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
+    );
+
+    let stretch = crate::transform::Transform::affine([
+        [f64::MAX, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .expect("affine transform");
+    let placed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(Box::new(line(Point3::new(0.0, 1.0, 0.0))), stretch)
+            .expect("placed curve"),
+    ));
+    let budget = cadmpeg_core::decode::WorkBudget::new(64);
+    assert_eq!(
+        crate::eval::curve_point_with_budget(&placed, 0.0, &budget),
+        FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
+    );
+    assert_eq!(
+        crate::eval::curve_tangent_with_budget(&placed, 0.0, &budget),
+        FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
+    );
+    assert_eq!(
+        crate::eval::curve_point_with_budget(&placed, 2.0, &budget),
+        None
+    );
+
+    let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    assert_eq!(
+        crate::eval::analytic_surface_parameters(&plane, Point3::new(2.0, -3.0, 5.0)),
+        crate::units::FinitePoint2::new(crate::math::Point2::new(2.0, -3.0))
+    );
+    assert_eq!(
+        crate::eval::analytic_surface_parameters(&plane, Point3::new(f64::MAX, 0.0, 0.0)),
+        crate::units::FinitePoint2::new(crate::math::Point2::new(f64::MAX, 0.0))
     );
 }

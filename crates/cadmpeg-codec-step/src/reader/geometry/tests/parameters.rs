@@ -113,14 +113,14 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let end_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 1.0)
         .expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
-    let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
+    let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
         .expect("start witness");
-    let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, start)
+    let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start)
         .expect("unanchored end witness");
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
-    let end =
-        nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, end_seed).expect("end witness");
+    let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed)
+        .expect("end witness");
 
     assert!(start.abs() < 1.0e-12);
     assert!((end - 1.0).abs() < 1.0e-12);

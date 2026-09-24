@@ -278,7 +278,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
@@ -286,7 +287,8 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             2.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(12.0, 0.0, 0.0))
     );
 
@@ -811,7 +813,8 @@ fn replicas_retain_bounded_parent_relations() {
             &index,
             &CurveId::mint("step:data:curve#9").expect("identity grammar"),
             0.0,
-        ),
+        )
+        .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(

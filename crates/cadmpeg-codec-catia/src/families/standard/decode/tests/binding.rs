@@ -1697,11 +1697,16 @@ fn generated_analytic_curve_ranges_use_angular_parameters() {
     let start = curve_point(&geometry, 0.0).expect("ellipse start");
     let end = curve_point(&geometry, std::f64::consts::FRAC_PI_2).expect("ellipse end");
     let witness = curve_point(&geometry, 0.75 * std::f64::consts::PI).expect("ellipse witness");
-    let short = standard_analytic_curve_parameter_range(&geometry, start, end, None)
+    let short = standard_analytic_curve_parameter_range(&geometry, start.get(), end.get(), None)
         .expect("short angular range");
     let mut oriented = geometry.clone();
-    let long = standard_oriented_analytic_curve_parameter_range(&mut oriented, start, end, witness)
-        .expect("witnessed angular range");
+    let long = standard_oriented_analytic_curve_parameter_range(
+        &mut oriented,
+        start.get(),
+        end.get(),
+        witness.get(),
+    )
+    .expect("witnessed angular range");
     assert!((short[0] - 0.0).abs() < ANGLE_TOLERANCE);
     assert!((short[1] - std::f64::consts::FRAC_PI_2).abs() < ANGLE_TOLERANCE);
     assert!((long[1] - 1.5 * std::f64::consts::PI).abs() < ANGLE_TOLERANCE);

@@ -143,7 +143,8 @@ fn numerical_0922b_unclamped_curve_inverse() {
         )
         .unwrap();
         let budget = GeometryWorkBudget::new(100_000);
-        let p = closest_nurbs_curve_parameter_with_budget(&curve, target, None, &budget).unwrap();
+        let p =
+            closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
@@ -155,9 +156,9 @@ fn numerical_0922b_unclamped_curve_inverse() {
         println!(
             "NX knots{:?}, exact start{target:?}: inverse{p}, residual{}",
             curve.knots(),
-            actual.distance(target)
+            actual.distance(target.get())
         );
-        assert!(actual.distance(target) < 1e-14);
+        assert!(actual.distance(target.get()) < 1e-14);
     }
 }
 #[test]
@@ -184,7 +185,8 @@ fn numerical_0922b_small_domain_inverse() {
         )
         .unwrap();
         let budget = GeometryWorkBudget::new(100_000);
-        let p = closest_nurbs_curve_parameter_with_budget(&curve, target, None, &budget).unwrap();
+        let p =
+            closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
@@ -196,9 +198,9 @@ fn numerical_0922b_small_domain_inverse() {
         println!(
             "NX d{d:e},target{target:?}:inverse{},residual{}",
             p / d,
-            actual.distance(target)
+            actual.distance(target.get())
         );
-        assert!(actual.distance(target) < 1e-14);
+        assert!(actual.distance(target.get()) < 1e-14);
     }
 }
 #[test]

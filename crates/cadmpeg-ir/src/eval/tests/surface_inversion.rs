@@ -156,7 +156,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
     )
     .unwrap();
     let point = nurbs_surface_point(&surface, 0.75, 0.4).expect("surface point");
-    let parameters = nurbs_surface_parameter_within_tolerance(&surface, point, None, 1.0e-10)
+    let parameters = nurbs_surface_parameter_within_tolerance(&surface, point.get(), None, 1.0e-10)
         .expect("rational multi-span inverse");
     assert!((parameters.u - 0.75).abs() < 1.0e-9);
     assert!((parameters.v - 0.4).abs() < 1.0e-9);

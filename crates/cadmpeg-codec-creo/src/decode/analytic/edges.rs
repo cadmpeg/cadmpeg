@@ -133,11 +133,7 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Opt
     let [Some(first), Some(second)] = points else {
         return None;
     };
-    first
-        .into_iter()
-        .chain(second)
-        .all(f64::is_finite)
-        .then_some([first, second])
+    Some([first, second])
 }
 
 fn nonperiodic_nurbs_edge_parameter_range(

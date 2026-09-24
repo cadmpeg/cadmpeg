@@ -61,7 +61,8 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         let knots = [0.0, 0.0, 1.0, 1.0];
         let weights = [weight; 2];
         assert_eq!(
-            nurbs_curve_point(1, &knots, &poles, Some(&weights), 0.5),
+            nurbs_curve_point(1, &knots, &poles, Some(&weights), 0.5)
+                .map(crate::features::FinitePoint3::get),
             Some(Point3::new(3.0, 0.0, 0.0))
         );
         assert_eq!(
@@ -154,9 +155,12 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
         )
         .expect("placed curve"),
     ));
-    assert_eq!(curve_point(&curve, 1.0), Some(Point3::new(3.0, 2.0, 3.0)));
     assert_eq!(
-        curve_tangent(&curve, 1.0),
+        curve_point(&curve, 1.0).map(crate::features::FinitePoint3::get),
+        Some(Point3::new(3.0, 2.0, 3.0))
+    );
+    assert_eq!(
+        curve_tangent(&curve, 1.0).map(crate::features::FiniteVector3::get),
         Some(Vector3::new(3.0, 2.0, 3.0))
     );
     for a in [1e-200, 1.0, 1e200] {
@@ -385,7 +389,8 @@ fn numerical_audit_rolling_ball_keeps_small_nonzero_frame() {
     let radius = 1e-20;
     let jet = audit_rolling_ball_jet(radius, 1.0, 0.0);
     assert_eq!(
-        super::super::rolling_ball_jet_point(&jet, 0.5, 0.0),
+        super::super::rolling_ball_jet_point(&jet, 0.5, 0.0)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(radius, 0.0, 0.0))
     );
     let point = super::super::rolling_ball_jet_point(&jet, 0.5, 1.0).unwrap();
@@ -397,7 +402,8 @@ fn numerical_audit_rolling_ball_keeps_small_nonzero_frame() {
 fn numerical_audit_rolling_ball_keeps_endpoint_when_unused_product_overflows() {
     let jet = audit_rolling_ball_jet(1.0, 1e200, 1.0);
     assert_eq!(
-        super::super::rolling_ball_jet_point(&jet, 0.0, 0.0),
+        super::super::rolling_ball_jet_point(&jet, 0.0, 0.0)
+            .map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
     );
 }
@@ -418,11 +424,13 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
         .unwrap(),
     );
     assert_eq!(
-        super::super::curve_tangent_solved(&line, width / 2.0),
+        super::super::curve_tangent_solved(&line, width / 2.0)
+            .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        super::super::curve_second_derivative_solved(&line, width / 2.0),
+        super::super::curve_second_derivative_solved(&line, width / 2.0)
+            .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(0.0, 0.0, 0.0))
     );
 

@@ -2223,13 +2223,13 @@ pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64;
             .map(PositiveReal::get)
             .collect::<Vec<_>>()
     });
-    let point = nurbs_pcurve_uv(
+    let point = Point2::from(nurbs_pcurve_uv(
         pcurve.degree,
         &knots,
         &control_points,
         weights.as_deref(),
         parameter,
-    )?;
+    )?);
     Some([point.u, point.v])
 }
 

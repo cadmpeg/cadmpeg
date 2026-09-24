@@ -264,10 +264,10 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .expect("coefficient-defined carrier evaluates at its start");
     let evaluated_end = cadmpeg_ir::eval::curve_point(geometry, range[1])
         .expect("coefficient-defined carrier evaluates at its end");
-    assert!(start.position().get().distance(evaluated_start) > 0.0);
-    assert!(end.position().get().distance(evaluated_end) > 0.0);
-    assert!(start.position().get().distance(evaluated_start) < 0.001);
-    assert!(end.position().get().distance(evaluated_end) < 0.001);
+    assert!(start.position().get().distance(evaluated_start.get()) > 0.0);
+    assert!(end.position().get().distance(evaluated_end.get()) > 0.0);
+    assert!(start.position().get().distance(evaluated_start.get()) < 0.001);
+    assert!(end.position().get().distance(evaluated_end.get()) < 0.001);
 }
 
 #[test]

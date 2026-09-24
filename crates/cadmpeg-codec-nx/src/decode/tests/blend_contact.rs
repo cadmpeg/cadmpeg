@@ -83,7 +83,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
-        point,
+        point.get(),
         None,
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
@@ -94,7 +94,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 
     let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
-        point,
+        point.get(),
         Some(Point2::new(f64::NAN, 0.5)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
@@ -330,8 +330,11 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             source_object: None,
         },
     ]);
-    let nurbs_chart = [3.8, 3.9, 4.1, 4.2]
-        .map(|u| cadmpeg_ir::eval::nurbs_surface_point(&periodic_geometry, u, 0.5).unwrap());
+    let nurbs_chart = [3.8, 3.9, 4.1, 4.2].map(|u| {
+        cadmpeg_ir::eval::nurbs_surface_point(&periodic_geometry, u, 0.5)
+            .unwrap()
+            .get()
+    });
     let nurbs_lanes = continue_surface_intersection_parameters(
         &ir,
         [&periodic_nurbs, &nurbs_section],
@@ -498,7 +501,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
-        point,
+        point.get(),
         Some(Point2::new(0.875, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
@@ -529,7 +532,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
         &surface,
-        point,
+        point.get(),
         Some(Point2::new(0.50011, 0.3)),
         &cadmpeg_core::decode::WorkBudget::new(TEST_SURFACE_INVERSION_WORK),
     )
@@ -1125,7 +1128,9 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         .unwrap(),
     ));
     let parameter = 1.2;
-    let mut point = cadmpeg_ir::eval::curve_point(&geometry, parameter).unwrap();
+    let mut point = cadmpeg_ir::eval::curve_point(&geometry, parameter)
+        .unwrap()
+        .get();
     point.y += 3.0;
     ir.model.curves.push(Curve {
         id: ellipse.clone(),

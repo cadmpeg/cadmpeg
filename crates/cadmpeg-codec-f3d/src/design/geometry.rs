@@ -1205,6 +1205,7 @@ fn sketch_geometry_point(
                 weights.as_deref(),
                 parameter,
             )
+            .map(Point2::from)
         }
         _ => None,
     }
@@ -1772,20 +1773,22 @@ fn certified_nurbs_tubes(
                 span[0] + (span[1] - span[0]) * ordinal as f64 / subdivisions as f64
             };
             tubes.push(CertifiedCurveTube {
-                start: cadmpeg_ir::eval::nurbs_pcurve_uv(
+                start: *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     degree as u32,
                     knots,
                     &control_points,
                     weights.as_deref(),
                     parameter(index),
-                )?,
-                end: cadmpeg_ir::eval::nurbs_pcurve_uv(
+                )?
+                .as_raw(),
+                end: *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     degree as u32,
                     knots,
                     &control_points,
                     weights.as_deref(),
                     parameter(index + 1),
-                )?,
+                )?
+                .as_raw(),
                 error,
             });
         }
@@ -3071,20 +3074,22 @@ pub(super) fn sketch_entity_endpoints(
             let start_parameter = curve.knots()[curve.degree() as usize];
             let end_parameter = curve.knots()[control_points.len()];
             Some([
-                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     start_parameter,
-                )?,
-                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                )?
+                .as_raw(),
+                *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     curve.degree(),
                     curve.knots(),
                     &control_points,
                     weights.as_deref(),
                     end_parameter,
-                )?,
+                )?
+                .as_raw(),
             ])
         }
         _ => None,

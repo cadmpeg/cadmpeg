@@ -46,11 +46,7 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
             let last = cadmpeg_ir::eval::curve_point(&carrier, upper)?;
-            [first.x, first.y]
-                .into_iter()
-                .chain([last.x, last.y])
-                .all(f64::is_finite)
-                .then_some(([first.x, first.y], [last.x, last.y]))
+            Some(([first.x, first.y], [last.x, last.y]))
         }
         _ => None,
     }
@@ -852,7 +848,7 @@ fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64
             &mut points,
         )?;
     }
-    (points.len() >= 2 && points.iter().flatten().all(|value| value.is_finite())).then_some(points)
+    (points.len() >= 2).then_some(points)
 }
 
 fn profile_nurbs_polyline(segment: &ProfileEntity, tolerance: f64) -> Option<Vec<[f64; 2]>> {

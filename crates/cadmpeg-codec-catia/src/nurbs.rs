@@ -878,7 +878,7 @@ mod tests {
             {
                 let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
                 let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
-                assert!(actual.distance(expected) < 1.0e-12);
+                assert!(actual.distance(expected.get()) < 1.0e-12);
             }
         }
     }
@@ -909,7 +909,7 @@ mod tests {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
                 .expect("source NURBS point");
-            assert!(actual.distance(expected) < 1.0e-12);
+            assert!(actual.distance(expected.get()) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }

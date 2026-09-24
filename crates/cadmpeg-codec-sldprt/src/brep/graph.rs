@@ -956,9 +956,12 @@ fn edge_parameter_range(
             .hypot(left.y - right.y)
             .hypot(left.z - right.z)
     };
-    if distance(first, endpoints[0]).max(distance(second, endpoints[1])) <= TOLERANCE_MM {
+    if distance(first.get(), endpoints[0]).max(distance(second.get(), endpoints[1])) <= TOLERANCE_MM
+    {
         Some((range, false))
-    } else if distance(first, endpoints[1]).max(distance(second, endpoints[0])) <= TOLERANCE_MM {
+    } else if distance(first.get(), endpoints[1]).max(distance(second.get(), endpoints[0]))
+        <= TOLERANCE_MM
+    {
         Some((range, true))
     } else {
         None
@@ -3650,7 +3653,7 @@ fn derive_spherical_pcurves(
             ) else {
                 return false;
             };
-            lifted.distance(curve_point) <= fit_tolerance
+            lifted.distance(curve_point.get()) <= fit_tolerance
         });
         if !fits {
             continue;
@@ -4009,7 +4012,10 @@ fn intersection_support_pcurve(
                     .control_points()
                     .iter()
                     .copied()
-                    .map(|point| analytic_surface_parameters(surface, point))
+                    .map(|point| {
+                        analytic_surface_parameters(surface, point)
+                            .map(cadmpeg_ir::math::Point2::from)
+                    })
                     .collect::<Option<Vec<_>>>()?;
                 for index in 1..control_points.len() {
                     let previous = control_points[index - 1];
@@ -4077,7 +4083,8 @@ fn intersection_support_pcurve(
         let last = control_points.len() - 1;
         for (index, target) in [(0, targets[0]), (last, targets[1])] {
             let reference = control_points[index];
-            let mut parameters = analytic_surface_parameters(surface, target)?;
+            let mut parameters =
+                cadmpeg_ir::math::Point2::from(analytic_surface_parameters(surface, target)?);
             match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
                     parameters.u = adjust_periodic(parameters.u, reference.u);
@@ -4762,12 +4769,16 @@ fn extended_nurbs_isocurve_axis_candidate(
             parameter,
         ) {
             let tolerance = inverse_coordinate_tolerance(
-                surface.poles().into_iter().chain(std::iter::once(point)),
+                surface
+                    .poles()
+                    .into_iter()
+                    .chain(std::iter::once(point.get())),
             );
-            if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point, None)
+            if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point.get(), None)
                 .filter(|parameters| {
-                    nurbs_surface_point(surface, parameters.u, parameters.v)
-                        .is_some_and(|mapped| Point3::distance(point, mapped) <= tolerance)
+                    nurbs_surface_point(surface, parameters.u, parameters.v).is_some_and(|mapped| {
+                        Point3::distance(point.get(), mapped.get()) <= tolerance
+                    })
                 })
             {
                 fixed_values.push(match fixed_axis {
@@ -4918,15 +4929,15 @@ fn nurbs_edge_endpoint_parameters(
     // The inverse-projection tolerance of this surface's coordinates against
     // the NURBS endpoint tolerance.
     let tolerance = looser_tolerance(
-        inverse_coordinate_tolerance(surface.poles().into_iter().chain([first, last])),
+        inverse_coordinate_tolerance(surface.poles().into_iter().chain([first.get(), last.get()])),
         NURBS_ENDPOINT_TOLERANCE_MM,
     );
     let project = |point| {
         let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        (Point3::distance(point, mapped) <= tolerance).then_some(parameters)
+        (Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters)
     };
-    Some([project(first)?, project(last)?])
+    Some([project(first.get())?, project(last.get())?])
 }
 
 fn nurbs_curve_surface_deviation(
@@ -4948,11 +4959,11 @@ fn nurbs_curve_surface_deviation(
             parameter,
         )?;
         let parameters = seed
-            .and_then(|seed| nurbs_surface_parameter_near_point(surface, point, Some(seed)))
-            .or_else(|| nurbs_surface_parameter_near_point(surface, point, None))?;
+            .and_then(|seed| nurbs_surface_parameter_near_point(surface, point.get(), Some(seed)))
+            .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?;
         let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v)?;
         seed = Some(parameters);
-        maximum = maximum.max(Point3::distance(point, surface_point));
+        maximum = maximum.max(Point3::distance(point.get(), surface_point.get()));
     }
     maximum.is_finite().then_some(maximum)
 }
@@ -5001,7 +5012,7 @@ fn nurbs_degree_one_cache_lanes(
         )?;
         let uv = nurbs_curve_point(1, curve.knots(), &uv_control_points, None, parameter)?;
         let mapped_point = nurbs_surface_point(surface, uv.x, uv.y)?;
-        fit_tolerance = fit_tolerance.max(Point3::distance(model_point, mapped_point));
+        fit_tolerance = fit_tolerance.max(Point3::distance(model_point.get(), mapped_point.get()));
     }
     if !fit_tolerance.is_finite() {
         return None;
@@ -5169,7 +5180,7 @@ fn ruled_surface_line_pcurve(
     };
     let objective = |parameter: f64| {
         let (a, b) = evaluate_ruling(parameter)?;
-        Some(perpendicular_squared(a).max(perpendicular_squared(b)))
+        Some(perpendicular_squared(a.get()).max(perpendicular_squared(b.get())))
     };
     let Some(candidates) = sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)
     else {
@@ -6323,7 +6334,9 @@ mod tests {
         let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
         let model_points = expected
             .map(|(u, v)| {
-                cadmpeg_ir::eval::nurbs_surface_point(&nurbs, u, v).expect("surface point")
+                cadmpeg_ir::eval::nurbs_surface_point(&nurbs, u, v)
+                    .expect("surface point")
+                    .get()
             })
             .to_vec();
         let endpoints = [model_points[0], model_points[2]];

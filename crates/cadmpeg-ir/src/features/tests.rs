@@ -1719,6 +1719,49 @@ fn finite_point_transformed_matches_apply_point_and_stays_admitted() {
 }
 
 #[test]
+fn finite_vector_transformed_matches_apply_vector_and_stays_admitted() {
+    use crate::features::FiniteVector3;
+    use crate::transform::Transform;
+
+    let transform = Transform::affine([
+        [2.0, 0.5, 0.0, 4.0],
+        [0.0, 3.0, 0.0, -2.0],
+        [0.0, 0.0, 4.0, 1.0],
+    ])
+    .unwrap();
+    for vector in [
+        Vector3::new(1.0, 2.0, 3.0),
+        Vector3::new(-0.0, 5.0e-324, -1.0e300),
+    ] {
+        let admitted = FiniteVector3::new(vector).unwrap();
+        let placed = admitted.transformed(transform).unwrap();
+        let raw = transform.apply_vector(vector).unwrap();
+        assert_eq!(
+            [placed.x, placed.y, placed.z].map(f64::to_bits),
+            [raw.x, raw.y, raw.z].map(f64::to_bits)
+        );
+        assert_eq!(FiniteVector3::new(raw), Some(placed));
+    }
+
+    // The translation does not act on a vector; a scale overflows it.
+    let stretch = Transform::affine([
+        [f64::MAX, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let unit = FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
+    assert_eq!(
+        unit.transformed(stretch),
+        FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
+    );
+    assert_eq!(
+        unit.transformed(stretch).unwrap().transformed(stretch),
+        None
+    );
+}
+
+#[test]
 fn feature_geometry_constants_are_the_admitted_literals() {
     use crate::features::{FeatureDirection3, FinitePoint3};
 

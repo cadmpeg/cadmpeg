@@ -1423,7 +1423,7 @@ pub(super) fn project(
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;
             };
-            let Some(start) = transform.apply_point(start) else {
+            let Some(start) = start.transformed(transform) else {
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
             };
@@ -1433,7 +1433,7 @@ pub(super) fn project(
                 losses.push(entity_loss(entry, "placement produces a non-finite point"));
                 continue;
             };
-            let direction = target.vector_from(start);
+            let direction = target.vector_from(start.get());
             if !direction.norm().is_finite() || direction.norm() <= 0.0 {
                 losses.push(entity_loss(
                     entry,
@@ -1555,7 +1555,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let direction = target.vector_from(start);
+        let direction = target.vector_from(start.get());
         if !direction.norm().is_finite() || direction.norm() <= 0.0 {
             losses.push(entity_loss(
                 entry,

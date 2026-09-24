@@ -905,7 +905,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(interior, &nurbs, 1.0e-9));
+    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9));
 }
 
 #[test]

@@ -53,7 +53,8 @@ impl WritableEdgeCurve<'_> {
             Self::Line(line) => cadmpeg_ir::eval::curve_point(
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                 parameter,
-            ),
+            )
+            .map(cadmpeg_ir::features::FinitePoint3::get),
             Self::Nurbs(nurbs) => {
                 let control_points = nurbs.control_points();
                 let weights = nurbs.weights();
@@ -64,6 +65,7 @@ impl WritableEdgeCurve<'_> {
                     weights.as_deref(),
                     cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?,
                 )
+                .map(cadmpeg_ir::features::FinitePoint3::get)
             }
         }
     }

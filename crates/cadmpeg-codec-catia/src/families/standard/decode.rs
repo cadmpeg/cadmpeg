@@ -282,7 +282,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             };
             let parameter = start + (end - start) * 0.5;
             if let Some(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
-                witnesses.push(point);
+                witnesses.push(point.get());
             }
         }
         if witnesses.len() < 2 {
@@ -3776,7 +3776,7 @@ fn standard_limit_curve_bindings(
                     return true;
                 }
                 checked_surface = true;
-                point_on_surface(midpoint, &surface.geometry)
+                point_on_surface(midpoint.get(), &surface.geometry)
             });
             if checked_surface && agrees {
                 edge_curves[edge].push(StandardLimitCurveBinding {
@@ -7044,7 +7044,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                 if let Some(point) =
                     cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end))
                 {
-                    witnesses.push(point);
+                    witnesses.push(point.get());
                 }
             }
             let mut distinct = Vec::<Point3>::new();

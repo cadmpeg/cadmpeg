@@ -479,7 +479,7 @@ fn evaluate_profile_point(
         weights.as_deref(),
         parameter,
     )
-    .filter(Point3::is_finite)
+    .map(cadmpeg_ir::features::FinitePoint3::get)
     .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
 }
 

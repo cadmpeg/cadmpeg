@@ -181,7 +181,8 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         panic!("expected an exact NURBS ruled cache");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
@@ -846,7 +847,8 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
         panic!("expected an exact NURBS extrusion cache");
     };
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1185,7 +1187,8 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
         ));
         assert_eq!(
-            cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5),
+            cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5)
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
@@ -1472,7 +1475,8 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
         ]
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(nurbs, 0.25, 0.75),
+        cadmpeg_ir::eval::nurbs_surface_point(nurbs, 0.25, 0.75)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1499,7 +1503,8 @@ fn decode_projects_a_degree_zero_bspline_surface() {
     assert_eq!(surface.u_knots(), [0.0, 1.0]);
     assert_eq!(surface.v_knots(), [0.0, 1.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(1.0, 2.0, 3.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1524,11 +1529,13 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
     assert_eq!((surface.u_count(), surface.v_count()), (2, 1));
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, 0.5),
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, 0.5)
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(4.0, 5.0, 6.0))
     );
     assert!(result.report().losses.is_empty());

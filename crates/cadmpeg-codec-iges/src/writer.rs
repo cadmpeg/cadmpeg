@@ -1906,8 +1906,8 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                     .zip(vertex_position(ir, &edge.start))
                     .is_some_and(|(topology_start, edge_start)| {
                         same_point_with_tolerance(
-                            topology_start,
-                            edge_start,
+                            topology_start.get(),
+                            edge_start.get(),
                             topology_edge_explicit_tolerance(ir, topology_edge),
                         )
                     })
@@ -1915,8 +1915,8 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                     .zip(vertex_position(ir, &edge.end))
                     .is_some_and(|(topology_end, edge_end)| {
                         same_point_with_tolerance(
-                            topology_end,
-                            edge_end,
+                            topology_end.get(),
+                            edge_end.get(),
                             topology_edge_explicit_tolerance(ir, topology_edge),
                         )
                     })
@@ -1930,12 +1930,20 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                     && vertex_position(ir, &edge.start)
                         .zip(curve_point(&curve.geometry, range[0]))
                         .is_some_and(|(start, evaluated)| {
-                            same_point_with_tolerance(start, evaluated, matching_topology_tolerance)
+                            same_point_with_tolerance(
+                                start.get(),
+                                evaluated.get(),
+                                matching_topology_tolerance,
+                            )
                         })
                     && vertex_position(ir, &edge.end)
                         .zip(curve_point(&curve.geometry, range[1]))
                         .is_some_and(|(end, evaluated)| {
-                            same_point_with_tolerance(end, evaluated, matching_topology_tolerance)
+                            same_point_with_tolerance(
+                                end.get(),
+                                evaluated.get(),
+                                matching_topology_tolerance,
+                            )
                         })
             })
         });
@@ -3797,8 +3805,8 @@ impl PcurveOrientationContext<'_> {
                     ))
                 },
             )?;
-            ensure_finite_point(start, &format!("{} pcurve {} start", self.owner, pcurve.id))?;
-            ensure_finite_point(end, &format!("{} pcurve {} end", self.owner, pcurve.id))?;
+            admitted_point(start, &format!("{} pcurve {} start", self.owner, pcurve.id))?;
+            admitted_point(end, &format!("{} pcurve {} end", self.owner, pcurve.id))?;
             mapped.push((start, end));
         }
         Ok(mapped)
@@ -3988,10 +3996,9 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> f64 {
     scale
 }
 
-fn point_coordinate_scale(point: Point3) -> f64 {
+fn point_coordinate_scale(point: FinitePoint3) -> f64 {
     [point.x, point.y, point.z]
         .into_iter()
-        .filter(|value| value.is_finite())
         .map(f64::abs)
         .fold(1.0, f64::max)
 }
@@ -4592,7 +4599,10 @@ fn extrusion_surface_entities(
                     .into(),
             ));
         }
-        (span.start, span.end)
+        (
+            admitted_point(span.start, "Type 122 directrix start")?,
+            admitted_point(span.end, "Type 122 directrix terminate")?,
+        )
     } else {
         let evaluation_interval = if matches!(
             &geometry,
@@ -4610,10 +4620,8 @@ fn extrusion_surface_entities(
         })?;
         (start, end)
     };
-    ensure_finite_point(start, "Type 122 directrix start")?;
-    ensure_finite_point(end, "Type 122 directrix terminate")?;
     let inferred_target = start.translated(*direction, 1.0);
-    ensure_finite_point(inferred_target, "Type 122 inferred terminate point")?;
+    admitted_point(inferred_target, "Type 122 inferred terminate point")?;
     let target = native_position.as_ref().copied().unwrap_or(inferred_target);
     if !same_point(target, inferred_target) {
         return Err(CodecError::Malformed(
@@ -4623,8 +4631,8 @@ fn extrusion_surface_entities(
 
     let directrix_span = CurveSpan {
         range: [start_parameter, terminate_parameter],
-        start,
-        end,
+        start: start.get(),
+        end: end.get(),
     };
     let mut entities = Vec::new();
     let directrix_local_index = append_curve_entity(
@@ -4784,8 +4792,6 @@ fn revolution_surface_entities(
     let end = curve_point(&geometry, evaluation_interval[1]).ok_or_else(|| {
         CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
     })?;
-    ensure_finite_point(start, "Type 120 generatrix start")?;
-    ensure_finite_point(end, "Type 120 generatrix terminate")?;
     let axis_direction = axis_direction.to_unit_length();
     let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
     let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -4798,8 +4804,8 @@ fn revolution_surface_entities(
     };
     let generatrix_span = CurveSpan {
         range: [start_parameter, terminate_parameter],
-        start,
-        end,
+        start: start.get(),
+        end: end.get(),
     };
     let directrix_index = base_index
         .checked_add(1)
@@ -5110,7 +5116,7 @@ fn nurbs_surface_closed_u(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64
             let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v) else {
                 return false;
             };
-            close_point(start, end)
+            close_point(start.get(), end.get())
         })
 }
 
@@ -5124,7 +5130,7 @@ fn nurbs_surface_closed_v(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64
             let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]) else {
                 return false;
             };
-            close_point(start, end)
+            close_point(start.get(), end.get())
         })
 }
 
@@ -5155,7 +5161,7 @@ fn point_position(ir: &CadIr, point_id: &PointId) -> Result<Point3, CodecError> 
         })
 }
 
-fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
+fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<FinitePoint3> {
     let point_id = ir
         .model
         .vertices
@@ -5167,7 +5173,7 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
         .points
         .iter()
         .find(|point| point.id == point_id)
-        .map(|point| point.position().get())
+        .map(|point| point.position())
 }
 
 #[derive(Clone, Copy)]
@@ -5474,7 +5480,11 @@ fn curve_reference_span_inner(
                             "IGES composite child curve {curve_id} has no evaluable end"
                         ))
                     })?;
-                    Ok(CurveSpan { range, start, end })
+                    Ok(CurveSpan {
+                        range,
+                        start: start.get(),
+                        end: end.get(),
+                    })
                 }
                 Some((first_edge, rest_edges)) => {
                     if matching_edges
@@ -5603,8 +5613,8 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             ))
         })?;
         let tolerance = edge_topology_tolerance(ir, edge)?;
-        if !close_point_with_tolerance(start, evaluated_start, tolerance)
-            || !close_point_with_tolerance(end, evaluated_end, tolerance)
+        if !close_point_with_tolerance(start, evaluated_start.get(), tolerance)
+            || !close_point_with_tolerance(end, evaluated_end.get(), tolerance)
         {
             return Err(CodecError::malformed(format_args!(
                 "IGES edge {} endpoints disagree with its curve parameter range",
@@ -6082,10 +6092,10 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
     };
     let scale = control_points
         .iter()
-        .map(|point| point.distance(start))
+        .map(|point| point.distance(start.get()))
         .filter(|distance| distance.is_finite())
         .fold(1.0, f64::max);
-    start.distance(end) <= NURBS_CLOSEDNESS_TOLERANCE * scale
+    start.distance(end.get()) <= NURBS_CLOSEDNESS_TOLERANCE * scale
 }
 
 fn flatten_curve(geometry: &SolvedCurveGeometry) -> Result<CurveGeometry, CodecError> {
@@ -6315,7 +6325,7 @@ fn orthonormal_pair(frame: &OrthonormalFrame3) -> (Vector3, Vector3) {
 /// divisions give the unit columns that a reader checks at the printed
 /// precision of 17 significant digits.
 fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placement, CodecError> {
-    ensure_finite_point(origin, "placement origin")?;
+    admitted_point(origin, "placement origin")?;
     let divided = |vector: Vector3| {
         let length = vector.norm();
         Vector3::new(vector.x / length, vector.y / length, vector.z / length)
@@ -6445,14 +6455,12 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
         && (left.z - right.z).abs() <= tolerance
 }
 
-fn ensure_finite_point(point: Point3, label: &str) -> Result<(), CodecError> {
-    if point.is_finite() {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
+fn admitted_point(point: Point3, label: &str) -> Result<FinitePoint3, CodecError> {
+    FinitePoint3::new(point).ok_or_else(|| {
+        CodecError::malformed(format_args!(
             "IGES point {label} has non-finite coordinates"
-        )))
-    }
+        ))
+    })
 }
 
 #[derive(Clone)]

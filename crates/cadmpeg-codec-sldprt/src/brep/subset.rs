@@ -74,6 +74,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                 curve.weights().as_deref(),
                 parameter,
             )
+            .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,
     }

@@ -399,7 +399,10 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     )
     .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
-    assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
+    assert_eq!(
+        nurbs_surface_point(&surface, 0.25, 0.75).map(crate::features::FinitePoint3::get),
+        Some(point)
+    );
     let bound = nurbs_surface_parameter_segment_chord_bound(
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
@@ -454,8 +457,11 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
     )
     .unwrap();
     let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
-    let endpoints = parameters
-        .map(|point| nurbs_surface_point(&surface, point.u, point.v).expect("surface endpoint"));
+    let endpoints = parameters.map(|point| {
+        nurbs_surface_point(&surface, point.u, point.v)
+            .expect("surface endpoint")
+            .get()
+    });
     let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints)
         .expect("multi-span rational Bézier residual bound");
 
@@ -548,7 +554,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
             &crate::index::ModelIndex::new(&ir),
             &id,
-            point,
+            point.get(),
             parameter,
         )
         .expect("direct analytic inverse");
@@ -707,7 +713,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
         &crate::index::ModelIndex::new(&ir),
         &id,
-        point,
+        point.get(),
         parameter,
     )
     .expect("transformed inverse");
@@ -1744,7 +1750,8 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         Vector3::new(-3.0 * parameter.sin(), 3.0 * parameter.cos(), 0.0)
     );
     assert_eq!(
-        curve_second_derivative(&CurveGeometry::Solved(circle.clone()), parameter),
+        curve_second_derivative(&CurveGeometry::Solved(circle.clone()), parameter)
+            .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(
             -3.0 * parameter.cos(),
             -3.0 * parameter.sin(),
@@ -1779,7 +1786,9 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
             .expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
         assert!(radial_dot.abs() < 1.0e-12);
-        assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1.0e-11);
+        assert!(
+            (point.x * second.x + point.y * second.y + tangent.dot(tangent.get())).abs() < 1.0e-11
+        );
         assert!(tangent.norm() > 0.0);
     }
 
@@ -1803,7 +1812,8 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         .unwrap(),
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(corner.clone()), 0.5),
+        curve_tangent(&CurveGeometry::Solved(corner.clone()), 0.5)
+            .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
