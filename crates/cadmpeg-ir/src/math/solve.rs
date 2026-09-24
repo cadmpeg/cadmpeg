@@ -2,6 +2,7 @@
 //! Scaled geometric least-squares solves.
 
 use super::Vector3;
+use crate::features::FiniteVector3;
 use crate::scalar::FiniteReal;
 
 /// Scalar least-squares step along a finite nonzero tangent. Exact products
@@ -28,13 +29,14 @@ pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<FiniteReal
 
 /// Solve a two-column least-squares step without imposing an absolute rank scale.
 pub fn least_squares_step(
-    du: Vector3,
-    dv: Vector3,
+    du: FiniteVector3,
+    dv: FiniteVector3,
     residual: Vector3,
 ) -> Option<(FiniteReal, FiniteReal)> {
-    if !du.is_finite() || !dv.is_finite() || !residual.is_finite() {
+    if !residual.is_finite() {
         return None;
     }
+    let (du, dv) = (du.get(), dv.get());
     let du_scale = du.x.abs().max(du.y.abs()).max(du.z.abs());
     let dv_scale = dv.x.abs().max(dv.y.abs()).max(dv.z.abs());
     if du_scale == 0.0 || dv_scale == 0.0 {
@@ -135,7 +137,12 @@ mod tests {
     use crate::scalar::FiniteReal;
 
     fn step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
-        super::least_squares_step(du, dv, residual).map(|(u, v)| (u.get(), v.get()))
+        super::least_squares_step(
+            super::FiniteVector3::new(du)?,
+            super::FiniteVector3::new(dv)?,
+            residual,
+        )
+        .map(|(u, v)| (u.get(), v.get()))
     }
 
     #[test]

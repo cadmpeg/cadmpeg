@@ -767,9 +767,7 @@ fn refine_nurbs_surface_parameters(
         );
         let partials =
             nurbs_surface_partials_with_budget(surface, parameters.u, parameters.v, budget)?;
-        let Some((step_u, step_v)) =
-            least_squares_step(partials.du.get(), partials.dv.get(), residual)
-        else {
+        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
         let current_distance = distance(position.get());
@@ -1195,9 +1193,7 @@ pub fn nurbs_surface_parameter_near_point(
             partials.point.y - point.y,
             partials.point.z - point.z,
         );
-        let Some((step_u, step_v)) =
-            least_squares_step(partials.du.get(), partials.dv.get(), residual)
-        else {
+        let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
         let [u, v] = parameters.coordinates();

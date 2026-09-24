@@ -1024,7 +1024,10 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
             if fit_tolerance.is_some_and(|tolerance| residual.norm() <= tolerance) {
                 return Some(parameters);
             }
-            let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
+            let Some((step_u, step_v)) = FiniteVector3::new(du)
+                .zip(FiniteVector3::new(dv))
+                .and_then(|(du, dv)| least_squares_step(du, dv, residual))
+            else {
                 break;
             };
             let (step_u, step_v) = (step_u.get(), step_v.get());
@@ -1168,7 +1171,9 @@ pub(super) fn refine_offset_surface_parameters_with_index_and_budget(
             position.y - point.y,
             position.z - point.z,
         );
-        let (step_u, step_v) = least_squares_step(du, dv, residual)?;
+        let (step_u, step_v) = FiniteVector3::new(du)
+            .zip(FiniteVector3::new(dv))
+            .and_then(|(du, dv)| least_squares_step(du, dv, residual))?;
         let (step_u, step_v) = (step_u.get(), step_v.get());
         let mut accepted = None;
         let mut scale = 1.0;
@@ -1951,7 +1956,11 @@ fn intersection_parameter_tangent(
     ];
     let mut tangent = [0.0; 4];
     for side in 0..2 {
-        let (u, v) = least_squares_step(derivatives[side][0], derivatives[side][1], chord)?;
+        let (u, v) = least_squares_step(
+            FiniteVector3::new(derivatives[side][0])?,
+            FiniteVector3::new(derivatives[side][1])?,
+            chord,
+        )?;
         let (u, v) = (u.get(), v.get());
         let mapped = FiniteVector3::new(Vector3::new(
             derivatives[side][0].x * u + derivatives[side][1].x * v,
