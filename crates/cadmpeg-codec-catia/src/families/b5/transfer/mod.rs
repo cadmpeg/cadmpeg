@@ -68,7 +68,7 @@ fn endpoint_gate_radius(residual: Option<f64>) -> f64 {
     }
 }
 
-type B5Support = (u32, u32, [f64; 2]);
+type B5Support = (u32, u32, [FiniteReal; 2]);
 type B5SupportPlan = HashMap<u32, Vec<B5Support>>;
 
 struct RevolutionPlan {
@@ -156,7 +156,7 @@ struct TransferPlan {
     surface_plan: BTreeMap<u32, SurfacePlan>,
     /// Pcurve geometry, cylinder-reparameterization flag, and native range
     /// keyed by object id (read by `pcurves` and `edges`).
-    pcurve_plan: BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurve_plan: BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
     /// Oriented 3D curve plans keyed by edge id (drained by `edges`).
     edge_curve_plan: HashMap<u32, CurvePlan>,
     /// Cylinder helix procedural plans keyed by edge id (drained by `edges`).
@@ -435,7 +435,10 @@ fn build_plan(
             if pcurve.surface != loop_.surface || !graph.vertices.edges().contains_key(&edge_id) {
                 return None;
             }
-            let knots = pcurve_nurbs_knots(pcurve)?;
+            let knots = pcurve_nurbs_knots(pcurve)?
+                .into_iter()
+                .map(FiniteReal::get)
+                .collect();
             let parameter_range = pcurve_parameter_domain(pcurve)?;
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
@@ -484,11 +487,18 @@ fn build_plan(
                 let [edge_start, edge_end] = graph.vertices.edge_points(edge_id)?;
                 let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
-                        oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
+                        oriented_nurbs_range(
+                            geometry.clone(),
+                            parameters.map(FiniteReal::get),
+                            edge_start,
+                            edge_end,
+                        )
                     })
                 } else if matches!(surface, B5Surface::Nurbs(_) | B5Surface::Revolution { .. }) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id)
-                        .and_then(|parameters| isocurve_endpoint_parameters(pcurve, parameters))
+                        .and_then(|parameters| {
+                            isocurve_endpoint_parameters(pcurve, parameters.map(FiniteReal::get))
+                        })
                         .and_then(|parameters| {
                             oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
                         })
@@ -503,7 +513,12 @@ fn build_plan(
                 ) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
                         oriented_circle_plan(
-                            pcurve, surface, &geometry, parameters, edge_start, edge_end,
+                            pcurve,
+                            surface,
+                            &geometry,
+                            parameters.map(FiniteReal::get),
+                            edge_start,
+                            edge_end,
                         )
                     })
                 } else {
@@ -534,7 +549,7 @@ fn build_plan(
                 let Some(helix) = cylinder_helix(
                     pcurve,
                     surface,
-                    endpoint_parameters,
+                    endpoint_parameters.map(FiniteReal::get),
                     edge_start,
                     edge_end,
                     refusal,
@@ -818,7 +833,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
                 format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
             )?,
         },
-        parameter_range: pcurve.range,
+        parameter_range: pcurve.range.map(FiniteReal::get),
     })
 }
 
@@ -957,40 +972,46 @@ pub(in crate::families) fn resolved_extrusion_surface(
     let construction_id = graph.canonical_surface_id(surface_id)?;
     let extrusion = graph.extrusion_surfaces.get(&construction_id)?;
     let active = extrusion.parameter_bounds[1].map(FiniteReal::get);
-    let mut resolve_support =
-        |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (u32, u32, [f64; 2])| {
-            let source_surface = graph.surfaces.get(&surface_object_id)?;
-            let surface = resolved_surface_geometry(graph, surface_object_id, refusal)?;
-            let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-            let knots = pcurve_nurbs_knots(pcurve)?;
-            let domain = pcurve_parameter_domain(pcurve)?;
-            bounded_occurrence_range(pcurve_parameter_range, domain)?;
-            let pcurve_geometry = PcurveGeometry::Nurbs {
-                nurbs: crate::nurbs::note_refusal(
-                    PcurveNurbs::from_lanes(
-                        pcurve.degree,
-                        knots,
-                        pcurve
-                            .control_points
-                            .iter()
-                            .map(|point| neutral_pcurve_point(*point, source_surface))
-                            .collect(),
-                        pcurve.weights.clone(),
-                        false,
-                    ),
-                    refusal,
-                    format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                )?,
-            };
-            let curve = lifted_curve_geometry(pcurve, source_surface);
-            Some(ResolvedExtrusionSupport {
-                surface_object_id,
-                surface,
-                pcurve: pcurve_geometry,
-                pcurve_parameter_range,
-                curve,
-            })
+    let mut resolve_support = |(surface_object_id, pcurve_object_id, pcurve_parameter_range): (
+        u32,
+        u32,
+        [FiniteReal; 2],
+    )| {
+        let source_surface = graph.surfaces.get(&surface_object_id)?;
+        let surface = resolved_surface_geometry(graph, surface_object_id, refusal)?;
+        let pcurve = graph.pcurves.get(&pcurve_object_id)?;
+        let knots = pcurve_nurbs_knots(pcurve)?
+            .into_iter()
+            .map(FiniteReal::get)
+            .collect();
+        let domain = pcurve_parameter_domain(pcurve)?;
+        bounded_occurrence_range(pcurve_parameter_range, domain)?;
+        let pcurve_geometry = PcurveGeometry::Nurbs {
+            nurbs: crate::nurbs::note_refusal(
+                PcurveNurbs::from_lanes(
+                    pcurve.degree,
+                    knots,
+                    pcurve
+                        .control_points
+                        .iter()
+                        .map(|point| neutral_pcurve_point(*point, source_surface))
+                        .collect(),
+                    pcurve.weights.clone(),
+                    false,
+                ),
+                refusal,
+                format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
+            )?,
         };
+        let curve = lifted_curve_geometry(pcurve, source_surface);
+        Some(ResolvedExtrusionSupport {
+            surface_object_id,
+            surface,
+            pcurve: pcurve_geometry,
+            pcurve_parameter_range: pcurve_parameter_range.map(FiniteReal::get),
+            curve,
+        })
+    };
     let directrix = match &extrusion.directrix {
         B5ExtrusionDirectrix::Intersection {
             supports,

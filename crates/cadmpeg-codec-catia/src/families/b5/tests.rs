@@ -54,7 +54,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
         .expect("length-closed B5 graph");
     let pcurve = graph.pcurves.get(&600).expect("analytic line pcurve");
     assert_eq!(pcurve.degree, 1);
-    assert_eq!(pcurve.distinct_knots, vec![-0.5, 1.5]);
+    assert_eq!(
+        pcurve.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-0.5, 1.5])
+    );
     assert_eq!(pcurve.multiplicities, vec![2, 2]);
     assert_eq!(pcurve.control_points, vec![[0.0, 4.0], [8.0, 0.0]]);
     assert_eq!(
@@ -63,7 +66,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     );
     let isoparametric = graph.pcurves.get(&601).expect("isoparametric line pcurve");
     assert_eq!(isoparametric.degree, 1);
-    assert_eq!(isoparametric.distinct_knots, vec![-3.0, 5.0]);
+    assert_eq!(
+        isoparametric.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-3.0, 5.0])
+    );
     assert_eq!(isoparametric.multiplicities, vec![2, 2]);
     assert_eq!(isoparametric.control_points, vec![[2.0, -3.0], [2.0, 5.0]]);
     assert_eq!(
@@ -72,7 +78,10 @@ fn b5_analytic_line_pcurve_resolves_to_clamped_linear_form() {
     );
     let transverse = graph.pcurves.get(&602).expect("transverse line pcurve");
     assert_eq!(transverse.degree, 1);
-    assert_eq!(transverse.distinct_knots, vec![1.0, 7.0]);
+    assert_eq!(
+        transverse.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[1.0, 7.0])
+    );
     assert_eq!(transverse.multiplicities, vec![2, 2]);
     assert_eq!(transverse.control_points, vec![[1.0, -4.0], [7.0, -4.0]]);
     assert_eq!(

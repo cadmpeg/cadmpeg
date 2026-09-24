@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
     SupportPcurve, SurfaceCurveFamily,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, IdentityNamespace, ProceduralCurveId, SurfaceId, VertexId};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -84,7 +85,10 @@ fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
     })
 }
 
-pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
+pub(super) fn ordered_subrange(
+    parameters: [FiniteReal; 2],
+    domain: [FiniteReal; 2],
+) -> Option<[FiniteReal; 2]> {
     let parameters = bounded_occurrence_range(parameters, domain)?;
     Some(if parameters[0] < parameters[1] {
         parameters
@@ -96,7 +100,7 @@ pub(super) fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option
 pub(super) fn b5_edge_support_definition(
     supports: &[B5Support],
     surface_ids: &HashMap<u32, SurfaceId>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
 ) -> Option<(IdentityNamespace, &'static str, ProceduralCurveDefinition)> {
     let ([first] | [first, _]) = supports else {
@@ -111,7 +115,7 @@ pub(super) fn b5_edge_support_definition(
     }
     let parameter_range = solved_parameter_range.unwrap_or_else(|| {
         if first.2[0] < first.2[1] && supports.iter().skip(1).all(|support| support.2 == first.2) {
-            first.2
+            first.2.map(FiniteReal::get)
         } else {
             [0.0, 1.0]
         }
@@ -122,8 +126,9 @@ pub(super) fn b5_edge_support_definition(
     });
     for (side, (surface, pcurve, support_range)) in sides.iter_mut().zip(supports) {
         side.surface = Some(surface_ids.get(surface)?.clone());
-        let mapped_range = (*support_range != parameter_range)
-            .then(|| DirectedParameterRange::new(*support_range).ok())
+        let support_range = support_range.map(FiniteReal::get);
+        let mapped_range = (support_range != parameter_range)
+            .then(|| DirectedParameterRange::new(support_range).ok())
             .flatten();
         side.pcurve = Some(SupportPcurve::new(
             pcurves.get(pcurve)?.0.clone(),
@@ -165,7 +170,7 @@ pub(super) fn b5_supports_follow_edge(
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> bool {
     supports.iter().all(|support| {
         let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
@@ -181,7 +186,7 @@ pub(super) fn orient_b5_supports_to_edge(
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) {
     for support in supports {
         let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
@@ -208,7 +213,7 @@ pub(super) fn orient_b5_supports_to_edge(
 pub(super) fn b5_supports_agree(
     supports: &[B5Support],
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> bool {
     let mut lifted = supports
         .iter()
@@ -225,15 +230,15 @@ pub(super) fn b5_supports_agree(
 }
 
 pub(super) fn b5_support_endpoints(
-    (surface, pcurve, range): &(u32, u32, [f64; 2]),
+    (surface, pcurve, range): &(u32, u32, [FiniteReal; 2]),
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Option<[[f64; 3]; 2]> {
     let surface = surfaces.get(surface)?;
     let (pcurve, _, domain) = pcurves.get(pcurve)?;
     bounded_occurrence_range(*range, *domain)?;
     let lifted = range.map(|parameter| {
-        let uv = pcurve_uv(pcurve, parameter)?;
+        let uv = pcurve_uv(pcurve, parameter.get())?;
         let point = surface_point(&surface.geometry, uv.u, uv.v)?;
         Some([point.x, point.y, point.z])
     });
@@ -247,7 +252,7 @@ pub(super) fn b5_supports_follow_curve(
     supports: &[B5Support],
     curve: &CurvePlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> bool {
     const EXACT_TOLERANCE: f64 = 1.0e-6;
 

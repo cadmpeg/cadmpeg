@@ -14,6 +14,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::PcurveId;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
@@ -45,16 +46,18 @@ pub(super) fn sphere_great_circle_geometry(
     else {
         return None;
     };
-    if pcurve.chart_scale != *construction_radius {
+    let chart_scale = pcurve.chart_scale.get();
+    if chart_scale != *construction_radius {
         return None;
     }
     let (sphere_axis, direction_x) = (components(frame.axis()), components(frame.reference()));
-    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
+    let phase = pcurve.chart_shift.get() / chart_scale + pcurve.phase.get();
+    let slope = pcurve.slope.get();
     let plane_axis = unit_vector(add(
         scale(sphere_axis, 1.0),
         add(
-            scale(direction_x, -pcurve.slope * phase.cos()),
-            scale(*direction_y, -pcurve.slope * phase.sin()),
+            scale(direction_x, -slope * phase.cos()),
+            scale(*direction_y, -slope * phase.sin()),
         ),
     ))?;
     let ref_direction = add(
@@ -74,28 +77,21 @@ pub(super) fn sphere_great_circle_geometry(
 
 pub(super) fn sphere_great_circle_pcurve(
     pcurve: &B5SphereGreatCirclePcurve,
-) -> Option<(PcurveGeometry, [f64; 2])> {
-    let parameter_range = pcurve.chart_bounds[0];
-    let azimuth_rate = pcurve.chart_scale.recip();
-    let plane_phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
-    (pcurve.chart_scale.is_finite()
-        && pcurve.chart_scale > 0.0
-        && parameter_range.into_iter().all(f64::is_finite)
-        && parameter_range[0] < parameter_range[1]
-        && azimuth_rate.is_finite()
-        && plane_phase.is_finite()
-        && pcurve.slope.is_finite())
-    .then_some((
+) -> Option<(PcurveGeometry, [FiniteReal; 2])> {
+    let chart_scale = pcurve.chart_scale.get();
+    let azimuth_rate = chart_scale.recip();
+    let plane_phase = pcurve.chart_shift.get() / chart_scale + pcurve.phase.get();
+    (azimuth_rate.is_finite() && plane_phase.is_finite()).then_some((
         PcurveGeometry::SphericalGreatCircle(
             cadmpeg_ir::geometry::pcurve::SphericalGreatCirclePcurve::try_new(
                 0.0,
                 azimuth_rate,
                 plane_phase,
-                pcurve.slope,
+                pcurve.slope.get(),
             )
             .ok()?,
         ),
-        parameter_range,
+        pcurve.u_bounds.finite_endpoints(),
     ))
 }
 
@@ -378,7 +374,10 @@ pub(super) fn lifted_curve_geometry(
     pcurve: &B5Pcurve,
     surface: &B5Surface,
 ) -> Option<CurveGeometry> {
-    let knots = pcurve_nurbs_knots(pcurve)?;
+    let knots = pcurve_nurbs_knots(pcurve)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
@@ -728,10 +727,10 @@ pub(super) fn emit_pcurves(
                 .entry(object_id)
                 .or_default()
                 .entry(parameter_range.map(|parameter| {
-                    if parameter == 0.0 {
+                    if parameter.get() == 0.0 {
                         0.0f64.to_bits()
                     } else {
-                        parameter.to_bits()
+                        parameter.get().to_bits()
                     }
                 }))
                 .or_default()
@@ -770,6 +769,7 @@ pub(super) fn emit_pcurves(
                 .pcurves
                 .get(&object_id)
                 .and_then(|pcurve| pcurve.parameter_range)
+                .map(|range| range.map(FiniteReal::get))
                 != Some(parameter_range)
             {
                 annotations

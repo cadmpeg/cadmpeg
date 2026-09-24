@@ -28,10 +28,16 @@ fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
     assert_eq!(pcurve.object_id, 7);
     assert_eq!(pcurve.surface, 3);
-    assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+    assert_eq!(
+        pcurve.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[10.0, 20.0])
+    );
     assert_eq!(pcurve.multiplicities, [6, 6]);
     assert_eq!(pcurve.control_points.len(), 6);
-    assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
+    assert_eq!(
+        pcurve.parameter_range,
+        Some(crate::test_support::test_b5::finite_pair([10.0, 20.0]))
+    );
     assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
 
     payload[6] = 0x0d;
@@ -635,7 +641,11 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
             ]),
             directrix: B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 2,
-                support: (7, 3, [10.0, 20.0]),
+                support: (
+                    7,
+                    3,
+                    crate::test_support::test_b5::finite_pair([10.0, 20.0])
+                ),
                 parameter_range: [0.0, 10.0],
             },
         })
@@ -677,7 +687,11 @@ fn extrusion_reparameters_a_class21_surface_curve_from_validated_knot_spans() {
             ]),
             directrix: B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 2,
-                support: (7, 3, [10.0, 50.0]),
+                support: (
+                    7,
+                    3,
+                    crate::test_support::test_b5::finite_pair([10.0, 50.0])
+                ),
                 parameter_range: [0.0, 10.0],
             },
         })
@@ -761,7 +775,11 @@ fn extrusion_selects_the_terminal_span_of_a_direct_class20_pcurve() {
                 ]),
                 directrix: B5ExtrusionDirectrix::SurfaceCurve {
                     object_id: 3,
-                    support: (7, 3, source_range),
+                    support: (
+                        7,
+                        3,
+                        crate::test_support::test_b5::finite_pair(source_range)
+                    ),
                     parameter_range: [0.0, 2.5],
                 },
             })
@@ -831,7 +849,7 @@ fn offset_curve_directrix_binds_source_support_and_exact_ranges() {
             object_id: 4,
             source: Box::new(B5ExtrusionDirectrix::SurfaceCurve {
                 object_id: 2,
-                support: (7, 3, [-3.0, 4.0]),
+                support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
                 parameter_range: [-3.0, 4.0],
             }),
             source_parameter_range: [-3.0, 4.0],
@@ -899,7 +917,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
         parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 7.0]]),
         directrix: B5ExtrusionDirectrix::SurfaceCurve {
             object_id: 2,
-            support: (7, 3, [-3.0, 4.0]),
+            support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
             parameter_range: [0.0, 7.0],
         },
     };
@@ -944,7 +962,7 @@ fn contextual_offset_extrusion_uses_the_class30_result_chart() {
                 object_id: 4,
                 source: Box::new(B5ExtrusionDirectrix::SurfaceCurve {
                     object_id: 2,
-                    support: (7, 3, [-3.0, 4.0]),
+                    support: (7, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
                     parameter_range: [-3.0, 4.0],
                 }),
                 source_parameter_range: [-3.0, 4.0],
@@ -1633,12 +1651,12 @@ fn parameter_incidence_retains_aligned_compact_controls() {
         [
             B5IncidenceLane {
                 curve: 9,
-                parameter: 1.25,
+                parameter: crate::test_support::test_b5::finite(1.25),
                 control: 5,
             },
             B5IncidenceLane {
                 curve: 10,
-                parameter: 2.5,
+                parameter: crate::test_support::test_b5::finite(2.5),
                 control: 11,
             },
         ]

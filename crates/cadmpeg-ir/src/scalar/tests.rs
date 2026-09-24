@@ -324,3 +324,21 @@ fn a_length_scaled_by_a_sine_stays_admitted_and_not_above_the_length() {
         NonNegativeLength::ZERO
     );
 }
+
+#[test]
+fn an_increasing_interval_hands_its_endpoints_on_as_finite_reals() {
+    use crate::topology::IncreasingParameterInterval;
+
+    for endpoints in [
+        [-2.5, 7.0],
+        [-f64::MAX, f64::MAX],
+        [-0.0, f64::MIN_POSITIVE],
+    ] {
+        let interval = IncreasingParameterInterval::new(endpoints).unwrap();
+        let [lower, upper] = interval.finite_endpoints();
+        assert_eq!(
+            [lower.get(), upper.get()].map(f64::to_bits),
+            endpoints.map(f64::to_bits)
+        );
+    }
+}

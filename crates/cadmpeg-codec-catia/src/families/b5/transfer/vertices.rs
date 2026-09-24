@@ -8,6 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Point, Vertex};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -23,7 +24,7 @@ pub(super) fn transfer_vertex_tolerances(
     graph: &B5Graph,
     supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> BTreeMap<usize, f64> {
     let mut tolerances = graph.vertex_tolerances.clone();
     for (&edge, supports) in supports {

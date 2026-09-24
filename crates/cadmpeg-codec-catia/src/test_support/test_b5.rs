@@ -51,6 +51,22 @@ pub(crate) fn finite(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture scalar")
 }
 
+/// Admit a finite fixture pair.
+pub(crate) fn finite_pair(values: [f64; 2]) -> [cadmpeg_ir::scalar::FiniteReal; 2] {
+    values.map(finite)
+}
+
+/// Admit a finite fixture lane.
+pub(crate) fn finite_lane(values: &[f64]) -> Vec<cadmpeg_ir::scalar::FiniteReal> {
+    values.iter().copied().map(finite).collect()
+}
+
+/// Admit an increasing fixture interval.
+pub(crate) fn increasing(endpoints: [f64; 2]) -> cadmpeg_ir::topology::IncreasingParameterInterval {
+    cadmpeg_ir::topology::IncreasingParameterInterval::new(endpoints)
+        .expect("increasing fixture interval")
+}
+
 /// Admit finite fixture parameter bounds.
 pub(crate) fn finite_bounds(bounds: [[f64; 2]; 2]) -> [[cadmpeg_ir::scalar::FiniteReal; 2]; 2] {
     bounds.map(|pair| {
