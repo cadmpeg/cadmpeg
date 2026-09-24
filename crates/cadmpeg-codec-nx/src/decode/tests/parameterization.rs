@@ -372,7 +372,7 @@ fn decode_tracks_fully_extended_offset_common_header() {
     };
     let support = definition_payload.support();
     let distance = definition_payload.distance();
-    assert_eq!(*distance, 2.5);
+    assert_eq!(distance.get(), 2.5);
     let owner = result
         .ir()
         .model
@@ -814,7 +814,9 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
         .find(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed"))
         .expect("validated completed support lane attaches");
     assert_eq!(
-        completed.fit_tolerance(),
+        completed
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         edge_tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
     );
     assert!(ir.model.coedges.iter().any(|coedge| coedge
@@ -1882,7 +1884,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 edit::replace(definition_payload, |previous| {
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                         previous.support().clone(),
-                        *previous.distance(),
+                        previous.distance().get(),
                         *previous.u_sense(),
                         *previous.v_sense(),
                         replacement,
@@ -1905,7 +1907,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                 edit::replace(definition_payload, |previous| {
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                         previous.support().clone(),
-                        *previous.distance(),
+                        previous.distance().get(),
                         *previous.u_sense(),
                         *previous.v_sense(),
                         replacement,

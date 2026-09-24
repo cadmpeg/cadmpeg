@@ -428,10 +428,10 @@ fn curve_properties(
         format!("{prefix}_knots"),
         comma_list(curve.knots().iter().copied()),
     );
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     properties.insert(format!("{prefix}_control_points"), points(&control_points));
     properties.insert(format!("{prefix}_periodic"), curve.periodic().to_string());
-    if let Some(weights) = curve.weights() {
+    if let Some(weights) = curve.pole_rows().weights() {
         properties.insert(
             format!("{prefix}_weights"),
             comma_list(weights.iter().copied()),
@@ -456,7 +456,10 @@ fn surface_properties(
     );
     properties.insert(format!("{prefix}_u_count"), surface.u_count().to_string());
     properties.insert(format!("{prefix}_v_count"), surface.v_count().to_string());
-    properties.insert(format!("{prefix}_control_points"), points(&surface.poles()));
+    properties.insert(
+        format!("{prefix}_control_points"),
+        points(&surface.pole_grid().points().concat()),
+    );
     properties.insert(
         format!("{prefix}_u_periodic"),
         surface.u_periodic().to_string(),
@@ -465,8 +468,8 @@ fn surface_properties(
         format!("{prefix}_v_periodic"),
         surface.v_periodic().to_string(),
     );
-    if let Some(weights) = surface.pole_weights() {
-        properties.insert(format!("{prefix}_weights"), comma_list(weights));
+    if let Some(weights) = surface.pole_grid().weights() {
+        properties.insert(format!("{prefix}_weights"), comma_list(weights.concat()));
     }
 }
 

@@ -1402,7 +1402,9 @@ fn generated_source_less_planar_face_writes_circle_edge_carrier() {
     let mut round_trip = EditableDecodeResult::from(round_trip);
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range(),
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 1.75])
     );
     assert!(round_trip.ir().model.edges[0].curve().is_some());
@@ -1478,7 +1480,9 @@ fn generated_source_less_planar_face_writes_ellipse_edge_carrier() {
         .expect("source-less ellipse-carrier round trip");
     assert_eq!(round_trip.ir().model.curves[0].geometry, expected);
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range(),
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.5, 2.0])
     );
     assert!(

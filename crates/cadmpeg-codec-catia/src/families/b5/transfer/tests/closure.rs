@@ -51,7 +51,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     .expect("equal-span NURBS translation") else {
         unreachable!();
     };
-    assert_eq!(translated.knots(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(translated.knots().as_slice(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(translated.control_points(), nurbs.control_points());
 
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -99,7 +99,7 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
     .expect("positive affine NURBS mapping") else {
         unreachable!();
     };
-    assert_eq!(scaled.knots(), [0.0, 0.0, 2.0, 2.0]);
+    assert_eq!(scaled.knots().as_slice(), [0.0, 0.0, 2.0, 2.0]);
     assert_eq!(
         curve_on_parameter_range(
             CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -663,7 +663,9 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         ir.model
             .pcurves
             .iter()
-            .map(cadmpeg_ir::geometry::pcurve::Pcurve::parameter_range)
+            .map(|pcurve| pcurve
+                .parameter_range()
+                .map(cadmpeg_ir::units::FiniteVector::get))
             .collect::<Vec<_>>(),
         [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
     );

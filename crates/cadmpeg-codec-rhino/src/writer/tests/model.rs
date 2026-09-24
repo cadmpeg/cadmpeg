@@ -107,7 +107,12 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
     let model = WritableModel::try_new(&ir).expect("writable adjacent faces");
     for (position, edge) in model.edges.iter().enumerate() {
         assert_eq!(edge.source.id, ir.model.edges[position].id);
-        assert_eq!(Some(edge.domain), ir.model.edges[position].param_range());
+        assert_eq!(
+            Some(edge.domain),
+            ir.model.edges[position]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get)
+        );
         for coedge in &edge.uses {
             assert_eq!(model.coedges[*coedge].edge, position);
         }

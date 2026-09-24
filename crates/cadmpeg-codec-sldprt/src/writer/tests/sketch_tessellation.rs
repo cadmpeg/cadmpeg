@@ -561,10 +561,10 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
                         Ok(())
                     })
                     .unwrap();
-                if let Some(mut weights) = curve.weights() {
+                if let Some(mut weights) = curve.pole_rows().weights() {
                     weights[1] = 0.75;
                     let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
-                        curve.control_points(),
+                        curve.pole_rows().points(),
                         Some(weights),
                     );
                     {
@@ -603,7 +603,7 @@ fn semantic_writer_applies_rational_and_non_rational_sketch_nurbs_edits() {
         .iter()
         .filter_map(|entity| match entity.geometry.definition() {
             SketchGeometryDefinition::Nurbs { curve } => {
-                Some((curve.control_points(), curve.weights()))
+                Some((curve.control_points(), curve.pole_rows().weights()))
             }
             _ => None,
         })

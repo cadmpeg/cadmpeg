@@ -385,8 +385,8 @@ fn datum_plane_frame_is_resolved(frame: cadmpeg_ir::features::FeatureDatumPlaneF
     const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
 
     let (Some(normal), Some(u_axis)) = (
-        UnitVector3::normalized(frame.normal()),
-        UnitVector3::normalized(frame.u_axis()),
+        UnitVector3::normalized(frame.normal().get()),
+        UnitVector3::normalized(frame.u_axis().get()),
     ) else {
         return false;
     };

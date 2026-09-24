@@ -115,7 +115,12 @@ fn a_construction_with_no_cache_slot_refuses_a_fit_tolerance() {
         .set_legacy_cache(LegacyCache::try_new(0.5).expect("admissible fit tolerance"))
         .expect("an exact curve states its own cache tolerance");
     let curve = ProceduralCurve::new(curve_id(), definition);
-    assert_eq!(curve.cache_fit_tolerance(), Some(0.5));
+    assert_eq!(
+        curve
+            .cache_fit_tolerance()
+            .map(crate::geometry::FitTolerance::get),
+        Some(0.5)
+    );
 
     let mut replica = replica_definition();
     assert!(replica
@@ -175,7 +180,12 @@ fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none
         empty.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
         Ok(())
     );
-    assert_eq!(empty.cache_fit_tolerance(), Some(7.0));
+    assert_eq!(
+        empty
+            .cache_fit_tolerance()
+            .map(crate::geometry::FitTolerance::get),
+        Some(7.0)
+    );
 
     let mut stated = ProceduralCurve::new(
         curve_id(),
@@ -187,7 +197,12 @@ fn requiring_a_fit_tolerance_states_the_contract_an_empty_legacy_slot_holds_none
         stated.require_cache_fit_tolerance(FitTolerance::try_new(7.0).expect("admissible")),
         Ok(())
     );
-    assert_eq!(stated.cache_fit_tolerance(), Some(9.0));
+    assert_eq!(
+        stated
+            .cache_fit_tolerance()
+            .map(crate::geometry::FitTolerance::get),
+        Some(9.0)
+    );
 }
 
 /// A caller that asked for a solved cache on a layout that states none, or on

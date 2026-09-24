@@ -211,7 +211,7 @@ pub(crate) fn bind_topology_selections(
                     Some(DatumPlaneReference::Face { face: reference }) => resolve_face(reference),
                     Some(DatumPlaneReference::ResolvedPlane { frame }) => {
                         let origin = frame.origin();
-                        let normal = frame.normal();
+                        let normal = frame.normal().get();
                         let native = feature
                             .source_properties
                             .get("ReferenceFaceNative")
@@ -219,7 +219,7 @@ pub(crate) fn bind_topology_selections(
                         let support_origin = offset_plane_support_origin(
                             &feature.source_properties,
                             native,
-                            origin,
+                            origin.get(),
                             normal,
                             *distance,
                         );

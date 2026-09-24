@@ -408,7 +408,7 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         panic!("expected lifted rational curve");
     };
     assert_eq!(
-        curve.weights(),
+        curve.pole_rows().weights(),
         pcurve.weights.map(|weights| {
             weights
                 .into_iter()
@@ -1420,14 +1420,14 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let pitch = helix_payload.pitch();
     let apex_factor = helix_payload.apex_factor();
 
-    assert_eq!(*angle_range, [0.0, 2.0]);
+    assert_eq!(angle_range.get(), [0.0, 2.0]);
     assert_eq!(*center, Point3::new(0.0, 0.0, 3.0));
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
-    assert_eq!(apex_factor, 0.0);
+    assert_eq!(apex_factor.get(), 0.0);
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance.get() <= 1e-4);
     assert_eq!(
-        plan.cache.control_points().first(),
+        plan.cache.pole_rows().points().first(),
         Some(&Point3::new(2.0, 0.0, 3.0))
     );
 
@@ -1462,7 +1462,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let center = *helix_payload.center().as_raw();
     let pitch = *helix_payload.pitch();
 
-    assert_eq!(angle_range, [0.0, 1.0]);
+    assert_eq!(angle_range.get(), [0.0, 1.0]);
     assert_eq!(center.z, 4.0);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
@@ -1487,6 +1487,6 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     let angle_range = *helix_payload.angle_range();
     let pitch = *helix_payload.pitch();
 
-    assert_eq!(angle_range, [0.0, tiny]);
+    assert_eq!(angle_range.get(), [0.0, tiny]);
     assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }

@@ -18,14 +18,13 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_partials_with_budget,
 };
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsSurface},
-    pcurve::PcurveGeometry,
-    IntcurveSupportSide, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsSurface, pcurve::PcurveGeometry, IntcurveSupportSide, ProceduralSurfaceDefinition,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{NonNegativeLength, PositiveLength};
+use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroReal, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod sample_count;
@@ -212,7 +211,7 @@ fn certified_offset_cache_fit_with_budget(
                         support.y + translation.y,
                         support.z + translation.z,
                     );
-                    Point3::distance(expected, *candidate)
+                    Point3::distance(expected, candidate.get())
                 })
                 .try_fold(0.0_f64, |maximum, error| {
                     error.is_finite().then(|| maximum.max(error))
@@ -353,16 +352,7 @@ impl HomogeneousSurfaceNet {
         let u_count = surface.u_count();
         let v_count = surface.v_count();
         let poles = surface.poles();
-        if surface
-            .u_knots()
-            .iter()
-            .chain(surface.v_knots())
-            .any(|knot| !knot.is_finite())
-            || !knots_nondecreasing(surface.u_knots())
-            || !knots_nondecreasing(surface.v_knots())
-            || poles.iter().any(|point| !point.is_finite())
-            || !positive_weights(surface.pole_weights())
-        {
+        if !positive_weights(surface.pole_weights()) {
             return None;
         }
         let pole_weights = surface.pole_weights();
@@ -371,8 +361,10 @@ impl HomogeneousSurfaceNet {
             .enumerate()
             .map(|(index, point)| {
                 components(
-                    *point,
-                    pole_weights.as_ref().map_or(1.0, |weights| weights[index]),
+                    point.get(),
+                    pole_weights
+                        .as_ref()
+                        .map_or(1.0, |weights| weights[index].get()),
                 )
             })
             .collect::<Vec<_>>();
@@ -768,8 +760,8 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let difference = |end: Point3, start: Point3| {
         Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z)
     };
-    let u_direction = difference(point(1, 0), point(0, 0));
-    let v_direction = difference(point(0, 1), point(0, 0));
+    let u_direction = difference(point(1, 0).get(), point(0, 0).get());
+    let v_direction = difference(point(0, 1).get(), point(0, 0).get());
     let normal = oriented_nurbs_normal(surface, u_direction.cross(v_direction))?;
 
     let positive_collinear = |increment: Vector3, direction: Vector3| {
@@ -781,7 +773,10 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
         let denominator = surface.u_knots()[u + u_degree + 1] - surface.u_knots()[u + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
-            || !positive_collinear(difference(point(u + 1, 0), point(u, 0)), u_direction)
+            || !positive_collinear(
+                difference(point(u + 1, 0).get(), point(u, 0).get()),
+                u_direction,
+            )
         {
             return None;
         }
@@ -790,7 +785,10 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
         let denominator = surface.v_knots()[v + v_degree + 1] - surface.v_knots()[v + 1];
         if !denominator.is_finite()
             || denominator <= 0.0
-            || !positive_collinear(difference(point(0, v + 1), point(0, v)), v_direction)
+            || !positive_collinear(
+                difference(point(0, v + 1).get(), point(0, v).get()),
+                v_direction,
+            )
         {
             return None;
         }
@@ -798,8 +796,8 @@ pub(super) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     let origin = point(0, 0);
     for u in 0..u_count {
         for v in 0..v_count {
-            let v_displacement = difference(point(0, v), origin);
-            if difference(point(u, v), point(u, 0)) != v_displacement {
+            let v_displacement = difference(point(0, v).get(), origin.get());
+            if difference(point(u, v).get(), point(u, 0).get()) != v_displacement {
                 return None;
             }
         }
@@ -816,18 +814,10 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-fn positive_weights(weights: Option<impl IntoIterator<Item = f64>>) -> bool {
-    let Some(weights) = weights else {
-        return true;
-    };
-    let mut any = false;
-    for weight in weights {
-        any = true;
-        if !weight.is_finite() || weight <= 0.0 {
-            return false;
-        }
-    }
-    any
+fn positive_weights(weights: Option<Vec<NonZeroReal>>) -> bool {
+    weights.is_none_or(|weights| {
+        !weights.is_empty() && weights.iter().all(|weight| weight.get() > 0.0)
+    })
 }
 
 fn offset_support_control_hull_excludes_point(
@@ -845,8 +835,7 @@ fn offset_support_control_hull_excludes_point(
             .surfaces(surface.as_str())
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                    if positive_weights(nurbs.pole_weights())
-                        && nurbs.poles().iter().all(Point3::is_finite) =>
+                    if positive_weights(nurbs.pole_weights()) =>
                 {
                     let poles = nurbs.poles();
                     let (minimum, maximum) = poles.iter().fold(
@@ -881,7 +870,7 @@ fn offset_support_control_hull_excludes_point(
                     .and_then(|procedural| match procedural.definition() {
                         ProceduralSurfaceDefinition::Offset(definition_payload) => {
                             let support = definition_payload.support();
-                            let distance = definition_payload.distance();
+                            let distance = definition_payload.distance().get();
                             let linear_extension = definition_payload.linear_support_extension();
                             Some((support, distance, linear_extension))
                         }
@@ -962,7 +951,7 @@ pub(super) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         return None;
     };
     let support = definition_payload.support();
-    let distance = definition_payload.distance();
+    let distance = definition_payload.distance().get();
     let linear_extension = definition_payload.linear_support_extension();
     let domain = surface_parameter_domain_with_index(index, support);
     let derivative_domain = (!linear_extension).then_some(domain).flatten();
@@ -1322,7 +1311,7 @@ fn initial_surface_parameters_with_index_and_budget(
                 return None;
             };
             let support = definition_payload.support();
-            let distance = definition_payload.distance();
+            let distance = definition_payload.distance().get();
             let support_fit_tolerance = fit_tolerance.and_then(|tolerance| {
                 let tolerance = tolerance + distance.abs();
                 tolerance.is_finite().then_some(tolerance)

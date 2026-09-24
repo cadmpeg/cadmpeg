@@ -287,7 +287,10 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .unwrap();
-    assert_eq!(edge.param_range(), Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::FRAC_PI_2])
+    );
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -449,7 +452,10 @@ fn decode_maps_absolute_arc_parameters_to_the_neutral_domain() {
         .iter()
         .find(|edge| edge.id.as_str() == "iges:model:edge#D3")
         .expect("offset arc");
-    assert_eq!(edge.param_range(), Some([0.0, std::f64::consts::FRAC_PI_2]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::FRAC_PI_2])
+    );
     let start = result
         .ir()
         .model
@@ -553,7 +559,7 @@ fn decode_solves_a_parameter_linear_line_offset() {
         let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
             panic!("expected an exact degree-one offset carrier");
         };
-        assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 10.0, 10.0]);
         assert_eq!(
             nurbs.control_points(),
             vec![
@@ -606,7 +612,7 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
         panic!("expected an exact function-offset carrier");
     };
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 10.0, 10.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 10.0, 10.0]);
     assert_eq!(
         nurbs.control_points(),
         vec![

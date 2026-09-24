@@ -137,7 +137,7 @@ fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = nurbs else {
         panic!("NURBS carrier");
     };
-    assert_eq!(nurbs.weights(), Some(vec![3.0, 2.0]));
+    assert_eq!(nurbs.pole_rows().weights(), Some(vec![3.0, 2.0]));
 }
 
 #[test]

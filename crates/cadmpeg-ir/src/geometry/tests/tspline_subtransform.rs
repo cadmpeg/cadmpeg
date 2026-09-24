@@ -59,7 +59,12 @@ fn surface_admission_requires_ordered_ranges_and_resolved_subtransform() {
         )
     };
     let valid = admit([[0.0, 1.0], [2.0, 2.0]], inline.clone()).unwrap();
-    assert_eq!(valid.parameter_ranges(), [[0.0, 1.0], [2.0, 2.0]]);
+    assert_eq!(
+        valid
+            .parameter_ranges()
+            .map(crate::topology::ParameterInterval::endpoints),
+        [[0.0, 1.0], [2.0, 2.0]]
+    );
     for ranges in [
         [[1.0, 0.0], [0.0, 1.0]],
         [[0.0, 1.0], [1.0, 0.0]],

@@ -42,7 +42,7 @@ fn numerical_0922_finite_knot_domain_reverses() {
         let result = reverse_nonperiodic_nurbs(&mut c, d);
         println!("Creo reverse finite line domain{d:?}: {result:?}");
         assert_eq!(result, Some(()));
-        assert_eq!(c.knots(), &[d[0], d[0], d[1], d[1]]);
+        assert_eq!(c.knots().as_slice(), &[d[0], d[0], d[1], d[1]]);
         assert_eq!(c.control_points()[0], Point3::new(1., 0., 0.));
     }
 }

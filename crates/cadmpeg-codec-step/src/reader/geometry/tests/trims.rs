@@ -337,7 +337,7 @@ fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12), _ => false }));
 }
 
 #[test]
@@ -371,8 +371,8 @@ fn trimmed_curve_prefers_the_parameter_value_under_parameter_master() {
             _ => None,
         })
         .expect("parameter-master trimmed curve");
-    assert_eq!(parameter_range[0], 0.0);
-    assert!((parameter_range[1] - 3.0 * std::f64::consts::PI / 2.0).abs() < 1.0e-9);
+    assert_eq!(parameter_range.endpoints()[0], 0.0);
+    assert!((parameter_range.endpoints()[1] - 3.0 * std::f64::consts::PI / 2.0).abs() < 1.0e-9);
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -411,8 +411,8 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
             _ => None,
         })
         .expect("Cartesian-master trimmed curve");
-    assert_eq!(parameter_range[0], 0.0);
-    assert!((parameter_range[1] - 3.0 * std::f64::consts::PI / 2.0).abs() < 1.0e-12);
+    assert_eq!(parameter_range.endpoints()[0], 0.0);
+    assert!((parameter_range.endpoints()[1] - 3.0 * std::f64::consts::PI / 2.0).abs() < 1.0e-12);
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -451,8 +451,8 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
             _ => None,
         })
         .expect("opposed-sense trimmed curve");
-    assert!((parameter_range[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
-    assert!((parameter_range[1] - std::f64::consts::TAU).abs() < 1.0e-12);
+    assert!((parameter_range.endpoints()[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((parameter_range.endpoints()[1] - std::f64::consts::TAU).abs() < 1.0e-12);
     assert!(result.ir().model.procedural_curves.iter().any(|curve| {
         match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.sense(),), (sense,) if curve.id.as_str() == "step:construction:trimmed_curve#40" && !sense), _ => false }
     }));
@@ -499,8 +499,8 @@ fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
             _ => None,
         })
         .expect("forward trimmed curve");
-    assert!((parameter_range[0] - 5.0).abs() < 1.0e-12);
-    assert!((parameter_range[1] - (1.0 + std::f64::consts::TAU)).abs() < 1.0e-12);
+    assert!((parameter_range.endpoints()[0] - 5.0).abs() < 1.0e-12);
+    assert!((parameter_range.endpoints()[1] - (1.0 + std::f64::consts::TAU)).abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

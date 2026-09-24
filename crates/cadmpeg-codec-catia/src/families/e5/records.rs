@@ -885,8 +885,8 @@ mod tests {
             };
             assert_eq!(nurbs.u_degree(), 1);
             assert_eq!(nurbs.v_degree(), 1);
-            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
             assert_eq!(nurbs.u_count(), 2);
             assert_eq!(nurbs.v_count(), 2);
             assert_eq!(nurbs.poles().len(), 4);

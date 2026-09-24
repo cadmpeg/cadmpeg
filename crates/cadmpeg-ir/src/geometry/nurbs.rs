@@ -12,6 +12,58 @@ use crate::scalar::NonZeroReal;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Knot values that are finite and non-decreasing.
+///
+/// A NURBS store admits its knots through [`Self::new`], so a reader holds
+/// the guarantee and the raw values through [`Self::as_slice`] or deref.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct KnotVector(Vec<f64>);
+
+impl KnotVector {
+    /// Admit finite non-decreasing knot values.
+    ///
+    /// # Errors
+    ///
+    /// Refuses a non-finite knot, then a decreasing pair.
+    pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
+        require_nondecreasing_knots(&knots)?;
+        Ok(Self(knots))
+    }
+
+    /// Borrow the knot values.
+    #[must_use]
+    pub fn as_slice(&self) -> &[f64] {
+        &self.0
+    }
+
+    /// Reverse the order and negate every value, the knots of the reversed
+    /// parameterization. Negation turns a non-decreasing sequence into a
+    /// non-increasing one, and the reversal restores the order, so the
+    /// result stays admitted.
+    pub(super) fn reverse_negated(&mut self) {
+        self.0.reverse();
+        for knot in &mut self.0 {
+            *knot = -*knot;
+        }
+    }
+}
+
+impl std::ops::Deref for KnotVector {
+    type Target = [f64];
+    fn deref(&self) -> &[f64] {
+        &self.0
+    }
+}
+
+impl<'a> IntoIterator for &'a KnotVector {
+    type Item = &'a f64;
+    type IntoIter = std::slice::Iter<'a, f64>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// One rational pole in model space: its position and its weight.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -328,9 +380,11 @@ pub struct NurbsSurface {
     /// Degree in the v parametric direction.
     v_degree: u32,
     /// Full knot vector in u.
-    u_knots: Vec<f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    u_knots: KnotVector,
     /// Full knot vector in v.
-    v_knots: Vec<f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    v_knots: KnotVector,
     /// Control grid rows, with the surface's rational form.
     poles: NurbsPoleGrid,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
@@ -655,9 +709,9 @@ impl NurbsSurface {
             NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
         poles.require_finite_points()?;
-        require_nondecreasing_knots(&u_knots)
+        let u_knots = KnotVector::new(u_knots)
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
-        require_nondecreasing_knots(&v_knots)
+        let v_knots = KnotVector::new(v_knots)
             .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         Ok(Self {
             u_degree,
@@ -682,12 +736,12 @@ impl NurbsSurface {
     }
 
     /// Full knot vector in u.
-    pub fn u_knots(&self) -> &[f64] {
+    pub fn u_knots(&self) -> &KnotVector {
         &self.u_knots
     }
 
     /// Full knot vector in v.
-    pub fn v_knots(&self) -> &[f64] {
+    pub fn v_knots(&self) -> &KnotVector {
         &self.v_knots
     }
 
@@ -730,29 +784,11 @@ impl NurbsSurface {
         &self.poles
     }
 
-    /// Control-point rows, outer index u and inner index v.
-    pub fn control_grid(&self) -> Vec<Vec<Point3>> {
-        self.poles.points()
-    }
-
-    /// Control points in u-major order.
-    pub fn poles(&self) -> Vec<Point3> {
-        self.poles.points().into_iter().flatten().collect()
-    }
-
-    /// Pole at grid position `(u, v)`.
-    pub fn pole(&self, u: usize, v: usize) -> Option<Point3> {
-        match &self.poles {
-            NurbsPoleGrid::Polynomial { rows } => rows.get(u)?.get(v).copied(),
-            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.point),
-        }
-    }
-
     /// Rational weight at grid position `(u, v)`, absent when non-rational.
-    pub fn weight(&self, u: usize, v: usize) -> Option<f64> {
+    pub fn weight(&self, u: usize, v: usize) -> Option<NonZeroReal> {
         match &self.poles {
             NurbsPoleGrid::Polynomial { .. } => None,
-            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.weight.get()),
+            NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v).map(|pole| pole.weight),
         }
     }
 
@@ -771,13 +807,20 @@ impl NurbsSurface {
     }
 
     /// Rational weight rows in control-grid order.
-    pub fn weights(&self) -> Option<Vec<Vec<f64>>> {
-        self.poles.weights()
+    pub fn weights(&self) -> Option<Vec<Vec<NonZeroReal>>> {
+        match &self.poles {
+            NurbsPoleGrid::Polynomial { .. } => None,
+            NurbsPoleGrid::Rational { rows } => Some(
+                rows.iter()
+                    .map(|row| row.iter().map(|pole| pole.weight).collect())
+                    .collect(),
+            ),
+        }
     }
 
     /// Rational weights in control-point order.
-    pub fn pole_weights(&self) -> Option<Vec<f64>> {
-        Some(self.poles.weights()?.into_iter().flatten().collect())
+    pub fn pole_weights(&self) -> Option<Vec<NonZeroReal>> {
+        Some(self.weights()?.into_iter().flatten().collect())
     }
 
     /// Whether the carrier's oriented normal is reversed.
@@ -866,7 +909,8 @@ pub struct NurbsCurve {
     /// Curve degree.
     degree: u32,
     /// Full knot vector.
-    knots: Vec<f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    knots: KnotVector,
     /// Poles in parameter order, with the curve's rational form.
     poles: NurbsPoles3,
     /// Whether the curve is periodic.
@@ -883,7 +927,7 @@ impl NurbsCurve {
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
         poles.require_finite_points()?;
-        require_nondecreasing_knots(&knots)?;
+        let knots = KnotVector::new(knots)?;
         Ok(Self {
             degree,
             knots,
@@ -898,22 +942,15 @@ impl NurbsCurve {
     }
 
     /// Full knot vector.
-    pub fn knots(&self) -> &[f64] {
+    pub fn knots(&self) -> &KnotVector {
         &self.knots
-    }
-
-    /// Endpoints of the full knot vector.
-    #[must_use]
-    pub fn full_knot_endpoints(&self) -> [f64; 2] {
-        [self.knots[0], self.knots[self.knots.len() - 1]]
     }
 
     /// Atomically edit knot values and preserve their invariants.
     pub fn edit_knots(&mut self, edit: impl FnOnce(&mut [f64])) -> Result<(), NurbsError> {
-        let mut values = self.knots.clone();
+        let mut values = self.knots.to_vec();
         edit(&mut values);
-        require_nondecreasing_knots(&values)?;
-        self.knots = values;
+        self.knots = KnotVector::new(values)?;
         Ok(())
     }
 
@@ -937,11 +974,6 @@ impl NurbsCurve {
         &self.poles
     }
 
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> Vec<Point3> {
-        self.poles.points()
-    }
-
     /// Number of poles.
     pub fn pole_count(&self) -> usize {
         self.poles.count()
@@ -962,8 +994,13 @@ impl NurbsCurve {
     }
 
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<Vec<f64>> {
-        self.poles.weights()
+    pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
+        match &self.poles {
+            NurbsPoles3::Polynomial { .. } => None,
+            NurbsPoles3::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight).collect())
+            }
+        }
     }
 
     /// Whether the curve is periodic.
@@ -974,10 +1011,7 @@ impl NurbsCurve {
     /// Reverse poles, weights, and the signed knot parameterization together.
     pub fn reverse_parameterization(&mut self) {
         self.poles.reverse();
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
+        self.knots.reverse_negated();
     }
 }
 

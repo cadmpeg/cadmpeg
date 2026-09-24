@@ -1620,11 +1620,7 @@ impl ProceduralSurfaceDefinition {
     #[must_use]
     pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
         if let Self::VariableBlend(payload) = self {
-            return payload
-                .construction()
-                .cache
-                .fit_tolerance()
-                .map(FitTolerance);
+            return payload.construction().cache.fit_tolerance();
         }
         match self.revision_cache() {
             Some(RevisionCacheForm::SolvedCache { fit_tolerance }) => Some(*fit_tolerance),
@@ -1870,8 +1866,8 @@ impl ProceduralSurface {
 
     /// Effective fit tolerance of the solved cache.
     #[must_use]
-    pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition.cache_fit_tolerance().map(FitTolerance::get)
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        self.definition.cache_fit_tolerance()
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
@@ -1887,7 +1883,7 @@ impl ProceduralSurface {
     /// Scale the effective cache-fit tolerance in place.
     pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
-            self.set_cache_fit_tolerance(Some(value * scale))?;
+            self.set_cache_fit_tolerance(Some(value.get() * scale))?;
         }
         Ok(())
     }
@@ -2165,44 +2161,44 @@ impl HelixPathConstruction {
     }
     /// Return the angle range.
     #[must_use]
-    pub const fn angle_range(&self) -> &[f64; 2] {
-        self.angle_range.as_raw()
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
     }
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point3 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint3 {
+        &self.center
     }
 
     /// Return the major.
     #[must_use]
-    pub const fn major(&self) -> &Vector3 {
-        self.major.as_raw()
+    pub const fn major(&self) -> &FiniteVector3 {
+        &self.major
     }
 
     /// Return the minor.
     #[must_use]
-    pub const fn minor(&self) -> &Vector3 {
-        self.minor.as_raw()
+    pub const fn minor(&self) -> &FiniteVector3 {
+        &self.minor
     }
 
     /// Return the pitch.
     #[must_use]
-    pub const fn pitch(&self) -> &Vector3 {
-        self.pitch.as_raw()
+    pub const fn pitch(&self) -> &FiniteVector3 {
+        &self.pitch
     }
 
     /// Return the apex factor.
     #[must_use]
-    pub const fn apex_factor(&self) -> f64 {
-        self.apex_factor.get()
+    pub const fn apex_factor(&self) -> FiniteReal {
+        self.apex_factor
     }
 
     /// Return the axis.
     #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.axis.as_raw()
+    pub const fn axis(&self) -> &FiniteVector3 {
+        &self.axis
     }
 }
 
@@ -2328,8 +2324,8 @@ impl HelixCurveConstruction {
     }
     /// Return the angle range.
     #[must_use]
-    pub const fn angle_range(&self) -> &[f64; 2] {
-        self.angle_range.as_raw()
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
     }
 
     /// Borrow the admitted center.
@@ -2340,32 +2336,32 @@ impl HelixCurveConstruction {
 
     /// Return the major.
     #[must_use]
-    pub const fn major(&self) -> &Vector3 {
-        self.major.as_raw()
+    pub const fn major(&self) -> &FiniteVector3 {
+        &self.major
     }
 
     /// Return the minor.
     #[must_use]
-    pub const fn minor(&self) -> &Vector3 {
-        self.minor.as_raw()
+    pub const fn minor(&self) -> &FiniteVector3 {
+        &self.minor
     }
 
     /// Return the pitch.
     #[must_use]
-    pub const fn pitch(&self) -> &Vector3 {
-        self.pitch.as_raw()
+    pub const fn pitch(&self) -> &FiniteVector3 {
+        &self.pitch
     }
 
     /// Return the apex factor.
     #[must_use]
-    pub const fn apex_factor(&self) -> f64 {
-        self.apex_factor.get()
+    pub const fn apex_factor(&self) -> FiniteReal {
+        self.apex_factor
     }
 
     /// Return the axis.
     #[must_use]
-    pub const fn axis(&self) -> &Vector3 {
-        self.axis.as_raw()
+    pub const fn axis(&self) -> &FiniteVector3 {
+        &self.axis
     }
 }
 
@@ -2478,14 +2474,14 @@ impl HelixCircleProfile {
     }
     /// Native profile length.
     #[must_use]
-    pub const fn length(&self) -> f64 {
-        self.length.get()
+    pub const fn length(&self) -> FiniteReal {
+        self.length
     }
 
     /// Signed circular profile radius.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> FiniteReal {
+        self.radius
     }
 }
 
@@ -2594,14 +2590,14 @@ impl HelixSurfaceConstruction {
     }
     /// Return the angle range.
     #[must_use]
-    pub const fn angle_range(&self) -> &[f64; 2] {
-        self.angle_range.as_raw()
+    pub const fn angle_range(&self) -> &FiniteVector<2> {
+        &self.angle_range
     }
 
     /// Return the dimension range.
     #[must_use]
-    pub const fn dimension_range(&self) -> &[f64; 2] {
-        self.dimension_range.as_raw()
+    pub const fn dimension_range(&self) -> &FiniteVector<2> {
+        &self.dimension_range
     }
 
     /// Return the path.
@@ -2890,9 +2886,8 @@ impl TSplineSurfaceConstruction {
     }
 
     /// Return ordered U and V intervals.
-    pub fn parameter_ranges(&self) -> [[f64; 2]; 2] {
+    pub fn parameter_ranges(&self) -> [crate::topology::ParameterInterval; 2] {
         self.parameter_ranges
-            .map(crate::topology::ParameterInterval::endpoints)
     }
 
     /// Return the native type code value.
@@ -2955,7 +2950,9 @@ struct TSplineSurfaceConstructionWire {
 impl From<TSplineSurfaceConstruction> for TSplineSurfaceConstructionWire {
     fn from(construction: TSplineSurfaceConstruction) -> Self {
         Self {
-            parameter_ranges: construction.parameter_ranges(),
+            parameter_ranges: construction
+                .parameter_ranges()
+                .map(crate::topology::ParameterInterval::endpoints),
             type_code: construction.type_code,
             subtransform: construction.subtransform,
             trailing_value: construction.trailing_value,
@@ -3270,9 +3267,9 @@ impl<P> RevisionCacheForm<P> {
 
     /// Fit tolerance carried by a solved cache.
     #[must_use]
-    pub const fn fit_tolerance(&self) -> Option<f64> {
+    pub const fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
-            Self::SolvedCache { fit_tolerance } => Some(fit_tolerance.get()),
+            Self::SolvedCache { fit_tolerance } => Some(*fit_tolerance),
             Self::Parameterization(_) => None,
         }
     }
@@ -3335,9 +3332,9 @@ impl VariableBlendCache {
 
     /// Active fit tolerance, absent for a stale or parameterized approximation.
     #[must_use]
-    pub const fn fit_tolerance(&self) -> Option<f64> {
+    pub const fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
-            Self::Current { fit_tolerance, .. } => Some(fit_tolerance.get()),
+            Self::Current { fit_tolerance, .. } => Some(*fit_tolerance),
             _ => None,
         }
     }
@@ -6796,13 +6793,7 @@ impl TolerantIntersectionParameterization {
 
     /// Common finite solved-curve interval.
     #[must_use]
-    pub const fn parameter_range(&self) -> [f64; 2] {
-        self.parameter_range.endpoints()
-    }
-
-    /// The admitted solved-curve interval.
-    #[must_use]
-    pub const fn parameter_interval(&self) -> crate::topology::IncreasingParameterInterval {
+    pub const fn parameter_range(&self) -> crate::topology::IncreasingParameterInterval {
         self.parameter_range
     }
 }
@@ -7864,8 +7855,8 @@ impl ProceduralCurve {
 
     /// Effective fit tolerance of the solved cache.
     #[must_use]
-    pub fn cache_fit_tolerance(&self) -> Option<f64> {
-        self.definition.cache_fit_tolerance().map(FitTolerance::get)
+    pub fn cache_fit_tolerance(&self) -> Option<FitTolerance> {
+        self.definition.cache_fit_tolerance()
     }
 
     /// Change the effective fit tolerance without permitting a parameterized
@@ -7890,7 +7881,7 @@ impl ProceduralCurve {
     /// Scale the effective cache-fit tolerance in place.
     pub fn scale_cache_fit_tolerance(&mut self, scale: f64) -> Result<(), CacheContractError> {
         if let Some(value) = self.cache_fit_tolerance() {
-            self.set_cache_fit_tolerance(Some(value * scale))?;
+            self.set_cache_fit_tolerance(Some(value.get() * scale))?;
         }
         Ok(())
     }

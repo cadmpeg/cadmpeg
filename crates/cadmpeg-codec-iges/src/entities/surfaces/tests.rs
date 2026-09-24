@@ -301,10 +301,10 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         .expect("relative-parameter rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-    let first_points = first.control_points();
-    let first_weights = first.weights();
-    let second_points = second.control_points();
-    let second_weights = second.weights();
+    let first_points = first.pole_rows().points();
+    let first_weights = first.pole_rows().weights();
+    let second_points = second.pole_rows().points();
+    let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
             first.degree(),
@@ -360,11 +360,14 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         .expect("partition-aligned rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
-    assert_eq!(surface.u_knots(), [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]);
-    let first_points = first.control_points();
-    let first_weights = first.weights();
-    let second_points = second.control_points();
-    let second_weights = second.weights();
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
+    );
+    let first_points = first.pole_rows().points();
+    let first_weights = first.pole_rows().weights();
+    let second_points = second.pole_rows().points();
+    let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
             first.degree(),
@@ -1005,7 +1008,7 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
             cadmpeg_ir::eval::model_surface_point_by_id(&index, &surface.id, parameter, 1.0)
                 .expect("hyperbola tabulated surface evaluates");
         assert!(
-            surface_point.distance(directrix_point.translated(*direction, 1.0))
+            surface_point.distance(directrix_point.translated(direction.get(), 1.0))
                 < EPS_TABULATED_POINT
         );
         assert!(
@@ -1107,7 +1110,7 @@ fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
             cadmpeg_ir::eval::model_surface_point_by_id(&index, &surface.id, parameter, 1.0)
                 .expect("placed hyperbola tabulated surface evaluates");
         assert!(
-            surface_point.distance(directrix_point.translated(*direction, 1.0))
+            surface_point.distance(directrix_point.translated(direction.get(), 1.0))
                 < EPS_PLACED_TABULATED_POINT
         );
         assert!(
@@ -1350,7 +1353,7 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             panic!("expected an offset dependency");
         };
         let distance = definition_payload.distance();
-        assert_eq!(*distance, expected_z);
+        assert_eq!(distance.get(), expected_z);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1500,8 +1503,8 @@ fn decode_projects_a_degree_zero_bspline_surface() {
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (0, 0));
     assert_eq!((surface.u_count(), surface.v_count()), (1, 1));
-    assert_eq!(surface.u_knots(), [0.0, 1.0]);
-    assert_eq!(surface.v_knots(), [0.0, 1.0]);
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 1.0]);
+    assert_eq!(surface.v_knots().as_slice(), [0.0, 1.0]);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
@@ -1680,7 +1683,7 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                     panic!("expected a NURBS surface carrier");
                 };
                 assert_eq!(
-                    surface.pole_weights(),
+                    surface.pole_grid().weights().map(|rows| rows.concat()),
                     Some(vec![1.0, 1.0, 0.99, 1.0])
                 );
             } else {

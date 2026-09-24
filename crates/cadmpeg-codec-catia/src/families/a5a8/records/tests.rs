@@ -169,7 +169,10 @@ fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
             .try_into()
             .expect("one inline-weight-tail surface");
     let surface = surface.geometry;
-    assert_eq!(surface.pole_weights(), Some(vec![2.0; 9]));
+    assert_eq!(
+        surface.pole_grid().weights().map(|rows| rows.concat()),
+        Some(vec![2.0; 9])
+    );
 }
 
 #[test]
@@ -747,7 +750,14 @@ fn a8_surface_parser_reads_rational_weight_grid() {
         &a8_rational_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     );
-    assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 9]));
+    assert_eq!(
+        surfaces[0]
+            .geometry
+            .pole_grid()
+            .weights()
+            .map(|rows| rows.concat()),
+        Some(vec![2.0; 9])
+    );
 }
 
 #[test]
@@ -765,7 +775,8 @@ fn surface_parsers_require_finite_nonzero_weights() {
             .expect("weights")
             .into_iter()
             .next()
-            .unwrap(),
+            .unwrap()
+            .get(),
         2e12
     );
     a5[146..154].copy_from_slice(&le_f64(f64::NAN));
@@ -788,7 +799,8 @@ fn surface_parsers_require_finite_nonzero_weights() {
             .expect("weights")
             .into_iter()
             .next()
-            .unwrap(),
+            .unwrap()
+            .get(),
         2e12
     );
     a8[275..283].copy_from_slice(&le_f64(f64::NAN));
@@ -847,7 +859,7 @@ fn a5_surface_parser_reads_multispan_cubic_nurbs() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
     assert_eq!((surface.u_count(), surface.v_count()), (5, 5));
     assert_eq!(
-        surface.u_knots(),
+        surface.u_knots().as_slice(),
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     );
     assert_eq!(surface.poles().len(), 25);
@@ -936,7 +948,14 @@ fn a5_surface_parser_reads_rational_weight_program() {
         &a5_rational_surface_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
     );
-    assert_eq!(surfaces[0].geometry.pole_weights(), Some(vec![2.0; 4]));
+    assert_eq!(
+        surfaces[0]
+            .geometry
+            .pole_grid()
+            .weights()
+            .map(|rows| rows.concat()),
+        Some(vec![2.0; 4])
+    );
 }
 
 #[test]

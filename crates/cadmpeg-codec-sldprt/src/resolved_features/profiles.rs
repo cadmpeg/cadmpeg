@@ -2384,7 +2384,8 @@ fn transform_sketch_block_geometry(
         SketchGeometryDefinition::Nurbs { curve } => {
             let mut curve = curve.clone();
             let transformed = curve
-                .control_points()
+                .pole_rows()
+                .points()
                 .into_iter()
                 .map(point)
                 .collect::<Option<Vec<_>>>()?;

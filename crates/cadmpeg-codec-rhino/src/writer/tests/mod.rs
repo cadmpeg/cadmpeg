@@ -1083,7 +1083,7 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             ),
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+                Some(domain),
                 Some(
                     cadmpeg_ir::geometry::FitTolerance::try_new(0.0001)
                         .expect("finite non-negative fixture tolerance"),

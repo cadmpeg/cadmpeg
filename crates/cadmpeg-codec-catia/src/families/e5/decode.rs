@@ -2402,7 +2402,7 @@ fn e5_boundary_curve(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.weights(),
+                    nurbs.pole_rows().weights(),
                     nurbs.periodic(),
                 ),
                 refusal,
@@ -2447,7 +2447,7 @@ fn e5_boundary_curve(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     control_points,
-                    nurbs.weights(),
+                    nurbs.pole_rows().weights(),
                     nurbs.periodic(),
                 ),
                 refusal,
@@ -4277,11 +4277,11 @@ mod route_tests {
             panic!("expected NURBS curve");
         };
         assert_eq!(
-            nurbs.control_points().first(),
+            nurbs.pole_rows().points().first(),
             Some(&Point3::new(1.0, 2.0, 3.0))
         );
         assert_eq!(
-            nurbs.control_points().last(),
+            nurbs.pole_rows().points().last(),
             Some(&Point3::new(2.0, 4.0, 3.0))
         );
     }
@@ -4448,7 +4448,7 @@ mod route_tests {
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
-        let control_points = nurbs.control_points();
+        let control_points = nurbs.pole_rows().points();
         assert_eq!(
             control_points.first(),
             Some(&cadmpeg_ir::math::Point2::new(0.0, 3.0))
@@ -4510,7 +4510,7 @@ mod route_tests {
             geometry,
             PcurveGeometry::Nurbs { nurbs }
                 if nurbs.degree() == 1
-                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                     && nurbs.control_points()
                         == [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)]
                     && nurbs.weights().is_none()
@@ -4558,7 +4558,7 @@ mod route_tests {
         let PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected NURBS pcurve");
         };
-        let control_points = nurbs.control_points();
+        let control_points = nurbs.pole_rows().points();
         assert_eq!(
             control_points.first(),
             Some(&Point2::new(0.0, half_angle.cos()))

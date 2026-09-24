@@ -31,9 +31,9 @@ use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
-use crate::scalar::{NonNegativeLength, NonNegativeReal};
+use crate::scalar::{NonNegativeLength, NonNegativeReal, NonZeroReal};
 use crate::transform::Transform;
-use crate::units::{FinitePoint2, UnitVector3};
+use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
@@ -262,32 +262,19 @@ fn rational_surface_patches_with_budget(
                 .checked_add(surface.v_knots().len())?,
         )
         .then_some(())?;
-    if u_degree >= u_count
-        || v_degree >= v_count
-        || surface
-            .u_knots()
-            .iter()
-            .chain(surface.v_knots())
-            .any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(surface.u_knots())
-        || !knots_nondecreasing(surface.v_knots())
-        || surface.poles().iter().any(|control| !control.is_finite())
-    {
+    if u_degree >= u_count || v_degree >= v_count {
         return None;
     }
     let weights = match surface.pole_weights() {
         Some(values) => {
-            if !values
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-            {
+            if !values.iter().all(|weight| weight.get() > 0.0) {
                 return None;
             }
-            values
+            values.into_iter().map(NonZeroReal::get).collect()
         }
         None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
-    let homogeneous_controls = positive_controls(&surface.poles(), &weights)?;
+    let homogeneous_controls = positive_controls(&surface.pole_grid().points().concat(), &weights)?;
     let u_spans_by_v = (0..v_count)
         .map(|v| {
             homogeneous_spans(
@@ -1657,7 +1644,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         let position = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             Some(weights.as_ref()),
             parameter,
         )?;
@@ -1724,7 +1711,7 @@ fn nurbs_curve_parameter_near_point_newton(
         let position = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             Some(weights),
             parameter,
         )?;
@@ -1739,7 +1726,7 @@ fn nurbs_curve_parameter_near_point_newton(
         let tangent = nurbs_curve_tangent(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             Some(weights),
             parameter,
         )?;
@@ -1771,19 +1758,14 @@ fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'static, [f64
     nurbs_curve_parameter_domain(curve)?;
     let count = curve.pole_count();
     let weights: Cow<'static, [f64]> = match curve.weights() {
-        Some(weights) => Cow::Owned(weights),
+        Some(weights) => {
+            if weights.iter().any(|weight| weight.get() <= 0.0) {
+                return None;
+            }
+            Cow::Owned(weights.into_iter().map(NonZeroReal::get).collect())
+        }
         None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
     };
-    if curve
-        .control_points()
-        .iter()
-        .zip(weights.as_ref())
-        .any(|(control, weight)| !control.is_finite() || !weight.is_finite() || *weight <= 0.0)
-        || curve.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(curve.knots())
-    {
-        return None;
-    }
     Some(weights)
 }
 
@@ -1793,7 +1775,8 @@ fn nurbs_curve_speed_bound_about(
     origin: Point3,
 ) -> Option<f64> {
     let points = curve
-        .control_points()
+        .pole_rows()
+        .points()
         .into_iter()
         .map(<[f64; 3]>::from)
         .collect::<Vec<_>>();
@@ -2027,7 +2010,7 @@ pub fn fitted_nurbs_offset_frame_distance(
 
 fn clamped_nurbs_pcurve_endpoint_frames(curve: &PcurveNurbs) -> Option<[(Point2, Point2); 2]> {
     let knots = curve.knots();
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     let [lower, upper] =
         nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?;
     let degree = curve.degree() as usize;
@@ -2037,11 +2020,9 @@ fn clamped_nurbs_pcurve_endpoint_frames(curve: &PcurveNurbs) -> Option<[(Point2,
             .skip(control_points.len())
             .take(degree + 1)
             .any(|knot| *knot != upper)
-        || curve.weights().is_some_and(|weights| {
-            weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        })
+        || curve
+            .weights()
+            .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
     {
         return None;
     }
@@ -2384,8 +2365,8 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
                             let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
                             Some((
                                 [u_value, v_value],
-                                surface.weight(pole_u, pole_v).unwrap_or(1.0),
-                                surface.pole(pole_u, pole_v)?,
+                                surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
+                                surface.pole(pole_u, pole_v)?.get(),
                             ))
                         })
                 }),
@@ -2478,8 +2459,8 @@ pub fn nurbs_surface_isocurve(
                 };
                 Some((
                     [basis, 1.0],
-                    surface.weight(pole_u, pole_v).unwrap_or(1.0),
-                    surface.pole(pole_u, pole_v)?,
+                    surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
+                    surface.pole(pole_u, pole_v)?.get(),
                 ))
             },
         ))?;
@@ -2613,8 +2594,8 @@ pub fn nurbs_surface_second_partials(
                             let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
                             Some((
                                 [u_value, v_value],
-                                surface.weight(pole_u, pole_v).unwrap_or(1.0),
-                                surface.pole(pole_u, pole_v)?,
+                                surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
+                                surface.pole(pole_u, pole_v)?.get(),
                             ))
                         })
                 }),
@@ -2888,8 +2869,8 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             nurbs_curve_tangent(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.control_points(),
-                nurbs.weights().as_deref(),
+                &nurbs.pole_rows().points(),
+                nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
         }
@@ -2956,8 +2937,8 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             nurbs_curve_second_derivative(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.control_points(),
-                nurbs.weights().as_deref(),
+                &nurbs.pole_rows().points(),
+                nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
         }
@@ -3197,21 +3178,13 @@ fn helix_differential(
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
-    let angle_range = helix_payload.angle_range();
-    let center = helix_payload.center().as_raw();
-    let major = helix_payload.major();
-    let minor = helix_payload.minor();
-    let pitch = helix_payload.pitch();
-    let apex_factor = helix_payload.apex_factor();
-    let axis = helix_payload.axis();
-
-    let angle_range = *angle_range;
-    let center = *center;
-    let major = *major;
-    let minor = *minor;
-    let pitch = *pitch;
-    let axis = *axis;
-    let [start, end] = angle_range;
+    let [start, end] = helix_payload.angle_range().get();
+    let center = helix_payload.center().get();
+    let major = helix_payload.major().get();
+    let minor = helix_payload.minor().get();
+    let pitch = helix_payload.pitch().get();
+    let apex_factor = helix_payload.apex_factor().get();
+    let axis = helix_payload.axis().get();
     if !parameter.is_finite() || parameter < start || parameter > end || unit_axis(axis).is_none() {
         return None;
     }
@@ -3292,7 +3265,7 @@ fn model_curve_differential_by_id_inner(
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
-                let [start, end] = definition_payload.parameter_range();
+                let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
                 {
                     let span = (end - start).abs();
@@ -3556,7 +3529,7 @@ fn construction_curve_parameter(
         if ranges.any(|range| range != interval) {
             return None;
         }
-        interval
+        interval.get()
     };
     let [curve_start, curve_end] = line_interval;
     if !curve_start.is_finite() || !curve_end.is_finite() {
@@ -3597,7 +3570,7 @@ fn model_native_extrusion_partials(
         index,
         directrix,
         u,
-        construction.parameter_interval(),
+        construction.parameter_interval().map(FiniteVector::get),
         carrier_interval,
         extrusion_directrix_reversed(construction.revision_form()),
     )?;
@@ -3620,9 +3593,9 @@ fn model_native_extrusion_partials(
     );
     let zero = Vector3::new(0.0, 0.0, 0.0);
     let partials = SurfaceSecondPartials {
-        point: offset(differential.point.get(), &[(v, direction)]),
+        point: offset(differential.point.get(), &[(v, direction.get())]),
         du: scale_vector(differential.tangent, derivative),
-        dv: direction,
+        dv: direction.get(),
         duu,
         duv: zero,
         dvv: zero,
@@ -3742,7 +3715,7 @@ fn model_curve_point_by_id_inner(
         }
         ProceduralCurveDefinition::Subset(definition_payload) => {
             let source = definition_payload.source();
-            let [start, end] = definition_payload.parameter_range();
+            let [start, end] = definition_payload.parameter_range().endpoints();
             let sense = definition_payload.sense();
             {
                 let span = (end - start).abs();
@@ -3774,7 +3747,7 @@ fn model_curve_point_by_id_inner(
             let supports = intersection.supports();
             let tolerance = intersection.tolerance().get();
 
-            let parameter_range = parameterization.parameter_range();
+            let parameter_range = parameterization.parameter_range().endpoints();
             if !parameter.is_finite()
                 || parameter < parameter_range[0]
                 || parameter > parameter_range[1]
@@ -3897,7 +3870,7 @@ fn model_curve_parameter_near_point_with_tolerance(
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
-                let [start, end] = definition_payload.parameter_range();
+                let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
                 {
                     let span = (end - start).abs();
@@ -3969,7 +3942,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     let admitted_tolerance = NonNegativeLength::from_assigned_real(intersection.tolerance());
     let tolerance = admitted_tolerance.get();
 
-    let range = parameterization.parameter_range();
+    let range = parameterization.parameter_range().endpoints();
     if !seed.is_finite() || seed < range[0] || seed > range[1] {
         return None;
     }
@@ -4173,10 +4146,9 @@ fn helix_parameter_near_point(
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
-    let angle_range = helix_payload.angle_range();
+    let [start, end] = helix_payload.angle_range().get();
     let tolerance = tolerance.get();
 
-    let [start, end] = *angle_range;
     if !seed.is_finite() || seed < start || seed > end || !target.is_finite() {
         return None;
     }
@@ -4473,8 +4445,8 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
             nurbs_curve_point(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.control_points(),
-                nurbs.weights().as_deref(),
+                &nurbs.pole_rows().points(),
+                nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
         }
@@ -5037,7 +5009,7 @@ pub fn model_surface_point(
         }
         ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
             model_curve_point_by_id(&index, definition_payload.directrix(), u)
-                .map(|point| offset(point.get(), &[(v, *definition_payload.direction())]))
+                .map(|point| offset(point.get(), &[(v, definition_payload.direction().get())]))
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
             model_native_revolution_partials(
@@ -6726,7 +6698,7 @@ fn model_surface_point_by_id_inner(
                         |budget| model_curve_point_by_id_with_budget(index, directrix, u, budget),
                     )
                     .map(|point| SurfaceEvaluation {
-                        point: offset(point.get(), &[(v, *definition_payload.direction())]),
+                        point: offset(point.get(), &[(v, definition_payload.direction().get())]),
                         oriented_normal: None,
                     })
             }
@@ -6956,7 +6928,7 @@ fn model_surface_point_by_id_inner(
                     let support = evaluate(index, support, u, v, visiting, budget)?;
                     let normal = support.oriented_normal?;
                     Some(SurfaceEvaluation {
-                        point: offset(support.point, &[(*distance, normal)]),
+                        point: offset(support.point, &[(distance.get(), normal)]),
                         oriented_normal: Some(normal),
                     })
                 }
@@ -6972,7 +6944,7 @@ fn model_surface_point_by_id_inner(
                         .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
                     let normal = support.oriented_normal?;
                     Some(SurfaceEvaluation {
-                        point: offset(support.point, &[(*distance, normal)]),
+                        point: offset(support.point, &[(distance.get(), normal)]),
                         oriented_normal: Some(normal),
                     })
                 }
@@ -7232,9 +7204,9 @@ fn model_surface_mapping(
             let zero = Vector3::new(0.0, 0.0, 0.0);
             Some(SurfaceMapping {
                 base: SurfaceSecondPartials {
-                    point: offset(differential.point.get(), &[(v, *direction)]),
+                    point: offset(differential.point.get(), &[(v, direction.get())]),
                     du: differential.tangent,
-                    dv: *direction,
+                    dv: direction.get(),
                     duu: differential.acceleration,
                     duv: zero,
                     dvv: zero,
@@ -7320,7 +7292,7 @@ fn model_surface_mapping(
             let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
             Some(SurfaceMapping {
                 offset_distance: support.offset_distance
-                    + *payload.distance() * support.orientation,
+                    + payload.distance().get() * support.orientation,
                 ..support
             })
         }
@@ -7328,7 +7300,7 @@ fn model_surface_mapping(
             let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
             Some(SurfaceMapping {
                 offset_distance: support.offset_distance
-                    + *payload.distance() * support.orientation,
+                    + payload.distance().get() * support.orientation,
                 ..support
             })
         }
@@ -7627,16 +7599,19 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let sine = t.sin();
             (
                 offset2(
-                    *center,
-                    &[(radius * cosine, *x_axis), (radius * sine, *y_axis)],
+                    center.get(),
+                    &[
+                        (radius.get() * cosine, x_axis.get()),
+                        (radius.get() * sine, y_axis.get()),
+                    ],
                 ),
                 Point2::new(
-                    radius * (-sine * x_axis.u + cosine * y_axis.u),
-                    radius * (-sine * x_axis.v + cosine * y_axis.v),
+                    radius.get() * (-sine * x_axis.u + cosine * y_axis.u),
+                    radius.get() * (-sine * x_axis.v + cosine * y_axis.v),
                 ),
                 Point2::new(
-                    -radius * (cosine * x_axis.u + sine * y_axis.u),
-                    -radius * (cosine * x_axis.v + sine * y_axis.v),
+                    -radius.get() * (cosine * x_axis.u + sine * y_axis.u),
+                    -radius.get() * (cosine * x_axis.v + sine * y_axis.v),
                 ),
             )
         }
@@ -7650,19 +7625,19 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let sine = t.sin();
             (
                 offset2(
-                    *center,
+                    center.get(),
                     &[
-                        (major_radius * cosine, *x_axis),
-                        (minor_radius * sine, *y_axis),
+                        (major_radius.get() * cosine, x_axis.get()),
+                        (minor_radius.get() * sine, y_axis.get()),
                     ],
                 ),
                 Point2::new(
-                    -major_radius * sine * x_axis.u + minor_radius * cosine * y_axis.u,
-                    -major_radius * sine * x_axis.v + minor_radius * cosine * y_axis.v,
+                    -major_radius.get() * sine * x_axis.u + minor_radius.get() * cosine * y_axis.u,
+                    -major_radius.get() * sine * x_axis.v + minor_radius.get() * cosine * y_axis.v,
                 ),
                 Point2::new(
-                    -major_radius * cosine * x_axis.u - minor_radius * sine * y_axis.u,
-                    -major_radius * cosine * x_axis.v - minor_radius * sine * y_axis.v,
+                    -major_radius.get() * cosine * x_axis.u - minor_radius.get() * sine * y_axis.u,
+                    -major_radius.get() * cosine * x_axis.v - minor_radius.get() * sine * y_axis.v,
                 ),
             )
         }
@@ -7674,8 +7649,11 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let sine_parameter = t.sin();
             (
                 offset2(
-                    *center,
-                    &[(cosine_parameter, *cosine), (sine_parameter, *sine)],
+                    center.get(),
+                    &[
+                        (cosine_parameter, cosine.get()),
+                        (sine_parameter, sine.get()),
+                    ],
                 ),
                 Point2::new(
                     -sine_parameter * cosine.u + cosine_parameter * sine.u,
@@ -7692,11 +7670,12 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let x = parabola.x_axis();
             let y = parabola.y_axis();
             let focal = parabola.focal_distance();
-            let axial = product_quotient([t, t], [4.0, focal])?;
-            let derivative = |axis| product_quotient([t, axis], [2.0, focal]).unwrap_or(f64::NAN);
-            let second = |axis| product_quotient([axis], [2.0, focal]).unwrap_or(f64::NAN);
+            let axial = product_quotient([t, t], [4.0, focal.get()])?;
+            let derivative =
+                |axis| product_quotient([t, axis], [2.0, focal.get()]).unwrap_or(f64::NAN);
+            let second = |axis| product_quotient([axis], [2.0, focal.get()]).unwrap_or(f64::NAN);
             (
-                offset2(*vertex, &[(axial, *x), (t, *y)]),
+                offset2(vertex.get(), &[(axial, x.get()), (t, y.get())]),
                 Point2::new(derivative(x.u) + y.u, derivative(x.v) + y.v),
                 Point2::new(second(x.u), second(x.v)),
             )
@@ -7704,13 +7683,16 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
         PcurveGeometry::Hyperbola(hyperbola) => {
             let x = hyperbola.x_axis();
             let y = hyperbola.y_axis();
-            let (major_sinh, major_cosh) = scaled_sinh_cosh(hyperbola.major_radius(), t)?;
-            let (minor_sinh, minor_cosh) = scaled_sinh_cosh(hyperbola.minor_radius(), t)?;
+            let (major_sinh, major_cosh) = scaled_sinh_cosh(hyperbola.major_radius().get(), t)?;
+            let (minor_sinh, minor_cosh) = scaled_sinh_cosh(hyperbola.minor_radius().get(), t)?;
             let zero = Point2::new(0.0, 0.0);
             (
-                offset2(*hyperbola.center(), &[(major_cosh, *x), (minor_sinh, *y)]),
-                offset2(zero, &[(major_sinh, *x), (minor_cosh, *y)]),
-                offset2(zero, &[(major_cosh, *x), (minor_sinh, *y)]),
+                offset2(
+                    hyperbola.center().get(),
+                    &[(major_cosh, x.get()), (minor_sinh, y.get())],
+                ),
+                offset2(zero, &[(major_sinh, x.get()), (minor_cosh, y.get())]),
+                offset2(zero, &[(major_cosh, x.get()), (minor_sinh, y.get())]),
             )
         }
         PcurveGeometry::Hyperbolic(hyperbolic) => {
@@ -7739,9 +7721,9 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             let radial_center = polar_harmonic_pcurve.radial_center();
             let radial_cos = polar_harmonic_pcurve.radial_cos();
             let radial_sin = polar_harmonic_pcurve.radial_sin();
-            let axial_origin = polar_harmonic_pcurve.axial_origin();
-            let axial_cos = polar_harmonic_pcurve.axial_cos();
-            let axial_sin = polar_harmonic_pcurve.axial_sin();
+            let axial_origin = polar_harmonic_pcurve.axial_origin().get();
+            let axial_cos = polar_harmonic_pcurve.axial_cos().get();
+            let axial_sin = polar_harmonic_pcurve.axial_sin().get();
             let cosine = t.cos();
             let sine = t.sin();
             let x = radial_center.u + radial_cos.u * cosine + radial_sin.u * sine;
@@ -7776,7 +7758,7 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 nurbs.degree(),
                 nurbs.knots(),
                 &radial_control_points,
-                nurbs.weights().as_deref(),
+                nurbs.pole_rows().weights().as_deref(),
                 t,
             )?;
             let axial_points = nurbs
@@ -7788,7 +7770,7 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                 nurbs.degree(),
                 nurbs.knots(),
                 &axial_points,
-                nurbs.weights().as_deref(),
+                nurbs.pole_rows().weights().as_deref(),
                 t,
             )?;
             let (angle, first, second) =
@@ -7804,10 +7786,10 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             });
         }
         PcurveGeometry::SphericalGreatCircle(spherical_great_circle_pcurve) => {
-            let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin();
-            let azimuth_rate = spherical_great_circle_pcurve.azimuth_rate();
-            let plane_phase = spherical_great_circle_pcurve.plane_phase();
-            let plane_slope = spherical_great_circle_pcurve.plane_slope();
+            let azimuth_origin = spherical_great_circle_pcurve.azimuth_origin().get();
+            let azimuth_rate = spherical_great_circle_pcurve.azimuth_rate().get();
+            let plane_phase = spherical_great_circle_pcurve.plane_phase().get();
+            let plane_slope = spherical_great_circle_pcurve.plane_slope().get();
             let azimuth = azimuth_origin + azimuth_rate * t;
             let phase = azimuth - plane_phase;
             let cosine = phase.cos();
@@ -7844,8 +7826,8 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             return nurbs_pcurve_differential(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.control_points(),
-                nurbs.weights().as_deref(),
+                &nurbs.pole_rows().points(),
+                nurbs.pole_rows().weights().as_deref(),
                 t,
             );
         }
@@ -7881,8 +7863,8 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             }
             let unit = Point2::new(tangent.u / speed, tangent.v / speed);
             let point = Point2::new(
-                basis.point.u - distance * unit.v,
-                basis.point.v + distance * unit.u,
+                basis.point.u - distance.get() * unit.v,
+                basis.point.v + distance.get() * unit.u,
             );
             let tangent = basis.acceleration.map(|acceleration| {
                 let tangential_acceleration = unit.u * acceleration.u + unit.v * acceleration.v;
@@ -7891,8 +7873,8 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
                     (acceleration.v - tangential_acceleration * unit.v) / speed,
                 );
                 Point2::new(
-                    tangent.u - distance * unit_derivative.v,
-                    tangent.v + distance * unit_derivative.u,
+                    tangent.u - distance.get() * unit_derivative.v,
+                    tangent.v + distance.get() * unit_derivative.u,
                 )
             });
             return Some(PcurveDifferential {

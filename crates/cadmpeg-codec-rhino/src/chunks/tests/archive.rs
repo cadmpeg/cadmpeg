@@ -81,7 +81,7 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         panic!("bounded line must decode to an exact NURBS carrier");
     };
     assert_eq!(curve.degree(), 1);
-    assert_eq!(curve.knots(), [3.0, 3.0, 7.0, 7.0]);
+    assert_eq!(curve.knots().as_slice(), [3.0, 3.0, 7.0, 7.0]);
     assert_eq!(
         curve.control_points(),
         vec![
@@ -366,14 +366,14 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
             matches!(
                 &curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
-                    if nurbs.knots() == [-1.0, -1.0, 3.0, 3.0]
+                    if nurbs.knots().as_slice() == [-1.0, -1.0, 3.0, 3.0]
             )
         })
         .expect("bounded line");
     let Some(SolvedCurveGeometry::Nurbs(line)) = line.geometry.solved() else {
         panic!("line carrier");
     };
-    assert_eq!(line.knots(), [-1.0, -1.0, 3.0, 3.0]);
+    assert_eq!(line.knots().as_slice(), [-1.0, -1.0, 3.0, 3.0]);
     let polyline = result
         .ir()
         .model
@@ -383,14 +383,14 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
             matches!(
                 &curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
-                    if nurbs.knots() == [2.0, 2.0, 3.5, 9.0, 9.0]
+                    if nurbs.knots().as_slice() == [2.0, 2.0, 3.5, 9.0, 9.0]
             )
         })
         .expect("polyline");
     let Some(SolvedCurveGeometry::Nurbs(polyline)) = polyline.geometry.solved() else {
         panic!("polyline carrier");
     };
-    assert_eq!(polyline.knots(), [2.0, 2.0, 3.5, 9.0, 9.0]);
+    assert_eq!(polyline.knots().as_slice(), [2.0, 2.0, 3.5, 9.0, 9.0]);
     assert_eq!(result.ir().model.procedural_curves.len(), 2);
     let root = result
         .ir()
@@ -711,10 +711,10 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
     assert!(model.vertices.iter().all(|vertex| vertex
         .tolerance
         .is_some_and(|tolerance| (tolerance.get() - 0.2).abs() < EPS_TOPOLOGY_TOLERANCE)));
-    assert!(model
-        .pcurves
-        .iter()
-        .all(|pcurve| pcurve.fit_tolerance() == Some(0.04)));
+    assert!(model.pcurves.iter().all(|pcurve| pcurve
+        .fit_tolerance()
+        .map(cadmpeg_ir::geometry::FitTolerance::get)
+        == Some(0.04)));
     assert_eq!(
         result
             .ir()

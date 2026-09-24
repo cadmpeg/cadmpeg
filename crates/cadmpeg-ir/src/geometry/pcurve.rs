@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-space curves, NURBS payloads, and source parameterization.
 
-use super::nurbs::{
-    require_curve_cardinality, require_nondecreasing_knots, NurbsCurve, NurbsError, NurbsPoles3,
-};
+use super::nurbs::{require_curve_cardinality, KnotVector, NurbsCurve, NurbsError, NurbsPoles3};
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
 use crate::ids::PcurveId;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use crate::topology::ParameterInterval;
 use crate::transform::Transform2;
 use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
 #[cfg(feature = "schema")]
@@ -295,38 +294,38 @@ impl PolarHarmonicPcurve {
 
     /// Return the radial center.
     #[must_use]
-    pub const fn radial_center(&self) -> &Point2 {
-        self.radial_center.as_raw()
+    pub const fn radial_center(&self) -> &FinitePoint2 {
+        &self.radial_center
     }
 
     /// Return the radial cos.
     #[must_use]
-    pub const fn radial_cos(&self) -> &Point2 {
-        self.radial_cos.as_raw()
+    pub const fn radial_cos(&self) -> &FinitePoint2 {
+        &self.radial_cos
     }
 
     /// Return the radial sin.
     #[must_use]
-    pub const fn radial_sin(&self) -> &Point2 {
-        self.radial_sin.as_raw()
+    pub const fn radial_sin(&self) -> &FinitePoint2 {
+        &self.radial_sin
     }
 
     /// Return the axial origin.
     #[must_use]
-    pub const fn axial_origin(&self) -> f64 {
-        self.axial_origin.get()
+    pub const fn axial_origin(&self) -> FiniteReal {
+        self.axial_origin
     }
 
     /// Return the axial cos.
     #[must_use]
-    pub const fn axial_cos(&self) -> f64 {
-        self.axial_cos.get()
+    pub const fn axial_cos(&self) -> FiniteReal {
+        self.axial_cos
     }
 
     /// Return the axial sin.
     #[must_use]
-    pub const fn axial_sin(&self) -> f64 {
-        self.axial_sin.get()
+    pub const fn axial_sin(&self) -> FiniteReal {
+        self.axial_sin
     }
 }
 
@@ -398,26 +397,26 @@ impl SphericalGreatCirclePcurve {
 
     /// Return the azimuth origin.
     #[must_use]
-    pub const fn azimuth_origin(&self) -> f64 {
-        self.azimuth_origin.get()
+    pub const fn azimuth_origin(&self) -> FiniteReal {
+        self.azimuth_origin
     }
 
     /// Return the azimuth rate.
     #[must_use]
-    pub const fn azimuth_rate(&self) -> f64 {
-        self.azimuth_rate.get()
+    pub const fn azimuth_rate(&self) -> FiniteReal {
+        self.azimuth_rate
     }
 
     /// Return the plane phase.
     #[must_use]
-    pub const fn plane_phase(&self) -> f64 {
-        self.plane_phase.get()
+    pub const fn plane_phase(&self) -> FiniteReal {
+        self.plane_phase
     }
 
     /// Return the plane slope.
     #[must_use]
-    pub const fn plane_slope(&self) -> f64 {
-        self.plane_slope.get()
+    pub const fn plane_slope(&self) -> FiniteReal {
+        self.plane_slope
     }
 
     /// The same great circle traversed as `reflection - t`. The azimuth
@@ -504,26 +503,26 @@ impl CirclePcurve {
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point2 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
     }
 
     /// Return the x axis.
     #[must_use]
-    pub const fn x_axis(&self) -> &Point2 {
-        self.x_axis.as_raw()
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
     }
 
     /// Return the y axis.
     #[must_use]
-    pub const fn y_axis(&self) -> &Point2 {
-        self.y_axis.as_raw()
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
     }
 
     /// Return the radius.
     #[must_use]
-    pub const fn radius(&self) -> f64 {
-        self.radius.get()
+    pub const fn radius(&self) -> PositiveReal {
+        self.radius
     }
 }
 
@@ -595,32 +594,32 @@ impl EllipsePcurve {
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point2 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
     }
 
     /// Return the x axis.
     #[must_use]
-    pub const fn x_axis(&self) -> &Point2 {
-        self.x_axis.as_raw()
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
     }
 
     /// Return the y axis.
     #[must_use]
-    pub const fn y_axis(&self) -> &Point2 {
-        self.y_axis.as_raw()
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
     }
 
     /// Return the major radius.
     #[must_use]
-    pub const fn major_radius(&self) -> f64 {
-        self.major_radius.get()
+    pub const fn major_radius(&self) -> PositiveReal {
+        self.major_radius
     }
 
     /// Return the minor radius.
     #[must_use]
-    pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius.get()
+    pub const fn minor_radius(&self) -> PositiveReal {
+        self.minor_radius
     }
 
     /// The same ellipse traversed as `-t`: the second axis changes sign.
@@ -688,20 +687,20 @@ impl HarmonicPcurve {
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point2 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
     }
 
     /// Return the cosine.
     #[must_use]
-    pub const fn cosine(&self) -> &Point2 {
-        self.cosine.as_raw()
+    pub const fn cosine(&self) -> &FinitePoint2 {
+        &self.cosine
     }
 
     /// Return the sine.
     #[must_use]
-    pub const fn sine(&self) -> &Point2 {
-        self.sine.as_raw()
+    pub const fn sine(&self) -> &FinitePoint2 {
+        &self.sine
     }
 }
 
@@ -766,26 +765,26 @@ impl ParabolaPcurve {
 
     /// Return the vertex.
     #[must_use]
-    pub const fn vertex(&self) -> &Point2 {
-        self.vertex.as_raw()
+    pub const fn vertex(&self) -> &FinitePoint2 {
+        &self.vertex
     }
 
     /// Return the x axis.
     #[must_use]
-    pub const fn x_axis(&self) -> &Point2 {
-        self.x_axis.as_raw()
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
     }
 
     /// Return the y axis.
     #[must_use]
-    pub const fn y_axis(&self) -> &Point2 {
-        self.y_axis.as_raw()
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
     }
 
     /// Return the focal distance.
     #[must_use]
-    pub const fn focal_distance(&self) -> f64 {
-        self.focal_distance.get()
+    pub const fn focal_distance(&self) -> PositiveReal {
+        self.focal_distance
     }
 
     /// The same parabola traversed as `-t`: the second axis changes sign.
@@ -868,32 +867,32 @@ impl HyperbolaPcurve {
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point2 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
     }
 
     /// Return the x axis.
     #[must_use]
-    pub const fn x_axis(&self) -> &Point2 {
-        self.x_axis.as_raw()
+    pub const fn x_axis(&self) -> &FinitePoint2 {
+        &self.x_axis
     }
 
     /// Return the y axis.
     #[must_use]
-    pub const fn y_axis(&self) -> &Point2 {
-        self.y_axis.as_raw()
+    pub const fn y_axis(&self) -> &FinitePoint2 {
+        &self.y_axis
     }
 
     /// Return the major radius.
     #[must_use]
-    pub const fn major_radius(&self) -> f64 {
-        self.major_radius.get()
+    pub const fn major_radius(&self) -> PositiveReal {
+        self.major_radius
     }
 
     /// Return the minor radius.
     #[must_use]
-    pub const fn minor_radius(&self) -> f64 {
-        self.minor_radius.get()
+    pub const fn minor_radius(&self) -> PositiveReal {
+        self.minor_radius
     }
 
     /// The same hyperbola traversed as `-t`: the second axis changes sign.
@@ -961,20 +960,20 @@ impl HyperbolicPcurve {
 
     /// Return the center.
     #[must_use]
-    pub const fn center(&self) -> &Point2 {
-        self.center.as_raw()
+    pub const fn center(&self) -> &FinitePoint2 {
+        &self.center
     }
 
     /// Return the cosine.
     #[must_use]
-    pub const fn cosine(&self) -> &Point2 {
-        self.cosine.as_raw()
+    pub const fn cosine(&self) -> &FinitePoint2 {
+        &self.cosine
     }
 
     /// Return the sine.
     #[must_use]
-    pub const fn sine(&self) -> &Point2 {
-        self.sine.as_raw()
+    pub const fn sine(&self) -> &FinitePoint2 {
+        &self.sine
     }
 }
 
@@ -1003,7 +1002,8 @@ impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "TrimmedPcurveWire")]
 pub struct TrimmedPcurve {
-    parameter_range: [f64; 2],
+    #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
+    parameter_range: ParameterInterval,
     #[serde(default = "crate::default_true")]
     same_sense: bool,
     basis: Box<PcurveGeometry>,
@@ -1031,11 +1031,8 @@ impl TrimmedPcurve {
         same_sense: bool,
         basis: Box<PcurveGeometry>,
     ) -> Result<Self, &'static str> {
-        if !(parameter_range.iter().all(|v| v.is_finite())
-            && parameter_range[0] <= parameter_range[1])
-        {
-            return Err("TrimmedPcurve.parameter_range must be finite and ordered");
-        }
+        let parameter_range = ParameterInterval::new(parameter_range)
+            .map_err(|_| "TrimmedPcurve.parameter_range must be finite and ordered")?;
         let depth = nesting_depth_over(&basis)
             .ok_or("TrimmedPcurve.basis nests past the admitted inline basis depth")?;
         Ok(Self {
@@ -1048,8 +1045,8 @@ impl TrimmedPcurve {
 
     /// Return the parameter range.
     #[must_use]
-    pub const fn parameter_range(&self) -> &[f64; 2] {
-        &self.parameter_range
+    pub const fn parameter_range(&self) -> ParameterInterval {
+        self.parameter_range
     }
 
     /// Return the same sense.
@@ -1108,8 +1105,8 @@ impl OffsetPcurve {
 
     /// Return the distance.
     #[must_use]
-    pub const fn distance(&self) -> f64 {
-        self.distance.get()
+    pub const fn distance(&self) -> FiniteReal {
+        self.distance
     }
 
     /// Return the basis.
@@ -1186,7 +1183,7 @@ pub struct PolarNurbsPole {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolarPcurveNurbs {
     degree: u32,
-    knots: Vec<f64>,
+    knots: KnotVector,
     poles: PolarNurbsPoles,
     periodic: bool,
 }
@@ -1323,7 +1320,7 @@ impl PolarPcurveNurbs {
                 "poles contain a non-finite value".into(),
             ));
         }
-        require_nondecreasing_knots(&knots)?;
+        let knots = KnotVector::new(knots)?;
         Ok(Self {
             degree,
             knots,
@@ -1338,7 +1335,7 @@ impl PolarPcurveNurbs {
     }
 
     /// Expanded knot vector.
-    pub fn knots(&self) -> &[f64] {
+    pub fn knots(&self) -> &KnotVector {
         &self.knots
     }
 
@@ -1359,9 +1356,19 @@ impl PolarPcurveNurbs {
         self.poles.poles()
     }
 
+    /// Pole rows, with the curve's rational form.
+    pub const fn pole_rows(&self) -> &PolarNurbsPoles {
+        &self.poles
+    }
+
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<Vec<f64>> {
-        self.poles.weights()
+    pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
+        match &self.poles {
+            PolarNurbsPoles::Polynomial { .. } => None,
+            PolarNurbsPoles::Rational { poles } => {
+                Some(poles.iter().map(|pole| pole.weight).collect())
+            }
+        }
     }
 
     /// Whether the NURBS parameterization is periodic.
@@ -1388,7 +1395,7 @@ impl Serialize for PolarPcurveNurbs {
     {
         PolarPcurveNurbsWire {
             degree: self.degree,
-            knots: self.knots.clone(),
+            knots: self.knots.to_vec(),
             poles: self.poles.clone(),
             periodic: self.periodic,
         }
@@ -1412,7 +1419,8 @@ impl<'de> Deserialize<'de> for PolarPcurveNurbs {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveNurbs {
     degree: u32,
-    knots: Vec<f64>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    knots: KnotVector,
     poles: PcurveNurbsPoles,
     #[serde(default)]
     periodic: bool,
@@ -1433,7 +1441,7 @@ impl PcurveNurbs {
             ));
         }
         require_finite_points_2("control_points", &poles.points())?;
-        require_nondecreasing_knots(&knots)?;
+        let knots = KnotVector::new(knots)?;
         Ok(Self {
             degree,
             knots,
@@ -1446,7 +1454,7 @@ impl PcurveNurbs {
     pub fn lift(&self, lift: impl FnMut(Point2) -> Point3) -> Result<NurbsCurve, NurbsError> {
         let points: Vec<Point3> = self.poles.points().into_iter().map(lift).collect();
         let poles = NurbsPoles3::from_lanes(points, self.poles.weights())?;
-        NurbsCurve::new(self.degree, self.knots.clone(), poles, self.periodic)
+        NurbsCurve::new(self.degree, self.knots.to_vec(), poles, self.periodic)
     }
 
     /// Curve degree.
@@ -1455,7 +1463,7 @@ impl PcurveNurbs {
     }
 
     /// Full knot vector.
-    pub fn knots(&self) -> &[f64] {
+    pub fn knots(&self) -> &KnotVector {
         &self.knots
     }
 
@@ -1476,11 +1484,6 @@ impl PcurveNurbs {
         &self.poles
     }
 
-    /// Control points in parameter order.
-    pub fn control_points(&self) -> Vec<Point2> {
-        self.poles.points()
-    }
-
     /// Atomically edit pole positions and preserve finite coordinates.
     ///
     /// The closure states its own refusal, which discards the whole edit.
@@ -1496,8 +1499,13 @@ impl PcurveNurbs {
     }
 
     /// Rational weights in pole order.
-    pub fn weights(&self) -> Option<Vec<f64>> {
-        self.poles.weights()
+    pub fn weights(&self) -> Option<Vec<NonZeroReal>> {
+        match &self.poles {
+            PcurveNurbsPoles::Polynomial { .. } => None,
+            PcurveNurbsPoles::Rational { points } => {
+                Some(points.iter().map(|pole| pole.weight).collect())
+            }
+        }
     }
 
     /// Whether the parameter-space curve is periodic.
@@ -1508,10 +1516,7 @@ impl PcurveNurbs {
     /// Reverse poles, weights, and the signed knot parameterization together.
     pub fn reverse_parameterization(&mut self) {
         self.poles.reverse();
-        self.knots.reverse();
-        for knot in &mut self.knots {
-            *knot = -*knot;
-        }
+        self.knots.reverse_negated();
     }
 }
 
@@ -1648,73 +1653,73 @@ impl PcurveGeometry {
                 scale(*line.direction().as_raw()),
             )?),
             Self::Circle(circle) if isotropic => Self::Circle(CirclePcurve::try_new(
-                scale(*circle.center()),
-                *circle.x_axis(),
-                *circle.y_axis(),
-                circle.radius() * u_scale,
+                scale(circle.center().get()),
+                circle.x_axis().get(),
+                circle.y_axis().get(),
+                circle.radius().get() * u_scale,
             )?),
             Self::Circle(circle) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(*circle.center()),
+                scale(circle.center().get()),
                 scale(Point2::new(
-                    circle.radius() * circle.x_axis().u,
-                    circle.radius() * circle.x_axis().v,
+                    circle.radius().get() * circle.x_axis().u,
+                    circle.radius().get() * circle.x_axis().v,
                 )),
                 scale(Point2::new(
-                    circle.radius() * circle.y_axis().u,
-                    circle.radius() * circle.y_axis().v,
+                    circle.radius().get() * circle.y_axis().u,
+                    circle.radius().get() * circle.y_axis().v,
                 )),
             )?),
             Self::Ellipse(ellipse) if isotropic => Self::Ellipse(EllipsePcurve::try_new(
-                scale(*ellipse.center()),
-                *ellipse.x_axis(),
-                *ellipse.y_axis(),
-                ellipse.major_radius() * u_scale,
-                ellipse.minor_radius() * u_scale,
+                scale(ellipse.center().get()),
+                ellipse.x_axis().get(),
+                ellipse.y_axis().get(),
+                ellipse.major_radius().get() * u_scale,
+                ellipse.minor_radius().get() * u_scale,
             )?),
             Self::Ellipse(ellipse) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(*ellipse.center()),
+                scale(ellipse.center().get()),
                 scale(Point2::new(
-                    ellipse.major_radius() * ellipse.x_axis().u,
-                    ellipse.major_radius() * ellipse.x_axis().v,
+                    ellipse.major_radius().get() * ellipse.x_axis().u,
+                    ellipse.major_radius().get() * ellipse.x_axis().v,
                 )),
                 scale(Point2::new(
-                    ellipse.minor_radius() * ellipse.y_axis().u,
-                    ellipse.minor_radius() * ellipse.y_axis().v,
+                    ellipse.minor_radius().get() * ellipse.y_axis().u,
+                    ellipse.minor_radius().get() * ellipse.y_axis().v,
                 )),
             )?),
             Self::Parabola(parabola) => Self::Parabola(ParabolaPcurve::try_new(
-                scale(*parabola.vertex()),
-                scale(*parabola.x_axis()),
-                scale(*parabola.y_axis()),
-                parabola.focal_distance(),
+                scale(parabola.vertex().get()),
+                scale(parabola.x_axis().get()),
+                scale(parabola.y_axis().get()),
+                parabola.focal_distance().get(),
             )?),
             Self::Hyperbola(hyperbola) if isotropic => Self::Hyperbola(HyperbolaPcurve::try_new(
-                scale(*hyperbola.center()),
-                *hyperbola.x_axis(),
-                *hyperbola.y_axis(),
-                hyperbola.major_radius() * u_scale,
-                hyperbola.minor_radius() * u_scale,
+                scale(hyperbola.center().get()),
+                hyperbola.x_axis().get(),
+                hyperbola.y_axis().get(),
+                hyperbola.major_radius().get() * u_scale,
+                hyperbola.minor_radius().get() * u_scale,
             )?),
             Self::Hyperbola(hyperbola) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(*hyperbola.center()),
+                scale(hyperbola.center().get()),
                 scale(Point2::new(
-                    hyperbola.major_radius() * hyperbola.x_axis().u,
-                    hyperbola.major_radius() * hyperbola.x_axis().v,
+                    hyperbola.major_radius().get() * hyperbola.x_axis().u,
+                    hyperbola.major_radius().get() * hyperbola.x_axis().v,
                 )),
                 scale(Point2::new(
-                    hyperbola.minor_radius() * hyperbola.y_axis().u,
-                    hyperbola.minor_radius() * hyperbola.y_axis().v,
+                    hyperbola.minor_radius().get() * hyperbola.y_axis().u,
+                    hyperbola.minor_radius().get() * hyperbola.y_axis().v,
                 )),
             )?),
             Self::Harmonic(harmonic) => Self::Harmonic(HarmonicPcurve::try_new(
-                scale(*harmonic.center()),
-                scale(*harmonic.cosine()),
-                scale(*harmonic.sine()),
+                scale(harmonic.center().get()),
+                scale(harmonic.cosine().get()),
+                scale(harmonic.sine().get()),
             )?),
             Self::Hyperbolic(hyperbolic) => Self::Hyperbolic(HyperbolicPcurve::try_new(
-                scale(*hyperbolic.center()),
-                scale(*hyperbolic.cosine()),
-                scale(*hyperbolic.sine()),
+                scale(hyperbolic.center().get()),
+                scale(hyperbolic.cosine().get()),
+                scale(hyperbolic.sine().get()),
             )?),
             Self::Nurbs { nurbs } => {
                 return nurbs
@@ -1727,11 +1732,15 @@ impl PcurveGeometry {
             Self::Trimmed(trimmed) => {
                 let mut basis = trimmed.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Trimmed(TrimmedPcurve::try_new(
-                    trimmed.parameter_range,
-                    trimmed.same_sense,
+                // Scaling keeps every trimmed, offset and placed layer of the
+                // basis, so its nesting depth and the held parameter range
+                // stay admitted.
+                Self::Trimmed(TrimmedPcurve {
+                    parameter_range: trimmed.parameter_range,
+                    same_sense: trimmed.same_sense,
                     basis,
-                )?)
+                    depth: trimmed.depth,
+                })
             }
             Self::Offset(offset) => {
                 if !isotropic {
@@ -1739,7 +1748,10 @@ impl PcurveGeometry {
                 }
                 let mut basis = offset.basis.clone();
                 basis.try_scale_coordinates(scales)?;
-                Self::Offset(OffsetPcurve::try_new(offset.distance() * u_scale, basis)?)
+                Self::Offset(OffsetPcurve::try_new(
+                    offset.distance().get() * u_scale,
+                    basis,
+                )?)
             }
             Self::Transformed(placed) => {
                 if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0
@@ -1838,12 +1850,12 @@ impl Pcurve {
     }
 
     /// Directed native parameter interval on which this pcurve is evaluated.
-    pub fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub fn parameter_range(&self) -> Option<FiniteVector<2>> {
         self.metadata.parameter_range()
     }
 
     /// Parameter-space fit tolerance following a solved UV cache.
-    pub fn fit_tolerance(&self) -> Option<f64> {
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
         self.metadata.fit_tolerance()
     }
 }
@@ -1912,7 +1924,7 @@ impl PcurveMetadata {
     }
 
     /// Directed native parameter interval on which this pcurve is evaluated.
-    pub fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub fn parameter_range(&self) -> Option<FiniteVector<2>> {
         match self {
             Self::AsmInline { form: inline } => Some(inline.parameter_range),
             Self::General { form: general } => general.parameter_range,
@@ -1920,7 +1932,7 @@ impl PcurveMetadata {
     }
 
     /// Parameter-space fit tolerance following a solved UV cache.
-    pub fn fit_tolerance(&self) -> Option<f64> {
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
         match self {
             Self::AsmInline { form: inline } => Some(inline.fit_tolerance()),
             Self::General { form: general } => general.fit_tolerance(),
@@ -1945,7 +1957,8 @@ pub struct PcurveInlineForm {
     pub wrapper_reversed: bool,
     /// Four native booleans following the inline subtype scope.
     pub native_tail_flags: [bool; 4],
-    parameter_range: [f64; 2],
+    #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
+    parameter_range: FiniteVector<2>,
     fit_tolerance: FitTolerance,
 }
 
@@ -1987,7 +2000,7 @@ impl PcurveInlineForm {
         Self {
             wrapper_reversed,
             native_tail_flags,
-            parameter_range: parameter_range.get(),
+            parameter_range,
             fit_tolerance,
         }
     }
@@ -2010,8 +2023,8 @@ impl PcurveInlineForm {
 
     /// Parameter-space fit tolerance.
     #[must_use]
-    pub const fn fit_tolerance(&self) -> f64 {
-        self.fit_tolerance.get()
+    pub const fn fit_tolerance(&self) -> FitTolerance {
+        self.fit_tolerance
     }
 
     /// Replace the fit tolerance.
@@ -2021,7 +2034,7 @@ impl PcurveInlineForm {
 
     /// Directed native parameter interval.
     #[must_use]
-    pub const fn parameter_range(&self) -> [f64; 2] {
+    pub const fn parameter_range(&self) -> FiniteVector<2> {
         self.parameter_range
     }
 }
@@ -2043,7 +2056,8 @@ pub struct PcurveGeneralForm {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_parameter_range"
     )]
-    parameter_range: Option<[f64; 2]>,
+    #[cfg_attr(feature = "schema", schemars(with = "Option<[f64; 2]>"))]
+    parameter_range: Option<FiniteVector<2>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fit_tolerance: Option<FitTolerance>,
 }
@@ -2087,10 +2101,7 @@ impl PcurveGeneralForm {
     ) -> Self {
         Self {
             wrapper_reversed,
-            parameter_range: match parameter_range {
-                Some(range) => Some(range.get()),
-                None => None,
-            },
+            parameter_range,
             fit_tolerance,
         }
     }
@@ -2113,8 +2124,8 @@ impl PcurveGeneralForm {
 
     /// Parameter-space fit tolerance.
     #[must_use]
-    pub fn fit_tolerance(&self) -> Option<f64> {
-        self.fit_tolerance.map(FitTolerance::get)
+    pub fn fit_tolerance(&self) -> Option<FitTolerance> {
+        self.fit_tolerance
     }
 
     /// Replace or clear the fit tolerance.
@@ -2124,7 +2135,7 @@ impl PcurveGeneralForm {
 
     /// Directed native parameter interval.
     #[must_use]
-    pub const fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub const fn parameter_range(&self) -> Option<FiniteVector<2>> {
         self.parameter_range
     }
 }

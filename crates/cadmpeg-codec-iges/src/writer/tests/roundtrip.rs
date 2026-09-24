@@ -320,7 +320,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         let Some(parameter_interval) = &definition_payload_0.parameter_interval() else {
             panic!("expected an extrusion definition");
         };
-        assert_eq!(*parameter_interval, [0.0, 1.0]);
+        assert_eq!(parameter_interval.get(), [0.0, 1.0]);
         let round_surface = round_trip
             .ir()
             .model
@@ -461,7 +461,9 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             "{version:?}"
         );
         assert_eq!(
-            round_trip.ir().model.edges[0].param_range(),
+            round_trip.ir().model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
         );
         assert!(

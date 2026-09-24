@@ -2887,7 +2887,9 @@ pub(super) fn validate_edge_range_edits(
         let mut normalized = after.clone();
         normalized.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
             normalized.curve().cloned(),
-            before.param_range(),
+            before
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
         )
         .map_err(CodecError::malformed)?;
         normalized.tolerance = before.tolerance;
@@ -2907,7 +2909,7 @@ pub(super) fn validate_edge_range_edits(
                 "edited F3D edge range {id} must replace an existing finite non-degenerate range"
             )));
         }
-        edits.insert(id.to_owned(), range);
+        edits.insert(id.to_owned(), range.get());
     }
     Ok(edits)
 }
@@ -3199,7 +3201,7 @@ pub(super) fn validate_pcurve_edits(
             && before.fit_tolerance().is_some() == after.fit_tolerance().is_some()
             && after
                 .parameter_range()
-                .is_none_or(|range| range.into_iter().all(f64::is_finite) && range[0] <= range[1]);
+                .is_none_or(|range| range[0] <= range[1]);
         if !valid || !contract_valid {
             return Err(CodecError::NotImplemented(format!(
                 "F3D pcurve edit changes fixed cache structure: {id}"
@@ -3217,7 +3219,7 @@ pub(super) fn validate_pcurve_edits(
                 PcurveEdit::Ref {
                     native_geometry: after_native,
                     periodic,
-                    parameter_range,
+                    parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
                 }
             }
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { .. }
@@ -3230,10 +3232,11 @@ pub(super) fn validate_pcurve_edits(
                 native_tail_flags: (before.native_tail_flags() != after.native_tail_flags())
                     .then_some(after.native_tail_flags())
                     .flatten(),
-                parameter_range,
+                parameter_range: parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
                 fit_tolerance: (before.fit_tolerance() != after.fit_tolerance())
                     .then_some(after.fit_tolerance())
-                    .flatten(),
+                    .flatten()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
             },
         };
         edits.insert(id.to_owned(), edit);
@@ -3445,9 +3448,9 @@ pub(super) fn validate_procedural_surface_edits(
                         || before_direction != after_direction
                         || before_native_position != after_native_position)
                         .then_some(ProceduralSurfaceEdit::Extrusion {
-                            parameter_interval: interval,
-                            direction: *after_direction,
-                            native_position: position,
+                            parameter_interval: interval.get(),
+                            direction: after_direction.get(),
+                            native_position: position.get(),
                         })
                 }
             }
@@ -3521,7 +3524,7 @@ pub(super) fn validate_procedural_surface_fit_edits(
                 "F3D procedural-surface fit tolerance must replace a finite nonnegative value: {id}"
             )));
         }
-        edits.insert(id.to_owned(), tolerance);
+        edits.insert(id.to_owned(), tolerance.get());
     }
     Ok(edits)
 }
@@ -3766,7 +3769,10 @@ pub(super) fn validate_procedural_curve_edits(
             }
             Some(tolerance)
         };
-        if let Some(edit) = ProceduralCurveEdit::new(definition, fit_tolerance) {
+        if let Some(edit) = ProceduralCurveEdit::new(
+            definition,
+            fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
+        ) {
             edits.insert(id.to_owned(), edit);
         }
     }

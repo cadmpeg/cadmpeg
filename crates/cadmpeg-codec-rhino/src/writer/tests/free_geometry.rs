@@ -237,7 +237,7 @@ fn reversed_unclamped_nurbs_knots_are_native_canonical() {
         .expect("reflected stored knots reconstruct");
 
     assert_eq!(
-        curve.knots(),
+        curve.knots().as_slice(),
         [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
     );
     check_knot_roundtrip("reversed", "curve", curve.knots(), 3, 6, curve.periodic())

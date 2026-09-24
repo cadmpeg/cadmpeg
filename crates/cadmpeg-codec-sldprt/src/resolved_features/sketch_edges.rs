@@ -175,7 +175,10 @@ pub(super) fn project_edge(
                     .ok()?,
                 )
             } else {
-                let parameters = edge.param_range().filter(|[start, end]| start != end);
+                let parameters = edge
+                    .param_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    .filter(|[start, end]| start != end);
                 Some(
                     SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                         center,
@@ -227,7 +230,10 @@ pub(super) fn project_edge(
                 let minor_component = -du * major_angle.sin() + dv * major_angle.cos();
                 (minor_component / minor_radius).atan2(major_component / major_radius)
             };
-            let parameters = edge.param_range().filter(|[start, end]| start != end);
+            let parameters = edge
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get)
+                .filter(|[start, end]| start != end);
             Some(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center,
@@ -257,9 +263,9 @@ pub(super) fn project_edge(
                 nurbs
                     .control_points()
                     .iter()
-                    .map(|point| project_point(*point, origin, u_axis, v_axis))
+                    .map(|point| project_point(point.get(), origin, u_axis, v_axis))
                     .collect(),
-                nurbs.weights(),
+                nurbs.pole_rows().weights(),
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),

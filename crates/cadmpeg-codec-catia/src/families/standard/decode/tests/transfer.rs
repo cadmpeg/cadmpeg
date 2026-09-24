@@ -772,7 +772,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             };
             let support = definition_payload.support();
             let distance = definition_payload.distance();
-            assert!((*distance - offset).abs() < 1.0e-12);
+            assert!((distance.get() - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
                 surface.id == *support
                     && matches!(
@@ -827,7 +827,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         .surfaces
         .iter()
         .any(|surface| surface.id == *support));
-    assert_eq!(*distance, 2.5);
+    assert_eq!(distance.get(), 2.5);
     assert_eq!([*u_sense, *v_sense], [None, None]);
     assert_eq!(
         *extension,
@@ -880,7 +880,7 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("offset construction");
     };
     let distance = definition_payload.distance();
-    assert_eq!(*distance, -2.0);
+    assert_eq!(distance.get(), -2.0);
     let Some(bounds) = procedural.record_bounds() else {
         panic!("offset parameter bounds");
     };

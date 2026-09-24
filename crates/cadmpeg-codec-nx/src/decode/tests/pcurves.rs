@@ -385,8 +385,13 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     };
     let supports = intersection.supports();
 
-    assert_eq!(parameterization.parameter_range(), range);
-    assert_eq!(ir.model.edges[0].param_range(), Some(range));
+    assert_eq!(parameterization.parameter_range().endpoints(), range);
+    assert_eq!(
+        ir.model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some(range)
+    );
     assert!(parameterization
         .pcurves
         .iter()
@@ -964,7 +969,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     surface
         .edit_control_points(|pole| {
             if let Some(source) = pole_index.checked_sub(6).and_then(|v| replacement.get(v)) {
-                *pole = *source;
+                *pole = source.get();
             }
             pole_index += 1;
             Ok(())
@@ -1060,7 +1065,7 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
+    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
         edit::replace(surface, |previous| {
@@ -1113,7 +1118,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     let weight_grid = (0..3)
         .map(|u| (0..3).map(|v| axis_weights[u] * axis_weights[v]).collect())
         .collect::<Vec<Vec<f64>>>();
-    let poles = NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weight_grid));
+    let poles = NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weight_grid));
     {
         let replacement = poles.unwrap();
         edit::replace(surface, |previous| {

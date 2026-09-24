@@ -153,7 +153,7 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .iter()
         .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range().expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range").get();
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 }
@@ -181,7 +181,7 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .iter_mut()
         .find(|edge| edge.curve().is_some())
         .expect("generated BinaryFile4 arc edge");
-    let mut range = edge.param_range().expect("generated arc range");
+    let mut range = edge.param_range().expect("generated arc range").get();
     range[0] += 0.125;
     range[1] -= 0.125;
     let expected_range = range;
@@ -207,7 +207,8 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
             .edges
             .iter()
             .find(|edge| edge.curve().is_some())
-            .and_then(cadmpeg_ir::topology::Edge::param_range),
+            .and_then(cadmpeg_ir::topology::Edge::param_range)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some(expected_range)
     );
     assert_eq!(round_trip.ir().model.faces[0].sense, expected_face_sense);
@@ -240,13 +241,13 @@ fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
     let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    let mut control_points = nurbs.control_points();
+    let mut control_points = nurbs.pole_rows().points();
     control_points[1].z = 4.5;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         true,
     )
     .unwrap();
@@ -282,7 +283,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .iter()
         .find(|edge| edge.curve().is_some())
         .expect("edge on the ellipse carrier");
-    let [start, end] = arc.param_range().expect("arc range");
+    let [start, end] = arc.param_range().expect("arc range").get();
     assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
     assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 

@@ -884,7 +884,7 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     for edge in &ir.model.edges {
-        let Some([start, end]) = edge.param_range() else {
+        let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
         let mut valid = true;

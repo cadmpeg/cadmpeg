@@ -641,12 +641,12 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
     assert_eq!(splines.len(), 2);
     assert!(splines.iter().all(|curve| {
         curve.degree() == 2
-            && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && curve.knots().as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
             && curve.control_points().len() == 3
             && !curve.periodic()
     }));
     assert!(splines.iter().any(|curve| curve.weights().is_none()));
     assert!(splines
         .iter()
-        .any(|curve| curve.weights() == Some(vec![1.0, 0.5, 1.0])));
+        .any(|curve| curve.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])));
 }

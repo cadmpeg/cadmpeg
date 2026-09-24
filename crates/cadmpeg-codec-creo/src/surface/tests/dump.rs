@@ -90,7 +90,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(matched_payload) => matches!(
             (
                 &matched_payload.parameter_interval(),
-                matched_payload.direction(),
+                matched_payload.direction().as_raw(),
                 &matched_payload.native_position(),
             ),
             (

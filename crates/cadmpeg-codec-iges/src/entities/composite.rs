@@ -11,7 +11,7 @@ use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
+    nurbs::{NurbsCurve, NurbsError},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, SolvedCurveGeometry,
 };
@@ -235,7 +235,7 @@ impl CompositeIndex {
                     .push(CompositeEdge {
                         start: edge.start.clone(),
                         end: edge.end.clone(),
-                        param_range: edge.param_range(),
+                        param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                     });
             }
         }
@@ -378,9 +378,9 @@ fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
     )
     .ok()?;
     for (index, point) in curve.control_points().iter().enumerate() {
-        let weight = curve
-            .weights()
-            .map_or(Some(1.0), |weights| weights.get(index).copied())?;
+        let weight = curve.weights().map_or(Some(1.0), |weights| {
+            weights.get(index).map(|weight| weight.get())
+        })?;
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
             return None;
@@ -500,9 +500,6 @@ fn reverse_nurbs(
         });
     };
     let control_count = curve.control_points().len();
-    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
-        return Err(CompositeCurveError::ReversedChildKnots);
-    }
     let [start, end] = interval;
     if !start.is_finite() || !end.is_finite() || start > end {
         return Err(CompositeCurveError::ReversedChildInterval { start, end });
@@ -542,10 +539,11 @@ fn reverse_nurbs(
     let reversed = NurbsCurve::from_lanes(
         curve.degree(),
         knots,
-        curve.control_points().iter().rev().copied().collect(),
+        curve.pole_rows().points().into_iter().rev().collect(),
         curve
+            .pole_rows()
             .weights()
-            .map(|weights| weights.iter().rev().copied().collect()),
+            .map(|weights| weights.into_iter().rev().collect()),
         curve.periodic(),
     )?;
     Ok((reversed, reversed_range))
@@ -837,9 +835,6 @@ pub(super) enum CompositeCurveError {
         /// Degree the child states.
         degree: u32,
     },
-    /// A reversed child states a knot vector this reader cannot reflect.
-    #[error("a reversed child states a non-finite or decreasing knot vector")]
-    ReversedChildKnots,
     /// A reversed child's stated interval is non-finite or decreasing.
     #[error("a reversed child states the interval [{start}, {end}]")]
     ReversedChildInterval {
@@ -960,8 +955,6 @@ fn elevate_nurbs_to_degree(
         || !interval[0].is_finite()
         || !interval[1].is_finite()
         || interval[0] >= interval[1]
-        || curve.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(curve.knots())
     {
         return Err(DegreeElevationError::UnclampedKnots {
             start: interval[0],
@@ -1097,8 +1090,8 @@ fn elevate_nurbs_to_degree(
     let elevated = NurbsCurve::from_lanes(
         elevated_degree,
         elevated_knots,
-        concatenated.nurbs.control_points(),
-        concatenated.nurbs.weights(),
+        concatenated.nurbs.pole_rows().points(),
+        concatenated.nurbs.pole_rows().weights(),
         false,
     )?;
     *curve = elevated;
@@ -1171,8 +1164,8 @@ fn concatenate_nurbs<T>(
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let child_control_points = curve.control_points();
-        let child_weights = match curve.weights() {
+        let child_control_points = curve.pole_rows().points();
+        let child_weights = match curve.pole_rows().weights() {
             Some(weights) => weights,
             None => alloc_filled(
                 child_control_points.len(),
@@ -1181,11 +1174,7 @@ fn concatenate_nurbs<T>(
             )
             .map_err(CompositeCurveError::ChildWeightAllocation)?,
         };
-        if let Some(weight) = child_weights
-            .iter()
-            .copied()
-            .find(|weight| !weight.is_finite() || *weight <= 0.0)
-        {
+        if let Some(weight) = child_weights.iter().copied().find(|weight| *weight <= 0.0) {
             return Err(CompositeCurveError::ChildWeight { weight });
         }
         let end = cursor + (child_end - child_start);
@@ -1255,8 +1244,8 @@ fn concatenate_nurbs<T>(
         rational.then_some(weights),
         false,
     )?;
-    let nurbs_points = nurbs.control_points();
-    let nurbs_weights = nurbs.weights();
+    let nurbs_points = nurbs.pole_rows().points();
+    let nurbs_weights = nurbs.pole_rows().weights();
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
@@ -1298,7 +1287,7 @@ fn bounded_edge_for_curve(
                 .map(|edge| CompositeEdge {
                     start: edge.start.clone(),
                     end: edge.end.clone(),
-                    param_range: edge.param_range(),
+                    param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                 })
                 .collect(),
         ),
@@ -1599,8 +1588,8 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let start = point_for_vertex(ir, &edge.start, index)?.get();
     let end = point_for_vertex(ir, &edge.end, index)?.get();
-    let control_points = nurbs.control_points();
-    let weights = nurbs.weights();
+    let control_points = nurbs.pole_rows().points();
+    let weights = nurbs.pole_rows().weights();
     let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
@@ -2075,8 +2064,8 @@ fn project_with_type_130_policy(
         };
         let degree = nurbs.degree();
         let cursor = segments.end();
-        let nurbs_points = nurbs.control_points();
-        let nurbs_weights = nurbs.weights();
+        let nurbs_points = nurbs.pole_rows().points();
+        let nurbs_weights = nurbs.pole_rows().weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),

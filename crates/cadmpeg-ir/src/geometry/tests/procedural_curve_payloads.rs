@@ -196,7 +196,12 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     .is_err());
     assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert_eq!(context.sides()[0].surface.as_ref(), Some(&support));
-    assert_eq!(curve.cache_fit_tolerance(), Some(0.5));
+    assert_eq!(
+        curve
+            .cache_fit_tolerance()
+            .map(crate::geometry::FitTolerance::get),
+        Some(0.5)
+    );
     assert!(ProceduralCurve::new(id(), subset([0.0, 1.0]))
         .intersection_context_mut()
         .is_none());

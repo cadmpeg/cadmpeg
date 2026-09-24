@@ -1223,12 +1223,12 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
-    assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
+    assert_eq!(angle_range.get(), [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, cadmpeg_ir::math::Point3::new(0.0, 0.0, -2.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(5.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, -5.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 10.0));
-    assert_eq!(apex_factor, 0.0);
+    assert_eq!(apex_factor.get(), 0.0);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
 }
 

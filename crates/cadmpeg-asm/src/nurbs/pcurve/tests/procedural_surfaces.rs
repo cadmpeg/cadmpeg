@@ -202,7 +202,13 @@ fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
         };
         assert_eq!(revision_form.revision.get(), 22_506);
         assert!(revision_form.cache.parameterization().is_none());
-        assert_eq!(revision_form.cache.fit_tolerance(), Some(0.01));
+        assert_eq!(
+            revision_form
+                .cache
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(0.01)
+        );
         assert_eq!(
             revision_form.support_bounds,
             [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]

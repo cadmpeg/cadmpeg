@@ -67,6 +67,37 @@ impl<const N: usize> From<[crate::scalar::FiniteReal; N]> for FiniteVector<N> {
     }
 }
 
+impl<const N: usize> std::ops::Deref for FiniteVector<N> {
+    type Target = [f64; N];
+    fn deref(&self) -> &[f64; N] {
+        &self.0
+    }
+}
+
+impl<const N: usize> IntoIterator for FiniteVector<N> {
+    type Item = f64;
+    type IntoIter = std::array::IntoIter<f64, N>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a, const N: usize> IntoIterator for &'a FiniteVector<N> {
+    type Item = &'a f64;
+    type IntoIter = std::slice::Iter<'a, f64>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl From<crate::topology::ParameterInterval> for FiniteVector<2> {
+    /// Carry an interval's endpoints. The interval admits only finite
+    /// endpoints, so nothing is checked.
+    fn from(value: crate::topology::ParameterInterval) -> Self {
+        Self(value.endpoints())
+    }
+}
+
 impl From<crate::topology::IncreasingParameterInterval> for FiniteVector<2> {
     /// Carry an increasing interval's endpoints. The interval admits only
     /// finite endpoints, so nothing is checked.
@@ -736,6 +767,10 @@ impl FinitePoint2 {
     pub fn new(value: Point2) -> Option<Self> {
         FiniteVector::new([value.u, value.v]).map(|_| Self(value))
     }
+    /// Return the point.
+    pub const fn get(self) -> Point2 {
+        self.0
+    }
     /// Borrow the point.
     pub const fn as_raw(&self) -> &Point2 {
         &self.0
@@ -756,6 +791,31 @@ impl TryFrom<Point2> for FinitePoint2 {
 impl From<FinitePoint2> for Point2 {
     fn from(value: FinitePoint2) -> Self {
         value.0
+    }
+}
+impl crate::geometry::pcurve::PcurveNurbs {
+    /// Control points in parameter order. [`Self::new`] and
+    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
+    /// carried without a check. The route lives beside [`FinitePoint2`]
+    /// because only this module constructs one.
+    #[must_use]
+    pub fn control_points(&self) -> Vec<FinitePoint2> {
+        self.pole_rows()
+            .points()
+            .into_iter()
+            .map(FinitePoint2)
+            .collect()
+    }
+}
+impl std::ops::Deref for FinitePoint2 {
+    type Target = Point2;
+    fn deref(&self) -> &Point2 {
+        &self.0
+    }
+}
+impl PartialEq<Point2> for FinitePoint2 {
+    fn eq(&self, other: &Point2) -> bool {
+        self.0 == *other
     }
 }
 

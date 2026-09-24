@@ -976,11 +976,13 @@ fn configuration_feature_plane_frame(
         FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
             Some(crate::resolved_features::compact_reference_planes::principal_sketch_frame(*plane))
         }
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => valid_plane_frame(
-            frame.normal(),
-            frame.u_axis(),
-        )
-        .then_some((frame.origin(), frame.normal(), frame.u_axis())),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
+            valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
+                frame.origin().get(),
+                frame.normal().get(),
+                frame.u_axis().get(),
+            ))
+        }
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(reference),
             distance,
@@ -1013,11 +1015,13 @@ fn configuration_reference_plane_frame(
         DatumPlaneReference::Feature {
             feature: feature_id,
         } => configuration_feature_plane_frame(feature_id, features, visiting),
-        DatumPlaneReference::ResolvedPlane { frame } => valid_plane_frame(
-            frame.normal(),
-            frame.u_axis(),
-        )
-        .then_some((frame.origin(), frame.normal(), frame.u_axis())),
+        DatumPlaneReference::ResolvedPlane { frame } => {
+            valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
+                frame.origin().get(),
+                frame.normal().get(),
+                frame.u_axis().get(),
+            ))
+        }
         DatumPlaneReference::Face { .. } => None,
     }
 }
@@ -1054,9 +1058,11 @@ fn inherit_configuration_reference_plane_semantics(
                 FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
                     ..
-                }) if valid_plane_frame(frame.normal(), frame.u_axis()) => {
-                    Some((frame.origin(), frame.normal(), frame.u_axis()))
-                }
+                }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some((
+                    frame.origin().get(),
+                    frame.normal().get(),
+                    frame.u_axis().get(),
+                )),
                 _ => return None,
             };
             let base_frame = configuration_reference_plane_frame(

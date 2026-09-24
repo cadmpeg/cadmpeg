@@ -14,7 +14,7 @@ use cadmpeg_ir::codec::write::{ExportBody, WritePath};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsError, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
     sampled::GeometryLayoutError,
     CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -26,6 +26,7 @@ use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
 };
+use cadmpeg_ir::scalar::NonZeroReal;
 use cadmpeg_ir::topology::{
     BodyKind, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region, Sense,
 };
@@ -1889,7 +1890,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                         .param_range()
                         .zip(edge.param_range())
                         .is_some_and(|(topology_range, edge_range)| {
-                            same_range(topology_range, edge_range)
+                            same_range(topology_range.get(), edge_range.get())
                         })
             })
             .map(|topology_edge| topology_edge_explicit_tolerance(ir, topology_edge))
@@ -1900,7 +1901,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                     .param_range()
                     .zip(edge.param_range())
                     .is_some_and(|(topology_range, edge_range)| {
-                        same_range(topology_range, edge_range)
+                        same_range(topology_range.get(), edge_range.get())
                     })
                 && vertex_position(ir, &topology_edge.start)
                     .zip(vertex_position(ir, &edge.start))
@@ -1923,10 +1924,10 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
         });
         let is_pcurve_carrier = ir.model.pcurves.iter().any(|pcurve| {
             pcurve.parameter_range().is_some_and(|range| {
-                curve_matches_pcurve(&curve.geometry, range, pcurve)
+                curve_matches_pcurve(&curve.geometry, range.get(), pcurve)
                     && edge
                         .param_range()
-                        .is_some_and(|edge_range| same_range(edge_range, range))
+                        .is_some_and(|edge_range| same_range(edge_range.get(), range.get()))
                     && vertex_position(ir, &edge.start)
                         .zip(curve_point(&curve.geometry, range[0]))
                         .is_some_and(|(start, evaluated)| {
@@ -1992,12 +1993,12 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
             (Some(left), Some(right)) if left.len() == right.len() => left
                 .iter()
                 .zip(right)
-                .all(|(left, right)| same_float(*left, right)),
+                .all(|(left, right)| same_float(left.get(), right.get())),
             _ => false,
         }
         && pcurve
             .parameter_range()
-            .is_some_and(|candidate| same_range(candidate, range))
+            .is_some_and(|candidate| same_range(candidate.get(), range))
 }
 
 fn same_float(left: f64, right: f64) -> bool {
@@ -2626,7 +2627,7 @@ fn validate_trimmed_sheet_topology(
                     };
                     if pcurve_use
                         .parameter_range
-                        .is_some_and(|range| !same_range(range.endpoints(), parameter_range))
+                        .is_some_and(|range| !same_range(range.endpoints(), parameter_range.get()))
                     {
                         return Err(CodecError::NotImplemented(format!(
                             "IGES semantic writer cannot restrict pcurve use {}",
@@ -3334,7 +3335,9 @@ fn procedural_pcurve_source_map(
     let (directrix, fallback_interval) = match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = definition_payload.parameter_interval();
+            let parameter_interval = definition_payload
+                .parameter_interval()
+                .map(cadmpeg_ir::units::FiniteVector::get);
             (directrix, parameter_interval.unwrap_or([0.0, 1.0]))
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
@@ -3366,7 +3369,9 @@ fn procedural_pcurve_source_map(
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
             let directrix = definition_payload.directrix();
-            let parameter_interval = definition_payload.parameter_interval();
+            let parameter_interval = definition_payload
+                .parameter_interval()
+                .map(cadmpeg_ir::units::FiniteVector::get);
             {
                 let source_interval = if line_directrix(ir, directrix) {
                     parameter_interval.unwrap_or([0.0, 1.0])
@@ -3502,11 +3507,11 @@ fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecEr
             .iter()
             .map(|point| Point3::new(point.u, point.v, 0.0))
             .collect(),
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
     .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    let (reversed, range) = reverse_nurbs(&nurbs, range)?;
+    let (reversed, range) = reverse_nurbs(&nurbs, range.get())?;
     encode_nurbs(&reversed, range, "PCURVE")
 }
 
@@ -3515,14 +3520,10 @@ fn reverse_nurbs(
     range: [f64; 2],
 ) -> Result<(NurbsCurve, [f64; 2]), CodecError> {
     let domain = nurbs_domain(nurbs)?;
-    if domain.iter().any(|value| !value.is_finite())
-        || domain[0] > domain[1]
-        || range.iter().any(|value| !value.is_finite())
+    if range.iter().any(|value| !value.is_finite())
         || range[0] > range[1]
         || range[0] < domain[0]
         || range[1] > domain[1]
-        || nurbs.knots().iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(nurbs.knots())
     {
         return Err(CodecError::Malformed(
             "IGES reversed NURBS domain or parameter range is invalid".into(),
@@ -3544,10 +3545,11 @@ fn reverse_nurbs(
     let reversed = NurbsCurve::from_lanes(
         nurbs.degree(),
         knots,
-        nurbs.control_points().iter().rev().copied().collect(),
+        nurbs.pole_rows().points().into_iter().rev().collect(),
         nurbs
+            .pole_rows()
             .weights()
-            .map(|weights| weights.iter().rev().copied().collect()),
+            .map(|weights| weights.into_iter().rev().collect()),
         nurbs.periodic(),
     )
     .map_err(|error| CodecError::malformed(format_args!("reversed NURBS: {error}")))?;
@@ -3569,7 +3571,8 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
         )));
     };
     let control_points = nurbs
-        .control_points()
+        .pole_rows()
+        .points()
         .iter()
         .map(|point| Point3::new(point.u, point.v, 0.0))
         .collect();
@@ -3577,11 +3580,11 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
         nurbs.degree(),
         nurbs.knots().to_vec(),
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
     .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    encode_nurbs(&curve, range, "PCURVE")
+    encode_nurbs(&curve, range.get(), "PCURVE")
 }
 
 fn reference_marker(index: usize) -> String {
@@ -3687,7 +3690,7 @@ fn validate_brep_pcurve_uses(
         })?;
         if pcurve_use
             .parameter_range
-            .is_some_and(|use_range| !same_range(use_range.endpoints(), range))
+            .is_some_and(|use_range| !same_range(use_range.endpoints(), range.get()))
         {
             return Err(CodecError::NotImplemented(format!(
                 "IGES B-rep {} cannot restrict pcurve use {}",
@@ -4544,7 +4547,9 @@ fn extrusion_surface_entities(
         ));
     };
     let directrix = definition_payload.directrix();
-    let parameter_interval = definition_payload.parameter_interval();
+    let parameter_interval = definition_payload
+        .parameter_interval()
+        .map(cadmpeg_ir::units::FiniteVector::get);
     let direction = definition_payload.direction();
     let native_position = definition_payload.native_position();
     let revision_form = definition_payload.revision_form();
@@ -4620,9 +4625,9 @@ fn extrusion_surface_entities(
         })?;
         (start, end)
     };
-    let inferred_target = start.translated(*direction, 1.0);
+    let inferred_target = start.translated(direction.get(), 1.0);
     admitted_point(inferred_target, "Type 122 inferred terminate point")?;
-    let target = native_position.as_ref().copied().unwrap_or(inferred_target);
+    let target = native_position.map_or(inferred_target, FinitePoint3::get);
     if !same_point(target, inferred_target) {
         return Err(CodecError::Malformed(
             "IGES Type 122 native terminate point disagrees with its sweep direction".into(),
@@ -5035,15 +5040,12 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
     let pole_count = u_count * v_count;
     let weights = match nurbs.pole_weights() {
         Some(values) => {
-            if values
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-            {
+            if values.iter().any(|weight| weight.get() <= 0.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES NURBS surface weights must be finite and positive".into(),
                 ));
             }
-            values
+            values.into_iter().map(NonZeroReal::get).collect()
         }
         None => alloc_filled(pole_count, 1.0, "iges NURBS surface weights")?,
     };
@@ -5420,7 +5422,7 @@ fn curve_reference_span_inner(
                 Some((first_edge, rest_edges)) => {
                     let endpoints = |edge: &Edge| -> Result<(Point3, Point3, f64), CodecError> {
                         if let Some(range) = edge.param_range() {
-                            if !same_range(range, derived_range) {
+                            if !same_range(range.get(), derived_range) {
                                 return Err(CodecError::NotImplemented(format!(
                                     "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
                                 )));
@@ -5622,7 +5624,11 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             )));
         }
     }
-    Ok(CurveSpan { range, start, end })
+    Ok(CurveSpan {
+        range: range.get(),
+        start,
+        end,
+    })
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
@@ -5957,19 +5963,19 @@ fn encode_nurbs(
     }
     let weights = match nurbs.weights() {
         Some(weights) => {
-            if weights.iter().any(|weight| *weight <= 0.0) {
+            if weights.iter().any(|weight| weight.get() <= 0.0) {
                 return Err(CodecError::NotImplemented(
                     "IGES NURBS weights must be finite and positive".into(),
                 ));
             }
-            weights
+            weights.into_iter().map(NonZeroReal::get).collect()
         }
         None => alloc_filled(control_count, 1.0, "iges NURBS weights")?,
     };
     let polynomial = weights
         .first()
         .is_some_and(|first| weights.iter().all(|weight| weight == first));
-    let control_points = nurbs.control_points();
+    let control_points = nurbs.pole_rows().points();
     let plane_normal = nurbs_plane_normal(&control_points);
     let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
@@ -6071,7 +6077,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
-    let control_points = nurbs.control_points();
+    let control_points = nurbs.pole_rows().points();
     let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),

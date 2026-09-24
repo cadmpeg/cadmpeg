@@ -5,7 +5,6 @@ use crate::native::{
     CatiaZeroEntityOrientedUsePair, CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord,
     CatiaZeroEntitySupportRun, CatiaZeroEntityVertexIncidence,
 };
-use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use std::collections::HashSet;
 
 pub(super) fn validate_zero_entity_support_runs(
@@ -268,8 +267,6 @@ pub(super) fn validate_zero_entity_support_runs(
                             let knots = nurbs.knots();
                             nurbs.degree() == expected_degree
                                 && nurbs.control_points().len() == expected_controls
-                                && knots.iter().all(|knot| knot.is_finite())
-                                && knots_nondecreasing(knots)
                                 && knots[..=expected_degree as usize]
                                     .iter()
                                     .all(|knot| *knot == knots[0])
@@ -281,15 +278,8 @@ pub(super) fn validate_zero_entity_support_runs(
                                     .chunk_by(|left, right| left == right)
                                     .map(<[f64]>::len)
                                     .eq(expected_multiplicities.iter().copied())
-                                && nurbs
-                                    .control_points()
-                                    .iter()
-                                    .all(|point| point.u.is_finite() && point.v.is_finite())
                                 && nurbs.weights().is_some_and(|weights| {
-                                    rational
-                                        && weights
-                                            .iter()
-                                            .all(|weight| weight.is_finite() && *weight > 0.0)
+                                    rational && weights.iter().all(|weight| weight.get() > 0.0)
                                 }) == rational
                                 && !nurbs.periodic()
                         }
@@ -347,12 +337,8 @@ fn validate_zero_entity_model_curve_construction(
     model_curve: Option<&cadmpeg_ir::geometry::CurveGeometry>,
     construction: Option<&cadmpeg_ir::geometry::ProceduralCurveDefinition>,
 ) -> bool {
-    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
-    };
+    let nonzero_vector =
+        |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z) > 0.0;
     let norm = |vector: &cadmpeg_ir::math::Vector3| vector.x.hypot(vector.y).hypot(vector.z);
     let normalized_dot = |left: &cadmpeg_ir::math::Vector3, right: &cadmpeg_ir::math::Vector3| {
         (left.x * right.x + left.y * right.y + left.z * right.z) / (norm(left) * norm(right))
@@ -364,23 +350,15 @@ fn validate_zero_entity_model_curve_construction(
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload)),
         ) => {
             let angle_range = helix_payload.angle_range();
-            let center = helix_payload.center().as_raw();
             let major = helix_payload.major();
             let minor = helix_payload.minor();
             let pitch = helix_payload.pitch();
-            let apex_factor = helix_payload.apex_factor();
             let axis = helix_payload.axis();
 
-            angle_range.iter().copied().all(f64::is_finite)
-                && angle_range[0] < angle_range[1]
-                && [center.x, center.y, center.z]
-                    .into_iter()
-                    .all(f64::is_finite)
-                && finite_vector(major)
-                && finite_vector(minor)
-                && [pitch.x, pitch.y, pitch.z].into_iter().all(f64::is_finite)
-                && apex_factor.is_finite()
-                && finite_vector(axis)
+            angle_range[0] < angle_range[1]
+                && nonzero_vector(major)
+                && nonzero_vector(minor)
+                && nonzero_vector(axis)
                 && (norm(axis) - 1.0).abs() <= 1.0e-9
                 && (norm(major) - norm(minor)).abs() <= 1.0e-9 * norm(major).max(norm(minor))
                 && normalized_dot(major, minor).abs() <= 1.0e-9
@@ -411,53 +389,25 @@ fn validate_zero_entity_model_curve(
 ) -> bool {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 
-    let finite_point = |point: &cadmpeg_ir::math::Point3| {
-        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
-    };
-    let finite_vector = |vector: &cadmpeg_ir::math::Vector3| {
-        [vector.x, vector.y, vector.z]
-            .into_iter()
-            .all(f64::is_finite)
-            && vector.x.hypot(vector.y).hypot(vector.z) > 0.0
-    };
     match (carrier_tag, curve) {
         (
             Some([0x27, 0x6a] | [0x34, 0xc8 | 0x5e]),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))),
         ) => {
-            curve.knots().iter().all(|knot| knot.is_finite())
-                && knots_nondecreasing(curve.knots())
-                && curve.control_points().iter().all(finite_point)
-                && curve.weights().is_none_or(|weights| {
-                    weights
-                        .iter()
-                        .all(|weight| weight.is_finite() && *weight > 0.0)
-                })
+            curve
+                .weights()
+                .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
                 && !curve.periodic()
         }
         (
             Some([0x28, 0x8a] | [0x29, 0xb8]),
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))),
-        ) => {
-            let origin = line_curve.origin().get();
-            let direction = *line_curve.direction().as_raw();
-            finite_point(&origin) && finite_vector(&direction)
-        }
-        (
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))),
+        )
+        | (
             Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8]),
-            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))),
-        ) => {
-            let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
-            let radius = circle_curve.radius().get();
-            finite_point(&center)
-                && finite_vector(axis)
-                && finite_vector(ref_direction)
-                && radius.is_finite()
-                && radius > 0.0
-        }
-        (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
+            Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))),
+        )
+        | (Some([0x28, 0x8a] | [0x29, 0xb8] | [0x2b, 0xc8] | [0x34, 0xc8 | 0x5e]), None) => true,
         _ => false,
     }
 }

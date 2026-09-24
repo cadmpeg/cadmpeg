@@ -137,7 +137,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
         let target = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             None,
             0.,
         )
@@ -148,7 +148,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             None,
             p,
         )
@@ -179,7 +179,7 @@ fn numerical_0922b_small_domain_inverse() {
         let target = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             None,
             0.75 * d,
         )
@@ -190,7 +190,7 @@ fn numerical_0922b_small_domain_inverse() {
         let actual = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             None,
             p,
         )
@@ -227,7 +227,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
     let actual = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        &curve.control_points(),
+        &curve.pole_rows().points(),
         None,
         p,
     )
@@ -301,7 +301,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             (cadmpeg_ir::eval::nurbs_curve_point(
                 1,
                 curve.knots(),
-                &curve.control_points(),
+                &curve.pole_rows().points(),
                 None,
                 t
             )

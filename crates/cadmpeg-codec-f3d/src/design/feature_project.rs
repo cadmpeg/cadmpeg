@@ -8672,8 +8672,8 @@ fn spatial_sketch_entity_endpoints(
             Some([at(start_angle.get()), at(end_angle.get())])
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[control_points.len()];
             Some([

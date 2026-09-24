@@ -1082,7 +1082,7 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(point)
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            curve.control_points().iter().copied().all(point_valid)
+            curve.pole_rows().points().into_iter().all(point_valid)
         }
         SolvedCurveGeometry::Polyline(polyline) => polyline.points().all(point_valid),
         SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
@@ -2068,8 +2068,8 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let nurbs_points = nurbs.control_points();
-        let nurbs_weights = nurbs.weights();
+        let nurbs_points = nurbs.pole_rows().points();
+        let nurbs_weights = nurbs.pole_rows().weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),

@@ -1319,7 +1319,7 @@ impl TryFrom<crate::geometry::nurbs::NurbsCurve> for SpatialSketchNurbsCurve {
         }
         if curve
             .weights()
-            .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+            .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
         {
             return Err("spatial sketch NURBS weights must be positive");
         }

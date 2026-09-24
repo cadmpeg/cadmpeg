@@ -550,7 +550,7 @@ fn homogeneous_poles(points: &[Point3], weights: Option<&[f64]>, scale: f64) -> 
     let mut out = Vec::with_capacity(points.len() * if weights.is_some() { 4 } else { 3 });
     for (index, point) in points.iter().enumerate() {
         let weight = weights.map_or(1.0, |values| values[index]);
-        if !weight.is_finite() || weight.abs() <= f64::EPSILON {
+        if weight.abs() <= f64::EPSILON {
             return None;
         }
         out.extend([
@@ -597,8 +597,8 @@ pub(crate) fn patch_nurbs_curve(
     {
         return None;
     }
-    let control_points = new.control_points();
-    let weights = new.weights();
+    let control_points = new.pole_rows().points();
+    let weights = new.pole_rows().weights();
     let poles = homogeneous_poles(&control_points, weights.as_deref(), scale)?;
     patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
     patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
@@ -658,8 +658,12 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let old_poles = homogeneous_poles(&old.poles(), old.pole_weights().as_deref(), scale)?;
-    let poles = homogeneous_poles(&new.poles(), new.pole_weights().as_deref(), scale)?;
+    let old_points = old.pole_grid().points().concat();
+    let old_weights = old.pole_grid().weights().map(|rows| rows.concat());
+    let old_poles = homogeneous_poles(&old_points, old_weights.as_deref(), scale)?;
+    let points = new.pole_grid().points().concat();
+    let weights = new.pole_grid().weights().map(|rows| rows.concat());
+    let poles = homogeneous_poles(&points, weights.as_deref(), scale)?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
     let u_knot_span = unique_surface_knot_span(
         bytes,

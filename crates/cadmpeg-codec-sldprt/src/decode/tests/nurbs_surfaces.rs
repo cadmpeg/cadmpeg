@@ -95,8 +95,8 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     let poles = surface.poles();
     assert_eq!(poles.len(), 4);
     assert_eq!(poles[3].z, 500.0);
@@ -170,7 +170,7 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
     assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
     assert_eq!(result.ir().model.surfaces.len(), 3);
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
-        match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance - 2.0).abs() < f64::EPSILON), _ => false }
+        match surface.definition() { ProceduralSurfaceDefinition::Offset(matched_payload) => matches!((matched_payload.distance(),), (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON), _ => false }
     }));
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(

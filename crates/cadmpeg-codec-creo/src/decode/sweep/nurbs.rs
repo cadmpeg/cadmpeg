@@ -294,7 +294,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
             .iter()
             .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
             .collect(),
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     ) {
         Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
@@ -452,18 +452,20 @@ pub(in super::super) fn extruded_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
-    let mut control_points = Vec::with_capacity(directrix.control_points().len() * 2);
-    let mut weights = directrix
-        .weights()
+    let directrix_points = directrix.pole_rows().points();
+    let directrix_weights = directrix.pole_rows().weights();
+    let mut control_points = Vec::with_capacity(directrix_points.len() * 2);
+    let mut weights = directrix_weights
+        .as_ref()
         .map(|_| Vec::with_capacity(control_points.capacity()));
-    for (index, point) in directrix.control_points().iter().enumerate() {
+    for (index, point) in directrix_points.iter().enumerate() {
         control_points.push(*point);
         control_points.push(Point3::new(
             point.x + sweep[0],
             point.y + sweep[1],
             point.z + sweep[2],
         ));
-        if let (Some(source), Some(target)) = (directrix.weights(), &mut weights) {
+        if let (Some(source), Some(target)) = (&directrix_weights, &mut weights) {
             target.extend([source[index], source[index]]);
         }
     }
@@ -539,7 +541,7 @@ pub(super) fn sketch_nurbs_pcurve(
             .iter()
             .map(|point| Point2::new(point.x, point.y))
             .collect(),
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),

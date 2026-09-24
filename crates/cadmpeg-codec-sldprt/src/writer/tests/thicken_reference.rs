@@ -1566,15 +1566,15 @@ fn semantic_writer_round_trips_typed_reference_plane() {
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin(),  Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin().get(),  Point3 {
                 x: 1.0,
                 y: 2.0,
                 z: 3.0
-            }) && matches!(frame.normal(),  Vector3 {
+            }) && matches!(frame.normal().get(),  Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0
-            }) && matches!(frame.u_axis(),  Vector3 {
+            }) && matches!(frame.u_axis().get(),  Vector3 {
                 x: 1.0,
                 y: 0.0,
                 z: 0.0
@@ -1613,15 +1613,15 @@ fn semantic_writer_round_trips_typed_reference_plane() {
     assert_eq!(feature.properties["UAxis"], "0,0,1");
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin(),  Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin().get(),  Point3 {
                 x: 25.4,
                 y: 0.0,
                 z: -2.0
-            }) && matches!(frame.normal(),  Vector3 {
+            }) && matches!(frame.normal().get(),  Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            }) && matches!(frame.u_axis(),  Vector3 {
+            }) && matches!(frame.u_axis().get(),  Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: 1.0

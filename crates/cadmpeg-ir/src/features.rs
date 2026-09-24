@@ -139,6 +139,54 @@ impl FinitePoint3 {
     }
 }
 
+impl crate::geometry::nurbs::NurbsCurve {
+    /// Control points in parameter order. [`Self::new`] and
+    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
+    /// carried without a check. The route lives beside [`FinitePoint3`]
+    /// because only this module constructs one.
+    #[must_use]
+    pub fn control_points(&self) -> Vec<FinitePoint3> {
+        self.pole_rows()
+            .points()
+            .into_iter()
+            .map(FinitePoint3)
+            .collect()
+    }
+}
+
+impl crate::geometry::nurbs::NurbsSurface {
+    /// Control-point rows, outer index u and inner index v. [`Self::new`] and
+    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
+    /// carried without a check. The route lives beside [`FinitePoint3`]
+    /// because only this module constructs one.
+    #[must_use]
+    pub fn control_grid(&self) -> Vec<Vec<FinitePoint3>> {
+        self.pole_grid()
+            .points()
+            .into_iter()
+            .map(|row| row.into_iter().map(FinitePoint3).collect())
+            .collect()
+    }
+
+    /// Control points in u-major order, with the guarantee of
+    /// [`Self::control_grid`].
+    #[must_use]
+    pub fn poles(&self) -> Vec<FinitePoint3> {
+        self.control_grid().into_iter().flatten().collect()
+    }
+
+    /// Pole at grid position `(u, v)`, with the guarantee of
+    /// [`Self::control_grid`].
+    #[must_use]
+    pub fn pole(&self, u: usize, v: usize) -> Option<FinitePoint3> {
+        let point = match self.pole_grid() {
+            crate::geometry::nurbs::NurbsPoleGrid::Polynomial { rows } => *rows.get(u)?.get(v)?,
+            crate::geometry::nurbs::NurbsPoleGrid::Rational { rows } => rows.get(u)?.get(v)?.point,
+        };
+        Some(FinitePoint3(point))
+    }
+}
+
 checked_feature_geometry!(
     /// A displacement with finite components, including zero.
     FiniteVector3, Vector3, value,
@@ -262,8 +310,8 @@ impl FeatureUnitPlaneFrame {
     }
 
     /// Return the model-space origin.
-    pub fn origin(self) -> Point3 {
-        self.origin.get()
+    pub fn origin(self) -> FinitePoint3 {
+        self.origin
     }
     /// Return the first unit direction.
     pub fn u_axis(self) -> Vector3 {
@@ -329,7 +377,7 @@ impl FeatureCoordinateFrame {
         }
     }
     /// Return the model-space origin.
-    pub fn origin(self) -> Point3 {
+    pub fn origin(self) -> FinitePoint3 {
         self.plane.origin()
     }
     /// Return the x-axis.
@@ -356,7 +404,7 @@ impl TryFrom<FeatureCoordinateFrameWire> for FeatureCoordinateFrame {
 impl From<FeatureCoordinateFrame> for FeatureCoordinateFrameWire {
     fn from(frame: FeatureCoordinateFrame) -> Self {
         Self {
-            origin: frame.origin(),
+            origin: frame.origin().get(),
             x_axis: frame.x_axis(),
             y_axis: frame.y_axis(),
             z_axis: frame.z_axis(),
@@ -436,11 +484,11 @@ macro_rules! checked_feature_plane_frame {
             #[must_use]
             pub fn with_origin(self, origin: FinitePoint3) -> Self { Self { origin, ..self } }
             /// Return the model-space origin.
-            pub fn origin(self) -> Point3 { self.origin.get() }
+            pub fn origin(self) -> FinitePoint3 { self.origin }
             /// Return the plane normal with its original magnitude.
-            pub fn normal(self) -> Vector3 { self.normal.get() }
+            pub fn normal(self) -> FeatureDirection3 { self.normal }
             /// Return the in-plane direction with its original magnitude.
-            pub fn u_axis(self) -> Vector3 { self.u_axis.get() }
+            pub fn u_axis(self) -> FeatureDirection3 { self.u_axis }
         }
         impl TryFrom<FeaturePlaneFrameWire> for $name {
             type Error = &'static str;
@@ -451,7 +499,11 @@ macro_rules! checked_feature_plane_frame {
         }
         impl From<$name> for FeaturePlaneFrameWire {
             fn from(frame: $name) -> Self {
-                Self { origin: frame.origin(), normal: frame.normal(), u_axis: frame.u_axis() }
+                Self {
+                    origin: frame.origin().get(),
+                    normal: frame.normal().get(),
+                    u_axis: frame.u_axis().get(),
+                }
             }
         }
     };
@@ -496,13 +548,13 @@ impl FeatureLineSegment {
     }
 
     /// Return the start point.
-    pub fn start(self) -> Point3 {
-        self.start.get()
+    pub fn start(self) -> FinitePoint3 {
+        self.start
     }
 
     /// Return the end point.
-    pub fn end(self) -> Point3 {
-        self.end.get()
+    pub fn end(self) -> FinitePoint3 {
+        self.end
     }
 }
 
@@ -645,14 +697,9 @@ impl FeatureEquationCurve {
         &self.z_expression
     }
 
-    /// Return the inclusive lower parameter bound.
-    pub fn start(&self) -> f64 {
-        self.domain.lower()
-    }
-
-    /// Return the inclusive upper parameter bound.
-    pub fn end(&self) -> f64 {
-        self.domain.upper()
+    /// Return the admitted parameter domain.
+    pub fn domain(&self) -> crate::topology::IncreasingParameterInterval {
+        self.domain
     }
 }
 
@@ -859,18 +906,18 @@ impl FeatureEllipticArc {
     }
 
     /// Return the ellipse center.
-    pub fn center(self) -> Point3 {
-        self.center.get()
+    pub fn center(self) -> FinitePoint3 {
+        self.center
     }
 
     /// Return the ellipse-plane normal.
-    pub fn normal(self) -> Vector3 {
-        self.normal.get()
+    pub fn normal(self) -> FeatureDirection3 {
+        self.normal
     }
 
     /// Return the major-axis direction.
-    pub fn major_axis(self) -> Vector3 {
-        self.major_axis.get()
+    pub fn major_axis(self) -> FeatureDirection3 {
+        self.major_axis
     }
 
     /// Return the major and minor semiaxis radii.
@@ -7030,7 +7077,7 @@ impl From<CoilPlacement> for CoilPlacementWire {
     fn from(placement: CoilPlacement) -> Self {
         match placement {
             CoilPlacement::Explicit { frame } => Self::Explicit {
-                origin: frame.origin(),
+                origin: frame.origin().get(),
                 axis: frame.u_axis(),
                 radial: frame.v_axis(),
             },

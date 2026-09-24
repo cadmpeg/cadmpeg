@@ -582,14 +582,14 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         panic!("expected a NURBS carrier");
     };
     assert_eq!(nurbs.degree(), 2);
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(nurbs.weights(), Some(vec![1.0, 0.5, 1.0]));
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.pole_rows().weights(), Some(vec![1.0, 0.5, 1.0]));
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.control_points(),
-            nurbs.weights().as_deref(),
+            &nurbs.pole_rows().points(),
+            nurbs.pole_rows().weights().as_deref(),
             0.5,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
@@ -846,7 +846,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         panic!("expected a NURBS carrier");
     };
     assert_eq!(nurbs.degree(), 1);
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(nurbs.control_points().len(), 2);
     assert_eq!(nurbs.weights(), None);
     assert!(!nurbs.periodic());
@@ -854,14 +854,19 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.control_points(),
-            nurbs.weights().as_deref(),
+            &nurbs.pole_rows().points(),
+            nurbs.pole_rows().weights().as_deref(),
             0.5,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 1.0])
+    );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -883,21 +888,26 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         panic!("expected a NURBS carrier");
     };
     assert_eq!(nurbs.degree(), 0);
-    assert_eq!(nurbs.knots(), [0.0, 1.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 1.0]);
     assert_eq!(nurbs.control_points().len(), 1);
     assert_eq!(nurbs.weights(), None);
     assert_eq!(
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.control_points(),
-            nurbs.weights().as_deref(),
+            &nurbs.pole_rows().points(),
+            nurbs.pole_rows().weights().as_deref(),
             0.5,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 1.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 1.0])
+    );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -958,7 +968,9 @@ fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
         );
         if decoded {
             assert_eq!(
-                result.ir().model.edges[0].param_range(),
+                result.ir().model.edges[0]
+                    .param_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get),
                 Some([0.123_457, 1.0])
             );
             assert!(result.report().losses.is_empty());
@@ -997,7 +1009,9 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     );
     assert_eq!(radius, 1.0);
     assert_eq!(
-        result.ir().model.edges[0].param_range(),
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert!(result
@@ -1168,7 +1182,12 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     let direction = *line_curve.direction().as_raw();
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
-    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 5.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 5.0])
+    );
     assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
     assert!(result.ir().model.shells[0].free_vertices().is_empty());
     assert_eq!(

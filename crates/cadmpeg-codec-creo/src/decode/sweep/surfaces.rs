@@ -388,7 +388,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         let tangent = cross(axis_direction, radial);
         let directrix_weight = directrix
             .weights()
-            .map_or(1.0, |curve_weights| curve_weights[index]);
+            .map_or(1.0, |curve_weights| curve_weights[index].get());
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
         {

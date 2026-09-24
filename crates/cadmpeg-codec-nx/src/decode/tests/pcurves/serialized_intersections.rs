@@ -212,8 +212,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("serialized branch transferred");
     };
-    assert_eq!(parameterization.parameter_range(), [0.0, 10.0]);
-    assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 10.0]));
+    assert_eq!(parameterization.parameter_range().endpoints(), [0.0, 10.0]);
+    assert_eq!(
+        ir.model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 10.0])
+    );
     assert_eq!(
         cadmpeg_ir::eval::model_surface_point_by_id(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
@@ -332,10 +337,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                     replacement.map(|range| {
                         cadmpeg_ir::units::FiniteVector::new(range).expect("finite fixture range")
                     }),
-                    previous.fit_tolerance().map(|value| {
-                        cadmpeg_ir::geometry::FitTolerance::try_new(value)
-                            .expect("admitted fit tolerance")
-                    }),
+                    previous.fit_tolerance(),
                 ))
             })
         }
@@ -363,7 +365,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
     else {
         panic!("reversed symmetric conic branches transferred");
     };
-    assert_eq!(parameterization.parameter_range(), range);
+    assert_eq!(parameterization.parameter_range().endpoints(), range);
     assert!(parameterization.pcurves.iter().all(
         |pcurve| matches!(pcurve, PcurveGeometry::Ellipse(ellipse_pcurve)
         if {

@@ -14,14 +14,13 @@ use cadmpeg_ir::geometry::analytic::{
     SphereSurface, TorusSurface,
 };
 use cadmpeg_ir::geometry::{
-    nurbs::knots_nondecreasing, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
 use cadmpeg_ir::topology::Sense;
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
@@ -732,23 +731,14 @@ fn analytic_rolling_ball_surface(
 fn linear_nurbs_spine(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<(Point3, UnitVector3)> {
-    if curve.degree() == 0
-        || curve.periodic()
-        || curve.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(curve.knots())
-        || curve
-            .control_points()
-            .iter()
-            .any(|point| !point.is_finite())
-    {
+    if curve.degree() == 0 || curve.periodic() {
         return None;
     }
     if let Some(weights) = curve.weights() {
-        let first_sign = weights.first()?.signum();
-        if first_sign == 0.0
-            || weights
-                .iter()
-                .any(|weight| !weight.is_finite() || weight.signum() != first_sign)
+        let first_sign = weights.first()?.get().signum();
+        if weights
+            .iter()
+            .any(|weight| weight.get().signum() != first_sign)
         {
             return None;
         }
@@ -758,16 +748,16 @@ fn linear_nurbs_spine(
         .control_points()
         .iter()
         .copied()
-        .map(|point| (point_vector(origin, point).norm(), point))
+        .map(|point| (point_vector(origin.get(), point.get()).norm(), point))
         .max_by(|left, right| left.0.total_cmp(&right.0))?;
-    let extent = point_vector(origin, farthest).norm();
+    let extent = point_vector(origin.get(), farthest.get()).norm();
     if !extent.is_finite() || extent <= f64::EPSILON {
         return None;
     }
-    let axis = UnitVector3::normalized(point_vector(origin, farthest))?;
+    let axis = UnitVector3::normalized(point_vector(origin.get(), farthest.get()))?;
     // This admits an analytic replacement, not a model-length approximation.
     if curve.control_points().iter().any(|point| {
-        let relative = point_vector(origin, *point);
+        let relative = point_vector(origin.get(), point.get());
         let relative = Vector3::new(
             relative.x / extent,
             relative.y / extent,
@@ -777,7 +767,7 @@ fn linear_nurbs_spine(
     }) {
         return None;
     }
-    Some((origin, axis))
+    Some((origin.get(), axis))
 }
 
 pub(super) fn rational_four_arc_circle(
@@ -785,11 +775,7 @@ pub(super) fn rational_four_arc_circle(
 ) -> Option<(Point3, Vector3, Vector3, f64)> {
     let weights = curve.weights()?;
     let degree = curve.degree() as usize;
-    if degree < 2
-        || curve.periodic()
-        || curve.control_points().len() != 4 * degree + 1
-        || curve.knots().iter().any(|knot| !knot.is_finite())
-    {
+    if degree < 2 || curve.periodic() || curve.control_points().len() != 4 * degree + 1 {
         return None;
     }
     let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
@@ -804,7 +790,7 @@ pub(super) fn rational_four_arc_circle(
     ];
     if spans
         .windows(2)
-        .any(|pair| !pair[0].is_finite() || pair[1] - pair[0] <= knot_tolerance)
+        .any(|pair| pair[1] - pair[0] <= knot_tolerance)
         || (0..5).any(|span| {
             let range = if span == 0 {
                 0..degree + 1
@@ -820,19 +806,18 @@ pub(super) fn rational_four_arc_circle(
     {
         return None;
     }
-    let weight_scale = weights.iter().copied().map(f64::abs).fold(0.0, f64::max);
-    if !weight_scale.is_finite() || weight_scale == 0.0 {
-        return None;
-    }
+    let weight_scale = weights
+        .iter()
+        .map(|weight| weight.get().abs())
+        .fold(0.0, f64::max);
     let homogeneous = curve
         .control_points()
         .iter()
         .zip(weights)
         .map(|(point, weight)| {
-            let weight = weight / weight_scale;
+            let weight = weight.get() / weight_scale;
             let homogeneous = [point.x * weight, point.y * weight, point.z * weight, weight];
-            (point.is_finite()
-                && weight.is_finite()
+            (weight.is_finite()
                 && weight != 0.0
                 && homogeneous.iter().all(|value| value.is_finite()))
             .then_some(homogeneous)
@@ -986,7 +971,7 @@ pub(super) fn clamp_edge_ranges_to_carrier_domains(
         })
         .collect();
     for edge in &mut out.edges {
-        let Some([mut start, mut end]) = edge.param_range() else {
+        let Some([mut start, mut end]) = edge.param_range().map(FiniteVector::get) else {
             continue;
         };
         let Some([first, last]) = edge.curve().and_then(|curve| domains.get(curve.as_str())) else {
@@ -1271,11 +1256,21 @@ mod tests {
             ..Default::default()
         };
         super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
-        assert_eq!(out.edges[0].param_range(), Some([-1e-10, 5e-13]));
+        assert_eq!(
+            out.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([-1e-10, 5e-13])
+        );
         out.edges[0].set_param_range(Some(
             cadmpeg_ir::topology::ParameterInterval::new([-1e-23, 5e-13]).unwrap(),
         ));
         super::clamp_edge_ranges_to_carrier_domains(&mut out).unwrap();
-        assert_eq!(out.edges[0].param_range(), Some([0., 5e-13]));
+        assert_eq!(
+            out.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0., 5e-13])
+        );
     }
 }

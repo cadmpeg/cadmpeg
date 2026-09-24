@@ -42,7 +42,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin(), Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 1.0,
                 y: 2.0,
                 z: 3.0
@@ -98,7 +98,7 @@ fn semantic_writer_round_trips_reference_coordinate_system() {
     assert_eq!(feature.properties["ZAxis"], "0,0,1");
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin(), Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
@@ -139,8 +139,8 @@ fn semantic_writer_round_trips_equation_driven_curve() {
             && curve.x_expression() == "10*cos(t)"
             && curve.y_expression() == "10*sin(t)"
             && curve.z_expression() == "t"
-            && curve.start() == 0.0
-            && (curve.end() - std::f64::consts::TAU).abs() < 1.0e-12
+            && curve.domain().lower() == 0.0
+            && (curve.domain().upper() - std::f64::consts::TAU).abs() < 1.0e-12
     ));
 
     {
@@ -186,7 +186,7 @@ fn semantic_writer_round_trips_equation_driven_curve() {
     assert!(matches!(
         regenerated.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })
-            if curve.start() == -2.0 && curve.end() == 3.0
+            if curve.domain().lower() == -2.0 && curve.domain().upper() == 3.0
             && curve.parameter() == "u"
             && curve.x_expression() == "u"
             && curve.y_expression() == "u^2"

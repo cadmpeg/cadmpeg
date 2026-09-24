@@ -223,7 +223,7 @@ fn numerical_0922b_wide_curve_inverse() {
         let hit = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
-            &curve.control_points(),
+            &curve.pole_rows().points(),
             None,
             result.unwrap(),
         )

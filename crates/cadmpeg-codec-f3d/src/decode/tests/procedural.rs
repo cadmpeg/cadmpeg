@@ -223,7 +223,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             .find(|curve| curve.id == *member_curve)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 
@@ -354,7 +354,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
                         .map(|curve| &curve.geometry),
                     Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                         if curve.degree() == 1
-                            && curve.knots()
+                            && curve.knots().as_slice()
                                 == [
                                     parameter_range[0],
                                     parameter_range[0],
@@ -752,7 +752,9 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         assert_eq!(construction.discontinuities[0], [0.1]);
         assert_eq!(construction.discontinuities[1], [0.2, 0.3]);
         assert_eq!(
-            decoded.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
+            decoded.ir().model.procedural_surfaces[0]
+                .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Some(0.07)
         );
 
@@ -802,7 +804,10 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         };
         let support = definition_payload.support();
         let parameter_ranges = definition_payload.parameter_ranges();
-        assert_eq!(parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert_eq!(
+            parameter_ranges.map(cadmpeg_ir::units::FiniteVector::get),
+            [[-1.0, 2.0], [-3.0, 4.0]]
+        );
         assert!(matches!(decoded
         .ir()
         .model
@@ -841,7 +846,9 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         assert!(
             match round_trip.ir().model.procedural_surfaces[0].definition() {
                 ProceduralSurfaceDefinition::SubSurface(matched_payload) => matches!(
-                    (&matched_payload.parameter_ranges(),),
+                    (&matched_payload
+                        .parameter_ranges()
+                        .map(cadmpeg_ir::units::FiniteVector::get),),
                     ([[-1.0, 2.0], [-3.0, 4.0]],)
                 ),
                 _ => false,
@@ -1020,7 +1027,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [-0.25, -0.25, 1.25, 1.25]
+                && curve.knots().as_slice() == [-0.25, -0.25, 1.25, 1.25]
     ));
 }
 
@@ -1102,7 +1109,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
             .find(|curve| curve.id == profiles[0].curve)
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 

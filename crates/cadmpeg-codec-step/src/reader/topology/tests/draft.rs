@@ -237,7 +237,7 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     let parameter_range = match &pcurve.geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            *parameter_range
+            parameter_range.endpoints()
         }
         other => panic!("expected trimmed pcurve, got {other:?}"),
     };
@@ -573,7 +573,7 @@ fn shared_step_pcurve_mismatch_omits_optional_use() {
         matches!(&source.geometry, PcurveGeometry::Trimmed(trimmed_pcurve)
         if {
             let parameter_range = trimmed_pcurve.parameter_range();
-            trimmed_pcurve.same_sense() && (*parameter_range == [0.0, 1.0])
+            trimmed_pcurve.same_sense() && (parameter_range.endpoints() == [0.0, 1.0])
         })
     );
 
@@ -631,7 +631,7 @@ fn reordered_shared_step_pcurve_mismatch_omits_optional_use() {
         matches!(&source.geometry, PcurveGeometry::Trimmed(trimmed_pcurve)
         if {
             let parameter_range = trimmed_pcurve.parameter_range();
-            trimmed_pcurve.same_sense() && (*parameter_range == [0.0, 1.0])
+            trimmed_pcurve.same_sense() && (parameter_range.endpoints() == [0.0, 1.0])
         })
     );
 

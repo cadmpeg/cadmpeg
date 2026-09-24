@@ -5500,8 +5500,8 @@ pub(super) fn point_lies_on_sketch_geometry(
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                 * (1.0 + point.u.abs().max(point.v.abs()));
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
                 curve.degree(),
                 curve.knots(),

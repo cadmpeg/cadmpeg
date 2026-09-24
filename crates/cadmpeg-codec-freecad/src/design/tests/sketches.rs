@@ -681,9 +681,9 @@ pub(crate) fn transfers_bounded_rational_sketch_nurbs() {
         matches!(result.ir().model.sketch_entities[0].geometry.definition(),
             cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { curve }
                 if curve.degree() == 2 && !curve.periodic()
-                && curve.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                && curve.knots().as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 && curve.control_points().len() == 3
-                && curve.weights() == Some(vec![1.0, 0.5, 1.0])
+                && curve.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])
         )
     );
 }

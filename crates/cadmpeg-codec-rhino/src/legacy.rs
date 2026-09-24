@@ -1796,7 +1796,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                                 .iter()
                                 .map(|point| Point2::new(point.x, point.y))
                                 .collect(),
-                            trim.pcurve.weights(),
+                            trim.pcurve.pole_rows().weights(),
                             trim.pcurve.periodic(),
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
@@ -2223,7 +2223,7 @@ fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecErr
         .map(|j| {
             let index = span - degree + j;
             let point = curve.control_points()[index];
-            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
+            let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
             [point.x * weight, point.y * weight, point.z * weight, weight]
         })
         .collect::<Vec<_>>();

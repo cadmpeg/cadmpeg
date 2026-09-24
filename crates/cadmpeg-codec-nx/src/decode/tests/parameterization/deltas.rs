@@ -295,7 +295,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
         panic!("offset surface");
     };
     let distance = definition_payload.distance();
-    assert_eq!(*distance, 4.5);
+    assert_eq!(distance.get(), 4.5);
     assert_eq!(
         result.ir().model.faces[0].surface,
         *result
@@ -355,7 +355,12 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.3, 0.7]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.3, 0.7])
+    );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -559,5 +564,5 @@ fn decode_emits_ext11_deltas_intersection_chart() {
         panic!("NURBS chart cache");
     };
     assert_eq!(nurbs.control_points()[1].x, 10.0);
-    assert_eq!(nurbs.knots(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(nurbs.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
 }

@@ -488,8 +488,8 @@ fn generated_sketch_curve(
                         "source-less SLDPRT sketch NURBS lift is invalid: {error}"
                     ))
                 })?)),
-                start,
-                end,
+                start: start.get(),
+                end: end.get(),
                 param_range: [knots[curve.degree() as usize], knots[control_points.len()]],
             })
         }
@@ -719,7 +719,10 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let control_points = curve.control_points();
-            Some([control_points[0], control_points[control_points.len() - 1]])
+            Some([
+                control_points[0].get(),
+                control_points[control_points.len() - 1].get(),
+            ])
         }
         _ => None,
     }

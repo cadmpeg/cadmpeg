@@ -43,7 +43,7 @@ fn nurbs_pcurve_scaling_scales_the_poles_and_keeps_the_knot_lane() {
         pcurve().degree(),
         pcurve().knots().to_vec(),
         vec![Point2::new(2.0, 6.0), Point2::new(6.0, 12.0)],
-        pcurve().weights(),
+        pcurve().pole_rows().weights(),
         pcurve().periodic(),
     )
     .unwrap();
@@ -360,10 +360,10 @@ fn a_reflected_great_circle_moves_its_origin_and_negates_its_rate() {
 
     let pcurve = SphericalGreatCirclePcurve::try_new(0.25, -1.5, 0.5, 2.0).unwrap();
     let reflected = pcurve.reflected(3.0).unwrap();
-    assert_eq!(reflected.azimuth_origin(), 0.25 + -1.5 * 3.0);
-    assert_eq!(reflected.azimuth_rate().to_bits(), 1.5_f64.to_bits());
-    assert_eq!(reflected.plane_phase(), 0.5);
-    assert_eq!(reflected.plane_slope(), 2.0);
+    assert_eq!(reflected.azimuth_origin().get(), 0.25 + -1.5 * 3.0);
+    assert_eq!(reflected.azimuth_rate().get().to_bits(), 1.5_f64.to_bits());
+    assert_eq!(reflected.plane_phase().get(), 0.5);
+    assert_eq!(reflected.plane_slope().get(), 2.0);
     assert_eq!(
         Some(reflected),
         SphericalGreatCirclePcurve::try_new(0.25 + -1.5 * 3.0, 1.5, 0.5, 2.0).ok()

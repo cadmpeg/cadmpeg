@@ -56,8 +56,8 @@ impl WritableEdgeCurve<'_> {
             )
             .map(cadmpeg_ir::features::FinitePoint3::get),
             Self::Nurbs(nurbs) => {
-                let control_points = nurbs.control_points();
-                let weights = nurbs.weights();
+                let control_points = nurbs.pole_rows().points();
+                let weights = nurbs.pole_rows().weights();
                 cadmpeg_ir::eval::nurbs_curve_point(
                     nurbs.degree(),
                     nurbs.knots(),
@@ -435,12 +435,15 @@ impl<'a> WritableModel<'a> {
                     curve.id.as_str()
                 )));
             }
-            let domain = edge.param_range().ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "edge {} has no parameter range",
-                    edge.id.as_str()
-                ))
-            })?;
+            let domain = edge
+                .param_range()
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "edge {} has no parameter range",
+                        edge.id.as_str()
+                    ))
+                })?
+                .get();
             let [lo, hi] = domain;
             if lo == hi {
                 return Err(CodecError::NotImplemented(format!(
@@ -485,8 +488,8 @@ impl<'a> WritableModel<'a> {
                     }
                     (
                         WritableEdgeCurve::Nurbs(nurbs),
-                        nurbs.control_points()[0],
-                        nurbs.control_points()[count - 1],
+                        nurbs.control_points()[0].get(),
+                        nurbs.control_points()[count - 1].get(),
                     )
                 }
                 _ => {
@@ -659,7 +662,7 @@ impl<'a> WritableModel<'a> {
                 let fit_tolerance = pcurve
                     .as_ref()
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
-                    .unwrap_or(0.0);
+                    .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
                 let c2 = match surfaces[face.surface] {
                     WritableFaceSurface::Plane { origin, normal, u_axis } => {

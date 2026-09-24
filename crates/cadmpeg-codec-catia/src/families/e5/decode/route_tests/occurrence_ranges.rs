@@ -215,7 +215,10 @@ fn reversing_nurbs_preserves_tiny_knot_domain() {
         panic!("expected NURBS");
     };
     assert_eq!(range, [tiny, 2.0 * tiny]);
-    assert_eq!(reversed.knots(), [tiny, tiny, 2.0 * tiny, 2.0 * tiny]);
+    assert_eq!(
+        reversed.knots().as_slice(),
+        [tiny, tiny, 2.0 * tiny, 2.0 * tiny]
+    );
     assert_eq!(
         reversed.control_points(),
         [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]

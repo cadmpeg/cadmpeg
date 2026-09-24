@@ -1405,10 +1405,10 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
                 panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
             };
-            let mut reversed_points = nurbs.control_points();
+            let mut reversed_points = nurbs.pole_rows().points();
             reversed_points.reverse();
             let reversed_poles =
-                PcurveNurbsPoles::from_lanes(reversed_points, nurbs.weights()).unwrap();
+                PcurveNurbsPoles::from_lanes(reversed_points, nurbs.pole_rows().weights()).unwrap();
             {
                 let replacement = reversed_poles;
                 edit::replace(nurbs, |previous| {

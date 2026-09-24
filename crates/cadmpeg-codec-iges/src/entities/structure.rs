@@ -1412,15 +1412,11 @@ fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
 ) -> Option<Vec<Point3>> {
-    let control_points = nurbs.control_points();
-    let weights = nurbs.weights();
-    if control_points.iter().any(|point| !point.is_finite())
-        || nurbs.knots().iter().any(|knot| !knot.is_finite())
-        || weights.as_ref().is_some_and(|weights| {
-            weights
-                .iter()
-                .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        })
+    let control_points = nurbs.pole_rows().points();
+    let weights = nurbs.pole_rows().weights();
+    if weights
+        .as_ref()
+        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
     {
         return None;
     }
@@ -1663,7 +1659,9 @@ fn plane_boundary_edge(
                 transform: Transform::identity(),
             },
             source_is_certified_simple,
-            source_edge.param_range(),
+            source_edge
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
             &mut active,
         )
     {

@@ -814,9 +814,12 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         SketchGeometryDefinition::Nurbs { curve } => {
             let control_points = curve.control_points();
             vec![
-                locus(control_points[0], SketchLocus::Start(entity.id().clone())),
                 locus(
-                    control_points[control_points.len() - 1],
+                    control_points[0].get(),
+                    SketchLocus::Start(entity.id().clone()),
+                ),
+                locus(
+                    control_points[control_points.len() - 1].get(),
                     SketchLocus::End(entity.id().clone()),
                 ),
             ]

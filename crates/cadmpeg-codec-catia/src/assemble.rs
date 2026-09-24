@@ -839,7 +839,7 @@ mod route_tests {
         assert_eq!(nurbs.knots().first(), Some(&range[0]));
         assert_eq!(nurbs.knots().last(), Some(&range[1]));
         assert_eq!(nurbs.control_points().len(), 3);
-        assert_eq!(nurbs.weights(), Some(vec![1.0, 1.0, 1.0]));
+        assert_eq!(nurbs.pole_rows().weights(), Some(vec![1.0, 1.0, 1.0]));
     }
 
     #[test]

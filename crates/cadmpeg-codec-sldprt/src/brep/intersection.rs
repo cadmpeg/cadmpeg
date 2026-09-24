@@ -785,7 +785,7 @@ mod tests {
         let Some(SolvedCurveGeometry::Nurbs(curve)) = carrier.carrier.geometry.solved() else {
             panic!("expected a NURBS polyline");
         };
-        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots().as_slice(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
         assert_eq!(
             curve.control_points(),
             [
@@ -798,7 +798,7 @@ mod tests {
         let control_points = &support_data.support_uv.as_ref().expect("UV cache")[0];
         assert_eq!(control_points[0], Point2::new(8.0, 9.0));
         assert_eq!(control_points[2], Point2::new(0.0, 1.0));
-        assert_eq!(curve.knots(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
+        assert_eq!(curve.knots().as_slice(), [-0.02, -0.02, -0.01, 0.0, 0.0]);
     }
 
     #[test]

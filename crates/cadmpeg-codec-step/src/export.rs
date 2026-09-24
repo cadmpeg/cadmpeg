@@ -2616,7 +2616,7 @@ impl<'a> Builder<'a> {
             ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
                 let direction = definition_payload.direction();
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
-                let direction_ref = geometry::direction(&mut self.emitter, *direction);
+                let direction_ref = geometry::direction(&mut self.emitter, direction.get());
                 let vector = self.emitter.emit(
                     "VECTOR",
                     &format!("'',{direction_ref},{}", real(direction.norm())),
@@ -2652,7 +2652,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_SURFACE",
                         &format!(
                             "'',{support},{},{}",
-                            real(*distance),
+                            real(distance.get()),
                             logical(*self_intersect)
                         ),
                     ))
@@ -2795,15 +2795,11 @@ impl<'a> Builder<'a> {
         match definition {
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
-                let [start, end] = definition_payload.parameter_range();
+                let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
                 {
                     let source = self.emit_curve(source.as_str())?;
-                    let (start, end) = if *sense {
-                        (*start, *end)
-                    } else {
-                        (*end, *start)
-                    };
+                    let (start, end) = if *sense { (start, end) } else { (end, start) };
                     Some(self.emitter.emit(
                         "TRIMMED_CURVE",
                         &format!(
@@ -2830,7 +2826,8 @@ impl<'a> Builder<'a> {
                 let self_intersect = definition_payload.self_intersect();
                 {
                     let source = self.emit_curve(source.as_str())?;
-                    let direction = geometry::direction(&mut self.emitter, *reference_direction);
+                    let direction =
+                        geometry::direction(&mut self.emitter, reference_direction.get());
                     let self_intersect = match self_intersect {
                         Some(true) => ".T.",
                         Some(false) => ".F.",
@@ -2840,7 +2837,7 @@ impl<'a> Builder<'a> {
                         "OFFSET_CURVE_3D",
                         &format!(
                             "'',{source},{},{self_intersect},{direction}",
-                            real(*distance)
+                            real(distance.get())
                         ),
                     ))
                 }

@@ -32,7 +32,7 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
         )
         .expect("linear model curve");
         let reversed = reverse_nurbs_curve(&source, range).expect("finite reflected knots");
-        assert_eq!(reversed.knots(), knots);
+        assert_eq!(reversed.knots().as_slice(), knots);
         assert_eq!(
             reverse_nurbs_curve(&reversed, range).expect("double reversal"),
             source
@@ -148,7 +148,7 @@ fn isocurve_is_invariant_under_common_weight_scale() {
             .expect("finite isocurve at any common weight scale");
             assert_eq!(curve.control_points(), expected);
             let weights = curve.weights().expect("rational isocurve");
-            assert_eq!(weights[0] / weights[1], 1.0);
+            assert_eq!(weights[0].get() / weights[1].get(), 1.0);
         }
     }
 }
@@ -170,7 +170,7 @@ fn isocurve_preserves_weight_ratios_between_output_poles() {
         )
         .expect("finite isocurve");
         let weights = curve.weights().expect("rational isocurve");
-        assert!((weights[1] / weights[0] - 2.0).abs() < RELATIVE_ROUNDOFF);
+        assert!((weights[1].get() / weights[0].get() - 2.0).abs() < RELATIVE_ROUNDOFF);
         for (pole, y) in curve.control_points().iter().zip([0.0, 1.0]) {
             assert!((pole.x - 10.0 / 3.0).abs() < RELATIVE_ROUNDOFF);
             assert_eq!(pole.y, y);

@@ -225,7 +225,7 @@ pub(super) fn swept_nurbs(
         return None;
     }
     let n = profile.pole_count();
-    let profile_weights = profile.weights();
+    let profile_weights = profile.pole_rows().weights();
     let mut control = Vec::with_capacity(n * 2);
     let mut weights = profile_weights.as_ref().map(|_| Vec::with_capacity(n * 2));
     for (i, pole) in profile.control_points().iter().enumerate() {
@@ -283,7 +283,7 @@ pub(super) fn spun_nurbs(
     let half_sqrt2 = std::f64::consts::SQRT_2 / 2.0;
     let mut control = Vec::with_capacity(n * 9);
     let mut weights = Vec::with_capacity(n * 9);
-    let profile_weights = profile.weights();
+    let profile_weights = profile.pole_rows().weights();
     for (i, pole) in profile.control_points().iter().enumerate() {
         let pole_weight = profile_weights.as_ref().map_or(1.0, |w| w[i]);
         let offset = [pole.x - base.x, pole.y - base.y, pole.z - base.z];
@@ -468,8 +468,8 @@ mod tests {
     }
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
-        let control_points = curve.control_points();
-        let weights = curve.weights();
+        let control_points = curve.pole_rows().points();
+        let weights = curve.pole_rows().weights();
         nurbs_curve_point(
             curve.degree(),
             curve.knots(),
@@ -593,7 +593,9 @@ mod tests {
         let mut acc = [0.0f64; 4];
         for (u_index, u_weight) in u_basis.iter().enumerate() {
             for (v_index, v_weight) in v_basis.iter().enumerate() {
-                let weight = surface.weight(u_index, v_index).unwrap_or(1.0);
+                let weight = surface
+                    .weight(u_index, v_index)
+                    .map_or(1.0, cadmpeg_ir::scalar::NonZeroReal::get);
                 let basis_weight = u_weight * v_weight * weight;
                 let point = &surface.control_grid()[u_index][v_index];
                 acc[0] += basis_weight * point.x;
@@ -746,11 +748,6 @@ mod tests {
                 &mut crate::lane_refusal::LaneRefusals::new(),
             )
             .unwrap();
-            assert!(surface
-                .control_grid()
-                .iter()
-                .flatten()
-                .all(Point3::is_finite));
             assert_eq!(surface.control_grid()[0][0], Point3::new(radius, 0., 0.));
         }
     }

@@ -569,7 +569,7 @@ fn revolution_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    let profile_weights = match profile.weights() {
+    let profile_weights = match profile.pole_rows().weights() {
         Some(weights) => weights,
         None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights").map_err(
             |error| {
@@ -640,7 +640,7 @@ fn sum_nurbs(
     u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
-    let first_weights = match first.weights() {
+    let first_weights = match first.pole_rows().weights() {
         Some(weights) => weights,
         None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights").map_err(|error| {
             GeometryError::malformed(
@@ -649,7 +649,7 @@ fn sum_nurbs(
             )
         })?,
     };
-    let second_weights = match second.weights() {
+    let second_weights = match second.pole_rows().weights() {
         Some(weights) => weights,
         None => {
             alloc_filled(v_count, 1.0, "Rhino sum-surface second weights").map_err(|error| {
@@ -722,14 +722,17 @@ pub(crate) fn extrusion_nurbs(
     profile_count
         .checked_mul(2)
         .ok_or_else(|| error(offset, "extrusion surface control count overflow"))?;
+    let start_points = start.pole_rows().points();
+    let end_points = end.pole_rows().points();
+    let start_weights = start.pole_rows().weights();
     let mut control_points = Vec::with_capacity(profile_count * 2);
-    let mut weights = start
-        .weights()
+    let mut weights = start_weights
+        .as_ref()
         .map(|_| Vec::with_capacity(profile_count * 2));
     for index in 0..profile_count {
-        control_points.push(start.control_points()[index]);
-        control_points.push(end.control_points()[index]);
-        if let (Some(source), Some(target)) = (start.weights(), &mut weights) {
+        control_points.push(start_points[index]);
+        control_points.push(end_points[index]);
+        if let (Some(source), Some(target)) = (&start_weights, &mut weights) {
             target.push(source[index]);
             target.push(source[index]);
         }

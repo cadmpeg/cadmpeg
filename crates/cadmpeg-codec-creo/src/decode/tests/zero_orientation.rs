@@ -1098,7 +1098,10 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     .expect("bicubic tensor-product surface");
 
     assert_eq!((nurbs.u_count(), nurbs.v_count()), (4, 4));
-    assert_eq!(nurbs.u_knots(), [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        nurbs.u_knots().as_slice(),
+        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]
+    );
     assert_eq!(nurbs.v_knots(), nurbs.u_knots());
     for u in 0..4 {
         for v in 0..4 {
@@ -1194,7 +1197,7 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
         surface.poles().into_iter().next().expect("pole")
     );
     assert_eq!(
-        surface.pole_weights().expect("rational weights")[1],
+        surface.pole_weights().expect("rational weights")[1].get(),
         std::f64::consts::FRAC_1_SQRT_2
     );
 }
@@ -1250,7 +1253,10 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 2));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 9));
-    assert_eq!(surface.u_knots(), [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]
+    );
     assert_eq!(
         surface.poles().into_iter().next().unwrap(),
         Point3::new(2.0, 0.0, 0.0)
@@ -1264,7 +1270,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         Point3::new(3.0, 0.75, 0.0)
     );
     assert_eq!(
-        surface.pole_weights().expect("rational surface weights")[10],
+        surface.pole_weights().expect("rational surface weights")[10].get(),
         0.75 * std::f64::consts::FRAC_1_SQRT_2
     );
 
@@ -1343,7 +1349,10 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(reversed)) = reversed else {
         panic!("reversed spline revolution must retain a NURBS surface");
     };
-    assert_eq!(reversed.u_knots(), [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
+    assert_eq!(
+        reversed.u_knots().as_slice(),
+        [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]
+    );
     assert_eq!(
         reversed.poles().into_iter().next().unwrap(),
         Point3::new(2.0, 2.0, 0.0)

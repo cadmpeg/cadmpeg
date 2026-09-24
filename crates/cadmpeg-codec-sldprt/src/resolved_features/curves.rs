@@ -1294,7 +1294,11 @@ pub(super) fn sketch_plane_frames(
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPlane { frame },
                 ) => SketchPlaneFrame::from_frame(
-                    (frame.origin(), frame.normal(), frame.u_axis()),
+                    (
+                        frame.origin().get(),
+                        frame.normal().get(),
+                        frame.u_axis().get(),
+                    ),
                     feature_u_axis_source(feature),
                 ),
                 _ => return None,
@@ -1369,7 +1373,11 @@ pub(super) fn lane_sketch_plane_frames(
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
                 SketchPlaneFrame::from_frame(
-                    (frame.origin(), frame.normal(), frame.u_axis()),
+                    (
+                        frame.origin().get(),
+                        frame.normal().get(),
+                        frame.u_axis().get(),
+                    ),
                     feature_u_axis_source(feature),
                 )
             }

@@ -415,7 +415,7 @@ fn native_procedural_surface_definition(
                 }
             }
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
             for values in &construction.discontinuities {
                 native_compound_loft_float_array(bytes, values)?;
             }
@@ -438,15 +438,17 @@ fn native_procedural_surface_definition(
                 native_solved_cache_fit_tolerance(
                     bytes,
                     "T-spline surface",
-                    procedural.cache_fit_tolerance(),
+                    procedural
+                        .cache_fit_tolerance()
+                        .map(cadmpeg_ir::geometry::FitTolerance::get),
                 )?;
                 for values in construction.discontinuities() {
                     native_compound_loft_float_array(bytes, values)?;
                 }
                 bytes.push(native_bool(construction.discontinuity_flag()));
-                for range in &construction.parameter_ranges() {
-                    for value in range {
-                        native_f64(bytes, *value / LEN_TO_MM);
+                for range in construction.parameter_ranges() {
+                    for value in range.endpoints() {
+                        native_f64(bytes, value / LEN_TO_MM);
                     }
                 }
                 native_i64(bytes, construction.type_code());
@@ -496,7 +498,9 @@ fn native_procedural_surface_definition(
                     native_solved_cache_fit_tolerance(
                         bytes,
                         "exact spline surface",
-                        procedural.cache_fit_tolerance(),
+                        procedural
+                            .cache_fit_tolerance()
+                            .map(cadmpeg_ir::geometry::FitTolerance::get),
                     )?;
                     for range in ranges {
                         for value in range {
@@ -516,7 +520,7 @@ fn native_procedural_surface_definition(
             native_ident(bytes, "comp_spl_sur")?;
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
             }
             native_i64(
                 bytes,
@@ -618,7 +622,7 @@ fn native_procedural_surface_definition(
                     } else {
                         native_ident(bytes, "nullbs")?;
                     }
-                    native_f64(bytes, *parameter);
+                    native_f64(bytes, parameter.get());
                     native_revision_surface_tail(bytes, "taper surface", form, Some(solved_cache))?;
                     // Orthogonal sense is the record's own trailing logical, written
                     // after the shared tail's illegal-region flag.
@@ -638,10 +642,10 @@ fn native_procedural_surface_definition(
                 } else {
                     native_ident(bytes, "nullbs")?;
                 }
-                native_f64(bytes, *parameter);
+                native_f64(bytes, parameter.get());
                 native_nurbs_surface(bytes, solved_cache)?;
                 if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
                 }
                 let write_draft = |bytes: &mut Vec<u8>, draft: Vector3| {
                     native_vector(bytes, [draft.x, draft.y, draft.z]);
@@ -823,7 +827,7 @@ fn native_procedural_surface_definition(
             }
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -919,7 +923,7 @@ fn native_procedural_surface_definition(
             );
             native_nurbs_surface(bytes, solved_cache)?;
             if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
             }
             bytes.push(0x10);
         }
@@ -1038,7 +1042,7 @@ fn native_procedural_surface_definition(
                 );
                 native_nurbs_surface(bytes, solved_cache)?;
                 if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
                 }
                 bytes.push(0x10);
             }
@@ -1072,7 +1076,7 @@ fn native_procedural_surface_definition(
                             &support.geometry,
                             &form.support_bounds,
                         )?;
-                        native_f64(bytes, *distance / LEN_TO_MM);
+                        native_f64(bytes, distance.get() / LEN_TO_MM);
                         // Leading sense pair, then the two-boolean ASM extension prefix.
                         for flag in form.flags {
                             bytes.push(native_bool(flag));
@@ -1111,7 +1115,7 @@ fn native_procedural_surface_definition(
                     },
                 )?;
                 native_embedded_surface(bytes, &support.geometry)?;
-                native_f64(bytes, *distance / LEN_TO_MM);
+                native_f64(bytes, distance.get() / LEN_TO_MM);
                 native_enum(bytes, u_sense);
                 native_enum(bytes, v_sense);
                 for flag in extension_flags {
@@ -1119,7 +1123,7 @@ fn native_procedural_surface_definition(
                 }
                 native_nurbs_surface(bytes, solved_cache)?;
                 if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-                    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+                    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
                 }
                 bytes.push(0x10);
             }
@@ -1135,17 +1139,21 @@ fn native_procedural_surface_definition(
                 target,
                 procedural,
                 directrix,
-                parameter_interval.ok_or_else(|| {
-                    CodecError::Malformed(
-                        "source-less F3D extrusion lacks its native interval".into(),
-                    )
-                })?,
-                *direction,
-                native_position.ok_or_else(|| {
-                    CodecError::Malformed(
-                        "source-less F3D extrusion lacks its native position".into(),
-                    )
-                })?,
+                parameter_interval
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "source-less F3D extrusion lacks its native interval".into(),
+                        )
+                    })?
+                    .get(),
+                direction.get(),
+                native_position
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "source-less F3D extrusion lacks its native position".into(),
+                        )
+                    })?
+                    .get(),
                 revision_form,
                 Some(solved_cache),
             )?;
@@ -1377,7 +1385,7 @@ fn encode_native_g2_blend(
     }
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+        native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     }
     for discontinuities in &construction.discontinuities {
         native_i64(
@@ -1649,7 +1657,7 @@ fn encode_native_compound_loft(
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     for scale in construction.scales.as_slice() {
         native_compound_loft_scale(bytes, target, scale)?;
     }
@@ -1768,7 +1776,7 @@ fn encode_native_scaled_compound_loft(
                 )
             })?;
             native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
         }
         ScaledCompoundLoftShape::None {
             parameter_ranges,
@@ -1905,13 +1913,21 @@ fn native_cacheless_procedural_surface_definition(
             target,
             procedural,
             directrix,
-            parameter_interval.ok_or_else(|| {
-                CodecError::Malformed("source-less F3D extrusion lacks its native interval".into())
-            })?,
-            *direction,
-            native_position.ok_or_else(|| {
-                CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
-            })?,
+            parameter_interval
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "source-less F3D extrusion lacks its native interval".into(),
+                    )
+                })?
+                .get(),
+            direction.get(),
+            native_position
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "source-less F3D extrusion lacks its native position".into(),
+                    )
+                })?
+                .get(),
             revision_form,
             None,
         )?;
@@ -1948,7 +1964,7 @@ fn native_cacheless_procedural_surface_definition(
             native_f64(bytes, if circular { value / LEN_TO_MM } else { value });
         }
         if let HelixSurfaceProfile::Circle(circle) = profile {
-            native_f64(bytes, circle.length() / LEN_TO_MM);
+            native_f64(bytes, circle.length().get() / LEN_TO_MM);
         }
         for value in path_angle_range {
             native_f64(bytes, value);
@@ -1971,13 +1987,15 @@ fn native_cacheless_procedural_surface_definition(
                 ],
             );
         }
-        native_f64(bytes, apex_factor);
+        native_f64(bytes, apex_factor.get());
         native_vector(bytes, [axis.x, axis.y, axis.z]);
         for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
             native_ident(bytes, sentinel)?;
         }
         match profile {
-            HelixSurfaceProfile::Circle(circle) => native_f64(bytes, circle.radius() / LEN_TO_MM),
+            HelixSurfaceProfile::Circle(circle) => {
+                native_f64(bytes, circle.radius().get() / LEN_TO_MM)
+            }
             HelixSurfaceProfile::Line(line) => {
                 let direction = line.direction();
                 native_point(
@@ -2439,7 +2457,7 @@ fn encode_native_law_surface(
                     CodecError::Malformed("full law surface requires a solved cache".into())
                 })?,
             )?;
-            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
         }
         cadmpeg_ir::geometry::LawSurfaceTail::Summary {
             parameters,
@@ -2585,7 +2603,7 @@ fn encode_native_skin_surface(
         &native_loft_curve(target, &construction.parameter_curve, None)?,
     )?;
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }
@@ -2621,7 +2639,7 @@ fn encode_native_net_surface(
         native_law_formula(bytes, target, formula)?;
     }
     native_nurbs_surface(bytes, solved_cache)?;
-    native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+    native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
     }
@@ -3118,9 +3136,12 @@ fn encode_native_sweep_surface(
     )?;
     native_f64(
         bytes,
-        cache_fit_tolerance.ok_or_else(|| {
-            CodecError::Malformed("sweep surface requires a native cache-fit tolerance".into())
-        })? / LEN_TO_MM,
+        cache_fit_tolerance
+            .ok_or_else(|| {
+                CodecError::Malformed("sweep surface requires a native cache-fit tolerance".into())
+            })?
+            .get()
+            / LEN_TO_MM,
     );
     for values in &construction.discontinuities {
         native_compound_loft_float_array(bytes, values)?;
@@ -3213,7 +3234,7 @@ fn encode_native_loft(
         .ok_or_else(|| CodecError::Malformed("legacy loft requires a solved NURBS cache".into()))?;
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+        native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     }
     bytes.push(0x10);
     Ok(())
@@ -3297,7 +3318,7 @@ fn encode_native_extrusion(
     if let Some(solved_cache) = solved_cache {
         native_nurbs_surface(bytes, solved_cache)?;
         if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
         }
     } else if procedural.cache_fit_tolerance().is_some() {
         return Err(CodecError::Malformed(
@@ -3337,7 +3358,7 @@ fn native_radius_function_pcurve_block(
                 .iter()
                 .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
                 .collect(),
-            nurbs.weights(),
+            nurbs.pole_rows().weights(),
             nurbs.periodic(),
         )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
@@ -4283,7 +4304,7 @@ fn encode_native_rolling_ball(
     native_enum(bytes, -1);
     native_nurbs_surface(bytes, solved_cache)?;
     if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-        native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+        native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
     }
     bytes.push(0x10);
     Ok(())
@@ -4558,8 +4579,8 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::PI],
         )
         .expect("generated circle interval");
-        let control_points = curve.control_points();
-        let weights = curve.weights();
+        let control_points = curve.pole_rows().points();
+        let weights = curve.pole_rows().weights();
         let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
             curve.knots(),
@@ -4624,7 +4645,7 @@ mod native_interval_curve_tests {
         assert_eq!(curve.control_points()[2].y, 4.0);
         assert_eq!(curve.control_points()[2].z, 0.5);
         assert_eq!(
-            curve.knots(),
+            curve.knots().as_slice(),
             vec![
                 0.0,
                 0.0,
@@ -4802,7 +4823,7 @@ pub(crate) fn native_procedural_curve(
     }
     let write_cache_fit_tolerance = |bytes: &mut Vec<u8>| {
         if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance() {
-            native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
+            native_f64(bytes, cache_fit_tolerance.get() / LEN_TO_MM);
         }
     };
     if matches!(
@@ -4876,8 +4897,14 @@ pub(crate) fn native_procedural_curve(
                         CodecError::Malformed("deformable source curve is missing".into())
                     })?;
                 let source_range = [
-                    source_parameter_range[0].unwrap_or(context.parameter_range()[0]),
-                    source_parameter_range[1].unwrap_or(context.parameter_range()[1]),
+                    source_parameter_range[0].map_or(
+                        context.parameter_range()[0],
+                        cadmpeg_ir::scalar::FiniteReal::get,
+                    ),
+                    source_parameter_range[1].map_or(
+                        context.parameter_range()[1],
+                        cadmpeg_ir::scalar::FiniteReal::get,
+                    ),
                 ];
                 let source_curve = native_interval_curve(
                     source.geometry.solved().ok_or_else(|| {
@@ -4899,7 +4926,7 @@ pub(crate) fn native_procedural_curve(
             }
         }
         for bound in source_parameter_range {
-            native_optional_f64(bytes, bound);
+            native_optional_f64(bytes, bound.map(cadmpeg_ir::scalar::FiniteReal::get));
         }
         match data {
             cadmpeg_ir::geometry::DeformableCurveData::VectorField {
@@ -5219,7 +5246,7 @@ pub(crate) fn native_procedural_curve(
             base.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
-            *base_range,
+            base_range.endpoints(),
         )?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
@@ -5227,35 +5254,35 @@ pub(crate) fn native_procedural_curve(
         if let Some(form) = cache_first {
             native_cache_first_curve_context(bytes, target, context, form, Some(solved_cache))?;
             for range in [base_u_range, base_v_range] {
-                for value in *range {
+                for value in range.endpoints() {
                     native_optional_f64(bytes, Some(value));
                 }
             }
             native_nurbs_curve(bytes, &base)?;
             for value in base_endpoints {
-                native_optional_f64(bytes, value);
+                native_optional_f64(bytes, value.map(cadmpeg_ir::scalar::FiniteReal::get));
             }
-            for value in base_range {
-                native_optional_f64(bytes, Some(*value));
+            for value in base_range.endpoints() {
+                native_optional_f64(bytes, Some(value));
             }
-            native_f64(bytes, *distance / LEN_TO_MM);
-            native_f64(bytes, *shift);
-            native_f64(bytes, *scale);
+            native_f64(bytes, distance.get() / LEN_TO_MM);
+            native_f64(bytes, shift.get());
+            native_f64(bytes, scale.get());
         } else {
             native_intcurve_support_context(bytes, target, context)?;
             bytes.push(native_bool(*discontinuity_flag));
             for range in [base_u_range, base_v_range] {
-                for value in *range {
+                for value in range.endpoints() {
                     native_f64(bytes, value);
                 }
             }
             native_nurbs_curve(bytes, &base)?;
-            for value in base_range {
-                native_f64(bytes, *value);
+            for value in base_range.endpoints() {
+                native_f64(bytes, value);
             }
-            native_f64(bytes, *distance / LEN_TO_MM);
-            native_f64(bytes, *shift);
-            native_f64(bytes, *scale);
+            native_f64(bytes, distance.get() / LEN_TO_MM);
+            native_f64(bytes, shift.get());
+            native_f64(bytes, scale.get());
             native_nurbs_curve(bytes, solved_cache)?;
             write_cache_fit_tolerance(bytes);
         }
@@ -5441,15 +5468,15 @@ pub(crate) fn native_procedural_curve(
             source.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
-            *parameter_range,
+            parameter_range.endpoints(),
         )?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "offset_int_cur")?;
         bytes.push(0x0b);
         native_nurbs_curve(bytes, &source)?;
-        native_f64(bytes, parameter_range[0]);
-        native_f64(bytes, parameter_range[1]);
+        native_f64(bytes, parameter_range.endpoints()[0]);
+        native_f64(bytes, parameter_range.endpoints()[1]);
         native_vector(
             bytes,
             [
@@ -5482,14 +5509,14 @@ pub(crate) fn native_procedural_curve(
             source.geometry.solved().ok_or_else(|| {
                 CodecError::NotImplemented("source-less F3D carrier has no solved geometry".into())
             })?,
-            *parameter_range,
+            parameter_range.endpoints(),
         )?;
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "subset_int_cur")?;
         native_nurbs_curve(bytes, &source)?;
-        native_f64(bytes, parameter_range[0]);
-        native_f64(bytes, parameter_range[1]);
+        native_f64(bytes, parameter_range.endpoints()[0]);
+        native_f64(bytes, parameter_range.endpoints()[1]);
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
         bytes.push(0x10);
@@ -5567,7 +5594,7 @@ pub(crate) fn native_procedural_curve(
             ],
         );
     }
-    native_f64(bytes, *apex_factor);
+    native_f64(bytes, apex_factor.get());
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     native_nurbs_curve(bytes, solved_cache)?;
     write_cache_fit_tolerance(bytes);
@@ -5639,7 +5666,7 @@ pub(super) fn native_cacheless_procedural_curve(
             ],
         );
     }
-    native_f64(bytes, apex_factor);
+    native_f64(bytes, apex_factor.get());
     native_vector(bytes, [axis.x, axis.y, axis.z]);
     bytes.push(0x10);
     Ok(true)
@@ -6619,7 +6646,7 @@ pub(super) fn native_pcurve(
         NativePcurveForm::Inline(inline) => inline,
     };
     let range = inline.parameter_range();
-    let native_geometry = native_support_pcurve_for_range(support, geometry, range)?;
+    let native_geometry = native_support_pcurve_for_range(support, geometry, range.get())?;
     native_ident(bytes, "pcurve")?;
     native_ref(bytes, -1);
     native_i64(bytes, -1);
@@ -6629,7 +6656,7 @@ pub(super) fn native_pcurve(
     bytes.push(0x0f);
     native_ident(bytes, "exp_par_cur")?;
     native_nurbs_pcurve_payload(bytes, &native_geometry)?;
-    native_f64(bytes, inline.fit_tolerance());
+    native_f64(bytes, inline.fit_tolerance().get());
     bytes.push(0x10);
     for flag in inline.native_tail_flags {
         bytes.push(native_bool(flag));
@@ -6717,7 +6744,7 @@ fn native_pcurve_geometry(
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             let basis = trimmed_pcurve.basis();
-            native_pcurve_geometry(basis, *parameter_range)
+            native_pcurve_geometry(basis, parameter_range.endpoints())
         }
         PcurveGeometry::Parabola(_) => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),

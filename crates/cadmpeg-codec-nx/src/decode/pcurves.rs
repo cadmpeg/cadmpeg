@@ -508,10 +508,14 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             };
             let ranges = [
                 first_use_range
-                    .or(first.parameter_range())
+                    .or(first
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get))
                     .or_else(|| pcurve_parameter_range(&first.geometry)),
                 second_use_range
-                    .or(second.parameter_range())
+                    .or(second
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get))
                     .or_else(|| pcurve_parameter_range(&second.geometry)),
             ];
             let [Some(first_range), Some(second_range)] = ranges else {
@@ -538,7 +542,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let Some(()) = first
                 .fit_tolerance()
                 .zip(second.fit_tolerance())
-                .map(|(first, second)| first + second)
+                .map(|(first, second)| first.get() + second.get())
                 .filter(|bound| bound.is_finite() && *bound <= endpoint_tolerance)
                 .map(|_| ())
             else {
@@ -595,7 +599,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if slot.is_some() {
                 return None;
             }
-            let range = parameterization.parameter_interval();
+            let range = parameterization.parameter_range();
             *slot = Some(parameterization);
             Some(range)
         });
@@ -740,7 +744,7 @@ fn reverse_pcurve_over_range(
             };
             let mut poles = nurbs.poles();
             poles.reverse();
-            let mut weights = nurbs.weights();
+            let mut weights = nurbs.pole_rows().weights();
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -774,9 +778,9 @@ fn reverse_pcurve_over_range(
             else {
                 return Ok(None);
             };
-            let mut control_points = nurbs.control_points();
+            let mut control_points = nurbs.pole_rows().points();
             control_points.reverse();
-            let mut weights = nurbs.weights();
+            let mut weights = nurbs.pole_rows().weights();
             if let Some(weights) = &mut weights {
                 weights.reverse();
             }
@@ -804,7 +808,7 @@ fn reverse_pcurve_over_range(
                 return Ok(None);
             };
             Ok(cadmpeg_ir::geometry::pcurve::TrimmedPcurve::try_new(
-                *parameter_range,
+                parameter_range.endpoints(),
                 same_sense,
                 Box::new(basis),
             )
@@ -823,7 +827,7 @@ fn reverse_pcurve_over_range(
             .map(PcurveGeometry::Transformed))
         }
         PcurveGeometry::Offset(offset_pcurve) => {
-            let distance = offset_pcurve.distance();
+            let distance = offset_pcurve.distance().get();
             let Some(basis) = reverse_pcurve_over_range(offset_pcurve.basis(), [start, end])?
             else {
                 return Ok(None);
@@ -921,13 +925,13 @@ fn reverse_analytic_pcurve_over_range(
             let radial_cos = polar_harmonic_pcurve.radial_cos();
             let radial_sin = polar_harmonic_pcurve.radial_sin();
             let axial_origin = polar_harmonic_pcurve.axial_origin();
-            let axial_cos = polar_harmonic_pcurve.axial_cos();
-            let axial_sin = polar_harmonic_pcurve.axial_sin();
+            let axial_cos = polar_harmonic_pcurve.axial_cos().get();
+            let axial_sin = polar_harmonic_pcurve.axial_sin().get();
             let cosine = reflection.cos();
             let sine = reflection.sin();
             Some(PcurveGeometry::PolarHarmonic(
                 cadmpeg_ir::geometry::pcurve::PolarHarmonicPcurve::try_new(
-                    *radial_center,
+                    radial_center.get(),
                     Point2::new(
                         cosine * radial_cos.u + sine * radial_sin.u,
                         cosine * radial_cos.v + sine * radial_sin.v,
@@ -936,7 +940,7 @@ fn reverse_analytic_pcurve_over_range(
                         sine * radial_cos.u - cosine * radial_sin.u,
                         sine * radial_cos.v - cosine * radial_sin.v,
                     ),
-                    axial_origin,
+                    axial_origin.get(),
                     cosine * axial_cos + sine * axial_sin,
                     sine * axial_cos - cosine * axial_sin,
                 )
@@ -951,20 +955,20 @@ fn reverse_analytic_pcurve_over_range(
             let sine = reflection.sin();
             Some(PcurveGeometry::Harmonic(
                 cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
-                    *center,
-                    combine(*source_cosine, cosine, *source_sine, sine)?,
-                    combine(*source_cosine, sine, *source_sine, -cosine)?,
+                    center.get(),
+                    combine(source_cosine.get(), cosine, source_sine.get(), sine)?,
+                    combine(source_cosine.get(), sine, source_sine.get(), -cosine)?,
                 )
                 .ok()?,
             ))
         }
         PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
-            let center = hyperbolic_pcurve.center();
-            let source_cosine = hyperbolic_pcurve.cosine();
-            let source_sine = hyperbolic_pcurve.sine();
-            let (cosine, sine) = reverse_hyperbolic(*source_cosine, *source_sine)?;
+            let center = hyperbolic_pcurve.center().get();
+            let source_cosine = hyperbolic_pcurve.cosine().get();
+            let source_sine = hyperbolic_pcurve.sine().get();
+            let (cosine, sine) = reverse_hyperbolic(source_cosine, source_sine)?;
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(*center, cosine, sine)
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(center, cosine, sine)
                     .ok()?,
             ))
         }
@@ -993,7 +997,10 @@ fn reverse_analytic_pcurve_over_range(
                 .all(f64::is_finite)
                 .then_some(PcurveGeometry::Circle(
                     cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
-                        *center, reversed_x, reversed_y, radius,
+                        center.get(),
+                        reversed_x,
+                        reversed_y,
+                        radius.get(),
                     )
                     .ok()?,
                 ))
@@ -1011,13 +1018,18 @@ fn reverse_analytic_pcurve_over_range(
             let sine = reflection.sin();
             Some(PcurveGeometry::Harmonic(
                 cadmpeg_ir::geometry::pcurve::HarmonicPcurve::try_new(
-                    *center,
-                    combine(*x_axis, major_radius * cosine, *y_axis, minor_radius * sine)?,
+                    center.get(),
                     combine(
-                        *x_axis,
-                        major_radius * sine,
-                        *y_axis,
-                        -minor_radius * cosine,
+                        x_axis.get(),
+                        major_radius.get() * cosine,
+                        y_axis.get(),
+                        minor_radius.get() * sine,
+                    )?,
+                    combine(
+                        x_axis.get(),
+                        major_radius.get() * sine,
+                        y_axis.get(),
+                        -minor_radius.get() * cosine,
                     )?,
                 )
                 .ok()?,
@@ -1030,17 +1042,17 @@ fn reverse_analytic_pcurve_over_range(
             PcurveGeometry::Hyperbola(hyperbola_pcurve.reversed_about_zero()),
         ),
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
-            let center = hyperbola_pcurve.center();
+            let center = hyperbola_pcurve.center().get();
             let x_axis = hyperbola_pcurve.x_axis();
             let y_axis = hyperbola_pcurve.y_axis();
-            let major_radius = hyperbola_pcurve.major_radius();
-            let minor_radius = hyperbola_pcurve.minor_radius();
+            let major_radius = hyperbola_pcurve.major_radius().get();
+            let minor_radius = hyperbola_pcurve.minor_radius().get();
             let (cosine, sine) = reverse_hyperbolic(
                 Point2::new(x_axis.u * major_radius, x_axis.v * major_radius),
                 Point2::new(y_axis.u * minor_radius, y_axis.v * minor_radius),
             )?;
             Some(PcurveGeometry::Hyperbolic(
-                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(*center, cosine, sine)
+                cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(center, cosine, sine)
                     .ok()?,
             ))
         }
@@ -1186,6 +1198,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
             };
             let Some(tolerance) = procedural
                 .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get)
                 .or_else(|| edge_tolerances.get(owner).copied())
             else {
                 return Ok(None);
@@ -1564,7 +1577,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     return false;
                 };
-                tolerant_range = Some(completed.parameter_interval());
+                tolerant_range = Some(completed.parameter_range());
                 *parameterization = Some(completed);
                 true
             }
@@ -1916,7 +1929,7 @@ fn exact_boundary_curve_breaks(
                 && !nurbs.weights().is_some_and(|weights| {
                     weights
                         .windows(2)
-                        .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                        .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
                 }) =>
         {
             let degree = usize::try_from(nurbs.degree()).ok()?;
@@ -2254,7 +2267,7 @@ fn piecewise_linear_nurbs_surface_isocurve(
         && !isocurve.weights().is_some_and(|weights| {
             weights
                 .windows(2)
-                .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
         }))
     .then_some(isocurve)
 }
@@ -3226,11 +3239,10 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
 }
 
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<([f64; 3], [f64; 3])> {
-    if surface.pole_weights().is_some_and(|weights| {
-        weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
-    }) {
+    if surface
+        .pole_weights()
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
+    {
         return None;
     }
     let mut minimum = [f64::INFINITY; 3];
@@ -3664,10 +3676,6 @@ pub(super) fn linear_nurbs_curve_endpoint_witness_with_index(
     if curve.degree() != 1
         || curve.periodic()
         || curve.weights().is_some()
-        || curve
-            .knots()
-            .windows(2)
-            .any(|pair| !pair[0].is_finite() || !pair[1].is_finite() || pair[0] > pair[1])
         || curve.knots().first()?.to_bits() != curve.knots()[1].to_bits()
         || curve.knots()[curve.knots().len() - 2].to_bits() != curve.knots().last()?.to_bits()
     {
@@ -3678,7 +3686,7 @@ pub(super) fn linear_nurbs_curve_endpoint_witness_with_index(
     [first, last]
         .into_iter()
         .all(|point| point.is_finite())
-        .then_some([first, last])
+        .then_some([first.get(), last.get()])
 }
 
 pub(super) fn pcurve_matches_edge_endpoint_contract(

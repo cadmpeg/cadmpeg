@@ -1293,7 +1293,7 @@ pub(crate) fn nonuniform_instance_converts_analytic_circle_to_exact_nurbs() {
     assert_eq!(nurbs.control_points()[0].x, 2.0);
     assert_eq!(nurbs.control_points()[2].y, 1.0);
     assert_eq!(
-        nurbs.weights().expect("required invariant")[1],
+        nurbs.weights().expect("required invariant")[1].get(),
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());

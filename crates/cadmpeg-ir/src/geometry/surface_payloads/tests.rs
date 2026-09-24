@@ -109,7 +109,7 @@ fn offset_distance_mutation_preserves_the_previous_value_on_rejection() {
         })
     }
     .unwrap();
-    assert_eq!(*payload.distance(), 0.0);
+    assert_eq!(payload.distance().get(), 0.0);
 }
 
 #[test]

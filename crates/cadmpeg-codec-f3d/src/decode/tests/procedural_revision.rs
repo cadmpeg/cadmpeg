@@ -889,7 +889,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
             ));
         }
     }
@@ -905,7 +905,12 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         .unwrap();
 
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected extrusion")
     };
@@ -917,9 +922,12 @@ fn decode_retains_generated_translational_extrusion_and_fit_contract() {
         panic!("expected extrusion")
     };
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
-    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(
-        native_position,
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
+    assert_eq!(
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix = result
@@ -946,17 +954,25 @@ fn decode_retains_versioned_nested_translational_extrusion() {
         )
         .expect("versioned extrusion decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.02));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
     let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() else {
         panic!("expected versioned extrusion")
     };
     let direction = definition_payload.direction();
     let parameter_interval = definition_payload.parameter_interval();
     let native_position = definition_payload.native_position();
-    assert_eq!(parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position,
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -998,11 +1014,15 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
         let ProceduralSurfaceDefinition::Extrusion(definition_payload) = definition else {
             panic!("expected extrusion")
         };
-        let mut parameter_interval_value = definition_payload.parameter_interval();
+        let mut parameter_interval_value = definition_payload
+            .parameter_interval()
+            .map(cadmpeg_ir::units::FiniteVector::get);
         let parameter_interval = &mut parameter_interval_value;
-        let mut direction_value = *definition_payload.direction();
+        let mut direction_value = definition_payload.direction().get();
         let direction = &mut direction_value;
-        let mut native_position_value = definition_payload.native_position();
+        let mut native_position_value = definition_payload
+            .native_position()
+            .map(cadmpeg_ir::features::FinitePoint3::get);
         let native_position = &mut native_position_value;
         {
             *parameter_interval = Some([-0.5, 1.25]);
@@ -1040,10 +1060,13 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
     let parameter_interval = definition_payload.parameter_interval();
     let direction = definition_payload.direction();
     let native_position = definition_payload.native_position();
-    assert_eq!(parameter_interval, Some([-0.5, 1.25]));
+    assert_eq!(
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-0.5, 1.25])
+    );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 30.0));
     assert_eq!(
-        native_position,
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(-20.0, 70.0, 15.0))
     );
 }
@@ -1066,7 +1089,9 @@ fn generated_f3d_rewrites_procedural_surface_fit_tolerance() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated procedural-surface decode");
     assert_eq!(
-        round_trip.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.075)
     );
 }
@@ -1225,12 +1250,14 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
     let SolvedSurfaceGeometry::Nurbs(mut nurbs) = cache.clone() else {
         unreachable!()
     };
-    let mut weight_rows = nurbs.weights();
+    let mut weight_rows = nurbs.pole_grid().weights();
     if let Some(rows) = &mut weight_rows {
         rows[0][1] = 0.65;
     }
-    let poles =
-        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(nurbs.control_grid(), weight_rows);
+    let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
+        nurbs.pole_grid().points(),
+        weight_rows,
+    );
     {
         let replacement = poles.unwrap();
         edit::replace(&mut nurbs, |previous| {
@@ -1301,14 +1328,14 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     else {
         panic!("expected NURBS directrix")
     };
-    let mut control_points = nurbs.control_points();
+    let mut control_points = nurbs.pole_rows().points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-2.0, -2.0, 3.0, 3.0, 3.0],
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         true,
     )
     .unwrap();
@@ -1342,7 +1369,9 @@ fn decode_resolves_generated_ref_translational_extrusion() {
 
     assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.procedural_surfaces[0].cache_fit_tolerance(),
+        result.ir().model.procedural_surfaces[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.02)
     );
 }
@@ -1378,7 +1407,12 @@ fn decode_retains_generated_rolling_ball_definition() {
         .unwrap();
 
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.01)
+    );
     let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
         panic!("expected rolling-ball blend")
     };
@@ -1662,14 +1696,14 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     else {
         panic!("expected NURBS blend spine")
     };
-    let mut control_points = nurbs.control_points();
+    let mut control_points = nurbs.pole_rows().points();
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
     .unwrap();
@@ -1823,7 +1857,7 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
         .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
-    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
         curve.control_points(),
         [Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)]

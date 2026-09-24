@@ -24,14 +24,22 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
     for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         let mut knots = curve().knots().to_vec();
         knots[1] = invalid;
-        assert!(
-            NurbsCurve::from_lanes(1, knots.clone(), curve().control_points(), None, false)
-                .is_err()
-        );
-        assert!(
-            PcurveNurbs::from_lanes(1, knots.clone(), pcurve().control_points(), None, false)
-                .is_err()
-        );
+        assert!(NurbsCurve::from_lanes(
+            1,
+            knots.clone(),
+            curve().pole_rows().points(),
+            None,
+            false
+        )
+        .is_err());
+        assert!(PcurveNurbs::from_lanes(
+            1,
+            knots.clone(),
+            pcurve().pole_rows().points(),
+            None,
+            false
+        )
+        .is_err());
         assert!(PolarPcurveNurbs::from_lanes(
             1,
             knots,
@@ -47,7 +55,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         )
         .is_err());
 
-        let mut points = curve().control_points();
+        let mut points = curve().pole_rows().points();
         points[1].z = invalid;
         assert!(NurbsCurve::from_lanes(1, curve().knots().to_vec(), points, None, false).is_err());
         assert!(PcurveNurbs::from_lanes(
@@ -74,7 +82,7 @@ fn construction_rejects_invalid_knots_and_non_finite_poles() {
         .is_err());
 
         let source = surface();
-        let mut points = source.control_grid();
+        let mut points = source.pole_grid().points();
         points[0][1].x = invalid;
         assert!(NurbsSurface::from_lanes(
             crate::geometry::nurbs::NurbsSurfaceAxis::new(1, source.u_knots().to_vec(), false),
@@ -99,21 +107,21 @@ fn curve_weights(
     curve: &NurbsCurve,
     weights: Vec<f64>,
 ) -> Result<NurbsPoles3, crate::geometry::nurbs::NurbsError> {
-    NurbsPoles3::from_lanes(curve.control_points(), Some(weights))
+    NurbsPoles3::from_lanes(curve.pole_rows().points(), Some(weights))
 }
 
 fn surface_weights(
     surface: &NurbsSurface,
     weights: Vec<Vec<f64>>,
 ) -> Result<NurbsPoleGrid, crate::geometry::nurbs::NurbsError> {
-    NurbsPoleGrid::from_lanes(surface.control_grid(), Some(weights))
+    NurbsPoleGrid::from_lanes(surface.pole_grid().points(), Some(weights))
 }
 
 fn pcurve_weights(
     pcurve: &PcurveNurbs,
     weights: Vec<f64>,
 ) -> Result<PcurveNurbsPoles, crate::geometry::nurbs::NurbsError> {
-    PcurveNurbsPoles::from_lanes(pcurve.control_points(), Some(weights))
+    PcurveNurbsPoles::from_lanes(pcurve.pole_rows().points(), Some(weights))
 }
 
 fn polar_weights(
@@ -330,7 +338,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             previous.degree(),
             knots,
             previous.poles(),
-            previous.weights(),
+            previous.pole_rows().weights(),
             previous.periodic(),
         )
     })
@@ -344,7 +352,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             previous.degree(),
             previous.knots().to_vec(),
             poles,
-            previous.weights(),
+            previous.pole_rows().weights(),
             previous.periodic(),
         )
     })
@@ -358,7 +366,7 @@ fn failed_numeric_edits_preserve_the_whole_carrier() {
             previous.degree(),
             previous.knots().to_vec(),
             poles,
-            previous.weights(),
+            previous.pole_rows().weights(),
             previous.periodic(),
         )
     })
@@ -373,24 +381,24 @@ fn reversal_preserves_weight_and_parameter_correspondence() {
     let mut curve = curve();
     let original = curve.clone();
     curve.reverse_parameterization();
-    assert_eq!(curve.knots(), &[-5.0, -5.0, -2.0, -2.0]);
+    assert_eq!(curve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         curve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
-    assert_eq!(curve.weights(), Some(vec![2.0, -1.0]));
+    assert_eq!(curve.pole_rows().weights(), Some(vec![2.0, -1.0]));
     curve.reverse_parameterization();
     assert_eq!(curve, original);
 
     let mut pcurve = pcurve();
     let original = pcurve.clone();
     pcurve.reverse_parameterization();
-    assert_eq!(pcurve.knots(), &[-5.0, -5.0, -2.0, -2.0]);
+    assert_eq!(pcurve.knots().as_slice(), &[-5.0, -5.0, -2.0, -2.0]);
     assert_eq!(
         pcurve.control_points(),
         vec![original.control_points()[1], original.control_points()[0]]
     );
-    assert_eq!(pcurve.weights(), Some(vec![2.0, 1.0]));
+    assert_eq!(pcurve.pole_rows().weights(), Some(vec![2.0, 1.0]));
     pcurve.reverse_parameterization();
     assert_eq!(pcurve, original);
 }

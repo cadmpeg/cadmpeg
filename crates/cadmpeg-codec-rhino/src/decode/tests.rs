@@ -566,7 +566,12 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.254)
     );
-    assert_eq!(model.pcurves[0].fit_tolerance(), Some(0.02));
+    assert_eq!(
+        model.pcurves[0]
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
     let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
     };
@@ -902,9 +907,12 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
         warnings: Diagnostics::new(),
     };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
-    assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
+    assert_eq!(
+        merged.knots().as_slice(),
+        vec![10.0, 10.0, 20.0, 40.0, 40.0]
+    );
     assert_eq!(merged.control_points().len(), 3);
-    assert_eq!(merged.weights(), Some(vec![2.0, 1.0, 1.0]));
+    assert_eq!(merged.pole_rows().weights(), Some(vec![2.0, 1.0, 1.0]));
     assert!(!merged.periodic());
 }
 
@@ -932,7 +940,7 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
         .curve;
-    assert_eq!(merged.knots(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
+    assert_eq!(merged.knots().as_slice(), vec![5.0, 5.0, 7.0, 9.0, 9.0]);
 }
 
 #[test]
@@ -965,7 +973,10 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         .curve;
     assert_eq!(merged.degree(), 2);
     assert_eq!(merged.control_points().len(), 5);
-    assert_eq!(merged.knots(), vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+    assert_eq!(
+        merged.knots().as_slice(),
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0]
+    );
 }
 
 fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {

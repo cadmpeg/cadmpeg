@@ -275,9 +275,10 @@ impl DecodedProceduralSurfaceDefinition {
     fn revision_cache_fit_tolerance(&self) -> Option<f64> {
         match self {
             Self::Exact { spline } => match spline {
-                cadmpeg_ir::geometry::ExactSpline::Revision { form, .. } => {
-                    form.cache.fit_tolerance()
-                }
+                cadmpeg_ir::geometry::ExactSpline::Revision { form, .. } => form
+                    .cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
                 cadmpeg_ir::geometry::ExactSpline::Legacy { .. } => None,
             },
             Self::Taper { revision_form, .. }
@@ -285,33 +286,57 @@ impl DecodedProceduralSurfaceDefinition {
             | Self::Revolution { revision_form, .. }
             | Self::Sum { revision_form, .. } => revision_form
                 .as_ref()
-                .and_then(|form| form.cache.fit_tolerance()),
+                .and_then(|form| form.cache.fit_tolerance())
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Self::Offset { layout, .. } => match layout {
-                EmbeddedOffsetLayout::Revision(form) => form.cache.fit_tolerance(),
+                EmbeddedOffsetLayout::Revision(form) => form
+                    .cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
                 EmbeddedOffsetLayout::Legacy { .. } => None,
             },
             Self::Loft(construction) => match &construction.layout {
-                EmbeddedLoftLayout::Revision(form, _) => form.cache.fit_tolerance(),
+                EmbeddedLoftLayout::Revision(form, _) => form
+                    .cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
                 EmbeddedLoftLayout::Legacy { .. } => None,
             },
-            Self::RevisionCompoundLoft(construction) => construction.cache.fit_tolerance(),
-            Self::RevisionG2Blend(construction) => construction.cache.fit_tolerance(),
+            Self::RevisionCompoundLoft(construction) => construction
+                .cache
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Self::RevisionG2Blend(construction) => construction
+                .cache
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Self::Sweep(construction) => match &construction.layout {
-                EmbeddedSweepSurfaceLayout::Revision { form, .. } => form.cache.fit_tolerance(),
+                EmbeddedSweepSurfaceLayout::Revision { form, .. } => form
+                    .cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
                 EmbeddedSweepSurfaceLayout::Legacy { .. } => None,
             },
             Self::TSpline(construction) => construction
                 .revision_form
                 .as_ref()
-                .and_then(|form| form.cache.fit_tolerance()),
+                .and_then(|form| form.cache.fit_tolerance())
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Self::Deformable(construction) => match &construction.layout {
-                EmbeddedDeformableSurfaceLayout::Revision(form) => form.cache.fit_tolerance(),
+                EmbeddedDeformableSurfaceLayout::Revision(form) => form
+                    .cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
                 EmbeddedDeformableSurfaceLayout::Legacy { .. } => None,
             },
             Self::Blend { native, .. } => native
                 .as_ref()
-                .and_then(|construction| construction.cache.fit_tolerance()),
-            Self::VariableBlend(construction) => construction.cache.fit_tolerance(),
+                .and_then(|construction| construction.cache.fit_tolerance())
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Self::VariableBlend(construction) => construction
+                .cache
+                .fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Self::Compound { .. }
             | Self::SubSurface { .. }
             | Self::CompoundLoft(_)

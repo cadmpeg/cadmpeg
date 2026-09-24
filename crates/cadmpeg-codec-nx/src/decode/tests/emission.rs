@@ -642,14 +642,19 @@ fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
         panic!("expected NURBS pcurve");
     };
     assert_eq!(nurbs.degree(), 1);
-    assert_eq!(nurbs.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
         nurbs.control_points(),
         [Point2::new(10.0, 20.0), Point2::new(10.0, 20.0)]
     );
     assert!(nurbs.weights().is_none());
     assert!(!nurbs.periodic());
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.01));
+    assert_eq!(
+        result.ir().model.pcurves[0]
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.01)
+    );
     assert_eq!(
         result.ir().model.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0)
