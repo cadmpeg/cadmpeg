@@ -6,6 +6,7 @@ pub mod bezier;
 /// Rational control-polygon speed bounds.
 pub mod bounds;
 
+use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::NonZeroReal;
 #[cfg(feature = "schema")]
@@ -402,9 +403,12 @@ pub struct NurbsSurface {
 pub struct BsplineSurface {
     u_degree: u32,
     v_degree: u32,
-    u_knots: Vec<f64>,
-    v_knots: Vec<f64>,
-    control_points: Vec<Vec<Point3>>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    u_knots: KnotVector,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))]
+    v_knots: KnotVector,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<Vec<Point3>>"))]
+    control_points: Vec<Vec<FinitePoint3>>,
 }
 
 impl BsplineSurface {
@@ -418,26 +422,13 @@ impl BsplineSurface {
     ) -> Result<Self, NurbsError> {
         let u_count = control_points.len();
         let v_count = control_points.first().map_or(0, Vec::len);
-        for (axis, degree, count, knots) in [
-            ("u", u_degree, u_count, &u_knots),
-            ("v", v_degree, v_count, &v_knots),
-        ] {
-            if count <= degree as usize {
-                return Err(NurbsError::Structure(format!(
-                    "control_points {axis} count must exceed degree {degree}, found {count}"
-                )));
-            }
-            require_length(
-                &format!("{axis}_knots"),
-                knots.len(),
-                checked_knot_count(axis, count, degree)?,
-            )?;
-            require_nondecreasing_knots(knots)?;
-        }
+        let u_knots = bspline_axis_knots("u", u_degree, u_count, u_knots)?;
+        let v_knots = bspline_axis_knots("v", v_degree, v_count, v_knots)?;
         require_rectangular_grid("control_points", &control_points)?;
-        for row in &control_points {
-            require_finite_points_3("control_points", row)?;
-        }
+        let control_points = control_points
+            .into_iter()
+            .map(admit_finite_row_3)
+            .collect::<Result<Vec<_>, NurbsError>>()?;
         Ok(Self {
             u_degree,
             v_degree,
@@ -464,16 +455,46 @@ impl BsplineSurface {
         &mut self,
         mut edit: impl FnMut(&mut Point3) -> Result<(), NurbsError>,
     ) -> Result<(), NurbsError> {
-        let mut points = self.control_points.clone();
-        for row in &mut points {
-            for point in row.iter_mut() {
+        let mut points = Vec::with_capacity(self.control_points.len());
+        for row in &self.control_points {
+            let mut row: Vec<Point3> = row.iter().map(|point| point.get()).collect();
+            for point in &mut row {
                 edit(point)?;
             }
-            require_finite_points_3("control_points", row.iter())?;
+            points.push(admit_finite_row_3(row)?);
         }
         self.control_points = points;
         Ok(())
     }
+}
+
+/// Admit one B-spline axis: more poles than its degree, the full knot count
+/// for them, and finite non-decreasing knots, refused in that order.
+fn bspline_axis_knots(
+    axis: &str,
+    degree: u32,
+    count: usize,
+    knots: Vec<f64>,
+) -> Result<KnotVector, NurbsError> {
+    if count <= degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "control_points {axis} count must exceed degree {degree}, found {count}"
+        )));
+    }
+    require_length(
+        &format!("{axis}_knots"),
+        knots.len(),
+        checked_knot_count(axis, count, degree)?,
+    )?;
+    KnotVector::new(knots)
+}
+
+/// Admit one control-point row whose every point is finite.
+fn admit_finite_row_3(row: Vec<Point3>) -> Result<Vec<FinitePoint3>, NurbsError> {
+    row.into_iter()
+        .map(FinitePoint3::new)
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
 }
 
 impl<'de> Deserialize<'de> for BsplineSurface {

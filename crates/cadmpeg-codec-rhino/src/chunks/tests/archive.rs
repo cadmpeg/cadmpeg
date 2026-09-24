@@ -406,7 +406,13 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
     let parameters = compound.parameters();
     let components = compound.components();
 
-    assert_eq!(parameters, &vec![0.0, 2.0, 5.0]);
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        vec![0.0, 2.0, 5.0]
+    );
     assert_eq!(components.len(), 2);
     assert!(components[0].component.as_str().contains("component-0"));
     assert!(components[1].component.as_str().contains("component-1"));

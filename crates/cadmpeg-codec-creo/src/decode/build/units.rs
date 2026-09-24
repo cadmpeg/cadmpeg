@@ -389,7 +389,7 @@ fn scale_feature_operation(
         }
         FeatureOperation::ReferenceImage { frame, bounds, .. } => {
             scale_unit_plane_frame(frame, scale)?;
-            let mut corners = bounds.corners();
+            let mut corners = bounds.corners().map(cadmpeg_ir::units::FinitePoint2::get);
             for point in &mut corners {
                 scale_point2(point, scale);
             }

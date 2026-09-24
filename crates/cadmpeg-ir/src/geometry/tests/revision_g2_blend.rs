@@ -263,3 +263,26 @@ fn the_revision_g2_blend_admission_refuses_a_non_finite_scalar() {
         }
     }
 }
+
+#[test]
+fn a_revision_g2_blend_holds_its_admitted_scalars() {
+    use crate::scalar::FiniteReal;
+
+    let construction =
+        RevisionG2BlendConstruction::admit(stored(&ADMITTED)).expect("every scalar is finite");
+    let finite = |value| FiniteReal::new(value).expect("finite fixture");
+    assert_eq!(
+        construction.leading_parameters(),
+        [finite(1.0), finite(2.0)]
+    );
+    assert_eq!(
+        construction.center_range(),
+        [Some(finite(0.0)), Some(finite(7.0))]
+    );
+    assert_eq!(construction.radii(), [finite(8.0), finite(15.0)]);
+    assert_eq!(construction.u_range(), [Some(finite(9.0)), None]);
+    assert_eq!(construction.v_range(), [None, Some(finite(10.0))]);
+    assert_eq!(construction.shape_parameter(), finite(11.0));
+    assert_eq!(construction.shape_length(), finite(12.0));
+    assert_eq!(construction.discontinuities()[0], vec![finite(14.0)]);
+}

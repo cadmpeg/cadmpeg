@@ -177,3 +177,41 @@ fn a_tspline_construction_states_no_program_graph_on_its_wire() {
         .to_string();
     assert!(error.contains("program_graph"), "{error}");
 }
+
+#[test]
+fn a_tspline_construction_holds_its_admitted_discontinuities() {
+    use super::super::TSplineSurfaceConstruction;
+    use crate::scalar::FiniteReal;
+
+    let inline = TSplineSubtransform::Inline(
+        InlineTSplineSubtransform::try_new("v 1 2", None, "e 3").unwrap(),
+    );
+    let lanes = [vec![0.25], vec![], vec![0.5, 0.75], vec![], vec![], vec![]];
+    let construction = TSplineSurfaceConstruction::try_new(
+        [[0.0, 1.0], [0.0, 1.0]],
+        7,
+        inline.clone(),
+        4,
+        lanes.clone(),
+        false,
+        crate::geometry::CacheContract::from_form(None),
+    )
+    .unwrap();
+    assert_eq!(FiniteReal::raw_lanes(construction.discontinuities()), lanes);
+    assert_eq!(
+        serde_json::to_value(&construction).unwrap()["discontinuities"],
+        json!(lanes)
+    );
+    let mut refused = lanes;
+    refused[3].push(f64::NAN);
+    assert!(TSplineSurfaceConstruction::try_new(
+        [[0.0, 1.0], [0.0, 1.0]],
+        7,
+        inline,
+        4,
+        refused,
+        false,
+        crate::geometry::CacheContract::from_form(None),
+    )
+    .is_err());
+}

@@ -1024,7 +1024,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let parameters = compound.parameters();
     let components = compound.components();
 
-    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.5, 1.0]
+    );
     assert_eq!(
         components
             .iter()
@@ -1121,7 +1127,13 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     let parameters = compound.parameters();
     let components = compound.components();
 
-    assert_eq!(parameters, &[0.0, 0.5, 1.0]);
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        [0.0, 0.5, 1.0]
+    );
     assert_eq!(
         components
             .iter()

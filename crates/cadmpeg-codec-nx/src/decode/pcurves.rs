@@ -475,10 +475,12 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let edge_reversed = match (vertex_points.get(&edge.start), vertex_points.get(&edge.end))
             {
                 (Some(start), Some(end)) => {
-                    let forward = Point3::distance(*start, endpoints[0]) <= endpoint_tolerance
-                        && Point3::distance(*end, endpoints[1]) <= endpoint_tolerance;
-                    let reversed = Point3::distance(*start, endpoints[1]) <= endpoint_tolerance
-                        && Point3::distance(*end, endpoints[0]) <= endpoint_tolerance;
+                    let forward = Point3::distance(*start, endpoints[0].get())
+                        <= endpoint_tolerance
+                        && Point3::distance(*end, endpoints[1].get()) <= endpoint_tolerance;
+                    let reversed = Point3::distance(*start, endpoints[1].get())
+                        <= endpoint_tolerance
+                        && Point3::distance(*end, endpoints[0].get()) <= endpoint_tolerance;
                     match (forward, reversed) {
                         (true, false) => false,
                         (false, true) => true,
@@ -557,7 +559,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                     &supports[side],
                     &carriers[side].geometry,
                     first_range,
-                    *endpoints,
+                    (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
                     endpoint_tolerance,
                     geometry_budget,
                 )?;
@@ -1439,7 +1441,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 } else {
                     [0.0, 1.0]
                 };
-                (supports.each_ref(), *endpoints, range, tolerance)
+                (
+                    supports.each_ref(),
+                    (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
+                    range,
+                    tolerance,
+                )
             }
             _ => continue,
         };

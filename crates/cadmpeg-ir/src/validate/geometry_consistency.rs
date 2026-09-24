@@ -79,8 +79,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 });
                 continue;
             };
-            let mismatch = Point3::distance(start.get(), endpoints[0])
-                .max(Point3::distance(end.get(), endpoints[1]));
+            let mismatch = Point3::distance(start.get(), endpoints[0].get())
+                .max(Point3::distance(end.get(), endpoints[1].get()));
             if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,

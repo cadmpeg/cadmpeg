@@ -108,3 +108,20 @@ fn tolerant_intersection_hands_back_its_admitted_tolerance() {
         );
     }
 }
+
+#[test]
+fn a_tolerant_intersection_holds_its_admitted_endpoints() {
+    use crate::features::FinitePoint3;
+
+    let endpoints = [Point3::new(1.0, 2.0, 3.0), Point3::new(-4.0, 5.0, 6.0)];
+    let construction =
+        TolerantIntersectionConstruction::try_new(supports(), endpoints, 0.5).unwrap();
+    assert_eq!(
+        *construction.endpoints(),
+        endpoints.map(|point| FinitePoint3::new(point).unwrap())
+    );
+    assert_eq!(
+        serde_json::to_value(&construction).unwrap()["endpoints"],
+        json!(endpoints)
+    );
+}

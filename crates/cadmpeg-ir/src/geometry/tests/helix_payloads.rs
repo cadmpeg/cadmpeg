@@ -333,3 +333,15 @@ fn helix_curve_finite_center_returns_the_admitted_center() {
         assert_eq!(FinitePoint3::new(center), Some(finite));
     }
 }
+
+#[test]
+fn a_helix_line_profile_holds_its_admitted_direction() {
+    let direction = Vector3::new(0.0, -2.0, 0.5);
+    let profile = HelixLineProfile::try_new(direction).unwrap();
+    assert_eq!(
+        profile.direction(),
+        crate::features::FiniteVector3::new(direction).unwrap()
+    );
+    assert!(HelixLineProfile::try_new(Vector3::new(0.0, 0.0, 0.0)).is_err());
+    assert!(HelixLineProfile::try_new(Vector3::new(f64::NAN, 1.0, 0.0)).is_err());
+}
