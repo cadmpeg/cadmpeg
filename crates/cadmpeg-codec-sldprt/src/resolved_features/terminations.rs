@@ -416,10 +416,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
             } if !feature.parameters.contains_key("D1")
                 && !feature.parameters.contains_key("Depth") =>
             {
-                feature.parameters.insert(
-                    cadmpeg_core::nonblank_literal!("D1"),
-                    crate::history::literals::format_length_mm(depth_m * 1000.0),
-                );
+                if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
+                    feature.parameters.insert(
+                        cadmpeg_core::nonblank_literal!("D1"),
+                        crate::history::literals::format_length_mm(depth),
+                    );
+                }
             }
             _ => {}
         }

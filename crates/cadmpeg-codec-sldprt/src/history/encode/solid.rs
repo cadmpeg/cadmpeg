@@ -193,7 +193,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             cadmpeg_core::nonblank_literal!("Depth")
                         };
                         let value = format_length_like(
-                            length.get(),
+                            (*length).into(),
                             existing
                                 .and_then(|record| record.parameters.get(key.as_str()))
                                 .map(String::as_str),
@@ -232,7 +232,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         if let Some(offset) = offset {
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth"),
-                                format_length_mm(offset.get()),
+                                format_length_mm(*offset),
                             );
                         }
                     }
@@ -257,7 +257,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         properties.insert(cadmpeg_core::nonblank_literal!("Face"), selection);
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm(offset.get()),
+                            format_length_mm((*offset).into()),
                         );
                     }
                 },
@@ -269,7 +269,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Depth"),
-                            format_length_mm(length.get()),
+                            format_length_mm((*length).into()),
                         );
                     }
                     _ => return Err(unsupported_extent()),
@@ -286,11 +286,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth"),
-                                format_length_mm(first.get()),
+                                format_length_mm((*first).into()),
                             );
                             parameters.insert(
                                 cadmpeg_core::nonblank_literal!("Depth2"),
-                                format_length_mm(second.get()),
+                                format_length_mm((*second).into()),
                             );
                         }
                         (LinearTermination::ThroughAll {}, LinearTermination::ThroughAll {}) => {
@@ -322,14 +322,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
-                        format_vector3(vector.get()),
+                        format_vector3((*vector).into()),
                     );
                 }
             }
             if let Some(draft) = first_draft {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Draft"),
-                    format_angle_rad(draft.get()),
+                    format_angle_rad(draft.into()),
                 );
             }
             if *op != BooleanOp::Unresolved
@@ -416,7 +416,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(diameter) = diameter {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Diameter"),
-                    format_length_mm(diameter.get()),
+                    format_length_mm((*diameter).into()),
                 );
             }
             if let Some(kind) = kind {
@@ -453,7 +453,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadPitch");
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("DrillPointAngle"),
-                            format_angle_rad(drill_point_angle.get()),
+                            format_angle_rad((*drill_point_angle).into()),
                         );
                     }
                     HoleKind::Counterbore { diameter, depth } => {
@@ -464,11 +464,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadPitch");
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CounterboreDiameter"),
-                            format_length_mm(diameter.get()),
+                            format_length_mm((*diameter).into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CounterboreDepth"),
-                            format_length_mm(depth.get()),
+                            format_length_mm((*depth).into()),
                         );
                         parameters.remove("DrillPointAngle");
                     }
@@ -484,15 +484,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("ThreadPitch");
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CounterboreDiameter"),
-                            format_length_mm(diameter.get()),
+                            format_length_mm((*diameter).into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CounterboreDepth"),
-                            format_length_mm(depth.get()),
+                            format_length_mm((*depth).into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("DrillPointAngle"),
-                            format_angle_rad(drill_point_angle.get()),
+                            format_angle_rad((*drill_point_angle).into()),
                         );
                     }
                     HoleKind::Countersink { diameter, angle } => {
@@ -504,11 +504,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         parameters.remove("DrillPointAngle");
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CountersinkDiameter"),
-                            format_length_mm(diameter.get()),
+                            format_length_mm((*diameter).into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("CountersinkAngle"),
-                            format_angle_rad(angle.get()),
+                            format_angle_rad((*angle).into()),
                         );
                     }
                     HoleKind::Counterdrill { .. } => {
@@ -537,23 +537,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.remove("CountersinkAngle");
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("ThreadMajorDiameter"),
-                    format_length_mm(major_diameter.get()),
+                    format_length_mm((*major_diameter).into()),
                 );
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("ThreadDepth"),
-                    format_length_mm(thread_depth.get()),
+                    format_length_mm((*thread_depth).into()),
                 );
                 if let Some(pitch) = pitch {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("ThreadPitch"),
-                        format_length_mm(pitch.get()),
+                        format_length_mm((*pitch).into()),
                     );
                 } else {
                     parameters.remove("ThreadPitch");
                 }
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("DrillPointAngle"),
-                    format_angle_rad(drill_point_angle.get()),
+                    format_angle_rad((*drill_point_angle).into()),
                 );
             }
             let mut properties = feature.source_properties.clone();
@@ -585,11 +585,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }] => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Position"),
-                        format_point3_mm(position.get()),
+                        format_point3_mm(*position),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
-                        format_vector3(direction.get()),
+                        format_vector3((*direction).into()),
                     );
                 }
                 [] if existing.is_none() => {
@@ -614,11 +614,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match extent {
                 Some(LinearTermination::Blind { length: depth }) => {
-                    let depth = depth.get();
-
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Depth"),
-                        format_length_mm(depth),
+                        format_length_mm((*depth).into()),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("EndCondition"),

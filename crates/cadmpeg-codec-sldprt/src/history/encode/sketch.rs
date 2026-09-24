@@ -121,7 +121,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 WrapMode::Emboss { depth } | WrapMode::Deboss { depth } => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Depth"),
-                        format_length_mm(depth.get()),
+                        format_length_mm((*depth).into()),
                     );
                 }
                 WrapMode::Scribe => {

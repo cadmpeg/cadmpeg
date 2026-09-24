@@ -76,7 +76,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
                 RadiusSpec::Constant { radius } => {
-                    let radius = radius.get();
+                    let radius = (*radius).into();
 
                     parameters.retain(|name, _| {
                         name != "Radius"
@@ -127,7 +127,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Radius{index}"),
-                            format_length_mm(point.radius.get()),
+                            format_length_mm(point.radius.into()),
                         );
                     }
                 }
@@ -226,7 +226,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         cadmpeg_core::nonblank_literal!("Distance")
                     };
                     let value = format_length_like(
-                        distance.get(),
+                        (*distance).into(),
                         existing
                             .and_then(|record| record.parameters.get(key.as_str()))
                             .map(String::as_str),
@@ -262,7 +262,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         first_key.clone(),
                         format_length_like(
-                            first.get(),
+                            (*first).into(),
                             existing
                                 .and_then(|record| record.parameters.get(first_key.as_str()))
                                 .map(String::as_str),
@@ -271,7 +271,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         second_key.clone(),
                         format_length_like(
-                            second.get(),
+                            (*second).into(),
                             existing
                                 .and_then(|record| record.parameters.get(second_key.as_str()))
                                 .map(String::as_str),
@@ -308,7 +308,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         distance_key.clone(),
                         format_length_like(
-                            distance.get(),
+                            (*distance).into(),
                             existing
                                 .and_then(|record| record.parameters.get(distance_key.as_str()))
                                 .map(String::as_str),
@@ -317,11 +317,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         angle_key.clone(),
                         format_angle_like(
-                            angle.get(),
+                            (*angle).into(),
                             existing
                                 .and_then(|record| record.parameters.get(angle_key.as_str()))
                                 .map(String::as_str),
-                        ),
+                        )?,
                     );
                 }
             }
@@ -594,7 +594,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Offset".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(distance.get()),
+                        format_length_mm(*distance),
                     );
                 }
                 FaceMotion::Translate {
@@ -604,11 +604,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
-                        format_vector3(direction.get()),
+                        format_vector3((*direction).into()),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(distance.get()),
+                        format_length_mm(*distance),
                     );
                 }
                 FaceMotion::Rotate {
@@ -619,15 +619,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Rotate".into());
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                        format_point3_mm(axis_origin.get()),
+                        format_point3_mm(*axis_origin),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisDirection"),
-                        format_vector3(axis_dir.get()),
+                        format_vector3((*axis_dir).into()),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(angle.get()),
+                        format_angle_rad(*angle),
                     );
                 }
             }
@@ -656,12 +656,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ))
             })?;
             require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
-            if !translation.is_finite() {
+            let Some(translation) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                translation.x,
+                translation.y,
+                translation.z,
+            )) else {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite body translation",
                     feature.id
                 )));
-            }
+            };
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
@@ -669,7 +673,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), bodies);
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Translation"),
-                format_point3_mm(Point3::new(translation.x, translation.y, translation.z)),
+                format_point3_mm(translation),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Copies"),
@@ -679,15 +683,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(rotation) => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("RotationOrigin"),
-                        format_point3_mm(rotation.origin.get()),
+                        format_point3_mm(rotation.origin.into()),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("RotationAxis"),
-                        format_vector3(rotation.direction.get()),
+                        format_vector3(rotation.direction.into()),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Rotation"),
-                        format_angle_rad(rotation.angle.get()),
+                        format_angle_rad(rotation.angle.into()),
                     );
                 }
                 None => {
@@ -738,7 +742,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(height) = height {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Height"),
-                    format_length_mm(height.get()),
+                    format_length_mm((*height).into()),
                 );
             }
             let mut properties = feature.source_properties.clone();
@@ -793,7 +797,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(axis) = axis {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Axis"),
-                    format_vector3(axis.get()),
+                    format_vector3((*axis).into()),
                 );
                 properties.remove("AxisDirection");
             }
@@ -805,7 +809,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Bending".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(angle.get()),
+                        format_angle_rad(*angle),
                     );
                 }
                 FlexMode::Twisting { angle } => {
@@ -814,7 +818,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Twisting".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(angle.get()),
+                        format_angle_rad(*angle),
                     );
                 }
                 FlexMode::Tapering { factor } => {
@@ -832,7 +836,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     properties.insert(cadmpeg_core::nonblank_literal!("Mode"), "Stretching".into());
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Distance"),
-                        format_length_mm(distance.get()),
+                        format_length_mm(*distance),
                     );
                 }
             }
@@ -938,7 +942,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Center"),
-                        format_point3_mm(point.get()),
+                        format_point3_mm(*point),
                     );
                 }
                 Some(ScaleCenter::Native(reference)) => {

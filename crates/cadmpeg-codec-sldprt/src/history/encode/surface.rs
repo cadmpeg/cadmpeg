@@ -108,7 +108,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance.get()),
+                format_length_mm(distance.into()),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
@@ -172,7 +172,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance.get()),
+                format_length_mm(distance.into()),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Edges"), edges);
@@ -185,7 +185,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(direction) => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
-                        format_vector3(direction.get()),
+                        format_vector3(direction.into()),
                     );
                 }
                 None => {
@@ -259,7 +259,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.insert(
                     thickness_key.clone(),
                     format_length_like(
-                        thickness.get(),
+                        (*thickness).into(),
                         existing
                             .and_then(|record| record.parameters.get(thickness_key.as_str()))
                             .map(String::as_str),
@@ -333,7 +333,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 parameters.insert(
                     thickness_key.clone(),
                     format_length_like(
-                        thickness.get(),
+                        (*thickness).into(),
                         existing
                             .and_then(|record| record.parameters.get(thickness_key.as_str()))
                             .map(String::as_str),
@@ -399,7 +399,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm(distance.get()),
+                format_length_mm(distance.into()),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), selection);
@@ -447,7 +447,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(value) => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("GapTolerance"),
-                        format_length_mm(value.get()),
+                        format_length_mm((*value).into()),
                     );
                 }
                 None => {
@@ -590,7 +590,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(angle) = angle {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Angle"),
-                    format_angle_rad(angle.get()),
+                    format_angle_rad((*angle).into()),
                 );
             }
             let mut properties = feature.source_properties.clone();
@@ -614,7 +614,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(pull_direction) = pull_direction {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Direction"),
-                    format_vector3(pull_direction.get()),
+                    format_vector3((*pull_direction).into()),
                 );
             }
             if let Some(outward) = outward {

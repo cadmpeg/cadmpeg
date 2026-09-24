@@ -8,7 +8,7 @@ use cadmpeg_ir::{
         DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
         FeatureTreeNodeRole, ParameterId, ParameterValue,
     },
-    scalar::Length,
+    scalar::{Angle, FiniteReal, Length},
 };
 use std::collections::{HashMap, HashSet};
 
@@ -18,7 +18,7 @@ use crate::history::classify::{
 };
 use crate::history::literals::{
     dimension_display, format_angle_rad, format_f64_literal, format_length_mm,
-    format_parameter_value, parse_angle_rad, parse_dimension_display_length,
+    format_length_number, format_parameter_value, parse_angle_rad, parse_dimension_display_length,
     parse_parameter_literal, parse_positive_dimension_length_mm,
 };
 use crate::history::project::pattern::{pattern_form, NativePatternClass};
@@ -302,12 +302,15 @@ pub(super) fn native_parameter_is_length(
     }
 }
 
+/// The expression of a native scalar `value` in metres or radians, in the
+/// display form of `expression`, or `None` when the value in its unit is not
+/// finite.
 pub(crate) fn format_native_scalar(
     feature: &Feature,
     name: &str,
     value: f64,
     expression: Option<&str>,
-) -> String {
+) -> Option<String> {
     if let Some(display) = expression.and_then(dimension_display) {
         let prefix = match display {
             DimensionDisplay::Diameter => expression
@@ -317,13 +320,16 @@ pub(crate) fn format_native_scalar(
                 .filter(|value| value.trim().starts_with("&lt;MOD-RHO&gt;"))
                 .map_or("<MOD-RHO>", |_| "&lt;MOD-RHO&gt;"),
         };
-        format!("{prefix}{}", format_f64_literal(value * 1000.0))
+        Some(format!(
+            "{prefix}{}",
+            format_length_number(Length::new(value * 1000.0)?)
+        ))
     } else if native_parameter_is_length(feature, name, expression) {
-        format_length_mm(value * 1000.0)
+        Length::new(value * 1000.0).map(format_length_mm)
     } else if expression.and_then(parse_angle_rad).is_some() {
-        format_angle_rad(value)
+        Angle::new(value).map(format_angle_rad)
     } else {
-        format_f64_literal(value)
+        FiniteReal::new(value).map(format_f64_literal)
     }
 }
 

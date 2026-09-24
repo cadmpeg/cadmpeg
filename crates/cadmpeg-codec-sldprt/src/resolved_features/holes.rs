@@ -560,6 +560,9 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
             {
                 continue;
             }
+            let Some(diameter) = cadmpeg_ir::scalar::Length::new(diameter) else {
+                continue;
+            };
             feature.parameters.insert(
                 cadmpeg_core::nonblank_literal!("D2"),
                 format!(

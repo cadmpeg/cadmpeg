@@ -9,7 +9,7 @@ use crate::history::classify::is_offset_plane;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
-    features::{DatumPlaneReference, PrincipalPlane},
+    features::{DatumPlaneReference, FinitePoint3, FiniteVector3, PrincipalPlane},
     scalar::Length,
 };
 
@@ -76,15 +76,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin().get()),
+                format_point3_mm(frame.origin().into()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Normal"),
-                format_vector3(frame.normal().get()),
+                format_vector3(frame.normal().into()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("UAxis"),
-                format_vector3(frame.u_axis().get()),
+                format_vector3(frame.u_axis().into()),
             );
             NeutralFeatureEncoding {
                 kind: existing
@@ -155,7 +155,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D1"),
                 format_length_like(
-                    distance.get(),
+                    *distance,
                     existing
                         .and_then(|record| record.parameters.get("D1"))
                         .map(String::as_str),
@@ -177,27 +177,29 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if !valid_direction(*direction) {
+            let Some(direction) =
+                FiniteVector3::new(*direction).filter(|direction| valid_direction(direction.get()))
+            else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported reference-axis semantics",
                     feature.id
                 )));
-            }
-            if !origin.is_finite() {
+            };
+            let Some(origin) = FinitePoint3::new(*origin) else {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has a non-finite reference-axis origin",
                     feature.id
                 )));
-            }
+            };
             require_same_family(existing, &feature.id, &["ReferenceAxis"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(*origin),
+                format_point3_mm(origin),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Direction"),
-                format_vector3(*direction),
+                format_vector3(direction),
             );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ReferenceAxis".into(), |record| record.kind.clone()),
@@ -216,17 +218,17 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if !position.is_finite() {
+            let Some(position) = FinitePoint3::new(*position) else {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported reference-point semantics",
                     feature.id
                 )));
-            }
+            };
             require_same_family(existing, &feature.id, &["ReferencePoint"])?;
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Position"),
-                format_point3_mm(*position),
+                format_point3_mm(position),
             );
             NeutralFeatureEncoding {
                 kind: existing
@@ -254,7 +256,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin().get()),
+                format_point3_mm(frame.origin().into()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("XAxis"),

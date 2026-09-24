@@ -192,8 +192,13 @@ pub(crate) fn enrich_history_parameters<'a>(
                     feature.parameters.get(name.as_str()).map(String::as_str),
                 )
             }
-            ScalarUnit::Length => crate::history::literals::format_length_mm(first * 1000.0),
-            ScalarUnit::Angle => crate::history::literals::format_angle_rad(first),
+            ScalarUnit::Length => cadmpeg_ir::scalar::Length::new(first * 1000.0)
+                .map(crate::history::literals::format_length_mm),
+            ScalarUnit::Angle => cadmpeg_ir::scalar::Angle::new(first)
+                .map(crate::history::literals::format_angle_rad),
+        };
+        let Some(expression) = expression else {
+            continue;
         };
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
             continue;
