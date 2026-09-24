@@ -73,7 +73,9 @@ pub(super) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for point in &mut ir.model.points {
-        scale_point3(&mut point.position().get(), length_scale_mm);
+        let position = scale_finite_point(point.position(), length_scale_mm)
+            .ok_or_else(|| CodecError::malformed("Creo scaled model point must be finite"))?;
+        point.set_position(position);
     }
     for face in &mut ir.model.faces {
         scale_tolerance(&mut face.tolerance, length_scale_mm)?;
@@ -2144,6 +2146,35 @@ mod tests {
             panic!("test parameter changed family");
         };
         assert_close(length.get(), 127.0);
+    }
+
+    fn model_point_ir(position: Point3) -> CadIr {
+        let mut ir = CadIr::empty();
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("test:model:entity#point").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point fixture"),
+            None,
+        ));
+        ir
+    }
+
+    #[test]
+    fn model_points_of_an_inch_model_are_converted_to_millimetres() {
+        let mut ir = model_point_ir(Point3::new(1.0, -2.0, 0.5));
+        normalize_model_lengths(&mut ir, 25.4).expect("valid unit scaling");
+        assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
+    }
+
+    #[test]
+    fn a_model_point_that_overflows_in_millimetres_is_refused() {
+        let mut ir = model_point_ir(Point3::new(0.0, f64::MAX, 0.0));
+        let error = normalize_model_lengths(&mut ir, 25.4)
+            .expect_err("an overflowing point has no position")
+            .to_string();
+        assert!(
+            error.contains("scaled model point must be finite"),
+            "{error}"
+        );
     }
 
     #[test]
