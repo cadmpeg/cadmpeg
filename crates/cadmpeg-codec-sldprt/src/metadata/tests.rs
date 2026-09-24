@@ -148,13 +148,14 @@ fn semantic_writer_preserves_document_metadata() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
 
     let expected = decoded
         .ir()

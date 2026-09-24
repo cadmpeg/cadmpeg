@@ -317,9 +317,12 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1]
-        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
-        .expect("a finite position is a point");
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -383,9 +386,12 @@ fn native_patch_requires_point_provenance_annotation() {
         .provenance
         .contains_key(&point_id));
     let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1]
-        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
-        .expect("a finite position is a point");
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     decoded
         .source_fidelity_mut()
         .annotations
@@ -726,9 +732,12 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .any(|link| link.as_str() == curve.id.as_str()));
 
     let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1]
-        .set_position(cadmpeg_ir::math::Point3::new(1_500.0, moved.y, moved.z))
-        .expect("a finite position is a point");
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_500.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -801,9 +810,12 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[1].position().get();
-    decoded.ir_mut().model.points[1]
-        .set_position(cadmpeg_ir::math::Point3::new(1_250.0, moved.y, moved.z))
-        .expect("a finite position is a point");
+    decoded.ir_mut().model.points[1].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1_250.0, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     // The retained baseline carries a deltas site beside the partition the
     // patch route edits. Both sites join the baseline decode.

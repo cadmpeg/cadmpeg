@@ -287,14 +287,12 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
         Point3::new(2.0, 0.0, 0.0),
         Point3::new(0.0, 2.0, 0.0),
     ]);
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("cadir:model:point#free").expect("identity grammar"),
-            Point3::new(5.0, 6.0, 7.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(Point::new(
+        PointId::mint("cadir:model:point#free").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(5.0, 6.0, 7.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     ir.model.curves.push(Curve {
         id: CurveId::mint("cadir:model:curve#free").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(

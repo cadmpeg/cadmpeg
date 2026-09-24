@@ -1198,13 +1198,14 @@ fn semantic_writer_preserves_parametric_history() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[0]
             .parameters
@@ -1248,13 +1249,14 @@ fn semantic_writer_applies_neutral_feature_edits() {
     {
         let mut ir_edit = decoded.ir_mut();
         let moved = ir_edit.model.points[0].position().get();
-        ir_edit.model.points[0]
-            .set_position(cadmpeg_ir::math::Point3::new(
+        ir_edit.model.points[0].set_position(
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x,
                 moved.y,
                 moved.z + 1.0,
             ))
-            .expect("a finite position is a point");
+            .expect("a finite position is a point"),
+        );
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Extrude { extent, .. },

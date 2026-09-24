@@ -7,6 +7,7 @@
 use crate::math::distance;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1649,7 +1650,7 @@ fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool
 
 fn pcurve_endpoints_match(
     pcurve: &ConsolidatedPcurve,
-    vertices: &[Point3],
+    vertices: &[FinitePoint3],
     evaluate: impl Fn([f64; 2]) -> Option<Point3>,
 ) -> bool {
     let (Some(first), Some(last)) = (
@@ -1662,7 +1663,7 @@ fn pcurve_endpoints_match(
         evaluate(uv).is_some_and(|point| {
             vertices
                 .iter()
-                .any(|vertex| distance(point, *vertex) < 2e-3)
+                .any(|vertex| distance(point, vertex.get()) < 2e-3)
         })
     })
 }
@@ -1671,7 +1672,7 @@ fn pcurve_endpoints_match(
 /// A/B or B5/A8 record. Marker-like bytes inside record payloads are not
 /// vertices.
 #[must_use]
-pub(in crate::families) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
+pub(in crate::families) fn object_stream_vertices(data: &[u8]) -> Vec<FinitePoint3> {
     let records = consolidated_records(data);
     object_stream_vertices_from_records(data, &records)
 }
@@ -1679,7 +1680,7 @@ pub(in crate::families) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
 fn object_stream_vertices_from_records(
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
-) -> Vec<Point3> {
+) -> Vec<FinitePoint3> {
     object_stream_vertex_row_ranges_from_records(data, records)
         .into_iter()
         .flat_map(|range| crate::wire::records::scan_vertex_records(&data[range]))

@@ -113,13 +113,14 @@ pub(crate) fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     }
     for point in &mut ir.model.points {
         let moved = point.position().get();
-        point
-            .set_position(cadmpeg_ir::math::Point3::new(
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 moved.x + dx,
                 moved.y,
                 moved.z,
             ))
-            .expect("a finite position is a point");
+            .expect("a finite position is a point"),
+        );
     }
     for curve in &mut ir.model.curves {
         translate_curve_x(&mut curve.geometry, dx);
@@ -237,9 +238,10 @@ pub(crate) fn translate_model(ir: &mut cadmpeg_ir::CadIr, t: [f64; 3]) {
     use cadmpeg_ir::math::Point3;
     let shift = |p: &Point3| Point3::new(p.x + t[0], p.y + t[1], p.z + t[2]);
     for point in &mut ir.model.points {
-        point
-            .set_position(shift(&point.position().get()))
-            .expect("a finite translation keeps a finite position");
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(shift(&point.position().get()))
+                .expect("a finite translation keeps a finite position"),
+        );
     }
     for curve in &mut ir.model.curves {
         if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) = &mut curve.geometry {

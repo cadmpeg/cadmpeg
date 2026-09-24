@@ -9,6 +9,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsError},
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
@@ -150,7 +151,7 @@ fn composite_point_adjacency_valid(
             let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
                 return false;
             };
-            if !close_with_tolerance(end, point, Some(context.tolerance)) {
+            if !close_with_tolerance(end.get(), point, Some(context.tolerance)) {
                 return false;
             }
         }
@@ -162,7 +163,7 @@ fn composite_point_adjacency_valid(
             let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
                 return false;
             };
-            if !close_with_tolerance(point, start, Some(context.tolerance)) {
+            if !close_with_tolerance(point, start.get(), Some(context.tolerance)) {
                 return false;
             }
         }
@@ -216,7 +217,7 @@ struct CompositeEdge {
 pub(super) struct CompositeIndex {
     curve_positions: BTreeMap<CurveId, usize>,
     edges: BTreeMap<CurveId, Vec<CompositeEdge>>,
-    vertex_points: BTreeMap<VertexId, Point3>,
+    vertex_points: BTreeMap<VertexId, FinitePoint3>,
 }
 
 impl CompositeIndex {
@@ -240,11 +241,9 @@ impl CompositeIndex {
         }
         let mut points = BTreeMap::new();
         for point in &ir.model.points {
-            points
-                .entry(point.id.clone())
-                .or_insert(point.position().get());
+            points.entry(point.id.clone()).or_insert(point.position());
         }
-        let mut vertex_points = BTreeMap::<VertexId, Point3>::new();
+        let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
         for vertex in &ir.model.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
                 vertex_points.entry(vertex.id.clone()).or_insert(point);
@@ -268,7 +267,7 @@ impl CompositeIndex {
         curve_id: CurveId,
         curve_index: usize,
         edge: CompositeEdge,
-        endpoints: [(VertexId, Point3); 2],
+        endpoints: [(VertexId, FinitePoint3); 2],
     ) {
         self.curve_positions.insert(curve_id.clone(), curve_index);
         self.edges.entry(curve_id).or_default().push(edge);
@@ -278,7 +277,11 @@ impl CompositeIndex {
     }
 }
 
-fn point_for_vertex(ir: &CadIr, id: &VertexId, index: Option<&CompositeIndex>) -> Option<Point3> {
+fn point_for_vertex(
+    ir: &CadIr,
+    id: &VertexId,
+    index: Option<&CompositeIndex>,
+) -> Option<FinitePoint3> {
     if let Some(index) = index {
         return index.vertex_points.get(id).copied();
     }
@@ -292,7 +295,7 @@ fn point_for_vertex(ir: &CadIr, id: &VertexId, index: Option<&CompositeIndex>) -
         .points
         .iter()
         .find(|candidate| candidate.id == *point)
-        .map(|point| point.position().get())
+        .map(Point::position)
 }
 
 fn composite_edge_endpoints_agree(
@@ -310,8 +313,8 @@ fn composite_edge_endpoints_agree(
     ) {
         (Some(left_start), Some(right_start), Some(left_end), Some(right_end)) => {
             // GE-05: the MUR boundary is excluded; zero still means exact equality.
-            close_with_tolerance(left_start, right_start, Some(tolerance))
-                && close_with_tolerance(left_end, right_end, Some(tolerance))
+            close_with_tolerance(left_start.get(), right_start.get(), Some(tolerance))
+                && close_with_tolerance(left_end.get(), right_end.get(), Some(tolerance))
         }
         (None, None, None, None) => true,
         _ => false,
@@ -347,8 +350,8 @@ fn select_composite_edge(
                 return false;
             };
             // GE-05: candidate admission uses the same strict MUR rule as joins.
-            close_with_tolerance(evaluated_start, start, Some(tolerance))
-                && close_with_tolerance(evaluated_end, end, Some(tolerance))
+            close_with_tolerance(evaluated_start, start.get(), Some(tolerance))
+                && close_with_tolerance(evaluated_end, end.get(), Some(tolerance))
         })
         .collect::<Vec<_>>();
     let first = usable.first()?;
@@ -1390,7 +1393,13 @@ fn bounded_nurbs_for_id(
                 return Ok(None);
             };
             Some((
-                NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false)?,
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![start.get(), end.get()],
+                    None,
+                    false,
+                )?,
                 [0.0, 1.0],
             ))
         }
@@ -1560,7 +1569,7 @@ fn curve_endpoints(
     curve_id: &CurveId,
     index: &CompositeIndex,
     tolerance: f64,
-) -> Option<(Point3, Point3)> {
+) -> Option<(FinitePoint3, FinitePoint3)> {
     let curve_position = index.curve_positions.get(curve_id)?;
     let curve = ir.model.curves.get(*curve_position)?;
     let candidates = index.edges.get(curve_id)?;
@@ -1588,8 +1597,8 @@ fn anchor_analytic_nurbs_endpoint_poles(
     let Some(tolerance) = tolerance else {
         return Some(());
     };
-    let start = point_for_vertex(ir, &edge.start, index)?;
-    let end = point_for_vertex(ir, &edge.end, index)?;
+    let start = point_for_vertex(ir, &edge.start, index)?.get();
+    let end = point_for_vertex(ir, &edge.end, index)?.get();
     let control_points = nurbs.control_points();
     let weights = nurbs.weights();
     let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1656,8 +1665,8 @@ fn project_native_composite(
             same_sense: true,
             transition: if index > 0
                 && close_with_tolerance(
-                    endpoints[index - 1].1,
-                    endpoints[index].0,
+                    endpoints[index - 1].1.get(),
+                    endpoints[index].0.get(),
                     Some(join_tolerance),
                 ) {
                 CompositeCurveTransition::Continuous
@@ -1676,8 +1685,8 @@ fn project_native_composite(
     let curve_id = crate::ids::curve(&stem);
     let edge_id = crate::ids::edge(&stem);
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None).ok()?,
-        Point::new(end_point.clone(), end, None).ok()?,
+        Point::new(start_point.clone(), start, None),
+        Point::new(end_point.clone(), end, None),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -2125,11 +2134,15 @@ fn project_with_type_130_policy(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve_id = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
+        let start = FinitePoint3::new(start)
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let end = FinitePoint3::new(end)
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            Point::new(end_point.clone(), end, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
         ir.model.vertices.extend([
             Vertex {

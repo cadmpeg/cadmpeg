@@ -172,28 +172,28 @@ fn offset_source_range_uses_the_unique_curve_endpoint_match() {
     ir.model.points.extend([
         Point::new(
             PointId::mint("test:model:point#wrong-start-point").expect("identity grammar"),
-            Point3::new(10.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
-            Point3::new(11.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(11.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#matching-start-point").expect("identity grammar"),
-            Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
         Point::new(
             PointId::mint("test:model:point#matching-end-point").expect("identity grammar"),
-            Point3::new(2.0, 0.0, 0.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
-        )
-        .expect("a finite position is a point"),
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {

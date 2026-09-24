@@ -166,13 +166,14 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .expect("generated BinaryFile4 decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let moved = edited.model.points[0].position().get();
-    edited.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 2.5,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let expected = edited.model.points[0].position().get();
     let edge = edited
         .model

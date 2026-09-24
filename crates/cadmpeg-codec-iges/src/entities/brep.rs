@@ -9,6 +9,7 @@ use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
@@ -122,7 +123,11 @@ fn topology_vertex(
         return Some(existing.clone());
     }
     let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
-    let point = Point::new(point_id.clone(), vertex_lists[&list][index], None).ok()?;
+    let point = Point::new(
+        point_id.clone(),
+        FinitePoint3::new(vertex_lists[&list][index])?,
+        None,
+    );
     sequences.record_point(&point_id, stem);
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     candidate.model_mut().points.push(point);

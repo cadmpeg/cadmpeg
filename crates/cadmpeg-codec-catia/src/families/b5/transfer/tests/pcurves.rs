@@ -185,7 +185,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
             Vec::new(),
             vec![B5LogicalVertex {
                 object_id: 50,
-                point: [2.0, 0.0, 0.5],
+                point: crate::test_support::test_b5::point([2.0, 0.0, 0.5]),
             }],
             BTreeMap::from([(30, [B5VertexRef::Logical(0), B5VertexRef::Logical(0)])]),
         )
@@ -1011,7 +1011,10 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         edges: BTreeMap::new(),
         vertex_incidence_links: BTreeMap::new(),
         vertices: crate::families::b5::graph::vertex_refs::B5Vertices::try_new(
-            vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]],
+            vec![[5.0, 0.0, 0.0], [0.0, 5.0, 0.0], [-5.0, 0.0, 0.0]]
+                .into_iter()
+                .map(crate::test_support::test_b5::point)
+                .collect(),
             Vec::new(),
             BTreeMap::from([
                 (5, [B5VertexRef::Raw(0), B5VertexRef::Raw(1)]),
@@ -1194,7 +1197,9 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
                 graph.vertices.raw_points().len(),
                 "contiguous vertex rows"
             );
-            graph.vertices.push_raw(point);
+            graph
+                .vertices
+                .push_raw(crate::test_support::test_b5::point(point));
         }
         for (position, edge) in component.edges.into_iter().enumerate() {
             graph

@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{BoundedCount, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::tessellation::Tessellation;
@@ -185,7 +186,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
     let points = (0..count)
         .map(|index| {
             let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
-            Point::new(
+            Ok(Point::new(
                 PointId::compose(
                     &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
                     crate::native::model_key(&property.id, index.to_string())
@@ -193,8 +194,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
                 ),
                 transform_point(transform, position)?,
                 Some(source_object.clone()),
-            )
-            .map_err(CodecError::malformed)
+            ))
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     reader.finish("point-cloud payload")?;
@@ -239,19 +239,18 @@ fn identity() -> [[f64; 4]; 4] {
 ///
 /// Finite operands still multiply and add to a non-finite coordinate, which
 /// states no position, so the transformed position carries its own test.
-fn transform_point(transform: [[f64; 4]; 4], point: Point3) -> Result<Point3, CodecError> {
+fn transform_point(transform: [[f64; 4]; 4], point: Point3) -> Result<FinitePoint3, CodecError> {
     let values: [f64; 3] = std::array::from_fn(|row| {
         transform[row][0] * point.x
             + transform[row][1] * point.y
             + transform[row][2] * point.z
             + transform[row][3]
     });
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::Malformed(
+    FinitePoint3::new(Point3::new(values[0], values[1], values[2])).ok_or_else(|| {
+        CodecError::Malformed(
             "transformed point-cloud point contains a non-finite coordinate".into(),
-        ));
-    }
-    Ok(Point3::new(values[0], values[1], values[2]))
+        )
+    })
 }
 
 #[derive(Clone, Copy)]

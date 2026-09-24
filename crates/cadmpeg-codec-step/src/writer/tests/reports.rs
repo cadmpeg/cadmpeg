@@ -35,22 +35,18 @@ fn edgeless_doc() -> CadIr {
         Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
     };
     let mut ir = CadIr::empty();
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("test:model:point#p0").expect("identity grammar"),
-            Point3::new(0.0, 0.0, 0.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
-    ir.model.points.push(
-        Point::new(
-            PointId::mint("test:model:point#p1").expect("identity grammar"),
-            Point3::new(1.0, 0.0, 0.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#p0").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#p1").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
     ir.model.vertices.push(Vertex {
         id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         point: PointId::mint("test:model:point#p0").expect("identity grammar"),

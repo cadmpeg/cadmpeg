@@ -129,10 +129,10 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         vertex_refs: vec![10, 11, 12, 13],
     };
     let points = vec![
-        Point3::new(20.0, 0.0, 0.0),
-        Point3::new(-20.0, 0.0, 0.0),
-        Point3::new(7.5, 0.0, 0.0),
-        Point3::new(-7.5, 0.0, 0.0),
+        point([20.0, 0.0, 0.0]),
+        point([-20.0, 0.0, 0.0]),
+        point([7.5, 0.0, 0.0]),
+        point([-7.5, 0.0, 0.0]),
     ];
     let (normal, u_axis, uv_scale) = super::super::solve_e5_plane_frame(
         100,
@@ -201,7 +201,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
         vertex_refs: vec![0, 1, 2, 3],
     };
     for scale in [1.0, 2.0] {
-        let points = sites.map(|[u, v]| Point3::new(u * scale, v * scale, 0.0));
+        let points = sites.map(|[u, v]| point([u * scale, v * scale, 0.0]));
         let result = super::super::solve_e5_plane_frame(
             100,
             point([0.0; 3]),
@@ -216,7 +216,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
                 let mapped =
                     u_axis.scale(u * uv_scale[0].get()) + v_axis.scale(v * uv_scale[1].get());
                 assert!(
-                    crate::math::distance(<[f64; 3]>::from(mapped), expected.into())
+                    crate::math::distance(<[f64; 3]>::from(mapped), expected.get().into())
                         < EPS_E5_DECODE_EXACT_GEOMETRY
                 );
             }

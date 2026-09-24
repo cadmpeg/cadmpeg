@@ -8,6 +8,7 @@ use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve},
     Curve, CurveGeometry, SolvedCurveGeometry,
@@ -820,7 +821,7 @@ pub(super) struct ProjectionOutcome {
 pub(crate) struct BoundaryVertexSourceEndpoint {
     pub(crate) edge: String,
     pub(crate) endpoint: BoundaryEndpoint,
-    pub(crate) position: Point3,
+    pub(crate) position: FinitePoint3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -835,7 +836,7 @@ pub(crate) enum BoundaryEndpoint {
 pub(crate) struct BoundaryVertexDerivation {
     pub(crate) source_entity: String,
     pub(crate) vertex: VertexId,
-    pub(crate) representative: Point3,
+    pub(crate) representative: FinitePoint3,
     pub(crate) tolerance: f64,
     pub(crate) source_endpoints: Vec<BoundaryVertexSourceEndpoint>,
 }
@@ -1427,12 +1428,15 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(start) = transform.apply_point(Point3::new(values[3], values[4], values[0]))
+        let Some(start) = FinitePoint3::new(Point3::new(values[3], values[4], values[0]))
+            .and_then(|point| point.transformed(transform))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let Some(end) = transform.apply_point(Point3::new(values[5], values[6], values[0])) else {
+        let Some(end) = FinitePoint3::new(Point3::new(values[5], values[6], values[0]))
+            .and_then(|point| point.transformed(transform))
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
@@ -1489,10 +1493,8 @@ pub(crate) fn project_geometry(
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            Point::new(end_point.clone(), end, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
         ir.model.vertices.extend([
             Vertex {
@@ -1567,21 +1569,17 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, z * factor))
+        let Some(position) = FinitePoint3::new(Point3::new(x * factor, y * factor, z * factor))
+            .and_then(|position| position.transformed(transform))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        if !position.is_finite() {
-            losses.push(entity_loss(entry, "scaled coordinates are not finite"));
-            continue;
-        }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-        ir.model.points.push(
-            Point::new(point.clone(), position, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model
+            .points
+            .push(Point::new(point.clone(), position, None));
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1658,20 +1656,17 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(position) = transform.apply_point(Point3::new(x * factor, y * factor, 0.0)) else {
+        let Some(position) = FinitePoint3::new(Point3::new(x * factor, y * factor, 0.0))
+            .and_then(|position| position.transformed(transform))
+        else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        if !position.is_finite() {
-            losses.push(entity_loss(entry, "scaled reference point is not finite"));
-            continue;
-        }
         let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence));
-        ir.model.points.push(
-            Point::new(point.clone(), position, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        ir.model
+            .points
+            .push(Point::new(point.clone(), position, None));
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
@@ -1725,18 +1720,20 @@ pub(crate) fn project_geometry(
             }
         };
         let Some(start) =
-            transform.apply_point(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
+            FinitePoint3::new(Point3::new(coordinates[0], coordinates[1], coordinates[2]))
+                .and_then(|point| point.transformed(transform))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
         let Some(end) =
-            transform.apply_point(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
+            FinitePoint3::new(Point3::new(coordinates[3], coordinates[4], coordinates[5]))
+                .and_then(|point| point.transformed(transform))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
         };
-        let delta = end.vector_from(start);
+        let delta = end.vector_from(start.get());
         let length = delta.norm();
         if !length.is_finite() || length <= 0.0 {
             losses.push(entity_loss(
@@ -1752,7 +1749,7 @@ pub(crate) fn project_geometry(
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    start,
+                    start.get(),
                     Vector3::new(delta.x / length, delta.y / length, delta.z / length),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -1771,10 +1768,8 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let edge = crate::ids::edge(&stem);
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            Point::new(end_point.clone(), end, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
         ir.model.vertices.extend([
             Vertex {
@@ -2116,11 +2111,15 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
+        let start = FinitePoint3::new(start)
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let end = FinitePoint3::new(end)
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-            Point::new(end_point.clone(), end, None)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            Point::new(start_point.clone(), start, None),
+            Point::new(end_point.clone(), end, None),
         ]);
         ir.model.vertices.extend([
             Vertex {

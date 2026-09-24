@@ -815,13 +815,14 @@ fn semantic_writer_regenerates_modified_planar_brep() {
         .unwrap();
     let mut result = EditableDecodeResult::from(result);
     let moved = result.ir_mut().model.points[0].position().get();
-    result.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    result.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(result.ir(), result.source_fidelity(), &mut encoded)
         .unwrap();
@@ -847,13 +848,14 @@ fn semantic_writer_uses_schema_specific_face_families() {
         .unwrap();
     let mut solid = EditableDecodeResult::from(solid);
     let moved = solid.ir_mut().model.points[0].position().get();
-    solid.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    solid.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut solid_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
         solid.ir(),
@@ -875,13 +877,14 @@ fn semantic_writer_uses_schema_specific_face_families() {
         .unwrap();
     let mut sheet = EditableDecodeResult::from(sheet);
     let moved = sheet.ir_mut().model.points[0].position().get();
-    sheet.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    sheet.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut sheet_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
         sheet.ir(),
@@ -905,13 +908,14 @@ fn semantic_writer_preserves_outer_header() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -987,13 +991,14 @@ fn semantic_writer_preserves_sheet_body_classification() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
@@ -1219,9 +1224,12 @@ fn semantic_writer_converts_millimetres_to_native_metres() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(50.8, moved.y, moved.z))
-        .expect("a finite position is a point");
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            50.8, moved.y, moved.z,
+        ))
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1257,13 +1265,14 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1392,13 +1401,14 @@ fn semantic_writer_preserves_unbound_material_definition() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
@@ -1480,13 +1490,14 @@ fn semantic_writer_preserves_face_appearance() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(

@@ -627,13 +627,14 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -691,13 +692,14 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 2.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     decoded.ir_mut().model.tessellations[0]
         .edit_vertices(|vertex| {
             vertex.z = 125.0;
@@ -787,13 +789,14 @@ fn semantic_writer_preserves_display_list_geometry() {
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     decoded.ir_mut().model.tessellations[0]
         .edit_vertices(|vertex| {
             vertex.z = 250.0;

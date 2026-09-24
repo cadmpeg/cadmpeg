@@ -8,6 +8,7 @@ use std::ops::Range;
 use crate::checked::extents_overlap;
 use crate::object_graph::extent_contains;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 pub(crate) mod class5b5c;
@@ -7775,7 +7776,11 @@ fn zero_entity_support_runs(
                                 gap: loop_record.members.gap(),
                                 loop_class: loop_record.loop_class.as_byte(),
                                 forward_senses: loop_record.forward_senses,
-                                oriented_model_endpoints: loop_record.oriented_model_endpoints,
+                                oriented_model_endpoints: loop_record
+                                    .oriented_model_endpoints
+                                    .into_iter()
+                                    .map(|pair| pair.map(FinitePoint3::get))
+                                    .collect(),
                             }
                         })
                         .collect(),
@@ -7795,8 +7800,10 @@ fn zero_entity_support_runs(
                     model_curve: support.model_curve,
                     model_curve_construction: support.model_curve_construction,
                     model_parameters: support.model_parameters,
-                    model_midpoint: support.model_midpoint,
-                    model_endpoints: support.model_endpoints,
+                    model_midpoint: support.model_midpoint.map(FinitePoint3::get),
+                    model_endpoints: support
+                        .model_endpoints
+                        .map(|pair| pair.map(FinitePoint3::get)),
                 })
                 .collect(),
         })
@@ -7821,8 +7828,8 @@ fn zero_entity_endpoint_pair_candidates(
             support_records: candidate
                 .support_record_ordinals
                 .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
-            model_endpoints: candidate.model_endpoints,
-            model_midpoint: candidate.model_midpoint,
+            model_endpoints: candidate.model_endpoints.map(FinitePoint3::get),
+            model_midpoint: candidate.model_midpoint.get(),
         })
         .collect()
 }
@@ -7845,7 +7852,7 @@ fn zero_entity_endpoint_locus_candidates(
                     },
                 )
                 .collect(),
-            representative_point: candidate.representative_point,
+            representative_point: candidate.representative_point.get(),
             maximum_deviation: candidate.maximum_deviation,
         })
         .collect()

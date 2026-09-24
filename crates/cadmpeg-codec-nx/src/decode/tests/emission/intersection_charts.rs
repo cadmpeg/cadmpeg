@@ -133,29 +133,32 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .find(|point| point.id == point_id)
         .expect("vertex point");
     let moved = point.position().get();
-    point
-        .set_position(cadmpeg_ir::math::Point3::new(
+    point.set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 0.5,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let moved = point.position().get();
-    point
-        .set_position(cadmpeg_ir::math::Point3::new(
+    point.set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y + 0.5,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let moved = point.position().get();
-    point
-        .set_position(cadmpeg_ir::math::Point3::new(
+    point.set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 0.5,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
     attach_tolerant_edge_intersections(
@@ -975,10 +978,18 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         VertexId::mint("test:model:entity#synthetic:v1").expect("identity grammar"),
     ];
     ir.model.points.extend([
-        Point::new(point_ids[0].clone(), Point3::new(0.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
-        Point::new(point_ids[1].clone(), Point3::new(10.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
+        Point::new(
+            point_ids[0].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            point_ids[1].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(10.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {
@@ -1135,7 +1146,12 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         ),
     ];
     ir.model.points.extend(points.iter().map(|(id, position)| {
-        Point::new(id.clone(), *position, None).expect("a finite position is a point")
+        Point::new(
+            id.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(*position)
+                .expect("a finite position is a point"),
+            None,
+        )
     }));
     let vertices = [
         VertexId::mint("test:model:entity#nx:test:boundary-vertex-0").expect("identity grammar"),

@@ -898,7 +898,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         bind_edge_vertices(
             &BTreeMap::from([(1, loop_.clone())]),
             &geometry,
-            &[[5.0, 0.0, 0.0], [0.0, 5.0, 0.0]],
+            &crate::test_support::test_b5::points([[5.0, 0.0, 0.0], [0.0, 5.0, 0.0]]),
         ),
         BTreeMap::from([(3, [0, 1])])
     );
@@ -966,7 +966,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         bind_edge_vertices(
             &BTreeMap::from([(1, loop_)]),
             &trimmed_geometry,
-            &trimmed_points.map(crate::test_support::test_b5::coordinates),
+            &trimmed_points,
         ),
         BTreeMap::from([(3, [0, 1])])
     );
@@ -1029,11 +1029,11 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         vec![
             B5LogicalVertex {
                 object_id: 10,
-                point: endpoints[0],
+                point: crate::test_support::test_b5::point(endpoints[0]),
             },
             B5LogicalVertex {
                 object_id: 11,
-                point: endpoints[1],
+                point: crate::test_support::test_b5::point(endpoints[1]),
             },
         ]
     );
@@ -1044,7 +1044,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         &geometry,
         &BTreeMap::from([(3, [10, 11])]),
         &BTreeMap::new(),
-        &BTreeMap::from([(10, endpoints[1])]),
+        &BTreeMap::from([(10, crate::test_support::test_b5::point(endpoints[1]))]),
         &[],
     );
     assert_eq!(
@@ -1056,11 +1056,11 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
         vec![
             B5LogicalVertex {
                 object_id: 10,
-                point: endpoints[1],
+                point: crate::test_support::test_b5::point(endpoints[1]),
             },
             B5LogicalVertex {
                 object_id: 11,
-                point: endpoints[1],
+                point: crate::test_support::test_b5::point(endpoints[1]),
             },
         ]
     );
@@ -1070,7 +1070,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
 
 #[test]
 fn canonical_point_uses_the_on_carrier_tolerance() {
-    let points = [[0.0, 0.0, 0.0]];
+    let points = [[0.0, 0.0, 0.0]].map(crate::test_support::test_b5::point);
     let index = point_index(&points);
     assert_eq!(canonical_point(&points, &index, [1e-3, 0.0, 0.0]), Some(0));
     assert_eq!(
@@ -1163,7 +1163,7 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
         bind_edge_vertices(
             &BTreeMap::from([(1, loop_)]),
             &geometry,
-            &[[2.5, 0.0, 0.0], [7.5, 0.0, 0.0]],
+            &crate::test_support::test_b5::points([[2.5, 0.0, 0.0], [7.5, 0.0, 0.0]]),
         ),
         BTreeMap::from([(3, [0, 1])])
     );
@@ -1341,7 +1341,9 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
     assert_eq!(coordinates.len(), 1);
     assert!(
         distance_squared(
-            *coordinates.get(&10).expect("native vertex coordinate"),
+            crate::test_support::test_b5::coordinates(
+                *coordinates.get(&10).expect("native vertex coordinate")
+            ),
             [0.0, 5.0, 0.0]
         ) < 1e-24
     );
@@ -1454,7 +1456,11 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
     };
 
     assert_eq!(
-        bind_edge_vertices(&loops, &geometry, &points),
+        bind_edge_vertices(
+            &loops,
+            &geometry,
+            &points.map(crate::test_support::test_b5::point)
+        ),
         BTreeMap::from([(21, [0, 2])])
     );
 }

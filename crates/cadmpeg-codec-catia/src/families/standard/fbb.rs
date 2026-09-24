@@ -2,6 +2,8 @@
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
@@ -133,21 +135,21 @@ pub(super) fn standard_face_frame_vectors(
 
 /// Return the counted vertex table of an admitted standard nested spine.
 #[must_use]
-pub(super) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+pub(super) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
     let face_run = selected_standard_run(bytes)?;
     let after_faces = face_run.after_faces();
     let (_, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
-    parse_vertex_table(bytes, vertex_header)
+    parse_vertex_points(bytes, vertex_header)
 }
 
 /// Coordinates from the counted vertex table following a complete FBB-only
 /// edge-table walk.
 #[must_use]
-pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+pub(super) fn fbb_only_vertex_points(bytes: &[u8]) -> Option<Vec<FinitePoint3>> {
     let face_run = largest_fbb_run(bytes)?;
     let after_faces = face_run.after_faces();
     let (_, _, vertex_header, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    parse_vertex_table(bytes, vertex_header)
+    parse_vertex_points(bytes, vertex_header)
 }
 
 /// Parses the counted standard spine, positional trim packets, mesh boundary
@@ -1014,7 +1016,18 @@ fn parse_edge_tables_scoped_width(
     Some((rows, scopes, position))
 }
 
-pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>> {
+pub(crate) fn parse_vertex_table(bytes: &[u8], position: usize) -> Option<Vec<[f64; 3]>> {
+    Some(
+        parse_vertex_points(bytes, position)?
+            .into_iter()
+            .map(|point| point.get().into())
+            .collect(),
+    )
+}
+
+/// The counted `05 08 01` vertex table at `position`, every coordinate
+/// admitted finite.
+fn parse_vertex_points(bytes: &[u8], mut position: usize) -> Option<Vec<FinitePoint3>> {
     if !bytes.get(position..)?.starts_with(&[0x01, 0x06]) {
         return None;
     }
@@ -1029,16 +1042,13 @@ pub(crate) fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Ve
             return None;
         }
         position += 3;
-        let mut point = [0.0; 3];
-        for coordinate in &mut point {
-            let value = View::f32_le_at(bytes, position)?;
-            if !value.is_finite() {
-                return None;
-            }
-            *coordinate = f64::from(value);
+        let mut coordinates = [FiniteReal::ZERO; 3];
+        for coordinate in &mut coordinates {
+            *coordinate = FiniteReal::new(f64::from(View::f32_le_at(bytes, position)?))?;
             position += 4;
         }
-        points.push(point);
+        let [x, y, z] = coordinates;
+        points.push(FinitePoint3::from_coordinates(x, y, z));
     }
     Some(points)
 }

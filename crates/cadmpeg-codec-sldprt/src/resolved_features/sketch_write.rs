@@ -274,14 +274,13 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("free-vertex"))
                 .colon(ordinal),
         );
-        ir.model.points.push(
-            Point::new(
-                point_id.clone(),
-                lift_point(position, origin, u_axis, v_axis),
-                None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-        );
+        let finite_position =
+            cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
+                .ok_or(Point::NON_FINITE_POSITION)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        ir.model
+            .points
+            .push(Point::new(point_id.clone(), finite_position, None));
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
@@ -541,14 +540,13 @@ fn sketch_vertex(
             .colon(cadmpeg_ir::identity_key!("vertex"))
             .colon(ordinal),
     );
-    ir.model.points.push(
-        Point::new(
-            point_id.clone(),
-            lift_point(position, origin, u_axis, v_axis),
-            None,
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
-    );
+    let finite_position =
+        cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+    ir.model
+        .points
+        .push(Point::new(point_id.clone(), finite_position, None));
     ir.model.vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,

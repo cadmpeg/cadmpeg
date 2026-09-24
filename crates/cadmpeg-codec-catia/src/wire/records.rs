@@ -13,6 +13,7 @@
 use std::{collections::HashSet, ops::Range};
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
@@ -772,36 +773,42 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
 /// vertex points in stream order.
-pub(crate) fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
-    scan_vertex_record_ranges(bytes)
+pub(crate) fn scan_vertex_records(bytes: &[u8]) -> Vec<FinitePoint3> {
+    scan_vertex_rows(bytes)
         .into_iter()
-        .map(|range| {
-            let x = f32_le(bytes, range.start + 3);
-            let y = f32_le(bytes, range.start + 7);
-            let z = f32_le(bytes, range.start + 11);
-            Point3::new(x as f64, y as f64, z as f64)
-        })
+        .map(|(_, point)| point)
         .collect()
 }
 
 /// Locate every finite `05 08 01` coordinate row in `bytes`.
 pub(crate) fn scan_vertex_record_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
+    scan_vertex_rows(bytes)
+        .into_iter()
+        .map(|(range, _)| range)
+        .collect()
+}
+
+/// Every `05 08 01` row whose three coordinates are finite, with its byte
+/// range and admitted point.
+fn scan_vertex_rows(bytes: &[u8]) -> Vec<(Range<usize>, FinitePoint3)> {
+    let mut rows = Vec::new();
     let mut p = 0usize;
     while p + 15 <= bytes.len() {
         if bytes[p] == 0x05 && bytes[p + 1] == 0x08 && bytes[p + 2] == 0x01 {
             let x = f32_le(bytes, p + 3);
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
-            if x.is_finite() && y.is_finite() && z.is_finite() {
-                ranges.push(p..p + 15);
+            if let Some(point) =
+                FinitePoint3::new(Point3::new(f64::from(x), f64::from(y), f64::from(z)))
+            {
+                rows.push((p..p + 15, point));
             }
             p += 15;
         } else {
             p += 1;
         }
     }
-    ranges
+    rows
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {

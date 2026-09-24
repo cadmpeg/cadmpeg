@@ -41,14 +41,13 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
     let mut ir = CadIr::empty();
     let point = PointId::mint(format!("{prefix}:point#0"))?;
     let vertex = VertexId::mint(format!("{prefix}:vertex#0"))?;
-    ir.model.points.push(
-        Point::new(
-            point.clone(),
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            None,
-        )
-        .map_err(FixtureError::Geometry)?,
-    );
+    let position =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+            .ok_or(Point::NON_FINITE_POSITION)
+            .map_err(FixtureError::Geometry)?;
+    ir.model
+        .points
+        .push(Point::new(point.clone(), position, None));
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,

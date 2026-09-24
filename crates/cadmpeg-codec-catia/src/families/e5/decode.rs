@@ -100,10 +100,18 @@ pub(in crate::families) fn try_decode_e5(
         if roster.len() == vertex_count {
             roster
         } else {
-            topology
+            match topology
                 .as_ref()
                 .and_then(|topology| derive_e5_vertices(topology, &surfaces, refusal))
-                .unwrap_or_default()
+            {
+                // A derived vertex that is not finite states no point, so the
+                // decode refuses it where the vertex list is admitted.
+                Some(derived) => derived
+                    .into_iter()
+                    .map(FinitePoint3::new)
+                    .collect::<Option<Vec<_>>>()?,
+                None => Vec::new(),
+            }
         }
     };
     if let Some(topology) = &topology {
@@ -141,7 +149,7 @@ pub(in crate::families) fn try_decode_e5(
         );
         ir.model
             .points
-            .push(Point::new(point_id.clone(), *point, None).ok()?);
+            .push(Point::new(point_id.clone(), *point, None));
         let vertex_id =
             VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
         annotate(
@@ -361,7 +369,7 @@ fn derive_e5_vertices(
 fn append_e5_planes(
     stream: &[u8],
     topology: &crate::families::e5::graph::E5Topology,
-    points: &[Point3],
+    points: &[FinitePoint3],
     surfaces: &mut Vec<crate::families::e5::records::E5Surface>,
 ) {
     let carrier_axes: HashMap<u32, Vector3> = surfaces
@@ -483,19 +491,17 @@ fn solve_e5_plane_frame(
     surface_ref: u32,
     origin: FinitePoint3,
     topology: &crate::families::e5::graph::E5Topology,
-    points: &[Point3],
+    points: &[FinitePoint3],
     expected_normal: Option<Vector3>,
 ) -> Option<(Vector3, Vector3, [FiniteReal; 2])> {
-    if topology.vertex_refs.len() != points.len()
-        || points.iter().copied().any(|point| !point.is_finite())
-    {
+    if topology.vertex_refs.len() != points.len() {
         return None;
     }
     let point_by_ref: HashMap<u32, Point3> = topology
         .vertex_refs
         .iter()
         .copied()
-        .zip(points.iter().copied())
+        .zip(points.iter().map(|point| point.get()))
         .collect();
     let mut segments = Vec::new();
     for face in topology
@@ -3079,8 +3085,8 @@ mod route_tests {
             let pcurve_ref = 2000 + index as u32;
             vertex_refs.extend([start_vertex, end_vertex]);
             points.extend([
-                Point3::new(start_uv[0], start_uv[1], 0.0),
-                Point3::new(end_uv[0], end_uv[1], 0.0),
+                point([start_uv[0], start_uv[1], 0.0]),
+                point([end_uv[0], end_uv[1], 0.0]),
             ]);
             pcurve_refs.push(pcurve_ref);
             edge_refs.push(edge_ref);
@@ -3210,9 +3216,9 @@ mod route_tests {
             vertex_refs: vec![1, 2, 3],
         };
         let points = vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(-1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0),
+            point([0.0, 0.0, 0.0]),
+            point([-1.0, 0.0, 0.0]),
+            point([0.0, -1.0, 0.0]),
         ];
         let (normal, u_axis, uv_scale) =
             solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
@@ -3711,16 +3717,16 @@ mod route_tests {
         ir.model.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
-                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
                 None,
-            )
-            .expect("a finite position is a point"),
+            ),
             Point::new(
                 PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
-                Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
+                    .expect("a finite position is a point"),
                 None,
-            )
-            .expect("a finite position is a point"),
+            ),
         ]);
         ir.model.vertices.extend([
             Vertex {

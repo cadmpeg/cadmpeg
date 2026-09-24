@@ -15,6 +15,7 @@
 
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -53,7 +54,7 @@ pub(crate) struct DecodedPoint {
     /// Byte offset of the record's `00 1d` tag within the stream.
     pub(crate) pos: usize,
     /// Position in millimetres.
-    pub(crate) position: Point3,
+    pub(crate) position: FinitePoint3,
 }
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
@@ -170,12 +171,8 @@ fn analytic_candidate(
             let mut at = pos + 8 + frame.shift;
             skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
-            xyz.iter()
-                .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
-                .then_some(AnalyticRecord::Point(DecodedPoint {
-                    pos,
-                    position: mm_point(xyz),
-                }))?
+            let position = FinitePoint3::new(mm_point(xyz))?;
+            AnalyticRecord::Point(DecodedPoint { pos, position })
         }
         NodeKind::Plane
         | NodeKind::Cylinder

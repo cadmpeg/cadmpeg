@@ -234,14 +234,12 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let mut ir = CadIr::empty();
-    ir.model.points.push(
-        cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
-            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
-            None,
-        )
-        .expect("a finite position is a point"),
-    );
+    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#honesty").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
 
     for version in [
         crate::RhinoArchiveVersion::V5,

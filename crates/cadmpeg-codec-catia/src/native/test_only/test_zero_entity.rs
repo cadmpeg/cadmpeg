@@ -133,13 +133,36 @@ pub(super) fn validate_zero_entity_support_runs(
                                                     .and_then(|support| support.model_endpoints)
                                             })
                                             .collect::<Vec<_>>();
-                                        let expected = crate::families::zero_entity::records::
-                                            oriented_closed_model_endpoints(
-                                                &endpoints,
-                                                &loop_record.forward_senses,
-                                            )
+                                        let admitted = endpoints
+                                            .iter()
+                                            .map(|pair| match pair {
+                                                None => Some(None),
+                                                Some([start, end]) => Some(Some([
+                                                    cadmpeg_ir::features::FinitePoint3::new(
+                                                        *start,
+                                                    )?,
+                                                    cadmpeg_ir::features::FinitePoint3::new(*end)?,
+                                                ])),
+                                            })
+                                            .collect::<Option<Vec<_>>>();
+                                        let expected = admitted
+                                            .and_then(|endpoints| {
+                                                crate::families::zero_entity::records::
+                                                    oriented_closed_model_endpoints(
+                                                        &endpoints,
+                                                        &loop_record.forward_senses,
+                                                    )
+                                            })
                                             .unwrap_or_default();
-                                        loop_record.oriented_model_endpoints == expected
+                                        loop_record.oriented_model_endpoints
+                                            == expected
+                                                .into_iter()
+                                                .map(|pair| {
+                                                    pair.map(
+                                                        cadmpeg_ir::features::FinitePoint3::get,
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>()
                                     }
                                     && loop_record.terminal_id == *terminal
                                     && loop_record.gap != 0
@@ -453,6 +476,10 @@ pub(super) fn validate_zero_entity_endpoint_pair_candidates(
     Ok(())
 }
 
+fn finite(point: cadmpeg_ir::math::Point3) -> cadmpeg_ir::features::FinitePoint3 {
+    cadmpeg_ir::features::FinitePoint3::new(point).expect("finite native test point")
+}
+
 fn derived_zero_entity_endpoint_pairs(
     runs: &[CatiaZeroEntitySupportRun],
 ) -> Vec<crate::families::zero_entity::topology::ZeroEntityEndpointPairCandidate> {
@@ -464,7 +491,7 @@ fn derived_zero_entity_endpoint_pairs(
         let midpoints = run
             .supports
             .iter()
-            .filter_map(|support| Some((support.record_ordinal, support.model_midpoint?)))
+            .filter_map(|support| Some((support.record_ordinal, finite(support.model_midpoint?))))
             .collect::<std::collections::HashMap<_, _>>();
         for loop_record in &face.loops {
             for (support_record_ordinal, model_endpoints) in loop_record
@@ -480,7 +507,7 @@ fn derived_zero_entity_endpoint_pairs(
                     crate::families::zero_entity::topology::ZeroEntityOrientedOccurrence {
                         face_record_ordinal: face.record_ordinal,
                         support_record_ordinal,
-                        model_endpoints,
+                        model_endpoints: model_endpoints.map(finite),
                         model_midpoint,
                     },
                 );

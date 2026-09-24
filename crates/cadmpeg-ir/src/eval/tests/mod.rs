@@ -1565,10 +1565,18 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         source_object: None,
     });
     ir.model.points.extend([
-        Point::new(start_point_id.clone(), Point3::new(2.0, 0.0, 0.0), None)
-            .expect("a finite position is a point"),
-        Point::new(end_point_id.clone(), Point3::new(2.0, 0.0, 10.0), None)
-            .expect("a finite position is a point"),
+        Point::new(
+            start_point_id.clone(),
+            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
+        Point::new(
+            end_point_id.clone(),
+            crate::features::FinitePoint3::new(Point3::new(2.0, 0.0, 10.0))
+                .expect("a finite position is a point"),
+            None,
+        ),
     ]);
     ir.model.vertices.extend([
         Vertex {

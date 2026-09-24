@@ -43,10 +43,10 @@ fn ir() -> CadIr {
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| {
         Point::new(
             PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
-            Point3::new(index as f64, 2.0, 3.0),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(index as f64, 2.0, 3.0))
+                .expect("a finite position is a point"),
             None,
         )
-        .expect("a finite position is a point")
     }));
     ir
 }

@@ -582,10 +582,10 @@ mod tests {
     fn point(id: &str) -> Point {
         Point::new(
             PointId::mint(id).expect("valid identity"),
-            Point3::new(0.0, 0.0, 0.0),
+            crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                .expect("a finite position is a point"),
             None,
         )
-        .expect("a finite position is a point")
     }
 
     fn point_draft(id: &str) -> ModelDraft {

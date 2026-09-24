@@ -197,10 +197,12 @@ fn polygon_sheet(points: &[Point3]) -> CadIr {
         );
         let length = delta.norm();
         let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-        ir.model.points.push(
-            Point::new(point_ids[index].clone(), points[index], None)
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -303,10 +305,12 @@ fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
             next.z - points[index].z,
         );
         let length = delta.norm();
-        ir.model.points.push(
-            Point::new(point_ids[index].clone(), points[index], None)
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(points[index])
                 .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -482,10 +486,12 @@ fn adjacent_quad_sheet() -> CadIr {
         ),
     });
     for index in 0..positions.len() {
-        ir.model.points.push(
-            Point::new(point_ids[index].clone(), positions[index], None)
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),
@@ -657,10 +663,12 @@ fn planar_tetrahedron() -> CadIr {
         .unwrap(),
     );
     for index in 0..4 {
-        ir.model.points.push(
-            Point::new(point_ids[index].clone(), positions[index], None)
+        ir.model.points.push(Point::new(
+            point_ids[index].clone(),
+            cadmpeg_ir::features::FinitePoint3::new(positions[index])
                 .expect("a finite position is a point"),
-        );
+            None,
+        ));
         ir.model.vertices.push(Vertex {
             id: vertex_ids[index].clone(),
             point: point_ids[index].clone(),

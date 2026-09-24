@@ -460,13 +460,14 @@ fn patch_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     }
     let mut edited = result.ir().clone();
     let moved = edited.model.points[0].position().get();
-    edited.model.points[0]
-        .set_position(cadmpeg_ir::math::Point3::new(
+    edited.model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
             moved.z,
         ))
-        .expect("a finite position is a point");
+        .expect("a finite position is a point"),
+    );
     let mut out = Vec::new();
     Some(
         match crate::test_support::plan_inherited_write(&edited, result.source_fidelity(), &mut out)
@@ -846,13 +847,14 @@ fn an_edit_survives_the_patch_writer() {
                     return false;
                 };
                 let moved = point.position().get();
-                point
-                    .set_position(cadmpeg_ir::math::Point3::new(
+                point.set_position(
+                    cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                         moved.x + MUTATION_MM,
                         moved.y,
                         moved.z,
                     ))
-                    .expect("a finite position is a point");
+                    .expect("a finite position is a point"),
+                );
                 true
             },
             |outcome| match outcome {

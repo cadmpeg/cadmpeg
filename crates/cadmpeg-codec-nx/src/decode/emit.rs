@@ -23,6 +23,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -1128,9 +1129,11 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         .note(&vertex, source_stream, edge.pos as u64)
         .tag("CLOSED_EDGE_VERTEX");
     annotations.exactness(&vertex, Exactness::Inferred);
-    ir.model
-        .points
-        .push(Point::new(point.clone(), position, None).ok()?);
+    ir.model.points.push(Point::new(
+        point.clone(),
+        FinitePoint3::new(position)?,
+        None,
+    ));
     ir.model.vertices.push(Vertex {
         id: vertex.clone(),
         point,

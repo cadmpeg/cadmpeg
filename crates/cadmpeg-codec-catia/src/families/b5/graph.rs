@@ -103,7 +103,7 @@ pub(in crate::families) struct B5LogicalVertex {
     /// Native `5d` object id.
     pub(in crate::families) object_id: u32,
     /// World-frame coordinate resolved from native incidence.
-    pub(in crate::families) point: [f64; 3],
+    pub(in crate::families) point: FinitePoint3,
 }
 
 impl B5Graph {
@@ -1311,10 +1311,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     if require_topology && (faces.is_empty() || loops.is_empty()) {
         return None;
     }
-    let vertex_points = crate::families::consolidated::records::object_stream_vertices(bytes)
-        .into_iter()
-        .map(|point| [point.x, point.y, point.z])
-        .collect::<Vec<_>>();
+    let vertex_points = crate::families::consolidated::records::object_stream_vertices(bytes);
     let geometric_edge_vertices = bind_edge_vertices(&loops, &geometry, &vertex_points);
     let vertex_incidence_links: BTreeMap<u32, B5VertexIncidenceLink> = records
         .iter()
@@ -2031,7 +2028,7 @@ fn incidence_vertex_coordinates(
     vertex_incidence_links: &BTreeMap<u32, B5VertexIncidenceLink>,
     by_id: &HashMap<u32, &B5Record>,
     geometry: &B5PcurveContext<'_>,
-) -> BTreeMap<u32, [f64; 3]> {
+) -> BTreeMap<u32, FinitePoint3> {
     native_edges
         .values()
         .flatten()
@@ -2048,10 +2045,7 @@ fn incidence_vertex_coordinates(
                     let points = incidence
                         .lanes
                         .into_iter()
-                        .map(|lane| {
-                            lift_parameter_incidence(lane.curve, lane.parameter, geometry)
-                                .map(coordinates)
-                        })
+                        .map(|lane| lift_parameter_incidence(lane.curve, lane.parameter, geometry))
                         .collect::<Option<Vec<_>>>()?;
                     (!points.is_empty()).then_some(points)
                 })
@@ -2063,7 +2057,10 @@ fn incidence_vertex_coordinates(
             let tolerance_squared = POINT_TOLERANCE * POINT_TOLERANCE;
             points
                 .iter()
-                .all(|candidate| distance_squared(*candidate, point) <= tolerance_squared)
+                .all(|candidate| {
+                    distance_squared(coordinates(*candidate), coordinates(point))
+                        <= tolerance_squared
+                })
                 .then_some((vertex, point))
         })
         .collect()
@@ -2319,8 +2316,8 @@ fn bind_native_vertices(
     geometry: &B5PcurveContext<'_>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     geometric_edges: &BTreeMap<u32, [usize; 2]>,
-    native_coordinates: &BTreeMap<u32, [f64; 3]>,
-    points: &[[f64; 3]],
+    native_coordinates: &BTreeMap<u32, FinitePoint3>,
+    points: &[FinitePoint3],
 ) -> BoundNativeVertices {
     let constraints: Vec<([u32; 2], [usize; 2])> = native_edges
         .iter()
@@ -2332,7 +2329,7 @@ fn bind_native_vertices(
         adjacency.entry(vertices[1]).or_default().push(index);
     }
     let vertex_points = propagate_vertex_points(&constraints, &adjacency, points);
-    let mut logical_coordinates: HashMap<u32, [f64; 3]> = vertex_points
+    let mut logical_coordinates: HashMap<u32, FinitePoint3> = vertex_points
         .into_iter()
         .map(|(vertex, point)| (vertex, points[point]))
         .collect();
@@ -2351,7 +2348,7 @@ fn bind_native_vertices(
             for lane in 0..2 {
                 logical_coordinates
                     .entry(vertices[lane])
-                    .or_insert(coordinates(lifted[lane]));
+                    .or_insert(lifted[lane]);
             }
         }
     }
@@ -2434,7 +2431,7 @@ fn bind_native_vertices(
 fn propagate_vertex_points(
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
-    points: &[[f64; 3]],
+    points: &[FinitePoint3],
 ) -> HashMap<u32, usize> {
     let mut mapping = HashMap::<u32, usize>::new();
     let mut completed = HashSet::new();
@@ -2456,7 +2453,7 @@ fn propagate_vertex_component(
     seed: usize,
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
-    points: &[[f64; 3]],
+    points: &[FinitePoint3],
 ) -> (HashMap<u32, usize>, Vec<usize>, bool) {
     let mut mapping = HashMap::new();
     let mut members = Vec::new();
@@ -2469,7 +2466,8 @@ fn propagate_vertex_component(
                   vertex,
                   locus| {
         if let Some(&previous) = mapping.get(&vertex) {
-            let residual = distance_squared(points[previous], points[locus]);
+            let residual =
+                distance_squared(coordinates(points[previous]), coordinates(points[locus]));
             if !residual.is_finite() || residual > POINT_TOLERANCE * POINT_TOLERANCE {
                 *consistent = false;
             }
@@ -2515,14 +2513,14 @@ fn propagate_vertex_component(
 }
 
 fn vertex_coordinate(
-    points: &[[f64; 3]],
+    points: &[FinitePoint3],
     logical_vertices: &[B5LogicalVertex],
     vertex: B5VertexRef,
 ) -> [f64; 3] {
-    match vertex {
+    coordinates(match vertex {
         B5VertexRef::Raw(index) => points[index],
         B5VertexRef::Logical(index) => logical_vertices[index].point,
-    }
+    })
 }
 
 pub(super) fn loop_chain_closes(
@@ -2606,7 +2604,7 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
 fn bind_edge_vertices(
     loops: &BTreeMap<u32, B5Loop>,
     geometry: &B5PcurveContext<'_>,
-    points: &[[f64; 3]],
+    points: &[FinitePoint3],
 ) -> BTreeMap<u32, [usize; 2]> {
     let point_index = point_index(points);
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
@@ -2699,11 +2697,11 @@ fn point_cell(point: [f64; 3]) -> [i64; 3] {
     point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
 }
 
-fn point_index(points: &[[f64; 3]]) -> HashMap<[i64; 3], Vec<usize>> {
+fn point_index(points: &[FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
     for (point_index, point) in points.iter().enumerate() {
         index
-            .entry(point_cell(*point))
+            .entry(point_cell(coordinates(*point)))
             .or_default()
             .push(point_index);
     }
@@ -2711,7 +2709,7 @@ fn point_index(points: &[[f64; 3]]) -> HashMap<[i64; 3], Vec<usize>> {
 }
 
 fn canonical_point(
-    points: &[[f64; 3]],
+    points: &[FinitePoint3],
     index: &HashMap<[i64; 3], Vec<usize>>,
     endpoint: [f64; 3],
 ) -> Option<usize> {
@@ -2727,7 +2725,7 @@ fn canonical_point(
                 ];
                 matches.extend(index.get(&neighbor).into_iter().flatten().filter_map(
                     |&point_index| {
-                        (distance_squared(points[point_index], endpoint)
+                        (distance_squared(coordinates(points[point_index]), endpoint)
                             <= POINT_TOLERANCE * POINT_TOLERANCE)
                             .then_some(point_index)
                     },
