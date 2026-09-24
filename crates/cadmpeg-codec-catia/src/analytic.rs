@@ -26,8 +26,7 @@ pub(crate) fn periodic_angular_range_is_valid(range: [f64; 2], domain: [f64; 2])
     const TOLERANCE: f64 = 1.0e-12;
     let range_midpoint = (range[0] + range[1]) * 0.5;
     let domain_midpoint = (domain[0] + domain[1]) * 0.5;
-    range.iter().chain(&domain).all(|value| value.is_finite())
-        && range[0] < range[1]
+    range[0] < range[1]
         && domain[0] < domain[1]
         && range[0] >= domain[0] - TOLERANCE
         && range[1] <= domain[1] + TOLERANCE
@@ -41,11 +40,7 @@ pub(crate) fn sphere_angular_ranges_are_valid(
     azimuth_range: [f64; 2],
     latitude_range: [f64; 2],
 ) -> bool {
-    azimuth_range
-        .iter()
-        .chain(&latitude_range)
-        .all(|value| value.is_finite())
-        && azimuth_range[0] < azimuth_range[1]
+    azimuth_range[0] < azimuth_range[1]
         && azimuth_range[1] - azimuth_range[0] <= std::f64::consts::TAU
         && -std::f64::consts::FRAC_PI_2 <= latitude_range[0]
         && latitude_range[0] < latitude_range[1]

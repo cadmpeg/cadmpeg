@@ -1,5 +1,6 @@
 use crate::nurbs::{expand_knots, pole_count};
 use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
+use cadmpeg_ir::scalar::FiniteReal;
 
 /// Distinct finite increasing knots paired with their multiplicities.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,14 +20,17 @@ impl A8KnotLane {
         &self.multiplicities
     }
 
-    pub(super) fn try_new(distinct: Vec<f64>, multiplicities: Vec<u32>) -> Option<Self> {
-        (distinct.len() == multiplicities.len()
-            && distinct.iter().all(|value| value.is_finite())
-            && knots_strictly_increasing(&distinct))
-        .then_some(Self {
-            distinct,
-            multiplicities,
-        })
+    pub(super) fn try_new(distinct: Vec<FiniteReal>, multiplicities: Vec<u32>) -> Option<Self> {
+        let distinct = distinct
+            .into_iter()
+            .map(FiniteReal::get)
+            .collect::<Vec<_>>();
+        (distinct.len() == multiplicities.len() && knots_strictly_increasing(&distinct)).then_some(
+            Self {
+                distinct,
+                multiplicities,
+            },
+        )
     }
 
     pub(super) fn expanded(&self) -> Option<Vec<f64>> {
@@ -41,16 +45,16 @@ impl A8KnotLane {
 #[cfg(test)]
 mod tests {
     use super::A8KnotLane;
+    use crate::test_support::test_b5::finite_lane;
 
     #[test]
     fn knot_lane_admission_requires_aligned_increasing_values() {
-        assert!(A8KnotLane::try_new(vec![0.0, 1.0], vec![2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![1.0, 0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0, 0.0], vec![2, 2]).is_none());
-        assert!(A8KnotLane::try_new(vec![0.0, f64::INFINITY], vec![2, 2]).is_none());
-        let lane =
-            A8KnotLane::try_new(vec![0.0, 1.0], vec![2, 2]).expect("aligned increasing knot lane");
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0]), vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[1.0, 0.0]), vec![2, 2]).is_none());
+        assert!(A8KnotLane::try_new(finite_lane(&[0.0, 0.0]), vec![2, 2]).is_none());
+        let lane = A8KnotLane::try_new(finite_lane(&[0.0, 1.0]), vec![2, 2])
+            .expect("aligned increasing knot lane");
         assert_eq!(lane.expanded(), Some(vec![0.0, 0.0, 1.0, 1.0]));
         assert_eq!(lane.pole_count(1), Some(2));
     }

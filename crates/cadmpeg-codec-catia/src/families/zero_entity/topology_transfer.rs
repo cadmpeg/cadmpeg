@@ -868,7 +868,7 @@ fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
         *nurbs.knots().get(degree)?,
         *nurbs.knots().get(nurbs.control_points().len())?,
     ];
-    (range.iter().copied().all(f64::is_finite) && range[0] < range[1]).then_some(range)
+    (range[0] < range[1]).then_some(range)
 }
 
 fn curve_orientation(

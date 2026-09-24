@@ -802,9 +802,7 @@ pub(in crate::families) fn try_decode_zero_entity(
                                 *nurbs.knots().get(nurbs.control_points().len())?,
                             ])
                         })
-                        .filter(|range| {
-                            range.iter().all(|value| value.is_finite()) && range[0] < range[1]
-                        })
+                        .filter(|range| range[0] < range[1])
                     else {
                         continue;
                     };
