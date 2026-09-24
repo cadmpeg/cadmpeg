@@ -744,12 +744,10 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::PolarNurbs { nurbs } => {
             let Some(reversed_knots) = nurbs
                 .knots()
-                .iter()
+                .finite_knots()
                 .rev()
                 .map(|knot| {
-                    FiniteReal::new(*knot)
-                        .and_then(|knot| cadmpeg_ir::math::reflect_parameter(knot, lower, upper))
-                        .map(FiniteReal::get)
+                    cadmpeg_ir::math::reflect_parameter(knot, lower, upper).map(FiniteReal::get)
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -764,12 +762,10 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::Nurbs { nurbs } => {
             let Some(reversed_knots) = nurbs
                 .knots()
-                .iter()
+                .finite_knots()
                 .rev()
                 .map(|knot| {
-                    FiniteReal::new(*knot)
-                        .and_then(|knot| cadmpeg_ir::math::reflect_parameter(knot, lower, upper))
-                        .map(FiniteReal::get)
+                    cadmpeg_ir::math::reflect_parameter(knot, lower, upper).map(FiniteReal::get)
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -874,10 +870,8 @@ fn reverse_analytic_pcurve_over_range(
             .ok()?,
         ));
     }
-    let reflection = start + end;
-    if !reflection.is_finite() {
-        return None;
-    }
+    let finite_reflection = FiniteReal::new(start + end)?;
+    let reflection = finite_reflection.get();
     let combine = |first: Point2, first_scale: f64, second: Point2, second_scale: f64| {
         let value = Point2::new(
             first_scale * first.u + second_scale * second.u,
@@ -885,17 +879,20 @@ fn reverse_analytic_pcurve_over_range(
         );
         value.is_finite().then_some(value)
     };
-    let reverse_hyperbolic = |cosine: Point2, sine: Point2| {
+    let reverse_hyperbolic = |cosine: FinitePoint2, sine: FinitePoint2| {
         let component = |cosine, sine| {
             let (cosine_sinh, cosine_cosh) =
-                cadmpeg_ir::math::scaled_sinh_cosh(cosine, reflection)?;
+                cadmpeg_ir::math::scaled_sinh_cosh(cosine, finite_reflection).ok()?;
             let (cosine_sinh, cosine_cosh) = (cosine_sinh.get(), cosine_cosh.get());
-            let (sine_sinh, sine_cosh) = cadmpeg_ir::math::scaled_sinh_cosh(sine, reflection)?;
+            let (sine_sinh, sine_cosh) =
+                cadmpeg_ir::math::scaled_sinh_cosh(sine, finite_reflection).ok()?;
             let (sine_sinh, sine_cosh) = (sine_sinh.get(), sine_cosh.get());
             Some((cosine_cosh + sine_sinh, -cosine_sinh - sine_cosh))
         };
-        let (cosine_u, sine_u) = component(cosine.u, sine.u)?;
-        let (cosine_v, sine_v) = component(cosine.v, sine.v)?;
+        let [cosine_u, cosine_v] = cosine.coordinates();
+        let [sine_u, sine_v] = sine.coordinates();
+        let (cosine_u, sine_u) = component(cosine_u, sine_u)?;
+        let (cosine_v, sine_v) = component(cosine_v, sine_v)?;
         Some((Point2::new(cosine_u, cosine_v), Point2::new(sine_u, sine_v)))
     };
     match pcurve {
@@ -943,9 +940,8 @@ fn reverse_analytic_pcurve_over_range(
         }
         PcurveGeometry::Hyperbolic(hyperbolic_pcurve) => {
             let center = hyperbolic_pcurve.center().get();
-            let source_cosine = hyperbolic_pcurve.cosine().get();
-            let source_sine = hyperbolic_pcurve.sine().get();
-            let (cosine, sine) = reverse_hyperbolic(source_cosine, source_sine)?;
+            let (cosine, sine) =
+                reverse_hyperbolic(*hyperbolic_pcurve.cosine(), *hyperbolic_pcurve.sine())?;
             Some(PcurveGeometry::Hyperbolic(
                 cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(center, cosine, sine)
                     .ok()?,
@@ -1026,9 +1022,17 @@ fn reverse_analytic_pcurve_over_range(
             let y_axis = hyperbola_pcurve.y_axis();
             let major_radius = hyperbola_pcurve.major_radius().get();
             let minor_radius = hyperbola_pcurve.minor_radius().get();
+            // The scaled axes are raw products, admitted where they are
+            // formed.
             let (cosine, sine) = reverse_hyperbolic(
-                Point2::new(x_axis.u * major_radius, x_axis.v * major_radius),
-                Point2::new(y_axis.u * minor_radius, y_axis.v * minor_radius),
+                FinitePoint2::new(Point2::new(
+                    x_axis.u * major_radius,
+                    x_axis.v * major_radius,
+                ))?,
+                FinitePoint2::new(Point2::new(
+                    y_axis.u * minor_radius,
+                    y_axis.v * minor_radius,
+                ))?,
             )?;
             Some(PcurveGeometry::Hyperbolic(
                 cadmpeg_ir::geometry::pcurve::HyperbolicPcurve::try_new(center, cosine, sine)

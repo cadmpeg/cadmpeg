@@ -22,9 +22,9 @@ pub fn projection_step(tangent: Vector3, residual: Vector3) -> Option<FiniteReal
         denominator.add_product(t, t);
     }
     let denominator = denominator.finish()?;
-    numerator
-        .finish()
-        .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
+    numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
+        value.quotient(denominator).ok()
+    })
 }
 
 /// Solve a two-column least-squares step without imposing an absolute rank scale.
@@ -121,12 +121,12 @@ pub fn least_squares_step(
     let u = u_numerator
         .finish()
         .map_or(Some(FiniteReal::ZERO), |value| {
-            value.quotient(u_denominator)
+            value.quotient(u_denominator).ok()
         })?;
     let v = v_numerator
         .finish()
         .map_or(Some(FiniteReal::ZERO), |value| {
-            value.quotient(v_denominator)
+            value.quotient(v_denominator).ok()
         })?;
     Some((u, v))
 }

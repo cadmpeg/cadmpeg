@@ -2679,4 +2679,145 @@ mod tests {
             Some(endpoints)
         );
     }
+
+    /// A plane through the origin placed by a transform that adds the largest
+    /// finite x coordinate: the pcurve point u = MAX lifts to a point without
+    /// a finite x, and u = -MAX lifts onto the plane x = 0.
+    fn overflowing_placed_plane_surface(face_id: u32) -> Surface {
+        let SurfaceGeometry::Solved(plane) = unit_plane_surface(face_id).geometry else {
+            panic!("the plane fixture is solved");
+        };
+        Surface {
+            id: SurfaceId::mint(format!("creo:visibgeom:surface#{face_id}"))
+                .expect("identity grammar"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(plane),
+                    cadmpeg_ir::transform::Transform::affine([
+                        [1.0, 0.0, 0.0, f64::MAX],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ])
+                    .expect("affine transform"),
+                )
+                .expect("valid PlacedSurface fixture"),
+            )),
+            source_object: None,
+        }
+    }
+
+    #[test]
+    fn a_two_chart_path_with_an_overflowing_placed_sample_is_mapped_on_both_charts() {
+        // The placed sample reaches x = +inf. `model_points_agree` scales its
+        // tolerance by the largest coordinate, which is then infinite, so the
+        // two charts agree.
+        let scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut ir = CadIr::empty();
+        ir.model
+            .surfaces
+            .extend([overflowing_placed_plane_surface(7), unit_plane_surface(8)]);
+        let pcurve = crate::curve::TwoChartPcurveSamples {
+            curve_id: 9,
+            faces: [7, 8],
+            samples: vec![
+                [[f64::MAX, 0.0], [0.0, 0.0]],
+                [[-f64::MAX, 1.0], [0.0, 1.0]],
+            ],
+            offset: 0,
+        };
+        assert!(matches!(
+            map_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            TwoChartMapping::Mapped {
+                endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
+                missing_surface_paths: 0,
+                unevaluable_paths: 0,
+                surface_mismatch: false,
+            }
+        ));
+    }
+
+    #[test]
+    fn a_pcurve_path_with_an_overflowing_placed_endpoint_is_mapped() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(overflowing_placed_plane_surface(7));
+        let mapped = super::map_pcurve_paths(
+            &ir,
+            [(
+                std::num::NonZeroU32::new(7),
+                [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
+            )],
+        );
+        assert_eq!(mapped.unevaluable_paths, 0);
+        assert_eq!(mapped.mapped.len(), 1);
+        assert_eq!(mapped.mapped[0].endpoints[0], [f64::INFINITY, 0.0, 0.0]);
+        assert_eq!(mapped.mapped[0].endpoints[1], [0.0, 5.0, 0.0]);
+    }
+
+    #[test]
+    fn a_pcurve_path_with_an_overflowing_placed_endpoint_withholds_the_curve_carrier() {
+        // Face 11's path lifts one endpoint to a point without a finite x. It
+        // is a mapped path that no endpoint evidence agrees with, and an
+        // evaluable path without a line carrier, so the curve keeps no carrier.
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves
+            .topology_rows
+            .push(crate::curve::CurveTopologyRow {
+                id: 7,
+                type_byte: 0,
+                feature_id: 0,
+                directions: [0x01, 0xf6],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
+                next_edges: [7, 7],
+                offset: 0,
+            });
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [10, 11].map(std::num::NonZeroU32::new),
+            face_0_endpoints: [[1.0, 2.0], [3.0, 4.0]],
+            face_1_endpoints: [[f64::MAX, 2.0], [-f64::MAX, 4.0]],
+            offset: 0,
+        });
+        scan.topology.loops.push(crate::topology::Loop {
+            face_id: std::num::NonZeroU32::new(10),
+            half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            }],
+        });
+        let mut ir = CadIr::empty();
+        ir.model
+            .surfaces
+            .extend([unit_plane_surface(10), overflowing_placed_plane_surface(11)]);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_diagnostics(&scan, &ir);
+        assert_eq!(diagnostics.mapped_paths, 2);
+        assert_eq!(diagnostics.unevaluable_paths, 0);
+        assert!(!evidence.contains_key(&7));
+        let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
+            .expect("valid source object identity");
+        assert!(transferred.is_empty(), "{transferred:?}");
+        assert!(ir.model.curves.is_empty());
+    }
+
+    #[test]
+    fn a_native_pcurve_with_an_overflowing_placed_endpoint_has_a_midpoint_and_no_orientation() {
+        // The placed endpoint reaches x = +inf. `point_pair_alignments` scales
+        // its tolerance by the largest coordinate, which is then infinite, so
+        // both pairings align: the midpoint is read, and the orientation is
+        // ambiguous.
+        let surface = overflowing_placed_plane_surface(7).geometry;
+        let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
+        assert_eq!(
+            super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
+            Some([f64::MAX, 2.5, 0.0])
+        );
+        assert_eq!(
+            super::oriented_native_pcurve_endpoints(
+                &surface,
+                endpoints,
+                [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
+            ),
+            None
+        );
+    }
 }

@@ -105,11 +105,13 @@ pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
         .fold(1.0, f64::max)
 }
 
-pub(in crate::decode) fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
+pub(in crate::decode) fn nurbs_intrinsic_parameter_range(
+    nurbs: &NurbsCurve,
+) -> Option<[FiniteReal; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
     let range = [
-        *nurbs.knots().get(degree)?,
-        *nurbs.knots().get(nurbs.control_points().len())?,
+        nurbs.knots().finite_knot(degree)?,
+        nurbs.knots().finite_knot(nurbs.control_points().len())?,
     ];
     (range[0] < range[1]).then_some(range)
 }
@@ -122,7 +124,8 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Opt
     valid_positive_nurbs_curve(nurbs)?;
     let range = nurbs_intrinsic_parameter_range(nurbs)?;
     let points = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+        cadmpeg_ir::eval::curve_point(geometry, parameter.get())
+            .map(|point| [point.x, point.y, point.z])
     });
     let [Some(first), Some(second)] = points else {
         return None;
@@ -141,7 +144,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
         return None;
     }
     let degree = usize::try_from(nurbs.degree()).ok()?;
-    let range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let range = FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
 
     if degree == 1 {
         nurbs
@@ -205,14 +208,14 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
                 &*geometry,
                 nurbs,
                 points[0],
-                intrinsic_range,
+                FiniteReal::raw_array(intrinsic_range),
                 tolerance,
             )?;
             let second = degree_one_nurbs_point_parameter(
                 &*geometry,
                 nurbs,
                 points[1],
-                intrinsic_range,
+                FiniteReal::raw_array(intrinsic_range),
                 tolerance,
             )?;
             (first, second)
@@ -224,11 +227,10 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             return None;
         };
         reverse_nonperiodic_nurbs(nurbs, intrinsic_range)?;
-        let [Some(first), Some(second), Some(start), Some(end)] =
-            [first, second, intrinsic_range[0], intrinsic_range[1]].map(FiniteReal::new)
-        else {
+        let [Some(first), Some(second)] = [first, second].map(FiniteReal::new) else {
             return None;
         };
+        let [start, end] = intrinsic_range;
         return Some([
             cadmpeg_ir::math::reflect_parameter(first, start, end)?.get(),
             cadmpeg_ir::math::reflect_parameter(second, start, end)?.get(),
@@ -236,7 +238,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     }
 
     let mapped = intrinsic_range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(&*geometry, parameter)
+        cadmpeg_ir::eval::curve_point(&*geometry, parameter.get())
             .map(|point| [point.x, point.y, point.z])
     });
     let [Some(first), Some(second)] = mapped else {
@@ -255,19 +257,22 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
     }
 }
 
-fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, range: [f64; 2]) -> Option<()> {
+/// Reverse a curve over `[start, end]`: the reversed parameterization with
+/// each knot reflected about the range. A knot whose reflection overflows
+/// leaves the curve unchanged.
+fn reverse_nonperiodic_nurbs(nurbs: &mut NurbsCurve, [start, end]: [FiniteReal; 2]) -> Option<()> {
+    let knots = nurbs
+        .knots()
+        .finite_knots()
+        .rev()
+        .map(|knot| cadmpeg_ir::math::reflect_parameter(knot, start, end).map(FiniteReal::get))
+        .collect::<Option<Vec<_>>>()?;
     let mut reversed = nurbs.clone();
     reversed.reverse_parameterization();
     reversed
-        .edit_knots(|knots| {
-            for knot in knots {
-                *knot = match [-*knot, range[0], range[1]].map(FiniteReal::new) {
-                    [Some(knot), Some(start), Some(end)] => {
-                        cadmpeg_ir::math::reflect_parameter(knot, start, end)
-                            .map_or(f64::NAN, FiniteReal::get)
-                    }
-                    _ => f64::NAN,
-                };
+        .edit_knots(|reversed_knots| {
+            for (knot, value) in reversed_knots.iter_mut().zip(&knots) {
+                *knot = *value;
             }
         })
         .ok()?;
@@ -287,7 +292,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
         .weights()
         .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
         .then_some(())?;
-    let range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let range = FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
     let mapped = range.map(|parameter| {
         cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
     });
@@ -706,7 +711,8 @@ mod tests {
         .expect("finite NURBS fixture");
         let mut reversed = original.clone();
 
-        assert!(reverse_nonperiodic_nurbs(&mut reversed, [f64::MAX, f64::MAX]).is_none());
+        let range = [cadmpeg_ir::scalar::FiniteReal::new(f64::MAX).expect("finite range"); 2];
+        assert!(reverse_nonperiodic_nurbs(&mut reversed, range).is_none());
         assert_eq!(reversed, original);
     }
 }

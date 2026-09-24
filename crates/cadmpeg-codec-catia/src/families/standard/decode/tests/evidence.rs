@@ -1825,3 +1825,39 @@ fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_partner_overflo
         Some([0, 1])
     );
 }
+
+#[test]
+fn a_native_endpoint_pair_reads_from_the_finite_support_when_its_placed_partner_overflows() {
+    let mut native = overflowing_cone_support([1.0, 4.0]);
+    native.carriers = native.carriers.map(|carrier| match carrier {
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+            SurfaceGeometry::Solved(cone),
+        ) => crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(cone),
+                    cadmpeg_ir::transform::Transform::identity(),
+                )
+                .expect("valid PlacedSurface fixture"),
+            )),
+        ),
+        carrier => carrier,
+    });
+    let points = [1.0_f64, 4.0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, angle)| {
+            Point::new(
+                PointId::mint(format!("catia:test:point#placed-overflow-{index}"))
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(angle.cos(), angle.sin(), 0.0))
+                    .expect("a finite position is a point"),
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        standard_native_support_endpoint_pair(&native, &points, &[0, 1], None),
+        Some([0, 1])
+    );
+}

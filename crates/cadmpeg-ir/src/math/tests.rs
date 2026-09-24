@@ -210,18 +210,29 @@ fn numerical_ranges_products_keep_intermediate_exponents() {
     assert_eq!(product_quotient([f64::MAX, 2.0], []), None);
     for parameter in [-720.0_f64, 720.0] {
         let expected = (parameter.abs() + 1e-10_f64.ln()).exp() * 0.5;
-        let (sinh, cosh) = scaled_sinh_cosh(1e-10, parameter).unwrap();
+        let (sinh, cosh) = scaled_sinh_cosh(
+            FiniteReal::new(1e-10).unwrap(),
+            FiniteReal::new(parameter).unwrap(),
+        )
+        .unwrap();
         let (sinh, cosh) = (sinh.get(), cosh.get());
         assert!((cosh / expected - 1.0).abs() < 1024.0 * f64::EPSILON);
         assert_eq!(sinh, parameter.signum() * cosh);
     }
     assert_eq!(
-        scaled_sinh_cosh(0.0, 2000.0).map(|(sinh, cosh)| (sinh.get(), cosh.get())),
+        scaled_sinh_cosh(FiniteReal::ZERO, FiniteReal::new(2000.0).unwrap())
+            .ok()
+            .map(|(sinh, cosh)| (sinh.get(), cosh.get())),
         Some((0.0, 0.0))
     );
-    assert_eq!(scaled_sinh_cosh(1.0, 2000.0), None);
     assert_eq!(
-        scaled_sinh_cosh(2.0, 0.0).map(|(sinh, cosh)| (sinh.get(), cosh.get())),
+        scaled_sinh_cosh(FiniteReal::ONE, FiniteReal::new(2000.0).unwrap()).ok(),
+        None
+    );
+    assert_eq!(
+        scaled_sinh_cosh(FiniteReal::new(2.0).unwrap(), FiniteReal::ZERO)
+            .ok()
+            .map(|(sinh, cosh)| (sinh.get(), cosh.get())),
         Some((0.0, 2.0))
     );
 }
@@ -357,4 +368,18 @@ fn numerical_audit_domains_do_not_admit_disjoint_parameter_ranges() {
         ));
     }
     assert!(!super::parameter_in_domain(f64::NAN, [0., 1.], 0.));
+}
+
+#[test]
+fn scaled_hyperbolic_products_that_overflow_carry_their_plain_products() {
+    use super::scaled_sinh_cosh;
+    // cosh(1) is finite; its product with MAX is not.
+    let (sinh, cosh) = scaled_sinh_cosh(FiniteReal::new(f64::MAX).unwrap(), FiniteReal::ONE)
+        .expect_err("the products overflow");
+    assert_eq!((sinh, cosh), (f64::INFINITY, f64::INFINITY));
+    // Past the cosh range the products are exponentiated in thirds.
+    assert_eq!(
+        scaled_sinh_cosh(FiniteReal::ONE.negated(), FiniteReal::new(-2000.0).unwrap()),
+        Err((f64::INFINITY, f64::NEG_INFINITY))
+    );
 }

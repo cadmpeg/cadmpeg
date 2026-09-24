@@ -61,7 +61,7 @@ impl Homogeneous {
             .collect::<Option<Vec<_>>>()?;
         let original = weights
             .iter()
-            .map(|weight| weight.finite().map(FiniteReal::get))
+            .map(|weight| weight.finite().ok().map(FiniteReal::get))
             .collect::<Option<Vec<_>>>();
         if original
             .as_ref()
@@ -102,18 +102,22 @@ impl Homogeneous {
     /// Subtract the specified weight derivatives, then divide by the base
     /// weight. Repeated corrections express second derivatives without first
     /// multiplying a possibly large first derivative by two.
+    ///
+    /// A zero base weight, and a correction outside the accumulator's range,
+    /// leave no value. Each lane is its coordinate, or the signed infinity of
+    /// a quotient that overflows.
     pub(super) fn project(
         self,
         base: Self,
         subtract: &[(Self, [FiniteReal; 3])],
-    ) -> Option<[FiniteReal; 3]> {
+    ) -> Option<[Result<FiniteReal, f64>; 3]> {
         let denominator = base.values[3]?;
-        let mut result = [FiniteReal::ZERO; 3];
-        for (axis, coordinate) in result.iter_mut().enumerate() {
+        let mut lanes = [Ok(FiniteReal::ZERO); 3];
+        for (axis, lane) in lanes.iter_mut().enumerate() {
             // A constant coordinate divides out exactly, including at f64::MAX.
             if subtract.is_empty() {
                 if let Some(value) = self.constant[axis] {
-                    *coordinate = value;
+                    *lane = Ok(value);
                     continue;
                 }
             }
@@ -127,11 +131,23 @@ impl Homogeneous {
                 }
                 sum.finish()
             };
-            *coordinate = match numerator {
-                Some(value) => value.quotient(denominator)?,
-                None => FiniteReal::ZERO,
-            };
+            *lane = numerator.map_or(Ok(FiniteReal::ZERO), |value| value.quotient(denominator));
         }
-        Some(result)
+        Some(lanes)
     }
+}
+
+/// The coordinates when every lane is finite. Otherwise the value of every
+/// lane: the coordinate, or the signed infinity of a lane that overflows.
+pub(super) fn finite_lanes<const N: usize>(
+    lanes: [Result<FiniteReal, f64>; N],
+) -> Result<[FiniteReal; N], [f64; N]> {
+    let mut coordinates = [FiniteReal::ZERO; N];
+    for (coordinate, lane) in coordinates.iter_mut().zip(lanes) {
+        let Ok(value) = lane else {
+            return Err(lanes.map(|lane| lane.map_or_else(|raw| raw, FiniteReal::get)));
+        };
+        *coordinate = value;
+    }
+    Ok(coordinates)
 }

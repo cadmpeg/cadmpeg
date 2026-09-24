@@ -502,18 +502,16 @@ fn reverse_nurbs(
     };
     let control_count = curve.control_points().len();
     let [start, end] = interval;
-    if !start.is_finite() || !end.is_finite() || start > end {
+    let (Some(finite_start), Some(finite_end)) = (FiniteReal::new(start), FiniteReal::new(end))
+    else {
+        return Err(CompositeCurveError::ReversedChildInterval { start, end });
+    };
+    if start > end {
         return Err(CompositeCurveError::ReversedChildInterval { start, end });
     }
-    let domain_start = curve.knots()[degree];
-    let domain_end = curve.knots()[control_count];
-    let (Some(lower), Some(upper)) = (FiniteReal::new(domain_start), FiniteReal::new(domain_end))
-    else {
-        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
-            domain_start,
-            domain_end,
-        });
-    };
+    let knots = curve.knots().finite_knots().collect::<Vec<_>>();
+    let (lower, upper) = (knots[degree], knots[control_count]);
+    let (domain_start, domain_end) = (lower.get(), upper.get());
     if domain_start >= domain_end {
         return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
             domain_start,
@@ -529,20 +527,17 @@ fn reverse_nurbs(
         });
     }
     let reflect = |parameter| {
-        FiniteReal::new(parameter)
-            .and_then(|parameter| cadmpeg_ir::math::reflect_parameter(parameter, lower, upper))
+        cadmpeg_ir::math::reflect_parameter(parameter, lower, upper)
             .map(FiniteReal::get)
             .ok_or(CompositeCurveError::ReversedChildReflectionNonFinite {
                 domain_start,
                 domain_end,
             })
     };
-    let reversed_range = [reflect(end)?, reflect(start)?];
-    let knots = curve
-        .knots()
-        .iter()
+    let reversed_range = [reflect(finite_end)?, reflect(finite_start)?];
+    let knots = knots
+        .into_iter()
         .rev()
-        .copied()
         .map(reflect)
         .collect::<Result<Vec<_>, _>>()?;
     let mut poles = curve.pole_rows().clone();

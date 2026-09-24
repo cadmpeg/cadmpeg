@@ -1048,8 +1048,10 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             } else {
                 (y.abs().ln() - minor_radius.get().ln() + std::f64::consts::LN_2).copysign(y)
             };
-            let Some((_, expected_x)) =
-                cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)
+            let Some(Ok((_, expected_x))) =
+                cadmpeg_ir::scalar::FiniteReal::new(parameter).map(|parameter| {
+                    cadmpeg_ir::math::scaled_sinh_cosh(major_radius.magnitude(), parameter)
+                })
             else {
                 return false;
             };

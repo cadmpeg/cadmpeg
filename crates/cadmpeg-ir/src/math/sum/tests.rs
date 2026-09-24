@@ -6,17 +6,15 @@ use super::{
 use crate::scalar::FiniteReal;
 
 #[test]
-fn zero_ratio_still_refuses_nonfinite_inputs() {
-    assert_eq!(super::scaled_ratio_products(0.0, 1.0, [f64::NAN]), None);
-    assert_eq!(
-        super::scaled_ratio_products(1.0, 0.0, [f64::INFINITY]),
-        None
-    );
-    assert_eq!(super::scaled_ratio_products(f64::NAN, 0.0, [1.0]), None);
-    assert_eq!(
-        super::scaled_ratio_products(0.0, 1.0, [2.0]).map(|products| products.map(FiniteReal::get)),
-        Some([0.0])
-    );
+fn a_zero_value_or_denominator_makes_every_ratio_product_zero() {
+    let real = |value| FiniteReal::new(value).expect("finite test value");
+    for [value, denominator] in [[0.0, 1.0], [1.0, 0.0]] {
+        assert_eq!(
+            super::scaled_ratio_products(real(value), real(denominator), [real(2.0)])
+                .map(|products| products.map(FiniteReal::get)),
+            Some([0.0])
+        );
+    }
 }
 
 #[test]
@@ -33,15 +31,21 @@ fn exact_dot_rounds_subnormal_ties_using_the_full_product_sum() {
     let coefficients = [2.0_f64.powi(-537), 2.0_f64.powi(-564)];
     let components = [2.0_f64.powi(-538), 2.0_f64.powi(-564)];
     assert_eq!(
-        super::finite_dot(coefficients, components).map(FiniteReal::get),
+        super::finite_dot(coefficients, components)
+            .ok()
+            .map(FiniteReal::get),
         Some(f64::from_bits(1))
     );
     assert_eq!(
-        super::finite_dot([-coefficients[0], -coefficients[1]], components).map(FiniteReal::get),
+        super::finite_dot([-coefficients[0], -coefficients[1]], components)
+            .ok()
+            .map(FiniteReal::get),
         Some(-f64::from_bits(1))
     );
     assert_eq!(
-        super::finite_dot([coefficients[0], 0.0], components).map(FiniteReal::get),
+        super::finite_dot([coefficients[0], 0.0], components)
+            .ok()
+            .map(FiniteReal::get),
         Some(0.0)
     );
 }
@@ -102,4 +106,38 @@ fn every_exponent_the_scaled_value_constructors_produce_stays_inside_the_stated_
         let scaled = value.scaled_by(scale_exponent);
         assert!(scaled.is_finite(), "scaled value {scaled} is not finite");
     }
+}
+
+#[test]
+fn an_overflowing_quotient_value_or_dot_product_carries_the_value_it_reached() {
+    let large = scaled_finite(f64::MAX).expect("finite value");
+    let half = scaled_finite(0.5).expect("finite value");
+    let negative_half = scaled_finite(-0.5).expect("finite value");
+    assert_eq!(large.quotient(half), Err(f64::INFINITY));
+    assert_eq!(large.quotient(negative_half), Err(f64::NEG_INFINITY));
+    assert_eq!(
+        large.quotient(scaled_finite(4.0).expect("finite value")),
+        Ok(FiniteReal::new(f64::MAX / 4.0).expect("finite quotient"))
+    );
+    assert_eq!(large.quotient_by_factors([half], false), Err(f64::INFINITY));
+    assert_eq!(
+        large.quotient_by_factors([half, half], true),
+        Err(f64::INFINITY)
+    );
+    let mut sum = ExactSignedSum::default();
+    sum.add_product(f64::MAX, -2.0);
+    assert_eq!(
+        sum.finish().expect("nonzero sum").finite(),
+        Err(f64::NEG_INFINITY)
+    );
+    // The plain left-to-right sum of the products.
+    assert_eq!(
+        super::finite_dot([1.0, 1.0], [f64::MAX, f64::MAX]),
+        Err(f64::INFINITY)
+    );
+    assert!(super::finite_dot([1.0, 0.0], [1.0, f64::INFINITY]).is_err_and(f64::is_nan));
+    assert_eq!(
+        super::finite_dot([1.0, -1.0], [f64::MAX, f64::MAX]),
+        Ok(FiniteReal::ZERO)
+    );
 }

@@ -771,9 +771,11 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 center.get(),
                 SketchLocus::Center(entity.id().clone()),
             )];
-            let point = |parameter: f64| {
-                let (_, x) = cadmpeg_ir::math::scaled_sinh_cosh(major_radius.get(), parameter)?;
-                let (y, _) = cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.get(), parameter)?;
+            let point = |parameter: cadmpeg_ir::scalar::FiniteReal| {
+                let (_, x) =
+                    cadmpeg_ir::math::scaled_sinh_cosh(major_radius.magnitude(), parameter).ok()?;
+                let (y, _) =
+                    cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.magnitude(), parameter).ok()?;
                 let (x, y) = (x.get(), y.get());
                 let (sine, cosine) = major_angle.get().sin_cos();
                 let point = Point2::new(
@@ -783,7 +785,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                 point.is_finite().then_some(point)
             };
             if let Some([start, end]) = bounds {
-                if let (Some(start), Some(end)) = (point(start.get()), point(end.get())) {
+                if let (Some(start), Some(end)) = (point(*start), point(*end)) {
                     loci.push(locus(start, SketchLocus::Start(entity.id().clone())));
                     loci.push(locus(end, SketchLocus::End(entity.id().clone())));
                 }

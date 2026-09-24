@@ -279,7 +279,8 @@ pub(in super::super) fn revolution_profile_boundary_pcurve(
     ) {
         let nurbs =
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let [lower, upper] =
+            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
         let parameter = match boundary {
             RevolutionBoundary::Start => lower,
             RevolutionBoundary::End => upper,
@@ -311,7 +312,8 @@ pub(in super::super) fn revolution_face_sense(
     let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
         let nurbs =
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let [lower, upper] =
+            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
         let parameter = lower + (upper - lower) * 0.5;
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
@@ -359,7 +361,8 @@ pub(in super::super) fn revolution_face_sense(
     let pcurve = if is_nurbs {
         let nurbs =
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
-        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let [lower, upper] =
+            cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
         let parameter = lower + (upper - lower) * 0.5;
         line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])?
     } else {

@@ -1582,7 +1582,8 @@ fn planar_parallel_lines(
             -first_start.v,
         ],
         [first_unit.y, first_unit.y, -first_unit.x, -first_unit.x],
-    )?
+    )
+    .ok()?
     .abs();
     Some(PlanarParallelLines {
         first: [first_start.get(), first_end.get()],
@@ -1612,6 +1613,7 @@ fn planar_parallel_line_span_distance(
             [point.u, -first_start.u, point.v, -first_start.v],
             [unit.x, unit.x, unit.y, unit.y],
         )
+        .ok()
     };
     let first_interval = [0.0, project(first_end)?.get()];
     let second_interval = [project(second_start)?.get(), project(second_end)?.get()];

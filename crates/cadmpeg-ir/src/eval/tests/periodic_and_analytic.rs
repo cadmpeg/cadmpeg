@@ -321,7 +321,7 @@ fn overflowing_plane() -> SolvedSurfaceGeometry {
 }
 
 #[test]
-fn a_placed_surface_has_no_point_where_its_basis_point_overflows() {
+fn a_placed_surface_reports_the_point_its_placement_reaches_where_its_basis_point_overflows() {
     use crate::eval::{surface_point, surface_point_with_budget, EvaluationFailure};
 
     let placed = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
@@ -337,14 +337,18 @@ fn a_placed_surface_has_no_point_where_its_basis_point_overflows() {
         .expect("placed surface"),
     ));
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
-    assert_eq!(
+    // The basis point has no finite x coordinate, and the placement's plain
+    // row products carry it into every coordinate.
+    for point in [
         surface_point(&placed, f64::MAX, 0.0),
-        Err(EvaluationFailure::NoValue)
-    );
-    assert_eq!(
         surface_point_with_budget(&placed, f64::MAX, 0.0, &budget),
-        Err(EvaluationFailure::NoValue)
-    );
+    ] {
+        assert!(
+            matches!(point, Err(EvaluationFailure::NonFinite(point))
+                if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()),
+            "{point:?}"
+        );
+    }
     assert_eq!(
         surface_point(&placed, -f64::MAX, 0.0).map(crate::features::FinitePoint3::get),
         Ok(Point3::new(0.0, 0.0, 1.0))
@@ -379,17 +383,21 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
 }
 
 #[test]
-fn a_line_pcurve_whose_point_overflows_has_no_value() {
+fn a_line_pcurve_whose_point_overflows_reports_the_non_finite_point() {
     use crate::eval::{pcurve_uv, EvaluationFailure};
     use crate::geometry::pcurve::{LinePcurve, PcurveGeometry};
     use crate::math::Point2;
 
-    // Only an offset carrier reports the non-finite point it reaches; the
-    // other carriers read an overflowing point as no point.
     let line = PcurveGeometry::Line(
         LinePcurve::try_new(Point2::new(f64::MAX, 0.0), Point2::new(1.0, 0.0)).unwrap(),
     );
-    assert_eq!(pcurve_uv(&line, f64::MAX), Err(EvaluationFailure::NoValue));
+    assert_eq!(
+        pcurve_uv(&line, f64::MAX),
+        Err(EvaluationFailure::NonFinite(Point2::new(
+            f64::INFINITY,
+            0.0
+        )))
+    );
 }
 
 #[test]

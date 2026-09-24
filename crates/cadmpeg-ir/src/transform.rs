@@ -81,10 +81,9 @@ impl Transform2 {
     pub fn apply_point(self, point: Point2) -> Point2 {
         let components = [point.u, point.v, 1.0];
         let apply = |row: [f64; 3]| {
-            finite_dot(row, components).map_or_else(
-                || row[0] * point.u + row[1] * point.v + row[2],
-                FiniteReal::get,
-            )
+            // A coordinate that is not finite is the plain
+            // `row[0] * u + row[1] * v + row[2]`.
+            finite_dot(row, components).map_or_else(|plain| plain, FiniteReal::get)
         };
         Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
@@ -93,8 +92,9 @@ impl Transform2 {
     pub fn apply_vector(self, vector: Point2) -> Point2 {
         let components = [vector.u, vector.v];
         let apply = |row: [f64; 3]| {
-            finite_dot([row[0], row[1]], components)
-                .map_or_else(|| row[0] * vector.u + row[1] * vector.v, FiniteReal::get)
+            // A component that is not finite is the plain
+            // `row[0] * u + row[1] * v`.
+            finite_dot([row[0], row[1]], components).map_or_else(|plain| plain, FiniteReal::get)
         };
         Point2::new(apply(self.rows[0]), apply(self.rows[1]))
     }
@@ -251,7 +251,7 @@ impl Transform {
         for (row, values) in rows.iter_mut().enumerate() {
             for (column, value) in values.iter_mut().enumerate() {
                 *value = finite_dot(left[row], std::array::from_fn(|inner| right[inner][column]))
-                    .ok_or(TransformError::NonFinite)?;
+                    .map_err(|_| TransformError::NonFinite)?;
             }
         }
         Ok(Self::from_finite_rows(rows))
@@ -264,12 +264,22 @@ impl Transform {
     /// The result is absent when any coordinate is not finite.
     #[must_use]
     pub fn apply_point(self, point: Point3) -> Option<FinitePoint3> {
+        self.apply_point_reaching(point).ok()
+    }
+
+    /// Applies this affine transform to a point, or gives the point it
+    /// reaches when a coordinate is not finite. Such a coordinate is the
+    /// plain sum of its row's products.
+    pub(crate) fn apply_point_reaching(self, point: Point3) -> Result<FinitePoint3, Point3> {
         let components = [point.x, point.y, point.z, 1.0];
-        Some(FinitePoint3::from_coordinates(
-            finite_dot(self.rows[0], components)?,
-            finite_dot(self.rows[1], components)?,
-            finite_dot(self.rows[2], components)?,
-        ))
+        match self.rows.map(|row| finite_dot(row, components)) {
+            [Ok(x), Ok(y), Ok(z)] => Ok(FinitePoint3::from_coordinates(x, y, z)),
+            coordinates => {
+                let [x, y, z] = coordinates
+                    .map(|coordinate| coordinate.map_or_else(|plain| plain, FiniteReal::get));
+                Err(Point3::new(x, y, z))
+            }
+        }
     }
 
     /// Applies this transform's linear component to a vector.
@@ -281,9 +291,9 @@ impl Transform {
         let components = [vector.x, vector.y, vector.z];
         let linear = self.rows.map(|row| [row[0], row[1], row[2]]);
         Some(FiniteVector3::from_components(
-            finite_dot(linear[0], components)?,
-            finite_dot(linear[1], components)?,
-            finite_dot(linear[2], components)?,
+            finite_dot(linear[0], components).ok()?,
+            finite_dot(linear[1], components).ok()?,
+            finite_dot(linear[2], components).ok()?,
         ))
     }
 
@@ -334,7 +344,7 @@ impl Transform {
         for row in 0..3 {
             rows[row][..3].copy_from_slice(&inverse_linear[row]);
             rows[row][3] = finite_dot(inverse_linear[row].map(FiniteReal::get), translation)
-                .ok_or(TransformError::NonFinite)?
+                .map_err(|_| TransformError::NonFinite)?
                 .negated();
         }
         Ok(Self::from_finite_rows(rows))
@@ -349,7 +359,9 @@ impl Transform {
                 let mut cofactor = ExactSignedSum::default();
                 add_cofactor_product(&mut cofactor, &matrix, column, row, 1.0);
                 *entry = cofactor.finish().map_or(Ok(FiniteReal::ZERO), |value| {
-                    value.quotient(determinant).ok_or(TransformError::NonFinite)
+                    value
+                        .quotient(determinant)
+                        .map_err(|_| TransformError::NonFinite)
                 })?;
             }
         }

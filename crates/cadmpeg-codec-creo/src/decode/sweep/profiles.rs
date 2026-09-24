@@ -42,7 +42,8 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
         }
         SketchGeometryDefinition::Nurbs { .. } => {
             let nurbs = sketch_nurbs_curve(geometry)?;
-            let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+            let [lower, upper] =
+                cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
             let last = cadmpeg_ir::eval::curve_point(&carrier, upper)?;
@@ -274,7 +275,9 @@ pub(in super::super) fn extrusion_side_uvs(
         SketchGeometryDefinition::Nurbs { .. }
     ) {
         if let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed) {
-            if let Some([lower, upper]) = nurbs_intrinsic_parameter_range(&nurbs) {
+            if let Some([lower, upper]) = nurbs_intrinsic_parameter_range(&nurbs)
+                .map(cadmpeg_ir::scalar::FiniteReal::raw_array)
+            {
                 return [
                     [[lower, 0.0], [upper, 0.0]],
                     [[upper, 0.0], [upper, 1.0]],
@@ -823,7 +826,8 @@ fn append_nurbs_profile_span(
 }
 
 fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64; 2]>> {
-    let [lower, upper] = nurbs_intrinsic_parameter_range(nurbs)?;
+    let [lower, upper] =
+        cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
     let first = [first.x, first.y];
@@ -864,7 +868,8 @@ fn profile_nurbs_polyline(segment: &ProfileEntity, tolerance: f64) -> Option<Vec
 
 fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) -> Option<f64> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
-    let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+    let [lower, upper] =
+        cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
     let mut area_twice = 0.0;
     for pair in nurbs.knots().windows(2) {

@@ -459,6 +459,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         ProfileGeometry::Nurbs { .. } => {
                             oriented_sketch_nurbs_curve(&sketch_geometry, reversed)
                                 .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
+                                .map(cadmpeg_ir::scalar::FiniteReal::raw_array)
                         }
                     };
                     ir.model.edges.push(Edge {

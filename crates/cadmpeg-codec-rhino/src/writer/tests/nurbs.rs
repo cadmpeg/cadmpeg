@@ -798,7 +798,9 @@ fn reversed_trim_reflects_interior_knots_without_domain_sum_overflow() {
         source: &source.model.edges[0],
         start: 0,
         end: 1,
-        domain,
+        domain: domain.map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
         curve_id: "large-domain",
         curve: WritableEdgeCurve::Nurbs(&curve),
         uses: vec![],
@@ -872,7 +874,9 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
         source: &source.model.edges[0],
         start: 0,
         end: 1,
-        domain,
+        domain: domain.map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
         curve_id: "large-domain",
         curve: WritableEdgeCurve::Nurbs(&curve),
         uses: vec![],

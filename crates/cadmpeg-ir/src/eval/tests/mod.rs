@@ -90,6 +90,7 @@ macro_rules! procedural_curve {
 
 mod helix;
 mod law_sweep;
+mod overflowing_arms;
 mod pcurves;
 mod procedural_curves;
 mod ruled_sum;

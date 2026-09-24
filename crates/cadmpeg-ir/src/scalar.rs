@@ -377,6 +377,14 @@ impl Length {
         Self(-self.0)
     }
 
+    /// The length in canonical millimeters as a dimensionless real, for a
+    /// product with a dimensionless factor. A length is finite, so nothing is
+    /// checked.
+    #[must_use]
+    pub const fn magnitude(self) -> FiniteReal {
+        FiniteReal(self.0)
+    }
+
     /// The magnitude. The magnitude of a finite value is finite.
     #[must_use]
     pub const fn abs(self) -> Self {
@@ -691,7 +699,7 @@ impl<const N: usize> crate::units::FiniteVector<N> {
     /// components, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.
     #[must_use]
-    pub(crate) fn finite_components(self) -> [FiniteReal; N] {
+    pub fn finite_components(self) -> [FiniteReal; N] {
         self.get().map(FiniteReal)
     }
 }
@@ -701,8 +709,17 @@ impl crate::geometry::nurbs::KnotVector {
     /// vector admits only finite knots, so nothing is checked. The route
     /// lives beside [`FiniteReal`] because only this module constructs one.
     #[must_use]
-    pub(crate) fn finite_knot(&self, index: usize) -> Option<FiniteReal> {
+    pub fn finite_knot(&self, index: usize) -> Option<FiniteReal> {
         self.as_slice().get(index).map(|knot| FiniteReal(*knot))
+    }
+
+    /// The knots as finite reals, in order. The vector admits only finite
+    /// knots, so nothing is checked. The route lives beside [`FiniteReal`]
+    /// because only this module constructs one.
+    pub fn finite_knots(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = FiniteReal> + ExactSizeIterator + '_ {
+        self.as_slice().iter().map(|knot| FiniteReal(*knot))
     }
 }
 
@@ -744,6 +761,28 @@ impl crate::features::FiniteVector3 {
             FiniteReal(vector.y),
             FiniteReal(vector.z),
         ]
+    }
+
+    /// The components charted by the binade of the largest magnitude, and the
+    /// chart's exponent: each component times `2^-exponent`, where
+    /// `2^exponent` is the least power of two above the largest magnitude. A
+    /// zero vector has no chart.
+    ///
+    /// Every magnitude is at most the largest, which lies below `2^exponent`,
+    /// and a power-of-two scaling does not raise a magnitude past the
+    /// product's own bound, so each charted component lies in `(-1, 1)` and
+    /// nothing is checked. The route lives beside [`FiniteReal`] because only
+    /// this module constructs one.
+    #[must_use]
+    pub(crate) fn binade_chart(self) -> Option<([FiniteReal; 3], i32)> {
+        let vector = self.get();
+        let largest = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        let exponent = crate::math::power_of_two_bound(largest)?;
+        let chart = |value: f64| FiniteReal(crate::math::power_of_two_product(value, -exponent));
+        Some((
+            [chart(vector.x), chart(vector.y), chart(vector.z)],
+            exponent,
+        ))
     }
 }
 

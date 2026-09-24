@@ -2738,4 +2738,130 @@ mod tests {
             assert!(super::translation_net_normal(&surface).is_none());
         }
     }
+
+    /// The cylinder of radius `radius` about the z axis through the origin,
+    /// optionally placed by a translation of `x` along x, under an offset of
+    /// `distance` with a linear support extension, which leaves the
+    /// parameters unclamped.
+    fn offset_cylinder_model(
+        support_origin_x: f64,
+        placed_x: Option<f64>,
+        radius: f64,
+        distance: f64,
+    ) -> (CadIr, SurfaceId) {
+        let support =
+            SurfaceId::mint("test:nx:surface#cylinder-support").expect("identity grammar");
+        let offset = SurfaceId::mint("test:nx:surface#cylinder-offset").expect("identity grammar");
+        let construction =
+            cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:nx:procedural#cylinder-offset")
+                .expect("identity grammar");
+        let cylinder = SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(support_origin_x, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            )
+            .expect("valid CylinderSurface fixture"),
+        );
+        let geometry = match placed_x {
+            Some(x) => SolvedSurfaceGeometry::Transformed(
+                cadmpeg_ir::geometry::PlacedSurface::try_new(
+                    Box::new(cylinder),
+                    cadmpeg_ir::transform::Transform::affine([
+                        [1.0, 0.0, 0.0, x],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                    ])
+                    .expect("affine transform"),
+                )
+                .expect("valid PlacedSurface fixture"),
+            ),
+            None => cylinder,
+        };
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.extend([
+            cadmpeg_ir::geometry::Surface {
+                id: support.clone(),
+                geometry: SurfaceGeometry::Solved(geometry),
+                source_object: None,
+            },
+            cadmpeg_ir::geometry::Surface {
+                id: offset.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            },
+        ]);
+        ir.model
+            .procedural_surfaces
+            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+                construction,
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        support,
+                        distance,
+                        None,
+                        None,
+                        true,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
+                        },
+                    )
+                    .expect("valid offset construction"),
+                ),
+                None,
+            ));
+        (ir, offset)
+    }
+
+    /// Refine from `u = -1.2` toward the offset point at `u = 0.3` on an offset
+    /// cylinder of total radius 1e307 whose axis lies at x = 1.701e308. The
+    /// first Gauss-Newton step lands near `u = -0.2`, where x exceeds the
+    /// finite range; the search halves it and converges.
+    fn refine_across_the_overflowing_step(ir: &CadIr, offset: &SurfaceId) -> Option<Point2> {
+        let axis_x = 1.701e308;
+        let radius = 1.0e307;
+        let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        let first_candidate =
+            cadmpeg_ir::eval::model_surface_point_by_id(&index, offset, -0.2, 0.0);
+        assert!(
+            matches!(
+                first_candidate,
+                Err(cadmpeg_ir::eval::EvaluationFailure::NonFinite(_))
+            ),
+            "{first_candidate:?}"
+        );
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        refine_offset_surface_parameters_with_index_and_budget(
+            &index,
+            offset,
+            target,
+            Point2::new(-1.2, 0.0),
+            1.0e295,
+            &geometry_budget,
+        )
+    }
+
+    #[test]
+    fn the_offset_refinement_halves_a_step_whose_offset_point_overflows() {
+        // The support point stays finite; its offset leaves the finite range.
+        let (ir, offset) = offset_cylinder_model(1.701e308, None, 5.0e306, 5.0e306);
+        let refined =
+            refine_across_the_overflowing_step(&ir, &offset).expect("the halved step converges");
+        assert!((refined.u - 0.3).abs() <= 1.0e-9, "{refined:?}");
+    }
+
+    #[test]
+    fn the_offset_refinement_halves_a_step_whose_placed_support_point_overflows() {
+        // The placed support point itself leaves the finite range.
+        let (ir, offset) = offset_cylinder_model(0.0, Some(1.701e308), 1.0e307 - 1.0e290, 1.0e290);
+        let refined =
+            refine_across_the_overflowing_step(&ir, &offset).expect("the halved step converges");
+        assert!((refined.u - 0.3).abs() <= 1.0e-9, "{refined:?}");
+    }
 }
