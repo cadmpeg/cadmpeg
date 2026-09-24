@@ -486,7 +486,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides()[0].surface.is_some());
     assert!(context.sides()[0].pcurve.is_some());
     assert!(context.sides()[1].surface.is_none());
-    assert_eq!(context.parameter_range(), [0.0, 0.01]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 0.01]);
     assert!(result.ir().model.coedges[0].pcurves.is_empty());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code.category() == LossCategory::Geometry

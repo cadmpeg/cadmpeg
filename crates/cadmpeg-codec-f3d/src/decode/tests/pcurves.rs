@@ -71,7 +71,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let shift = definition_payload.shift();
     let scale = definition_payload.scale();
     assert_eq!(base_u_range.endpoints(), [-1.0, 2.0]);
-    assert_eq!(context.parameter_range(), [0.0, 1.0]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
     assert!(*discontinuity_flag);
     assert_eq!(base_v_range.endpoints(), [-3.0, 4.0]);
     assert_eq!(base_range.endpoints(), [-0.5, 1.5]);
@@ -109,8 +109,9 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         let scale = &mut scale_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
-            let mut range = previous.parameter_range();
-            let discontinuities = previous.discontinuities().clone();
+            let mut range = previous.parameter_range().endpoints();
+            let discontinuities =
+                cadmpeg_ir::scalar::FiniteReal::raw_lanes(previous.discontinuities());
             {
                 let context_parameter_range: &mut [f64; 2] = &mut range;
 
@@ -160,7 +161,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     assert!(
         match regenerated.ir().model.procedural_curves[0].definition() {
             ProceduralCurveDefinition::SurfaceOffset(matched_payload) =>
-                matches!((matched_payload.context(), matched_payload.discontinuity_flag(), matched_payload.base_u_range().endpoints(), matched_payload.base_v_range().endpoints(), matched_payload.base_range().endpoints(), matched_payload.distance().get(), matched_payload.shift().get(), matched_payload.scale().get(),), (context, false, [-2.0, 5.0], [-6.0, 7.0], [-0.75, 1.75], 3.5, -0.25, 0.8,) if context.parameter_range() == [-1.5, 2.5]),
+                matches!((matched_payload.context(), matched_payload.discontinuity_flag(), matched_payload.base_u_range().endpoints(), matched_payload.base_v_range().endpoints(), matched_payload.base_range().endpoints(), matched_payload.distance().get(), matched_payload.shift().get(), matched_payload.scale().get(),), (context, false, [-2.0, 5.0], [-6.0, 7.0], [-0.75, 1.75], 3.5, -0.25, 0.8,) if context.parameter_range().endpoints() == [-1.5, 2.5]),
             _ => false,
         }
     );
@@ -382,7 +383,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             panic!("expected resolved deformable source")
         };
         assert_eq!(cache_first.revision.get(), 23100);
-        assert_eq!(context.parameter_range(), [-1.0, 2.0]);
+        assert_eq!(context.parameter_range().endpoints(), [-1.0, 2.0]);
         assert_eq!(
             source_parameter_range.map(|bound| bound.map(cadmpeg_ir::scalar::FiniteReal::get)),
             [Some(0.0), Some(1.0)]

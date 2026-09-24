@@ -1218,7 +1218,7 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                 source_surface,
                 &source_pcurve.geometry,
                 target_surface,
-                context.parameter_range(),
+                context.parameter_range().endpoints(),
                 tolerance,
                 blend_contact,
                 transfer_budget,
@@ -1415,7 +1415,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 (
                     [first_support, second_support],
                     [start_point, end_point],
-                    context.parameter_range(),
+                    context.parameter_range().endpoints(),
                     tolerance,
                 )
             }

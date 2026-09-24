@@ -185,8 +185,8 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
     context.set_surface(0, Some(support.clone()));
     assert!(edit::replace(context, |previous| {
         let sides = previous.sides().clone();
-        let mut range = previous.parameter_range();
-        let discontinuities = previous.discontinuities().clone();
+        let mut range = previous.parameter_range().endpoints();
+        let discontinuities = crate::scalar::FiniteReal::raw_lanes(previous.discontinuities());
         {
             let range: &mut [f64; 2] = &mut range;
             *range = [1.0, 0.0];
@@ -194,7 +194,7 @@ fn intersection_context_mutation_keeps_checked_ranges_and_cache_tolerance() {
         crate::geometry::IntcurveSupportContext::try_new(sides, range, discontinuities)
     })
     .is_err());
-    assert_eq!(context.parameter_range(), [0.0, 1.0]);
+    assert_eq!(context.parameter_range().endpoints(), [0.0, 1.0]);
     assert_eq!(context.sides()[0].surface.as_ref(), Some(&support));
     assert_eq!(
         curve

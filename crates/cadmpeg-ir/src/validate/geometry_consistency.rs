@@ -106,6 +106,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             };
             let solved = context
                 .parameter_range()
+                .endpoints()
                 .map(|parameter| curve_point(solved, parameter));
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
@@ -212,6 +213,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         };
         let solved = context
             .parameter_range()
+            .endpoints()
             .map(|parameter| curve_point(curve, parameter));
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
@@ -263,7 +265,7 @@ fn check_support_sides(
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let support = context.parameter_range().map(|parameter| {
+        let support = context.parameter_range().endpoints().map(|parameter| {
             side.pcurve_parameter(context.parameter_range(), parameter)
                 .and_then(|parameter| pcurve_uv(&pcurve.geometry, parameter.get()))
                 .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))

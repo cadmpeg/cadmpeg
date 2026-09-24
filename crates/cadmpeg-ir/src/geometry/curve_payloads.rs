@@ -1016,7 +1016,7 @@ impl ThreeSurfaceIntersectionCurvePayload {
             .pcurve
             .as_ref()
             .is_some_and(|pcurve| pcurve.parameter_range.is_some())
-            && context.parameter_range()[0] == context.parameter_range()[1]
+            && context.parameter_range().endpoints()[0] == context.parameter_range().endpoints()[1]
         {
             return Err(ProceduralGeometryError::Payload(
                 "three-surface intersection context is not finite and ordered",

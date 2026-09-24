@@ -776,7 +776,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         one_sided,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range() == [2.0, 4.0]
+            if family.context().parameter_range().endpoints() == [2.0, 4.0]
                 && family.context().sides()[0].surface == Some(surfaces[&10].clone())
                 && family.context().sides()[0]
                     .pcurve
@@ -807,7 +807,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         intersection,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range() == [2.0, 4.0]
+            if context.parameter_range().endpoints() == [2.0, 4.0]
                 && context.sides()[1].surface == Some(surfaces[&11].clone())
                 && context.sides()[1]
                     .pcurve
@@ -839,7 +839,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         independently_parameterized,
         ProceduralCurveDefinition::Intersection { context, .. }
-            if context.parameter_range() == [0.0, 1.0]
+            if context.parameter_range().endpoints() == [0.0, 1.0]
             && context.sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
             && context.sides()[1].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([5.0, 2.0])
     ));
@@ -857,7 +857,7 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     assert!(matches!(
         distance_parameterized,
         ProceduralCurveDefinition::SurfaceCurve { family }
-            if family.context().parameter_range() == [0.0, 8.0]
+            if family.context().parameter_range().endpoints() == [0.0, 8.0]
             && family.context().sides()[0].pcurve_parameter_range().map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints) == Some([2.0, 4.0])
     ));
 }

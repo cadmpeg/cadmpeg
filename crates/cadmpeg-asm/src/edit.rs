@@ -1195,13 +1195,13 @@ fn patch_two_sided_offset_definition(
     for (at, value) in layout
         .parameter_range
         .into_iter()
-        .zip(context.parameter_range())
+        .zip(context.parameter_range().endpoints())
     {
         AsmEditSet::patch_f64_payload(bytes, record.offset + at, value)?;
     }
     for (locations, values) in layout.discontinuities.iter().zip(context.discontinuities()) {
         for (at, value) in locations.iter().zip(values) {
-            AsmEditSet::patch_f64_payload(bytes, record.offset + *at, *value)?;
+            AsmEditSet::patch_f64_payload(bytes, record.offset + *at, value.get())?;
         }
     }
     AsmEditSet::patch_native_bool(
@@ -1252,10 +1252,13 @@ fn patch_intcurve_context(
             .into_iter()
             .chain(discontinuities.into_iter().flatten())
             .zip(
-                context
-                    .parameter_range()
-                    .into_iter()
-                    .chain(context.discontinuities().iter().flatten().copied()),
+                context.parameter_range().endpoints().into_iter().chain(
+                    context
+                        .discontinuities()
+                        .iter()
+                        .flatten()
+                        .map(|value| value.get()),
+                ),
             ),
     )?;
     if let Some((offset, value)) = flag {

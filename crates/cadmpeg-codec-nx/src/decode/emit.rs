@@ -630,7 +630,7 @@ pub(super) fn emit_topology(
                     (owner.clone(), side.surface.clone()?),
                     (
                         side.pcurve.clone()?.geometry,
-                        context.parameter_range(),
+                        context.parameter_range().endpoints(),
                         procedural.cache_fit_tolerance(),
                     ),
                 ))

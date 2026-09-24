@@ -3676,7 +3676,7 @@ mod tests {
                 .as_ref()
                 .expect("first pcurve")
                 .geometry,
-            context.parameter_range()[0],
+            context.parameter_range().endpoints()[0],
         )
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
