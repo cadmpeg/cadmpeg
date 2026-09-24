@@ -5977,7 +5977,7 @@ fn encode_nurbs(
         i32::from(polynomial),
         i32::from(nurbs.periodic())
     );
-    for value in nurbs.knots().iter() {
+    for value in nurbs.knots() {
         parameters.push(',');
         parameters.push_str(&number(finite(*value, "NURBS knot")?));
     }

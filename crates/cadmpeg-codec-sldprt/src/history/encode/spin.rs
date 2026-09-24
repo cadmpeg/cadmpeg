@@ -128,7 +128,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                    format_point3_mm(axis.origin.into()),
+                    format_point3_mm(axis.origin),
                 );
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("AxisDirection"),

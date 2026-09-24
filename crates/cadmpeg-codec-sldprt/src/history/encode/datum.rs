@@ -76,7 +76,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin().into()),
+                format_point3_mm(frame.origin()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Normal"),
@@ -256,7 +256,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin().into()),
+                format_point3_mm(frame.origin()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("XAxis"),
