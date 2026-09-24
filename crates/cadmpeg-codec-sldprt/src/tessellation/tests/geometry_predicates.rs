@@ -29,7 +29,11 @@ fn numerical_audit_tessellation_keeps_translated_area() {
     for offset in [0., 1e8] {
         let p = [[0., 0.], [1., 0.], [1., 1.], [0., 1.]]
             .map(|p| Point2::new(offset + p[0], offset + p[1]));
-        assert_eq!(polygon_area_twice(&p), 2.);
+        assert_eq!(
+            cadmpeg_ir::math::planar::polygon_area_twice(&p)
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            Some(2.)
+        );
         assert!(is_simple_polygon(&p, EPS_DISTANCE));
     }
 }
