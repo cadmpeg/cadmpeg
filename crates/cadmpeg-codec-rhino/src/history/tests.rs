@@ -915,3 +915,77 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
         );
     }
 }
+
+/// The semantic text of the version-two hatch fixture with the real at byte
+/// `offset` replaced by `value`, at ten millimetres per unit.
+fn scaled_hatch_semantics(offset: usize, value: f64, warnings: &mut Diagnostics) -> Option<String> {
+    let mut payload = crate::hatch::tests::version_two_hatch_payload();
+    payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    let geometry = EmbeddedGeometry {
+        class_id: crate::hatch::CLASS,
+        class_data_range: 0..payload.len(),
+        userdata: Vec::new(),
+    };
+    crate::decode::with_expand_bytes(&payload, |expand| {
+        extended_geometry_json(
+            expand,
+            &geometry,
+            ArchiveVersion::V8,
+            None,
+            crate::test_support::millimeter_scale(10.0),
+            warnings,
+        )
+    })
+}
+
+/// Byte 0 of the hatch fixture is the version; the plane's sixteen reals
+/// follow, origin first and the equation constant last.
+const HATCH_ORIGIN_X_OFFSET: usize = 1;
+const HATCH_EQUATION_CONSTANT_OFFSET: usize = 1 + 15 * 8;
+
+/// A plane value past the largest finite `f64` once in millimetres is
+/// refused by its field name.
+fn assert_hatch_plane_overflow_is_refused(offset: usize, field: &str) {
+    let mut warnings = Diagnostics::new();
+    assert_eq!(
+        scaled_hatch_semantics(offset, 1.0e308, &mut warnings),
+        None,
+        "{field}"
+    );
+    assert!(
+        warnings
+            .messages()
+            .any(|message| message.contains(field) && message.contains("not implemented yet")),
+        "{field}: {:?}",
+        warnings.messages().collect::<Vec<_>>()
+    );
+}
+
+/// The hatch plane origin and its equation constant are written in
+/// millimetres.
+#[test]
+fn history_hatch_writes_its_plane_in_millimetres() {
+    let admitted = scaled_hatch_semantics(HATCH_ORIGIN_X_OFFSET, 10.0, &mut Diagnostics::new())
+        .expect("finite hatch semantics");
+    let admitted: serde_json::Value =
+        serde_json::from_str(&admitted).expect("hatch semantics are JSON");
+    assert_eq!(
+        admitted["plane"]["origin"],
+        serde_json::json!([100.0, 200.0, 300.0])
+    );
+    assert_eq!(admitted["plane"]["equation"][3], serde_json::json!(-300.0));
+}
+
+/// An origin coordinate that overflows in millimetres is refused, where it
+/// was written `null`.
+#[test]
+fn history_hatch_refuses_an_origin_that_overflows_in_millimetres() {
+    assert_hatch_plane_overflow_is_refused(HATCH_ORIGIN_X_OFFSET, "plane.origin[0]");
+}
+
+/// An equation constant that overflows in millimetres is refused, where it
+/// was written `null`.
+#[test]
+fn history_hatch_refuses_an_equation_constant_that_overflows_in_millimetres() {
+    assert_hatch_plane_overflow_is_refused(HATCH_EQUATION_CONSTANT_OFFSET, "plane.equation[3]");
+}

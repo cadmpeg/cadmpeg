@@ -983,11 +983,36 @@ fn extended_geometry_json(
         let mut hatch =
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
         crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
-        let mut plane = hatch.plane;
-        for coordinate in &mut plane.origin {
-            *coordinate *= scale.value();
-        }
-        plane.equation[3] *= scale.value();
+        let plane = hatch.plane;
+        let millimetres = |coordinate: f64, field: &str| {
+            crate::wire::scaled_coordinate(coordinate, scale).ok_or_else(|| {
+                cadmpeg_core::CodecError::NotImplemented(format!(
+                    "history hatch {field} {coordinate} at {} millimetres per unit has no \
+                     finite millimetre value",
+                    scale.value()
+                ))
+            })
+        };
+        let scaled = (|| {
+            Ok::<_, cadmpeg_core::CodecError>((
+                [
+                    millimetres(plane.origin[0], "plane.origin[0]")?,
+                    millimetres(plane.origin[1], "plane.origin[1]")?,
+                    millimetres(plane.origin[2], "plane.origin[2]")?,
+                ],
+                millimetres(plane.equation[3], "plane.equation[3]")?,
+            ))
+        })();
+        let (origin, equation_constant) = match scaled {
+            Ok(scaled) => scaled,
+            Err(error) => {
+                warnings.push(format!(
+                    "embedded history hatch at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+                return None;
+            }
+        };
         let loops = hatch
             .loops
             .iter()
@@ -1004,11 +1029,16 @@ fn extended_geometry_json(
         let mut semantic = serde_json::json!({
             "kind": "hatch",
             "plane": {
-                "origin": plane.origin,
+                "origin": origin,
                 "xaxis": plane.xaxis,
                 "yaxis": plane.yaxis,
                 "zaxis": plane.zaxis,
-                "equation": plane.equation,
+                "equation": [
+                    plane.equation[0],
+                    plane.equation[1],
+                    plane.equation[2],
+                    equation_constant,
+                ],
             },
             "pattern_scale": hatch.pattern_scale,
             "pattern_rotation": hatch.pattern_rotation,
