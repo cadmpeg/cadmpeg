@@ -531,3 +531,61 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
         crate::units::FinitePoint2::new(crate::math::Point2::new(f64::MAX, 0.0))
     );
 }
+
+#[test]
+fn analytic_parameters_are_finite_where_their_quotients_overflow() {
+    use crate::eval::analytic_surface_parameters_solved;
+
+    // Over a subnormal radius the projections overflow to infinities; the
+    // angle of two infinities is still finite.
+    let cylinder = SolvedSurfaceGeometry::Cylinder(
+        crate::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0e-310,
+        )
+        .unwrap(),
+    );
+    let parameters =
+        analytic_surface_parameters_solved(&cylinder, Point3::new(1.0e10, 1.0e10, 2.0)).unwrap();
+    assert_eq!(
+        parameters.get(),
+        crate::math::Point2::new(std::f64::consts::FRAC_PI_4, 2.0)
+    );
+
+    // The hypotenuse of the two largest finite coordinates overflows; the
+    // latitude over it is zero.
+    let sphere = SolvedSurfaceGeometry::Sphere(
+        crate::geometry::analytic::SphereSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    );
+    let parameters =
+        analytic_surface_parameters_solved(&sphere, Point3::new(f64::MAX, f64::MAX, 1.0)).unwrap();
+    assert_eq!(
+        parameters.get(),
+        crate::math::Point2::new(std::f64::consts::FRAC_PI_4, 0.0)
+    );
+
+    let torus = SolvedSurfaceGeometry::Torus(
+        crate::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0e-310,
+        )
+        .unwrap(),
+    );
+    let parameters =
+        analytic_surface_parameters_solved(&torus, Point3::new(f64::MAX, f64::MAX, 1.0)).unwrap();
+    assert_eq!(
+        parameters.get(),
+        crate::math::Point2::new(std::f64::consts::FRAC_PI_4, std::f64::consts::FRAC_PI_4)
+    );
+}

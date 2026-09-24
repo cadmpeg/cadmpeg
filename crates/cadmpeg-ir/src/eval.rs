@@ -31,7 +31,7 @@ use crate::math::solve::least_squares_step;
 use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
-use crate::scalar::{FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroReal};
+use crate::scalar::{FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroLength, NonZeroReal};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
@@ -104,7 +104,8 @@ pub fn spatial_points_are_reflections(
 }
 
 /// Recover native parameters for an analytic surface point. The parameters
-/// are absent when either is not finite.
+/// are absent when a projection of the point is not finite, and on a cone at
+/// its apex and where its angle is undefined.
 pub fn analytic_surface_parameters_solved(
     geometry: &SolvedSurfaceGeometry,
     point: Point3,
@@ -126,22 +127,23 @@ pub fn analytic_surface_parameters_solved(
         let transverse = axis.cross(reference);
         (project(reference), project(transverse), project(axis))
     };
-    let result = match geometry {
+    let finite = crate::scalar::ExtendedReal::from_finite;
+    match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
             let u_axis = plane_surface.frame().reference().as_raw();
             let (u, v, _) = components(origin, *normal, *u_axis);
-            return Some(FinitePoint2::from_coordinates(u?, v?));
+            Some(FinitePoint2::from_coordinates(u?, v?))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
             let axis = cylinder_surface.frame().axis().as_raw();
             let ref_direction = cylinder_surface.frame().reference().as_raw();
-            let radius = cylinder_surface.radius().get();
+            let radius = NonZeroLength::from(cylinder_surface.radius());
             let (x, y, v) = components(origin, *axis, *ref_direction);
-            let (x, y, v) = (x?.get(), y?.get(), v?.get());
-            Point2::new((y / radius).atan2(x / radius), v)
+            let angle = finite(y?).over(radius).atan2(finite(x?).over(radius));
+            Some(FinitePoint2::from_coordinates(angle, v?))
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
@@ -151,37 +153,46 @@ pub fn analytic_surface_parameters_solved(
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
             let (x, y, v) = components(origin, *axis, *ref_direction);
-            let (x, y, v) = (x?.get(), y?.get(), v?.get());
-            let local_radius = radius + v * half_angle.tan();
+            let (x, y, v) = (x?.get(), y?.get(), v?);
+            let local_radius = radius + v.get() * half_angle.tan();
             if local_radius == 0.0 {
                 return None;
             }
-            Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
+            // A section radius whose product with the ratio underflows to
+            // zero leaves 0 / 0 at y = 0.
+            let angle = FiniteReal::new((y / (local_radius * ratio)).atan2(x / local_radius))?;
+            Some(FinitePoint2::from_coordinates(angle, v))
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
             let axis = sphere_surface.frame().axis().as_raw();
             let ref_direction = sphere_surface.frame().reference().as_raw();
             let (x, y, z) = components(center, *axis, *ref_direction);
-            let (x, y, z) = (x?.get(), y?.get(), z?.get());
-            Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
+            let (x, y, z) = (x?, y?, z?);
+            Some(FinitePoint2::from_coordinates(
+                y.atan2(x),
+                finite(z).atan2(crate::scalar::ExtendedReal::hypot(x, y)),
+            ))
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
             let axis = torus_surface.frame().axis().as_raw();
             let ref_direction = torus_surface.frame().reference().as_raw();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
+            let major_radius = torus_surface.major_radius();
+            let minor_radius = torus_surface.minor_radius();
             let (x, y, z) = components(center, *axis, *ref_direction);
-            let (x, y, z) = (x?.get(), y?.get(), z?.get());
-            Point2::new(
+            let (x, y, z) = (x?, y?, z?);
+            Some(FinitePoint2::from_coordinates(
                 y.atan2(x),
-                (z / minor_radius).atan2((x.hypot(y) - major_radius) / minor_radius),
-            )
+                finite(z).over(minor_radius).atan2(
+                    crate::scalar::ExtendedReal::hypot(x, y)
+                        .minus(major_radius.into())
+                        .over(minor_radius),
+                ),
+            ))
         }
-        _ => return None,
-    };
-    FinitePoint2::new(result)
+        _ => None,
+    }
 }
 
 #[derive(Clone)]

@@ -623,6 +623,45 @@ impl crate::units::FinitePoint2 {
     }
 }
 
+/// A real value or an infinity, never NaN.
+///
+/// The hypotenuse of two finite values, a finite value or an infinity over a
+/// nonzero finite length, and a finite length subtracted from one of these
+/// are all finite or infinite. The four-quadrant arctangent of two such values is
+/// finite, so it needs no check.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ExtendedReal(f64);
+
+impl ExtendedReal {
+    /// A finite value.
+    pub(crate) const fn from_finite(value: FiniteReal) -> Self {
+        Self(value.0)
+    }
+
+    /// The hypotenuse `hypot(x, y)` of two finite values: finite or `+inf`.
+    pub(crate) fn hypot(x: FiniteReal, y: FiniteReal) -> Self {
+        Self(x.0.hypot(y.0))
+    }
+
+    /// `self - value`: an infinity less a finite length keeps its infinity.
+    #[must_use]
+    pub(crate) fn minus(self, value: Length) -> Self {
+        Self(self.0 - value.0)
+    }
+
+    /// `self / divisor`: over a nonzero finite divisor, a finite value is
+    /// finite or infinite and an infinity keeps its infinity.
+    #[must_use]
+    pub(crate) fn over(self, divisor: NonZeroLength) -> Self {
+        Self(self.0 / divisor.0)
+    }
+
+    /// The four-quadrant arctangent of `self / x`, an angle in `[-π, π]`.
+    pub(crate) fn atan2(self, x: Self) -> FiniteReal {
+        FiniteReal(self.0.atan2(x.0))
+    }
+}
+
 impl NonZeroReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
