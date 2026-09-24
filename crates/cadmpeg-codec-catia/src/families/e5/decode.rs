@@ -731,14 +731,15 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
             knots,
-            multiplicities,
             control_points,
             range,
             ..
         } => {
-            let (knots, _) =
-                crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
-            let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+            let knots = knots
+                .iter()
+                .copied()
+                .map(FiniteReal::get)
+                .collect::<Vec<_>>();
             let control_points = control_points
                 .iter()
                 .map(|[u, v]| Point2::new(u.get(), v.get()))
@@ -2266,15 +2267,16 @@ fn e5_pcurve_on_surface(
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
             knots,
-            multiplicities,
             control_points,
             range,
             ..
         } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let (knots, _) =
-                crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
-            let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+            let knots = knots
+                .iter()
+                .copied()
+                .map(FiniteReal::get)
+                .collect::<Vec<_>>();
             let control_points = control_points
                 .iter()
                 .map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1]))
@@ -4484,8 +4486,7 @@ mod route_tests {
         let pcurve = E5Pcurve::Nurbs {
             surface: 7,
             degree: 1,
-            knots: finite_lane(&[0.0, 1.0]),
-            multiplicities: vec![2, 2],
+            knots: finite_lane(&[0.0, 0.0, 1.0, 1.0]),
             control_points: vec![finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])],
             range: finite_pair([0.0, 1.0]),
         };

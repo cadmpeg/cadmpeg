@@ -235,10 +235,9 @@ pub(super) enum E5Pcurve {
         surface: u32,
         /// B-spline degree.
         degree: u32,
-        /// Distinct knot values in strictly increasing order.
+        /// The full knot vector: each stored distinct knot, in strictly
+        /// increasing order, repeated by its stored multiplicity.
         knots: Vec<FiniteReal>,
-        /// Multiplicity for each distinct knot.
-        multiplicities: Vec<u32>,
         /// `(u, v)` control points in parameter order.
         control_points: Vec<[FiniteReal; 2]>,
         /// Effective parameter domain of the expanded knot vector.
@@ -846,19 +845,10 @@ fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E
     view.is_empty().then_some(E5Pcurve::Nurbs {
         surface,
         degree,
-        knots,
-        multiplicities,
+        knots: expanded_knots,
         control_points,
         range,
     })
-}
-
-pub(super) fn expand_nurbs_knots(
-    degree: u32,
-    knots: &[FiniteReal],
-    multiplicities: &[u32],
-) -> Option<(Vec<FiniteReal>, usize)> {
-    expand_nurbs_knots_limited(degree, knots, multiplicities, usize::MAX)
 }
 
 fn expand_nurbs_knots_limited(
@@ -1720,7 +1710,6 @@ mod tests {
             surface,
             degree,
             knots,
-            multiplicities,
             control_points,
             range,
         } = parse_nurbs_pcurve(&payload, 2, 7).expect("AA NURBS pcurve")
@@ -1729,8 +1718,7 @@ mod tests {
         };
         assert_eq!(surface, 7);
         assert_eq!(degree, 1);
-        assert_eq!(knots, finite_lane(&[0.0, 1.0]));
-        assert_eq!(multiplicities, [2, 2]);
+        assert_eq!(knots, finite_lane(&[0.0, 0.0, 1.0, 1.0]));
         assert_eq!(
             control_points,
             [finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])]
