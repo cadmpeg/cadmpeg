@@ -6,16 +6,21 @@ use crate::families::e5::decode::{
 use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
 use crate::families::e5::tests::e5_loop_members;
 use crate::test_support::test_b5::{finite_pair, point};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
+
+fn uv(values: [f64; 2]) -> FiniteVector<2> {
+    FiniteVector::new(values).expect("finite fixture pair")
+}
 
 #[test]
 fn plane_axis_fit_is_uv_scale_independent() {
     for scale in [2.0, 1e-200] {
         let pairs = [
-            ([scale, 0.0], Point3::new(scale, 0.0, 0.0)),
-            ([0.0, scale], Point3::new(0.0, scale, 0.0)),
-            ([scale, scale], Point3::new(scale, scale, 0.0)),
+            (uv([scale, 0.0]), point([scale, 0.0, 0.0])),
+            (uv([0.0, scale]), point([0.0, scale, 0.0])),
+            (uv([scale, scale]), point([scale, scale, 0.0])),
         ];
         let (u_axis, v_axis, residual) =
             fit_e5_plane_axes(point([0.0; 3]), &pairs).expect("full-rank frame");
@@ -33,8 +38,8 @@ fn plane_axis_fit_is_uv_scale_independent() {
 fn rank_one_plane_endpoints_complete_with_known_normal() {
     for scale in [2.0, 1e-200] {
         let pairs = [
-            ([0.0, -scale], Point3::new(-scale, 0.0, 0.0)),
-            ([0.0, scale], Point3::new(scale, 0.0, 0.0)),
+            (uv([0.0, -scale]), point([-scale, 0.0, 0.0])),
+            (uv([0.0, scale]), point([scale, 0.0, 0.0])),
         ];
         let (u_axis, v_axis, residual) =
             fit_rank_one_e5_plane_axes(point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
@@ -49,10 +54,10 @@ fn rank_one_plane_endpoints_complete_with_known_normal() {
 fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
     let tiny = 1e-15;
     let pairs = [
-        ([tiny, -20.0], Point3::new(-20.0, 0.0, 0.0)),
-        ([tiny, 20.0], Point3::new(20.0, 0.0, 0.0)),
-        ([-tiny, -7.5], Point3::new(-7.5, 0.0, 0.0)),
-        ([tiny, 7.5], Point3::new(7.5, 0.0, 0.0)),
+        (uv([tiny, -20.0]), point([-20.0, 0.0, 0.0])),
+        (uv([tiny, 20.0]), point([20.0, 0.0, 0.0])),
+        (uv([-tiny, -7.5]), point([-7.5, 0.0, 0.0])),
+        (uv([tiny, 7.5]), point([7.5, 0.0, 0.0])),
     ];
     assert!(fit_e5_plane_axes(point([0.0; 3]), &pairs).is_none());
     let (_, _, residual) =
@@ -64,12 +69,12 @@ fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
 #[test]
 fn e5_uv_rank_detection_ignores_roundoff_transverse_components() {
     assert!(!super::super::e5_uv_vectors_are_independent(
-        [1e-15, -20.0],
-        [-1e-15, 20.0],
+        uv([1e-15, -20.0]),
+        uv([-1e-15, 20.0]),
     ));
     assert!(super::super::e5_uv_vectors_are_independent(
-        [1.0, 0.0],
-        [0.0, 1.0]
+        uv([1.0, 0.0]),
+        uv([0.0, 1.0])
     ));
 }
 
@@ -233,9 +238,27 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
 fn plane_frame_residual_rejects_nonfinite_predictions() {
     let residual = super::super::plane_frame_residual(
         [0.0; 3],
-        &[([f64::MAX, f64::MAX], Point3::new(0.0, 0.0, 0.0))],
+        &[(uv([f64::MAX, f64::MAX]), point([0.0, 0.0, 0.0]))],
         Vector3::new(f64::MAX, 0.0, 0.0),
         Vector3::new(-f64::MAX, 0.0, 0.0),
     );
     assert_eq!(residual, f64::INFINITY);
+}
+
+#[test]
+fn e5_native_uv_endpoints_hand_back_admitted_pairs() {
+    let line = |direction: [f64; 2]| E5Pcurve::Line {
+        surface: 100,
+        origin: finite_pair([1.0, 2.0]),
+        direction: finite_pair(direction),
+        range: finite_pair([0.0, 2.0]),
+    };
+    assert_eq!(
+        super::super::e5_native_uv_endpoints(&line([3.0, -1.0])),
+        Some([uv([1.0, 2.0]), uv([7.0, 0.0])])
+    );
+    assert_eq!(
+        super::super::e5_native_uv_endpoints(&line([f64::MAX, 0.0])),
+        None
+    );
 }

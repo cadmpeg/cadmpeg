@@ -785,6 +785,13 @@ impl From<FinitePoint2> for Point2 {
         value.0
     }
 }
+impl From<FinitePoint2> for FiniteVector<2> {
+    /// Carry a finite point's coordinates. Every coordinate is finite, so
+    /// nothing is checked.
+    fn from(value: FinitePoint2) -> Self {
+        Self([value.0.u, value.0.v])
+    }
+}
 impl crate::geometry::pcurve::PcurveNurbs {
     /// Control points in parameter order. [`Self::new`] and
     /// [`Self::edit_control_points`] admit every pole finite, so each pole is
