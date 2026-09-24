@@ -25,6 +25,7 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroReal, PositiveLength};
+use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{BTreeMap, BTreeSet};
 
 mod sample_count;
@@ -2213,7 +2214,7 @@ pub(super) fn intersection_side(
         }
         let control_points = uv
             .iter()
-            .map(|pair| surface_parameters(geometry, *pair))
+            .map(|pair| surface_parameters(geometry, *pair).map(FinitePoint2::get))
             .collect::<Option<Vec<_>>>()?;
         Some((control_points, linear_knots(parameters)))
     });
@@ -2235,7 +2236,11 @@ pub(super) fn intersection_side(
     })
 }
 
-pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<Point2> {
+/// Convert serialized support parameters to model parameters: planar
+/// parameters and the axial parameter of a cylinder or cone are lengths in
+/// metres, the others are unchanged. A scaled parameter is finite only when
+/// the serialized one is, so the one admission states both.
+pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Option<FinitePoint2> {
     let point = match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             Point2::new(uv[0] * 1000.0, uv[1] * 1000.0)
@@ -2255,10 +2260,7 @@ pub(super) fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Opt
             return surface_parameters(&SurfaceGeometry::Solved(placed.basis().clone()), uv)
         }
     };
-    [point.u, point.v]
-        .into_iter()
-        .all(f64::is_finite)
-        .then_some(point)
+    FinitePoint2::new(point)
 }
 
 pub(super) fn normalize_pcurve_parameters(
@@ -2272,14 +2274,13 @@ pub(super) fn normalize_pcurve_parameters(
             let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
             let converted_origin = surface_parameters(surface, [origin.u, origin.v])?;
             let converted_end = surface_parameters(surface, [end.u, end.v])?;
-            *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            *line_pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                 converted_origin,
-                Point2::new(
+                cadmpeg_ir::units::NonzeroPoint2::new(Point2::new(
                     converted_end.u - converted_origin.u,
                     converted_end.v - converted_origin.v,
-                ),
-            )
-            .ok()?;
+                ))?,
+            );
         }
         PcurveGeometry::Nurbs { nurbs } => {
             let converted = nurbs
@@ -2291,7 +2292,7 @@ pub(super) fn normalize_pcurve_parameters(
             nurbs
                 .edit_control_points(|point| {
                     if let Some(next) = converted.next() {
-                        *point = next;
+                        *point = next.get();
                     }
                     Ok(())
                 })

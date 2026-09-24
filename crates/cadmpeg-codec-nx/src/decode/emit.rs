@@ -12,7 +12,7 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
@@ -1082,14 +1082,11 @@ pub(super) fn curve_tag(geometry: &SolvedCurveGeometry) -> &'static str {
     }
 }
 
+/// Admit a metre tolerance in millimetres. The scaled value is finite and
+/// positive exactly when the metre value is and scaling does not overflow,
+/// and the negative missing-tolerance sentinel is refused by its sign.
 pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::PositiveReal> {
-    match value {
-        MISSING_TOLERANCE => None,
-        value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
-            cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
-        }
-        _ => None,
-    }
+    cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
 }
 
 #[allow(clippy::too_many_arguments)]

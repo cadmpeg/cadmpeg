@@ -45,6 +45,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -196,10 +197,7 @@ fn support_uv_lane_matches_surface_with_budget(
         if geometry_budget.exhausted() {
             return false;
         }
-        if uv
-            .iter()
-            .any(|value| !value.is_finite() || missing_support_parameter(*value))
-        {
+        if uv.iter().any(|value| missing_support_parameter(*value)) {
             return false;
         }
         let Some(uv) = surface_parameters(geometry, *uv) else {
@@ -453,11 +451,8 @@ fn serialized_support_uv_seed_candidates(
         };
         let lane = lane_order[candidate % 2];
         let [u, v] = *lanes[lane].as_deref()?.get(point_index)?;
-        (u.is_finite()
-            && v.is_finite()
-            && !missing_support_parameter(u)
-            && !missing_support_parameter(v))
-        .then(|| surface_parameters(geometry, [u, v]))?
+        (!missing_support_parameter(u) && !missing_support_parameter(v))
+            .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
     })
 }
 
@@ -540,11 +535,8 @@ fn serialized_support_uv_seed_for_side(
     .into_iter()
     .find_map(|(lanes, lane)| {
         let [u, v] = *lanes[lane].as_deref()?.first()?;
-        (u.is_finite()
-            && v.is_finite()
-            && !missing_support_parameter(u)
-            && !missing_support_parameter(v))
-        .then(|| surface_parameters(geometry, [u, v]))?
+        (!missing_support_parameter(u) && !missing_support_parameter(v))
+            .then(|| surface_parameters(geometry, [u, v]).map(FinitePoint2::get))?
     })
 }
 
@@ -611,13 +603,13 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             if values
                 .iter()
                 .flatten()
-                .any(|value| !value.is_finite() || missing_support_parameter(*value))
+                .any(|value| missing_support_parameter(*value))
             {
                 return None;
             }
             values
                 .iter()
-                .map(|uv| surface_parameters(surface_geometry, *uv))
+                .map(|uv| surface_parameters(surface_geometry, *uv).map(FinitePoint2::get))
                 .collect::<Option<Vec<_>>>()
         });
         for (side, control_points) in side_lanes.into_iter().enumerate() {

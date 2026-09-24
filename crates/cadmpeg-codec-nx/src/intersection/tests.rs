@@ -363,7 +363,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         uncharted.supports.references()[0],
         uncharted.supports.references()[1]
     );
-    assert!(uncharted.tolerance.is_finite() && uncharted.tolerance > 0.0);
+    assert!(uncharted.tolerance.get().is_finite() && uncharted.tolerance.get() > 0.0);
 
     let edge = stream
         .windows(4)

@@ -676,7 +676,7 @@ pub(super) fn try_decode_geometry(
                         &surfaces_by_xmt,
                         [Some(charted.primary_support), charted.secondary_support],
                         &charted.samples.points(),
-                        charted.fit_tolerance,
+                        charted.fit_tolerance.get(),
                         &charted.support_uv,
                         &serialized_support_uv_geometry_budget,
                     );
@@ -685,7 +685,7 @@ pub(super) fn try_decode_geometry(
                         &surfaces_by_xmt,
                         [Some(charted.primary_support), charted.secondary_support],
                         &charted.samples.points(),
-                        charted.fit_tolerance,
+                        charted.fit_tolerance.get(),
                         &charted.ext_support_uv,
                         &serialized_support_uv_geometry_budget,
                     ) {
@@ -717,11 +717,12 @@ pub(super) fn try_decode_geometry(
                     let [Some(first), Some(second)] = supports else {
                         return None;
                     };
-                    (first != second).then_some((
+                    cadmpeg_ir::geometry::TolerantIntersectionConstruction::from_parts(
                         [first, second],
                         uncharted.endpoints,
-                        uncharted.tolerance * 1000.0,
-                    ))
+                        uncharted.tolerance.into(),
+                    )
+                    .ok()
                 });
             if let Some(charted) = charted {
                 if let Some(support_uv) = intersection_support_uv.get(&construction.xmt) {
@@ -734,7 +735,7 @@ pub(super) fn try_decode_geometry(
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
                     charted.samples.clone(),
-                    charted.fit_tolerance,
+                    charted.fit_tolerance.get(),
                     SerializedSupportUv {
                         values: charted.support_uv.clone(),
                         ext11: charted.ext_support_uv.clone(),
@@ -832,12 +833,9 @@ pub(super) fn try_decode_geometry(
                     discontinuity_flag: false,
                     cache: None,
                 }
-            } else if let Some((supports, endpoints, tolerance)) = uncharted {
+            } else if let Some(construction) = uncharted {
                 ProceduralCurveDefinition::TolerantIntersection {
-                    construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
-                        supports, endpoints, tolerance,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                    construction,
                     parameterization: None,
                     cache: None,
                 }
@@ -851,10 +849,9 @@ pub(super) fn try_decode_geometry(
             let mut definition = definition;
             if let Some(charted) = charted {
                 definition
-                    .set_legacy_cache(
-                        cadmpeg_ir::geometry::LegacyCache::try_new(charted.fit_tolerance)
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                    )
+                    .set_legacy_cache(cadmpeg_ir::geometry::LegacyCache::new(
+                        charted.fit_tolerance,
+                    ))
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);

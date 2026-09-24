@@ -146,6 +146,47 @@ fn ellipse_requires_ordered_serialized_radii() {
 }
 
 #[test]
+fn analytic_scanners_refuse_metre_values_that_overflow_in_millimetres() {
+    let mut cylinder = record(0x33, 99);
+    put_ref(&mut cylinder, 2, 2);
+    cylinder[18] = b'+';
+    put_vec3(&mut cylinder, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cylinder, 67, 0.01);
+    put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_some());
+
+    put_f64(&mut cylinder, 67, f64::MAX);
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
+
+    put_f64(&mut cylinder, 67, 0.01);
+    put_vec3(&mut cylinder, 19, [f64::MAX, 0.0, 0.0]);
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
+
+    assert_eq!(decoded_tolerance(-31_415_800_000_000.0), None);
+}
+
+#[test]
+fn ellipse_order_is_read_from_the_metre_radii() {
+    let major = 0.010_000_000_000_000_045_f64;
+    let minor = f64::from_bits(major.to_bits() + 1);
+    assert_eq!(major * 1000.0, minor * 1000.0);
+
+    let mut ellipse = record(0x20, 107);
+    put_ref(&mut ellipse, 2, 2);
+    ellipse[18] = b'+';
+    put_vec3(&mut ellipse, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut ellipse, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut ellipse, 67, [1.0, 0.0, 0.0]);
+    put_f64(&mut ellipse, 91, major);
+    put_f64(&mut ellipse, 99, minor);
+    assert!(crate::geometry::decode_curve_record(&ellipse, NodeKind::Ellipse, 0).is_none());
+
+    put_f64(&mut ellipse, 99, major);
+    assert!(crate::geometry::decode_curve_record(&ellipse, NodeKind::Ellipse, 0).is_some());
+}
+
+#[test]
 fn graph_owned_point_has_no_scanner_magnitude_limit() {
     let mut stream = topology_partition_stream();
     let point = stream
