@@ -276,7 +276,10 @@ fn offset_candidate_sample_error(
     let u = u0 + (u1 - u0) * 0.5;
     let v = v0 + (v1 - v0) * 0.5;
     let support_partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
-    let normal = oriented_nurbs_normal(support, support_partials.du.cross(support_partials.dv))?;
+    let normal = oriented_nurbs_normal(
+        support,
+        support_partials.du.cross(support_partials.dv.get()),
+    )?;
     let candidate_point =
         cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
     let expected = Point3::new(
@@ -595,7 +598,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         let candidate_point =
             cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
         let partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
-        let normal_vector = partials.du.cross(partials.dv);
+        let normal_vector = partials.du.cross(partials.dv.get());
         let normal_size = normal_vector.norm();
         let half_u = (u1 - u0) * 0.5;
         let half_v = (v1 - v0) * 0.5;
