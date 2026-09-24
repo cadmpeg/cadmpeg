@@ -4,8 +4,11 @@
 //! The emitter allocates instance names, formats scalar values, counts entity
 //! types, and interns repeated points and directions.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+
+use cadmpeg_core::CodecError;
 
 pub(crate) mod target;
 
@@ -25,6 +28,9 @@ pub(crate) struct Emitter {
     counts: BTreeMap<&'static str, usize>,
     /// Leaf instances keyed by encoded type and parameters.
     interned: HashMap<String, Ref>,
+    /// The first non-finite number [`Self::real`] was asked to format. The
+    /// emitted lines are not handed out once one is recorded.
+    refused_real: Cell<Option<f64>>,
 }
 
 impl Emitter {
@@ -33,7 +39,22 @@ impl Emitter {
             lines: Vec::new(),
             counts: BTreeMap::new(),
             interned: HashMap::new(),
+            refused_real: Cell::new(None),
         }
+    }
+
+    /// Format `v` as a Part 21 real literal.
+    ///
+    /// A Part 21 real states a finite number only. A non-finite `v` is
+    /// recorded, and [`Self::into_lines`] then refuses the whole DATA section,
+    /// so the placeholder this returns never reaches a file.
+    pub(crate) fn real(&self, v: f64) -> String {
+        part21_real(v).unwrap_or_else(|| {
+            if self.refused_real.get().is_none() {
+                self.refused_real.set(Some(v));
+            }
+            String::new()
+        })
     }
 
     /// Append `#id = TYPE(params);` and return the allocated reference.
@@ -75,19 +96,26 @@ impl Emitter {
             .collect()
     }
 
-    /// Consume the emitter and return one encoded DATA instance per element.
-    pub(crate) fn into_lines(self) -> Vec<String> {
-        self.lines
+    /// Consume the emitter and return one encoded DATA instance per element,
+    /// or refuse the section when [`Self::real`] was handed a non-finite
+    /// number.
+    pub(crate) fn into_lines(self) -> Result<Vec<String>, CodecError> {
+        match self.refused_real.get() {
+            None => Ok(self.lines),
+            Some(value) => Err(CodecError::NotImplemented(format!(
+                "STEP writer computed the non-finite real {value}, which Part 21 cannot state"
+            ))),
+        }
     }
 }
 
-/// Format an `f64` as a Part 21 real literal.
+/// Format a finite `f64` as a Part 21 real literal, or `None` for a
+/// non-finite one.
 ///
 /// The result always contains a decimal point, including scientific notation.
-/// Non-finite inputs become `0.`.
-pub(crate) fn real(v: f64) -> String {
+fn part21_real(v: f64) -> Option<String> {
     if !v.is_finite() {
-        return "0.".to_string();
+        return None;
     }
     // Shortest round-tripping decimal, then normalize to Part 21 lexical rules.
     let mut s = format!("{v}");
@@ -105,12 +133,12 @@ pub(crate) fn real(v: f64) -> String {
         } else {
             exp.strip_prefix('+').unwrap_or(exp).to_string()
         };
-        return format!("{mantissa}E{exp}");
+        return Some(format!("{mantissa}E{exp}"));
     }
     if !s.contains('.') {
         s.push('.');
     }
-    s
+    Some(s)
 }
 
 /// Encode a Rust string as a Part 21 single-quoted string literal.

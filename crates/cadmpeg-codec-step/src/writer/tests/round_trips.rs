@@ -271,7 +271,7 @@ fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::surface(&mut e, g.solved().expect("solved surface"))
         .expect("surface geometry is writable");
-    e.into_lines().join("\n")
+    e.into_lines().expect("finite reals").join("\n")
 }
 
 /// Emit a single curve carrier in isolation and return the DATA lines joined.
@@ -279,7 +279,7 @@ fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::curve(&mut e, g.solved().expect("solved curve"))
         .expect("curve geometry is writable");
-    e.into_lines().join("\n")
+    e.into_lines().expect("finite reals").join("\n")
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {
@@ -1441,4 +1441,81 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
             .collect::<Vec<_>>(),
         ["NAMED_UNIT", "SI_UNIT", "SOLID_ANGLE_UNIT"]
     );
+}
+
+/// The sweep vector's components are finite, and its length is past the
+/// largest finite `f64`.
+#[test]
+fn a_linear_sweep_whose_magnitude_overflows_is_refused() {
+    use cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction;
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap242_geometry.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode procedural geometry");
+    let mut ir = source.ir().clone();
+    let sweep = ir
+        .model
+        .procedural_surfaces
+        .iter_mut()
+        .find(|surface| {
+            matches!(
+                surface.definition(),
+                ProceduralSurfaceDefinition::LinearSweep(_)
+            )
+        })
+        .expect("the fixture states a linear sweep");
+    sweep.edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::LinearSweep(construction) = definition else {
+            panic!("the selected surface is a linear sweep");
+        };
+        *construction = LinearSweepSurfaceConstruction::try_new(
+            construction.directrix().clone(),
+            Vector3::new(1.3e308, 1.3e308, 0.0),
+        )
+        .expect("finite components admit the sweep");
+    });
+
+    let mut bytes = Vec::new();
+    let written = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    );
+    let text = String::from_utf8_lossy(&bytes);
+    let error = written.expect_err(&format!(
+        "an overflowing sweep magnitude has no STEP real: {}",
+        text.lines()
+            .filter(|line| line.contains("VECTOR") || line.contains("SURFACE_OF_LINEAR"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    ));
+    assert!(
+        error
+            .to_string()
+            .contains("not implemented yet: STEP writer computed the non-finite real inf"),
+        "{error}"
+    );
+}
+
+/// The formatter states a finite number and refuses the section for any
+/// other, where it wrote `0.` in its place.
+#[test]
+fn the_part21_real_formatter_refuses_a_non_finite_value() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let emitter = crate::writer::Emitter::new();
+        assert_eq!(emitter.real(1.5), "1.5");
+        assert_eq!(emitter.real(value), "", "{value}");
+        let Err(error) = emitter.into_lines() else {
+            panic!("a non-finite real refuses the section: {value}");
+        };
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::NotImplemented(_)),
+            "{error}"
+        );
+    }
 }

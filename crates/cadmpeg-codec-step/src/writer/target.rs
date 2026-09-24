@@ -34,8 +34,7 @@ pub(crate) fn plan(
         resolved.unavailable("the resolved target index is outside the STEP schema catalog")
     })?;
     let mut bytes = Vec::new();
-    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)
-        .map_err(CodecError::from)?;
+    let outcome = write_step_outcome(input.ir, &mut bytes, schema, &codec.options)?;
     let mut losses = outcome.losses;
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));

@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
 
-use crate::writer::{real, refs, Emitter, Ref};
+use crate::writer::{refs, Emitter, Ref};
 
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
@@ -142,12 +142,12 @@ fn similarity_transform(transform: &Transform) -> bool {
 
 /// Emit or reuse a `CARTESIAN_POINT`.
 pub(crate) fn point(e: &mut Emitter, p: Point3) -> Ref {
-    let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
+    let params = format!("'',({},{},{})", e.real(p.x), e.real(p.y), e.real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
 fn point2(e: &mut Emitter, p: Point2) -> Ref {
-    let params = format!("'',({},{})", real(p.u), real(p.v));
+    let params = format!("'',({},{})", e.real(p.u), e.real(p.v));
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
@@ -156,7 +156,7 @@ fn direction2(e: &mut Emitter, v: Point2) -> Option<Ref> {
         cadmpeg_ir::features::FiniteVector3::new(Vector3::new(v.u, v.v, 0.0))?.unit_nonzero()?;
     Some(e.emit_interned(
         "DIRECTION",
-        &format!("'',({},{})", real(unit.x), real(unit.y)),
+        &format!("'',({},{})", e.real(unit.x), e.real(unit.y)),
     ))
 }
 
@@ -195,7 +195,7 @@ fn transformation_operator_2d(e: &mut Emitter, transform: Transform2) -> Option<
     }
     Some(e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
-        &format!("'',{x},{y},{origin},{}", real(scale)),
+        &format!("'',{x},{y},{origin},{}", e.real(scale)),
     ))
 }
 
@@ -218,7 +218,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 return None;
             }
             let direction = direction2(e, *direction)?;
-            let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
+            let vector = e.emit("VECTOR", &format!("'',{direction},{}", e.real(magnitude)));
             e.emit("LINE", &format!("'',{point},{vector}"))
         }
         PcurveGeometry::Circle(circle_pcurve) => {
@@ -226,7 +226,10 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let x_axis = circle_pcurve.x_axis();
             let radius = circle_pcurve.radius();
             let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
-            e.emit("CIRCLE", &format!("'',{placement},{}", real(radius.get())))
+            e.emit(
+                "CIRCLE",
+                &format!("'',{placement},{}", e.real(radius.get())),
+            )
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
             let center = ellipse_pcurve.center();
@@ -238,8 +241,8 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 "ELLIPSE",
                 &format!(
                     "'',{placement},{},{}",
-                    real(major_radius.get()),
-                    real(minor_radius.get())
+                    e.real(major_radius.get()),
+                    e.real(minor_radius.get())
                 ),
             )
         }
@@ -250,7 +253,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let placement = axis2_placement_2d(e, vertex.get(), x_axis.get())?;
             e.emit(
                 "PARABOLA",
-                &format!("'',{placement},{}", real(focal_distance.get())),
+                &format!("'',{placement},{}", e.real(focal_distance.get())),
             )
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
@@ -263,8 +266,8 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 "HYPERBOLA",
                 &format!(
                     "'',{placement},{},{}",
-                    real(major_radius.get()),
-                    real(minor_radius.get())
+                    e.real(major_radius.get()),
+                    e.real(minor_radius.get())
                 ),
             )
         }
@@ -284,14 +287,14 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let with_knots = format!(
                 "{},{},.UNSPECIFIED.",
                 int_list(&multiplicities),
-                real_list(&knots)
+                real_list(e, &knots)
             );
             if let Some(weights) = nurbs.pole_rows().weights() {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
                         "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                        real_list(&weights)
+                        real_list(e, &weights)
                     ),
                 )
             } else {
@@ -320,8 +323,8 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 "TRIMMED_CURVE",
                 &format!(
                     "'',{basis},({}),({}),{sense},.PARAMETER.",
-                    real(parameter_range.endpoints()[0]),
-                    real(parameter_range.endpoints()[1])
+                    e.real(parameter_range.endpoints()[0]),
+                    e.real(parameter_range.endpoints()[1])
                 ),
             )
         }
@@ -331,7 +334,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
-                &format!("'',{basis},{},.F.", real(distance.get())),
+                &format!("'',{basis},{},.F.", e.real(distance.get())),
             )
         }
         PcurveGeometry::Harmonic(_)
@@ -344,15 +347,23 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
 
 /// Emit or reuse a unit-length `DIRECTION`.
 ///
-/// A zero-length vector becomes `(0,0,1)`.
+/// A zero-length vector becomes `(0,0,1)`. A vector of finite components
+/// whose length overflows is normalized through its components divided by
+/// the largest magnitude, whose length is finite. A non-finite component
+/// reaches the emitter as a non-finite real, which refuses the section.
 pub(crate) fn direction(e: &mut Emitter, v: Vector3) -> Ref {
     let n = v.norm();
-    let u = if n > 0.0 {
-        Vector3::new(v.x / n, v.y / n, v.z / n)
-    } else {
+    let u = if n == 0.0 {
         Vector3::new(0.0, 0.0, 1.0)
+    } else if n.is_infinite() && v.is_finite() {
+        let largest = v.x.abs().max(v.y.abs()).max(v.z.abs());
+        let reduced = Vector3::new(v.x / largest, v.y / largest, v.z / largest);
+        let length = reduced.norm();
+        Vector3::new(reduced.x / length, reduced.y / length, reduced.z / length)
+    } else {
+        Vector3::new(v.x / n, v.y / n, v.z / n)
     };
-    let params = format!("'',({},{},{})", real(u.x), real(u.y), real(u.z));
+    let params = format!("'',({},{},{})", e.real(u.x), e.real(u.y), e.real(u.z));
     e.emit_interned("DIRECTION", &params)
 }
 
@@ -397,7 +408,7 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
     let z = direction(e, z);
     e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
-        &format!("'',{x},{y},{origin},{},{z}", real(scale)),
+        &format!("'',{x},{y},{origin},{},{z}", e.real(scale)),
     )
 }
 
@@ -440,7 +451,10 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let pl = placement(e, origin, *axis, *ref_direction);
-            e.emit("CYLINDRICAL_SURFACE", &format!("'',{pl},{}", real(radius)))
+            e.emit(
+                "CYLINDRICAL_SURFACE",
+                &format!("'',{pl},{}", e.real(radius)),
+            )
         }
         // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`. The
         // half angle goes out as it stands, which is the only branch that keeps
@@ -461,7 +475,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, origin, *axis, *ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
-                &format!("'',{pl},{},{}", real(radius), real(half_angle)),
+                &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle)),
             )
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
@@ -472,7 +486,7 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
             let pl = placement(e, center, *axis, *ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
-                &format!("'',{pl},{}", real(radius.abs())),
+                &format!("'',{pl},{}", e.real(radius.abs())),
             )
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
@@ -486,8 +500,8 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
                 "TOROIDAL_SURFACE",
                 &format!(
                     "'',{pl},{},{}",
-                    real(major_radius),
-                    real(minor_radius.abs())
+                    e.real(major_radius),
+                    e.real(minor_radius.abs())
                 ),
             )
         }
@@ -524,7 +538,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let p = point(e, origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
             let dir = direction(e, d);
-            let vec = e.emit("VECTOR", &format!("'',{dir},{}", real(1.0)));
+            let vec = e.emit("VECTOR", &format!("'',{dir},{}", e.real(1.0)));
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -533,7 +547,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
             let pl = placement(e, center, *axis, *ref_direction);
-            e.emit("CIRCLE", &format!("'',{pl},{}", real(radius)))
+            e.emit("CIRCLE", &format!("'',{pl},{}", e.real(radius)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
@@ -544,7 +558,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let pl = placement(e, center, *axis, *major_direction);
             e.emit(
                 "ELLIPSE",
-                &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),
+                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
             )
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -553,7 +567,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             let pl = placement(e, vertex, *axis, *major_direction);
-            e.emit("PARABOLA", &format!("'',{pl},{}", real(focal_distance)))
+            e.emit("PARABOLA", &format!("'',{pl},{}", e.real(focal_distance)))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
@@ -564,7 +578,7 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let pl = placement(e, center, *axis, *major_direction);
             e.emit(
                 "HYPERBOLA",
-                &format!("'',{pl},{},{}", real(major_radius), real(minor_radius)),
+                &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
             )
         }
         SolvedCurveGeometry::Degenerate(degenerate_curve) => {
@@ -615,13 +629,13 @@ fn int_list(xs: &[usize]) -> String {
     out
 }
 
-fn real_list(xs: &[f64]) -> String {
+fn real_list(e: &Emitter, xs: &[f64]) -> String {
     let mut out = String::from("(");
     for (i, x) in xs.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&real(*x));
+        out.push_str(&e.real(*x));
     }
     out.push(')');
     out
@@ -648,7 +662,11 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
         n.degree(),
         closed_flag(n.periodic())
     );
-    let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
+    let with_knots = format!(
+        "{},{},.UNSPECIFIED.",
+        int_list(&mults),
+        real_list(e, &knots)
+    );
     match n.pole_rows().weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
@@ -661,7 +679,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
                  B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() \
                  GEOMETRIC_REPRESENTATION_ITEM() \
                  RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
-                real_list(&w)
+                real_list(e, &w)
             );
             e.emit_raw("B_SPLINE_CURVE_WITH_KNOTS", &body)
         }
@@ -699,8 +717,8 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         "{},{},{},{},.UNSPECIFIED.",
         int_list(&u_mults),
         int_list(&v_mults),
-        real_list(&u_knots),
-        real_list(&v_knots)
+        real_list(e, &u_knots),
+        real_list(e, &v_knots)
     );
     Some(match n.pole_grid().weights() {
         None => e.emit(
@@ -711,7 +729,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
             let mut wrows: Vec<String> = Vec::with_capacity(u_count);
             for row in w {
-                wrows.push(real_list(&row));
+                wrows.push(real_list(e, &row));
             }
             let wgrid = format!("({})", wrows.join(","));
             let body = format!(
