@@ -868,7 +868,11 @@ fn pcurve_surface_mismatch_is_flagged() {
                 )
                 .unwrap(),
             },
-            metadata: PcurveMetadata::try_general(None, None, fit_tolerance).unwrap(),
+            metadata: PcurveMetadata::general(
+                None,
+                None,
+                fit_tolerance.map(|value| crate::geometry::FitTolerance::try_new(value).unwrap()),
+            ),
         });
         let coedge = ir
             .model

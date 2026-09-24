@@ -185,7 +185,8 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     range[0] += 0.125;
     range[1] -= 0.125;
     let expected_range = range;
-    edge.set_param_range(Some(range)).unwrap();
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(range)).unwrap();
     edited.model.faces[0].sense = match edited.model.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,

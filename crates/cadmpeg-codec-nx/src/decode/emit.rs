@@ -24,6 +24,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point_with_budget;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
     ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -834,12 +835,21 @@ pub(super) fn emit_topology(
                 ir.model.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry,
-                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                         None,
-                        Some(parameter_range),
-                        fit_tolerance,
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                        Some(
+                            cadmpeg_ir::units::FiniteVector::new(parameter_range)
+                                .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
+                        fit_tolerance
+                            .map(|value| {
+                                cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                                    .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
+                            })
+                            .transpose()
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                 });
                 pcurve = Some(pcurve_id);
             }

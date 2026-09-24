@@ -39,7 +39,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
             .get()
     });
     ir.model.edges[0].set_curve(None).unwrap();
-    ir.model.edges[0].set_param_range(None).unwrap();
+    ir.model.edges[0].set_param_range(None);
     ir.model.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
     let mut edges = std::collections::BTreeMap::new();
@@ -177,7 +177,7 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge_id = ir.model.edges[0].id.clone();
     ir.model.edges[0].set_curve(None).unwrap();
-    ir.model.edges[0].set_param_range(None).unwrap();
+    ir.model.edges[0].set_param_range(None);
     ir.model.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
     let edges = std::collections::BTreeMap::from([(8, edge_id.clone())]);

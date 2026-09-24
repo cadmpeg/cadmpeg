@@ -1801,12 +1801,23 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     },
-                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                         None,
-                        Some(pcurve_domain),
-                        (trim.tolerance_2d > 0.0).then_some(trim.tolerance_2d),
-                    )
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                        Some(
+                            cadmpeg_ir::units::FiniteVector::new(pcurve_domain)
+                                .ok_or(cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
+                        (trim.tolerance_2d > 0.0)
+                            .then_some(trim.tolerance_2d)
+                            .map(|value| {
+                                cadmpeg_ir::geometry::FitTolerance::try_new(value).map_err(|_| {
+                                    cadmpeg_ir::geometry::pcurve::PcurveMetadata::INVALID_FIT_TOLERANCE
+                                })
+                            })
+                            .transpose()
+                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                    ),
                 });
                 let coedge_id = cadmpeg_ir::ids::CoedgeId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "coedge"),

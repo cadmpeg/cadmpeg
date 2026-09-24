@@ -405,8 +405,9 @@ fn bind_consolidated_revolution_faces_and_seams(
             }
             carrier @ CurveGeometry::Solved(_) => *carrier = geometry,
         }
-        edge.set_param_range(Some(parameter_range))
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        edge.carrier =
+            cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some(parameter_range))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?
@@ -5375,12 +5376,15 @@ fn emit_standard_topology(
                     ir.model.pcurves.push(Pcurve {
                         id: id.clone(),
                         geometry,
-                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None,
-                            Some(range),
+                            Some(
+                                cadmpeg_ir::units::FiniteVector::new(range)
+                                    .ok_or(cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                            ),
                             None,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                     });
                     Ok((id, range))
                 })

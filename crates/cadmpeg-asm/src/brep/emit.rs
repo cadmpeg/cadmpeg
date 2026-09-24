@@ -3917,6 +3917,20 @@ pub(super) fn emit_pcurves(
                     }
                     _ => None,
                 };
+                let parameter_range = parameter_range
+                    .map(|range| {
+                        cadmpeg_ir::units::FiniteVector::new(range)
+                            .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+                    })
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                let fit_tolerance = fit_tolerance
+                    .map(|value| {
+                        cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                            .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
+                    })
+                    .transpose()
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 let metadata = match (
                     wrapper_reversed,
                     native_tail_flags,
@@ -3929,21 +3943,15 @@ pub(super) fn emit_pcurves(
                         Some(parameter_range),
                         Some(fit_tolerance),
                     ) => PcurveMetadata::AsmInline {
-                        form: PcurveInlineForm::try_new(
+                        form: PcurveInlineForm::new(
                             wrapper_reversed,
                             native_tail_flags,
                             parameter_range,
                             fit_tolerance,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                     },
                     (wrapper_reversed, _, parameter_range, fit_tolerance) => {
-                        PcurveMetadata::try_general(
-                            wrapper_reversed,
-                            parameter_range,
-                            fit_tolerance,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?
+                        PcurveMetadata::general(wrapper_reversed, parameter_range, fit_tolerance)
                     }
                 };
                 out.pcurves.push(Pcurve {

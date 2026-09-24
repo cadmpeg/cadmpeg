@@ -216,9 +216,11 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0]
-        .set_param_range(Some([-1.0, 2.0]))
-        .unwrap();
+    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.model.edges[0].curve().cloned(),
+        Some([-1.0, 2.0]),
+    )
+    .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -330,12 +332,13 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
     {
         let replacement = [-2.0, 3.0];
         edit::replace(inline, |previous| {
-            cadmpeg_ir::geometry::pcurve::PcurveInlineForm::try_new(
+            Ok::<_, &str>(cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
-                replacement,
-                previous.fit_tolerance(),
-            )
+                cadmpeg_ir::units::FiniteVector::new(replacement).expect("finite fixture range"),
+                cadmpeg_ir::geometry::FitTolerance::try_new(previous.fit_tolerance())
+                    .expect("admitted fit tolerance"),
+            ))
         })
     }
     .unwrap();
@@ -858,9 +861,11 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
     source_less.model.edges[0]
         .set_curve(Some(curve_id))
         .unwrap();
-    source_less.model.edges[0]
-        .set_param_range(Some([0.25, 1.5]))
-        .unwrap();
+    source_less.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        source_less.model.edges[0].curve().cloned(),
+        Some([0.25, 1.5]),
+    )
+    .unwrap();
 
     let mut encoded = Vec::new();
     F3dCodec

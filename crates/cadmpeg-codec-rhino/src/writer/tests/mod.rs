@@ -872,7 +872,11 @@ fn rectangular_nurbs_patch() -> CadIr {
     for (index, (domain, control_points, weights, origin, direction)) in
         edge_data.into_iter().enumerate()
     {
-        ir.model.edges[index].set_param_range(Some(domain)).unwrap();
+        ir.model.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            ir.model.edges[index].curve().cloned(),
+            Some(domain),
+        )
+        .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
@@ -891,12 +895,14 @@ fn rectangular_nurbs_patch() -> CadIr {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(domain),
-                Some(0.001),
-            )
-            .unwrap(),
+                Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -972,7 +978,11 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
     for (index, (domain, control_points, weights, origin, direction)) in
         edge_data.into_iter().enumerate()
     {
-        ir.model.edges[index].set_param_range(Some(domain)).unwrap();
+        ir.model.edges[index].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            ir.model.edges[index].curve().cloned(),
+            Some(domain),
+        )
+        .unwrap();
         ir.model.curves[index].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
@@ -991,12 +1001,14 @@ fn mixed_plane_nurbs_sheet() -> CadIr {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(domain),
-                Some(0.001),
-            )
-            .unwrap(),
+                Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.001)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,
@@ -1069,12 +1081,14 @@ fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             geometry: PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
             ),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(domain),
-                Some(0.0001),
-            )
-            .unwrap(),
+                Some(cadmpeg_ir::units::FiniteVector::new(domain).expect("finite fixture range")),
+                Some(
+                    cadmpeg_ir::geometry::FitTolerance::try_new(0.0001)
+                        .expect("finite non-negative fixture tolerance"),
+                ),
+            ),
         });
         ir.model.coedges[index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
             pcurve: id,

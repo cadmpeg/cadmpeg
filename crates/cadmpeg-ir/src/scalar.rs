@@ -429,6 +429,17 @@ impl crate::topology::IncreasingParameterInterval {
     }
 }
 
+impl crate::topology::ParameterInterval {
+    /// Return the endpoints as finite reals. The interval admits only finite
+    /// endpoints, so nothing is checked. The route lives beside
+    /// [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub const fn finite_endpoints(self) -> [FiniteReal; 2] {
+        let [start, end] = self.endpoints();
+        [FiniteReal(start), FiniteReal(end)]
+    }
+}
+
 impl NonZeroReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);

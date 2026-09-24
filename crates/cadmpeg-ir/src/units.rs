@@ -59,6 +59,14 @@ impl<const N: usize> FiniteVector<N> {
     }
 }
 
+impl<const N: usize> From<[crate::scalar::FiniteReal; N]> for FiniteVector<N> {
+    /// Carry finite scalars as coordinates. Every scalar is finite, so
+    /// nothing is checked.
+    fn from(value: [crate::scalar::FiniteReal; N]) -> Self {
+        Self(value.map(crate::scalar::FiniteReal::get))
+    }
+}
+
 impl From<crate::topology::IncreasingParameterInterval> for FiniteVector<2> {
     /// Carry an increasing interval's endpoints. The interval admits only
     /// finite endpoints, so nothing is checked.
@@ -756,6 +764,21 @@ mod tests {
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn finite_scalars_carry_into_finite_coordinates_unchanged() {
+        let scalars =
+            [-0.0, f64::MAX, 5.0e-324].map(|value| FiniteReal::new(value).expect("finite scalar"));
+        let coordinates = FiniteVector::from(scalars);
+        assert_eq!(
+            coordinates.get().map(f64::to_bits),
+            [-0.0, f64::MAX, 5.0e-324].map(f64::to_bits)
+        );
+        assert_eq!(
+            FiniteVector::new([-0.0, f64::MAX, 5.0e-324]),
+            Some(coordinates)
+        );
+    }
 
     #[test]
     fn an_admitted_direction_at_unit_length_is_divided_by_its_length() {

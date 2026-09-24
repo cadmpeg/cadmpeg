@@ -9,7 +9,7 @@ use crate::ids::PcurveId;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use crate::transform::Transform2;
-use crate::units::{FinitePoint2, NonzeroPoint2};
+use crate::units::{FinitePoint2, FiniteVector, NonzeroPoint2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -1825,14 +1825,24 @@ impl Default for PcurveMetadata {
 }
 
 impl PcurveMetadata {
-    /// Admit metadata without an ASM inline-record claim.
-    pub fn try_general(
+    /// The refusal of a parameter range with a non-finite endpoint.
+    pub const NON_FINITE_PARAMETER_RANGE: &'static str =
+        "pcurve parameter_range endpoints must be finite";
+    /// The refusal of a fit tolerance that is not finite and non-negative.
+    pub const INVALID_FIT_TOLERANCE: &'static str =
+        "pcurve fit_tolerance must be finite and non-negative";
+
+    /// Construct metadata without an ASM inline-record claim from admitted
+    /// fields.
+    #[must_use]
+    pub const fn general(
         wrapper_reversed: Option<bool>,
-        parameter_range: Option<[f64; 2]>,
-        fit_tolerance: Option<f64>,
-    ) -> Result<Self, &'static str> {
-        PcurveGeneralForm::try_new(wrapper_reversed, parameter_range, fit_tolerance)
-            .map(|form| Self::General { form })
+        parameter_range: Option<FiniteVector<2>>,
+        fit_tolerance: Option<FitTolerance>,
+    ) -> Self {
+        Self::General {
+            form: PcurveGeneralForm::new(wrapper_reversed, parameter_range, fit_tolerance),
+        }
     }
 
     /// Native wrapper reversal, when the source stores one.
@@ -1868,12 +1878,12 @@ impl PcurveMetadata {
     }
 }
 
-fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<[f64; 2], &'static str> {
-    if range.iter().all(|value| value.is_finite()) {
-        Ok(range)
-    } else {
-        Err("pcurve parameter_range endpoints must be finite")
-    }
+fn admit_pcurve_parameter_range(range: [f64; 2]) -> Result<FiniteVector<2>, &'static str> {
+    FiniteVector::new(range).ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
+}
+
+fn admit_pcurve_fit_tolerance(value: f64) -> Result<FitTolerance, &'static str> {
+    FitTolerance::try_new(value).map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
 }
 
 /// The fields carried together by an ASM inline `exp_par_cur` record.
@@ -1916,20 +1926,36 @@ impl TryFrom<PcurveInlineFormWire> for PcurveInlineForm {
 }
 
 impl PcurveInlineForm {
-    /// Admit inline metadata with finite parameter endpoints and a finite non-negative tolerance.
-    pub fn try_new(
+    /// Construct inline metadata from admitted fields.
+    #[must_use]
+    pub const fn new(
+        wrapper_reversed: bool,
+        native_tail_flags: [bool; 4],
+        parameter_range: FiniteVector<2>,
+        fit_tolerance: FitTolerance,
+    ) -> Self {
+        Self {
+            wrapper_reversed,
+            native_tail_flags,
+            parameter_range: parameter_range.get(),
+            fit_tolerance,
+        }
+    }
+
+    /// Admit inline metadata read from the wire, refusing a non-finite
+    /// endpoint and then a tolerance that is not finite and non-negative.
+    pub(crate) fn try_new(
         wrapper_reversed: bool,
         native_tail_flags: [bool; 4],
         parameter_range: [f64; 2],
         fit_tolerance: f64,
     ) -> Result<Self, &'static str> {
-        Ok(Self {
+        Ok(Self::new(
             wrapper_reversed,
             native_tail_flags,
-            parameter_range: admit_pcurve_parameter_range(parameter_range)?,
-            fit_tolerance: FitTolerance::try_new(fit_tolerance)
-                .map_err(|_| "pcurve fit_tolerance must be finite and non-negative")?,
-        })
+            admit_pcurve_parameter_range(parameter_range)?,
+            admit_pcurve_fit_tolerance(fit_tolerance)?,
+        ))
     }
 
     /// Parameter-space fit tolerance.
@@ -2002,22 +2028,37 @@ impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
 }
 
 impl PcurveGeneralForm {
-    /// Admit general metadata with finite parameter endpoints and a finite non-negative tolerance.
-    pub fn try_new(
+    /// Construct general metadata from admitted fields.
+    #[must_use]
+    pub const fn new(
+        wrapper_reversed: Option<bool>,
+        parameter_range: Option<FiniteVector<2>>,
+        fit_tolerance: Option<FitTolerance>,
+    ) -> Self {
+        Self {
+            wrapper_reversed,
+            parameter_range: match parameter_range {
+                Some(range) => Some(range.get()),
+                None => None,
+            },
+            fit_tolerance,
+        }
+    }
+
+    /// Admit general metadata read from the wire, refusing a non-finite
+    /// endpoint and then a tolerance that is not finite and non-negative.
+    pub(crate) fn try_new(
         wrapper_reversed: Option<bool>,
         parameter_range: Option<[f64; 2]>,
         fit_tolerance: Option<f64>,
     ) -> Result<Self, &'static str> {
-        Ok(Self {
+        Ok(Self::new(
             wrapper_reversed,
-            parameter_range: parameter_range
+            parameter_range
                 .map(admit_pcurve_parameter_range)
                 .transpose()?,
-            fit_tolerance: fit_tolerance
-                .map(FitTolerance::try_new)
-                .transpose()
-                .map_err(|_| "pcurve fit_tolerance must be finite and non-negative")?,
-        })
+            fit_tolerance.map(admit_pcurve_fit_tolerance).transpose()?,
+        ))
     }
 
     /// Parameter-space fit tolerance.

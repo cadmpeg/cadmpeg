@@ -1789,12 +1789,17 @@ fn emit_e5_pcurves(
         ir.model.pcurves.push(Pcurve {
             id,
             geometry: geometry.clone(),
-            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                 None,
-                Some(*range),
+                Some(
+                    cadmpeg_ir::units::FiniteVector::new(*range)
+                        .ok_or(
+                            cadmpeg_ir::geometry::pcurve::PcurveMetadata::NON_FINITE_PARAMETER_RANGE,
+                        )
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
                 None,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
         });
     }
     Ok(())

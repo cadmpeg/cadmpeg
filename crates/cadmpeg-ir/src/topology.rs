@@ -980,6 +980,14 @@ impl From<ParameterInterval> for [f64; 2] {
     }
 }
 
+impl From<IncreasingParameterInterval> for ParameterInterval {
+    /// Carry a strictly increasing interval. Its endpoints are finite and in
+    /// increasing order, so nothing is checked.
+    fn from(value: IncreasingParameterInterval) -> Self {
+        Self(value.endpoints())
+    }
+}
+
 /// A finite parameter interval whose first endpoint is strictly below its
 /// second.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1159,10 +1167,15 @@ impl Edge {
         self.carrier = EdgeCarrier::new(curve, self.param_range())?;
         Ok(())
     }
-    /// Replace the parameter endpoints if valid for the carrier.
-    pub fn set_param_range(&mut self, range: Option<[f64; 2]>) -> Result<(), &'static str> {
-        self.carrier = EdgeCarrier::new(self.curve().cloned(), range)?;
-        Ok(())
+    /// Replace the parameter endpoints with an admitted interval. The
+    /// interval is finite and ordered, so it is valid with or without a
+    /// carrier curve.
+    pub fn set_param_range(&mut self, range: Option<ParameterInterval>) {
+        self.carrier = match (self.curve().cloned(), range) {
+            (curve, None) => EdgeCarrier::unbounded(curve),
+            (Some(curve), Some(range)) => EdgeCarrier::Bounded(curve, range),
+            (None, Some(range)) => EdgeCarrier::Endpoints(range.finite_endpoints()),
+        };
     }
     /// Return the underlying curve carrier.
     pub const fn curve(&self) -> Option<&CurveId> {
@@ -1370,6 +1383,49 @@ mod tests {
     }
 
     #[test]
+    fn an_admitted_interval_bounds_a_carrier_or_sets_free_endpoints() {
+        use super::{EdgeCarrier, IncreasingParameterInterval, ParameterInterval};
+        use crate::scalar::FiniteReal;
+
+        let increasing = IncreasingParameterInterval::new([-1.5, 2.0]).expect("increasing");
+        let interval = ParameterInterval::from(increasing);
+        assert_eq!(interval.endpoints(), [-1.5, 2.0]);
+        assert_eq!(
+            interval.finite_endpoints().map(FiniteReal::get),
+            interval.endpoints()
+        );
+
+        let mut edge = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model
+            .edges
+            .remove(0);
+        let curve = edge.curve().cloned().expect("the cube edges have carriers");
+        edge.set_param_range(Some(interval));
+        assert_eq!(edge.carrier, EdgeCarrier::Bounded(curve.clone(), interval));
+        assert_eq!(
+            Ok(edge.carrier.clone()),
+            EdgeCarrier::new(Some(curve), Some([-1.5, 2.0]))
+        );
+        edge.set_param_range(None);
+        assert_eq!(edge.param_range(), None);
+        assert!(edge.curve().is_some());
+
+        edge.set_curve(None)
+            .expect("a carrier without endpoints can drop its curve");
+        let equal = ParameterInterval::new([3.0, 3.0]).expect("equal endpoints are ordered");
+        edge.set_param_range(Some(equal));
+        assert_eq!(
+            edge.carrier,
+            EdgeCarrier::Endpoints(equal.finite_endpoints())
+        );
+        assert_eq!(
+            Ok(edge.carrier.clone()),
+            EdgeCarrier::new(None, Some([3.0, 3.0]))
+        );
+    }
+
+    #[test]
     fn edge_parameter_edits_commit_only_valid_pairs() {
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
@@ -1377,10 +1433,10 @@ mod tests {
             .edges
             .remove(0);
         let original = edge.clone();
-        assert!(edge.set_param_range(Some([2.0, 1.0])).is_err());
+        assert!(super::EdgeCarrier::new(edge.curve().cloned(), Some([2.0, 1.0])).is_err());
         assert_eq!(edge, original);
         edge.set_curve(None).unwrap();
-        edge.set_param_range(Some([2.0, 1.0])).unwrap();
+        edge.carrier = super::EdgeCarrier::new(edge.curve().cloned(), Some([2.0, 1.0])).unwrap();
         let carrierless = edge.clone();
         assert!(edge.set_curve(original.curve().cloned()).is_err());
         assert_eq!(edge, carrierless);

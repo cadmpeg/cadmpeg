@@ -28,7 +28,7 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     ir.model
         .edges
         .iter_mut()
-        .for_each(|edge| edge.set_param_range(None).unwrap());
+        .for_each(|edge| edge.set_param_range(None));
     let sketch_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#path").unwrap();
     let entity_id =
         SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#line").unwrap();

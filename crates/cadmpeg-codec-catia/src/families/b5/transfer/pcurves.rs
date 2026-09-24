@@ -784,12 +784,11 @@ pub(super) fn emit_pcurves(
             ir.model.pcurves.push(Pcurve {
                 id,
                 geometry: geometry.clone(),
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                     None,
-                    Some(parameter_range.map(FiniteReal::get)),
+                    Some(cadmpeg_ir::units::FiniteVector::from(parameter_range)),
                     None,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                ),
             });
         }
     }

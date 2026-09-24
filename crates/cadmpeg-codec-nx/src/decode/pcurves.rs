@@ -595,7 +595,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if slot.is_some() {
                 return None;
             }
-            let range = parameterization.parameter_range();
+            let range = parameterization.parameter_interval();
             *slot = Some(parameterization);
             Some(range)
         });
@@ -606,8 +606,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             if edge_reversed {
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
-            edge.set_param_range(Some(range))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1433,9 +1432,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         let Some(edge) = ir.model.edges.get(*edge_index) else {
             continue;
         };
-        let (supports, endpoints, range, admitted_tolerance, tolerant) = match procedural
-            .definition()
-        {
+        let (supports, endpoints, range, admitted_tolerance) = match procedural.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 if !context.sides().iter().all(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
@@ -1463,7 +1460,6 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                     [start_point, end_point],
                     context.parameter_range(),
                     tolerance,
-                    false,
                 )
             }
             ProceduralCurveDefinition::TolerantIntersection {
@@ -1486,7 +1482,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 } else {
                     [0.0, 1.0]
                 };
-                (supports.each_ref(), *endpoints, range, tolerance, true)
+                (supports.each_ref(), *endpoints, range, tolerance)
             }
             _ => continue,
         };
@@ -1595,17 +1591,17 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             curve_is_cache_backed_with_index(&model_index, owner),
             owner.clone(),
             range,
-            tolerant,
         ));
     }
     let mut bounded_tolerant_curves = Vec::new();
-    for (procedural_id, pcurves, tolerance, cache_backed, curve, range, tolerant) in replacements {
+    for (procedural_id, pcurves, tolerance, cache_backed, curve, range) in replacements {
         let Some(procedural_index) = procedural_indices.get(&procedural_id).copied() else {
             continue;
         };
         let Some(procedural) = ir.model.procedural_curves.get_mut(procedural_index) else {
             continue;
         };
+        let mut tolerant_range = None;
         let completed = procedural.edit_definition(|definition| match definition {
             ProceduralCurveDefinition::Intersection { context, .. }
                 if context.sides().iter().all(|side| {
@@ -1624,6 +1620,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     return false;
                 };
+                tolerant_range = Some(completed.parameter_interval());
                 *parameterization = Some(completed);
                 true
             }
@@ -1635,7 +1632,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         if cache_backed {
             procedural.require_cache_fit_tolerance(tolerance)?;
         }
-        if tolerant {
+        if let Some(range) = tolerant_range {
             bounded_tolerant_curves.push((curve, range));
         }
     }
@@ -1647,8 +1644,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             continue;
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
-            edge.set_param_range(Some(range))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;

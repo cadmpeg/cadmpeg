@@ -6799,6 +6799,12 @@ impl TolerantIntersectionParameterization {
     pub const fn parameter_range(&self) -> [f64; 2] {
         self.parameter_range.endpoints()
     }
+
+    /// The admitted solved-curve interval.
+    #[must_use]
+    pub const fn parameter_interval(&self) -> crate::topology::IncreasingParameterInterval {
+        self.parameter_range
+    }
 }
 
 /// Cache-first shared-context fields absent from the context-first layout.

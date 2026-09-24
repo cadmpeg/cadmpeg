@@ -10,6 +10,7 @@ use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
@@ -184,11 +185,19 @@ fn project_pcurve_uses(
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
-                metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                metadata: PcurveMetadata::general(
                     None,
-                    Some(range),
-                    fit_tolerance,
-                )?,
+                    Some(
+                        cadmpeg_ir::units::FiniteVector::new(range)
+                            .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)?,
+                    ),
+                    fit_tolerance
+                        .map(|value| {
+                            cadmpeg_ir::geometry::FitTolerance::try_new(value)
+                                .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
+                        })
+                        .transpose()?,
+                ),
             });
             Ok(PcurveUse {
                 pcurve: id,

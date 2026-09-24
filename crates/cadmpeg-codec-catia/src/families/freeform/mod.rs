@@ -2508,12 +2508,13 @@ fn append_resolved_consolidated_surface_curves(
                     ir.model.pcurves.push(Pcurve {
                         id: pcurve_id.clone(),
                         geometry,
-                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::try_general(
+                        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
                             None,
-                            Some(resolved.block.parameters.range.endpoints()),
+                            Some(cadmpeg_ir::units::FiniteVector::from(
+                                resolved.block.parameters.range,
+                            )),
                             None,
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                        ),
                     });
                     ir.model.coedges[coedge_index]
                         .pcurves
@@ -2527,9 +2528,9 @@ fn append_resolved_consolidated_surface_curves(
                         .map_err(cadmpeg_core::CodecError::malformed)?;
                 }
             }
-            ir.model.edges[edge_index]
-                .set_param_range(Some(resolved.block.parameters.range.endpoints()))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            ir.model.edges[edge_index].set_param_range(Some(
+                cadmpeg_ir::topology::ParameterInterval::from(resolved.block.parameters.range),
+            ));
             let procedural = &mut ir.model.procedural_curves[procedure_index];
             procedural.replace_definition(definition);
             annotate(
