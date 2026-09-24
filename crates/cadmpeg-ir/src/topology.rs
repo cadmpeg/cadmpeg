@@ -950,6 +950,18 @@ pub struct CoedgeUseCurve {
 pub struct ParameterInterval([f64; 2]);
 
 impl ParameterInterval {
+    /// The unit interval `[0, 1]`.
+    pub(crate) const UNIT: Self = Self([0.0, 1.0]);
+
+    /// The interval from `lower` to `upper`, absent when `upper` is below
+    /// `lower`. Finite reals need no finiteness test.
+    pub(crate) fn ordered(
+        lower: crate::scalar::FiniteReal,
+        upper: crate::scalar::FiniteReal,
+    ) -> Option<Self> {
+        (lower <= upper).then_some(Self([lower.get(), upper.get()]))
+    }
+
     /// Admit finite endpoints in increasing or equal order.
     pub fn new(endpoints: [f64; 2]) -> Result<Self, &'static str> {
         if endpoints.iter().all(|value| value.is_finite()) && endpoints[0] <= endpoints[1] {
@@ -973,6 +985,35 @@ impl crate::geometry::nurbs::NurbsCurve {
     pub fn full_knot_endpoints(&self) -> ParameterInterval {
         let knots = self.knots();
         ParameterInterval([knots[0], knots[knots.len() - 1]])
+    }
+}
+
+impl crate::geometry::nurbs::KnotVector {
+    /// Knots `first` and `last` as an interval, absent past the last knot or
+    /// when `first` follows `last`. The vector admits finite non-decreasing
+    /// knots, so the interval is finite and ordered. The route lives beside
+    /// [`ParameterInterval`] because only this module constructs one.
+    #[must_use]
+    pub(crate) fn span(&self, first: usize, last: usize) -> Option<ParameterInterval> {
+        (first <= last).then_some(())?;
+        Some(ParameterInterval([*self.get(first)?, *self.get(last)?]))
+    }
+
+    /// The intervals between consecutive distinct knots among knots
+    /// `first..=last`, in increasing order.
+    #[must_use]
+    pub(crate) fn active_spans(
+        &self,
+        first: usize,
+        last: usize,
+    ) -> Option<Vec<IncreasingParameterInterval>> {
+        Some(
+            self.get(first..=last)?
+                .windows(2)
+                .filter(|pair| pair[0] < pair[1])
+                .map(|pair| IncreasingParameterInterval([pair[0], pair[1]]))
+                .collect(),
+        )
     }
 }
 
@@ -1005,6 +1046,15 @@ impl From<IncreasingParameterInterval> for ParameterInterval {
 pub struct IncreasingParameterInterval([f64; 2]);
 
 impl IncreasingParameterInterval {
+    /// The interval from `lower` to `upper`, absent unless `lower` is
+    /// strictly below `upper`. Finite reals need no finiteness test.
+    pub(crate) fn between(
+        lower: crate::scalar::FiniteReal,
+        upper: crate::scalar::FiniteReal,
+    ) -> Option<Self> {
+        (lower < upper).then_some(Self([lower.get(), upper.get()]))
+    }
+
     /// Admit finite endpoints in strictly increasing order.
     pub fn new(endpoints: [f64; 2]) -> Option<Self> {
         (endpoints.iter().all(|value| value.is_finite()) && endpoints[0] < endpoints[1])
@@ -1021,6 +1071,15 @@ impl IncreasingParameterInterval {
     /// Return the upper endpoint.
     pub const fn upper(self) -> f64 {
         self.0[1]
+    }
+
+    /// The two halves at the midpoint, absent when the midpoint rounds onto
+    /// an endpoint.
+    #[must_use]
+    pub(crate) fn split_at_midpoint(self) -> Option<(Self, Self)> {
+        let [lower, upper] = self.0;
+        let middle = lower.midpoint(upper);
+        (lower < middle && middle < upper).then_some((Self([lower, middle]), Self([middle, upper])))
     }
 }
 
@@ -1292,6 +1351,65 @@ cadmpeg_core::named_optional_field!(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn checked_endpoints_build_ordered_and_increasing_intervals() {
+        use super::{IncreasingParameterInterval, ParameterInterval};
+        use crate::scalar::FiniteReal;
+
+        let [low, high] = [-1.0, 3.0].map(|value| FiniteReal::new(value).unwrap());
+        assert_eq!(
+            ParameterInterval::ordered(low, high).map(ParameterInterval::endpoints),
+            Some([-1.0, 3.0])
+        );
+        assert_eq!(
+            ParameterInterval::ordered(low, low).map(ParameterInterval::endpoints),
+            Some([-1.0, -1.0])
+        );
+        assert!(ParameterInterval::ordered(high, low).is_none());
+        assert_eq!(ParameterInterval::UNIT.endpoints(), [0.0, 1.0]);
+        assert_eq!(
+            IncreasingParameterInterval::between(low, high)
+                .map(IncreasingParameterInterval::endpoints),
+            Some([-1.0, 3.0])
+        );
+        assert!(IncreasingParameterInterval::between(low, low).is_none());
+
+        let (lower, upper) = IncreasingParameterInterval::between(low, high)
+            .and_then(IncreasingParameterInterval::split_at_midpoint)
+            .expect("the midpoint lies strictly inside");
+        assert_eq!(lower.endpoints(), [-1.0, 1.0]);
+        assert_eq!(upper.endpoints(), [1.0, 3.0]);
+        let next = f64::from_bits(1.0_f64.to_bits() + 1);
+        let narrow = IncreasingParameterInterval::new([1.0, next]).unwrap();
+        assert!(narrow.split_at_midpoint().is_none());
+    }
+
+    #[test]
+    fn knot_spans_read_finite_intervals_between_knots() {
+        let knots = crate::geometry::nurbs::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0, 2.5, 4.0])
+            .expect("non-decreasing knots");
+        assert_eq!(
+            knots.span(1, 4).map(super::ParameterInterval::endpoints),
+            Some([0.0, 2.5])
+        );
+        assert!(knots.span(4, 1).is_none());
+        assert!(knots.span(1, 6).is_none());
+        assert_eq!(
+            knots.active_spans(0, 5).map(|spans| spans
+                .into_iter()
+                .map(super::IncreasingParameterInterval::endpoints)
+                .collect::<Vec<_>>()),
+            Some(vec![[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]])
+        );
+        assert_eq!(knots.active_spans(2, 3), Some(Vec::new()));
+        assert!(knots.active_spans(0, 6).is_none());
+        assert_eq!(
+            knots.finite_knot(4).map(crate::scalar::FiniteReal::get),
+            Some(2.5)
+        );
+        assert!(knots.finite_knot(6).is_none());
+    }
+
     #[test]
     fn increasing_intervals_admit_only_finite_strictly_increasing_endpoints() {
         use super::IncreasingParameterInterval;

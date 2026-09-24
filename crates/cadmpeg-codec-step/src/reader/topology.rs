@@ -3644,7 +3644,7 @@ fn curve_parameter_near_point(
             model_curve_parameter_near_point_in_index_with_tolerance(
                 index, curve_id, point, seed, tolerance,
             )
-            .map(|parameter| ((parameter - seed).abs(), parameter))
+            .map(|parameter| ((parameter.get() - seed).abs(), parameter.get()))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
         .map(|(_, parameter)| parameter)

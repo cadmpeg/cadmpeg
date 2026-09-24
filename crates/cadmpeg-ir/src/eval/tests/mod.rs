@@ -560,7 +560,8 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             point.get(),
             parameter,
         )
-        .expect("direct analytic inverse");
+        .expect("direct analytic inverse")
+        .get();
         assert!((inverse - parameter).abs() < 1.0e-12);
     }
 }
@@ -652,7 +653,8 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             point,
             seed,
         )
-        .expect("polyline inverse");
+        .expect("polyline inverse")
+        .get();
         assert!((inverse - expected).abs() < 1.0e-12);
     }
 }
@@ -678,7 +680,8 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
         &index, &id, point, 0.5, 0.01,
     )
-    .expect("caller tolerance admits the bounded residual");
+    .expect("caller tolerance admits the bounded residual")
+    .get();
     assert!((inverse - 0.5).abs() < 1.0e-12);
 }
 
@@ -719,7 +722,8 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         point.get(),
         parameter,
     )
-    .expect("transformed inverse");
+    .expect("transformed inverse")
+    .get();
     assert!((inverse - parameter).abs() < 1.0e-10);
 
     ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -762,7 +766,8 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
             &id,
             point,
             seed
-        ),
+        )
+        .map(crate::scalar::FiniteReal::get),
         Some(seed)
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
@@ -1151,6 +1156,66 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     assert_eq!(partials.point, Point3::new(-0.25, 0.5, -2.0));
     assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
+    use crate::eval::EvaluationFailure;
+
+    let base_id = SurfaceId::mint("test:model:entity#far-base").expect("valid identity");
+    let subset_id = SurfaceId::mint("test:model:entity#far-subset").expect("valid identity");
+    let subset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#far-subset-construction")
+            .expect("valid identity");
+    let plane = SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    );
+    let mut ir = CadIr::empty();
+    ir.model.surfaces = vec![
+        Surface {
+            id: base_id.clone(),
+            geometry: SurfaceGeometry::Solved(plane.clone()),
+            source_object: None,
+        },
+        Surface {
+            id: subset_id.clone(),
+            geometry: SurfaceGeometry::Solved(plane),
+            source_object: None,
+        },
+    ];
+    // The u range runs down from 1e308 while its sense runs up, so the
+    // support parameter at the far end of the span is 2e308.
+    ir.model
+        .add_procedural_surface(
+            subset_id.clone(),
+            procedural_surface! {
+                id: subset_construction,
+                definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        )
+        .expect("subset surface exists and has no procedural construction");
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(
+        matches!(
+            model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5),
+            Err(EvaluationFailure::NonFinite(_))
+        ),
+        "{:?}",
+        model_surface_point_by_id(&index, &subset_id, 1.0e308, 0.5)
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &subset_id, 0.0, 0.5)
+            .map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(1.0e308, 0.5, 0.0))
+    );
 }
 
 #[test]
@@ -1921,11 +1986,13 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     .unwrap();
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1),
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.1)
+            .map(crate::scalar::FiniteReal::get),
         Some(0.25)
     );
     assert_eq!(
-        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9),
+        nurbs_curve_parameter_near_point(&curve, point, 1.0e-12, 0.9)
+            .map(crate::scalar::FiniteReal::get),
         Some(0.75)
     );
     assert_eq!(
@@ -1937,11 +2004,16 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
 
 #[test]
 fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
-    let boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
-    let intervals = super::bounded_nearest_intervals(&boundaries, 5_000.5);
+    let boundaries = (0..=10_000)
+        .map(crate::scalar::FiniteReal::from_index)
+        .collect::<Vec<_>>();
+    let seed = crate::scalar::FiniteReal::new(5_000.5).expect("finite seed");
+    let intervals = super::bounded_nearest_intervals(&boundaries, seed);
 
     assert_eq!(intervals.len(), 512);
-    assert!(intervals.contains(&[5_000.0, 5_001.0]));
+    assert!(intervals
+        .iter()
+        .any(|interval| interval.map(crate::scalar::FiniteReal::get) == [5_000.0, 5_001.0]));
 }
 
 #[test]
@@ -1961,11 +2033,12 @@ fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
 
 #[test]
 fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
-    let boundaries = [0.0, 1.0, 2.0];
+    let boundaries = [0, 1, 2].map(crate::scalar::FiniteReal::from_index);
+    let seed = crate::scalar::FiniteReal::new(1.4).expect("finite seed");
 
     assert_eq!(
-        super::nearest_boundary_witness(&boundaries, 1.4, 0.0, |_| Some(0.0)),
-        super::BoundaryWitness::Found(1.0)
+        super::nearest_boundary_witness(&boundaries, seed, 0.0, |_| Some(0.0)),
+        super::BoundaryWitness::Found(crate::scalar::FiniteReal::ONE)
     );
 }
 

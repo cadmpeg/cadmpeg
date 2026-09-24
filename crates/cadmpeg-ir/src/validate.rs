@@ -71,7 +71,9 @@ use topology::{
 /// The recursion is bounded by the carrier: each pcurve nesting constructor
 /// refuses a chain past
 /// [`MAX_GEOMETRY_NESTING`](crate::geometry::MAX_GEOMETRY_NESTING).
-fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -> Option<[f64; 2]> {
+fn pcurve_parameter_domain(
+    geometry: &crate::geometry::pcurve::PcurveGeometry,
+) -> Option<crate::topology::IncreasingParameterInterval> {
     use crate::geometry::pcurve::PcurveGeometry;
 
     match geometry {
@@ -79,21 +81,16 @@ fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -
             nurbs.degree(),
             nurbs.knots(),
             nurbs.control_points().len(),
-        )
-        .map(crate::topology::IncreasingParameterInterval::endpoints),
+        ),
         PcurveGeometry::PolarNurbs { nurbs } => crate::eval::nurbs_pcurve_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
             nurbs.poles().len(),
-        )
-        .map(crate::topology::IncreasingParameterInterval::endpoints),
+        ),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
-            let parameter_range = trimmed_pcurve.parameter_range();
-            if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {
-                Some(parameter_range.endpoints())
-            } else {
-                pcurve_parameter_domain(trimmed_pcurve.basis())
-            }
+            let [start, end] = trimmed_pcurve.parameter_range().finite_endpoints();
+            crate::topology::IncreasingParameterInterval::between(start, end)
+                .or_else(|| pcurve_parameter_domain(trimmed_pcurve.basis()))
         }
         PcurveGeometry::Offset(offset_pcurve) => pcurve_parameter_domain(offset_pcurve.basis()),
         PcurveGeometry::Transformed(placed) => pcurve_parameter_domain(placed.basis()),

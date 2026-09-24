@@ -163,7 +163,10 @@ fn numerical_0922_wide_surface_chart_keeps_inverse_and_bound() {
         println!("IR plane domain {d:?}: chord bound={bound:?}, inverse={inverse:?}");
         assert!(bound.unwrap() < CHORD_BOUND_TOLERANCE);
         let expected_u = d[0].midpoint(d[1]);
-        assert_eq!(inverse, Some(Point2::new(expected_u, 0.5)));
+        assert_eq!(
+            inverse.map(crate::units::FinitePoint2::get),
+            Some(Point2::new(expected_u, 0.5))
+        );
     }
 }
 #[test]
@@ -181,7 +184,10 @@ fn numerical_0922_far_surface_query_keeps_inverse() {
             "IR unit plane, query z={z:e}: {result:?}, budget {}",
             budget.consumed()
         );
-        assert_eq!(result, Some(Point2::new(0.5, 0.5)));
+        assert_eq!(
+            result.map(crate::units::FinitePoint2::get),
+            Some(Point2::new(0.5, 0.5))
+        );
     }
 }
 #[test]

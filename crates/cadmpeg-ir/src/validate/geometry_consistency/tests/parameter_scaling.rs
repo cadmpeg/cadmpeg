@@ -41,10 +41,11 @@ fn numerical_audit_mapped_pcurve_search_ignores_knot_units() {
             &context,
             &p,
             Point3::new(0.3, 0., 0.),
-            0.,
+            crate::scalar::FiniteReal::ZERO,
             EPS_POINT,
         )
-        .unwrap();
+        .unwrap()
+        .get();
         assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() <= EPS_POINT);
     }
 }

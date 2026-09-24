@@ -17,6 +17,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -55,16 +56,17 @@ fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
         )
         .unwrap(),
     ));
+    let [two, five] = [2.0, 5.0].map(|value| FiniteReal::new(value).expect("finite parameter"));
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), 2.0, 5.0),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, five),
         Some([2.0, 5.0])
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), 5.0, 2.0),
+        edge_parameter_range(line.solved().expect("solved carrier"), five, two),
         None
     );
     assert_eq!(
-        edge_parameter_range(line.solved().expect("solved carrier"), 2.0, 2.0),
+        edge_parameter_range(line.solved().expect("solved carrier"), two, two),
         None
     );
 }
@@ -80,8 +82,11 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         )
         .unwrap(),
     ));
-    let start = 1.5 + 20_000.0 * std::f64::consts::TAU;
-    let end = 0.5 - 20_000.0 * std::f64::consts::TAU;
+    let [start, end] = [
+        1.5 + 20_000.0 * std::f64::consts::TAU,
+        0.5 - 20_000.0 * std::f64::consts::TAU,
+    ]
+    .map(|value| FiniteReal::new(value).expect("finite parameter"));
     let range = edge_parameter_range(circle.solved().expect("solved carrier"), start, end)
         .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
@@ -114,13 +119,16 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
         .expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
-        .expect("start witness");
+        .expect("start witness")
+        .get();
     let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start)
-        .expect("unanchored end witness");
+        .expect("unanchored end witness")
+        .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
     let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed)
-        .expect("end witness");
+        .expect("end witness")
+        .get();
 
     assert!(start.abs() < 1.0e-12);
     assert!((end - 1.0).abs() < 1.0e-12);
@@ -707,12 +715,11 @@ fn numerical_followup_periodic_edge_preserves_small_domain_phase() {
             true,
         )
         .unwrap();
-        let range = super::super::edge_parameter_range(
-            &SolvedCurveGeometry::Nurbs(curve),
-            0.8 * d,
-            0.9 * d,
-        )
-        .unwrap();
+        let [start, end] =
+            [0.8 * d, 0.9 * d].map(|value| FiniteReal::new(value).expect("finite parameter"));
+        let range =
+            super::super::edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end)
+                .unwrap();
         assert!((range[0] / d - 0.8).abs() < 16. * f64::EPSILON);
         assert!((range[1] / d - 0.9).abs() < 16. * f64::EPSILON);
     }

@@ -513,6 +513,7 @@ fn unseeded_nurbs_surface_parameters_with_index_and_budget(
         fit_tolerance,
         geometry_budget,
     )
+    .map(FinitePoint2::get)
 }
 
 fn serialized_support_uv_seed_for_side(
@@ -1102,7 +1103,7 @@ fn complete_support_uv_wave(
                                             effective_fit_tolerance,
                                             geometry_budget,
                                         )
-                                        .map(|parameters| (parameters, true))
+                                        .map(|parameters| (parameters.get(), true))
                                     } else {
                                         unseeded_nurbs_surface_parameters_with_index_and_budget(
                                             &model_index,

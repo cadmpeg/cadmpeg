@@ -972,7 +972,8 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let geometry = pcurves.get(use_.pcurve.as_str());
             let mut valid = geometry.is_some();
             if let Some(geometry) = geometry {
-                let domain = pcurve_parameter_domain(geometry);
+                let domain = pcurve_parameter_domain(geometry)
+                    .map(crate::topology::IncreasingParameterInterval::endpoints);
                 match domain {
                     Some([lower, upper]) => {
                         valid &= [start, end]
