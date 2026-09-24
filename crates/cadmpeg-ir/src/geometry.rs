@@ -599,7 +599,9 @@ pub fn derive_reference_direction(axis: Vector3) -> Vector3 {
     let norm = axis.norm();
     let axis = if norm.is_finite() && norm != 0.0 {
         Vector3::new(axis.x / norm, axis.y / norm, axis.z / norm)
-    } else if let Some(unit) = axis.unit_nonzero() {
+    } else if let Some(unit) = crate::features::FiniteVector3::new(axis)
+        .and_then(crate::features::FiniteVector3::unit_nonzero)
+    {
         unit
     } else {
         return Vector3::new(1.0, 0.0, 0.0);

@@ -8,7 +8,7 @@ use crate::nurbs::proc_surface::{
 };
 use crate::nurbs::reader::LEN_TO_MM;
 use crate::sab::{Record, Token};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
     SphereSurface, TorusSurface,
@@ -891,14 +891,14 @@ pub(super) fn rational_four_arc_circle(
     for span in &quadratic_points {
         let radial = point_vector(first_center, span[0]);
         let next = point_vector(first_center, span[2]);
-        let radial_unit = radial.unit_nonzero()?;
-        let next_unit = next.unit_nonzero()?;
+        let radial_unit = FiniteVector3::new(radial)?.unit_nonzero()?;
+        let next_unit = FiniteVector3::new(next)?.unit_nonzero()?;
         if (radial.norm() - radius).abs() > tolerance
             || radial_unit.dot(next_unit).abs() > EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
         {
             return None;
         }
-        let span_normal = radial_unit.cross(next_unit).unit_nonzero()?;
+        let span_normal = FiniteVector3::new(radial_unit.cross(next_unit))?.unit_nonzero()?;
         if normal.is_some_and(|normal: Vector3| {
             normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
         }) {
@@ -906,7 +906,12 @@ pub(super) fn rational_four_arc_circle(
         }
         normal.get_or_insert(span_normal);
     }
-    Some((first_center, normal?, first_radial.unit_nonzero()?, radius))
+    Some((
+        first_center,
+        normal?,
+        FiniteVector3::new(first_radial)?.unit_nonzero()?,
+        radius,
+    ))
 }
 
 fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<[[f64; 4]; 3]> {

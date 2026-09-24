@@ -6,6 +6,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::chunks::{chunk_at, ArchiveVersion};
 use crate::curves::GeometryError;
@@ -218,16 +219,16 @@ pub(crate) fn decode_at(
         let tuple_bound = body.counted(dimension as u64, 8).ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
         })?;
-        let mut stored =
-            ExactVec::<f64>::new(tuple_bound).map_err(|error| refused(body.position(), &error))?;
+        let mut stored = ExactVec::<FiniteReal>::new(tuple_bound)
+            .map_err(|error| refused(body.position(), &error))?;
         for _ in 0..dimension {
             let value = req_f64(&mut body)?;
-            if !value.is_finite() {
+            let Some(value) = FiniteReal::new(value) else {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
                     "nonfinite NURBS cage control value",
                 ));
-            }
+            };
             stored
                 .push(value)
                 .map_err(|error| refused(body.position(), &error))?;
@@ -237,28 +238,28 @@ pub(crate) fn decode_at(
             .map_err(|error| refused(body.position(), &error))?;
         let weight = if let Some(weights) = &mut weights {
             let weight = req_f64(&mut body)?;
-            if !weight.is_finite() {
+            let Some(weight) = FiniteReal::new(weight) else {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
                     "nonfinite NURBS cage control value",
                 ));
-            }
-            if weight == 0.0 {
+            };
+            if weight.get() == 0.0 {
                 return Err(GeometryError::malformed(
                     body.position() - 8,
                     "zero NURBS cage weight",
                 ));
             }
-            weights.push(weight);
+            weights.push(weight.get());
             weight
         } else {
-            1.0
+            FiniteReal::ONE
         };
         let point = stored
             .into_iter()
             .map(|coordinate| {
-                cadmpeg_ir::math::multiply_divide(coordinate, scale.value(), weight)
-                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+                cadmpeg_ir::math::multiply_divide(coordinate, scale.real(), weight)
+                    .map(FiniteReal::get)
                     .ok_or_else(|| {
                         GeometryError::malformed(
                             body.position(),

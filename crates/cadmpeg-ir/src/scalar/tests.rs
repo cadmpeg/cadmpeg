@@ -430,3 +430,11 @@ fn finite_reals_halve_average_and_count_without_a_check() {
         [1.5, -2.0]
     );
 }
+
+#[test]
+fn a_positive_length_reads_as_its_magnitude_and_half_is_one_half() {
+    use crate::scalar::{FiniteReal, PositiveLength};
+
+    assert_eq!(PositiveLength::new(2.5).unwrap().magnitude().get(), 2.5);
+    assert_eq!(FiniteReal::HALF.get(), 0.5);
+}

@@ -3438,7 +3438,9 @@ fn trim_line_line_intersection(
         second_end[1] - second_start[1],
         0.0,
     );
-    if first.unit_nonzero()?.cross(second.unit_nonzero()?).z.abs() <= TRIM_INTERSECTION_EPS {
+    let first_unit = cadmpeg_ir::features::FiniteVector3::new(first)?.unit_nonzero()?;
+    let second_unit = cadmpeg_ir::features::FiniteVector3::new(second)?.unit_nonzero()?;
+    if first_unit.cross(second_unit).z.abs() <= TRIM_INTERSECTION_EPS {
         return None;
     }
     // Solve in component-scaled directions. Unit directions are for the
@@ -3473,12 +3475,17 @@ fn trim_line_circle_intersection(
         radius,
     )?;
     let endpoint_tolerance = TRIM_COORDINATE_EPS * radius;
+    // A segment end that is not finite has no distance to measure.
+    let segment =
+        cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(start[0], start[1]))
+            .zip(cadmpeg_ir::units::FinitePoint2::new(
+                cadmpeg_ir::math::Point2::new(end[0], end[1]),
+            ));
     let mut inside = intersections.into_iter().filter(|(_, point)| {
-        cadmpeg_ir::math::planar::point_segment_distance(
-            point.get(),
-            cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        ) <= endpoint_tolerance
+        segment.is_some_and(|(start, end)| {
+            cadmpeg_ir::math::planar::point_segment_distance(*point, start, end)
+                <= endpoint_tolerance
+        })
     });
     let (_, point) = inside.next()?;
     if inside.next().is_some_and(|(_, other)| other != point) {

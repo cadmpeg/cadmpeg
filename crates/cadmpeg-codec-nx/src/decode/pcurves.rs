@@ -36,6 +36,7 @@ use cadmpeg_ir::eval::{
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point_with_budget,
     pcurve_tangent, pcurve_uv, surface_second_partials,
 };
+use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs, PolarPcurveNurbs},
@@ -46,6 +47,7 @@ use cadmpeg_ir::ids::{
     CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, ProceduralCurveId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FinitePoint2;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
@@ -680,9 +682,9 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             // missing surface chart or a tie states no selection.
             let selected_forward = (|| {
                 let curve = index.curves(curve.as_str())?;
-                let curve_tangent = Vector3::unit_nonzero(
-                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)?.get(),
-                )?;
+                let curve_tangent =
+                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)?
+                        .unit_nonzero()?;
                 let alignment = |candidate: &PcurveGeometry| {
                     let uv = pcurve_uv(candidate, range[0]).ok()?;
                     let uv_tangent = pcurve_tangent(candidate, range[0]).ok()?;
@@ -693,11 +695,12 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         uv.v,
                         geometry_budget,
                     )?;
-                    let tangent = Vector3::unit_nonzero(Vector3::new(
+                    let tangent = FiniteVector3::new(Vector3::new(
                         uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                         uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
                         uv_tangent.u * partials.du.z + uv_tangent.v * partials.dv.z,
-                    ))?;
+                    ))
+                    .and_then(FiniteVector3::unit_nonzero)?;
                     Some(curve_tangent.dot(tangent))
                 };
                 match (alignment(pcurve)?, alignment(&reversed)?) {
@@ -731,7 +734,10 @@ fn reverse_pcurve_over_range(
     [start, end]: [f64; 2],
 ) -> Result<Option<PcurveGeometry>, NurbsError> {
     let reflection = start + end;
-    if !start.is_finite() || !end.is_finite() || start >= end {
+    let (Some(lower), Some(upper)) = (FiniteReal::new(start), FiniteReal::new(end)) else {
+        return Ok(None);
+    };
+    if start >= end {
         return Ok(None);
     }
     match pcurve {
@@ -741,8 +747,9 @@ fn reverse_pcurve_over_range(
                 .iter()
                 .rev()
                 .map(|knot| {
-                    cadmpeg_ir::math::reflect_parameter(*knot, start, end)
-                        .map(cadmpeg_ir::scalar::FiniteReal::get)
+                    FiniteReal::new(*knot)
+                        .and_then(|knot| cadmpeg_ir::math::reflect_parameter(knot, lower, upper))
+                        .map(FiniteReal::get)
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -760,8 +767,9 @@ fn reverse_pcurve_over_range(
                 .iter()
                 .rev()
                 .map(|knot| {
-                    cadmpeg_ir::math::reflect_parameter(*knot, start, end)
-                        .map(cadmpeg_ir::scalar::FiniteReal::get)
+                    FiniteReal::new(*knot)
+                        .and_then(|knot| cadmpeg_ir::math::reflect_parameter(knot, lower, upper))
+                        .map(FiniteReal::get)
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -2913,12 +2921,18 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     else {
         return false;
     };
-    let radial = Vector3::new(point.x - center.x, point.y - center.y, point.z - center.z);
+    let Some(radial) = FiniteVector3::new(Vector3::new(
+        point.x - center.x,
+        point.y - center.y,
+        point.z - center.z,
+    )) else {
+        return false;
+    };
     let distance = radial.norm();
     if !distance.is_finite() || (distance - radius).abs() > tolerance {
         return false;
     }
-    let Some(radial) = Vector3::unit_nonzero(radial) else {
+    let Some(radial) = radial.unit_nonzero() else {
         return false;
     };
     let Some(curve) = index.curves(spine.as_str()) else {

@@ -33,6 +33,7 @@ use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{
     ExtendedReal, FiniteReal, NonNegativeLength, NonNegativeReal, NonZeroLength, NonZeroReal,
+    PositiveReal,
 };
 use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
@@ -97,7 +98,7 @@ pub fn spatial_points_are_reflections(
     if !scale.is_finite() {
         return false;
     }
-    let Some(axis) = axis.unit_nonzero() else {
+    let Some(axis) = FiniteVector3::new(axis).and_then(FiniteVector3::unit_nonzero) else {
         return false;
     };
     let scaled =
@@ -443,23 +444,26 @@ fn binomial_coefficient(degree: usize, index: usize) -> f64 {
 
 fn rational_patch_parameter_segment(
     patch: &RationalBezierSurfacePatch,
-    start: Point2,
-    end: Point2,
+    start: FinitePoint2,
+    end: FinitePoint2,
 ) -> Option<Vec<[f64; 4]>> {
-    let normalize = |value: f64, domain: [f64; 2]| {
+    let normalize = |value: FiniteReal, domain: IncreasingParameterInterval| {
+        let [lower, upper] = domain.finite_endpoints();
         Some(
-            difference_quotient(value, domain[0], domain[1], domain[0])?
+            difference_quotient(value, lower, upper, lower)?
                 .get()
                 .clamp(0.0, 1.0),
         )
     };
+    let [start_u, start_v] = start.coordinates();
+    let [end_u, end_v] = end.coordinates();
     let u_range = [
-        normalize(start.u, patch.u_domain.endpoints())?,
-        normalize(end.u, patch.u_domain.endpoints())?,
+        normalize(start_u, patch.u_domain)?,
+        normalize(end_u, patch.u_domain)?,
     ];
     let v_range = [
-        normalize(start.v, patch.v_domain.endpoints())?,
-        normalize(end.v, patch.v_domain.endpoints())?,
+        normalize(start_v, patch.v_domain)?,
+        normalize(end_v, patch.v_domain)?,
     ];
     let u_lines = (0..=patch.v_degree)
         .map(|v| {
@@ -574,21 +578,28 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     parameters: [Point2; 2],
     chord: [Point3; 2],
 ) -> Option<f64> {
-    if parameters.iter().any(|point| !point.is_finite())
-        || chord.iter().any(|point| !point.is_finite())
-    {
+    let [Some(first), Some(last)] = parameters.map(FinitePoint2::new) else {
+        return None;
+    };
+    if chord.iter().any(|point| !point.is_finite()) {
         return None;
     }
     let patches = rational_surface_patches(surface)?;
+    let [first_u, first_v] = first.coordinates();
+    let [last_u, last_v] = last.coordinates();
     let mut splits = vec![0.0, 1.0];
     for patch in &patches {
+        let [u_lower, u_upper] = patch.u_domain.finite_endpoints();
+        let [v_lower, v_upper] = patch.v_domain.finite_endpoints();
         for (boundary, start, end) in [
-            (patch.u_domain.lower(), parameters[0].u, parameters[1].u),
-            (patch.u_domain.upper(), parameters[0].u, parameters[1].u),
-            (patch.v_domain.lower(), parameters[0].v, parameters[1].v),
-            (patch.v_domain.upper(), parameters[0].v, parameters[1].v),
+            (u_lower, first_u, last_u),
+            (u_upper, first_u, last_u),
+            (v_lower, first_v, last_v),
+            (v_upper, first_v, last_v),
         ] {
-            if start.min(end) < boundary && boundary < start.max(end) {
+            if start.get().min(end.get()) < boundary.get()
+                && boundary.get() < start.get().max(end.get())
+            {
                 let parameter = difference_quotient(boundary, start, end, start)?.get();
                 if 0.0 < parameter && parameter < 1.0 {
                     splits.push(parameter);
@@ -601,9 +612,9 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     splits.windows(2).try_fold(0.0_f64, |bound, range| {
         let middle = 0.5 * (range[0] + range[1]);
         let parameter_point = |parameter: f64| {
-            Some(Point2::new(
-                crate::math::interpolate(parameters[0].u, parameters[1].u, parameter)?.get(),
-                crate::math::interpolate(parameters[0].v, parameters[1].v, parameter)?.get(),
+            Some(FinitePoint2::from_coordinates(
+                crate::math::interpolate(first.u, last.u, parameter)?,
+                crate::math::interpolate(first.v, last.v, parameter)?,
             ))
         };
         let midpoint = parameter_point(middle)?;
@@ -1311,6 +1322,7 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
+    let finite_t = FiniteReal::new(t);
     let mut values = vec![1.0];
     let mut left = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis left").ok()?;
     let mut right = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis right").ok()?;
@@ -1325,8 +1337,9 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
                 scaled_ratio_products(value, denominator, [right[r + 1], left[j - r]])?
                     .map(FiniteReal::get)
             } else {
-                let right_knot = knots[span + r + 1];
-                let left_knot = knots[span + 1 - j + r];
+                let t = finite_t?;
+                let [right_knot, left_knot] =
+                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
                 [
                     value * difference_quotient(right_knot, t, right_knot, left_knot)?.get(),
                     value * difference_quotient(t, left_knot, right_knot, left_knot)?.get(),
@@ -1364,12 +1377,14 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
             } else if left_denominator.is_finite() {
                 degree as f64 * lower_at(index) / left_denominator
             } else {
-                difference_quotient(
+                FiniteReal::array([
                     degree as f64 * lower_at(index),
-                    0.0,
                     knots[index + degree],
                     knots[index],
-                )
+                ])
+                .and_then(|[value, end, start]| {
+                    difference_quotient(value, FiniteReal::ZERO, end, start)
+                })
                 .map_or(f64::NAN, FiniteReal::get)
             };
             let right = if right_denominator == 0.0 {
@@ -1377,12 +1392,14 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
             } else if right_denominator.is_finite() {
                 degree as f64 * lower_at(index + 1) / right_denominator
             } else {
-                difference_quotient(
+                FiniteReal::array([
                     degree as f64 * lower_at(index + 1),
-                    0.0,
                     knots[index + degree + 1],
                     knots[index + 1],
-                )
+                ])
+                .and_then(|[value, end, start]| {
+                    difference_quotient(value, FiniteReal::ZERO, end, start)
+                })
                 .map_or(f64::NAN, FiniteReal::get)
             };
             left - right
@@ -1424,12 +1441,14 @@ fn bspline_basis_second_derivative(
             } else if left_denominator.is_finite() {
                 degree as f64 * lower_at(index) / left_denominator
             } else {
-                difference_quotient(
+                FiniteReal::array([
                     degree as f64 * lower_at(index),
-                    0.0,
                     knots[index + degree],
                     knots[index],
-                )
+                ])
+                .and_then(|[value, end, start]| {
+                    difference_quotient(value, FiniteReal::ZERO, end, start)
+                })
                 .map_or(f64::NAN, FiniteReal::get)
             };
             let right = if right_denominator == 0.0 {
@@ -1437,12 +1456,14 @@ fn bspline_basis_second_derivative(
             } else if right_denominator.is_finite() {
                 degree as f64 * lower_at(index + 1) / right_denominator
             } else {
-                difference_quotient(
+                FiniteReal::array([
                     degree as f64 * lower_at(index + 1),
-                    0.0,
                     knots[index + degree + 1],
                     knots[index + 1],
-                )
+                ])
+                .and_then(|[value, end, start]| {
+                    difference_quotient(value, FiniteReal::ZERO, end, start)
+                })
                 .map_or(f64::NAN, FiniteReal::get)
             };
             left - right
@@ -1459,7 +1480,7 @@ fn bspline_basis_scaled_derivatives(
     degree: usize,
     span: usize,
     t: f64,
-    scale: f64,
+    scale: PositiveReal,
 ) -> Option<(Vec<f64>, Vec<f64>)> {
     if degree == 0 {
         return Some((vec![0.0], vec![0.0]));
@@ -1481,7 +1502,7 @@ fn bspline_basis_scaled_derivative_level(
     knots: &[f64],
     degree: usize,
     span: usize,
-    scale: f64,
+    scale: PositiveReal,
     lower: &[f64],
 ) -> Option<Vec<f64>> {
     let lower_start = span - (degree - 1);
@@ -1504,7 +1525,9 @@ fn bspline_basis_scaled_derivative_level(
             if knots[hi] == knots[lo] {
                 Some(0.0)
             } else {
-                difference_quotient(scale, 0.0, knots[hi], knots[lo]).map(FiniteReal::get)
+                let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
+                difference_quotient(scale.into(), FiniteReal::ZERO, hi_knot, lo_knot)
+                    .map(FiniteReal::get)
             }
         };
         let left = ratio(index + degree, index)?;
@@ -2108,8 +2131,12 @@ fn fitted_nurbs_offset_candidate(
         {
             return None;
         }
-        let source_unit = Vector3::new(source_tangent.u, source_tangent.v, 0.0).unit_nonzero()?;
-        let result_unit = Vector3::new(result_tangent.u, result_tangent.v, 0.0).unit_nonzero()?;
+        let source_unit =
+            FiniteVector3::new(Vector3::new(source_tangent.u, source_tangent.v, 0.0))?
+                .unit_nonzero()?;
+        let result_unit =
+            FiniteVector3::new(Vector3::new(result_tangent.u, result_tangent.v, 0.0))?
+                .unit_nonzero()?;
         if source_unit.cross(result_unit).norm() > EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 {
             return None;
         }
@@ -2219,12 +2246,11 @@ fn nurbs_pcurve_differential_with(
             .as_ref()
             .is_none_or(|values| values.iter().all(|value| value.is_finite()))
     {
-        1.0
+        PositiveReal::ONE
     } else {
-        let scale = knots[span + 1] - knots[span];
-        if !scale.is_finite() || scale <= 0.0 {
+        let Some(scale) = PositiveReal::new(knots[span + 1] - knots[span]) else {
             return Some(point_only());
-        }
+        };
         if degree == 1 {
             let local_weights = weights.map(|weights| {
                 [
@@ -2237,7 +2263,7 @@ fn nurbs_pcurve_differential_with(
                 &poles,
                 local_weights.as_ref().map(<[f64; 2]>::as_slice),
                 1,
-                scale,
+                scale.get(),
                 false,
             );
             let acceleration = linear_nurbs_derivative(
@@ -2245,7 +2271,7 @@ fn nurbs_pcurve_differential_with(
                 &poles,
                 local_weights.as_ref().map(<[f64; 2]>::as_slice),
                 1,
-                scale,
+                scale.get(),
                 true,
             );
             return Some(PcurveDifferential {
@@ -2271,12 +2297,13 @@ fn nurbs_pcurve_differential_with(
         )
     });
     let unscale = |value: FiniteReal, twice: bool| {
-        if scale == 1.0 {
+        if scale.get() == 1.0 {
             Some(value)
         } else {
-            let value = difference_quotient(value.get(), 0.0, scale, 0.0)?;
+            let value =
+                difference_quotient(value, FiniteReal::ZERO, scale.into(), FiniteReal::ZERO)?;
             if twice {
-                difference_quotient(value.get(), 0.0, scale, 0.0)
+                difference_quotient(value, FiniteReal::ZERO, scale.into(), FiniteReal::ZERO)
             } else {
                 Some(value)
             }
@@ -3104,14 +3131,18 @@ fn nurbs_curve_tangent(
     let basis = bspline_basis(knots, degree, span, t)?;
     let mut derivatives = bspline_basis_derivative(knots, degree, span, t)?;
     let scale = if derivatives.iter().all(|value| value.is_finite()) {
-        1.0
+        PositiveReal::ONE
     } else {
-        let scale = knots[span + 1] - knots[span];
-        if !scale.is_finite() || scale <= 0.0 {
-            return None;
-        }
+        let scale = PositiveReal::new(knots[span + 1] - knots[span])?;
         if degree == 1 {
-            return linear_nurbs_derivative(&basis, control_points, weights, span, scale, false);
+            return linear_nurbs_derivative(
+                &basis,
+                control_points,
+                weights,
+                span,
+                scale.get(),
+                false,
+            );
         }
         derivatives = bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?.0;
         scale
@@ -3123,10 +3154,10 @@ fn nurbs_curve_tangent(
     let point = base.project(base, &[])?;
     let [x, y, z] = derivative.project(base, &[(derivative, point)])?;
     let unscale = |value: FiniteReal| {
-        if scale == 1.0 {
+        if scale.get() == 1.0 {
             Some(value)
         } else {
-            difference_quotient(value.get(), 0.0, scale, 0.0)
+            difference_quotient(value, FiniteReal::ZERO, scale.into(), FiniteReal::ZERO)
         }
     };
     Some(FiniteVector3::from_components(
@@ -3153,14 +3184,18 @@ fn nurbs_curve_second_derivative(
         .chain(&second_basis)
         .all(|value| value.is_finite())
     {
-        1.0
+        PositiveReal::ONE
     } else {
-        let scale = knots[span + 1] - knots[span];
-        if !scale.is_finite() || scale <= 0.0 {
-            return None;
-        }
+        let scale = PositiveReal::new(knots[span + 1] - knots[span])?;
         if degree == 1 {
-            return linear_nurbs_derivative(&basis, control_points, weights, span, scale, true);
+            return linear_nurbs_derivative(
+                &basis,
+                control_points,
+                weights,
+                span,
+                scale.get(),
+                true,
+            );
         }
         (first_basis, second_basis) =
             bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?;
@@ -3178,14 +3213,14 @@ fn nurbs_curve_second_derivative(
         &[(second_sum, point), (first_sum, first), (first_sum, first)],
     )?;
     let unscale = |value: FiniteReal| {
-        if scale == 1.0 {
+        if scale.get() == 1.0 {
             Some(value)
         } else {
             difference_quotient(
-                difference_quotient(value.get(), 0.0, scale, 0.0)?.get(),
-                0.0,
-                scale,
-                0.0,
+                difference_quotient(value, FiniteReal::ZERO, scale.into(), FiniteReal::ZERO)?,
+                FiniteReal::ZERO,
+                scale.into(),
+                FiniteReal::ZERO,
             )
         }
     };
@@ -3294,20 +3329,21 @@ fn helix_differential(
     let ProceduralCurveDefinition::Helix(helix_payload) = definition else {
         return None;
     };
-    let [start, end] = helix_payload.angle_range().get();
+    let [start, end] = helix_payload.angle_range().finite_components();
     let center = helix_payload.center().get();
     let major = helix_payload.major().get();
     let minor = helix_payload.minor().get();
     let pitch = helix_payload.pitch().get();
     let apex_factor = helix_payload.apex_factor().get();
     let axis = helix_payload.axis().get();
-    if !parameter.is_finite() || parameter < start || parameter > end || unit_axis(axis).is_none() {
+    let finite_parameter = FiniteReal::new(parameter)?;
+    if finite_parameter < start || finite_parameter > end || unit_axis(axis).is_none() {
         return None;
     }
 
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
     let revolution_fraction =
-        difference_quotient(parameter, start, std::f64::consts::TAU, 0.0)?.get();
+        difference_quotient(finite_parameter, start, FiniteReal::TAU, FiniteReal::ZERO)?.get();
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
     let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
     let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
@@ -4395,9 +4431,13 @@ fn direct_curve_parameter_near_point(
             let vertex = parabola_curve.vertex().get();
             let axis = parabola_curve.frame().axis().as_raw();
             let major_direction = parabola_curve.frame().reference().as_raw();
-            let focal_distance = parabola_curve.focal_distance().get();
+            let focal_distance = parabola_curve.focal_distance().magnitude();
             let (_, transverse, _) = components(vertex, *axis, *major_direction);
-            crate::math::multiply_divide(transverse, 0.5, focal_distance)?
+            crate::math::multiply_divide(
+                FiniteReal::new(transverse)?,
+                FiniteReal::HALF,
+                focal_distance,
+            )?
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
@@ -4893,8 +4933,10 @@ pub fn rolling_ball_jet_point(
         return None;
     }
     let second_radius = second_limit.vector_from(center);
-    let second_direction = (second_radius
-        - first_direction.scale(second_radius.dot(first_direction) / first_direction_squared))
+    let second_direction = FiniteVector3::new(
+        second_radius
+            - first_direction.scale(second_radius.dot(first_direction) / first_direction_squared),
+    )?
     .unit_nonzero()?;
     let radial =
         first_direction.scale((s * angle).cos()) + second_direction.scale((s * angle).sin());
@@ -5596,8 +5638,9 @@ fn scalar_unary_sweep_law_differential(
             }
             let inverse = 1.0 / x;
             let denominator = ((x - 1.0) / x) * ((x + 1.0) / x);
-            let derivative =
-                crate::math::multiply_divide(operand.derivative / x, -inverse, denominator)?;
+            let [left, right, denominator] =
+                FiniteReal::array([operand.derivative / x, -inverse, denominator])?;
+            let derivative = crate::math::multiply_divide(left, right, denominator)?;
             return sweep_differential_of(inverse.atanh(), derivative);
         }
         _ => {}
@@ -5813,7 +5856,7 @@ fn sweep_tail_interval_contains(interval: [Option<FiniteReal>; 2], parameter: f6
 fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(Vector3, Vector3)> {
     use crate::math::sum::ExactSignedSum;
 
-    let unit = vector.unit_nonzero()?;
+    let unit = FiniteVector3::new(vector)?.unit_nonzero()?;
     if !derivative.is_finite() {
         return None;
     }
@@ -6634,7 +6677,7 @@ fn circular_arc_partials(
     let cosine = first_radius.dot(second_radius).clamp(-1.0, 1.0);
     let cross = first_radius.cross(second_radius);
     let sine = cross.norm();
-    let axis = cross.unit_nonzero()?;
+    let axis = FiniteVector3::new(cross)?.unit_nonzero()?;
     let angle = sine.atan2(cosine);
     let cosine_v = first_radius_v.dot(second_radius) + first_radius.dot(second_radius_v);
     let cross_v = vector_sum(&[
@@ -7752,24 +7795,18 @@ fn polyline_samples(polyline: &PolylineCurve) -> (Vec<FinitePoint3>, Vec<FiniteR
 }
 
 fn difference_quotient(
-    end: f64,
-    start: f64,
-    domain_end: f64,
-    domain_start: f64,
+    end: FiniteReal,
+    start: FiniteReal,
+    domain_end: FiniteReal,
+    domain_start: FiniteReal,
 ) -> Option<FiniteReal> {
-    if [end, start, domain_end, domain_start]
-        .iter()
-        .any(|value| !value.is_finite())
-    {
-        return None;
-    }
     let mut denominator = ExactSignedSum::default();
-    denominator.add_product(domain_end, 1.0);
-    denominator.add_product(domain_start, -1.0);
+    denominator.add_product(domain_end.get(), 1.0);
+    denominator.add_product(domain_start.get(), -1.0);
     let denominator = denominator.finish()?;
     let mut numerator = ExactSignedSum::default();
-    numerator.add_product(end, 1.0);
-    numerator.add_product(start, -1.0);
+    numerator.add_product(end.get(), 1.0);
+    numerator.add_product(start.get(), -1.0);
     numerator
         .finish()
         .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
@@ -7780,18 +7817,18 @@ fn polyline_point(
     parameters: &[FiniteReal],
     t: f64,
 ) -> Option<FinitePoint3> {
-    if points.len() < 2 || points.len() != parameters.len() || !t.is_finite() {
+    if points.len() < 2 || points.len() != parameters.len() {
         return None;
     }
+    let t = FiniteReal::new(t)?;
     let segment = parameters.windows(2).position(|window| {
-        let window = [window[0].get(), window[1].get()];
         (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])
     })?;
     let fraction = difference_quotient(
         t,
-        parameters[segment].get(),
-        parameters[segment + 1].get(),
-        parameters[segment].get(),
+        parameters[segment],
+        parameters[segment + 1],
+        parameters[segment],
     )?
     .get();
     let start = points[segment].get();
@@ -7809,21 +7846,21 @@ fn polyline_tangent(
     parameters: &[FiniteReal],
     t: f64,
 ) -> Option<FiniteVector3> {
-    if points.len() < 2 || points.len() != parameters.len() || !t.is_finite() {
+    if points.len() < 2 || points.len() != parameters.len() {
         return None;
     }
+    let t = FiniteReal::new(t)?;
     let mut tangent = None;
     for (segment, window) in parameters.windows(2).enumerate() {
-        let window = [window[0].get(), window[1].get()];
         if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
             continue;
         }
-        let start = points[segment].get();
-        let end = points[segment + 1].get();
+        let [start_x, start_y, start_z] = points[segment].coordinates();
+        let [end_x, end_y, end_z] = points[segment + 1].coordinates();
         let candidate = FiniteVector3::from_components(
-            difference_quotient(end.x, start.x, window[1], window[0])?,
-            difference_quotient(end.y, start.y, window[1], window[0])?,
-            difference_quotient(end.z, start.z, window[1], window[0])?,
+            difference_quotient(end_x, start_x, window[1], window[0])?,
+            difference_quotient(end_y, start_y, window[1], window[0])?,
+            difference_quotient(end_z, start_z, window[1], window[0])?,
         );
         if tangent.is_some_and(|tangent| tangent != candidate) {
             return None;
@@ -7923,8 +7960,8 @@ fn polar_angle_differential(
                 let mut numerator = ExactSignedSum::default();
                 numerator.add_product(point.u, acceleration.v);
                 numerator.add_product(-point.v, acceleration.u);
-                numerator.add_scaled_product(dot.finish(), first.negated().get())?;
-                numerator.add_scaled_product(dot.finish(), first.negated().get())?;
+                numerator.add_scaled_product(dot.finish(), first.negated())?;
+                numerator.add_scaled_product(dot.finish(), first.negated())?;
                 numerator
                     .finish()
                     .map_or(Some(FiniteReal::ZERO), |value| value.quotient(radius))

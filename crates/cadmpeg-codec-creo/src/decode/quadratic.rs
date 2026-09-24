@@ -103,10 +103,15 @@ pub(super) fn real_roots(
 ) -> Vec<f64> {
     if [quadratic, linear, constant]
         .iter()
-        .any(|coefficient| !coefficient.value.is_finite() || !coefficient.terms.is_finite())
+        .any(|coefficient| !coefficient.terms.is_finite())
     {
         return Vec::new();
     }
+    let [Some(quadratic_value), Some(linear_value), Some(_)] =
+        [quadratic, linear, constant].map(|coefficient| FiniteReal::new(coefficient.value))
+    else {
+        return Vec::new();
+    };
     if quadratic.value == 0.0 {
         let root = -constant.value / linear.value;
         return root.is_finite().then_some(root).into_iter().collect();
@@ -157,7 +162,7 @@ pub(super) fn real_roots(
                 + error_quadratic * error_constant)
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
-        return multiply_divide(-linear.value, 0.5, quadratic.value)
+        return multiply_divide(linear_value.negated(), FiniteReal::HALF, quadratic_value)
             .map(FiniteReal::get)
             .into_iter()
             .collect();

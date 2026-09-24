@@ -14,6 +14,7 @@ use model::{
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
@@ -1315,11 +1316,14 @@ fn validate_nurbs_trim(
                     if sense == Sense::Forward {
                         Ok(value)
                     } else {
-                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
-                            .map(cadmpeg_ir::scalar::FiniteReal::get)
-                            .ok_or_else(|| {
-                                CodecError::malformed("reversed edge knot is non-finite")
-                            })
+                        match [value, domain[0], domain[1]].map(FiniteReal::new) {
+                            [Some(value), Some(start), Some(end)] => {
+                                cadmpeg_ir::math::reflect_parameter(value, start, end)
+                            }
+                            _ => None,
+                        }
+                        .map(FiniteReal::get)
+                        .ok_or_else(|| CodecError::malformed("reversed edge knot is non-finite"))
                     }
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?,
@@ -1351,9 +1355,9 @@ fn validate_nurbs_trim(
     for span in breaks.windows(2) {
         for step in 0..=16 {
             let fraction = f64::from(step) / 16.0;
-            let parameter = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
-                .map(cadmpeg_ir::scalar::FiniteReal::get)
+            let sample = cadmpeg_ir::math::interpolate(span[0], span[1], fraction)
                 .ok_or_else(|| CodecError::malformed("non-finite trim sample parameter"))?;
+            let parameter = sample.get();
             // A non-finite pcurve point is refused by the domain test.
             let uv = match pcurve_uv(&pcurve.geometry, parameter) {
                 Ok(uv) => uv.get(),
@@ -1379,9 +1383,14 @@ fn validate_nurbs_trim(
             let curve_parameter = if sense == Sense::Forward {
                 parameter
             } else {
-                cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1])
-                    .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
+                match [domain[0], domain[1]].map(FiniteReal::new) {
+                    [Some(start), Some(end)] => {
+                        cadmpeg_ir::math::reflect_parameter(sample, start, end)
+                    }
+                    _ => None,
+                }
+                .map(FiniteReal::get)
+                .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
             };
             let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {
                 CodecError::malformed(format_args!(

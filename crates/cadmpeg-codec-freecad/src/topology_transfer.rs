@@ -1840,26 +1840,10 @@ fn ensure_similarity(transform: Transform) -> Result<(), CodecError> {
 }
 
 fn uniform_scale(transform: Transform) -> Result<f64, CodecError> {
-    let columns = [
-        Vector3::new(
-            transform.rows()[0][0],
-            transform.rows()[1][0],
-            transform.rows()[2][0],
-        ),
-        Vector3::new(
-            transform.rows()[0][1],
-            transform.rows()[1][1],
-            transform.rows()[2][1],
-        ),
-        Vector3::new(
-            transform.rows()[0][2],
-            transform.rows()[1][2],
-            transform.rows()[2][2],
-        ),
-    ];
+    let columns = transform.linear_columns();
     let scale = columns[0].norm();
     let lengths = columns.map(|column| column.norm());
-    let units = columns.map(Vector3::unit_nonzero);
+    let units = columns.map(cadmpeg_ir::features::FiniteVector3::unit_nonzero);
     if !scale.is_finite()
         || scale <= 0.0
         || lengths.iter().any(|length| {
@@ -2266,11 +2250,22 @@ pub(crate) fn normalize_occt_curve_range(
             Some([canonical_start, canonical_start + sweep])
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            let focal_distance = parabola_curve.focal_distance().get();
+            use cadmpeg_ir::scalar::FiniteReal;
+            let focal_distance = parabola_curve.focal_distance().magnitude();
             let [start, end] = range?;
             Some([
-                cadmpeg_ir::math::multiply_divide(start, 0.5, focal_distance)?.get(),
-                cadmpeg_ir::math::multiply_divide(end, 0.5, focal_distance)?.get(),
+                cadmpeg_ir::math::multiply_divide(
+                    FiniteReal::new(start)?,
+                    FiniteReal::HALF,
+                    focal_distance,
+                )?
+                .get(),
+                cadmpeg_ir::math::multiply_divide(
+                    FiniteReal::new(end)?,
+                    FiniteReal::HALF,
+                    focal_distance,
+                )?
+                .get(),
             ])
         }
         SolvedCurveGeometry::Transformed(placed) => {

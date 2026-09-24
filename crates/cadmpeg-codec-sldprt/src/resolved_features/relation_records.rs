@@ -2250,7 +2250,10 @@ pub(super) fn line_line_distance(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) ->
     let unit = |direction: [f64; 2]| {
         let v = cadmpeg_ir::math::Vector3::new(direction[0], direction[1], 0.0);
         (v.norm() > SKETCH_POINT_TOLERANCE)
-            .then(|| v.unit_nonzero())
+            .then(|| {
+                cadmpeg_ir::features::FiniteVector3::new(v)
+                    .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+            })
             .flatten()
     };
     let a = unit(first_direction)?;
@@ -2270,8 +2273,8 @@ pub(super) fn line_line_angle(first: [[f64; 2]; 2], second: [[f64; 2]; 2]) -> Op
     if first.norm() <= SKETCH_POINT_TOLERANCE || second.norm() <= SKETCH_POINT_TOLERANCE {
         return None;
     }
-    let first = first.unit_nonzero()?;
-    let second = second.unit_nonzero()?;
+    let first = cadmpeg_ir::features::FiniteVector3::new(first)?.unit_nonzero()?;
+    let second = cadmpeg_ir::features::FiniteVector3::new(second)?.unit_nonzero()?;
     Some(first.cross(second).norm().atan2(first.dot(second)))
 }
 

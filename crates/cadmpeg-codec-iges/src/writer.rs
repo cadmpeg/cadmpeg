@@ -3521,11 +3521,14 @@ fn reverse_nurbs(
         ));
     }
     let reflect = |parameter| {
-        cadmpeg_ir::math::reflect_parameter(parameter, domain[0], domain[1])
-            .map(cadmpeg_ir::scalar::FiniteReal::get)
-            .ok_or_else(|| {
-                CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
-            })
+        match [parameter, domain[0], domain[1]].map(cadmpeg_ir::scalar::FiniteReal::new) {
+            [Some(parameter), Some(start), Some(end)] => {
+                cadmpeg_ir::math::reflect_parameter(parameter, start, end)
+            }
+            _ => None,
+        }
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .ok_or_else(|| CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite"))
     };
     let knots = nurbs
         .knots()

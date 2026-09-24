@@ -433,7 +433,7 @@ pub(super) fn take_bool(bytes: &[u8], position: &mut usize) -> Option<bool> {
 }
 
 pub(super) fn normalized(value: [f64; 3]) -> Option<Vector3> {
-    Vector3::unit_nonzero(Vector3::from(value))
+    cadmpeg_ir::features::FiniteVector3::new(Vector3::from(value))?.unit_nonzero()
 }
 
 pub(super) fn take_native_ident(bytes: &[u8], position: &mut usize) -> Option<String> {

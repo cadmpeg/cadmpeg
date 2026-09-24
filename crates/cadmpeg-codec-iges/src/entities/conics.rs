@@ -376,24 +376,27 @@ pub(super) fn project(
                 -1.0
             };
             let major_direction = basis_y.scale(opening);
-            let Some(focal_distance) = cadmpeg_ir::math::product_quotient(
+            let Some(focal) = cadmpeg_ir::math::product_quotient(
                 [*coeff_e, factor, scale_x, scale_x],
                 [4.0, *coeff_a, scale_y],
             )
-            .map(|value| value.get().abs()) else {
+            .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 losses.push(entity_loss(
                     entry,
                     "parabola focal distance is not representable",
                 ));
                 continue;
             };
+            let focal_distance = focal.get();
             let parameter = |point: Point3, axis: Vector3| {
                 cadmpeg_ir::math::multiply_divide(
-                    point
-                        .vector_from(plane_origin)
-                        .dot(axis.cross(major_direction)),
-                    0.5,
-                    focal_distance,
+                    cadmpeg_ir::scalar::FiniteReal::new(
+                        point
+                            .vector_from(plane_origin)
+                            .dot(axis.cross(major_direction)),
+                    )?,
+                    cadmpeg_ir::scalar::FiniteReal::HALF,
+                    focal,
                 )
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
@@ -434,24 +437,27 @@ pub(super) fn project(
                 -1.0
             };
             let major_direction = basis_x.scale(opening);
-            let Some(focal_distance) = cadmpeg_ir::math::product_quotient(
+            let Some(focal) = cadmpeg_ir::math::product_quotient(
                 [*coeff_d, factor, scale_y, scale_y],
                 [4.0, *coeff_c, scale_x],
             )
-            .map(|value| value.get().abs()) else {
+            .map(cadmpeg_ir::scalar::FiniteReal::abs) else {
                 losses.push(entity_loss(
                     entry,
                     "parabola focal distance is not representable",
                 ));
                 continue;
             };
+            let focal_distance = focal.get();
             let parameter = |point: Point3, axis: Vector3| {
                 cadmpeg_ir::math::multiply_divide(
-                    point
-                        .vector_from(plane_origin)
-                        .dot(axis.cross(major_direction)),
-                    0.5,
-                    focal_distance,
+                    cadmpeg_ir::scalar::FiniteReal::new(
+                        point
+                            .vector_from(plane_origin)
+                            .dot(axis.cross(major_direction)),
+                    )?,
+                    cadmpeg_ir::scalar::FiniteReal::HALF,
+                    focal,
                 )
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             };

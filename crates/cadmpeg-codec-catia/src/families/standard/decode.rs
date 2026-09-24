@@ -5,7 +5,7 @@ use crate::families::standard::fbb::EdgeTableForm;
 use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
@@ -7353,7 +7353,11 @@ fn standard_pcurve_geometry(
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let chord = end.vector_from(start);
             let offset = midpoint.vector_from(start);
-            chord.unit_nonzero()?.cross(offset).norm() <= STANDARD_FACE_BOUNDS_TOLERANCE
+            FiniteVector3::new(chord)?
+                .unit_nonzero()?
+                .cross(offset)
+                .norm()
+                <= STANDARD_FACE_BOUNDS_TOLERANCE
         }
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } => {
             (midpoint.distance_squared(*center).sqrt() - radius).abs() <= 2e-3
@@ -7604,7 +7608,7 @@ fn standard_spline_line(
     {
         return None;
     }
-    let direction = end.vector_from(start);
+    let direction = FiniteVector3::new(end.vector_from(start))?;
     let length = direction.x.hypot(direction.y).hypot(direction.z);
     if !length.is_finite() || length == 0.0 {
         return None;
@@ -7615,10 +7619,10 @@ fn standard_spline_line(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface_2)),
         ) => {
-            let left_normal = plane_surface.frame().axis().as_raw();
-            let right_normal = plane_surface_2.frame().axis().as_raw();
-            let intersection = (*left_normal).cross(*right_normal);
-            intersection
+            let left_normal = *plane_surface.frame().axis();
+            let right_normal = *plane_surface_2.frame().axis();
+            left_normal
+                .finite_cross(right_normal)
                 .unit_nonzero()
                 .is_some_and(|intersection| direction.cross(intersection).norm() <= TOLERANCE)
         }
@@ -9457,13 +9461,14 @@ fn circle_axis_from_carrier(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let sphere_center = sphere_surface.center();
             let sphere_radius = sphere_surface.radius().get();
-            let offset = center.vector_from(*sphere_center);
-            let distance = offset.x.hypot(offset.y).hypot(offset.z);
-            (distance.is_finite()
-                && distance != 0.0
-                && close_squared_lengths(distance.hypot(circle_radius), sphere_radius))
-            .then(|| offset.unit_nonzero())
-            .flatten()
+            FiniteVector3::new(center.vector_from(*sphere_center)).and_then(|offset| {
+                let distance = offset.x.hypot(offset.y).hypot(offset.z);
+                (distance.is_finite()
+                    && distance != 0.0
+                    && close_squared_lengths(distance.hypot(circle_radius), sphere_radius))
+                .then(|| offset.unit_nonzero())
+                .flatten()
+            })
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
             let torus_center = torus_surface.center();

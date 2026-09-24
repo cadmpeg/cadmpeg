@@ -280,33 +280,28 @@ impl StandardUnit {
             Self::Parsecs => 3.085_677_58e19,
         }
     }
-
-    /// Whether every admitted unit code maps to a finite positive scale.
-    ///
-    /// `From<StandardUnit> for MillimeterScale` builds the scale directly, so
-    /// the table itself must hold the invariant of the checked constructor.
-    const fn scales_are_positive_finite() -> bool {
-        let mut value = 0;
-        while value <= LAST_STANDARD_UNIT_VALUE {
-            if let Some(unit) = Self::from_value(value) {
-                let scale = unit.millimeters_per_unit();
-                if !scale.is_finite() || scale <= 0.0 {
-                    return false;
-                }
-            }
-            value += 1;
-        }
-        true
-    }
 }
 
 /// The highest standard unit code the archive grammar admits.
 const LAST_STANDARD_UNIT_VALUE: i32 = 25;
 
-/// Fails to compile if any arm of [`StandardUnit::millimeters_per_unit`] is not
-/// finite and positive. That is what admits the direct construction in
-/// `From<StandardUnit> for MillimeterScale`.
-const _: [(); 1] = [(); StandardUnit::scales_are_positive_finite() as usize];
+/// The millimeter scale of every standard unit, indexed by unit code; a code
+/// with no unit holds one. The table is admitted when it is compiled, so a
+/// scale that is not finite and positive fails the build.
+const STANDARD_MILLIMETER_SCALES: [PositiveReal; 26] = {
+    let mut table = [PositiveReal::ONE; 26];
+    let mut value = 0;
+    while value <= LAST_STANDARD_UNIT_VALUE {
+        if let Some(unit) = StandardUnit::from_value(value) {
+            table[unit as usize] = match PositiveReal::new(unit.millimeters_per_unit()) {
+                Some(scale) => scale,
+                None => panic!("a standard unit scale must be finite and positive"),
+            };
+        }
+        value += 1;
+    }
+    table
+};
 
 /// A custom unit whose meter and millimeter scales are finite and positive.
 #[derive(Debug, Clone, PartialEq)]
@@ -398,26 +393,30 @@ impl UnitsAndTolerances {
 
 /// A finite positive conversion from source lengths to millimeters.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct MillimeterScale(f64);
+pub(crate) struct MillimeterScale(PositiveReal);
 
 impl From<StandardUnit> for MillimeterScale {
     fn from(unit: StandardUnit) -> Self {
-        Self(unit.millimeters_per_unit())
+        Self(STANDARD_MILLIMETER_SCALES[unit as usize])
     }
 }
 
 impl MillimeterScale {
     /// Lengths that are already millimetres.
-    pub(crate) const IDENTITY: Self = Self(1.0);
+    pub(crate) const IDENTITY: Self = Self(PositiveReal::ONE);
 
     /// Admits a finite positive conversion factor.
     fn new(millimeters_per_unit: f64) -> Option<Self> {
-        (millimeters_per_unit.is_finite() && millimeters_per_unit > 0.0)
-            .then_some(Self(millimeters_per_unit))
+        PositiveReal::new(millimeters_per_unit).map(Self)
     }
 
     pub(crate) fn value(self) -> f64 {
-        self.0
+        self.0.get()
+    }
+
+    /// The factor as a finite real.
+    pub(crate) fn real(self) -> FiniteReal {
+        self.0.into()
     }
 }
 

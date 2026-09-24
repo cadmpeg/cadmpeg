@@ -9,13 +9,19 @@ use cadmpeg_ir::geometry::{
     ProceduralCurveDefinition,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
 use crate::nurbs::reader::KnotLayout;
 use crate::nurbs::reader::LEN_TO_MM;
+
+/// Native lengths per canonical millimeter.
+const LENGTH_PER_MILLIMETRE: FiniteReal = match FiniteReal::new(1.0 / LEN_TO_MM) {
+    Some(scale) => scale,
+    None => panic!("the native length unit must be a finite nonzero millimeter count"),
+};
 use crate::sab::{self, Record};
 use cadmpeg_ir::geometry::{
     CompoundComponent, IntcurveSupportContext, ProjectionTail, SpringLayout, SurfaceCurveFamily,
@@ -30,7 +36,7 @@ use cadmpeg_ir::ids::CurveId;
 pub struct AsmEditSet {
     records: Vec<Record>,
     ref_width: RefWidth,
-    header_scale: Option<f64>,
+    header_scale: Option<PositiveReal>,
 }
 
 /// Writable values for one solved NURBS surface cache.
@@ -161,7 +167,7 @@ impl AsmEditSet {
         Self {
             records,
             ref_width,
-            header_scale: Some(header_scale).filter(|scale| scale.is_finite() && *scale > 0.0),
+            header_scale: PositiveReal::new(header_scale),
         }
     }
 
@@ -914,6 +920,7 @@ impl AsmEditSet {
                 record.index
             ))
         })?;
+        let [translation_x, translation_y, translation_z] = transform.translation().components();
         let vectors = [
             [
                 transform.rows()[0][0],
@@ -932,23 +939,23 @@ impl AsmEditSet {
             ],
             [
                 cadmpeg_ir::math::multiply_divide(
-                    transform.rows()[0][3],
-                    1.0 / LEN_TO_MM,
-                    header_scale,
+                    translation_x,
+                    LENGTH_PER_MILLIMETRE,
+                    header_scale.into(),
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
-                    transform.rows()[1][3],
-                    1.0 / LEN_TO_MM,
-                    header_scale,
+                    translation_y,
+                    LENGTH_PER_MILLIMETRE,
+                    header_scale.into(),
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),
                 cadmpeg_ir::math::multiply_divide(
-                    transform.rows()[2][3],
-                    1.0 / LEN_TO_MM,
-                    header_scale,
+                    translation_z,
+                    LENGTH_PER_MILLIMETRE,
+                    header_scale.into(),
                 )
                 .ok_or_else(|| CodecError::malformed("native transform translation is non-finite"))?
                 .get(),

@@ -121,9 +121,9 @@ impl Homogeneous {
                 self.values[axis]
             } else {
                 let mut sum = ExactSignedSum::default();
-                sum.add_scaled_product(self.values[axis], 1.0)?;
+                sum.add_scaled_product(self.values[axis], FiniteReal::ONE)?;
                 for (weight, factor) in subtract {
-                    sum.add_scaled_product(weight.values[3], factor[axis].negated().get())?;
+                    sum.add_scaled_product(weight.values[3], factor[axis].negated())?;
                 }
                 sum.finish()
             };

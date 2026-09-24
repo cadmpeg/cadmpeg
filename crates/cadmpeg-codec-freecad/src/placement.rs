@@ -64,7 +64,9 @@ pub(crate) fn placement_matrix(
             ))
         })?;
         let axis = Vector3::new(axis[0], axis[1], axis[2]);
-        let unit = axis.unit_nonzero().unwrap_or(Vector3::new(0.0, 0.0, 1.0));
+        let unit = cadmpeg_ir::features::FiniteVector3::new(axis)
+            .and_then(cadmpeg_ir::features::FiniteVector3::unit_nonzero)
+            .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
         let (x, y, z) = (unit.x, unit.y, unit.z);
         let half_angle = angle / 2.0;
         let scale = half_angle.sin();

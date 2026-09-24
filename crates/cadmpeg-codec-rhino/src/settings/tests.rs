@@ -1606,3 +1606,15 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
 }
 
 mod rendering_checksums;
+
+#[test]
+fn every_standard_unit_reads_its_scale_from_the_admitted_table() {
+    for value in 0..=30 {
+        if let Some(unit) = settings::StandardUnit::from_value(value) {
+            let scale = settings::MillimeterScale::from(unit);
+            assert_eq!(scale.value(), unit.millimeters_per_unit());
+            assert_eq!(scale.real().get(), scale.value());
+        }
+    }
+    assert_eq!(settings::MillimeterScale::IDENTITY.value(), 1.0);
+}
