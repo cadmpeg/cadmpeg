@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous Bezier extraction and rational boundary bounds.
 
+use super::PoleValue;
+use crate::features::FinitePoint3;
 use crate::math::sum::ExactSignedSum;
 use cadmpeg_core::decode::alloc_filled;
 
@@ -14,8 +16,12 @@ pub struct HomogeneousBezierSpan<const DIMENSION: usize = 4> {
 }
 
 /// Form a positive-weight homogeneous polygon without common-scale overflow.
-/// Refuse a relative weight or coordinate product that would disappear.
-pub fn positive_controls(points: &[crate::math::Point3], weights: &[f64]) -> Option<Vec<[f64; 4]>> {
+/// Refuse a raw pole with a non-finite coordinate, and a relative weight or
+/// coordinate product that would disappear.
+pub fn positive_controls<P: PoleValue<FinitePoint3>>(
+    points: &[P],
+    weights: &[f64],
+) -> Option<Vec<[f64; 4]>> {
     if points.len() != weights.len()
         || points.is_empty()
         || weights
@@ -30,7 +36,8 @@ pub fn positive_controls(points: &[crate::math::Point3], weights: &[f64]) -> Opt
         .zip(weights)
         .map(|(point, weight)| {
             let weight = weight / scale;
-            if weight == 0.0 || !point.is_finite() {
+            let point = point.admit()?.get();
+            if weight == 0.0 {
                 return None;
             }
             let result = [weight * point.x, weight * point.y, weight * point.z, weight];

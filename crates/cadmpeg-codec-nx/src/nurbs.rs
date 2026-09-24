@@ -19,12 +19,15 @@ use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::PcurveGeometry,
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::units::FinitePoint2;
 use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
@@ -124,26 +127,22 @@ fn decode_surfaces(
             let mut weights = (stride == 4).then(Vec::new);
             for pole_index in 0..poles {
                 let base = pole_index.checked_mul(stride)?;
-                let weight = if stride == 4 {
+                let weight = NonZeroReal::new(if stride == 4 {
                     payload.value_at(base.checked_add(3)?)?
                 } else {
                     1.0
-                };
-                if !weight.is_finite() || weight == 0.0 {
-                    return None;
-                }
+                })?;
                 let pole = [
                     payload.value_at(base)?,
                     payload.value_at(base.checked_add(1)?)?,
                     payload.value_at(base.checked_add(2)?)?,
-                    weight,
                 ];
-                control_points.push(weighted_mm_point(&pole, weight)?);
+                control_points.push(weighted_mm_point(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
             }
-            let surface = NurbsSurface::from_lanes(
+            let surface = NurbsSurface::from_checked_lanes(
                 NurbsSurfaceAxis::new(descriptor.u_degree as u32, full_u, descriptor.u_periodic),
                 NurbsSurfaceAxis::new(descriptor.v_degree as u32, full_v, descriptor.v_periodic),
                 NurbsSurfaceLanes::new(
@@ -229,25 +228,21 @@ fn decode_pcurves(
             let mut weights = (stride == 3).then(Vec::new);
             for pole_index in 0..descriptor.basis.poles {
                 let base = pole_index.checked_mul(stride)?;
-                let weight = if stride == 3 {
+                let weight = NonZeroReal::new(if stride == 3 {
                     control.value_at(base.checked_add(2)?)?
                 } else {
                     1.0
-                };
-                if !weight.is_finite() || weight == 0.0 {
-                    return None;
-                }
+                })?;
                 let pole = [
                     control.value_at(base)?,
                     control.value_at(base.checked_add(1)?)?,
-                    weight,
                 ];
-                control_points.push(weighted_point2(&pole, weight)?);
+                control_points.push(weighted_point2(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
             }
-            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
                 descriptor.basis.degree as u32,
                 knots,
                 control_points,
@@ -327,26 +322,22 @@ fn decode_curves(
             let mut weights = (stride == 4).then(Vec::new);
             for pole_index in 0..descriptor.basis.poles {
                 let base = pole_index.checked_mul(stride)?;
-                let weight = if stride == 4 {
+                let weight = NonZeroReal::new(if stride == 4 {
                     control.value_at(base.checked_add(3)?)?
                 } else {
                     1.0
-                };
-                if !weight.is_finite() || weight == 0.0 {
-                    return None;
-                }
+                })?;
                 let pole = [
                     control.value_at(base)?,
                     control.value_at(base.checked_add(1)?)?,
                     control.value_at(base.checked_add(2)?)?,
-                    weight,
                 ];
-                control_points.push(weighted_mm_point(&pole, weight)?);
+                control_points.push(weighted_mm_point(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
             }
-            let curve = NurbsCurve::from_lanes(
+            let curve = NurbsCurve::from_checked_lanes(
                 descriptor.basis.degree as u32,
                 knots,
                 control_points,
@@ -430,20 +421,18 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
     }
 }
 
-fn weighted_mm_point(pole: &[f64], weight: f64) -> Option<Point3> {
-    let coordinates = [pole[0], pole[1], pole[2]].map(|value| value / weight * 1000.0);
-    coordinates
-        .into_iter()
-        .all(f64::is_finite)
-        .then(|| Point3::new(coordinates[0], coordinates[1], coordinates[2]))
+/// The Euclidean pole of a homogeneous pole in millimetres, absent when a
+/// coordinate is not finite.
+fn weighted_mm_point(pole: [f64; 3], weight: NonZeroReal) -> Option<FinitePoint3> {
+    let [x, y, z] = pole.map(|value| value / weight.get() * 1000.0);
+    FinitePoint3::new(Point3::new(x, y, z))
 }
 
-fn weighted_point2(pole: &[f64], weight: f64) -> Option<Point2> {
-    let coordinates = [pole[0] / weight, pole[1] / weight];
-    coordinates
-        .into_iter()
-        .all(f64::is_finite)
-        .then(|| Point2::new(coordinates[0], coordinates[1]))
+/// The Euclidean parameter-space pole of a homogeneous pole, absent when a
+/// coordinate is not finite.
+fn weighted_point2(pole: [f64; 2], weight: NonZeroReal) -> Option<FinitePoint2> {
+    let [u, v] = pole.map(|value| value / weight.get());
+    FinitePoint2::new(Point2::new(u, v))
 }
 
 #[derive(Default)]

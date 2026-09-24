@@ -4878,18 +4878,18 @@ fn decode_pcurves(
                 let point = Point2::new(point.x, point.y);
                 plane_parameterization.map_or(point, |map| map.map_point(point))
             })
-            .collect();
+            .collect::<Vec<Point2>>();
         let id = cadmpeg_ir::ids::PcurveId::compose(
             &cadmpeg_ir::identity_namespace!("rhino", "object", "pcurve"),
             key.clone()
                 .then(cadmpeg_ir::identity_key!(".trim-"))
                 .then(index),
         );
-        let nurbs = match PcurveNurbs::from_lanes(
+        let nurbs = match PcurveNurbs::from_checked_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
-            nurbs.pole_rows().weights(),
+            nurbs.weights(),
             nurbs.periodic(),
         ) {
             Ok(nurbs) => nurbs,
@@ -5355,17 +5355,13 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
     curve.geometry = match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform
-                        .apply_point(*pole)
-                        .ok_or_else(|| {
-                            NurbsError::EditRefused(
-                                "instance control point transform produced a non-finite coordinate"
-                                    .to_string(),
-                            )
-                        })?
-                        .get();
-                    Ok(())
+                .map_control_points(|pole| {
+                    transform.apply_point(pole.get()).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })
                 })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
@@ -5378,17 +5374,13 @@ fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String
             let mut nurbs = crate::curves::exact_nurbs(&decoded, 0)
                 .map_err(|error| format!("analytic instance curve conversion failed: {error}"))?;
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform
-                        .apply_point(*pole)
-                        .ok_or_else(|| {
-                            NurbsError::EditRefused(
-                                "instance control point transform produced a non-finite coordinate"
-                                    .to_string(),
-                            )
-                        })?
-                        .get();
-                    Ok(())
+                .map_control_points(|pole| {
+                    transform.apply_point(pole.get()).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })
                 })
                 .map_err(|error| error.to_string())?;
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
@@ -5456,17 +5448,13 @@ fn transform_surface(surface: &mut Surface, transform: Transform) -> Result<(), 
     surface.geometry = match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(mut nurbs)) => {
             nurbs
-                .edit_control_points(|pole| {
-                    *pole = transform
-                        .apply_point(*pole)
-                        .ok_or_else(|| {
-                            NurbsError::EditRefused(
-                                "instance control point transform produced a non-finite coordinate"
-                                    .to_string(),
-                            )
-                        })?
-                        .get();
-                    Ok(())
+                .map_control_points(|pole| {
+                    transform.apply_point(pole.get()).ok_or_else(|| {
+                        NurbsError::EditRefused(
+                            "instance control point transform produced a non-finite coordinate"
+                                .to_string(),
+                        )
+                    })
                 })
                 .map_err(|error| error.to_string())?;
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))

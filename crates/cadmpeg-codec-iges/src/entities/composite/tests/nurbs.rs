@@ -143,8 +143,8 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.001), None, None)
             .expect("carrier lanes pair")
             .expect("the source endpoint is inside the declared resolution");
-    assert_eq!(carrier.pole_rows().points().first(), Some(&start));
-    assert_eq!(carrier.pole_rows().points().last(), Some(&declared_end));
+    assert_eq!(carrier.pole_rows().raw_points().first(), Some(&start));
+    assert_eq!(carrier.pole_rows().raw_points().last(), Some(&declared_end));
     assert!(
         bounded_nurbs_for_curve_with_tolerance(&ir, &curve_id, Some(0.0001), None, None,)
             .expect("carrier lanes pair")

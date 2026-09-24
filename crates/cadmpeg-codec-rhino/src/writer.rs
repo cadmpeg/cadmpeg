@@ -1245,7 +1245,7 @@ fn admit_pcurve<'a>(
             }
             (
                 (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)),
-                nurbs.pole_rows().points(),
+                nurbs.pole_rows().raw_points(),
             )
         }
         _ => {

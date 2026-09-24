@@ -1405,7 +1405,7 @@ fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
             let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
                 panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
             };
-            let mut reversed_points = nurbs.pole_rows().points();
+            let mut reversed_points = nurbs.pole_rows().raw_points();
             reversed_points.reverse();
             let reversed_poles =
                 PcurveNurbsPoles::from_lanes(reversed_points, nurbs.pole_rows().weights()).unwrap();
@@ -1595,7 +1595,7 @@ fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
             nurbs: PcurveNurbs::from_lanes(
                 1,
                 vec![0.0, 0.0, 1.0, 1.0],
-                vec![start_uv.into(), end_uv.into()],
+                vec![Point2::from(start_uv), Point2::from(end_uv)],
                 None,
                 false,
             )

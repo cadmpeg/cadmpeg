@@ -1040,7 +1040,12 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     bytes.extend([1.0, 0.8].into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
+            |weights| weights
+                .into_iter()
+                .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                .collect::<Vec<_>>()
+        ),
         Some(vec![
             1.0, 0.8, 0.8, 1.0, 0.9, 0.65, 0.65, 0.9, 0.9, 0.65, 0.65, 0.9, 1.0, 0.8, 0.8, 1.0,
         ])
@@ -1058,7 +1063,12 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     bytes.extend(expected.into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
+            |weights| weights
+                .into_iter()
+                .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                .collect::<Vec<_>>()
+        ),
         Some(expected.to_vec())
     );
     assert_eq!(at, bytes.len());

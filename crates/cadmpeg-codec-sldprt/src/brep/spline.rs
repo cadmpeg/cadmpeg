@@ -597,7 +597,7 @@ pub(crate) fn patch_nurbs_curve(
     {
         return None;
     }
-    let control_points = new.pole_rows().points();
+    let control_points = new.pole_rows().raw_points();
     let weights = new.pole_rows().weights();
     let poles = homogeneous_poles(&control_points, weights.as_deref(), scale)?;
     patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
@@ -658,10 +658,10 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let old_points = old.pole_grid().points().concat();
+    let old_points = old.pole_grid().raw_points().concat();
     let old_weights = old.pole_grid().weights().map(|rows| rows.concat());
     let old_poles = homogeneous_poles(&old_points, old_weights.as_deref(), scale)?;
-    let points = new.pole_grid().points().concat();
+    let points = new.pole_grid().raw_points().concat();
     let weights = new.pole_grid().weights().map(|rows| rows.concat());
     let poles = homogeneous_poles(&points, weights.as_deref(), scale)?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;

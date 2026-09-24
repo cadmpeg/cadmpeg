@@ -88,28 +88,24 @@ pub(super) fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]
     ]
 }
 
-pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
-    let bounds = nurbs.control_points().iter().try_fold(
+pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> f64 {
+    let bounds = nurbs.control_points().iter().fold(
         [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
         |mut bounds, point| {
             for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                coordinate.is_finite().then_some(())?;
                 bounds[0][index] = bounds[0][index].min(coordinate);
                 bounds[1][index] = bounds[1][index].max(coordinate);
             }
-            Some(bounds)
+            bounds
         },
-    )?;
-    Some(
-        (0..3)
-            .map(|index| bounds[1][index] - bounds[0][index])
-            .fold(1.0, f64::max),
-    )
+    );
+    (0..3)
+        .map(|index| bounds[1][index] - bounds[0][index])
+        .fold(1.0, f64::max)
 }
 
 pub(in crate::decode) fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
-    nurbs_control_extent(nurbs)?;
     let range = [
         *nurbs.knots().get(degree)?,
         *nurbs.knots().get(nurbs.control_points().len())?,
@@ -151,7 +147,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
             .weights()
             .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
             .then_some(())?;
-        let scale = nurbs_control_extent(nurbs)?;
+        let scale = nurbs_control_extent(nurbs);
         let tolerance = EPS_AGREE * scale;
         let first = degree_one_nurbs_point_parameter(geometry, nurbs, points[0], range, tolerance)?;
         let second =
@@ -203,7 +199,7 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
             let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &*geometry else {
                 return None;
             };
-            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
+            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
             let first = degree_one_nurbs_point_parameter(
                 &*geometry,
                 nurbs,
@@ -289,7 +285,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
     let [Some(first), Some(second)] = mapped else {
         return None;
     };
-    let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
+    let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
     [first, second]
         .into_iter()
         .all(|mapped| {

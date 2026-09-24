@@ -21,7 +21,7 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use std::ops::Range;
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
@@ -704,7 +704,7 @@ fn parse_a5_nurbs_curve(
     at += 1;
     let control_points = (0..control_count)
         .map(|_| {
-            let point = f64_point(data, at)?.get();
+            let point = f64_point(data, at)?;
             at += 24;
             Some(point)
         })
@@ -1539,7 +1539,7 @@ fn a5_surface(
     }
     let mut control_points = Vec::with_capacity(poles);
     for _ in 0..poles {
-        control_points.push(f64_point(data, at)?.get());
+        control_points.push(f64_point(data, at)?);
         at += 24;
     }
     let weights = match mode {
@@ -1560,7 +1560,7 @@ fn a5_surface(
         pos,
         identity: None,
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_checked_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
@@ -1705,18 +1705,14 @@ fn a8_surface_from_parsed(
     }
     let mut control_points = Vec::with_capacity(poles);
     for _ in 0..poles {
-        control_points.push(f64_point(data, pole_start)?.get());
+        control_points.push(f64_point(data, pole_start)?);
         pole_start += 24;
     }
     let weights = if rational {
-        let values = f64_values(data, &mut pole_start, poles, end)?
+        f64_values(data, &mut pole_start, poles, end)?
             .into_iter()
-            .map(FiniteReal::get)
-            .collect::<Vec<_>>();
-        values
-            .iter()
-            .all(|weight| *weight != 0.0)
-            .then_some(values)?
+            .map(|weight| NonZeroReal::new(weight.get()))
+            .collect::<Option<Vec<_>>>()?
     } else {
         Vec::new()
     };
@@ -1725,7 +1721,7 @@ fn a8_surface_from_parsed(
         pos,
         identity: Some(object_id),
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_lanes(
+            NurbsSurface::from_checked_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     u_degree,
                     u_knots.expanded()?,
@@ -1836,13 +1832,14 @@ fn a5_weights(
     rows: usize,
     cols: usize,
     end: usize,
-) -> Option<Vec<f64>> {
+) -> Option<Vec<NonZeroReal>> {
     let count = rows.checked_mul(cols)?;
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
-        return f64_values(bytes, at, count, end)
-            .map(|weights| weights.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
-            .filter(|weights| weights.iter().all(|weight| *weight != 0.0));
+        return f64_values(bytes, at, count, end)?
+            .into_iter()
+            .map(|weight| NonZeroReal::new(weight.get()))
+            .collect();
     }
     if bytes.get(*at) != Some(&0x01) {
         return None;
@@ -1850,7 +1847,7 @@ fn a5_weights(
 
     let seed_count = cols.div_ceil(2);
     let mut weights = Vec::with_capacity(count);
-    let mut previous = None::<Vec<f64>>;
+    let mut previous = None::<Vec<NonZeroReal>>;
     for _ in 0..rows {
         let row = if bytes.get(*at) == Some(&0x02) {
             *at += 1;
@@ -1862,8 +1859,8 @@ fn a5_weights(
             *at += 3;
             let seed = f64_values(bytes, at, seed_count, end)?
                 .into_iter()
-                .map(FiniteReal::get)
-                .collect::<Vec<_>>();
+                .map(|weight| NonZeroReal::new(weight.get()))
+                .collect::<Option<Vec<_>>>()?;
             let mut row = seed.clone();
             row.extend(seed[..cols / 2].iter().rev().copied());
             if row.len() != cols {
@@ -1874,10 +1871,7 @@ fn a5_weights(
         };
         weights.extend(row);
     }
-    weights
-        .iter()
-        .all(|weight| *weight != 0.0)
-        .then_some(weights)
+    Some(weights)
 }
 
 #[cfg(test)]

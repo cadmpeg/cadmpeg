@@ -257,15 +257,15 @@ pub(super) fn project_edge(
             )
         }
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
-            match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 nurbs
                     .control_points()
                     .iter()
                     .map(|point| project_point(point.get(), origin, u_axis, v_axis))
-                    .collect(),
-                nurbs.pole_rows().weights(),
+                    .collect::<Vec<_>>(),
+                nurbs.weights(),
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(SketchGeometry::nurbs(nurbs)),

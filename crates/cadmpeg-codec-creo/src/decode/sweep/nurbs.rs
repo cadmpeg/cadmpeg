@@ -286,15 +286,18 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         return None;
     }
     let nurbs = saved_spline_nurbs(spline, refusal)?;
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
             .control_points()
             .iter()
-            .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+            .map(|point| {
+                let [x, y, _] = point.coordinates();
+                cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y)
+            })
             .collect(),
-        nurbs.pole_rows().weights(),
+        nurbs.weights(),
         nurbs.periodic(),
     ) {
         Ok(pcurve) => Some(SketchGeometry::nurbs(pcurve)),
@@ -452,8 +455,8 @@ pub(in super::super) fn extruded_nurbs_surface(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<NurbsSurface> {
-    let directrix_points = directrix.pole_rows().points();
-    let directrix_weights = directrix.pole_rows().weights();
+    let directrix_points = directrix.pole_rows().raw_points();
+    let directrix_weights = directrix.weights();
     let mut control_points = Vec::with_capacity(directrix_points.len() * 2);
     let mut weights = directrix_weights
         .as_ref()
@@ -469,7 +472,7 @@ pub(in super::super) fn extruded_nurbs_surface(
             target.extend([source[index], source[index]]);
         }
     }
-    match NurbsSurface::from_lanes(
+    match NurbsSurface::from_checked_lanes(
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
             directrix.degree(),
             directrix.knots().to_vec(),
@@ -533,15 +536,18 @@ pub(super) fn sketch_nurbs_pcurve(
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Option<PcurveGeometry> {
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
         nurbs.knots().to_vec(),
         nurbs
             .control_points()
             .iter()
-            .map(|point| Point2::new(point.x, point.y))
+            .map(|point| {
+                let [x, y, _] = point.coordinates();
+                cadmpeg_ir::units::FinitePoint2::from_coordinates(x, y)
+            })
             .collect(),
-        nurbs.pole_rows().weights(),
+        nurbs.weights(),
         nurbs.periodic(),
     ) {
         Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),

@@ -55,18 +55,11 @@ impl WritableEdgeCurve<'_> {
                 parameter,
             )
             .map(cadmpeg_ir::features::FinitePoint3::get),
-            Self::Nurbs(nurbs) => {
-                let control_points = nurbs.pole_rows().points();
-                let weights = nurbs.pole_rows().weights();
-                cadmpeg_ir::eval::nurbs_curve_point(
-                    nurbs.degree(),
-                    nurbs.knots(),
-                    &control_points,
-                    weights.as_deref(),
-                    cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?.get(),
-                )
-                .map(cadmpeg_ir::features::FinitePoint3::get)
-            }
+            Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point_at(
+                nurbs,
+                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?.get(),
+            )
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         }
     }
 }

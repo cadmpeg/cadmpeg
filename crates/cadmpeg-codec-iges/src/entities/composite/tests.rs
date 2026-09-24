@@ -1027,7 +1027,7 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
     let before = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        &curve.pole_rows().points(),
+        &curve.pole_rows().raw_points(),
         curve.pole_rows().weights().as_deref(),
         0.25,
     )
@@ -1036,7 +1036,7 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        &curve.pole_rows().points(),
+        &curve.pole_rows().raw_points(),
         curve.pole_rows().weights().as_deref(),
         0.25,
     )
@@ -1071,9 +1071,9 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
         trimmed.weights().map(|weights| weights.len()),
         Some(trimmed.pole_count())
     );
-    let curve_points = curve.pole_rows().points();
+    let curve_points = curve.pole_rows().raw_points();
     let curve_weights = curve.pole_rows().weights();
-    let trimmed_points = trimmed.pole_rows().points();
+    let trimmed_points = trimmed.pole_rows().raw_points();
     let trimmed_weights = trimmed.pole_rows().weights();
     for parameter in [0.25, 0.5, 1.0, 1.5] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1123,9 +1123,9 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
     .expect("carrier lanes pair")
     .expect("evaluated active endpoints join exactly");
 
-    let curve_points = curve.pole_rows().points();
+    let curve_points = curve.pole_rows().raw_points();
     let curve_weights = curve.pole_rows().weights();
-    let concatenated_points = concatenated.nurbs.pole_rows().points();
+    let concatenated_points = concatenated.nurbs.pole_rows().raw_points();
     let concatenated_weights = concatenated.nurbs.pole_rows().weights();
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1176,9 +1176,9 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
         let trimmed = trim_nurbs_to_interval(&curve, interval)
             .expect("carrier lanes pair")
             .expect("a valid active interval has an exact NURBS subrange");
-        let curve_points = curve.pole_rows().points();
+        let curve_points = curve.pole_rows().raw_points();
         let curve_weights = curve.pole_rows().weights();
-        let trimmed_points = trimmed.pole_rows().points();
+        let trimmed_points = trimmed.pole_rows().raw_points();
         let trimmed_weights = trimmed.pole_rows().weights();
         for parameter in parameters {
             let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1224,7 +1224,7 @@ fn concatenation_preserves_degree_zero_spans() {
         concatenated.nurbs.control_points(),
         vec![point, point, point]
     );
-    let concatenated_points = concatenated.nurbs.pole_rows().points();
+    let concatenated_points = concatenated.nurbs.pole_rows().raw_points();
     let concatenated_weights = concatenated.nurbs.pole_rows().weights();
     for parameter in [0.5, 1.5, 2.5] {
         assert_eq!(
@@ -1256,7 +1256,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     let before = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        &curve.pole_rows().points(),
+        &curve.pole_rows().raw_points(),
         curve.pole_rows().weights().as_deref(),
         2.0,
     )
@@ -1265,7 +1265,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree(),
         curve.knots(),
-        &curve.pole_rows().points(),
+        &curve.pole_rows().raw_points(),
         curve.pole_rows().weights().as_deref(),
         2.0,
     )
@@ -1281,9 +1281,9 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let mut elevated = source.clone();
     elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None).expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 2);
-    let source_points = source.pole_rows().points();
+    let source_points = source.pole_rows().raw_points();
     let source_weights = source.pole_rows().weights();
-    let elevated_points = elevated.pole_rows().points();
+    let elevated_points = elevated.pole_rows().raw_points();
     let elevated_weights = elevated.pole_rows().weights();
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1324,9 +1324,9 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
     elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None).expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 3);
     assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
-    let source_points = source.pole_rows().points();
+    let source_points = source.pole_rows().raw_points();
     let source_weights = source.pole_rows().weights();
-    let elevated_points = elevated.pole_rows().points();
+    let elevated_points = elevated.pole_rows().raw_points();
     let elevated_weights = elevated.pole_rows().weights();
     for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1510,7 +1510,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         cadmpeg_ir::eval::nurbs_curve_point(
             reversed.degree(),
             reversed.knots(),
-            &reversed.pole_rows().points(),
+            &reversed.pole_rows().raw_points(),
             reversed.pole_rows().weights().as_deref(),
             range[0],
         )
@@ -1521,7 +1521,7 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         cadmpeg_ir::eval::nurbs_curve_point(
             reversed.degree(),
             reversed.knots(),
-            &reversed.pole_rows().points(),
+            &reversed.pole_rows().raw_points(),
             reversed.pole_rows().weights().as_deref(),
             range[1],
         )
@@ -1573,7 +1573,7 @@ fn decode_concatenates_ordered_composite_curve_children() {
         cadmpeg_ir::eval::nurbs_curve_point(
             1,
             nurbs.knots(),
-            &nurbs.pole_rows().points(),
+            &nurbs.pole_rows().raw_points(),
             None,
             1.5
         )

@@ -11,12 +11,13 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::{nurbs_surface_point, pcurve_uv};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
+    nurbs::NurbsSurface,
     pcurve::{PcurveGeometry, PcurveNurbs},
     CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::units::FinitePoint2;
 
 use crate::analytic::signed_reference_frame;
 use crate::layout::a9_03_frame as a9_03;
@@ -1400,18 +1401,15 @@ pub(super) fn zero_entity_neutral_pcurve(
     let control_points = nurbs
         .control_points()
         .iter()
-        .map(|point| {
-            let point = Point2::new(point.u * u_scale, point.v * v_scale);
-            point.is_finite().then_some(point)
-        })
+        .map(|point| FinitePoint2::new(Point2::new(point.u * u_scale, point.v * v_scale)))
         .collect::<Option<Vec<_>>>()?;
     Some(PcurveGeometry::Nurbs {
         nurbs: crate::nurbs::note_refusal(
-            PcurveNurbs::from_lanes(
+            PcurveNurbs::from_checked_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 control_points,
-                nurbs.pole_rows().weights(),
+                nurbs.weights(),
                 nurbs.periodic(),
             ),
             refusal,
@@ -1466,23 +1464,13 @@ fn zero_entity_model_curve(
             ];
             Some((
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
-                    NurbsCurve::from_lanes(
-                        nurbs.degree(),
-                        nurbs.knots().to_vec(),
-                        nurbs
-                            .control_points()
-                            .iter()
-                            .map(|point| {
-                                Point3::new(
-                                    origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                                    origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                                    origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                                )
-                            })
-                            .collect(),
-                        nurbs.pole_rows().weights(),
-                        false,
-                    ),
+                    nurbs.lift(|point| {
+                        Point3::new(
+                            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+                            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+                            origin.z + point.u * u_axis.z + point.v * v_axis.z,
+                        )
+                    }),
                     refusal,
                     format_args!("zero-entity planar edge curve lifted from its pcurve: {record}"),
                 )?)),
@@ -2079,8 +2067,10 @@ fn zero_entity_nurbs_surface(
         crate::nurbs_surface_control_count(layout.u_count as usize, layout.v_count as usize)?;
     let mut control_points = Vec::with_capacity(pole_count);
     for pole in 0..pole_count {
-        control_points
-            .push(f64_point(data, layout.grid.checked_add(pole.checked_mul(24)?)?)?.get());
+        control_points.push(f64_point(
+            data,
+            layout.grid.checked_add(pole.checked_mul(24)?)?,
+        )?);
     }
     Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
         crate::nurbs::note_refusal(

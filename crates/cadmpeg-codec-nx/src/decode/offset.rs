@@ -2290,12 +2290,7 @@ pub(super) fn normalize_pcurve_parameters(
                 .collect::<Option<Vec<_>>>()?;
             let mut converted = converted.into_iter();
             nurbs
-                .edit_control_points(|point| {
-                    if let Some(next) = converted.next() {
-                        *point = next.get();
-                    }
-                    Ok(())
-                })
+                .map_control_points(|point| Ok(converted.next().unwrap_or(point)))
                 .ok()?;
         }
         _ => {}

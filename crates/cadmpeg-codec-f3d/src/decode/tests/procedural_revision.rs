@@ -1255,7 +1255,7 @@ fn generated_f3d_rewrites_rational_nurbs_surface_weights() {
         rows[0][1] = 0.65;
     }
     let poles = cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_lanes(
-        nurbs.pole_grid().points(),
+        nurbs.pole_grid().raw_points(),
         weight_rows,
     );
     {
@@ -1328,7 +1328,7 @@ fn generated_f3d_rewrites_extrusion_directrix_control_points() {
     else {
         panic!("expected NURBS directrix")
     };
-    let mut control_points = nurbs.pole_rows().points();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].y = 12.5;
     control_points[1].z = -2.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -1696,7 +1696,7 @@ fn generated_f3d_rewrites_rolling_ball_spine_cache() {
     else {
         panic!("expected NURBS blend spine")
     };
-    let mut control_points = nurbs.pole_rows().points();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].x = 8.0;
     control_points[1].y = -6.0;
     *nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(

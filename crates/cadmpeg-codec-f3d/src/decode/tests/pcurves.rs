@@ -660,7 +660,7 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         panic!("expected NURBS edge carrier")
     };
-    let mut control_points = nurbs.pole_rows().points();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
@@ -924,7 +924,7 @@ fn negative_ref_pcurve_reverses_its_uv_parameterization() {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        nurbs.pole_rows().points().first(),
+        nurbs.pole_rows().raw_points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
     );
 }
@@ -949,7 +949,7 @@ fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        nurbs.pole_rows().points().first(),
+        nurbs.pole_rows().raw_points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
     );
 }
@@ -1109,7 +1109,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    let mut control_points = nurbs.pole_rows().points();
+    let mut control_points = nurbs.pole_rows().raw_points();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
     *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1217,7 +1217,7 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
         weights[1] = 0.75;
     }
     let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
-        nurbs.pole_rows().points(),
+        nurbs.pole_rows().raw_points(),
         weights,
     );
     {

@@ -164,7 +164,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             false,
         ),
         cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            translated_surface(2.0).pole_grid().points()[..2].to_vec(),
+            translated_surface(2.0).pole_grid().raw_points()[..2].to_vec(),
             None,
         ),
         false,

@@ -3352,15 +3352,15 @@ fn native_radius_function_pcurve_block(
         ));
     };
     let native = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             nurbs
                 .control_points()
                 .iter()
                 .map(|point| cadmpeg_ir::math::Point2::new(point.u / LEN_TO_MM, point.v))
-                .collect(),
-            nurbs.pole_rows().weights(),
+                .collect::<Vec<_>>(),
+            nurbs.weights(),
             nurbs.periodic(),
         )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?,
@@ -4587,7 +4587,7 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::PI],
         )
         .expect("generated circle interval");
-        let control_points = curve.pole_rows().points();
+        let control_points = curve.pole_rows().raw_points();
         let weights = curve.pole_rows().weights();
         let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
             curve.degree(),
@@ -5812,7 +5812,7 @@ fn native_support_pcurve_for_range(
     range: [f64; 2],
 ) -> Result<PcurveNurbs, CodecError> {
     let native = native_pcurve_geometry(pcurve, range)?;
-    let mut poles = native.pole_rows().clone();
+    let mut poles = native.pole_rows().to_raw();
     match geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             poles.edit_points(|point| {
@@ -5854,7 +5854,7 @@ fn native_support_pcurve_for_range(
                 Ok(())
             })?;
         }
-        _ => {}
+        _ => return Ok(native.into_owned()),
     }
     PcurveNurbs::new(
         native.degree(),

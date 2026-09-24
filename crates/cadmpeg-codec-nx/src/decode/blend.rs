@@ -2198,7 +2198,7 @@ pub(super) fn closest_pcurve_parameters(
         return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
-    let control_points = nurbs.pole_rows().points();
+    let control_points = nurbs.pole_rows().raw_points();
     let weights = nurbs.pole_rows().weights();
     let homogeneous = homogeneous_pcurve_spans(
         degree,

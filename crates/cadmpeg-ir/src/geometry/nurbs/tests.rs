@@ -178,7 +178,7 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     use crate::test_support::nurbs::{pcurve, polar};
 
     let curve = curve();
-    assert_eq!(curve.control_points(), curve.pole_rows().points());
+    assert_eq!(curve.control_points(), curve.pole_rows().raw_points());
     assert_eq!(curve.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
     assert_eq!(
         curve.knots().iter().copied().collect::<Vec<_>>(),
@@ -206,8 +206,8 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     assert_eq!(reversed.knots().as_slice(), [-5.0, -5.0, -2.0, -2.0]);
 
     let surface = surface();
-    assert_eq!(surface.control_grid(), surface.pole_grid().points());
-    assert_eq!(surface.poles(), surface.pole_grid().points().concat());
+    assert_eq!(surface.control_grid(), surface.pole_grid().raw_points());
+    assert_eq!(surface.poles(), surface.pole_grid().raw_points().concat());
     assert_eq!(
         surface.pole(1, 0).map(crate::features::FinitePoint3::get),
         Some(Point3::new(1.0, 0.0, 0.0))
@@ -228,7 +228,7 @@ fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
     );
 
     let pcurve = pcurve();
-    assert_eq!(pcurve.control_points(), pcurve.pole_rows().points());
+    assert_eq!(pcurve.control_points(), pcurve.pole_rows().raw_points());
     assert_eq!(pcurve.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
     assert_eq!(
         pcurve.weights().map(|weights| weights
@@ -272,5 +272,187 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
     assert_eq!(
         serde_json::from_value::<BsplineSurface>(wire).unwrap(),
         surface
+    );
+}
+
+#[test]
+fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{
+        bezier::positive_controls, NurbsCurve, NurbsError, NurbsPoles3, NurbsSurfaceAxis,
+        NurbsSurfaceLanes,
+    };
+    use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, PolarPcurveNurbs};
+    use crate::math::Point2;
+    use crate::scalar::{FiniteReal, NonZeroReal};
+    use crate::test_support::nurbs::{pcurve, polar};
+    use crate::units::FinitePoint2;
+
+    let curve = curve();
+    let held: &NurbsPoles3<FinitePoint3> = curve.pole_rows();
+    assert_eq!(
+        NurbsCurve::new(1, curve.knots().to_vec(), held.clone(), true),
+        Ok(curve.clone())
+    );
+    assert_eq!(held.to_raw().points(), curve.pole_rows().raw_points());
+    assert_eq!(
+        NurbsCurve::from_checked_lanes(
+            1,
+            curve.knots().to_vec(),
+            curve.control_points(),
+            curve.weights(),
+            true,
+        ),
+        Ok(curve.clone())
+    );
+    let weight = NonZeroReal::new(1.0).unwrap();
+    assert_eq!(
+        NurbsCurve::from_checked_lanes(
+            1,
+            curve.knots().to_vec(),
+            curve.control_points(),
+            Some(vec![weight]),
+            true,
+        ),
+        Err(NurbsError::WeightLaneLength {
+            field: "poles".to_owned(),
+            poles: 2,
+            weights: 1,
+        })
+    );
+    let non_finite = vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let raw_refusal =
+        NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite.clone(), None, false)
+            .unwrap_err();
+    assert_eq!(
+        NurbsCurve::from_checked_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite, None, false),
+        Err(raw_refusal)
+    );
+    assert_eq!(
+        NurbsCurve::from_checked_lanes(
+            4,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        ),
+        Err(NurbsError::Structure(
+            "control_points must contain more than degree 4 poles, found 2".into()
+        ))
+    );
+    assert_eq!(
+        crate::eval::nurbs_curve_point_at(&curve, 3.0),
+        crate::eval::nurbs_curve_point(
+            1,
+            curve.knots(),
+            &curve.pole_rows().raw_points(),
+            curve.pole_rows().weights().as_deref(),
+            3.0,
+        )
+    );
+
+    let mut mapped = curve.clone();
+    let refusal = mapped.map_control_points(|_| Err(NurbsError::EditRefused("kept".into())));
+    assert_eq!(refusal, Err(NurbsError::EditRefused("kept".into())));
+    assert_eq!(mapped, curve);
+    mapped
+        .map_control_points(|point| Ok(point.negated()))
+        .unwrap();
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point3::new(-1.0, -2.0, -3.0), Point3::new(-4.0, -5.0, -6.0)]
+    );
+    assert_eq!(mapped.weights(), curve.weights());
+
+    let surface = surface();
+    let u = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true);
+    let v = || NurbsSurfaceAxis::new(1, vec![2.0, 2.0, 5.0, 5.0], false);
+    assert_eq!(
+        crate::geometry::nurbs::NurbsSurface::new(u(), v(), surface.pole_grid().clone(), true),
+        Ok(surface.clone())
+    );
+    assert_eq!(
+        crate::geometry::nurbs::NurbsSurface::from_checked_lanes(
+            u(),
+            v(),
+            NurbsSurfaceLanes::new(surface.control_grid(), surface.weights()),
+            true,
+        ),
+        Ok(surface.clone())
+    );
+    assert_eq!(
+        positive_controls(&surface.poles(), &[1.0, 1.0, 2.0, 2.0]),
+        positive_controls(
+            &surface.pole_grid().raw_points().concat(),
+            &[1.0, 1.0, 2.0, 2.0]
+        )
+    );
+    assert_eq!(
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], &[1.0]),
+        None
+    );
+    let mut mapped = surface.clone();
+    mapped
+        .map_control_points(|point| Ok(point.negated()))
+        .unwrap();
+    assert_eq!(
+        mapped.pole(1, 1).map(FinitePoint3::get),
+        Some(Point3::new(-1.0, -1.0, 0.0))
+    );
+    assert_eq!(mapped.weights(), surface.weights());
+
+    let pcurve = pcurve();
+    let held: &PcurveNurbsPoles<FinitePoint2> = pcurve.pole_rows();
+    assert_eq!(
+        PcurveNurbs::new(1, pcurve.knots().to_vec(), held.clone(), true),
+        Ok(pcurve.clone())
+    );
+    assert_eq!(
+        PcurveNurbs::from_checked_lanes(
+            1,
+            pcurve.knots().to_vec(),
+            pcurve.control_points(),
+            pcurve.weights(),
+            true,
+        ),
+        Ok(pcurve.clone())
+    );
+    let mut mapped = pcurve.clone();
+    mapped
+        .map_control_points(|point| Ok(point.negated()))
+        .unwrap();
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point2::new(-1.0, -2.0), Point2::new(-3.0, -4.0)]
+    );
+    let lifted = pcurve
+        .lift(|point| Point3::new(point.u, point.v, 0.0))
+        .unwrap();
+    assert_eq!(lifted.weights(), pcurve.weights());
+    assert_eq!(
+        pcurve.lift(|_| Point3::new(f64::NAN, 0.0, 0.0)),
+        Err(NurbsError::Structure(
+            "control_points contains a non-finite point".into()
+        ))
+    );
+
+    let polar = polar();
+    assert_eq!(
+        PolarPcurveNurbs::new(1, polar.knots().to_vec(), polar.pole_rows().clone(), true),
+        Ok(polar.clone())
+    );
+    assert_eq!(
+        PolarPcurveNurbs::from_checked_lanes(
+            1,
+            polar.knots().to_vec(),
+            polar.poles(),
+            polar.weights(),
+            true,
+        ),
+        Ok(polar.clone())
+    );
+    assert_eq!(
+        polar.axial_control_values(),
+        vec![FiniteReal::new(5.0).unwrap(), FiniteReal::new(6.0).unwrap()]
     );
 }

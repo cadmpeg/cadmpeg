@@ -1810,17 +1810,17 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
-            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
+            let tolerance = EPS_AGREE * nurbs_control_extent(nurbs);
             let control_points = nurbs
                 .control_points()
                 .iter()
                 .map(|point| project_point([point.x, point.y, point.z], tolerance))
                 .collect::<Option<Vec<_>>>()?;
-            match PcurveNurbs::from_lanes(
+            match PcurveNurbs::from_checked_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 control_points,
-                nurbs.pole_rows().weights(),
+                nurbs.weights(),
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),

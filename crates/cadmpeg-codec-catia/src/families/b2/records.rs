@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::analytic::ConeSurface;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{
-    Angle, FiniteReal, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal,
+    Angle, FiniteReal, NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength, PositiveReal,
 };
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::OrthonormalFrame3;
@@ -2033,16 +2033,16 @@ fn parse_b2_nurbs_curve(
     }
     let control_points = (0..control_count)
         .map(|_| {
-            let point = f64_point(data, at)?.get();
+            let point = f64_point(data, at)?;
             at += 24;
             Some(point)
         })
         .collect::<Option<Vec<_>>>()?;
     let weights = (0..control_count)
         .map(|_| {
-            let weight = f64_le(data, at)?.get();
+            let weight = PositiveReal::new(f64_le(data, at)?.get())?;
             at += 8;
-            (weight > 0.0).then_some(weight)
+            Some(NonZeroReal::from(weight))
         })
         .collect::<Option<Vec<_>>>()?;
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {
@@ -2069,7 +2069,7 @@ fn parse_b2_nurbs_curve(
         pos: frame.pos,
         header_token: frame.header_token,
         geometry: crate::nurbs::note_refusal(
-            NurbsCurve::from_lanes(degree, knots, control_points, Some(weights), false),
+            NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
             refusal,
             format_args!("b2 NURBS curve record at byte {}", frame.pos),
         )?,

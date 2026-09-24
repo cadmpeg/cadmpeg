@@ -1082,7 +1082,7 @@ pub(super) fn curve_geometry_coplanar(
             point_valid(point)
         }
         SolvedCurveGeometry::Nurbs(curve) => {
-            curve.pole_rows().points().into_iter().all(point_valid)
+            curve.pole_rows().raw_points().into_iter().all(point_valid)
         }
         SolvedCurveGeometry::Polyline(polyline) => polyline.points().all(point_valid),
         SolvedCurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
@@ -2073,25 +2073,11 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let nurbs_points = nurbs.pole_rows().points();
-        let nurbs_weights = nurbs.pole_rows().weights();
-        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree(),
-            nurbs.knots(),
-            &nurbs_points,
-            nurbs_weights.as_deref(),
-            parameter_range[0],
-        ) else {
+        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
-        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree(),
-            nurbs.knots(),
-            &nurbs_points,
-            nurbs_weights.as_deref(),
-            parameter_range[1],
-        ) else {
+        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };

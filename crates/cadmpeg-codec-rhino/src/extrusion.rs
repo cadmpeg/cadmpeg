@@ -4,7 +4,7 @@
 use crate::loss::Diagnostics;
 use std::ops::Range;
 
-use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
+use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point_at};
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
@@ -456,7 +456,7 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
         return false;
     }
     let degree = curve.degree() as usize;
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     control_points.len() >= degree
         && (0..degree).all(|offset| {
             points_coincident(
@@ -471,17 +471,9 @@ fn evaluate_profile_point(
     parameter: f64,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
-    let control_points = curve.pole_rows().points();
-    let weights = curve.pole_rows().weights();
-    nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &control_points,
-        weights.as_deref(),
-        parameter,
-    )
-    .map(cadmpeg_ir::features::FinitePoint3::get)
-    .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
+    nurbs_curve_point_at(curve, parameter)
+        .map(cadmpeg_ir::features::FinitePoint3::get)
+        .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
 }
 
 fn points_coincident(first: Point3, second: Point3) -> bool {
@@ -577,7 +569,7 @@ fn cap_pcurve(
     frame: (Vector3, Vector3, Vector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     let mut points = Vec::with_capacity(control_points.len());
     for point in control_points {
         let delta = point.vector_from(origin);

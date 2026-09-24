@@ -60,21 +60,12 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) => {
             let degree = usize::try_from(curve.degree()).ok()?;
-            let domain = [
-                curve.knots()[degree],
-                curve.knots()[curve.control_points().len()],
-            ];
+            let domain = [curve.knots()[degree], curve.knots()[curve.pole_count()]];
             if !(domain[0]..=domain[1]).contains(&parameter) {
                 return None;
             }
-            cadmpeg_ir::eval::nurbs_curve_point(
-                curve.degree(),
-                curve.knots(),
-                &curve.pole_rows().points(),
-                curve.pole_rows().weights().as_deref(),
-                parameter,
-            )
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+            cadmpeg_ir::eval::nurbs_curve_point_at(curve, parameter)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,
     }

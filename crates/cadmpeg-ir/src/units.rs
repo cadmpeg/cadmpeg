@@ -804,32 +804,6 @@ impl From<FinitePoint2> for FiniteVector<2> {
         Self([value.0.u, value.0.v])
     }
 }
-impl crate::geometry::pcurve::PcurveNurbs {
-    /// Control points in parameter order. [`Self::new`] and
-    /// [`Self::edit_control_points`] admit every pole finite, so each pole is
-    /// carried without a check. The route lives beside [`FinitePoint2`]
-    /// because only this module constructs one.
-    #[must_use]
-    pub fn control_points(&self) -> Vec<FinitePoint2> {
-        self.pole_rows()
-            .points()
-            .into_iter()
-            .map(FinitePoint2)
-            .collect()
-    }
-}
-impl crate::geometry::pcurve::PolarPcurveNurbs {
-    /// Radial-plane poles in parameter order. [`Self::new`] admits every pole
-    /// finite, so each pole is carried without a check. The route lives beside
-    /// [`FinitePoint2`] because only this module constructs one.
-    #[must_use]
-    pub fn radial_control_points(&self) -> Vec<FinitePoint2> {
-        self.poles()
-            .into_iter()
-            .map(|pole| FinitePoint2(pole.radial))
-            .collect()
-    }
-}
 impl std::ops::Deref for FinitePoint2 {
     type Target = Point2;
     fn deref(&self) -> &Point2 {

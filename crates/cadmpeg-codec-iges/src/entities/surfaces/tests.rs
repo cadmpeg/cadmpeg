@@ -301,9 +301,9 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         .expect("relative-parameter rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-    let first_points = first.pole_rows().points();
+    let first_points = first.pole_rows().raw_points();
     let first_weights = first.pole_rows().weights();
-    let second_points = second.pole_rows().points();
+    let second_points = second.pole_rows().raw_points();
     let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
@@ -364,9 +364,9 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         surface.u_knots().as_slice(),
         [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
     );
-    let first_points = first.pole_rows().points();
+    let first_points = first.pole_rows().raw_points();
     let first_weights = first.pole_rows().weights();
-    let second_points = second.pole_rows().points();
+    let second_points = second.pole_rows().raw_points();
     let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
         let first_point = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1606,7 +1606,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
     .expect("valid rational boundary");
     let mut scaled = first.clone();
     let scaled_poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
-        scaled.pole_rows().points(),
+        scaled.pole_rows().raw_points(),
         Some(vec![2.0; scaled.pole_count()]),
     )
     .unwrap();
@@ -1709,7 +1709,8 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
         false,
     )
     .expect("valid rail");
-    let error = super::same_basis_ruled_surface(&rail, &rail, &[0.5])
+    let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).expect("nonzero weight");
+    let error = super::same_basis_ruled_surface(&rail, &rail, &[weight])
         .expect_err("a weight lane one shorter than the pole lane is refused");
     let reported = CodecError::from(error);
     let CodecError::Malformed(message) = &reported else {

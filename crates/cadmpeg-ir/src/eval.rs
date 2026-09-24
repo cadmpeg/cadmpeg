@@ -274,7 +274,7 @@ fn rational_surface_patches_with_budget(
         }
         None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
     };
-    let homogeneous_controls = positive_controls(&surface.pole_grid().points().concat(), &weights)?;
+    let homogeneous_controls = positive_controls(&surface.poles(), &weights)?;
     let u_spans_by_v = (0..v_count)
         .map(|v| {
             homogeneous_spans(
@@ -1570,6 +1570,21 @@ pub fn nurbs_curve_point(
     )
 }
 
+/// Evaluate a NURBS curve at knot-domain parameter `t` over its admitted
+/// poles. The point is absent when `t` is outside the knot domain or a
+/// homogeneous sum is not finite.
+pub fn nurbs_curve_point_at(curve: &NurbsCurve, t: f64) -> Option<FinitePoint3> {
+    let poles = curve.control_points();
+    nurbs_curve_point_with(
+        curve.degree(),
+        curve.knots(),
+        poles.len(),
+        |index| poles.get(index).copied(),
+        curve.pole_rows().weights().as_deref(),
+        t,
+    )
+}
+
 /// [`nurbs_curve_point`] over `count` poles that `pole` hands out admitted.
 /// The projected coordinates are finite, so the point needs no check.
 fn nurbs_curve_point_with(
@@ -1831,7 +1846,7 @@ fn nurbs_curve_speed_bound_about(
 ) -> Option<FiniteReal> {
     let points = curve
         .pole_rows()
-        .points()
+        .raw_points()
         .into_iter()
         .map(<[f64; 3]>::from)
         .collect::<Vec<_>>();
@@ -2066,7 +2081,7 @@ pub fn fitted_nurbs_offset_frame_distance(
 
 fn clamped_nurbs_pcurve_endpoint_frames(curve: &PcurveNurbs) -> Option<[(Point2, Point2); 2]> {
     let knots = curve.knots();
-    let control_points = curve.pole_rows().points();
+    let control_points = curve.pole_rows().raw_points();
     let [lower, upper] =
         nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?.endpoints();
     let degree = curve.degree() as usize;
@@ -2544,8 +2559,8 @@ pub fn nurbs_surface_isocurve(
                 ))
             },
         ))?;
-        let point = Point3::from(sum.project(sum, &[])?.map(FiniteReal::get));
-        control_points.push(point);
+        let [x, y, z] = sum.project(sum, &[])?;
+        control_points.push(FinitePoint3::from_coordinates(x, y, z));
         sums.push(sum);
     }
     let (degree, knots, periodic) = match fixed_axis {
