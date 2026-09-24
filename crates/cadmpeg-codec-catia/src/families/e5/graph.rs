@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{alloc_filled, View};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 
 use crate::wire;
 
@@ -102,8 +103,8 @@ pub(super) struct E5CurveSupport {
     /// Raw mode byte following the pcurve reference lane; meaning not
     /// decoded further.
     pub(super) mode: u8,
-    /// Finite `[lo, hi]` parameter range on the support, stored as LE f64.
-    pub(super) range: [f64; 2],
+    /// `[lo, hi]` parameter range on the support, stored as LE f64.
+    pub(super) range: [FiniteReal; 2],
     /// Unparsed bytes after the fixed header; not interpreted.
     pub(super) tail: Vec<u8>,
 }
@@ -143,24 +144,24 @@ pub(super) struct E5BoundEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families::e5) struct E5PcurveJetSite {
     /// Distinct knot.
-    pub(super) knot: f64,
+    pub(super) knot: FiniteReal,
     /// Multiplicity of this distinct knot.
     multiplicity: u32,
     /// `(u, v)` position.
-    pub(super) point: [f64; 2],
+    pub(super) point: [FiniteReal; 2],
     /// `(u, v)` first derivative.
-    pub(super) first_derivatives: [f64; 2],
+    pub(super) first_derivatives: [FiniteReal; 2],
     /// `(u, v)` second derivative.
-    pub(super) second_derivatives: [f64; 2],
+    pub(super) second_derivatives: [FiniteReal; 2],
 }
 
 impl E5PcurveJetSite {
     pub(super) fn zip(
-        knots: Vec<f64>,
+        knots: Vec<FiniteReal>,
         multiplicities: Vec<u32>,
-        points: Vec<[f64; 2]>,
-        first_derivatives: Vec<[f64; 2]>,
-        second_derivatives: Vec<[f64; 2]>,
+        points: Vec<[FiniteReal; 2]>,
+        first_derivatives: Vec<[FiniteReal; 2]>,
+        second_derivatives: Vec<[FiniteReal; 2]>,
     ) -> Vec<Self> {
         knots
             .into_iter()
@@ -193,11 +194,11 @@ pub(super) enum E5Pcurve {
         /// `record_id` of the owning surface carrier.
         surface: u32,
         /// `(u, v)` origin of the line in surface parameter space.
-        origin: [f64; 2],
+        origin: [FiniteReal; 2],
         /// `(u, v)` direction of the line in surface parameter space.
-        direction: [f64; 2],
+        direction: [FiniteReal; 2],
         /// `[param_lo, param_hi]` domain along `direction` from `origin`.
-        range: [f64; 2],
+        range: [FiniteReal; 2],
     },
     /// Class `0x97`: `<surface_ref>, center_u, center_v, radius, param_lo,
     /// param_hi` with two intervening `u32` fields (`codes`).
@@ -205,16 +206,16 @@ pub(super) enum E5Pcurve {
         /// `record_id` of the owning surface carrier.
         surface: u32,
         /// `(u, v)` center of the circle in surface parameter space.
-        center: [f64; 2],
+        center: [FiniteReal; 2],
         /// The two `u32` fields between `center` and `radius`; meaning not
         /// decoded further.
         codes: [u32; 2],
-        /// Positive circle radius in surface parameter units.
-        radius: f64,
+        /// Circle radius in surface parameter units.
+        radius: PositiveReal,
         /// `[param_lo, param_hi]` angular domain.
-        range: [f64; 2],
+        range: [FiniteReal; 2],
         /// Two trailing scalar fields following the parameter range.
-        tail: [f64; 2],
+        tail: [FiniteReal; 2],
     },
     /// Class `0xa0`: a nonperiodic degree-5 C2 B-spline p-curve encoded as a
     /// per-knot position/first-derivative/second-derivative jet ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
@@ -225,7 +226,7 @@ pub(super) enum E5Pcurve {
         sites: Vec<E5PcurveJetSite>,
         /// `[0.0, knots.last()]` parameter range, validated against the
         /// knot span.
-        range: [f64; 2],
+        range: [FiniteReal; 2],
     },
     /// Class `0xaa`: a tensor-product-free NURBS p-curve with one surface
     /// reference, distinct knots and multiplicities, and 2D control points.
@@ -235,13 +236,13 @@ pub(super) enum E5Pcurve {
         /// B-spline degree.
         degree: u32,
         /// Distinct knot values in strictly increasing order.
-        knots: Vec<f64>,
+        knots: Vec<FiniteReal>,
         /// Multiplicity for each distinct knot.
         multiplicities: Vec<u32>,
         /// `(u, v)` control points in parameter order.
-        control_points: Vec<[f64; 2]>,
+        control_points: Vec<[FiniteReal; 2]>,
         /// Effective parameter domain of the expanded knot vector.
-        range: [f64; 2],
+        range: [FiniteReal; 2],
     },
 }
 
@@ -719,10 +720,7 @@ fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
     position += 1;
     let mut view = View::over_retained(record.payload);
     view.seek(position)?;
-    let range = [view.f64_le()?, view.f64_le()?];
-    if range.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
+    let range = [finite_f64_le(&mut view)?, finite_f64_le(&mut view)?];
     position = view.position();
     Some(E5CurveSupport {
         kind: E5CurveSupportKind::from_parts(record.class == 0xc1, pcurves)?,
@@ -768,8 +766,8 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
     view.seek(position)?;
     match record.class {
         0x96 => {
-            let values = view.read_counted(6, 8, View::f64_le)?;
-            if !view.is_empty() || values.iter().any(|value| !value.is_finite()) {
+            let values = view.read_counted(6, 8, finite_f64_le)?;
+            if !view.is_empty() {
                 return None;
             }
             Some(E5Pcurve::Line {
@@ -780,20 +778,17 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             })
         }
         0x97 => {
-            let center = view.read_counted(2, 8, View::f64_le)?;
+            let center = view.read_counted(2, 8, finite_f64_le)?;
             let codes = [view.u32_le()?, view.u32_le()?];
-            let values = view.read_counted(5, 8, View::f64_le)?;
-            if !view.is_empty()
-                || center.iter().chain(&values).any(|value| !value.is_finite())
-                || values[0] <= 0.0
-            {
+            let values = view.read_counted(5, 8, finite_f64_le)?;
+            if !view.is_empty() {
                 return None;
             }
             Some(E5Pcurve::Circle {
                 surface,
                 center: [center[0], center[1]],
                 codes,
-                radius: values[0],
+                radius: PositiveReal::new(values[0].get())?,
                 range: [values[1], values[2]],
                 tail: [values[3], values[4]],
             })
@@ -805,6 +800,10 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
 }
 
 const E5_NURBS_PCURVE_TAIL_BYTES: usize = 37;
+
+fn finite_f64_le(view: &mut View<'_>) -> Option<FiniteReal> {
+    FiniteReal::new(view.f64_le()?)
+}
 
 fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
     let mut view = View::over_retained(payload);
@@ -824,26 +823,23 @@ fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E
     let knots = view.read_counted(knot_count_u64, 8, View::f64_le)?;
     let multiplicities = view.read_counted(knot_count_u64, 4, View::u32_le)?;
     let max_control_count = view.remaining().checked_sub(E5_NURBS_PCURVE_TAIL_BYTES)? / 16;
+    let knots = knots
+        .into_iter()
+        .map(FiniteReal::new)
+        .collect::<Option<Vec<_>>>()?;
     let (expanded_knots, control_count) =
         expand_nurbs_knots_limited(degree, &knots, &multiplicities, max_control_count)?;
     let control_points = view.read_counted(u64::try_from(control_count).ok()?, 16, |view| {
-        Some([view.f64_le()?, view.f64_le()?])
+        Some([finite_f64_le(view)?, finite_f64_le(view)?])
     })?;
-    if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES
-        || knots.iter().any(|knot| !knot.is_finite())
-        || control_points
-            .iter()
-            .flatten()
-            .copied()
-            .any(|value| !value.is_finite())
-    {
+    if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES {
         return None;
     }
     let range = [
         *expanded_knots.get(usize::try_from(degree).ok()?)?,
         *expanded_knots.get(control_count)?,
     ];
-    if !range.into_iter().all(f64::is_finite) || range[0] >= range[1] {
+    if range[0] >= range[1] {
         return None;
     }
     view.skip(E5_NURBS_PCURVE_TAIL_BYTES)?;
@@ -859,21 +855,20 @@ fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E
 
 pub(super) fn expand_nurbs_knots(
     degree: u32,
-    knots: &[f64],
+    knots: &[FiniteReal],
     multiplicities: &[u32],
-) -> Option<(Vec<f64>, usize)> {
+) -> Option<(Vec<FiniteReal>, usize)> {
     expand_nurbs_knots_limited(degree, knots, multiplicities, usize::MAX)
 }
 
 fn expand_nurbs_knots_limited(
     degree: u32,
-    knots: &[f64],
+    knots: &[FiniteReal],
     multiplicities: &[u32],
     max_control_count: usize,
-) -> Option<(Vec<f64>, usize)> {
+) -> Option<(Vec<FiniteReal>, usize)> {
     if knots.len() != multiplicities.len()
         || knots.is_empty()
-        || knots.iter().any(|knot| !knot.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities.contains(&0)
     {
@@ -913,22 +908,22 @@ fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5P
         return None;
     }
     let site_count_u64 = u64::try_from(site_count).ok()?;
-    let mut knots = vec![0.0];
-    knots.extend(view.read_counted(site_count_u64.checked_sub(1)?, 8, View::f64_le)?);
+    let mut knots = vec![FiniteReal::ZERO];
+    knots.extend(view.read_counted(site_count_u64.checked_sub(1)?, 8, finite_f64_le)?);
     let multiplicities = view.read_counted(site_count_u64, 4, View::u32_le)?;
     if usize::try_from(view.u32_le()?).ok()? != site_count {
         return None;
     }
-    let x = view.read_counted(site_count_u64, 8, View::f64_le)?;
-    let y = view.read_counted(site_count_u64, 8, View::f64_le)?;
-    let dx = view.read_counted(site_count_u64, 8, View::f64_le)?;
-    let dy = view.read_counted(site_count_u64, 8, View::f64_le)?;
+    let x = view.read_counted(site_count_u64, 8, finite_f64_le)?;
+    let y = view.read_counted(site_count_u64, 8, finite_f64_le)?;
+    let dx = view.read_counted(site_count_u64, 8, finite_f64_le)?;
+    let dy = view.read_counted(site_count_u64, 8, finite_f64_le)?;
     if view.u16_le()? != 1 {
         return None;
     }
-    let ddx = view.read_counted(site_count_u64, 8, View::f64_le)?;
-    let ddy = view.read_counted(site_count_u64, 8, View::f64_le)?;
-    let range_values = view.read_counted(2, 8, View::f64_le)?;
+    let ddx = view.read_counted(site_count_u64, 8, finite_f64_le)?;
+    let ddy = view.read_counted(site_count_u64, 8, finite_f64_le)?;
+    let range_values = view.read_counted(2, 8, finite_f64_le)?;
     // `site_count == 0` is refused above and `site_count == 1` takes the first
     // arm, so the interior station count is the exact difference. The checked
     // subtraction refuses a stated count this arm cannot span instead of
@@ -941,22 +936,13 @@ fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5P
             .chain(std::iter::once(degree + 1))
             .collect()
     };
-    let final_knot = *knots.last()?;
+    let final_knot = knots.last()?.get();
     if !view.is_empty()
-        || knots.iter().any(|value| !value.is_finite())
         || knots.windows(2).any(|pair| pair[0] >= pair[1])
         || multiplicities != expected_multiplicities
         || multiplicities.iter().sum::<u32>() != degree + 1 + 3 * u32::try_from(site_count).ok()?
-        || range_values[0] != 0.0
-        || (range_values[1] - final_knot).abs() > EPS_PARAMETER_ENDPOINT * final_knot.abs()
-        || x.iter()
-            .chain(&y)
-            .chain(&dx)
-            .chain(&dy)
-            .chain(&ddx)
-            .chain(&ddy)
-            .chain(&range_values)
-            .any(|value| !value.is_finite())
+        || range_values[0].get() != 0.0
+        || (range_values[1].get() - final_knot).abs() > EPS_PARAMETER_ENDPOINT * final_knot.abs()
     {
         return None;
     }
@@ -1053,10 +1039,10 @@ fn plane_digon_orientation_hint(
     };
     let close_point =
         |left: [f64; 2], right: [f64; 2]| close(left[0], right[0]) && close(left[1], right[1]);
-    let first_start = first_sites.first()?.point;
-    let first_end = first_sites.last()?.point;
-    let second_start = second_sites.first()?.point;
-    let second_end = second_sites.last()?.point;
+    let first_start = first_sites.first()?.point.map(FiniteReal::get);
+    let first_end = first_sites.last()?.point.map(FiniteReal::get);
+    let second_start = second_sites.first()?.point.map(FiniteReal::get);
+    let second_end = second_sites.last()?.point.map(FiniteReal::get);
     let same_endpoint_pair = (close_point(first_start, second_start)
         && close_point(first_end, second_end))
         || (close_point(first_start, second_end) && close_point(first_end, second_start));
@@ -1092,7 +1078,7 @@ fn plane_digon_orientation_hint(
     let first_radius = first_start_radius;
     for site in first_sites.iter().chain(second_sites.iter()) {
         if !close(
-            (site.point[0] - center[0]).hypot(site.point[1] - center[1]),
+            (site.point[0].get() - center[0]).hypot(site.point[1].get() - center[1]),
             first_radius,
         ) {
             return None;
@@ -1138,24 +1124,36 @@ fn plane_digon_orientation_hint(
             Sign::Negative
         })
     };
-    let first_direction = signed_parameter_direction(first_edge, first_pcurve_id, *first_range)?
-        .combine(if reversed[0] {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        });
-    let second_direction =
-        signed_parameter_direction(second_edge, second_pcurve_id, *second_range)?.combine(
-            if reversed[1] {
-                Sign::Negative
-            } else {
-                Sign::Positive
-            },
-        );
-    let first_winding = native_arc_sign(first_start, first_sites.first()?.first_derivatives)?
-        .combine(first_direction);
-    let second_winding = native_arc_sign(second_start, second_sites.first()?.first_derivatives)?
-        .combine(second_direction);
+    let first_direction = signed_parameter_direction(
+        first_edge,
+        first_pcurve_id,
+        first_range.map(FiniteReal::get),
+    )?
+    .combine(if reversed[0] {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    });
+    let second_direction = signed_parameter_direction(
+        second_edge,
+        second_pcurve_id,
+        second_range.map(FiniteReal::get),
+    )?
+    .combine(if reversed[1] {
+        Sign::Negative
+    } else {
+        Sign::Positive
+    });
+    let first_winding = native_arc_sign(
+        first_start,
+        first_sites.first()?.first_derivatives.map(FiniteReal::get),
+    )?
+    .combine(first_direction);
+    let second_winding = native_arc_sign(
+        second_start,
+        second_sites.first()?.first_derivatives.map(FiniteReal::get),
+    )?
+    .combine(second_direction);
     if first_winding != second_winding {
         return None;
     }
@@ -1169,9 +1167,10 @@ fn plane_digon_orientation_hint(
     {
         return None;
     }
-    let mut intervals = [first_support.range, second_support.range];
+    let mut intervals =
+        [first_support.range, second_support.range].map(|range| range.map(FiniteReal::get));
     for interval in &mut intervals {
-        if !interval[0].is_finite() || !interval[1].is_finite() || interval[0] == interval[1] {
+        if interval[0] == interval[1] {
             return None;
         }
         if interval[0] > interval[1] {
@@ -1591,11 +1590,13 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 mod tests {
     use super::{
         curve_support_reference_closes, parse_body_root, parse_jet_pcurve, parse_nurbs_pcurve,
-        parse_topology, plane_digon_orientation_hint, records, solve_absolute_orientation,
-        solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport, E5CurveSupportKind, E5Edge,
-        E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite, E5Topology, Sign,
+        parse_pcurve, parse_topology, plane_digon_orientation_hint, records,
+        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport,
+        E5CurveSupportKind, E5Edge, E5Face, E5Loop, E5LoopMember, E5Pcurve, E5PcurveJetSite,
+        E5Topology, Record, Sign,
     };
     use crate::families::e5::tests::e5_loop_members;
+    use crate::test_support::test_b5::{finite, finite_lane, finite_pair};
     use crate::test_support::test_e5::append_e5_record;
     use std::collections::BTreeMap;
 
@@ -1678,15 +1679,15 @@ mod tests {
             3,
             E5Pcurve::Line {
                 surface: 10,
-                origin: [0.0, 0.0],
-                direction: [1.0, 0.0],
-                range: [0.0, 1.0],
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
             },
         )]);
         let support = |pcurves: [u32; 2]| E5CurveSupport {
             kind: E5CurveSupportKind::Intersection(pcurves),
             mode: 0,
-            range: [0.0, 1.0],
+            range: finite_pair([0.0, 1.0]),
             tail: Vec::new(),
         };
         let supports = BTreeMap::from([(1, support([2, 3])), (2, support([1, 3]))]);
@@ -1728,10 +1729,40 @@ mod tests {
         };
         assert_eq!(surface, 7);
         assert_eq!(degree, 1);
-        assert_eq!(knots, [0.0, 1.0]);
+        assert_eq!(knots, finite_lane(&[0.0, 1.0]));
         assert_eq!(multiplicities, [2, 2]);
-        assert_eq!(control_points, [[0.0, 0.0], [1.0, 1.0]]);
-        assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(
+            control_points,
+            [finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])]
+        );
+        assert_eq!(range, finite_pair([0.0, 1.0]));
+    }
+
+    #[test]
+    fn circle_pcurve_admits_only_a_finite_positive_radius() {
+        let parse = |radius: f64| {
+            let mut payload = vec![0x81, 0x18];
+            payload.extend_from_slice(&7_u16.to_le_bytes());
+            for value in [0.5_f64, 0.0] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            payload.extend_from_slice(&[0; 8]);
+            for value in [radius, 0.0, 1.0, 0.0, 0.0] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            parse_pcurve(&Record {
+                class: 0x97,
+                id: 20,
+                payload: &payload,
+            })
+        };
+        assert!(matches!(
+            parse(0.5),
+            Some(E5Pcurve::Circle { surface: 7, radius, .. }) if radius.get() == 0.5
+        ));
+        for refused in [0.0, -0.5, f64::INFINITY, f64::NAN] {
+            assert!(parse(refused).is_none());
+        }
     }
 
     #[test]
@@ -1776,10 +1807,7 @@ mod tests {
 
         assert!(matches!(
             parse_jet_pcurve(&payload, 0, 7),
-            Some(E5Pcurve::Jet {
-                range: [0.0, value],
-                ..
-            }) if value == final_knot
+            Some(E5Pcurve::Jet { range, .. }) if range == finite_pair([0.0, final_knot])
         ));
 
         let mut nonzero_lower = payload.clone();
@@ -1836,14 +1864,14 @@ mod tests {
                 .zip(first_derivatives)
                 .enumerate()
                 .map(|(index, (point, first_derivatives))| E5PcurveJetSite {
-                    knot: index as f64,
+                    knot: finite(index as f64),
                     multiplicity: 6,
-                    point,
-                    first_derivatives,
-                    second_derivatives: [0.0, 0.0],
+                    point: finite_pair(point),
+                    first_derivatives: finite_pair(first_derivatives),
+                    second_derivatives: finite_pair([0.0, 0.0]),
                 })
                 .collect(),
-            range: [0.0, 1.0],
+            range: finite_pair([0.0, 1.0]),
         };
         let pcurves = BTreeMap::from([
             (
@@ -1891,7 +1919,7 @@ mod tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Intersection([10, 12]),
                     mode: 0,
-                    range: [0.0, 1.0],
+                    range: finite_pair([0.0, 1.0]),
                     tail: Vec::new(),
                 },
             ),
@@ -1900,7 +1928,7 @@ mod tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Intersection([11, 13]),
                     mode: 0,
-                    range: [1.0, 2.0],
+                    range: finite_pair([1.0, 2.0]),
                     tail: Vec::new(),
                 },
             ),

@@ -5,6 +5,7 @@ use crate::families::e5::decode::{
 };
 use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
 use crate::families::e5::tests::e5_loop_members;
+use crate::test_support::test_b5::{finite_pair, point};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeMap;
 
@@ -17,7 +18,7 @@ fn plane_axis_fit_is_uv_scale_independent() {
             ([scale, scale], Point3::new(scale, scale, 0.0)),
         ];
         let (u_axis, v_axis, residual) =
-            fit_e5_plane_axes([0.0; 3], &pairs).expect("full-rank frame");
+            fit_e5_plane_axes(point([0.0; 3]), &pairs).expect("full-rank frame");
         assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!((u_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(u_axis.y.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -36,7 +37,7 @@ fn rank_one_plane_endpoints_complete_with_known_normal() {
             ([0.0, scale], Point3::new(scale, 0.0, 0.0)),
         ];
         let (u_axis, v_axis, residual) =
-            fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+            fit_rank_one_e5_plane_axes(point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
                 .expect("rank-one frame");
         assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!((v_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
@@ -53,9 +54,9 @@ fn plane_axis_fit_rejects_numerically_rank_one_uv_data() {
         ([-tiny, -7.5], Point3::new(-7.5, 0.0, 0.0)),
         ([tiny, 7.5], Point3::new(7.5, 0.0, 0.0)),
     ];
-    assert!(fit_e5_plane_axes([0.0; 3], &pairs).is_none());
+    assert!(fit_e5_plane_axes(point([0.0; 3]), &pairs).is_none());
     let (_, _, residual) =
-        fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
+        fit_rank_one_e5_plane_axes(point([0.0; 3]), &pairs, Vector3::new(0.0, 1.0, 0.0))
             .expect("rank-one frame");
     assert!(residual < EPS_E5_DECODE_EXACT_GEOMETRY);
 }
@@ -98,9 +99,9 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
             pcurve_ref,
             E5Pcurve::Line {
                 surface: 100,
-                origin: start,
-                direction: [end[0] - start[0], end[1] - start[1]],
-                range: [0.0, 1.0],
+                origin: finite_pair(start),
+                direction: finite_pair([end[0] - start[0], end[1] - start[1]]),
+                range: finite_pair([0.0, 1.0]),
             },
         );
     };
@@ -135,7 +136,7 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
     ];
     let (normal, u_axis, uv_scale) = super::super::solve_e5_plane_frame(
         100,
-        [0.0, 0.0, 0.0],
+        point([0.0, 0.0, 0.0]),
         &topology,
         &points,
         Some(Vector3::new(0.0, 1.0, 0.0)),
@@ -143,7 +144,7 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
     .expect("rank-one plane frame");
     assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
     assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
-    assert_eq!(uv_scale, [-1.0, -1.0]);
+    assert_eq!(uv_scale, finite_pair([-1.0, -1.0]));
 }
 
 #[test]
@@ -169,12 +170,12 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
             key,
             E5Pcurve::Line {
                 surface: 100,
-                origin: sites[index],
-                direction: [
+                origin: finite_pair(sites[index]),
+                direction: finite_pair([
                     sites[next][0] - sites[index][0],
                     sites[next][1] - sites[index][1],
-                ],
-                range: [0.0, 1.0],
+                ]),
+                range: finite_pair([0.0, 1.0]),
             },
         );
     }
@@ -203,7 +204,7 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
         let points = sites.map(|[u, v]| Point3::new(u * scale, v * scale, 0.0));
         let result = super::super::solve_e5_plane_frame(
             100,
-            [0.0; 3],
+            point([0.0; 3]),
             &topology,
             &points,
             Some(Vector3::new(0.0, 0.0, 1.0)),
@@ -212,7 +213,8 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
             let (normal, u_axis, uv_scale) = result.expect("unit plane chart");
             let v_axis = normal.cross(u_axis);
             for ([u, v], expected) in sites.into_iter().zip(points) {
-                let mapped = u_axis.scale(u * uv_scale[0]) + v_axis.scale(v * uv_scale[1]);
+                let mapped =
+                    u_axis.scale(u * uv_scale[0].get()) + v_axis.scale(v * uv_scale[1].get());
                 assert!(
                     crate::math::distance(<[f64; 3]>::from(mapped), expected.into())
                         < EPS_E5_DECODE_EXACT_GEOMETRY

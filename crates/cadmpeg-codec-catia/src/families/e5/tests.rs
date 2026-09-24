@@ -9,6 +9,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
+use crate::test_support::test_b5::{coordinates, finite_pair};
 use crate::test_support::test_bytes::{le_f32, le_f64};
 use crate::test_support::test_container::object_main_catpart;
 use crate::test_support::test_e5::{
@@ -233,19 +234,20 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],
-        crate::families::e5::graph::E5Pcurve::Line {
-            direction: [1.0, 0.0],
-            ..
-        }
+        crate::families::e5::graph::E5Pcurve::Line { direction, .. }
+            if direction == finite_pair([1.0, 0.0])
     ));
     assert_eq!(topology.bounds[&900].entries[0].parameter, 0.25);
     assert_eq!(topology.bounds[&900].entries[1].representation, 200);
     assert_eq!(topology.curve_supports[&200].pcurves(), &[400, 410]);
-    assert_eq!(topology.curve_supports[&200].range, [-10.0, 10.0]);
+    assert_eq!(
+        topology.curve_supports[&200].range,
+        finite_pair([-10.0, 10.0])
+    );
     assert!(matches!(
         topology.pcurves[&403],
         crate::families::e5::graph::E5Pcurve::Jet { ref sites, .. }
-            if sites.iter().map(|site| site.knot).collect::<Vec<_>>() == [0.0, 1.0]
+            if sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>() == [0.0, 1.0]
     ));
 
     let mut missing_support = bytes.clone();
@@ -336,7 +338,7 @@ fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes(
     let planes = crate::families::e5::records::e5_planes(&e5_plane_stream());
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
     assert_eq!(planes[0].v_range, [-2.0, 9.0]);
 }
@@ -346,7 +348,7 @@ fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
     let planes =
         crate::families::e5::records::e5_planes(&e5_plane_stream_with_transform_scalars(5));
     assert_eq!(planes.len(), 1);
-    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
     assert_eq!(planes[0].v_range, [-2.0, 9.0]);
 }

@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -15,11 +16,12 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell,
     Vertex,
 };
-use cadmpeg_ir::units::FinitePoint2;
+use cadmpeg_ir::units::{FinitePoint2, OrthonormalFrame3};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -412,8 +414,8 @@ fn append_e5_planes(
                         else {
                             continue;
                         };
-                        if direction[0].abs() <= EPS_E5_DECODE_GEOMETRY
-                            || direction[1].abs() > EPS_E5_DECODE_GEOMETRY
+                        if direction[0].get().abs() <= EPS_E5_DECODE_GEOMETRY
+                            || direction[1].get().abs() > EPS_E5_DECODE_GEOMETRY
                         {
                             continue;
                         }
@@ -443,13 +445,10 @@ fn append_e5_planes(
         ) else {
             continue;
         };
-        let Ok(payload) = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-            Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-            normal,
-            u_axis,
-        ) else {
+        let Some(frame) = OrthonormalFrame3::new(normal, u_axis) else {
             continue;
         };
+        let payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(plane.origin, frame);
         surfaces.push(crate::families::e5::records::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
@@ -482,15 +481,13 @@ fn e5_uv_vectors_are_independent(left: [f64; 2], right: [f64; 2]) -> bool {
 
 fn solve_e5_plane_frame(
     surface_ref: u32,
-    origin: [f64; 3],
+    origin: FinitePoint3,
     topology: &crate::families::e5::graph::E5Topology,
     points: &[Point3],
     expected_normal: Option<Vector3>,
-) -> Option<(Vector3, Vector3, [f64; 2])> {
-    if !origin.into_iter().all(f64::is_finite)
-        || topology.vertex_refs.len() != points.len()
+) -> Option<(Vector3, Vector3, [FiniteReal; 2])> {
+    if topology.vertex_refs.len() != points.len()
         || points.iter().copied().any(|point| !point.is_finite())
-        || expected_normal.is_some_and(|normal| !normal.is_finite())
     {
         return None;
     }
@@ -556,7 +553,12 @@ fn solve_e5_plane_frame(
     };
     let endpoint_error =
         |axes: (Vector3, Vector3), segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
-            plane_frame_residual(origin, &endpoint_pairs(segment, reversed), axes.0, axes.1)
+            plane_frame_residual(
+                origin.get().into(),
+                &endpoint_pairs(segment, reversed),
+                axes.0,
+                axes.1,
+            )
         };
 
     let mut fitted_axes = Vec::new();
@@ -645,7 +647,8 @@ fn solve_e5_plane_frame(
         };
         // The returned chart uses unit axes and derives v from normal x u.
         // Validate that chart, not the unrestricted least-squares fit.
-        let residual = plane_frame_residual(origin, &pairs, u_axis, normal.cross(u_axis));
+        let residual =
+            plane_frame_residual(origin.get().into(), &pairs, u_axis, normal.cross(u_axis));
         if !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
             continue;
         }
@@ -672,12 +675,12 @@ fn solve_e5_plane_frame(
             .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)?;
         let uv_scale = if first < 0.0 {
             u_axis = Vector3::new(-u_axis.x, -u_axis.y, -u_axis.z);
-            [-1.0, -1.0]
+            [FiniteReal::ONE.negated(); 2]
         } else {
-            [1.0, 1.0]
+            [FiniteReal::ONE; 2]
         };
         if !canonical.iter().any(
-            |(existing_normal, existing_u, _): &(Vector3, Vector3, [f64; 2])| {
+            |(existing_normal, existing_u, _): &(Vector3, Vector3, [FiniteReal; 2])| {
                 existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
                     && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
             },
@@ -704,8 +707,8 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
             ..
         } => finite(range.map(|parameter| {
             [
-                origin[0] + parameter * direction[0],
-                origin[1] + parameter * direction[1],
+                origin[0].get() + parameter.get() * direction[0].get(),
+                origin[1].get() + parameter.get() * direction[1].get(),
             ]
         })),
         crate::families::e5::graph::E5Pcurve::Circle {
@@ -714,15 +717,17 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
             range,
             ..
         } => finite(range.map(|parameter| {
-            let angle = parameter / radius;
+            let radius = radius.get();
+            let angle = parameter.get() / radius;
             [
-                center[0] + radius * angle.cos(),
-                center[1] + radius * angle.sin(),
+                center[0].get() + radius * angle.cos(),
+                center[1].get() + radius * angle.sin(),
             ]
         })),
-        crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => {
-            finite([sites.first()?.point, sites.last()?.point])
-        }
+        crate::families::e5::graph::E5Pcurve::Jet { sites, .. } => Some([
+            sites.first()?.point.map(FiniteReal::get),
+            sites.last()?.point.map(FiniteReal::get),
+        ]),
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
             knots,
@@ -733,13 +738,20 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
         } => {
             let (knots, _) =
                 crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
+            let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
             let control_points = control_points
                 .iter()
-                .map(|[u, v]| Point2::new(*u, *v))
+                .map(|[u, v]| Point2::new(u.get(), v.get()))
                 .collect::<Vec<_>>();
             let endpoints = range.map(|parameter| {
-                cadmpeg_ir::eval::nurbs_pcurve_uv(*degree, &knots, &control_points, None, parameter)
-                    .map(|point| [point.u, point.v])
+                cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    *degree,
+                    &knots,
+                    &control_points,
+                    None,
+                    parameter.get(),
+                )
+                .map(|point| [point.u, point.v])
             });
             Some([endpoints[0]?, endpoints[1]?]).and_then(finite)
         }
@@ -747,16 +759,16 @@ fn e5_native_uv_endpoints(pcurve: &crate::families::e5::graph::E5Pcurve) -> Opti
 }
 
 fn fit_e5_plane_axes(
-    origin: [f64; 3],
+    origin: FinitePoint3,
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
-    if !origin.into_iter().all(f64::is_finite)
-        || pairs
-            .iter()
-            .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
+    if pairs
+        .iter()
+        .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
     {
         return None;
     }
+    let origin: [f64; 3] = origin.get().into();
     let uv_scale = pairs
         .iter()
         .flat_map(|(uv, _)| uv.iter())
@@ -819,18 +831,17 @@ fn fit_e5_plane_axes(
 }
 
 fn fit_rank_one_e5_plane_axes(
-    origin: [f64; 3],
+    origin: FinitePoint3,
     pairs: &[([f64; 2], Point3)],
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
-    if !origin.into_iter().all(f64::is_finite)
-        || !normal.is_finite()
-        || pairs
-            .iter()
-            .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
+    if pairs
+        .iter()
+        .any(|(uv, point)| !uv.iter().copied().all(f64::is_finite) || !point.is_finite())
     {
         return None;
     }
+    let origin: [f64; 3] = origin.get().into();
     let (uv, point) = pairs.iter().find(|(uv, _)| {
         let norm = uv[0].hypot(uv[1]);
         norm.is_finite() && norm != 0.0
@@ -1474,9 +1485,10 @@ fn plan_e5_boundary<'a>(
             return None;
         };
         let cache = e5_occurrence_intersection_cache(sides);
-        let solved_range = cache.as_ref().map_or(support.range, |(_, range)| *range);
+        let support_range = support.range.map(FiniteReal::get);
+        let solved_range = cache.as_ref().map_or(support_range, |(_, range)| *range);
         let Some(context) =
-            e5_support_occurrence_intersection_context(support.range, solved_range, sides)
+            e5_support_occurrence_intersection_context(support_range, solved_range, sides)
         else {
             if let [side] = sides.as_slice() {
                 surface_curve_plan.entry(edge_ref).or_insert_with(|| {
@@ -2127,15 +2139,13 @@ fn e5_pcurve_on_surface(
             range,
             ..
         } => {
+            let range = range.map(FiniteReal::get);
             let origin = e5_surface_uv(decoded_surface, *raw_origin);
             let direction = Point2::new(
-                direction[0] * decoded_surface.uv_scale[0],
-                direction[1] * decoded_surface.uv_scale[1],
+                direction[0].get() * decoded_surface.uv_scale[0].get(),
+                direction[1].get() * decoded_surface.uv_scale[1].get(),
             );
-            if !origin.is_finite()
-                || !direction.is_finite()
-                || !range.iter().copied().all(f64::is_finite)
-            {
+            if !origin.is_finite() || !direction.is_finite() {
                 return None;
             }
             let uv = range.map(|parameter| {
@@ -2156,7 +2166,7 @@ fn e5_pcurve_on_surface(
                 PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction).ok()?,
                 ),
-                *range,
+                range,
                 endpoints,
             ))
         }
@@ -2166,13 +2176,14 @@ fn e5_pcurve_on_surface(
             range,
             ..
         } => {
-            let angular_range = ordered_range([range[0] / radius, range[1] / radius]);
+            let (center, radius) = (center.map(FiniteReal::get), radius.get());
+            let angular_range = ordered_range([range[0].get() / radius, range[1].get() / radius]);
             if !angular_range.into_iter().all(f64::is_finite) {
                 return None;
             }
             let geometry = rational_pcurve_arc(
-                *center,
-                *radius,
+                center,
+                radius,
                 angular_range,
                 refusal,
                 "e5 arc pcurve record",
@@ -2180,25 +2191,13 @@ fn e5_pcurve_on_surface(
             let PcurveGeometry::Nurbs { mut nurbs } = geometry else {
                 return None;
             };
-            let scale = decoded_surface.uv_scale;
+            let scale = decoded_surface.uv_scale.map(FiniteReal::get);
             nurbs
                 .edit_control_points(|point| {
                     *point = Point2::new(point.u * scale[0], point.v * scale[1]);
                     Ok(())
                 })
                 .ok()?;
-            if !nurbs
-                .control_points()
-                .iter()
-                .copied()
-                .all(|point| point.is_finite())
-                || !nurbs.knots().iter().copied().all(f64::is_finite)
-                || nurbs
-                    .weights()
-                    .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
-            {
-                return None;
-            }
             let geometry = PcurveGeometry::Nurbs { nurbs };
             let endpoints = angular_range.map(|angle| {
                 cadmpeg_ir::eval::surface_point(
@@ -2214,34 +2213,23 @@ fn e5_pcurve_on_surface(
             Some((geometry, angular_range, endpoints))
         }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
-            let scale = decoded_surface.uv_scale;
-            let knots = sites.iter().map(|site| site.knot).collect::<Vec<_>>();
+            let scale = decoded_surface.uv_scale.map(FiniteReal::get);
+            let knots = sites.iter().map(|site| site.knot.get()).collect::<Vec<_>>();
+            let scaled =
+                |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
             let points = sites
                 .iter()
-                .map(|site| [site.point[0] * scale[0], site.point[1] * scale[1]])
+                .map(|site| scaled(site.point))
                 .collect::<Vec<_>>();
             let first_derivatives = sites
                 .iter()
-                .map(|site| {
-                    [
-                        site.first_derivatives[0] * scale[0],
-                        site.first_derivatives[1] * scale[1],
-                    ]
-                })
+                .map(|site| scaled(site.first_derivatives))
                 .collect::<Vec<_>>();
             let second_derivatives = sites
                 .iter()
-                .map(|site| {
-                    [
-                        site.second_derivatives[0] * scale[0],
-                        site.second_derivatives[1] * scale[1],
-                    ]
-                })
+                .map(|site| scaled(site.second_derivatives))
                 .collect::<Vec<_>>();
-            if !scale.into_iter().all(f64::is_finite)
-                || !range.iter().copied().all(f64::is_finite)
-                || !knots.iter().copied().all(f64::is_finite)
-                || !points.iter().flatten().copied().all(f64::is_finite)
+            if !points.iter().flatten().copied().all(f64::is_finite)
                 || !first_derivatives
                     .iter()
                     .flatten()
@@ -2267,28 +2255,13 @@ fn e5_pcurve_on_surface(
                     decoded_surface.record_id, decoded_surface.pos
                 ),
             )?;
-            let PcurveGeometry::Nurbs { nurbs } = &geometry else {
-                return None;
-            };
-            if !nurbs.knots().iter().copied().all(f64::is_finite)
-                || !nurbs
-                    .control_points()
-                    .iter()
-                    .copied()
-                    .all(|point| point.is_finite())
-                || nurbs
-                    .weights()
-                    .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
-            {
-                return None;
-            }
             let endpoints = [*points.first()?, *points.last()?]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
             let endpoints = [endpoints[0]?, endpoints[1]?];
             if !endpoints.iter().copied().all(|point| point.is_finite()) {
                 return None;
             }
-            Some((geometry, *range, endpoints))
+            Some((geometry, range.map(FiniteReal::get), endpoints))
         }
         crate::families::e5::graph::E5Pcurve::Nurbs {
             degree,
@@ -2298,18 +2271,15 @@ fn e5_pcurve_on_surface(
             range,
             ..
         } => {
-            let scale = decoded_surface.uv_scale;
+            let scale = decoded_surface.uv_scale.map(FiniteReal::get);
             let (knots, _) =
                 crate::families::e5::graph::expand_nurbs_knots(*degree, knots, multiplicities)?;
+            let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
             let control_points = control_points
                 .iter()
-                .map(|[u, v]| Point2::new(*u * scale[0], *v * scale[1]))
+                .map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1]))
                 .collect::<Vec<_>>();
-            if !scale
-                .into_iter()
-                .all(|value| value.is_finite() && value != 0.0)
-                || !range.iter().copied().all(f64::is_finite)
-                || !knots.iter().copied().all(f64::is_finite)
+            if !scale.into_iter().all(|value| value != 0.0)
                 || !control_points
                     .iter()
                     .copied()
@@ -2327,6 +2297,7 @@ fn e5_pcurve_on_surface(
                     ),
                 )?,
             };
+            let range = range.map(FiniteReal::get);
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter));
             let uv = uv[0].zip(uv[1])?;
             let uv = [uv.0, uv.1];
@@ -2336,7 +2307,7 @@ fn e5_pcurve_on_surface(
             if !endpoints.iter().copied().all(|point| point.is_finite()) {
                 return None;
             }
-            Some((geometry, *range, endpoints))
+            Some((geometry, range, endpoints))
         }
     }
 }
@@ -2347,12 +2318,11 @@ fn e5_boundary_curve(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
-    uv_scale: [f64; 2],
+    uv_scale: [FiniteReal; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    if !uv_scale
-        .into_iter()
-        .all(|value| value.is_finite() && value != 0.0)
+    let uv_scale = uv_scale.map(FiniteReal::get);
+    if !uv_scale.into_iter().all(|value| value != 0.0)
         || !range.into_iter().all(f64::is_finite)
         || !endpoints.iter().copied().all(|point| point.is_finite())
     {
@@ -2368,9 +2338,9 @@ fn e5_boundary_curve(
         let u_axis = plane_surface.frame().reference().as_raw();
         let v_axis = (*normal).cross(*u_axis);
         let center = origin
-            .translated(*u_axis, center[0] * uv_scale[0])
-            .translated(v_axis, center[1] * uv_scale[1]);
-        if !center.is_finite() || !v_axis.is_finite() || !radius.is_finite() || *radius <= 0.0 {
+            .translated(*u_axis, center[0].get() * uv_scale[0])
+            .translated(v_axis, center[1].get() * uv_scale[1]);
+        if !center.is_finite() || !v_axis.is_finite() {
             return None;
         }
         return Some((
@@ -2379,7 +2349,7 @@ fn e5_boundary_curve(
                     center,
                     *normal,
                     u_axis.scale(uv_scale[0]),
-                    *radius,
+                    radius.get(),
                 )
                 .ok()?,
             )),
@@ -2406,15 +2376,10 @@ fn e5_boundary_curve(
             })
             .collect::<Vec<_>>();
         if !v_axis.is_finite()
-            || !range.into_iter().all(f64::is_finite)
-            || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points
                 .iter()
                 .copied()
                 .all(|point| point.is_finite())
-            || nurbs
-                .weights()
-                .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
         {
             return None;
         }
@@ -2456,15 +2421,10 @@ fn e5_boundary_curve(
             })
             .collect::<Vec<_>>();
         if !v_axis.is_finite()
-            || !range.into_iter().all(f64::is_finite)
-            || !nurbs.knots().iter().copied().all(f64::is_finite)
             || !control_points
                 .iter()
                 .copied()
                 .all(|point| point.is_finite())
-            || nurbs
-                .weights()
-                .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
         {
             return None;
         }
@@ -2884,8 +2844,14 @@ fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f6
     }
 }
 
-fn e5_surface_uv(surface: &crate::families::e5::records::E5Surface, raw: [f64; 2]) -> Point2 {
-    Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
+fn e5_surface_uv(
+    surface: &crate::families::e5::records::E5Surface,
+    raw: [FiniteReal; 2],
+) -> Point2 {
+    Point2::new(
+        raw[0].get() * surface.uv_scale[0].get(),
+        raw[1].get() * surface.uv_scale[1].get(),
+    )
 }
 
 struct E5BodyPlan {
@@ -3040,6 +3006,7 @@ mod route_tests {
     use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
 
+    use crate::test_support::test_b5::{finite_lane, finite_pair, point, positive};
     use std::collections::{BTreeMap, HashMap};
 
     fn jet_pcurve(
@@ -3054,13 +3021,13 @@ mod route_tests {
         E5Pcurve::Jet {
             surface,
             sites: E5PcurveJetSite::zip(
-                knots,
+                finite_lane(&knots),
                 multiplicities,
-                points,
-                first_derivatives,
-                second_derivatives,
+                points.into_iter().map(finite_pair).collect(),
+                first_derivatives.into_iter().map(finite_pair).collect(),
+                second_derivatives.into_iter().map(finite_pair).collect(),
             ),
-            range,
+            range: finite_pair(range),
         }
     }
 
@@ -3068,32 +3035,21 @@ mod route_tests {
     fn e5_native_uv_endpoints_reject_nonfinite_results() {
         let line = E5Pcurve::Line {
             surface: 0,
-            origin: [f64::MAX, 0.0],
-            direction: [f64::MAX, 0.0],
-            range: [1.0, 2.0],
+            origin: finite_pair([f64::MAX, 0.0]),
+            direction: finite_pair([f64::MAX, 0.0]),
+            range: finite_pair([1.0, 2.0]),
         };
         assert!(e5_native_uv_endpoints(&line).is_none());
 
         let circle = E5Pcurve::Circle {
             surface: 0,
-            center: [f64::MAX, 0.0],
+            center: finite_pair([f64::MAX, 0.0]),
             codes: [0, 0],
-            radius: f64::MAX,
-            range: [0.0, 1.0],
-            tail: [0.0, 0.0],
+            radius: positive(f64::MAX),
+            range: finite_pair([0.0, 1.0]),
+            tail: finite_pair([0.0, 0.0]),
         };
         assert!(e5_native_uv_endpoints(&circle).is_none());
-
-        let jet = jet_pcurve(
-            0,
-            vec![0.0, 1.0],
-            vec![6, 6],
-            vec![[0.0, 0.0], [f64::INFINITY, 0.0]],
-            vec![[0.0, 0.0], [0.0, 0.0]],
-            vec![[0.0, 0.0], [0.0, 0.0]],
-            [0.0, 1.0],
-        );
-        assert!(e5_native_uv_endpoints(&jet).is_none());
     }
 
     #[test]
@@ -3141,9 +3097,9 @@ mod route_tests {
                 pcurve_ref,
                 E5Pcurve::Line {
                     surface: 100,
-                    origin: start_uv,
-                    direction: [end_uv[0] - start_uv[0], end_uv[1] - start_uv[1]],
-                    range: [0.0, 1.0],
+                    origin: finite_pair(start_uv),
+                    direction: finite_pair([end_uv[0] - start_uv[0], end_uv[1] - start_uv[1]]),
+                    range: finite_pair([0.0, 1.0]),
                 },
             );
         }
@@ -3171,14 +3127,14 @@ mod route_tests {
         };
 
         let (normal, u_axis, uv_scale) =
-            solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
+            solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
                 .expect("17-segment plane frame");
         assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
-        assert_eq!(uv_scale, [1.0, 1.0]);
+        assert_eq!(uv_scale, finite_pair([1.0, 1.0]));
         assert!(solve_e5_plane_frame(
             100,
-            [0.0, 0.0, 0.0],
+            point([0.0, 0.0, 0.0]),
             &topology,
             &points,
             Some(Vector3::new(f64::NAN, 0.0, 1.0)),
@@ -3232,18 +3188,18 @@ mod route_tests {
                     20,
                     E5Pcurve::Line {
                         surface: 100,
-                        origin: [0.0, 0.0],
-                        direction: [1.0, 0.0],
-                        range: [0.0, 1.0],
+                        origin: finite_pair([0.0, 0.0]),
+                        direction: finite_pair([1.0, 0.0]),
+                        range: finite_pair([0.0, 1.0]),
                     },
                 ),
                 (
                     21,
                     E5Pcurve::Line {
                         surface: 100,
-                        origin: [0.0, 0.0],
-                        direction: [0.0, 1.0],
-                        range: [0.0, 1.0],
+                        origin: finite_pair([0.0, 0.0]),
+                        direction: finite_pair([0.0, 1.0]),
+                        range: finite_pair([0.0, 1.0]),
                     },
                 ),
             ]),
@@ -3257,11 +3213,11 @@ mod route_tests {
             Point3::new(0.0, -1.0, 0.0),
         ];
         let (normal, u_axis, uv_scale) =
-            solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
+            solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
                 .expect("negative native chart frame");
         assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
         assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
-        assert_eq!(uv_scale, [-1.0, -1.0]);
+        assert_eq!(uv_scale, finite_pair([-1.0, -1.0]));
 
         let surface = E5Surface {
             pos: 0,
@@ -3279,9 +3235,9 @@ mod route_tests {
         let (pcurve, range, endpoints) = e5_pcurve_on_surface(
             &E5Pcurve::Line {
                 surface: 100,
-                origin: [0.0, 0.0],
-                direction: [1.0, 0.0],
-                range: [0.0, 1.0],
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
             },
             &surface,
             &mut crate::nurbs::LaneRefusals::new(),
@@ -3300,9 +3256,9 @@ mod route_tests {
             &surface.geometry,
             &E5Pcurve::Line {
                 surface: 100,
-                origin: [0.0, 0.0],
-                direction: [1.0, 0.0],
-                range: [0.0, 1.0],
+                origin: finite_pair([0.0, 0.0]),
+                direction: finite_pair([1.0, 0.0]),
+                range: finite_pair([0.0, 1.0]),
             },
             &PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -3409,7 +3365,7 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let topology = E5Topology {
             bodies: Vec::new(),
@@ -3444,9 +3400,9 @@ mod route_tests {
                 20,
                 E5Pcurve::Line {
                     surface: 100,
-                    origin: [0.0, 0.0],
-                    direction: [1.0, 0.0],
-                    range: [0.0, 1.0],
+                    origin: finite_pair([0.0, 0.0]),
+                    direction: finite_pair([1.0, 0.0]),
+                    range: finite_pair([0.0, 1.0]),
                 },
             )]),
             bounds: BTreeMap::from([
@@ -3476,7 +3432,7 @@ mod route_tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Boundary(20),
                     mode: 0,
-                    range: [0.0, 1.0],
+                    range: finite_pair([0.0, 1.0]),
                     tail: Vec::new(),
                 },
             )]),
@@ -3517,13 +3473,13 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let line = || E5Pcurve::Line {
             surface: 100,
-            origin: [0.0, 0.0],
-            direction: [0.001, 0.0],
-            range: [0.0, 1.0],
+            origin: finite_pair([0.0, 0.0]),
+            direction: finite_pair([0.001, 0.0]),
+            range: finite_pair([0.0, 1.0]),
         };
         let topology = E5Topology {
             bodies: Vec::new(),
@@ -3546,7 +3502,7 @@ mod route_tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
-                    range: [0.0, 1.0],
+                    range: finite_pair([0.0, 1.0]),
                     tail: Vec::new(),
                 },
             )]),
@@ -3589,7 +3545,7 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let topology = E5Topology {
             bodies: Vec::new(),
@@ -3643,20 +3599,20 @@ mod route_tests {
                     20,
                     E5Pcurve::Line {
                         surface: 100,
-                        origin: [0.0, 0.0],
-                        direction: [1.0, 0.0],
-                        range: [0.0, 1.0],
+                        origin: finite_pair([0.0, 0.0]),
+                        direction: finite_pair([1.0, 0.0]),
+                        range: finite_pair([0.0, 1.0]),
                     },
                 ),
                 (
                     21,
                     E5Pcurve::Circle {
                         surface: 100,
-                        center: [0.5, 0.0],
+                        center: finite_pair([0.5, 0.0]),
                         codes: [0, 0],
-                        radius: 0.5,
-                        range: [0.0, std::f64::consts::FRAC_PI_2],
-                        tail: [0.0, 0.0],
+                        radius: positive(0.5),
+                        range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
+                        tail: finite_pair([0.0, 0.0]),
                     },
                 ),
             ]),
@@ -3666,7 +3622,7 @@ mod route_tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Intersection([20, 21]),
                     mode: 0,
-                    range: [0.0, 1.0],
+                    range: finite_pair([0.0, 1.0]),
                     tail: Vec::new(),
                 },
             )]),
@@ -3732,9 +3688,9 @@ mod route_tests {
                 30,
                 E5Pcurve::Line {
                     surface: 100,
-                    origin: [1.0, 0.0],
-                    direction: [-1.0, 0.0],
-                    range: [0.0, 1.0],
+                    origin: finite_pair([1.0, 0.0]),
+                    direction: finite_pair([-1.0, 0.0]),
+                    range: finite_pair([0.0, 1.0]),
                 },
             )]),
             bounds: BTreeMap::new(),
@@ -3743,7 +3699,7 @@ mod route_tests {
                 E5CurveSupport {
                     kind: E5CurveSupportKind::Boundary(30),
                     mode: 0,
-                    range: [0.0, 1.0],
+                    range: finite_pair([0.0, 1.0]),
                     tail: Vec::new(),
                 },
             )]),
@@ -3791,7 +3747,7 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let mut annotations = AnnotationBuilder::new();
         assert!(super::transfer_e5_topology(
@@ -3951,9 +3907,9 @@ mod route_tests {
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
-            origin: [0.0, 3.0],
-            direction: [1.0, 0.0],
-            range: [0.0, std::f64::consts::FRAC_PI_2],
+            origin: finite_pair([0.0, 3.0]),
+            direction: finite_pair([1.0, 0.0]),
+            range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
         };
         let (curve, range) = e5_boundary_curve(
             &surface,
@@ -3961,7 +3917,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("cylinder boundary circle");
@@ -4000,9 +3956,9 @@ mod route_tests {
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
-            origin: [0.0, 3.0],
-            direction: [1.0, transverse_noise],
-            range: [0.0, std::f64::consts::FRAC_PI_2],
+            origin: finite_pair([0.0, 3.0]),
+            direction: finite_pair([1.0, transverse_noise]),
+            range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
         };
         let (curve, _) = e5_boundary_curve(
             &surface,
@@ -4010,7 +3966,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("near-isoparametric cylinder boundary circle");
@@ -4045,9 +4001,9 @@ mod route_tests {
         );
         let native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
-            origin: [0.0, 3.0],
-            direction: [direction, 0.0],
-            range: [0.0, parameter_end],
+            origin: finite_pair([0.0, 3.0]),
+            direction: finite_pair([direction, 0.0]),
+            range: finite_pair([0.0, parameter_end]),
         };
         let (curve, _) = e5_boundary_curve(
             &surface,
@@ -4058,7 +4014,7 @@ mod route_tests {
                 Point3::new(2.0, 0.0, 3.0),
                 Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
             ],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("cylinder boundary circle");
@@ -4083,9 +4039,9 @@ mod route_tests {
         );
         let plane_native = crate::families::e5::graph::E5Pcurve::Line {
             surface: 0,
-            origin: [0.0, 0.0],
-            direction: [direction, 0.0],
-            range: [0.0, 1.0],
+            origin: finite_pair([0.0, 0.0]),
+            direction: finite_pair([direction, 0.0]),
+            range: finite_pair([0.0, 1.0]),
         };
         let tiny_endpoint = Point3::new(direction, 0.0, 0.0);
         let (curve, range) = e5_boundary_curve(
@@ -4094,7 +4050,7 @@ mod route_tests {
             &plane_pcurve,
             [0.0, direction],
             [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("finite nonzero plane line");
@@ -4117,9 +4073,9 @@ mod route_tests {
         ));
         let native = E5Pcurve::Line {
             surface: 0,
-            origin: [f64::MAX, 0.0],
-            direction: [f64::MAX, 0.0],
-            range: [1.0, 2.0],
+            origin: finite_pair([f64::MAX, 0.0]),
+            direction: finite_pair([f64::MAX, 0.0]),
+            range: finite_pair([1.0, 2.0]),
         };
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -4134,44 +4090,7 @@ mod route_tests {
             &pcurve,
             [1.0, 2.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            [1.0, 1.0],
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn e5_boundary_circle_rejects_nonfinite_radius() {
-        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("valid PlaneSurface fixture"),
-        ));
-        let native = E5Pcurve::Circle {
-            surface: 0,
-            center: [0.0, 0.0],
-            codes: [0, 0],
-            radius: f64::INFINITY,
-            range: [0.0, 1.0],
-            tail: [0.0, 0.0],
-        };
-        let pcurve = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-            )
-            .expect("valid LinePcurve fixture"),
-        );
-        assert!(e5_boundary_curve(
-            &surface,
-            &native,
-            &pcurve,
-            [0.0, 1.0],
-            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .is_none());
@@ -4190,9 +4109,9 @@ mod route_tests {
         let tiny = f64::from_bits(1);
         let native = E5Pcurve::Line {
             surface: 0,
-            origin: [0.0, 0.0],
-            direction: [tiny, 0.0],
-            range: [0.0, 1.0],
+            origin: finite_pair([0.0, 0.0]),
+            direction: finite_pair([tiny, 0.0]),
+            range: finite_pair([0.0, 1.0]),
         };
         let pcurve = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -4207,7 +4126,7 @@ mod route_tests {
             &pcurve,
             [0.0, tiny],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("subnormal line chord");
@@ -4233,11 +4152,11 @@ mod route_tests {
         ));
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
-            center: [4.0, 5.0],
+            center: finite_pair([4.0, 5.0]),
             codes: [0, 0],
-            radius: 2.0,
-            range: [0.0, std::f64::consts::PI],
-            tail: [0.0, 0.0],
+            radius: positive(2.0),
+            range: finite_pair([0.0, std::f64::consts::PI]),
+            tail: finite_pair([0.0, 0.0]),
         };
         let pcurve = rational_pcurve_arc(
             [4.0, 5.0],
@@ -4253,7 +4172,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(7.0, 7.0, 3.0), Point3::new(5.0, 9.0, 3.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("plane boundary circle");
@@ -4278,7 +4197,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(-5.0, -3.0, 3.0), Point3::new(-3.0, -5.0, 3.0)],
-            [-1.0, -1.0],
+            finite_pair([-1.0, -1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("reflected plane boundary circle");
@@ -4336,7 +4255,7 @@ mod route_tests {
             &pcurve,
             [0.0, 1.0],
             [Point3::new(1.0, 2.0, 3.0), Point3::new(2.0, 4.0, 3.0)],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .expect("plane jet curve");
@@ -4368,7 +4287,7 @@ mod route_tests {
         let native = E5Pcurve::Jet {
             surface: 0,
             sites: Vec::new(),
-            range: [0.0, 1.0],
+            range: finite_pair([0.0, 1.0]),
         };
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
@@ -4389,7 +4308,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .is_none());
@@ -4498,7 +4417,7 @@ mod route_tests {
                 )
                 .expect("valid CylinderSurface fixture"),
             )),
-            uv_scale: [0.5, 1.0],
+            uv_scale: finite_pair([0.5, 1.0]),
         };
         let pcurve = jet_pcurve(
             7,
@@ -4560,15 +4479,15 @@ mod route_tests {
                 )
                 .expect("valid planar NURBS surface"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let pcurve = E5Pcurve::Nurbs {
             surface: 7,
             degree: 1,
-            knots: vec![0.0, 1.0],
+            knots: finite_lane(&[0.0, 1.0]),
             multiplicities: vec![2, 2],
-            control_points: vec![[0.0, 0.0], [1.0, 1.0]],
-            range: [0.0, 1.0],
+            control_points: vec![finite_pair([0.0, 0.0]), finite_pair([1.0, 1.0])],
+            range: finite_pair([0.0, 1.0]),
         };
 
         let (geometry, range, endpoints) =
@@ -4608,7 +4527,7 @@ mod route_tests {
                 )
                 .expect("valid ConeSurface fixture"),
             )),
-            uv_scale: [0.5, half_angle.cos() / 4.0],
+            uv_scale: finite_pair([0.5, half_angle.cos() / 4.0]),
         };
         let pcurve = jet_pcurve(
             7,
@@ -4676,13 +4595,13 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [f64::MAX, 1.0],
+            uv_scale: finite_pair([f64::MAX, 1.0]),
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Line {
             surface: 7,
-            origin: [2.0, 0.0],
-            direction: [1.0, 0.0],
-            range: [0.0, 1.0],
+            origin: finite_pair([2.0, 0.0]),
+            direction: finite_pair([1.0, 0.0]),
+            range: finite_pair([0.0, 1.0]),
         };
         assert!(
             e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
@@ -4703,15 +4622,15 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [f64::MAX, 1.0],
+            uv_scale: finite_pair([f64::MAX, 1.0]),
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 7,
-            center: [2.0, 0.0],
+            center: finite_pair([2.0, 0.0]),
             codes: [0, 0],
-            radius: 1.0,
-            range: [0.0, 1.0],
-            tail: [0.0, 0.0],
+            radius: positive(1.0),
+            range: finite_pair([0.0, 1.0]),
+            tail: finite_pair([0.0, 0.0]),
         };
         assert!(
             e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
@@ -4732,7 +4651,7 @@ mod route_tests {
                 )
                 .expect("valid PlaneSurface fixture"),
             )),
-            uv_scale: [1.0, 1.0],
+            uv_scale: finite_pair([1.0, 1.0]),
         };
         let pcurve = jet_pcurve(
             7,
@@ -4761,11 +4680,11 @@ mod route_tests {
         ));
         let native = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 0,
-            center: [f64::MAX, 0.0],
+            center: finite_pair([f64::MAX, 0.0]),
             codes: [0, 0],
-            radius: 1.0,
-            range: [0.0, 1.0],
-            tail: [0.0, 0.0],
+            radius: positive(1.0),
+            range: finite_pair([0.0, 1.0]),
+            tail: finite_pair([0.0, 0.0]),
         };
         let pcurve = rational_pcurve_arc(
             [f64::MAX, 0.0],
@@ -4784,7 +4703,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
-            [1.0, 1.0],
+            finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .is_none());
@@ -4805,15 +4724,15 @@ mod route_tests {
                 )
                 .expect("valid TorusSurface fixture"),
             )),
-            uv_scale: [0.2, 0.5],
+            uv_scale: finite_pair([0.2, 0.5]),
         };
         let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
             surface: 7,
-            center: [10.0, 4.0],
+            center: finite_pair([10.0, 4.0]),
             codes: [0, 0],
-            radius: 2.0,
-            range: [0.0, std::f64::consts::PI],
-            tail: [0.0, 0.0],
+            radius: positive(2.0),
+            range: finite_pair([0.0, std::f64::consts::PI]),
+            tail: finite_pair([0.0, 0.0]),
         };
         let (geometry, range, endpoints) =
             e5_pcurve_on_surface(&pcurve, &surface, &mut crate::nurbs::LaneRefusals::new())
