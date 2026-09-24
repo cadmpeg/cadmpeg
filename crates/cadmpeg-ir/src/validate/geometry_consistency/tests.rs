@@ -333,19 +333,22 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
                 definition_payload.context().clone(),
                 *definition_payload.discontinuity_flag(),
                 [
-                    *definition_payload.base_u_range(),
-                    *definition_payload.base_v_range(),
+                    definition_payload.base_u_range().endpoints(),
+                    definition_payload.base_v_range().endpoints(),
                 ],
                 (
                     definition_payload.base().clone(),
-                    *definition_payload.base_range(),
+                    definition_payload.base_range().endpoints(),
                     [None, None],
                 ),
                 crate::geometry::CacheContract::from_form(
                     definition_payload.cache_first().cloned(),
                 ),
-                *definition_payload.distance(),
-                [*definition_payload.shift(), *definition_payload.scale()],
+                definition_payload.distance().get(),
+                [
+                    definition_payload.shift().get(),
+                    definition_payload.scale().get(),
+                ],
             )
             .unwrap();
         match restored_cache {
@@ -393,8 +396,13 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let center = circle_pcurve.center();
     let x_axis = circle_pcurve.x_axis();
     let y_axis = circle_pcurve.y_axis();
-    *circle_pcurve =
-        crate::geometry::pcurve::CirclePcurve::try_new(*center, *x_axis, *y_axis, 2.0).unwrap();
+    *circle_pcurve = crate::geometry::pcurve::CirclePcurve::try_new(
+        center.get(),
+        x_axis.get(),
+        y_axis.get(),
+        2.0,
+    )
+    .unwrap();
     super::check_pcurve_surface_consistency(&mismatched, &mut findings);
     assert_eq!(findings.len(), 1);
     assert!(findings[0].message.contains("pcurve mapped through"));
@@ -460,7 +468,9 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,
-                previous.fit_tolerance(),
+                previous
+                    .fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
             )
         })
     }
@@ -813,7 +823,7 @@ fn edge_endpoint_mismatch_is_flagged() {
             context: crate::geometry::IntcurveSupportContext::try_new(std::array::from_fn(|_| crate::geometry::IntcurveSupportSide {
                     surface: None,
                     pcurve: None,
-                }), ir.model.edges[0].param_range().expect("cube edge range"), std::array::from_fn(|_| Vec::new())).unwrap(),
+                }), ir.model.edges[0].param_range().expect("cube edge range").get(), std::array::from_fn(|_| Vec::new())).unwrap(),
             discontinuity_flag: false,
             cache: None,
         },

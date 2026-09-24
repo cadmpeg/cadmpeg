@@ -396,7 +396,7 @@ pub(super) fn revolve_nurbs(
         angular_weights.push(1.0);
         append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
     }
-    let profile_weights = match profile.weights() {
+    let profile_weights = match profile.pole_rows().weights() {
         Some(weights) => weights,
         None => alloc_filled(
             profile.control_points().len(),
@@ -1001,12 +1001,14 @@ mod tests {
             Some([0.25, 0.75])
         );
         assert_eq!(
-            ir.model.procedural_curves[0].cache_fit_tolerance(),
+            ir.model.procedural_curves[0]
+                .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
             Some(1e-5)
         );
         assert!(match ir.model.procedural_surfaces[0].definition() {
             ProceduralSurfaceDefinition::Extrusion(matched_payload) =>
-                matches!((&matched_payload.parameter_interval(), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
+                matches!((&matched_payload.parameter_interval().map(cadmpeg_ir::units::FiniteVector::get), matched_payload.direction(), &matched_payload.native_position(),), (Some([0.0, 1.0]), direction, None,) if *direction == Vector3::new(0.0, 0.0, 1.0)),
             _ => false,
         });
         assert_eq!(

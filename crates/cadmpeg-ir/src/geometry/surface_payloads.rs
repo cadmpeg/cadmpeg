@@ -72,8 +72,8 @@ impl SubSurfaceConstruction {
         &self.support
     }
     /// Return the parameter ranges.
-    pub fn parameter_ranges(&self) -> [[f64; 2]; 2] {
-        self.parameter_ranges.map(FiniteVector::get)
+    pub fn parameter_ranges(&self) -> [FiniteVector<2>; 2] {
+        self.parameter_ranges
     }
 }
 
@@ -209,8 +209,8 @@ impl TaperSurfaceConstruction {
         &self.pcurve
     }
     /// Return the parameter.
-    pub fn parameter(&self) -> &f64 {
-        self.parameter.as_raw()
+    pub fn parameter(&self) -> FiniteReal {
+        self.parameter
     }
     /// Return the taper.
     pub fn taper(&self) -> &TaperSurfaceKind {
@@ -368,16 +368,16 @@ impl ExtrusionSurfaceConstruction {
         &self.directrix
     }
     /// Return the parameter interval.
-    pub fn parameter_interval(&self) -> Option<[f64; 2]> {
-        self.parameter_interval.map(FiniteVector::get)
+    pub fn parameter_interval(&self) -> Option<FiniteVector<2>> {
+        self.parameter_interval
     }
     /// Return the direction.
-    pub fn direction(&self) -> &Vector3 {
-        self.direction.as_raw()
+    pub fn direction(&self) -> &FiniteVector3 {
+        &self.direction
     }
     /// Return the native position.
-    pub fn native_position(&self) -> Option<Point3> {
-        self.native_position.map(FinitePoint3::get)
+    pub fn native_position(&self) -> Option<FinitePoint3> {
+        self.native_position
     }
     /// Return the revision form.
     pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
@@ -781,8 +781,8 @@ impl OffsetSurfaceConstruction {
         &self.support
     }
     /// Return the distance.
-    pub fn distance(&self) -> &f64 {
-        self.distance.as_raw()
+    pub fn distance(&self) -> FiniteReal {
+        self.distance
     }
     /// Return the u sense.
     pub fn u_sense(&self) -> &Option<i64> {
@@ -993,8 +993,8 @@ impl ParallelOffsetSurfaceConstruction {
         &self.support
     }
     /// Return the distance.
-    pub fn distance(&self) -> &f64 {
-        self.distance.as_raw()
+    pub fn distance(&self) -> FiniteReal {
+        self.distance
     }
     /// Return the self intersect.
     pub fn self_intersect(&self) -> &Option<bool> {
@@ -1058,8 +1058,8 @@ impl LinearSweepSurfaceConstruction {
         &self.directrix
     }
     /// Return the direction.
-    pub fn direction(&self) -> &Vector3 {
-        self.direction.as_raw()
+    pub fn direction(&self) -> &FiniteVector3 {
+        &self.direction
     }
 }
 
@@ -1219,8 +1219,8 @@ impl SumSurfaceConstruction {
         &self.second
     }
     /// Return the basepoint.
-    pub fn basepoint(&self) -> &Vector3 {
-        self.basepoint.as_raw()
+    pub fn basepoint(&self) -> &FiniteVector3 {
+        &self.basepoint
     }
     /// Return the revision form.
     pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {

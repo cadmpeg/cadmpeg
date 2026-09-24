@@ -172,3 +172,68 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .flatten()
         .all(|point| point.z == 2.0));
 }
+
+#[test]
+fn nurbs_stores_hand_out_their_admitted_poles_knots_and_weights() {
+    use crate::test_support::nurbs::{pcurve, polar};
+
+    let curve = curve();
+    assert_eq!(curve.control_points(), curve.pole_rows().points());
+    assert_eq!(curve.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(
+        curve.knots().iter().copied().collect::<Vec<_>>(),
+        [2.0, 2.0, 5.0, 5.0]
+    );
+    assert_eq!(
+        curve.weights().map(|weights| weights
+            .into_iter()
+            .map(crate::scalar::NonZeroReal::get)
+            .collect()),
+        curve.pole_rows().weights()
+    );
+    assert_eq!(curve.full_knot_endpoints().endpoints(), [2.0, 5.0]);
+    let mut reversed = curve.clone();
+    reversed.reverse_parameterization();
+    assert_eq!(reversed.knots().as_slice(), [-5.0, -5.0, -2.0, -2.0]);
+
+    let surface = surface();
+    assert_eq!(surface.control_grid(), surface.pole_grid().points());
+    assert_eq!(surface.poles(), surface.pole_grid().points().concat());
+    assert_eq!(
+        surface.pole(1, 0).map(|pole| pole.get()),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+    assert_eq!(surface.pole(2, 0), None);
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(surface.weight(1, 1).map(|weight| weight.get()), Some(-2.0));
+    assert_eq!(
+        surface.pole_weights().map(|weights| weights
+            .into_iter()
+            .map(crate::scalar::NonZeroReal::get)
+            .collect()),
+        surface.pole_grid().weights().map(|rows| rows.concat())
+    );
+
+    let pcurve = pcurve();
+    assert_eq!(pcurve.control_points(), pcurve.pole_rows().points());
+    assert_eq!(pcurve.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(pcurve.full_knot_endpoints().endpoints(), [2.0, 5.0]);
+    assert_eq!(
+        pcurve.weights().map(|weights| weights
+            .into_iter()
+            .map(crate::scalar::NonZeroReal::get)
+            .collect()),
+        pcurve.pole_rows().weights()
+    );
+
+    let polar = polar();
+    assert_eq!(polar.knots().as_slice(), [2.0, 2.0, 5.0, 5.0]);
+    assert_eq!(
+        polar.weights().map(|weights| weights
+            .into_iter()
+            .map(crate::scalar::NonZeroReal::get)
+            .collect()),
+        polar.pole_rows().weights()
+    );
+}

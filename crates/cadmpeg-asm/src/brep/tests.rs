@@ -108,7 +108,7 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let weights = quadratic.weights().unwrap();
     let homogeneous = |index: usize| {
         let point = quadratic.control_points()[index];
-        let weight = weights[index] * 7.0;
+        let weight = weights[index].get() * 7.0;
         [point.x * weight, point.y * weight, point.z * weight, weight]
     };
     let combine = |first: [f64; 4], first_scale: f64, second: [f64; 4], second_scale: f64| {
@@ -163,9 +163,12 @@ fn degree_elevated_circle() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
 #[test]
 fn exact_circle_recognition_is_projective_and_degree_invariant() {
     let mut scaled = exact_circle_directrix();
-    let scaled_weights = scaled
-        .weights()
-        .map(|weights| weights.into_iter().map(|weight| weight * 7.0).collect());
+    let scaled_weights = scaled.weights().map(|weights| {
+        weights
+            .into_iter()
+            .map(|weight| weight.get() * 7.0)
+            .collect()
+    });
     {
         let replacement = cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_lanes(
             scaled.pole_rows().points(),
@@ -1084,7 +1087,12 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
 
     assert_eq!(brep.edges.len(), 1);
     assert_eq!(brep.edges[0].curve(), None);
-    assert_eq!(brep.edges[0].param_range(), Some([1.0, 0.0]));
+    assert_eq!(
+        brep.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 0.0])
+    );
 }
 
 #[test]
@@ -1170,8 +1178,15 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
             let rescaled = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 curve.degree(),
                 curve.knots().to_vec(),
-                curve.control_points(),
-                Some(curve.weights().unwrap().iter().map(|w| w * scale).collect()),
+                curve.pole_rows().points(),
+                Some(
+                    curve
+                        .weights()
+                        .unwrap()
+                        .iter()
+                        .map(|w| w.get() * scale)
+                        .collect(),
+                ),
                 false,
             )
             .unwrap();
@@ -1183,7 +1198,7 @@ fn circle_recognition_is_invariant_under_common_weight_scale() {
         let polynomial = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             curve.degree(),
             curve.knots().to_vec(),
-            curve.control_points(),
+            curve.pole_rows().points(),
             Some(vec![scale; 9]),
             false,
         )

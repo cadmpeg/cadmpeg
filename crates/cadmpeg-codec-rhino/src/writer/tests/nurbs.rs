@@ -62,7 +62,9 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
             .model
             .edges
             .iter()
-            .find(|edge| edge.param_range() == Some([2.0, 5.0]))
+            .find(|edge| {
+                edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([2.0, 5.0])
+            })
             .expect("NURBS edge domain");
         let curve = decoded
             .ir()
@@ -184,12 +186,20 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
             .model
             .pcurves
             .iter()
-            .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
+            .filter(|pcurve| {
+                pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.001)
+            })
             .collect::<Vec<_>>();
         assert_eq!(explicit.len(), 2, "{version:?}");
         assert!(explicit.iter().all(|pcurve| {
             pcurve.wrapper_reversed() == Some(false)
-                && pcurve.parameter_range() == Some([2.0, 5.0])
+                && pcurve
+                    .parameter_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    == Some([2.0, 5.0])
                 && matches!(
                     pcurve.geometry,
                     cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
@@ -220,9 +230,7 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
             None,
-            (ir.model.edges[0].param_range()).map(|value| {
-                cadmpeg_ir::units::FiniteVector::new(value).expect("finite fixture range")
-            }),
+            ir.model.edges[0].param_range(),
             None,
         ),
     });
@@ -358,9 +366,19 @@ fn explicit_line_pcurve_round_trips_as_native_c2() {
             .model
             .pcurves
             .iter()
-            .find(|pcurve| pcurve.fit_tolerance() == Some(0.002))
+            .find(|pcurve| {
+                pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.002)
+            })
             .expect("explicit line C2");
-        assert_eq!(pcurve.parameter_range(), Some([0.0, 2.0]));
+        assert_eq!(
+            pcurve
+                .parameter_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 2.0])
+        );
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
             panic!("line C2 must decode as NURBS");
         };
@@ -414,12 +432,10 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
             "{version:?}"
         );
         assert_eq!(decoded.ir().model.pcurves.len(), 4, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .pcurves
-            .iter()
-            .all(|pcurve| pcurve.fit_tolerance() == Some(0.001)));
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            == Some(0.001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }
@@ -454,7 +470,9 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
         assert_eq!(decoded.ir().model.faces.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.surfaces[0].geometry, expected_surface);
         assert_eq!(
-            decoded.ir().model.edges[1].param_range(),
+            decoded.ir().model.edges[1]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
             Some([30.0, 32.0])
         );
         let shared_uses = decoded
@@ -481,7 +499,10 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
                 .model
                 .pcurves
                 .iter()
-                .filter(|pcurve| pcurve.fit_tolerance() == Some(0.001))
+                .filter(|pcurve| pcurve
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get)
+                    == Some(0.001))
                 .count(),
             4,
             "{version:?}"
@@ -492,8 +513,14 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             .pcurves
             .iter()
             .find(|pcurve| {
-                pcurve.parameter_range() == Some([30.0, 32.0])
-                    && pcurve.fit_tolerance() != Some(0.001)
+                pcurve
+                    .parameter_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    == Some([30.0, 32.0])
+                    && pcurve
+                        .fit_tolerance()
+                        .map(cadmpeg_ir::geometry::FitTolerance::get)
+                        != Some(0.001)
             })
             .expect("generated planar shared-edge pcurve");
         assert!(matches!(
@@ -578,12 +605,10 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
         assert_eq!(decoded.ir().model.curves[0].geometry, expected_curve);
         assert_eq!(decoded.ir().model.loops.len(), 2, "{version:?}");
         assert_eq!(decoded.ir().model.pcurves.len(), 7, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .pcurves
-            .iter()
-            .all(|pcurve| pcurve.fit_tolerance() == Some(0.0001)));
+        assert!(decoded.ir().model.pcurves.iter().all(|pcurve| pcurve
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get)
+            == Some(0.0001)));
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
     }
 }

@@ -455,7 +455,7 @@ fn source_periodic(curve: &NurbsCurve) -> bool {
         return false;
     }
     let degree = curve.degree() as usize;
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     control_points.len() >= degree
         && (0..degree).all(|offset| {
             points_coincident(
@@ -470,8 +470,8 @@ fn evaluate_profile_point(
     parameter: f64,
     offset: usize,
 ) -> Result<Point3, GeometryError> {
-    let control_points = curve.control_points();
-    let weights = curve.weights();
+    let control_points = curve.pole_rows().points();
+    let weights = curve.pole_rows().weights();
     nurbs_curve_point(
         curve.degree(),
         curve.knots(),
@@ -517,7 +517,7 @@ fn transform_nurbs(
     let transformed = result
         .control_points()
         .into_iter()
-        .map(|point| transform_local(point, origin, xaxis, yaxis, zaxis, miter, offset))
+        .map(|point| transform_local(point.get(), origin, xaxis, yaxis, zaxis, miter, offset))
         .collect::<Result<Vec<_>, _>>()?;
     let mut transformed = transformed.into_iter();
     result
@@ -576,7 +576,7 @@ fn cap_pcurve(
     frame: (Vector3, Vector3, Vector3),
     offset: usize,
 ) -> Result<CapPcurve, GeometryError> {
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     let mut points = Vec::with_capacity(control_points.len());
     for point in control_points {
         let delta = point.vector_from(origin);
@@ -590,7 +590,7 @@ fn cap_pcurve(
         degree: curve.degree(),
         knots: curve.knots().to_vec(),
         control_points: points,
-        weights: curve.weights(),
+        weights: curve.pole_rows().weights(),
         periodic: curve.periodic(),
     })
 }
@@ -1271,7 +1271,7 @@ pub(crate) mod tests {
             .expect("required invariant");
             assert_eq!(decoded.boundaries.len(), 1);
             assert_eq!(
-                decoded.boundaries[0].lateral.v_knots(),
+                decoded.boundaries[0].lateral.v_knots().as_slice(),
                 vec![4.0, 4.0, 9.0, 9.0]
             );
             assert_eq!(

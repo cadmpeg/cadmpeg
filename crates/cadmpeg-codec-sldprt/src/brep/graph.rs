@@ -6,6 +6,7 @@
 //! explicit body records. It derives one body hierarchy when those records are
 //! absent. It also derives supported pcurves and periodic seams.
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
 
@@ -667,7 +668,7 @@ fn resolve_sweep_surface(
             if point_lo > point_hi {
                 return None;
             }
-            let pole_travel: Vec<f64> = curve.control_points().iter().map(project).collect();
+            let pole_travel: Vec<f64> = curve.pole_rows().points().iter().map(project).collect();
             let pole_lo = pole_travel.iter().copied().fold(f64::INFINITY, f64::min);
             let pole_hi = pole_travel
                 .iter()
@@ -2927,7 +2928,7 @@ fn derive_cylindrical_pcurves(
                         )
                     })
                     .collect::<Vec<_>>();
-                let curve_weights = nurbs.weights();
+                let curve_weights = nurbs.pole_rows().weights();
                 if !quadratic_nurbs_has_constant_radius(
                     &radial_control_points,
                     curve_weights.as_deref(),
@@ -2937,7 +2938,7 @@ fn derive_cylindrical_pcurves(
                     continue;
                 }
                 parameter_range = if let Some(range) = edge.param_range() {
-                    Some(range)
+                    Some(range.get())
                 } else {
                     let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end))
                     else {
@@ -2977,7 +2978,7 @@ fn derive_cylindrical_pcurves(
                     nurbs.degree(),
                     nurbs.knots().to_vec(),
                     poles,
-                    nurbs.weights(),
+                    nurbs.pole_rows().weights(),
                     nurbs.periodic(),
                 ) {
                     Ok(polar) => polar,
@@ -3202,8 +3203,8 @@ fn nurbs_parameter_at_point(
     nurbs: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     target: cadmpeg_ir::math::Point3,
 ) -> InverseResolution<f64> {
-    let control_points = nurbs.control_points();
-    let weights = nurbs.weights();
+    let control_points = nurbs.pole_rows().points();
+    let weights = nurbs.pole_rows().weights();
     let squared_distance = |parameter: f64| {
         let point = nurbs_curve_point(
             nurbs.degree(),
@@ -3229,8 +3230,8 @@ fn nurbs_parameter_at_point(
         inverse_coordinate_tolerance(
             nurbs
                 .control_points()
-                .iter()
-                .copied()
+                .into_iter()
+                .map(FinitePoint3::get)
                 .chain(std::iter::once(target)),
         ),
         domain,
@@ -3861,7 +3862,7 @@ fn derive_nurbs_isoparametric_pcurves(
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: (pcurve.parameter_range())
-                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                    .map(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range.get()))
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             }];
@@ -3938,8 +3939,6 @@ fn intersection_support_pcurve(
     if chart.degree() != 1
         || chart.weights().is_some()
         || chart.periodic()
-        || chart.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(chart.knots())
         || !support_data.fit_tolerance_mm.is_finite()
         || support_data.fit_tolerance_mm <= 0.0
     {
@@ -3958,10 +3957,10 @@ fn intersection_support_pcurve(
         *chart.control_points().first()?,
         *chart.control_points().last()?,
     ];
-    let direct_error = squared_distance(model_endpoints[0], edge_endpoints[0])
-        + squared_distance(model_endpoints[1], edge_endpoints[1]);
-    let reverse_error = squared_distance(model_endpoints[0], edge_endpoints[1])
-        + squared_distance(model_endpoints[1], edge_endpoints[0]);
+    let direct_error = squared_distance(model_endpoints[0].get(), edge_endpoints[0])
+        + squared_distance(model_endpoints[1].get(), edge_endpoints[1]);
+    let reverse_error = squared_distance(model_endpoints[0].get(), edge_endpoints[1])
+        + squared_distance(model_endpoints[1].get(), edge_endpoints[0]);
     let targets = if direct_error <= reverse_error {
         edge_endpoints
     } else {
@@ -3995,11 +3994,11 @@ fn intersection_support_pcurve(
     } else {
         match surface {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                let mut control_points = Vec::with_capacity(chart.control_points().len());
+                let mut control_points = Vec::with_capacity(chart.pole_rows().points().len());
                 for point in chart.control_points() {
                     let parameters = nurbs_surface_parameter_within_tolerance(
                         surface,
-                        point,
+                        point.get(),
                         control_points.last().copied(),
                         support_data.fit_tolerance_mm,
                     )?;
@@ -4009,7 +4008,8 @@ fn intersection_support_pcurve(
             }
             _ => {
                 let mut control_points = chart
-                    .control_points()
+                    .pole_rows()
+                    .points()
                     .iter()
                     .copied()
                     .map(|point| {
@@ -4128,7 +4128,7 @@ fn intersection_support_pcurve(
     let control_errors = mapped_points
         .iter()
         .zip(chart.control_points())
-        .map(|(point, target)| squared_distance(*point, target).sqrt())
+        .map(|(point, target)| squared_distance(*point, target.get()).sqrt())
         .collect::<Vec<_>>();
     if control_errors
         .iter()
@@ -4145,7 +4145,7 @@ fn intersection_support_pcurve(
                 nurbs_surface_parameter_segment_chord_bound(
                     surface,
                     [parameters[0], parameters[1]],
-                    [chord[0], chord[1]],
+                    [chord[0].get(), chord[1].get()],
                 )
                 .is_none_or(|error| error > support_data.fit_tolerance_mm)
             }
@@ -4229,7 +4229,8 @@ fn nurbs_boundary_pcurve(
         surface
             .poles()
             .into_iter()
-            .chain(curve.control_points().iter().copied()),
+            .chain(curve.control_points())
+            .map(FinitePoint3::get),
     );
     let same_curve = |candidate: &cadmpeg_ir::geometry::nurbs::NurbsCurve| {
         candidate.degree() == curve.degree()
@@ -4251,7 +4252,7 @@ fn nurbs_boundary_pcurve(
                 (Some(candidate), Some(actual)) => {
                     candidate.len() == actual.len()
                         && candidate.iter().zip(actual).all(|(candidate, actual)| {
-                            (candidate - actual).abs() <= EPS_NURBS_WEIGHT
+                            (candidate.get() - actual.get()).abs() <= EPS_NURBS_WEIGHT
                         })
                 }
                 _ => false,
@@ -4339,9 +4340,7 @@ fn nurbs_strict_isocurve_pcurve(
         if fixed_degree != 1
             || fixed_count != 2
             || fixed_periodic
-            || fixed_knots != [fixed_min, fixed_min, fixed_max, fixed_max]
-            || !fixed_min.is_finite()
-            || !fixed_max.is_finite()
+            || fixed_knots.as_slice() != [fixed_min, fixed_min, fixed_max, fixed_max]
             || fixed_min >= fixed_max
         {
             return nurbs_boundary_pcurve(surface, curve, fixed_axis);
@@ -4359,16 +4358,15 @@ fn nurbs_strict_isocurve_pcurve(
         if surface_weights.as_ref().is_some_and(|weights| {
             (0..varying_count).any(|varying| {
                 let (a, b) = pole_indices(varying);
-                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
+                (weights[a].get() - weights[b].get()).abs() > EPS_NURBS_WEIGHT
             })
         }) || match (curve.weights(), expected_weights.as_deref()) {
             (None, None) => false,
             (Some(actual), Some(expected)) => {
                 actual.len() != expected.len()
-                    || actual
-                        .iter()
-                        .zip(expected)
-                        .any(|(actual, expected)| (actual - expected).abs() > EPS_NURBS_WEIGHT)
+                    || actual.iter().zip(expected).any(|(actual, expected)| {
+                        (actual.get() - expected.get()).abs() > EPS_NURBS_WEIGHT
+                    })
             }
             _ => true,
         } {
@@ -4394,7 +4392,8 @@ fn nurbs_strict_isocurve_pcurve(
             surface
                 .poles()
                 .into_iter()
-                .chain(curve.control_points().iter().copied()),
+                .chain(curve.control_points())
+                .map(FinitePoint3::get),
         );
         if delta_squared <= f64::EPSILON {
             let all_equal = (0..varying_count).all(|varying| {
@@ -4474,9 +4473,6 @@ fn nurbs_active_domain(knots: &[f64], degree: u32, count: usize) -> Option<[f64;
     if count <= degree || knots.len() != count.checked_add(degree)?.checked_add(1)? {
         return None;
     }
-    if knots.iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(knots) {
-        return None;
-    }
     let domain = [*knots.get(degree)?, *knots.get(count)?];
     (domain[0] < domain[1]).then_some(domain)
 }
@@ -4508,13 +4504,23 @@ fn nurbs_representation_matches(
         .iter()
         .chain(&actual_points)
         .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
-        .chain(expected_weights.iter().flatten().copied().map(f64::abs))
-        .chain(actual_weights.iter().flatten().copied().map(f64::abs))
+        .chain(
+            expected_weights
+                .iter()
+                .flatten()
+                .map(|weight| weight.get().abs()),
+        )
+        .chain(
+            actual_weights
+                .iter()
+                .flatten()
+                .map(|weight| weight.get().abs()),
+        )
         .fold(1.0_f64, f64::max);
     expected
         .knots()
         .iter()
-        .zip(actual.knots())
+        .zip(actual.knots().iter())
         .all(|(left, right)| nurbs_roundoff_equal(*left, *right, scale))
         && expected_points
             .iter()
@@ -4531,7 +4537,7 @@ fn nurbs_representation_matches(
                     && expected
                         .iter()
                         .zip(actual)
-                        .all(|(left, right)| nurbs_roundoff_equal(*left, *right, scale))
+                        .all(|(left, right)| nurbs_roundoff_equal(left.get(), right.get(), scale))
             }
             _ => false,
         }
@@ -4540,21 +4546,13 @@ fn nurbs_representation_matches(
 fn nurbs_homogeneous_controls(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Option<Vec<[f64; 4]>> {
-    if curve.knots().iter().any(|knot| !knot.is_finite()) || !knots_nondecreasing(curve.knots()) {
-        return None;
-    }
     curve
         .control_points()
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let weight = curve.weights().map_or(1.0, |weights| weights[index]);
-            (point.is_finite() && weight.is_finite() && weight > 0.0).then_some([
-                point.x * weight,
-                point.y * weight,
-                point.z * weight,
-                weight,
-            ])
+            let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
+            (weight > 0.0).then_some([point.x * weight, point.y * weight, point.z * weight, weight])
         })
         .collect()
 }
@@ -4759,8 +4757,8 @@ fn extended_nurbs_isocurve_axis_candidate(
     ];
     if overlap[0] < overlap[1] {
         let parameter = overlap[0].midpoint(overlap[1]);
-        let control_points = curve.control_points();
-        let weights = curve.weights();
+        let control_points = curve.pole_rows().points();
+        let weights = curve.pole_rows().weights();
         if let Some(point) = nurbs_curve_point(
             curve.degree(),
             curve.knots(),
@@ -4772,6 +4770,7 @@ fn extended_nurbs_isocurve_axis_candidate(
                 surface
                     .poles()
                     .into_iter()
+                    .map(FinitePoint3::get)
                     .chain(std::iter::once(point.get())),
             );
             if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point.get(), None)
@@ -4912,8 +4911,8 @@ fn nurbs_edge_endpoint_parameters(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Option<[cadmpeg_ir::math::Point2; 2]> {
-    let control_points = curve.control_points();
-    let weights = curve.weights();
+    let control_points = curve.pole_rows().points();
+    let weights = curve.pole_rows().weights();
     let curve_points = range.map(|parameter| {
         nurbs_curve_point(
             curve.degree(),
@@ -4929,7 +4928,13 @@ fn nurbs_edge_endpoint_parameters(
     // The inverse-projection tolerance of this surface's coordinates against
     // the NURBS endpoint tolerance.
     let tolerance = looser_tolerance(
-        inverse_coordinate_tolerance(surface.poles().into_iter().chain([first.get(), last.get()])),
+        inverse_coordinate_tolerance(
+            surface
+                .poles()
+                .into_iter()
+                .chain([first, last])
+                .map(FinitePoint3::get),
+        ),
         NURBS_ENDPOINT_TOLERANCE_MM,
     );
     let project = |point| {
@@ -4948,8 +4953,8 @@ fn nurbs_curve_surface_deviation(
     let parameters = nurbs_curve_sample_parameters(curve, range)?;
     let mut seed = None;
     let mut maximum = 0.0_f64;
-    let control_points = curve.control_points();
-    let weights = curve.weights();
+    let control_points = curve.pole_rows().points();
+    let weights = curve.pole_rows().weights();
     for parameter in parameters {
         let point = nurbs_curve_point(
             curve.degree(),
@@ -4976,14 +4981,10 @@ fn nurbs_degree_one_cache_lanes(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Option<(Vec<cadmpeg_ir::math::Point2>, f64)> {
-    if curve.degree() != 1
-        || curve.weights().is_some()
-        || curve.periodic()
-        || !knots_nondecreasing(curve.knots())
-    {
+    if curve.degree() != 1 || curve.weights().is_some() || curve.periodic() {
         return None;
     }
-    let curve_points = curve.control_points();
+    let curve_points = curve.pole_rows().points();
     let mut control_points = Vec::with_capacity(curve_points.len());
     let mut seed = None;
     for point in &curve_points {
@@ -5040,7 +5041,7 @@ fn nurbs_edge_parameter_range(
 ) -> Option<[f64; 2]> {
     let domain = nurbs_curve_parameter_domain(curve)?;
     let range = if let Some(range) = edge.param_range() {
-        range
+        range.get()
     } else {
         let [start, end] = endpoints?;
         match (
@@ -5119,9 +5120,7 @@ fn ruled_surface_line_pcurve(
     if varying_degree != 1
         || varying_count != 2
         || varying_periodic
-        || varying_knots != [varying_min, varying_min, varying_max, varying_max]
-        || !varying_min.is_finite()
-        || !varying_max.is_finite()
+        || varying_knots.as_slice() != [varying_min, varying_min, varying_max, varying_max]
         || varying_min >= varying_max
         || surface.pole_weights().is_some_and(|weights| {
             (0..fixed_count).any(|fixed| {
@@ -5129,7 +5128,7 @@ fn ruled_surface_line_pcurve(
                     SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
                     SurfaceParameterAxis::V => (fixed, vc + fixed),
                 };
-                (weights[a] - weights[b]).abs() > EPS_NURBS_WEIGHT
+                (weights[a].get() - weights[b].get()).abs() > EPS_NURBS_WEIGHT
             })
         })
     {
@@ -5192,6 +5191,7 @@ fn ruled_surface_line_pcurve(
             surface
                 .poles()
                 .into_iter()
+                .map(FinitePoint3::get)
                 .chain(std::iter::once(line_origin)),
         ),
         [fixed_min, fixed_max],

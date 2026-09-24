@@ -62,12 +62,12 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
             range,
             HelixFrame {
                 center,
-                major,
-                minor,
-                pitch,
-                axis
+                major: major.get(),
+                minor: minor.get(),
+                pitch: pitch.get(),
+                axis: axis.get()
             },
-            apex,
+            apex.get(),
             None
         )
         .is_err());
@@ -76,12 +76,12 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         [0.0, 0.0],
         HelixFrame {
             center,
-            major,
-            minor,
-            pitch,
-            axis
+            major: major.get(),
+            minor: minor.get(),
+            pitch: pitch.get(),
+            axis: axis.get()
         },
-        apex,
+        apex.get(),
         None
     )
     .is_ok());
@@ -90,42 +90,42 @@ fn helix_curve_admission_rejects_the_validator_numeric_states() {
         Vector3::new(f64::EPSILON, 0.0, 0.0),
     ] {
         assert!(HelixCurveConstruction::try_new(
-            range,
+            range.get(),
             HelixFrame {
                 center,
                 major: vector,
-                minor,
-                pitch,
-                axis
+                minor: minor.get(),
+                pitch: pitch.get(),
+                axis: axis.get()
             },
-            apex,
+            apex.get(),
             None
         )
         .is_err());
         assert!(HelixCurveConstruction::try_new(
-            range,
+            range.get(),
             HelixFrame {
                 center,
-                major,
-                minor,
-                pitch,
+                major: major.get(),
+                minor: minor.get(),
+                pitch: pitch.get(),
                 axis: vector
             },
-            apex,
+            apex.get(),
             None
         )
         .is_err());
     }
     assert!(HelixCurveConstruction::try_new(
-        range,
+        range.get(),
         HelixFrame {
             center,
-            major,
+            major: major.get(),
             minor: Vector3::new(0.0, 2.0, 0.0),
-            pitch,
-            axis
+            pitch: pitch.get(),
+            axis: axis.get()
         },
-        apex,
+        apex.get(),
         None
     )
     .is_err());
@@ -154,7 +154,7 @@ fn helix_curve_scaling_is_atomic_and_reversal_preserves_admission() {
         assert_eq!(value, old);
     }
     value.try_reverse_parameterization().unwrap();
-    assert_eq!(*value.angle_range(), [-1.0, 0.0]);
+    assert_eq!(value.angle_range().get(), [-1.0, 0.0]);
     value.try_reverse_parameterization().unwrap();
     assert_eq!(value, old);
     value.try_scale_lengths(2.0).unwrap();

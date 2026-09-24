@@ -197,7 +197,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.ir().model.curves.iter().any(
         |curve| matches!(curve.geometry, CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve))
                 if {
@@ -210,8 +210,8 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
         if nurbs.degree() == 2
-            && nurbs.knots() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
-            && nurbs.weights() == Some(vec![1.0, 0.5, 1.0])
+            && nurbs.knots().as_slice() == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && nurbs.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])
     )));
     assert_eq!(result.ir().model.surfaces.len(), 10);
     assert!(result
@@ -275,7 +275,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if curve.id.as_str() == "step:data:curve#48"
             && nurbs.degree() == 1
-            && nurbs.knots() == [0.0, 0.0, 1.0, 2.0, 2.0]
+            && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 2.0, 2.0]
     )));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
@@ -292,9 +292,9 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 2
             && nurbs.v_count() == 2
-            && nurbs.u_knots() == [0.0, 0.0, 1.0, 1.0]
-            && nurbs.v_knots() == [0.0, 0.0, 1.0, 1.0]
-            && nurbs.pole_weights() == Some(vec![1.0, 1.0, 1.0, 0.75])
+            && nurbs.u_knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.v_knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
+            && nurbs.pole_grid().weights().map(|rows| rows.concat()) == Some(vec![1.0, 1.0, 1.0, 0.75])
     )));
     assert!(result.ir().model.surfaces.iter().any(
         |surface| matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
@@ -346,7 +346,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .expect("Cartesian trimmed curve");
     assert!(match cartesian_trim.definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) =>
-            matches!((matched_payload.parameter_range(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
+            matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if *start == 0.0 && (*end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12),
         _ => false,
     });
     let (source, parameter_range) = result
@@ -364,7 +364,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         })
         .expect("trimmed curve was not retained as a subset construction");
     assert_eq!(source.as_str(), "step:data:curve#8");
-    assert_eq!(parameter_range, [0.0, std::f64::consts::FRAC_PI_2]);
+    assert_eq!(
+        parameter_range.endpoints(),
+        [0.0, std::f64::consts::FRAC_PI_2]
+    );
     assert!(result
         .ir()
         .model
@@ -373,7 +376,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .any(|curve| match curve.definition() {
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset(matched_payload) =>
                 matches!(
-                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (
+                        matched_payload.distance().get(),
+                        matched_payload.self_intersect(),
+                    ),
                     (1.0, None,)
                 ),
             _ => false,
@@ -414,7 +420,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         match surface.definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset(matched_payload) => {
                 matches!(
-                    (matched_payload.distance(), matched_payload.self_intersect(),),
+                    (
+                        matched_payload.distance().get(),
+                        matched_payload.self_intersect(),
+                    ),
                     (0.5, Some(false),)
                 )
             }

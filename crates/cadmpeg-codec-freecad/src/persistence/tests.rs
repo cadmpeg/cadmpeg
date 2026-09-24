@@ -311,7 +311,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             assert_eq!(nurbs.degree(), 2);
             assert_eq!(nurbs.control_points().len(), 3);
-            assert_eq!(nurbs.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
             assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected curve {other:?}"),
@@ -320,7 +320,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     match result.ir().model.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
             let parameter_range = definition_payload.parameter_range();
-            assert_eq!(*parameter_range, [0.0, 5.0]);
+            assert_eq!(parameter_range.endpoints(), [0.0, 5.0]);
         }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
@@ -383,8 +383,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
             assert_eq!(nurbs.poles().len(), 4);
-            assert_eq!(nurbs.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-            assert_eq!(nurbs.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
             assert!(nurbs.weights().is_none());
         }
         other => panic!("unexpected surface {other:?}"),

@@ -2017,7 +2017,7 @@ fn conical_trim(
                     || nurbs.control_points().len() != 2
                     || nurbs.control_points().iter().any(|point| {
                         surface.solved().is_none_or(|surface| {
-                            analytic_surface_residual(surface, *point)
+                            analytic_surface_residual(surface, point.get())
                                 .is_none_or(|residual| residual > tolerance)
                         })
                     })

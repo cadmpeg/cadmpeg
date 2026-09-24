@@ -380,17 +380,10 @@ fn nurbs_translation_candidate(
             nurbs.u_periodic(),
         )
     };
-    let [first, second, third, fourth] = knots else {
+    let [first, second, third, fourth] = knots.as_slice() else {
         return None;
     };
-    (degree == 1
-        && count == 2
-        && !periodic
-        && first.is_finite()
-        && fourth.is_finite()
-        && first == second
-        && third == fourth
-        && first < third)
+    (degree == 1 && count == 2 && !periodic && first == second && third == fourth && first < third)
         .then_some(())?;
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
@@ -409,19 +402,11 @@ fn nurbs_translation_candidate(
         let end = *poles.get(end_index)?;
         let start = [start.x, start.y, start.z];
         let end = [end.x, end.y, end.z];
-        start
-            .into_iter()
-            .chain(end)
-            .all(f64::is_finite)
-            .then_some(())?;
         if let Some(weights) = &pole_weights {
-            let start_weight = *weights.get(start_index)?;
-            let end_weight = *weights.get(end_index)?;
-            (start_weight.is_finite()
-                && end_weight.is_finite()
-                && (start_weight - end_weight).abs()
-                    <= EPS_SWEEP_EXTENT_DEGENERATE
-                        * start_weight.abs().max(end_weight.abs()).max(1.0))
+            let start_weight = weights.get(start_index)?.get();
+            let end_weight = weights.get(end_index)?.get();
+            ((start_weight - end_weight).abs()
+                <= EPS_SWEEP_EXTENT_DEGENERATE * start_weight.abs().max(end_weight.abs()).max(1.0))
             .then_some(())?;
         }
         let candidate = std::array::from_fn(|axis| end[axis] - start[axis]);

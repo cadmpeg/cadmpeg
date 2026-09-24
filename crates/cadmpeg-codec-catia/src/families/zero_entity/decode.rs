@@ -1173,7 +1173,12 @@ mod tests {
         .expect("valid exactness fields");
 
         assert_eq!(counts.edges, 2);
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
     }
 
     #[test]
@@ -1313,8 +1318,18 @@ mod tests {
         );
         assert!(matches!(ir.model.bodies[0].kind, BodyKind::Wire));
         assert_eq!(ir.model.shells[0].wire_edges().len(), 4);
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
-        assert_eq!(ir.model.edges[1].param_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
+        assert_eq!(
+            ir.model.edges[1]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
         assert_eq!(
             ir.model.edges[1].curve().cloned(),
             Some(CurveId::mint("catia:test:curve#1".to_string()).expect("identity grammar"))
@@ -1451,10 +1466,17 @@ mod tests {
 
         assert_eq!(counts.loops, 1);
         assert_eq!(
-            ir.model.edges[0].param_range(),
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
             Some([start_angle, end_angle])
         );
-        assert_eq!(ir.model.edges[1].param_range(), Some([0.0, chord]));
+        assert_eq!(
+            ir.model.edges[1]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, chord])
+        );
         assert!(crate::assemble::neutral_model_is_admissible(&mut ir, &[]));
     }
 
@@ -1556,8 +1578,18 @@ mod tests {
         assert_eq!(counts.bodies, 1);
         assert_eq!(counts.loops, 1);
         assert_eq!(counts.edges, 2);
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
-        assert_eq!(ir.model.edges[1].param_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
+        assert_eq!(
+            ir.model.edges[1]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
         assert_eq!(ir.model.edges[0].curve().cloned(), Some(curve_id.clone()));
         let derived_curve_id = CurveId::mint("catia:zero-entity:wire-curve#1-2-3-1".to_string())
             .expect("identity grammar");

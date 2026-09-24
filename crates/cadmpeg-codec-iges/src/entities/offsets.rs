@@ -206,7 +206,7 @@ fn source_parameter_range(
     candidates
         .iter()
         .all(|candidate| *candidate == range)
-        .then_some(range)
+        .then_some(range.get())
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -748,7 +748,7 @@ pub(super) fn project(
                         controls.clear();
                         break;
                     };
-                    let Some(distance) = coordinate(function_control, coordinate_index.get())
+                    let Some(distance) = coordinate(function_control.get(), coordinate_index.get())
                     else {
                         controls.clear();
                         break;

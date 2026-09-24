@@ -164,40 +164,40 @@ impl SurfaceOffsetCurveConstruction {
         &self.discontinuity_flag
     }
     /// Return the base u range.
-    pub fn base_u_range(&self) -> &[f64; 2] {
-        self.base_u_range.as_raw()
+    pub fn base_u_range(&self) -> &ParameterInterval {
+        &self.base_u_range
     }
     /// Return the base v range.
-    pub fn base_v_range(&self) -> &[f64; 2] {
-        self.base_v_range.as_raw()
+    pub fn base_v_range(&self) -> &ParameterInterval {
+        &self.base_v_range
     }
     /// Return the base.
     pub fn base(&self) -> &CurveId {
         &self.base
     }
     /// Return the base range.
-    pub fn base_range(&self) -> &[f64; 2] {
-        self.base_range.as_raw()
+    pub fn base_range(&self) -> &ParameterInterval {
+        &self.base_range
     }
     /// Return the base endpoints.
-    pub fn base_endpoints(&self) -> [Option<f64>; 2] {
-        self.base_endpoints.map(|value| value.map(FiniteReal::get))
+    pub fn base_endpoints(&self) -> [Option<FiniteReal>; 2] {
+        self.base_endpoints
     }
     /// Return the cache first.
     pub const fn cache_first(&self) -> Option<&CacheFirstCurveForm> {
         self.cache.form()
     }
     /// Return the distance.
-    pub fn distance(&self) -> &f64 {
-        self.distance.as_raw()
+    pub fn distance(&self) -> FiniteReal {
+        self.distance
     }
     /// Return the shift.
-    pub fn shift(&self) -> &f64 {
-        self.shift.as_raw()
+    pub fn shift(&self) -> FiniteReal {
+        self.shift
     }
     /// Return the scale.
-    pub fn scale(&self) -> &f64 {
-        self.scale.as_raw()
+    pub fn scale(&self) -> FiniteReal {
+        self.scale
     }
 }
 
@@ -339,9 +339,8 @@ impl DeformableCurveConstruction {
         &self.source
     }
     /// Return the source parameter range.
-    pub fn source_parameter_range(&self) -> [Option<f64>; 2] {
+    pub fn source_parameter_range(&self) -> [Option<FiniteReal>; 2] {
         self.source_parameter_range
-            .map(|value| value.map(FiniteReal::get))
     }
     /// Return the data.
     pub fn data(&self) -> &DeformableCurveData {
@@ -562,12 +561,12 @@ impl SpatialOffsetCurveConstruction {
         &self.source
     }
     /// Return the distance.
-    pub fn distance(&self) -> &f64 {
-        self.distance.as_raw()
+    pub fn distance(&self) -> FiniteReal {
+        self.distance
     }
     /// Return the reference direction.
-    pub fn reference_direction(&self) -> &Vector3 {
-        self.reference_direction.as_raw()
+    pub fn reference_direction(&self) -> &FiniteVector3 {
+        &self.reference_direction
     }
     /// Return the self intersect.
     pub fn self_intersect(&self) -> &Option<bool> {
@@ -648,8 +647,8 @@ impl TwoSidedOffsetCurveConstruction {
         &self.discontinuity_flag
     }
     /// Return the offsets.
-    pub fn offsets(&self) -> &[f64; 2] {
-        self.offsets.as_raw()
+    pub fn offsets(&self) -> &FiniteVector<2> {
+        &self.offsets
     }
 }
 
@@ -729,12 +728,12 @@ impl VectorOffsetCurveConstruction {
         &self.source
     }
     /// Return the parameter range.
-    pub fn parameter_range(&self) -> &[f64; 2] {
-        self.parameter_range.as_raw()
+    pub fn parameter_range(&self) -> &ParameterInterval {
+        &self.parameter_range
     }
     /// Return the offset.
-    pub fn offset(&self) -> &Vector3 {
-        self.offset.as_raw()
+    pub fn offset(&self) -> &FiniteVector3 {
+        &self.offset
     }
     /// Return the roles.
     pub fn roles(&self) -> &VectorOffsetRoles {
@@ -814,8 +813,8 @@ impl SubsetCurveConstruction {
         &self.source
     }
     /// Return the parameter range.
-    pub fn parameter_range(&self) -> &[f64; 2] {
-        self.parameter_range.as_raw()
+    pub fn parameter_range(&self) -> &ParameterInterval {
+        &self.parameter_range
     }
     /// Return the sense.
     pub fn sense(&self) -> &bool {
@@ -894,8 +893,8 @@ impl SilhouetteCurveConstruction {
         &self.cast_surface
     }
     /// Return the light direction.
-    pub fn light_direction(&self) -> &Vector3 {
-        self.light_direction.as_raw()
+    pub fn light_direction(&self) -> &FiniteVector3 {
+        &self.light_direction
     }
 }
 

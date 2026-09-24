@@ -7,7 +7,7 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsSurface},
     pcurve::PcurveGeometry,
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
@@ -59,14 +59,8 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
 }
 
 fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
-    n.poles().iter().all(Point3::is_finite)
-        && n.pole_weights().is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
-        && knots_nondecreasing(n.u_knots())
-        && knots_nondecreasing(n.v_knots())
+    n.pole_weights()
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
@@ -230,21 +224,21 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let center = circle_pcurve.center();
             let x_axis = circle_pcurve.x_axis();
             let radius = circle_pcurve.radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis)?;
-            e.emit("CIRCLE", &format!("'',{placement},{}", real(radius)))
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
+            e.emit("CIRCLE", &format!("'',{placement},{}", real(radius.get())))
         }
         PcurveGeometry::Ellipse(ellipse_pcurve) => {
             let center = ellipse_pcurve.center();
             let x_axis = ellipse_pcurve.x_axis();
             let major_radius = ellipse_pcurve.major_radius();
             let minor_radius = ellipse_pcurve.minor_radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis)?;
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
             e.emit(
                 "ELLIPSE",
                 &format!(
                     "'',{placement},{},{}",
-                    real(major_radius),
-                    real(minor_radius)
+                    real(major_radius.get()),
+                    real(minor_radius.get())
                 ),
             )
         }
@@ -252,10 +246,10 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let vertex = parabola_pcurve.vertex();
             let x_axis = parabola_pcurve.x_axis();
             let focal_distance = parabola_pcurve.focal_distance();
-            let placement = axis2_placement_2d(e, *vertex, *x_axis)?;
+            let placement = axis2_placement_2d(e, vertex.get(), x_axis.get())?;
             e.emit(
                 "PARABOLA",
-                &format!("'',{placement},{}", real(focal_distance)),
+                &format!("'',{placement},{}", real(focal_distance.get())),
             )
         }
         PcurveGeometry::Hyperbola(hyperbola_pcurve) => {
@@ -263,13 +257,13 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let x_axis = hyperbola_pcurve.x_axis();
             let major_radius = hyperbola_pcurve.major_radius();
             let minor_radius = hyperbola_pcurve.minor_radius();
-            let placement = axis2_placement_2d(e, *center, *x_axis)?;
+            let placement = axis2_placement_2d(e, center.get(), x_axis.get())?;
             e.emit(
                 "HYPERBOLA",
                 &format!(
                     "'',{placement},{},{}",
-                    real(major_radius),
-                    real(minor_radius)
+                    real(major_radius.get()),
+                    real(minor_radius.get())
                 ),
             )
         }
@@ -277,7 +271,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let points = nurbs
                 .control_points()
                 .iter()
-                .map(|point| point2(e, *point))
+                .map(|point| point2(e, point.get()))
                 .collect::<Vec<_>>();
             let (knots, multiplicities) = compress_knots(nurbs.knots());
             let base = format!(
@@ -291,7 +285,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 int_list(&multiplicities),
                 real_list(&knots)
             );
-            if let Some(weights) = nurbs.weights() {
+            if let Some(weights) = nurbs.pole_rows().weights() {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
@@ -325,8 +319,8 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 "TRIMMED_CURVE",
                 &format!(
                     "'',{basis},({}),({}),{sense},.PARAMETER.",
-                    real(parameter_range[0]),
-                    real(parameter_range[1])
+                    real(parameter_range.endpoints()[0]),
+                    real(parameter_range.endpoints()[1])
                 ),
             )
         }
@@ -336,7 +330,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             let basis = pcurve(e, basis)?;
             e.emit(
                 "OFFSET_CURVE_2D",
-                &format!("'',{basis},{},.F.", real(distance)),
+                &format!("'',{basis},{},.F.", real(distance.get())),
             )
         }
         PcurveGeometry::Harmonic(_)
@@ -641,7 +635,11 @@ fn closed_flag(periodic: bool) -> &'static str {
 }
 
 fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
-    let pts: Vec<Ref> = n.control_points().iter().map(|p| point(e, *p)).collect();
+    let pts: Vec<Ref> = n
+        .control_points()
+        .iter()
+        .map(|p| point(e, p.get()))
+        .collect();
     let (knots, mults) = compress_knots(n.knots());
     let ctrl = refs(&pts);
     let base = format!(
@@ -650,7 +648,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
         closed_flag(n.periodic())
     );
     let with_knots = format!("{},{},.UNSPECIFIED.", int_list(&mults), real_list(&knots));
-    match n.weights() {
+    match n.pole_rows().weights() {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -681,7 +679,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
     for grid_row in n.control_grid() {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
         for p in grid_row {
-            row.push(point(e, p));
+            row.push(point(e, p.get()));
         }
         rows.push(refs(&row));
     }
@@ -703,7 +701,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
         real_list(&u_knots),
         real_list(&v_knots)
     );
-    Some(match n.weights() {
+    Some(match n.pole_grid().weights() {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),

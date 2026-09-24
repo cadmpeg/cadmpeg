@@ -1197,10 +1197,7 @@ fn admit_pcurve<'a>(
         || pcurve.native_tail_flags().is_some()
         || pcurve
             .parameter_range()
-            .is_some_and(|range| range != edge.domain)
-        || pcurve
-            .fit_tolerance()
-            .is_some_and(|value| !value.is_finite() || value < 0.0)
+            .is_some_and(|range| range.get() != edge.domain)
     {
         return Err(CodecError::NotImplemented(format!(
             "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
@@ -1248,7 +1245,7 @@ fn admit_pcurve<'a>(
             }
             (
                 (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)),
-                nurbs.control_points(),
+                nurbs.pole_rows().points(),
             )
         }
         _ => {
@@ -1344,7 +1341,11 @@ fn validate_nurbs_trim(
                 .tolerance
                 .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
         )
-        .max(pcurve.fit_tolerance().unwrap_or(0.0));
+        .max(
+            pcurve
+                .fit_tolerance()
+                .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get),
+        );
     for span in breaks.windows(2) {
         for step in 0..=16 {
             let fraction = f64::from(step) / 16.0;
@@ -1976,7 +1977,7 @@ fn nurbs_curve_payload_dimension(
     }
     payload.extend(count.to_le_bytes());
     for (index, point) in curve.control_points().iter().enumerate() {
-        let weight = curve.weights().map_or(1.0, |weights| weights[index]);
+        let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
         if dimension == 3 {
@@ -2047,7 +2048,9 @@ fn nurbs_surface_payload(
     payload.extend(pole_count.to_le_bytes());
     let pole_weights = surface.pole_weights();
     for (index, point) in poles.iter().enumerate() {
-        let weight = pole_weights.as_ref().map_or(1.0, |weights| weights[index]);
+        let weight = pole_weights
+            .as_ref()
+            .map_or(1.0, |weights| weights[index].get());
         payload.extend((point.x * weight).to_le_bytes());
         payload.extend((point.y * weight).to_le_bytes());
         payload.extend((point.z * weight).to_le_bytes());

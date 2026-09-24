@@ -186,8 +186,8 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
                 if {
                     let center = circle_pcurve.center();
         let y_axis = circle_pcurve.y_axis();
-                    (circle_pcurve.radius() == 500.0)
-                        && matches!(y_axis, cadmpeg_ir::math::Point2 { u: 0.0, v: 1.0 })
+                    (circle_pcurve.radius().get() == 500.0)
+                        && matches!(y_axis.get(), cadmpeg_ir::math::Point2 { u: 0.0, v: 1.0 })
                         && (*center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0))
                 })
     );
@@ -228,8 +228,8 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
                     let radial_center = polar_harmonic_pcurve.radial_center();
         let radial_cos = polar_harmonic_pcurve.radial_cos();
         let radial_sin = polar_harmonic_pcurve.radial_sin();
-                    (polar_harmonic_pcurve.axial_origin() == 0.0)
-                        && (polar_harmonic_pcurve.axial_sin() == 0.0)
+                    (polar_harmonic_pcurve.axial_origin().get() == 0.0)
+                        && (polar_harmonic_pcurve.axial_sin().get() == 0.0)
                         && (*radial_center == cadmpeg_ir::math::Point2::new(0.0, 0.0)
                             && (radial_cos.u - 1000.0).abs() < EPS_POLAR_RADIAL_COMPONENT
                             && radial_cos.v.abs() < EPS_POLAR_RADIAL_COMPONENT
@@ -345,7 +345,11 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
                         && *direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
                 })
     );
-    assert_eq!(pole.parameter_range(), Some([0.0, std::f64::consts::TAU]));
+    assert_eq!(
+        pole.parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
     let seam = result
         .ir()
         .model
@@ -525,7 +529,8 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .edges
             .iter()
             .find(|edge| edge.curve().is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(cadmpeg_ir::topology::Edge::param_range),
+            .and_then(cadmpeg_ir::topology::Edge::param_range)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1000.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
@@ -562,7 +567,8 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
             .edges
             .iter()
             .find(|edge| edge.curve().is_some_and(|id| id.as_str().ends_with("#192")))
-            .and_then(cadmpeg_ir::topology::Edge::param_range),
+            .and_then(cadmpeg_ir::topology::Edge::param_range)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-500.0, 500.0])
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());

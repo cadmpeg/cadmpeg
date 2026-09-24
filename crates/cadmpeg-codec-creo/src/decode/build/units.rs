@@ -94,7 +94,7 @@ pub(super) fn normalize_model_lengths(
     for edge in &mut ir.model.edges {
         scale_tolerance(&mut edge.tolerance, length_scale_mm)?;
         if let (Some(mut range), Some(scale)) = (
-            edge.param_range(),
+            edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
             edge.curve().and_then(|id| curve_parameter_scales.get(id)),
         ) {
             scale_pair(&mut range, *scale);
@@ -323,7 +323,7 @@ fn scale_datum_plane_reference(
     scale: f64,
 ) -> Result<(), CodecError> {
     if let cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } = reference {
-        let mut origin = frame.origin();
+        let mut origin = frame.origin().get();
         scale_point3(&mut origin, scale);
         let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
             CodecError::Malformed("Creo scaled plane support must have a finite origin".into())
@@ -398,7 +398,7 @@ fn scale_feature_operation(
             })?;
         }
         FeatureOperation::DatumCoordinateSystem { frame } => {
-            let mut origin = frame.origin();
+            let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
             let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
                 CodecError::Malformed(
@@ -409,7 +409,7 @@ fn scale_feature_operation(
         }
         FeatureOperation::DatumPlane { frame }
         | FeatureOperation::DatumThreePointPlane { frame, .. } => {
-            let mut origin = frame.origin();
+            let mut origin = frame.origin().get();
             scale_point3(&mut origin, scale);
             let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
                 CodecError::Malformed("Creo scaled datum plane must have a finite origin".into())
@@ -445,8 +445,8 @@ fn scale_feature_operation(
             scale_finite_point3(position, scale)?;
         }
         FeatureOperation::LineSegment { segment } => {
-            let mut start = segment.start();
-            let mut end = segment.end();
+            let mut start = segment.start().get();
+            let mut end = segment.end().get();
             scale_point3(&mut start, scale);
             scale_point3(&mut end, scale);
             *segment =
@@ -472,7 +472,7 @@ fn scale_feature_operation(
             );
         }
         FeatureOperation::EllipticArc { arc } => {
-            let mut center = arc.center();
+            let mut center = arc.center().get();
             let mut radii = arc.radii();
             scale_point3(&mut center, scale);
             for radius in &mut radii {
@@ -864,7 +864,7 @@ fn scale_unit_plane_frame(
     frame: &mut cadmpeg_ir::features::FeatureUnitPlaneFrame,
     scale: f64,
 ) -> Result<(), CodecError> {
-    let mut origin = frame.origin();
+    let mut origin = frame.origin().get();
     scale_point3(&mut origin, scale);
     let origin = cadmpeg_ir::features::FinitePoint3::new(origin).ok_or_else(|| {
         CodecError::Malformed("Creo scaled plane frame must have a finite origin".into())
@@ -1596,8 +1596,10 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
         let cache = self.legacy_cache();
         match self {
             ProceduralSurfaceDefinition::Extrusion(payload) => {
-                let mut direction = *payload.direction();
-                let mut native_position = payload.native_position();
+                let mut direction = payload.direction().get();
+                let mut native_position = payload
+                    .native_position()
+                    .map(cadmpeg_ir::features::FinitePoint3::get);
                 scale_vector3(&mut direction, scale);
                 if let Some(position) = &mut native_position {
                     scale_point3(position, scale);
@@ -1605,7 +1607,9 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 *payload =
                     cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                         payload.directrix().clone(),
-                        payload.parameter_interval(),
+                        payload
+                            .parameter_interval()
+                            .map(cadmpeg_ir::units::FiniteVector::get),
                         direction,
                         native_position,
                         cadmpeg_ir::geometry::CacheContract::from_form(
@@ -1614,7 +1618,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                     )?;
             }
             ProceduralSurfaceDefinition::LinearSweep(payload) => {
-                let mut direction = *payload.direction();
+                let mut direction = payload.direction().get();
                 scale_vector3(&mut direction, scale);
                 *payload =
                     cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -1639,7 +1643,7 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
                 );
             }
             ProceduralSurfaceDefinition::Sum(payload) => {
-                let mut basepoint = *payload.basepoint();
+                let mut basepoint = payload.basepoint().get();
                 scale_vector3(&mut basepoint, scale);
                 *payload = cadmpeg_ir::geometry::surface_payloads::SumSurfaceConstruction::try_new(
                     payload.first().clone(),
@@ -2343,16 +2347,23 @@ mod tests {
         let direction = definition_payload.direction();
         let native_position = definition_payload.native_position();
         let parameter_interval = definition_payload.parameter_interval();
-        assert_vector3(*direction, [25.4, 50.8, 76.2]);
+        assert_vector3(direction.get(), [25.4, 50.8, 76.2]);
         assert_point3(
-            *native_position.as_ref().expect("test native position"),
+            native_position
+                .as_ref()
+                .expect("test native position")
+                .get(),
             [101.6, 127.0, 152.4],
         );
-        assert_eq!(parameter_interval, Some([1.0, 2.0]));
+        assert_eq!(
+            parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.0, 2.0])
+        );
         assert_close(
             surface
                 .cache_fit_tolerance()
-                .expect("test surface tolerance"),
+                .expect("test surface tolerance")
+                .get(),
             177.8,
         );
         assert_eq!(
@@ -2376,13 +2387,16 @@ mod tests {
         let axis = helix_payload.axis();
 
         assert_point3(*center, [25.4, 50.8, 76.2]);
-        assert_vector3(*major, [101.6, 127.0, 152.4]);
-        assert_vector3(*minor, [-127.0, 101.6, 152.4]);
-        assert_vector3(*pitch, [254.0, 279.4, 304.8]);
+        assert_vector3(major.get(), [101.6, 127.0, 152.4]);
+        assert_vector3(minor.get(), [-127.0, 101.6, 152.4]);
+        assert_vector3(pitch.get(), [254.0, 279.4, 304.8]);
         assert_eq!(*axis, Vector3::new(0.0, 0.0, 1.0));
-        assert_close(apex_factor, 0.25);
+        assert_close(apex_factor.get(), 0.25);
         assert_close(
-            curve.cache_fit_tolerance().expect("test curve tolerance"),
+            curve
+                .cache_fit_tolerance()
+                .expect("test curve tolerance")
+                .get(),
             330.2,
         );
     }

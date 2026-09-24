@@ -1052,7 +1052,9 @@ pub(super) fn project(
                             let id = crate::ids::edge(&stem.child(edge_key.0).slot(edge_key.1 + 1));
                             let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
-                                source_edge.param_range(),
+                                source_edge
+                                    .param_range()
+                                    .map(cadmpeg_ir::units::FiniteVector::get),
                             ) {
                                 Ok(carrier) => carrier,
                                 Err(error) => {

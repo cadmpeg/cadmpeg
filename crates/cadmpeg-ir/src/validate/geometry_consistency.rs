@@ -67,6 +67,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
 
             let evaluated = parameterization
                 .parameter_range()
+                .endpoints()
                 .map(|parameter| model_curve_point_by_id(&index, owner, parameter));
             let [Some(start), Some(end)] = evaluated else {
                 findings.push(Finding {
@@ -99,7 +100,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let context = definition_payload.context();
             let base = definition_payload.base();
             let base_endpoints = definition_payload.base_endpoints();
-            let offset = definition_payload.distance();
+            let offset = definition_payload.distance().get();
             let Some(solved) = curves.get(owner.as_str()) else {
                 continue;
             };
@@ -111,13 +112,16 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             };
             let bound = procedural_support_allowance(
                 ir.tolerances.linear,
-                procedural.cache_fit_tolerance(),
+                procedural
+                    .cache_fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
             );
             let Some(base) = curves.get(base.as_str()) else {
                 continue;
             };
-            let base = base_endpoints
-                .map(|parameter| parameter.and_then(|parameter| curve_point(base, parameter)));
+            let base = base_endpoints.map(|parameter| {
+                parameter.and_then(|parameter| curve_point(base, parameter.get()))
+            });
             let [Some(base_start), Some(base_end)] = base else {
                 check_support_sides(
                     context,
@@ -212,8 +216,12 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
         };
-        let bound =
-            procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance());
+        let bound = procedural_support_allowance(
+            ir.tolerances.linear,
+            procedural
+                .cache_fit_tolerance()
+                .map(crate::geometry::FitTolerance::get),
+        );
         check_support_sides(
             &context,
             third,
@@ -329,7 +337,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
-        let Some([start_t, end_t]) = edge.param_range() else {
+        let Some([start_t, end_t]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
         let Some((curve_id, geometry)) = edge
@@ -358,7 +366,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 curve_cache_tolerances
                     .get(curve_id.as_str())
                     .copied()
-                    .flatten(),
+                    .flatten()
+                    .map(crate::geometry::FitTolerance::get),
             ],
         );
         let mismatch =
@@ -416,7 +425,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 curve_cache_tolerances
                     .get(curve_id.as_str())
                     .copied()
-                    .flatten(),
+                    .flatten()
+                    .map(crate::geometry::FitTolerance::get),
             ],
         );
         let mismatch =
@@ -544,8 +554,10 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 *start_tol,
                 *end_tol,
                 face.tolerance.map(crate::scalar::PositiveReal::get),
-                first.fit_tolerance(),
-                last.fit_tolerance(),
+                first
+                    .fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
+                last.fit_tolerance().map(crate::geometry::FitTolerance::get),
             ],
         );
         // Recovering an occurrence interval is a topological operation. A
@@ -587,19 +599,19 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 first_use
                     .parameter_range
                     .map(crate::geometry::DirectedParameterRange::endpoints),
-                edge.param_range(),
+                edge.param_range().map(crate::units::FiniteVector::get),
             )
         } else {
             match (
                 first_use
                     .parameter_range
                     .map(crate::geometry::DirectedParameterRange::endpoints)
-                    .or(first.parameter_range())
+                    .or(first.parameter_range().map(crate::units::FiniteVector::get))
                     .or_else(|| pcurve_parameter_extremes(first)),
                 last_use
                     .parameter_range
                     .map(crate::geometry::DirectedParameterRange::endpoints)
-                    .or(last.parameter_range())
+                    .or(last.parameter_range().map(crate::units::FiniteVector::get))
                     .or_else(|| pcurve_parameter_extremes(last)),
             ) {
                 (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
@@ -659,7 +671,10 @@ fn pcurve_parameter_ranges(
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
     let mut ranges = Vec::with_capacity(4);
-    if let Some(range) = pcurve_range.or(pcurve.parameter_range()) {
+    if let Some(range) = pcurve_range.or(pcurve
+        .parameter_range()
+        .map(crate::units::FiniteVector::get))
+    {
         ranges.push(range);
     }
     if let Some([start, end]) = edge_range {
@@ -819,7 +834,7 @@ fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<f64> {
 fn pcurve_parameter_seeds(pcurve: &crate::geometry::pcurve::Pcurve) -> Vec<f64> {
     let mut seeds = vec![0.0];
     if let Some(range) = pcurve.parameter_range() {
-        seeds.extend(range);
+        seeds.extend(range.get());
     }
     if let Some([start, end]) = pcurve_parameter_domain(&pcurve.geometry) {
         seeds.extend([start, start + (end - start) * 0.5, end]);
@@ -884,6 +899,7 @@ fn solved_surface_parameter_domains(geometry: &SolvedSurfaceGeometry) -> Option<
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::pcurve::Pcurve) -> Option<[f64; 2]> {
     pcurve
         .parameter_range()
+        .map(crate::units::FiniteVector::get)
         .or_else(|| pcurve_geometry_trim_range(&pcurve.geometry))
 }
 
@@ -891,7 +907,7 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            Some(*parameter_range)
+            Some(parameter_range.endpoints())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();

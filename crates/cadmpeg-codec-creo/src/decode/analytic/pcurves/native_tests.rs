@@ -455,7 +455,7 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
                     *center == Point2::new(2.0, 4.0)
                         && *x_axis == Point2::new(0.0, 1.0)
                         && *y_axis == Point2::new(-1.0, 0.0)
-                        && radius == 2.0
+                        && radius.get() == 2.0
                 })
     );
 
@@ -473,10 +473,10 @@ fn projects_exact_planar_carriers_without_changing_parameters() {
         planar_curve_pcurve(&plane(), &nurbs, &"nurbs fixture", &mut crate::lane_refusal::LaneRefusals::new()),
         Some(PcurveGeometry::Nurbs { nurbs })
             if nurbs.degree() == 1
-                && nurbs.knots() == [2.0, 2.0, 5.0, 5.0]
+                && nurbs.knots().as_slice() == [2.0, 2.0, 5.0, 5.0]
                 && nurbs.control_points()
                     == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
-                && nurbs.weights() == Some(vec![2.0, 1.0])
+                && nurbs.pole_rows().weights() == Some(vec![2.0, 1.0])
                 && !nurbs.periodic()
     ));
 

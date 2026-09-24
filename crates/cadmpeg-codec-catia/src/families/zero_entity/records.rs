@@ -1411,7 +1411,7 @@ pub(super) fn zero_entity_neutral_pcurve(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 control_points,
-                nurbs.weights(),
+                nurbs.pole_rows().weights(),
                 nurbs.periodic(),
             ),
             refusal,
@@ -1480,7 +1480,7 @@ fn zero_entity_model_curve(
                                 )
                             })
                             .collect(),
-                        nurbs.weights(),
+                        nurbs.pole_rows().weights(),
                         false,
                     ),
                     refusal,
@@ -2587,7 +2587,7 @@ mod tests {
 
         let slope = 2.0;
         let start_radius = 2.0 + half_angle.sin();
-        assert_eq!(angle_range, [0.0, 0.5]);
+        assert_eq!(angle_range.get(), [0.0, 0.5]);
         assert_eq!(center, Point3::new(1.0, 2.0, 3.0 + half_angle.cos()));
         assert_eq!(major, Vector3::new(start_radius, 0.0, 0.0));
         assert_eq!(minor, Vector3::new(0.0, start_radius, 0.0));
@@ -2596,13 +2596,13 @@ mod tests {
             Vector3::new(0.0, 0.0, std::f64::consts::TAU * slope * half_angle.cos())
         );
         assert_eq!(
-            apex_factor,
+            apex_factor.get(),
             std::f64::consts::TAU * slope * half_angle.sin() / start_radius
         );
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
 
         let revolution_fraction = angle_range[1] / std::f64::consts::TAU;
-        let end_radius = start_radius * (1.0 + apex_factor * revolution_fraction);
+        let end_radius = start_radius * (1.0 + apex_factor.get() * revolution_fraction);
         assert!((end_radius - (2.0 + 2.0 * half_angle.sin())).abs() < 1.0e-12);
         assert!(
             (center.z + pitch.z * revolution_fraction - (3.0 + 2.0 * half_angle.cos())).abs()
@@ -2611,7 +2611,7 @@ mod tests {
         for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let angle = angle_range[0] + fraction * (angle_range[1] - angle_range[0]);
             let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-            let radial_scale = 1.0 + apex_factor * revolution_fraction;
+            let radial_scale = 1.0 + apex_factor.get() * revolution_fraction;
             let construction_point = Point3::new(
                 center.x
                     + radial_scale * (major.x * angle.cos() + minor.x * angle.sin())

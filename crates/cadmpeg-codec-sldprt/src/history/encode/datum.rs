@@ -66,7 +66,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            if !valid_plane_frame(frame.normal(), frame.u_axis()) {
+            if !valid_plane_frame(frame.normal().get(), frame.u_axis().get()) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes unsupported reference-plane semantics",
                     feature.id
@@ -76,15 +76,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin()),
+                format_point3_mm(frame.origin().get()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Normal"),
-                format_vector3(frame.normal()),
+                format_vector3(frame.normal().get()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("UAxis"),
-                format_vector3(frame.u_axis()),
+                format_vector3(frame.u_axis().get()),
             );
             NeutralFeatureEncoding {
                 kind: existing
@@ -254,7 +254,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Origin"),
-                format_point3_mm(frame.origin()),
+                format_point3_mm(frame.origin().get()),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("XAxis"),

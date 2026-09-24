@@ -54,10 +54,10 @@ fn curve_geometry_for_sheet_pcurve(
             let radius = circle_pcurve.radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                    point(*center),
+                    point(center.get()),
                     Vector3::new(0.0, 0.0, 1.0),
-                    vector(*x_axis),
-                    radius,
+                    vector(x_axis.get()),
+                    radius.get(),
                 )
                 .unwrap(),
             )))
@@ -69,11 +69,11 @@ fn curve_geometry_for_sheet_pcurve(
             let minor_radius = ellipse_pcurve.minor_radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                 cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                    point(*center),
+                    point(center.get()),
                     Vector3::new(0.0, 0.0, 1.0),
-                    vector(*x_axis),
-                    major_radius,
-                    minor_radius,
+                    vector(x_axis.get()),
+                    major_radius.get(),
+                    minor_radius.get(),
                 )
                 .unwrap(),
             )))
@@ -84,10 +84,10 @@ fn curve_geometry_for_sheet_pcurve(
             let focal_distance = parabola_pcurve.focal_distance();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
                 cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                    point(*vertex),
+                    point(vertex.get()),
                     Vector3::new(0.0, 0.0, 1.0),
-                    vector(*x_axis),
-                    focal_distance,
+                    vector(x_axis.get()),
+                    focal_distance.get(),
                 )
                 .unwrap(),
             )))
@@ -99,11 +99,11 @@ fn curve_geometry_for_sheet_pcurve(
             let minor_radius = hyperbola_pcurve.minor_radius();
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
                 cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                    point(*center),
+                    point(center.get()),
                     Vector3::new(0.0, 0.0, 1.0),
-                    vector(*x_axis),
-                    major_radius,
-                    minor_radius,
+                    vector(x_axis.get()),
+                    major_radius.get(),
+                    minor_radius.get(),
                 )
                 .unwrap(),
             )))
@@ -112,8 +112,8 @@ fn curve_geometry_for_sheet_pcurve(
             NurbsCurve::from_lanes(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
-                nurbs.control_points().iter().copied().map(point).collect(),
-                nurbs.weights(),
+                nurbs.pole_rows().points().into_iter().map(point).collect(),
+                nurbs.pole_rows().weights(),
                 nurbs.periodic(),
             )?,
         ))),
@@ -175,8 +175,8 @@ fn curve_geometry_for_sheet_pcurve(
             }
             line(
                 Point2::new(
-                    origin.u - distance * direction.v / length,
-                    origin.v + distance * direction.u / length,
+                    origin.u - distance.get() * direction.v / length,
+                    origin.v + distance.get() * direction.u / length,
                 ),
                 Point2::new(direction.u / length, direction.v / length),
             )
@@ -239,7 +239,7 @@ fn align_sheet_edge_to_pcurve(
     let parameter_range = match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            *parameter_range
+            parameter_range.endpoints()
         }
         _ => [0.0, 1.0],
     };
@@ -347,7 +347,7 @@ pub(crate) fn writer_round_trips_rational_nurbs_pcurves(
             if nurbs.degree() == 1
                 && !nurbs.periodic()
                 && nurbs.control_points().len() == 2
-                && nurbs.weights() == Some(vec![1.0, 2.0])
+                && nurbs.pole_rows().weights() == Some(vec![1.0, 2.0])
     ));
     Ok(())
 }

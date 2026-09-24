@@ -590,7 +590,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("{:010}", curve.pos),
             )),
         });
-        standalone_wires.push((id, parameter_range, curve.pos));
+        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
     }
     for curve in a5_nurbs_curves {
         let id = CurveId::compose(
@@ -614,7 +614,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("{:010}", curve.pos),
             )),
         });
-        standalone_wires.push((id, parameter_range, curve.pos));
+        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
     }
     for circle in b2_spatial_circles {
         let id = CurveId::compose(
@@ -3212,7 +3212,12 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &wires,
         ));
-        assert_eq!(ir.model.edges[0].param_range(), Some([-4.0, 9.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([-4.0, 9.0])
+        );
         let expected_start = Point3::new(1.0, -0.4, -0.2);
         let expected_end = Point3::new(1.0, 7.4, 10.2);
         for (actual, expected) in [
@@ -3293,8 +3298,8 @@ mod tests {
                 ..
             }] if first.degree() == 5
                 && second.degree() == 5
-                && first.control_points().first() == Some(&Point3::new(1.0, 0.0, 0.0))
-                && second.control_points().first() == Some(&Point3::new(0.0, 1.0, 0.0))
+                && first.pole_rows().points().first() == Some(&Point3::new(1.0, 0.0, 0.0))
+                && second.pole_rows().points().first() == Some(&Point3::new(0.0, 1.0, 0.0))
         ));
     }
 
@@ -3675,7 +3680,12 @@ mod tests {
         )
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
     }
 
     #[test]
@@ -3937,7 +3947,12 @@ mod tests {
         )
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 1.0])
+        );
         let ProceduralCurveDefinition::Intersection { context, .. } =
             ir.model.procedural_curves[0].definition()
         else {

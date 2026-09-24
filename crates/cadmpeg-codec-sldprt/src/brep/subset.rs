@@ -70,8 +70,8 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
             cadmpeg_ir::eval::nurbs_curve_point(
                 curve.degree(),
                 curve.knots(),
-                &curve.control_points(),
-                curve.weights().as_deref(),
+                &curve.pole_rows().points(),
+                curve.pole_rows().weights().as_deref(),
                 parameter,
             )
             .map(cadmpeg_ir::features::FinitePoint3::get)

@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
@@ -3300,8 +3300,8 @@ fn write_nurbs_curve(
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let control_points = nurbs.control_points();
-    let curve_weights = nurbs.weights();
+    let control_points = nurbs.pole_rows().points();
+    let curve_weights = nurbs.pole_rows().weights();
     let poles = homogeneous_poles(&control_points, curve_weights.as_deref(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     let unique = unique_knots(nurbs.knots(), entity)?;
@@ -3361,23 +3361,9 @@ fn write_nurbs_surface(
     })?;
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
-    if !nurbs
-        .u_knots()
-        .iter()
-        .chain(nurbs.v_knots())
-        .all(|value| value.is_finite())
-        || !knots_nondecreasing(nurbs.u_knots())
-        || !knots_nondecreasing(nurbs.v_knots())
-    {
-        return Err(CodecError::Malformed(
-            "NURBS surface knot vectors must be finite and nondecreasing".into(),
-        ));
-    }
-    let poles = homogeneous_poles(
-        &nurbs.poles(),
-        nurbs.pole_weights().as_deref(),
-        length_scale,
-    )?;
+    let points = nurbs.pole_grid().points().concat();
+    let weights = nurbs.pole_grid().weights().map(|rows| rows.concat());
+    let poles = homogeneous_poles(&points, weights.as_deref(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(

@@ -396,7 +396,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
         &curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
     )));
 }
 
@@ -482,7 +482,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
             &curve.geometry,
             cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
         )));
     }
 }
@@ -636,7 +636,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
                 .find(|curve| curve.id == *curve_id)
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == knots
+            if curve.degree() == 1 && curve.knots().as_slice() == knots
         ));
     }
 }
@@ -773,7 +773,7 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }
@@ -864,7 +864,7 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }
@@ -956,7 +956,7 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
                     if curve.degree() == 1
-                        && curve.knots() == [range[0], range[0], range[1], range[1]]
+                        && curve.knots().as_slice() == [range[0], range[0], range[1], range[1]]
         ));
     }
 }

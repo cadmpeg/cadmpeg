@@ -103,8 +103,14 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
     let PcurveGeometry::Nurbs { nurbs } = &support.geometry else {
         panic!("completed second support NURBS pcurve");
     };
-    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(0.0, 10.0)));
+    assert_eq!(
+        nurbs.pole_rows().points().first(),
+        Some(&Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        nurbs.pole_rows().points().last(),
+        Some(&Point2::new(0.0, 10.0))
+    );
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -465,7 +471,7 @@ fn decode_transfers_bspline_surface_and_curve() {
             _ => None,
         })
         .expect("B-spline surface");
-    assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     let poles = surface.poles();
     assert_eq!(poles.len(), 4);
     assert!((poles[1].y - 20.0).abs() < 1.0e-9);
@@ -479,7 +485,7 @@ fn decode_transfers_bspline_surface_and_curve() {
             _ => None,
         })
         .expect("B-spline curve");
-    assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points().len(), 2);
     assert!((curve.control_points()[1].x - 20.0).abs() < 1.0e-9);
 }
@@ -524,7 +530,10 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
     assert_ne!(edge.start, edge.end);
-    assert_eq!(edge.param_range(), Some([0.25, 0.75]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert_eq!(result.ir().model.coedges.len(), 2);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -535,7 +544,10 @@ fn decode_resolves_forward_trimmed_curve_chain() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let edge = result.ir().model.edges.first().expect("edge");
     assert_eq!(edge.curve(), Some(&result.ir().model.curves[0].id));
-    assert_eq!(edge.param_range(), Some([0.25, 0.75]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 

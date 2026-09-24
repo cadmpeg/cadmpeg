@@ -107,7 +107,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     )
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let control_points = nurbs.control_points();
+    let control_points = nurbs.pole_rows().points();
     let start_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 0.0)
         .expect("start point");
     let end_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 1.0)
@@ -545,7 +545,7 @@ fn anisotropic_parabola_scaling_scales_both_axes_and_keeps_the_parameter() {
             if *parabola.vertex() == Point2::new(0.0, 0.0)
                 && *parabola.x_axis() == Point2::new(2.0, 0.0)
                 && *parabola.y_axis() == Point2::new(0.0, 3.0)
-                && parabola.focal_distance() == 1.0),
+                && parabola.focal_distance().get() == 1.0),
         "{scaled:?}"
     );
     for parameter in [0.0, 0.25, 1.0, 2.0] {

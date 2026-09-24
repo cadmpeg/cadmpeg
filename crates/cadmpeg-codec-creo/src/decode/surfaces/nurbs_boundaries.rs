@@ -4,6 +4,7 @@
 use crate::vecmath::normalize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
@@ -40,13 +41,10 @@ fn nurbs_surface_boundaries(
     let v_count = nurbs.v_count();
     let poles = nurbs.poles();
     let pole_weights = nurbs.pole_weights();
-    (poles.iter().all(Point3::is_finite)
-        && pole_weights.as_ref().is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        }))
-    .then_some(())?;
+    pole_weights
+        .as_ref()
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
+        .then_some(())?;
     let boundaries = [
         (false, (0..v_count).collect::<Vec<_>>()),
         (
@@ -80,11 +78,14 @@ fn nurbs_surface_boundaries(
             let curve = match NurbsCurve::from_lanes(
                 degree,
                 knots,
-                control_indices.iter().map(|index| poles[*index]).collect(),
+                control_indices
+                    .iter()
+                    .map(|index| poles[*index].get())
+                    .collect(),
                 pole_weights.as_ref().map(|weights| {
                     control_indices
                         .iter()
-                        .map(|index| weights[*index])
+                        .map(|index| weights[*index].get())
                         .collect()
                 }),
                 periodic,
@@ -108,7 +109,7 @@ fn nurbs_surface_boundaries(
     boundaries.try_into().ok()
 }
 
-fn point_tolerance<'a>(points: impl Iterator<Item = &'a Point3>) -> Option<f64> {
+fn point_tolerance<'a>(points: impl Iterator<Item = &'a FinitePoint3>) -> Option<f64> {
     let points = points.collect::<Vec<_>>();
     let anchor = **points.first()?;
     let extent = points
@@ -243,7 +244,7 @@ fn nurbs_curves_match(
     if !knots_match {
         return false;
     }
-    match (left.weights(), right.weights()) {
+    match (left.pole_rows().weights(), right.pole_rows().weights()) {
         (None, None) => true,
         (Some(left), Some(right)) => {
             let right = if reversed {
@@ -587,8 +588,8 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
                 .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT)))
         .then_some(())?;
         let poles = nurbs.poles();
-        let weights = match nurbs.pole_weights() {
-            Some(weights) => weights,
+        let weights = match nurbs.pole_grid().weights() {
+            Some(weights) => weights.concat(),
             None => match ctx.alloc_filled(poles.len(), 1.0, "creo_nurbs_weights") {
                 Ok(weights) => weights,
                 Err(error) => return Some(Err(error)),
@@ -670,13 +671,15 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             3.0 * parameter.powi(2) * (1.0 - parameter),
             parameter.powi(3),
         ];
-        let evaluated = |v| {
+        let evaluated = |v: usize| {
             let weight = (0..4)
                 .map(|u| bernstein[u] * weights[2 * u + v])
                 .sum::<f64>();
             let coordinate = |coordinate: fn(&Point3) -> f64| {
                 (0..4)
-                    .map(|u| bernstein[u] * weights[2 * u + v] * coordinate(&poles[2 * u + v]))
+                    .map(|u| {
+                        bernstein[u] * weights[2 * u + v] * coordinate(poles[2 * u + v].as_raw())
+                    })
                     .sum::<f64>()
                     / weight
             };

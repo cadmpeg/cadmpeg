@@ -59,7 +59,10 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             Point3::new(3.0, 1.0, 9.0),
         ]
     );
-    assert_eq!(boundary.weights(), Some(vec![1.0, 2.0, 3.0, 4.0]));
+    assert_eq!(
+        boundary.pole_rows().weights(),
+        Some(vec![1.0, 2.0, 3.0, 4.0])
+    );
 
     let generator = nurbs_plane_boundary_curve(
         &surface,
@@ -80,7 +83,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
         generator.control_points(),
         [Point3::new(3.0, 0.0, 9.0), Point3::new(3.0, 1.0, 9.0)]
     );
-    assert_eq!(generator.weights(), Some(vec![4.0, 4.0]));
+    assert_eq!(generator.pole_rows().weights(), Some(vec![4.0, 4.0]));
 
     assert!(nurbs_plane_boundary_curve(
         &surface,
@@ -113,14 +116,14 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     coplanar
         .edit_control_points(|point| {
             if let Some(value) = restored.next() {
-                *point = value;
+                *point = value.get();
             }
             Ok(())
         })
         .expect("finite fixture geometry preserves NURBS invariants");
-    let mut zero_weights = coplanar.weights().expect("rational fixture");
+    let mut zero_weights = coplanar.pole_grid().weights().expect("rational fixture");
     zero_weights[0][0] = 0.0;
-    assert!(NurbsPoleGrid::from_lanes(coplanar.control_grid(), Some(zero_weights)).is_err());
+    assert!(NurbsPoleGrid::from_lanes(coplanar.pole_grid().points(), Some(zero_weights)).is_err());
 }
 
 #[test]
@@ -170,13 +173,13 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
         shared.control_points(),
         [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 1.0)]
     );
-    assert_eq!(shared.weights(), Some(vec![3.0, 4.0]));
+    assert_eq!(shared.pole_rows().weights(), Some(vec![3.0, 4.0]));
 
     let mut reversed = second.clone();
-    let mut reversed_grid = reversed.control_grid();
+    let mut reversed_grid = reversed.pole_grid().points();
     reversed_grid[0].swap(0, 1);
     reversed_grid[1].swap(0, 1);
-    let mut reversed_weights = reversed.weights();
+    let mut reversed_weights = reversed.pole_grid().weights();
     if let Some(rows) = &mut reversed_weights {
         rows[0].swap(0, 1);
         rows[1].swap(0, 1);
@@ -212,10 +215,10 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .is_some());
 
     let mut same_side = second.clone();
-    let mut same_side_grid = same_side.control_grid();
+    let mut same_side_grid = same_side.pole_grid().points();
     same_side_grid[1][0] = Point3::new(-2.0, 0.0, 0.0);
     same_side_grid[1][1] = Point3::new(-2.0, 0.0, 1.0);
-    let same_side_weights = same_side.weights();
+    let same_side_weights = same_side.pole_grid().weights();
     {
         let replacement = NurbsPoleGrid::from_lanes(same_side_grid, same_side_weights)
             .expect("finite fixture geometry preserves NURBS invariants");
@@ -277,9 +280,9 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
     .is_none());
 
     let mut different_boundary = second;
-    let mut different_grid = different_boundary.control_grid();
+    let mut different_grid = different_boundary.pole_grid().points();
     different_grid[0][1].x = 0.1;
-    let different_weights = different_boundary.weights();
+    let different_weights = different_boundary.pole_grid().weights();
     {
         let replacement = NurbsPoleGrid::from_lanes(different_grid, different_weights)
             .expect("finite fixture geometry preserves NURBS invariants");
@@ -358,7 +361,7 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     assert_eq!(generator.control_points()[1].z, 2.0);
     let weights = generator.weights().expect("rational generator");
     assert_eq!(weights.len(), 2);
-    assert!((weights[0] - weights[1]).abs() <= 1.0e-12);
+    assert!((weights[0].get() - weights[1].get()).abs() <= 1.0e-12);
 
     assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
         ctx,

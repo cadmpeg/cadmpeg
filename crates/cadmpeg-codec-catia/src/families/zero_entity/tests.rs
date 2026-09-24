@@ -249,7 +249,7 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
             assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
             assert_eq!((surface.u_count(), surface.v_count()), (7, 7));
             assert_eq!(
-                surface.u_knots(),
+                surface.u_knots().as_slice(),
                 [0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
             );
             assert_eq!(surface.poles().len(), 49);

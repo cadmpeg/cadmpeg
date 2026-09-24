@@ -87,8 +87,8 @@ fn pcurve_parameter_domain(geometry: &crate::geometry::pcurve::PcurveGeometry) -
         ),
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            if parameter_range[0] < parameter_range[1] {
-                Some(*parameter_range)
+            if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {
+                Some(parameter_range.endpoints())
             } else {
                 pcurve_parameter_domain(trimmed_pcurve.basis())
             }

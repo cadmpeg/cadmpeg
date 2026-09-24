@@ -67,8 +67,8 @@ fn spatial_oriented_endpoints(
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.pole_count()];
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             (
                 crate::eval::nurbs_curve_point(
                     curve.degree(),
@@ -1653,7 +1653,10 @@ fn oriented_endpoints(
         ),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let control_points = curve.control_points();
-            (control_points[0], control_points[control_points.len() - 1])
+            (
+                control_points[0].get(),
+                control_points[control_points.len() - 1].get(),
+            )
         }
         _ => return None,
     };

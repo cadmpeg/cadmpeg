@@ -417,7 +417,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert!(model.edges.iter().all(|edge| edge.curve().is_some()));
     assert!(model.edges.iter().all(|edge| edge.param_range().is_some()));
     for edge in &model.edges {
-        let [start_parameter, end_parameter] = edge.param_range().expect("line edge range");
+        let [start_parameter, end_parameter] = edge.param_range().expect("line edge range").get();
         assert_eq!(start_parameter, 0.0);
         assert!(end_parameter > 0.0);
         let curve = model

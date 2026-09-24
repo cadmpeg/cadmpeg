@@ -27,7 +27,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, PositiveLength};
+use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroLength, NonZeroReal, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -153,11 +153,10 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
             curve.degree() == 1
                 && curve.weights().is_none()
                 && curve.control_points().len() == 2
-                && curve.control_points().iter().all(Point3::is_finite)
                 && curve.control_points()[0]
-                    .distance(curve.control_points()[1])
+                    .distance(curve.control_points()[1].get())
                     .is_finite()
-                && curve.control_points()[0].distance(curve.control_points()[1]) > 0.0
+                && curve.control_points()[0].distance(curve.control_points()[1].get()) > 0.0
                 && curve.knots()[0] == curve.knots()[1]
                 && curve.knots()[2] == curve.knots()[3]
                 && curve.knots()[1].is_finite()
@@ -214,7 +213,7 @@ fn interval_certified_linear_bezier(
             .first()
             .zip(geometry.control_points().last())
             .is_none_or(|(first, last)| {
-                let distance = first.distance(*last);
+                let distance = first.distance(last.get());
                 !distance.is_finite() || distance <= 0.0
             })
     {
@@ -385,25 +384,19 @@ fn curve_geometry<'a>(ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a CurveGeom
 
 fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
     let degree = usize::try_from(curve.degree()).ok()?;
-    let count = curve.control_points().len();
-    if !knots_nondecreasing(curve.knots()) {
-        return None;
-    }
-    let weights = curve.weights().map_or_else(
-        || cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok(),
-        Some,
-    )?;
-    if curve.control_points().iter().any(|point| {
-        [point.x, point.y, point.z]
-            .into_iter()
-            .any(|value| !value.is_finite())
-    }) || weights
-        .iter()
-        .any(|weight| !weight.is_finite() || *weight <= 0.0)
-    {
-        return None;
-    }
-    let controls = positive_controls(&curve.control_points(), &weights)?;
+    let count = curve.pole_count();
+    let weights = match curve.weights() {
+        Some(weights) => {
+            if weights.iter().any(|weight| weight.get() <= 0.0) {
+                return None;
+            }
+            weights.into_iter().map(NonZeroReal::get).collect()
+        }
+        None => {
+            cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok()?
+        }
+    };
+    let controls = positive_controls(&curve.pole_rows().points(), &weights)?;
     homogeneous_spans(degree, curve.knots(), controls)
 }
 
@@ -586,15 +579,13 @@ fn aligned_homogeneous_spans(
 }
 
 fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
-    let count = curve.pole_count();
-    let weights = curve
-        .weights()
-        .unwrap_or_else(|| std::iter::repeat_n(1.0, count).collect());
-    (weights.len() == count
-        && weights
+    match curve.weights() {
+        Some(weights) => weights
             .iter()
-            .all(|weight| weight.is_finite() && *weight > 0.0))
-    .then_some(weights)
+            .all(|weight| weight.get() > 0.0)
+            .then(|| weights.into_iter().map(NonZeroReal::get).collect()),
+        None => Some(std::iter::repeat_n(1.0, curve.pole_count()).collect()),
+    }
 }
 
 fn projectively_shared_weights(first: &NurbsCurve, second: &NurbsCurve) -> Option<Vec<f64>> {
@@ -640,10 +631,10 @@ fn same_basis_ruled_surface(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
             first
-                .control_points()
-                .iter()
-                .copied()
-                .zip(second.control_points().iter().copied())
+                .pole_rows()
+                .points()
+                .into_iter()
+                .zip(second.pole_rows().points())
                 .map(|(first, second)| vec![first, second])
                 .collect(),
             weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
@@ -1538,8 +1529,8 @@ pub(super) fn project(
             );
             continue;
         }
-        let directrix_points = placed_directrix.control_points();
-        let directrix_weights = placed_directrix.weights();
+        let directrix_points = placed_directrix.pole_rows().points();
+        let directrix_weights = placed_directrix.pole_rows().weights();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             placed_directrix.degree(),
             placed_directrix.knots(),
@@ -1564,20 +1555,22 @@ pub(super) fn project(
             continue;
         }
         let control_points = placed_directrix
-            .control_points()
-            .iter()
-            .flat_map(|point| [*point, point.translated(direction, 1.0)])
+            .pole_rows()
+            .points()
+            .into_iter()
+            .flat_map(|point| [point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
         let Ok(_) = u32::try_from(placed_directrix.control_points().len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights: Option<Vec<Vec<f64>>> = placed_directrix.weights().map(|weights| {
-            weights
-                .iter()
-                .map(|weight| vec![*weight, *weight])
-                .collect()
-        });
+        let weights: Option<Vec<Vec<f64>>> =
+            placed_directrix.pole_rows().weights().map(|weights| {
+                weights
+                    .iter()
+                    .map(|weight| vec![*weight, *weight])
+                    .collect()
+            });
         let procedural_directrix = if entry.transform == 0 {
             directrix_id
         } else {
@@ -1891,7 +1884,7 @@ pub(super) fn project(
         let mut control_points = Vec::with_capacity(surface_pole_count);
         let mut weights = Vec::with_capacity(control_points.capacity());
         let generatrix_points = generatrix.control_points();
-        let generatrix_weights = generatrix.weights();
+        let generatrix_weights = generatrix.pole_rows().weights();
         for (u_index, point) in generatrix_points.iter().enumerate() {
             let delta = point.vector_from(axis_origin);
             let axis_point = axis_origin.translated(axis_direction, delta.dot(axis_direction));

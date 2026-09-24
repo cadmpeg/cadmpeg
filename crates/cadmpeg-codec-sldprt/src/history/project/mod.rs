@@ -421,7 +421,11 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                             plane,
                         }) => Some(principal_frame(*plane)),
                         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
-                            Some((frame.origin(), frame.normal(), frame.u_axis()))
+                            Some((
+                                frame.origin().get(),
+                                frame.normal().get(),
+                                frame.u_axis().get(),
+                            ))
                         }
                         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                             ..
@@ -546,9 +550,11 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
                     principal_frame(*plane)
                 }
-                FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
-                    (frame.origin(), frame.normal(), frame.u_axis())
-                }
+                FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => (
+                    frame.origin().get(),
+                    frame.normal().get(),
+                    frame.u_axis().get(),
+                ),
                 _ => return None,
             };
             Some((feature.id.clone(), frame))

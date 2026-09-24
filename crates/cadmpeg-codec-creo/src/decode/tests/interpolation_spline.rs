@@ -180,7 +180,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         let PcurveGeometry::Nurbs { nurbs } = &pcurve else {
             panic!("spline cap pcurve is not NURBS");
         };
-        assert_eq!(nurbs.weights(), Some(vec![1.0, 0.75, 0.75, 1.0]));
+        assert_eq!(
+            nurbs.pole_rows().weights(),
+            Some(vec![1.0, 0.75, 0.75, 1.0])
+        );
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
         assert!((first.u - start[0]).abs() < 1.0e-12);
@@ -230,8 +233,11 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         panic!("spline side surface is not NURBS");
     };
     assert_eq!((side.u_degree(), side.v_degree()), (3, 1));
-    assert_eq!(side.u_knots(), [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
-    assert_eq!(side.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        side.u_knots().as_slice(),
+        [2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]
+    );
+    assert_eq!(side.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
         side.poles().into_iter().next().unwrap(),
         Point3::new(11.0, 20.0, 28.0)
@@ -249,7 +255,7 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         Point3::new(10.0, 21.0, 33.0)
     );
     assert_eq!(
-        side.pole_weights(),
+        side.pole_grid().weights().map(|rows| rows.concat()),
         Some([1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0].to_vec())
     );
 }

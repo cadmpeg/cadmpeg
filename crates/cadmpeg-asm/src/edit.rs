@@ -640,13 +640,13 @@ impl AsmEditSet {
                     bytes,
                     self.ref_width,
                     record,
-                    *parameter_range,
-                    *offset,
+                    parameter_range.endpoints(),
+                    offset.get(),
                 )
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let parameter_range = definition_payload.parameter_range();
-                patch_subset_definition(bytes, self.ref_width, record, *parameter_range)
+                patch_subset_definition(bytes, self.ref_width, record, parameter_range.endpoints())
             }
             ProceduralCurveDefinition::Compound(compound) => {
                 let parameters = compound.parameters();
@@ -663,18 +663,18 @@ impl AsmEditSet {
                     record,
                     context,
                     *discontinuity_flag,
-                    *offsets,
+                    offsets.get(),
                 )
             }
             ProceduralCurveDefinition::SurfaceOffset(definition_payload) => {
                 let context = definition_payload.context();
                 let discontinuity_flag = definition_payload.discontinuity_flag();
-                let base_u_range = definition_payload.base_u_range();
-                let base_v_range = definition_payload.base_v_range();
-                let base_range = definition_payload.base_range();
-                let distance = definition_payload.distance();
-                let shift = definition_payload.shift();
-                let scale = definition_payload.scale();
+                let base_u_range = definition_payload.base_u_range().endpoints();
+                let base_v_range = definition_payload.base_v_range().endpoints();
+                let base_range = definition_payload.base_range().endpoints();
+                let distance = definition_payload.distance().get();
+                let shift = definition_payload.shift().get();
+                let scale = definition_payload.scale().get();
                 patch_surface_offset_definition(
                     bytes,
                     self.ref_width,
@@ -682,12 +682,12 @@ impl AsmEditSet {
                     SurfaceOffsetFields {
                         context,
                         discontinuity_flag,
-                        base_u_range,
-                        base_v_range,
-                        base_range,
-                        distance,
-                        shift,
-                        scale,
+                        base_u_range: &base_u_range,
+                        base_v_range: &base_v_range,
+                        base_range: &base_range,
+                        distance: &distance,
+                        shift: &shift,
+                        scale: &scale,
                     },
                 )
             }
@@ -1048,7 +1048,7 @@ fn patch_helix_definition(
     AsmEditSet::patch_f64_payloads(
         bytes,
         record.offset,
-        layout.angle_range.into_iter().zip(*angle_range),
+        layout.angle_range.into_iter().zip(angle_range.get()),
     )?;
     for (offset, value) in layout.frame_vectors.into_iter().zip([
         [
@@ -1075,7 +1075,7 @@ fn patch_helix_definition(
         AsmEditSet::patch_vector_payload(bytes, record.offset + offset, value)?;
     }
     let apex_at = record.offset + layout.apex_factor;
-    AsmEditSet::patch_f64_payload(bytes, apex_at, apex_factor)?;
+    AsmEditSet::patch_f64_payload(bytes, apex_at, apex_factor.get())?;
     AsmEditSet::patch_vector_payload(bytes, record.offset + layout.axis, [axis.x, axis.y, axis.z])?;
     Ok(())
 }
@@ -1717,7 +1717,7 @@ fn patch_nurbs_curve_record(
                 point.x / LEN_TO_MM,
                 point.y / LEN_TO_MM,
                 point.z / LEN_TO_MM,
-                weights.as_ref().map_or(0.0, |weights| weights[index]),
+                weights.as_ref().map_or(0.0, |weights| weights[index].get()),
             ]
             .into_iter()
             .take(components)
@@ -1923,7 +1923,7 @@ fn patch_nurbs_pcurve_record(
     if let Some(weights) = nurbs.weights() {
         for (weight, offset) in weights.iter().zip(layout.weight_value_offsets()) {
             let at = scope.start + offset;
-            AsmEditSet::patch_f64_payload(bytes, at, *weight)?;
+            AsmEditSet::patch_f64_payload(bytes, at, weight.get())?;
         }
     }
     Ok(())

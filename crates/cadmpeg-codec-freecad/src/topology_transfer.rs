@@ -1630,7 +1630,7 @@ fn normalize_pcurve_parameter_range(
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            *parameter_range
+            parameter_range.endpoints()
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();

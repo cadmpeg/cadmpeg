@@ -3700,7 +3700,7 @@ fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]
     match geometry {
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
-            Some(*parameter_range)
+            Some(parameter_range.endpoints())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
@@ -3913,8 +3913,8 @@ fn pcurve_parameter_break_fractions(
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             let basis = trimmed_pcurve.basis();
-            add(parameter_range[0]);
-            add(parameter_range[1]);
+            add(parameter_range.endpoints()[0]);
+            add(parameter_range.endpoints()[1]);
             pcurve_parameter_break_fractions(basis, parameters, fractions);
         }
         PcurveGeometry::Offset(offset_pcurve) => {
@@ -4057,8 +4057,8 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             let basis = trimmed_pcurve.basis();
-            if parameter_range[0] < parameter_range[1] {
-                Some(*parameter_range)
+            if parameter_range.endpoints()[0] < parameter_range.endpoints()[1] {
+                Some(parameter_range.endpoints())
             } else {
                 pcurve_selection_parameter_domain(basis)
             }

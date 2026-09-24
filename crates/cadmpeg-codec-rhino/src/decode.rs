@@ -3560,8 +3560,6 @@ fn stage_extrusion_caps(
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(parameter_range))
                     .map_err(|error| format!("extrusion cap staging: {error}"))?;
-            let endpoint = FinitePoint3::new(endpoint)
-                .ok_or_else(|| format!("extrusion cap staging: {}", Point::NON_FINITE_POSITION))?;
             ir.model.points.push(Point::new(
                 point_id.clone(),
                 endpoint,
@@ -4884,7 +4882,7 @@ fn decode_pcurves(
             nurbs.degree(),
             nurbs.knots().to_vec(),
             control_points,
-            nurbs.weights(),
+            nurbs.pole_rows().weights(),
             nurbs.periodic(),
         ) {
             Ok(nurbs) => nurbs,

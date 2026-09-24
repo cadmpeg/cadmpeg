@@ -2246,11 +2246,11 @@ pub(crate) fn project_unbound_offset_plane_faces(
             };
             let (origin, normal) = match reference.as_ref() {
                 Some(cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame }) => {
-                    (frame.origin(), frame.normal())
+                    (frame.origin(), frame.normal().get())
                 }
                 _ => break 'feature_edit,
             };
-            let Some(selected) = unique_planar_face(origin, normal, faces, surfaces) else {
+            let Some(selected) = unique_planar_face(origin.get(), normal, faces, surfaces) else {
                 break 'feature_edit;
             };
             *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {

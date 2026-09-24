@@ -277,7 +277,8 @@ fn bind_consolidated_revolution_faces_and_seams(
             else {
                 continue;
             };
-            let Some([start, end]) = edge.param_range() else {
+            let Some([start, end]) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
+            else {
                 continue;
             };
             let parameter = start + (end - start) * 0.5;
@@ -592,7 +593,12 @@ mod consolidated_revolution_binding_tests {
         assert!(
             matches!(ir.model.curves[0].geometry.solved_cache(), Some(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 3.0 })
         );
-        assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 0.5]));
+        assert_eq!(
+            ir.model.edges[0]
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.0, 0.5])
+        );
     }
 }
 
@@ -3672,7 +3678,7 @@ fn standard_limit_curve_point_parameter(
         .map(|control| {
             control
                 .windows(2)
-                .map(|pair| pair[0].distance(pair[1]))
+                .map(|pair| pair[0].distance(pair[1].get()))
                 .sum::<f64>()
         })
         .sum::<f64>();
@@ -3683,7 +3689,7 @@ fn standard_limit_curve_point_parameter(
         0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span);
     let mut parameters = Vec::new();
     for (span, control_points) in curve.control_points().chunks_exact(6).enumerate() {
-        let control: BezierSpan = std::array::from_fn(|index| control_points[index]);
+        let control: BezierSpan = std::array::from_fn(|index| control_points[index].get());
         collect_bezier_point_parameters(
             control,
             [curve.knots()[span * 6], curve.knots()[(span + 1) * 6]],
@@ -6465,7 +6471,7 @@ fn standard_nurbs_line_pair_on_face(
 fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
     if surface
         .pole_weights()
-        .is_some_and(|weights| weights.into_iter().any(|weight| weight <= 0.0))
+        .is_some_and(|weights| weights.into_iter().any(|weight| weight.get() <= 0.0))
     {
         return None;
     }
@@ -6523,7 +6529,7 @@ fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> 
                     .zip([right.x, right.y, right.z])
                     .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
             })
-            && match (left.weights(), right.weights()) {
+            && match (left.pole_rows().weights(), right.pole_rows().weights()) {
                 (None, None) => true,
                 (Some(left), Some(right)) => {
                     left.len() == right.len()
@@ -7037,7 +7043,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                 let Some((curve, [start, end])) = edge
                     .curve()
                     .and_then(|id| curves.get(id))
-                    .zip(edge.param_range())
+                    .zip(edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
                 else {
                     continue;
                 };

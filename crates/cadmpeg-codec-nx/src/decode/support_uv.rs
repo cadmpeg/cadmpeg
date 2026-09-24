@@ -414,11 +414,10 @@ pub(super) fn missing_support_parameter(value: f64) -> bool {
 pub(super) fn pcurve_requires_completion(pcurve: Option<&PcurveGeometry>) -> bool {
     match pcurve {
         None => true,
-        Some(PcurveGeometry::Nurbs { nurbs }) => nurbs.control_points().iter().any(|point| {
-            !point.is_finite()
-                || missing_support_parameter(point.u)
-                || missing_support_parameter(point.v)
-        }),
+        Some(PcurveGeometry::Nurbs { nurbs }) => nurbs
+            .control_points()
+            .iter()
+            .any(|point| missing_support_parameter(point.u) || missing_support_parameter(point.v)),
         Some(_) => false,
     }
 }
@@ -427,11 +426,16 @@ fn pcurve_control_point_seed(pcurve: Option<&PcurveGeometry>, index: usize) -> O
     let PcurveGeometry::Nurbs { nurbs } = pcurve? else {
         return None;
     };
-    nurbs.control_points().get(index).copied().filter(|point| {
-        point.is_finite()
-            && !missing_support_parameter(point.u)
-            && !missing_support_parameter(point.v)
-    })
+    nurbs
+        .pole_rows()
+        .points()
+        .get(index)
+        .copied()
+        .filter(|point| {
+            point.is_finite()
+                && !missing_support_parameter(point.u)
+                && !missing_support_parameter(point.v)
+        })
 }
 
 fn serialized_support_uv_seed_candidates(
@@ -1490,8 +1494,8 @@ pub(super) fn blend_spine_cache_fit_tolerance_with_index(
                 .and_then(|procedurals| procedurals.first().copied())
                 .and_then(cadmpeg_ir::geometry::ProceduralCurve::cache_fit_tolerance)
         })
-        .filter(|tolerance| *tolerance > 0.0)
-        .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance)
+        .filter(|tolerance| tolerance.get() > 0.0)
+        .map_or(fit_tolerance, |tolerance| fit_tolerance + tolerance.get())
 }
 
 fn complete_blend_boundary_support_uv_with_index_and_budget(
@@ -1916,7 +1920,7 @@ pub(super) fn parameterization_equivalent_surfaces_with_index(
         let second_v_sense = second_payload.v_sense();
         let second_support_extension = second_payload.linear_support_extension();
         let second_extension = second_payload.extension();
-        first_distance.to_bits() == second_distance.to_bits()
+        first_distance.get().to_bits() == second_distance.get().to_bits()
             && first_u_sense == second_u_sense
             && first_v_sense == second_v_sense
             && first_support_extension == second_support_extension
@@ -2099,7 +2103,9 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             let candidate = (
                 pcurve.geometry.clone(),
                 context.parameter_range(),
-                procedural.cache_fit_tolerance(),
+                procedural
+                    .cache_fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
             );
             if !values.contains(&candidate) {
                 values.push(candidate);

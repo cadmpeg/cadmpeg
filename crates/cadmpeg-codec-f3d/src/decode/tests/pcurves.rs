@@ -70,12 +70,15 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let distance = definition_payload.distance();
     let shift = definition_payload.shift();
     let scale = definition_payload.scale();
-    assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(base_u_range.endpoints(), [-1.0, 2.0]);
     assert_eq!(context.parameter_range(), [0.0, 1.0]);
     assert!(*discontinuity_flag);
-    assert_eq!(*base_v_range, [-3.0, 4.0]);
-    assert_eq!(*base_range, [-0.5, 1.5]);
-    assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
+    assert_eq!(base_v_range.endpoints(), [-3.0, 4.0]);
+    assert_eq!(base_range.endpoints(), [-0.5, 1.5]);
+    assert_eq!(
+        (distance.get(), shift.get(), scale.get()),
+        (-2.5, 0.75, 1.25)
+    );
     assert!(result
         .ir()
         .model
@@ -92,17 +95,17 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         let context = &mut context_value;
         let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
         let discontinuity_flag = &mut discontinuity_flag_value;
-        let mut base_u_range_value = *definition_payload.base_u_range();
+        let mut base_u_range_value = definition_payload.base_u_range().endpoints();
         let base_u_range = &mut base_u_range_value;
-        let mut base_v_range_value = *definition_payload.base_v_range();
+        let mut base_v_range_value = definition_payload.base_v_range().endpoints();
         let base_v_range = &mut base_v_range_value;
-        let mut base_range_value = *definition_payload.base_range();
+        let mut base_range_value = definition_payload.base_range().endpoints();
         let base_range = &mut base_range_value;
-        let mut distance_value = *definition_payload.distance();
+        let mut distance_value = definition_payload.distance().get();
         let distance = &mut distance_value;
-        let mut shift_value = *definition_payload.shift();
+        let mut shift_value = definition_payload.shift().get();
         let shift = &mut shift_value;
-        let mut scale_value = *definition_payload.scale();
+        let mut scale_value = definition_payload.scale().get();
         let scale = &mut scale_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
@@ -130,7 +133,9 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                 (
                     definition_payload.base().clone(),
                     base_range_value,
-                    definition_payload.base_endpoints(),
+                    definition_payload
+                        .base_endpoints()
+                        .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
                 ),
                 cadmpeg_ir::geometry::CacheContract::from_form(
                     definition_payload.cache_first().cloned(),
@@ -155,7 +160,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     assert!(
         match regenerated.ir().model.procedural_curves[0].definition() {
             ProceduralCurveDefinition::SurfaceOffset(matched_payload) =>
-                matches!((matched_payload.context(), matched_payload.discontinuity_flag(), matched_payload.base_u_range(), matched_payload.base_v_range(), matched_payload.base_range(), matched_payload.distance(), matched_payload.shift(), matched_payload.scale(),), (context, false, [-2.0, 5.0], [-6.0, 7.0], [-0.75, 1.75], 3.5, -0.25, 0.8,) if context.parameter_range() == [-1.5, 2.5]),
+                matches!((matched_payload.context(), matched_payload.discontinuity_flag(), matched_payload.base_u_range().endpoints(), matched_payload.base_v_range().endpoints(), matched_payload.base_range().endpoints(), matched_payload.distance().get(), matched_payload.shift().get(), matched_payload.scale().get(),), (context, false, [-2.0, 5.0], [-6.0, 7.0], [-0.75, 1.75], 3.5, -0.25, 0.8,) if context.parameter_range() == [-1.5, 2.5]),
             _ => false,
         }
     );
@@ -183,11 +188,14 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
     let distance = definition_payload.distance();
     let shift = definition_payload.shift();
     let scale = definition_payload.scale();
-    assert_eq!(*base_u_range, [-1.0, 2.0]);
+    assert_eq!(base_u_range.endpoints(), [-1.0, 2.0]);
     assert!(*discontinuity_flag);
-    assert_eq!(*base_v_range, [-3.0, 4.0]);
-    assert_eq!(*base_range, [-0.5, 1.5]);
-    assert_eq!((*distance, *shift, *scale), (-2.5, 0.75, 1.25));
+    assert_eq!(base_v_range.endpoints(), [-3.0, 4.0]);
+    assert_eq!(base_range.endpoints(), [-0.5, 1.5]);
+    assert_eq!(
+        (distance.get(), shift.get(), scale.get()),
+        (-2.5, 0.75, 1.25)
+    );
 }
 
 #[test]
@@ -375,7 +383,10 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         };
         assert_eq!(cache_first.revision.get(), 23100);
         assert_eq!(context.parameter_range(), [-1.0, 2.0]);
-        assert_eq!(source_parameter_range, [Some(0.0), Some(1.0)]);
+        assert_eq!(
+            source_parameter_range.map(|bound| bound.map(cadmpeg_ir::scalar::FiniteReal::get)),
+            [Some(0.0), Some(1.0)]
+        );
         assert!(result
             .ir()
             .model
@@ -469,7 +480,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 .map(|curve| &curve.geometry),
             Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                    && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                     && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(3.0, -2.0, 5.0),
                         cadmpeg_ir::math::Point3::new(5.0, 2.0, 4.0),
@@ -505,7 +516,9 @@ fn generated_deformable_curves_decode_and_write_source_less() {
                 definition_payload.context().clone(),
                 definition_payload.cache_first().clone(),
                 source_value,
-                definition_payload.source_parameter_range(),
+                definition_payload
+                    .source_parameter_range()
+                    .map(|bound| bound.map(cadmpeg_ir::scalar::FiniteReal::get)),
                 definition_payload.data().clone(),
             )
             .unwrap();
@@ -551,7 +564,9 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated procedural-curve decode");
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.025)
     );
 }
@@ -644,14 +659,14 @@ fn generated_f3d_rewrites_topology_bound_nurbs_curve() {
     let SolvedCurveGeometry::Nurbs(mut nurbs) = cache.clone() else {
         panic!("expected NURBS edge carrier")
     };
-    let mut control_points = nurbs.control_points();
+    let mut control_points = nurbs.pole_rows().points();
     control_points[1].x = 14.0;
     control_points[1].z = -3.0;
     nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0, 2.0],
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )
     .unwrap();
@@ -682,7 +697,7 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 
     let pcurve = decode_pcurve_cache(&b).expect("2D pcurve block decodes");
     assert_eq!(pcurve.degree(), 1);
-    assert_eq!(pcurve.knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(pcurve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
 }
@@ -908,7 +923,7 @@ fn negative_ref_pcurve_reverses_its_uv_parameterization() {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        nurbs.control_points().first(),
+        nurbs.pole_rows().points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.75, 1.5))
     );
 }
@@ -933,7 +948,7 @@ fn ref_pcurve_selector_reversal_xors_intcurve_reversal() {
         panic!("ref pcurve is not a NURBS");
     };
     assert_eq!(
-        nurbs.control_points().first(),
+        nurbs.pole_rows().points().first(),
         Some(&cadmpeg_ir::math::Point2::new(0.25, 0.5))
     );
 }
@@ -961,11 +976,21 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
         complete.native_tail_flags(),
         Some([true, false, true, false])
     );
-    assert_eq!(complete.parameter_range(), Some([-1.0, 2.0]));
+    assert_eq!(
+        complete
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.0, 2.0])
+    );
 
     let short = decode(synthetic_geometry_with_short_pcurve_tail_smbh());
     assert_eq!(short.native_tail_flags(), None);
-    assert_eq!(short.parameter_range(), Some([-1.0, 2.0]));
+    assert_eq!(
+        short
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.0, 2.0])
+    );
 }
 
 #[test]
@@ -978,7 +1003,12 @@ fn generated_inline_pcurve_fit_tolerance_is_scoped() {
             &DecodeOptions::default(),
         )
         .expect("generated inline pcurve decode");
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), Some(0.001));
+    assert_eq!(
+        result.ir().model.pcurves[0]
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.001)
+    );
 }
 
 #[test]
@@ -1063,19 +1093,29 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
     let pcurve = &mut edited.model.pcurves[0];
     assert_eq!(pcurve.wrapper_reversed(), Some(false));
     assert_eq!(pcurve.native_tail_flags(), Some([true, false, true, false]));
-    assert_eq!(pcurve.parameter_range(), Some([-1.0, 2.0]));
-    assert_eq!(pcurve.fit_tolerance(), Some(0.001));
+    assert_eq!(
+        pcurve
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-1.0, 2.0])
+    );
+    assert_eq!(
+        pcurve
+            .fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.001)
+    );
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    let mut control_points = nurbs.control_points();
+    let mut control_points = nurbs.pole_rows().points();
     control_points[0].u = -0.5;
     control_points[1].v = 2.25;
     *nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
         1,
         vec![-1.0, -1.0, 2.0, 2.0],
         control_points,
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         true,
     )
     .unwrap();
@@ -1093,8 +1133,7 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
                 cadmpeg_ir::units::FiniteVector::new(replacement).expect("finite fixture range"),
-                cadmpeg_ir::geometry::FitTolerance::try_new(previous.fit_tolerance())
-                    .expect("admitted fit tolerance"),
+                previous.fit_tolerance(),
             ))
         })
     }
@@ -1172,12 +1211,14 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
             Ok(())
         })
         .unwrap();
-    let mut weights = nurbs.weights();
+    let mut weights = nurbs.pole_rows().weights();
     if let Some(weights) = &mut weights {
         weights[1] = 0.75;
     }
-    let poles =
-        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(nurbs.control_points(), weights);
+    let poles = cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::from_lanes(
+        nurbs.pole_rows().points(),
+        weights,
+    );
     {
         let replacement = poles.unwrap();
         edit::replace(nurbs, |previous| {
@@ -1211,7 +1252,12 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let pcurve = &mut edited.model.pcurves[0];
     assert_eq!(pcurve.wrapper_reversed(), None);
     assert_eq!(pcurve.fit_tolerance(), None);
-    assert_eq!(pcurve.parameter_range(), Some([-2.0, 4.0]));
+    assert_eq!(
+        pcurve
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([-2.0, 4.0])
+    );
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
@@ -1255,10 +1301,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
                 replacement.map(|range| {
                     cadmpeg_ir::units::FiniteVector::new(range).expect("finite fixture range")
                 }),
-                previous.fit_tolerance().map(|value| {
-                    cadmpeg_ir::geometry::FitTolerance::try_new(value)
-                        .expect("admitted fit tolerance")
-                }),
+                previous.fit_tolerance(),
             ))
         })
     }
@@ -1307,7 +1350,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
         form: cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
             false,
             [true, false, true, false],
-            cadmpeg_ir::units::FiniteVector::new(parameter_range).expect("finite fixture range"),
+            parameter_range,
             cadmpeg_ir::geometry::FitTolerance::try_new(0.002)
                 .expect("finite non-negative fixture tolerance"),
         ),

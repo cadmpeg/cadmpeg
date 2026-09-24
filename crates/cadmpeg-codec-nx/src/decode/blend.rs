@@ -23,10 +23,9 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
     homogeneous_spans, positive_controls, HomogeneousBezierSpan,
 };
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve},
-    pcurve::PcurveGeometry,
-    BlendCrossSection, BlendRadiusLaw, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    nurbs::NurbsCurve, pcurve::PcurveGeometry, BlendCrossSection, BlendRadiusLaw,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::solve::least_squares_step;
@@ -2196,8 +2195,8 @@ pub(super) fn closest_pcurve_parameters(
         return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, nurbs.periodic(), seed));
-    let control_points = nurbs.control_points();
-    let weights = nurbs.weights();
+    let control_points = nurbs.pole_rows().points();
+    let weights = nurbs.pole_rows().weights();
     let homogeneous = homogeneous_pcurve_spans(
         degree,
         nurbs.knots(),
@@ -2273,7 +2272,7 @@ fn homogeneous_pcurve_spans(
         || count <= degree
         || knots.len() != count.checked_add(degree)?.checked_add(1)?
         || knots.iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(knots)
+        || !cadmpeg_ir::geometry::nurbs::knots_nondecreasing(knots)
         || control_points.iter().any(|control| !control.is_finite())
         || !point.is_finite()
     {
@@ -2828,8 +2827,8 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
         })?;
     let contact_fit_tolerance = procedural
         .cache_fit_tolerance()
-        .filter(|fit| *fit > 0.0)
-        .map_or(tolerance, |fit| tolerance.max(fit));
+        .filter(|fit| fit.get() > 0.0)
+        .map_or(tolerance, |fit| tolerance.max(fit.get()));
     let offset_surfaces = context
         .sides()
         .iter()
@@ -3270,7 +3269,7 @@ fn surface_offset_lineage_with_index(
         return Some((surface.clone(), 0.0));
     };
     let support = definition_payload.support();
-    let distance = definition_payload.distance();
+    let distance = definition_payload.distance().get();
     let (base, accumulated) = surface_offset_lineage_with_index(index, support, depth + 1)?;
     Some((base, accumulated + distance))
 }
@@ -3789,32 +3788,19 @@ fn closest_nurbs_curve_parameter_with_budget(
 ) -> Option<f64> {
     let degree = usize::try_from(curve.degree()).ok()?;
     let count = curve.control_points().len();
-    if curve.knots().iter().any(|knot| !knot.is_finite())
-        || !knots_nondecreasing(curve.knots())
-        || curve
-            .control_points()
-            .iter()
-            .any(|control| !control.is_finite())
-        || !point.is_finite()
-    {
+    if !point.is_finite() {
         return None;
     }
     let domain = [*curve.knots().get(degree)?, *curve.knots().get(count)?];
-    if !domain[0].is_finite() || !domain[1].is_finite() || domain[0] >= domain[1] {
+    if domain[0] >= domain[1] {
         return None;
     }
     if seed.is_some_and(|seed| !seed.is_finite()) {
         return None;
     }
     let search_seed = seed.map(|seed| canonical_periodic_parameter(domain, curve.periodic(), seed));
-    let weights = match curve.weights() {
-        Some(weights)
-            if weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0) =>
-        {
-            weights
-        }
+    let weights = match curve.pole_rows().weights() {
+        Some(weights) if weights.iter().all(|weight| *weight > 0.0) => weights,
         Some(_) => return None,
         None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
     };

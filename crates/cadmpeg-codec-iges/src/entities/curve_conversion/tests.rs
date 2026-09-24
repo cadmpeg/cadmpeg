@@ -69,8 +69,8 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
     .expect("valid ellipse arc");
     assert_eq!(curve.degree(), 2);
     assert_eq!(curve.control_points().len(), 3);
-    let control_points = curve.control_points();
-    let weights = curve.weights();
+    let control_points = curve.pole_rows().points();
+    let weights = curve.pole_rows().weights();
     for (parameter, expected) in [
         (0.0, Point3::new(5.0, 2.0, 3.0)),
         (
@@ -105,7 +105,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
     )
     .expect("arc lanes pair")
     .expect("valid parabola arc");
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     for (parameter, expected) in [
         (-1.0, Point3::new(3.0, -2.0, 3.0)),
         (1.0, Point3::new(3.0, 6.0, 3.0)),

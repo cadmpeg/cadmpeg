@@ -24,7 +24,12 @@ fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
                 "fit_tolerance": 2.0,
             },
         });
-        assert_eq!(general.parameter_range(), Some(range));
+        assert_eq!(
+            general
+                .parameter_range()
+                .map(crate::units::FiniteVector::get),
+            Some(range)
+        );
         assert_eq!(serde_json::to_value(&general).unwrap(), wire);
         assert_eq!(
             serde_json::from_value::<PcurveMetadata>(wire).unwrap(),
@@ -32,7 +37,7 @@ fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
         );
         let inline =
             PcurveInlineForm::try_new(false, [true, false, true, false], range, 2.0).unwrap();
-        assert_eq!(inline.parameter_range(), range);
+        assert_eq!(inline.parameter_range().get(), range);
         let metadata = PcurveMetadata::AsmInline { form: inline };
         let wire = serde_json::to_value(&metadata).unwrap();
         assert_eq!(
@@ -103,19 +108,21 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
                     previous.wrapper_reversed,
                     previous.native_tail_flags,
                     replacement,
-                    previous.fit_tolerance(),
+                    previous.fit_tolerance().get(),
                 )
             })
         }
         .is_err());
-        assert_eq!(inline.parameter_range(), [0.0, 1.0]);
+        assert_eq!(inline.parameter_range().get(), [0.0, 1.0]);
         assert!({
             let replacement = Some(range);
             edit::replace(&mut general, |previous| {
                 crate::geometry::pcurve::PcurveGeneralForm::try_new(
                     previous.wrapper_reversed,
                     replacement,
-                    previous.fit_tolerance(),
+                    previous
+                        .fit_tolerance()
+                        .map(crate::geometry::FitTolerance::get),
                 )
             })
         }
@@ -129,7 +136,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
                 replacement,
-                previous.fit_tolerance(),
+                previous.fit_tolerance().get(),
             )
         })
     }
@@ -140,20 +147,29 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,
-                previous.fit_tolerance(),
+                previous
+                    .fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
             )
         })
     }
     .unwrap();
-    assert_eq!(inline.parameter_range(), [1.0, 1.0]);
-    assert_eq!(general.parameter_range(), Some([3.0, -2.0]));
+    assert_eq!(inline.parameter_range().get(), [1.0, 1.0]);
+    assert_eq!(
+        general
+            .parameter_range()
+            .map(crate::units::FiniteVector::get),
+        Some([3.0, -2.0])
+    );
     {
         let replacement = None;
         edit::replace(&mut general, |previous| {
             crate::geometry::pcurve::PcurveGeneralForm::try_new(
                 previous.wrapper_reversed,
                 replacement,
-                previous.fit_tolerance(),
+                previous
+                    .fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
             )
         })
     }
@@ -192,13 +208,23 @@ fn pcurve_fit_tolerance_admission_and_mutation_preserve_valid_values() {
             Err(PcurveMetadata::INVALID_FIT_TOLERANCE)
         );
         assert!(FitTolerance::try_new(value).is_err());
-        assert_eq!(inline.fit_tolerance(), 2.0);
-        assert_eq!(general.fit_tolerance(), Some(2.0));
+        assert_eq!(inline.fit_tolerance().get(), 2.0);
+        assert_eq!(
+            general
+                .fit_tolerance()
+                .map(crate::geometry::FitTolerance::get),
+            Some(2.0)
+        );
     }
     inline.set_fit_tolerance(FitTolerance::try_new(0.0).unwrap());
     general.set_fit_tolerance(Some(FitTolerance::try_new(0.0).unwrap()));
-    assert_eq!(inline.fit_tolerance(), 0.0);
-    assert_eq!(general.fit_tolerance(), Some(0.0));
+    assert_eq!(inline.fit_tolerance().get(), 0.0);
+    assert_eq!(
+        general
+            .fit_tolerance()
+            .map(crate::geometry::FitTolerance::get),
+        Some(0.0)
+    );
     general.set_fit_tolerance(None);
     assert_eq!(general.fit_tolerance(), None);
 }
@@ -220,7 +246,12 @@ fn pcurve_fit_tolerance_wire_rejects_negative_values_and_keeps_numeric_tokens() 
         for (source, mut form) in [("general", general), ("asm_inline", inline)] {
             let wire = serde_json::json!({"source": source, "form": form});
             let metadata: PcurveMetadata = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(metadata.fit_tolerance(), Some(value));
+            assert_eq!(
+                metadata
+                    .fit_tolerance()
+                    .map(crate::geometry::FitTolerance::get),
+                Some(value)
+            );
             assert_eq!(serde_json::to_value(metadata).unwrap(), wire);
             form["fit_tolerance"] = serde_json::json!(-1.0);
             let wire = serde_json::json!({"source": source, "form": form.clone()});

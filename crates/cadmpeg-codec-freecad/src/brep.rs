@@ -6360,7 +6360,7 @@ pub(crate) mod tests {
 
         assert_eq!(normalized.u_count(), 7);
         assert_eq!(
-            normalized.u_knots(),
+            normalized.u_knots().as_slice(),
             [-0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.5]
         );
         let poles = normalized.poles();
@@ -6636,8 +6636,8 @@ pub(crate) mod tests {
             panic!("Bezier curve was not normalized to NURBS")
         };
         assert_eq!(curve.degree(), 2);
-        assert_eq!(curve.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-        assert_eq!(curve.weights(), Some(vec![1.0, 2.0, 1.0]));
+        assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 1.0]));
     }
 
     #[test]
@@ -6651,8 +6651,8 @@ pub(crate) mod tests {
         };
         assert_eq!((surface.u_degree(), surface.v_degree()), (1, 1));
         assert_eq!((surface.u_count(), surface.v_count()), (2, 2));
-        assert_eq!(surface.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-        assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
         assert!(surface.weights().is_none());
     }
 
@@ -6964,13 +6964,13 @@ pub(crate) mod tests {
         };
         let distance = offset_pcurve.distance();
         let basis = offset_pcurve.basis();
-        assert_eq!(distance, 0.25);
+        assert_eq!(distance.get(), 0.25);
         assert!(
             matches!(basis, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Trimmed(trimmed_pcurve)
             if {
                 let basis = trimmed_pcurve.basis();
                 matches!(basis, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle_pcurve)
-                        if { circle_pcurve.radius() == 3.0 })
+                        if { circle_pcurve.radius().get() == 3.0 })
             })
         );
     }

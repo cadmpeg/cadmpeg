@@ -200,7 +200,7 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
     assert!(
         matches!(&pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Trimmed(trimmed_pcurve)
         if {
-            let [start, end] = trimmed_pcurve.parameter_range();
+            let [start, end] = &trimmed_pcurve.parameter_range().endpoints();
             *start == 0.0 && *end == 1.0
         })
     );
@@ -908,7 +908,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
             &pcurve.geometry,
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
                 if nurbs.degree() == 1
-                    && nurbs.knots() == [0.0, 0.0, 1.0, 1.0]
+                    && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                     && nurbs.control_points().len() == 2
                     && nurbs.weights().is_none()
                     && !nurbs.periodic()

@@ -161,7 +161,7 @@ fn add_edge(
     parameter_range: [f64; 2],
     sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
-    let control_points = nurbs.control_points();
+    let control_points = nurbs.pole_rows().points();
     let start = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),

@@ -962,8 +962,28 @@ impl ParameterInterval {
     pub const fn endpoints(self) -> [f64; 2] {
         self.0
     }
-    pub(crate) const fn as_raw(&self) -> &[f64; 2] {
-        &self.0
+}
+
+impl crate::geometry::nurbs::NurbsCurve {
+    /// Endpoints of the full knot vector. [`Self::new`] and
+    /// [`Self::edit_knots`] admit finite non-decreasing knots, so the first
+    /// knot is finite and at most the last. The route lives beside
+    /// [`ParameterInterval`] because only this module constructs one.
+    #[must_use]
+    pub fn full_knot_endpoints(&self) -> ParameterInterval {
+        let knots = self.knots();
+        ParameterInterval([knots[0], knots[knots.len() - 1]])
+    }
+}
+
+impl crate::geometry::pcurve::PcurveNurbs {
+    /// Endpoints of the full knot vector, with the guarantee of
+    /// [`crate::geometry::nurbs::NurbsCurve::full_knot_endpoints`]:
+    /// [`Self::new`] admits finite non-decreasing knots.
+    #[must_use]
+    pub fn full_knot_endpoints(&self) -> ParameterInterval {
+        let knots = self.knots();
+        ParameterInterval([knots[0], knots[knots.len() - 1]])
     }
 }
 
@@ -1103,12 +1123,13 @@ impl EdgeCarrier {
         }
     }
 
-    /// Return the parameter endpoints, when the carrier states them.
-    pub fn param_range(&self) -> Option<[f64; 2]> {
+    /// Return the parameter endpoints, when the carrier states them. Both
+    /// forms hold finite endpoints; the bounded form also orders them.
+    pub fn param_range(&self) -> Option<crate::units::FiniteVector<2>> {
         match self {
             Self::Free | Self::Curve(_) => None,
-            Self::Endpoints([start, end]) => Some([start.get(), end.get()]),
-            Self::Bounded(_, interval) => Some(interval.endpoints()),
+            Self::Endpoints(endpoints) => Some((*endpoints).into()),
+            Self::Bounded(_, interval) => Some((*interval).into()),
         }
     }
 
@@ -1132,7 +1153,7 @@ impl From<EdgeCarrier> for EdgeCarrierWire {
     fn from(value: EdgeCarrier) -> Self {
         Self {
             curve: value.curve().cloned(),
-            param_range: value.param_range(),
+            param_range: value.param_range().map(crate::units::FiniteVector::get),
         }
     }
 }
@@ -1164,7 +1185,10 @@ impl Edge {
 
     /// Replace the curve while retaining the range if it remains valid.
     pub fn set_curve(&mut self, curve: Option<CurveId>) -> Result<(), &'static str> {
-        self.carrier = EdgeCarrier::new(curve, self.param_range())?;
+        self.carrier = EdgeCarrier::new(
+            curve,
+            self.param_range().map(crate::units::FiniteVector::get),
+        )?;
         Ok(())
     }
     /// Replace the parameter endpoints with an admitted interval. The
@@ -1182,7 +1206,7 @@ impl Edge {
         self.carrier.curve()
     }
     /// Return the parameter endpoints.
-    pub fn param_range(&self) -> Option<[f64; 2]> {
+    pub fn param_range(&self) -> Option<crate::units::FiniteVector<2>> {
         self.carrier.param_range()
     }
 }
@@ -1422,6 +1446,46 @@ mod tests {
         assert_eq!(
             Ok(edge.carrier.clone()),
             EdgeCarrier::new(None, Some([3.0, 3.0]))
+        );
+    }
+
+    #[test]
+    fn an_edge_hands_out_its_admitted_endpoints_as_a_finite_vector() {
+        use super::{EdgeCarrier, ParameterInterval};
+        use crate::scalar::FiniteReal;
+
+        let mut edge = crate::examples::unit_cube()
+            .expect("valid unit cube fixture")
+            .model
+            .edges
+            .remove(0);
+        let interval = ParameterInterval::new([-1.5, 2.0]).expect("ordered");
+        edge.set_param_range(Some(interval));
+        let bounded = edge
+            .param_range()
+            .expect("a bounded carrier states its range");
+        assert_eq!(bounded.get(), [-1.5, 2.0]);
+        assert_eq!(*bounded, interval.endpoints());
+        assert_eq!(bounded.into_iter().collect::<Vec<_>>(), [-1.5, 2.0]);
+
+        edge.set_curve(None)
+            .expect("a carrier with ordered endpoints can drop its curve");
+        let reversed = [
+            FiniteReal::new(4.0).unwrap(),
+            FiniteReal::new(-4.0).unwrap(),
+        ];
+        edge.carrier = EdgeCarrier::Endpoints(reversed);
+        let free = edge
+            .param_range()
+            .expect("free endpoints state their range");
+        assert_eq!(free.get(), [4.0, -4.0]);
+        assert_eq!(
+            (&free).into_iter().copied().collect::<Vec<_>>(),
+            [4.0, -4.0]
+        );
+        assert_eq!(
+            serde_json::to_value(&edge.carrier).unwrap(),
+            serde_json::json!({"param_range": [4.0, -4.0]})
         );
     }
 

@@ -53,15 +53,15 @@ fn decode_projects_fixed_reference_plane_frame() {
         .unwrap();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin(),  Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if matches!(frame.origin().get(),  Point3 {
                 x: 2500.0,
                 y: -250.0,
                 z: 1500.0,
-            }) && matches!(frame.normal(),  Vector3 {
+            }) && matches!(frame.normal().get(),  Vector3 {
                 x: -1.0,
                 y: 0.0,
                 z: 0.0,
-            }) && matches!(frame.u_axis(),  Vector3 {
+            }) && matches!(frame.u_axis().get(),  Vector3 {
                 x: 0.0,
                 y: 0.0,
                 z: -1.0,

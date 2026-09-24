@@ -32,7 +32,7 @@ fn curve_cache_decodes_in_both_integer_widths() {
         assert_eq!(curve.degree(), 1);
         assert_eq!(curve.control_points().len(), 2);
         assert_eq!(curve.control_points()[1].x, 10.0); // cm→mm ×10
-        assert_eq!(curve.knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
         assert!(first_curve_patch_layout(&block, int_width).is_some());
         assert!(final_curve_patch_layout(&block, int_width).is_some());
         let other_width = match int_width {
@@ -467,7 +467,7 @@ fn an_exp_par_cur_scope_decodes_its_own_bs2_field_through_the_scope_type() {
             .unwrap_or_else(|| panic!("explicit pcurve cache at width {int_width}"));
 
         assert_eq!(pcurve.degree(), 1);
-        assert_eq!(pcurve.knots(), [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(pcurve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     }
 }
 

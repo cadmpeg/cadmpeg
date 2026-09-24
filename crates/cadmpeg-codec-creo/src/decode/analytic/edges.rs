@@ -109,10 +109,7 @@ pub(super) fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
 
 pub(in crate::decode) fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
     let degree = usize::try_from(nurbs.degree()).ok()?;
-    (nurbs_control_extent(nurbs).is_some()
-        && nurbs.knots().iter().all(|knot| knot.is_finite())
-        && nurbs.knots().windows(2).all(|pair| pair[0] <= pair[1]))
-    .then_some(())?;
+    nurbs_control_extent(nurbs)?;
     let range = [
         *nurbs.knots().get(degree)?,
         *nurbs.knots().get(nurbs.control_points().len())?,
@@ -152,11 +149,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
     if degree == 1 {
         nurbs
             .weights()
-            .is_none_or(|weights| {
-                weights
-                    .iter()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-            })
+            .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
             .then_some(())?;
         let scale = nurbs_control_extent(nurbs)?;
         let tolerance = EPS_AGREE * scale;
@@ -285,11 +278,7 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
     nurbs.periodic().then_some(())?;
     nurbs
         .weights()
-        .is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
         .then_some(())?;
     let range = nurbs_intrinsic_parameter_range(nurbs)?;
     let mapped = range.map(|parameter| {
@@ -351,8 +340,10 @@ fn degree_one_nurbs_point_parameter(
         if dot(mismatch, mismatch).sqrt() > tolerance {
             continue;
         }
-        let first_weight = nurbs.weights().map_or(1.0, |weights| weights[span - 1]);
-        let second_weight = nurbs.weights().map_or(1.0, |weights| weights[span]);
+        let first_weight = nurbs
+            .weights()
+            .map_or(1.0, |weights| weights[span - 1].get());
+        let second_weight = nurbs.weights().map_or(1.0, |weights| weights[span].get());
         let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
         if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
             continue;

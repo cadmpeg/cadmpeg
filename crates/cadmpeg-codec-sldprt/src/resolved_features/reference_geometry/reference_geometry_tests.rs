@@ -315,7 +315,7 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
     );
     assert!(matches!(
         crate::history::project::project_features(&histories).unwrap()[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin(), Point3 {
+        FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { frame }) if matches!(frame.origin().get(), Point3 {
                 x: 125.0,
                 y: -250.0,
                 z: 500.0

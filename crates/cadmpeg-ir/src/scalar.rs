@@ -402,9 +402,6 @@ impl FiniteReal {
     /// Zero.
     pub const ZERO: Self = Self(0.0);
 
-    pub(crate) const fn as_raw(&self) -> &f64 {
-        &self.0
-    }
     /// Reverse the sign.
     #[must_use]
     pub const fn negated(self) -> Self {

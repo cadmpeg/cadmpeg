@@ -2015,7 +2015,7 @@ pub(in super::super) fn transfer_native_brep(
                             })?;
                             Some((
                                 geometry,
-                                edge.param_range(),
+                                edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
                                 tag,
                             ))

@@ -1445,7 +1445,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
     assert_eq!(surface.u_knots(), directrix.knots());
-    assert_eq!(surface.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     assert_eq!(
         surface.poles(),
         [
@@ -1458,7 +1458,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         ]
     );
     assert_eq!(
-        surface.pole_weights(),
+        surface.pole_grid().weights().map(|rows| rows.concat()),
         Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
     );
 }

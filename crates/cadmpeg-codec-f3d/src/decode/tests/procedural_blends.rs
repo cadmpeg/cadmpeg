@@ -160,7 +160,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                             .find(|curve| curve.id == side.curve)
                             .map(|curve| &curve.geometry),
                         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-                if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                     ));
             }
             assert!(matches!(
@@ -173,7 +173,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [-0.5, -0.5, 1.5, 1.5]
+                && curve.knots().as_slice() == [-0.5, -0.5, 1.5, 1.5]
             ));
         }
     }
@@ -346,7 +346,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         if let Some(third) = &actual.third {
@@ -359,7 +359,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .find(|curve| curve.id == third.curve)
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -371,7 +371,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }
@@ -499,7 +499,10 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    let Some([0.25, 0.75]) = &definition_payload_0.parameter_interval() else {
+    let Some([0.25, 0.75]) = definition_payload_0
+        .parameter_interval()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+    else {
         panic!("expected a parameterized revision-gated extrusion")
     };
     let Some(form) = definition_payload_0.revision_form() else {
@@ -1001,7 +1004,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| Some(&curve.id) == actual.post_curve.as_ref())
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
         ));
         for side in actual.sides.iter() {
             assert!(matches!(
@@ -1013,7 +1016,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
         assert!(matches!(
@@ -1025,7 +1028,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                 .find(|curve| curve.id == actual.slice)
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [-1.0, -1.0, 2.0, 2.0]
         ));
     }
 }

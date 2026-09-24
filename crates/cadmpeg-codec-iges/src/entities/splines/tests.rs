@@ -133,7 +133,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     };
     assert_eq!(nurbs.degree(), 3);
     assert_eq!(
-        nurbs.knots(),
+        nurbs.knots().as_slice(),
         [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
     );
     assert_eq!(nurbs.control_points().len(), 7);
@@ -141,14 +141,19 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         cadmpeg_ir::eval::nurbs_curve_point(
             nurbs.degree(),
             nurbs.knots(),
-            &nurbs.control_points(),
+            &nurbs.pole_rows().points(),
             None,
             1.5,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
-    assert_eq!(result.ir().model.edges[0].param_range(), Some([0.0, 2.0]));
+    assert_eq!(
+        result.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 2.0])
+    );
     assert!(result
         .report()
         .losses
@@ -173,7 +178,7 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
     let point = cadmpeg_ir::eval::nurbs_curve_point(
         nurbs.degree(),
         nurbs.knots(),
-        &nurbs.control_points(),
+        &nurbs.pole_rows().points(),
         None,
         3.25,
     )

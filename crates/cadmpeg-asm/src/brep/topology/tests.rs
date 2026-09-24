@@ -106,7 +106,12 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
                 panic!("expected a revision Sum");
             };
             assert!(matches!(form.cache, RevisionCacheForm::SolvedCache { .. }));
-            assert_eq!(form.cache.fit_tolerance(), Some(tolerance * 10.0));
+            assert_eq!(
+                form.cache
+                    .fit_tolerance()
+                    .map(cadmpeg_ir::geometry::FitTolerance::get),
+                Some(tolerance * 10.0)
+            );
             assert_eq!(decoded.cache_fit_tolerance(), Some(tolerance * 10.0));
             assert_eq!(decoded.legacy_cache_fit_tolerance(), None);
 

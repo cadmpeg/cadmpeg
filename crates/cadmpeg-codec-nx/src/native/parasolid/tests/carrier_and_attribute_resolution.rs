@@ -149,7 +149,7 @@ fn decode_preserves_offset_status_without_assigning_parameter_sense() {
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
             let extension = definition_payload.extension();
-            assert_eq!(*distance, 2.5);
+            assert_eq!(distance.get(), 2.5);
             assert_eq!(*u_sense, None);
             assert_eq!(*v_sense, None);
             assert_eq!(
@@ -472,7 +472,12 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(nurbs.degree(), 1);
     assert_eq!(nurbs.control_points()[0].x, 0.0);
     assert_eq!(nurbs.control_points()[1].x, 10.0);
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.01));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.01)
+    );
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         procedural.definition()
     else {
@@ -537,7 +542,10 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .expect("required invariant");
     let edge = result.ir().model.edges.first().expect("edge");
     assert_eq!(edge.curve(), Some(&result.ir().model.curves[0].id));
-    assert_eq!(edge.param_range(), Some([0.25, 0.75]));
+    assert_eq!(
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     let records = result
         .ir()
         .native

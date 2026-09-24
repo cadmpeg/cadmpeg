@@ -123,7 +123,7 @@ impl<'a> NativeRecordPlan<'a> {
                     let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
                     ref_pcurve_count += 1;
                     NativePcurveForm::Reference {
-                        range,
+                        range: range.get(),
                         companion_ref,
                     }
                 }
@@ -1468,7 +1468,9 @@ fn encode_source_less_edges_vertices_points(
             })
             .transpose()?
             .unwrap_or(-1);
-        let mut range = edge.param_range().unwrap_or([0.0, 1.0]);
+        let mut range = edge
+            .param_range()
+            .map_or([0.0, 1.0], cadmpeg_ir::units::FiniteVector::get);
         // Conic edge parameters are angles in both the IR and the native
         // stream; line parameters are arc lengths, millimeters in the IR
         // and centimeters natively.

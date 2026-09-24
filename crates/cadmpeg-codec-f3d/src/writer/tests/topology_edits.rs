@@ -249,7 +249,9 @@ fn generated_f3d_rewrites_edge_parameter_range() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range(),
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.5, 4.75])
     );
 }

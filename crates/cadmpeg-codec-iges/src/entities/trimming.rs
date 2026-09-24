@@ -399,7 +399,7 @@ pub(super) fn pcurve_geometry(
                 )
             })
             .collect(),
-        nurbs.weights(),
+        nurbs.pole_rows().weights(),
         nurbs.periodic(),
     )?;
     Ok(Some((
@@ -438,7 +438,7 @@ fn procedural_pcurve_parameter_map(
                 if line_directrix(ir, directrix) {
                     u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
                 } else if let Some(parameter_interval) = parameter_interval {
-                    u_map = affine_parameter_map(parameter_interval, carrier_interval)?;
+                    u_map = affine_parameter_map(parameter_interval.get(), carrier_interval)?;
                 }
             }
         }
@@ -594,11 +594,10 @@ fn source_curve_control_intervals(
                 (!controls.is_empty()).then_some(controls)
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                if nurbs.weights().is_some_and(|weights| {
-                    weights
-                        .iter()
-                        .any(|weight| !weight.is_finite() || *weight <= 0.0)
-                }) {
+                if nurbs
+                    .weights()
+                    .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
+                {
                     return None;
                 }
                 let exact = || {
@@ -715,11 +714,11 @@ fn source_curve_control_polygon_within_bounds(
 fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
     if nurbs
         .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight != 1.0))
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
     {
         return None;
     }
-    let control_points = nurbs.control_points();
+    let control_points = nurbs.pole_rows().points();
     linear_nurbs_parameters(
         nurbs.degree(),
         nurbs.knots(),
@@ -747,7 +746,7 @@ fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Ve
     };
     if nurbs
         .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight != 1.0))
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() != 1.0))
     {
         return None;
     }
@@ -808,7 +807,7 @@ fn linear_boundary_model_points(
         let mut curve_points = match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Line(_)) => vec![item.start.get(), item.end.get()],
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                linear_model_nurbs_points(nurbs, item.source_edge.param_range()?)?
+                linear_model_nurbs_points(nurbs, item.source_edge.param_range()?.get())?
             }
             _ => return None,
         };
@@ -1258,15 +1257,10 @@ fn pcurve_within_declared_intervals(
         .iter()
         .enumerate()
         .map(|(index, point)| {
-            let weight = nurbs
-                .weights()
-                .map_or(Some(1.0), |weights| weights.get(index).copied())?;
-            (weight.is_finite() && weight > 0.0).then_some([
-                weight,
-                weight * point.u,
-                weight * point.v,
-                0.0,
-            ])
+            let weight = nurbs.weights().map_or(Some(1.0), |weights| {
+                weights.get(index).map(|weight| weight.get())
+            })?;
+            (weight > 0.0).then_some([weight, weight * point.u, weight * point.v, 0.0])
         })
         .collect::<Option<Vec<_>>>()
     else {
@@ -2239,7 +2233,9 @@ pub(super) fn project(
                 let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
                 let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(item.model_curve),
-                    item.source_edge.param_range(),
+                    item.source_edge
+                        .param_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get),
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {

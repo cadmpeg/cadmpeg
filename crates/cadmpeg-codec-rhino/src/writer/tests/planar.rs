@@ -128,12 +128,10 @@ fn adjacent_planar_faces_round_trip_shared_edge_and_domains() {
         assert_eq!(decoded.ir().model.coedges.len(), 8, "{version:?}");
         assert_eq!(decoded.ir().model.edges.len(), 7, "{version:?}");
         assert_eq!(decoded.ir().model.vertices.len(), 6, "{version:?}");
-        assert!(decoded
-            .ir()
-            .model
-            .edges
-            .iter()
-            .all(|edge| edge.param_range() == Some([2.0, 3.0])));
+        assert!(decoded.ir().model.edges.iter().all(|edge| edge
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            == Some([2.0, 3.0])));
         let shared = decoded
             .ir()
             .model

@@ -397,7 +397,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
     );
     assert_eq!(
-        first_use_curve.knots(),
+        first_use_curve.knots().as_slice(),
         [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]
     );
 
@@ -848,13 +848,13 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .expect("cache-first surface-offset form");
     assert_eq!(form.revision.get(), 23100);
     assert_eq!(form.extension, 7);
-    assert_eq!(*base_u_range, [-1.0, 2.0]);
-    assert_eq!(*base_v_range, [-3.0, 4.0]);
+    assert_eq!(base_u_range.endpoints(), [-1.0, 2.0]);
+    assert_eq!(base_v_range.endpoints(), [-3.0, 4.0]);
     assert_eq!(base_endpoints, [None, None]);
-    assert_eq!(*base_range, [-0.5, 1.5]);
-    assert_eq!(*distance, -2.5);
-    assert_eq!(*shift, 0.75);
-    assert_eq!(*scale, 1.25);
+    assert_eq!(base_range.endpoints(), [-0.5, 1.5]);
+    assert_eq!(distance.get(), -2.5);
+    assert_eq!(shift.get(), 0.75);
+    assert_eq!(scale.get(), 1.25);
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -884,17 +884,19 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
             actual_payload.context().clone(),
             *actual_payload.discontinuity_flag(),
             [
-                *actual_payload.base_u_range(),
-                *actual_payload.base_v_range(),
+                actual_payload.base_u_range().endpoints(),
+                actual_payload.base_v_range().endpoints(),
             ],
             (
                 expected_payload.base().clone(),
-                *actual_payload.base_range(),
-                actual_payload.base_endpoints(),
+                actual_payload.base_range().endpoints(),
+                actual_payload
+                    .base_endpoints()
+                    .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
             ),
             cadmpeg_ir::geometry::CacheContract::from_form(actual_payload.cache_first().cloned()),
-            *actual_payload.distance(),
-            [*actual_payload.shift(), *actual_payload.scale()],
+            actual_payload.distance().get(),
+            [actual_payload.shift().get(), actual_payload.scale().get()],
         )
         .unwrap();
     assert_eq!(actual, expected);

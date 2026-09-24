@@ -342,6 +342,7 @@ pub(super) fn emit_topology(
                     let surface = pcurve_supports.get(&curve_xmt?)?.clone();
                     let parameter_range = pcurve
                         .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get)
                         .or(param_range)
                         .or_else(|| pcurve_parameter_range(&pcurve.geometry))?;
                     let parameter_range = ordered_parameter_range(parameter_range)?;
@@ -665,7 +666,9 @@ pub(super) fn emit_topology(
                     .copied()
                     .and_then(ordered_parameter_range);
                 let parameter_range = use_range
-                    .or(carrier.parameter_range())
+                    .or(carrier
+                        .parameter_range()
+                        .map(cadmpeg_ir::units::FiniteVector::get))
                     .or_else(|| pcurve_parameter_range(&carrier.geometry));
                 let endpoints = pcurve_endpoint_witness_with_index_and_budget(
                     &index,
@@ -673,7 +676,9 @@ pub(super) fn emit_topology(
                     support,
                     &carrier.geometry,
                     parameter_range,
-                    carrier.fit_tolerance(),
+                    carrier
+                        .fit_tolerance()
+                        .map(cadmpeg_ir::geometry::FitTolerance::get),
                     adaptive_geometry_budget,
                 )?;
                 let curve = index.edges(edge.as_str())?.curve()?;
@@ -723,7 +728,7 @@ pub(super) fn emit_topology(
                     &support,
                     &geometry,
                     None,
-                    fit_tolerance,
+                    fit_tolerance.map(cadmpeg_ir::geometry::FitTolerance::get),
                     adaptive_geometry_budget,
                 )
                 .then_some((
@@ -842,13 +847,7 @@ pub(super) fn emit_topology(
                                 .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                         ),
-                        fit_tolerance
-                            .map(|value| {
-                                cadmpeg_ir::geometry::FitTolerance::try_new(value)
-                                    .map_err(|_| PcurveMetadata::INVALID_FIT_TOLERANCE)
-                            })
-                            .transpose()
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
+                        fit_tolerance,
                     ),
                 });
                 pcurve = Some(pcurve_id);

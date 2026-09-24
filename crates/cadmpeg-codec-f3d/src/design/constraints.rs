@@ -824,10 +824,10 @@ fn rotated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
-            let first_points = first.control_points();
-            let second_points = second.control_points();
-            let first_weights = first.weights();
-            let second_weights = second.weights();
+            let first_points = first.pole_rows().points();
+            let second_points = second.pole_rows().points();
+            let first_weights = first.pole_rows().weights();
+            let second_weights = second.pole_rows().weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())
@@ -937,10 +937,10 @@ fn translated_sketch_geometry_matches(
             SketchGeometryDefinition::Nurbs { curve: first },
             SketchGeometryDefinition::Nurbs { curve: second },
         ) => {
-            let first_points = first.control_points();
-            let second_points = second.control_points();
-            let first_weights = first.weights();
-            let second_weights = second.weights();
+            let first_points = first.pole_rows().points();
+            let second_points = second.pole_rows().points();
+            let first_weights = first.pole_rows().weights();
+            let second_weights = second.pole_rows().weights();
             first.degree() == second.degree()
                 && first.periodic() == second.periodic()
                 && equal_scalars(first.knots(), second.knots())

@@ -98,7 +98,7 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
         curve.control_points(),
         [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
     );
-    assert_eq!(curve.weights(), Some(vec![1.0e308, 1.0e-308]));
+    assert_eq!(curve.pole_rows().weights(), Some(vec![1.0e308, 1.0e-308]));
     let surface = bilinear_surface(vec![vec![1.0e308; 2], vec![1.0e-308; 2]], [0.0, 1.0e308]);
     let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5).unwrap();
     for point in curve.control_points() {

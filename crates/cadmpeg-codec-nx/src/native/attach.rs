@@ -5626,7 +5626,7 @@ fn owned_offset_carriers<'a>(
         };
         let support = definition_payload.support();
         let candidate = definition_payload.distance();
-        carriers.push((support.clone(), *candidate));
+        carriers.push((support.clone(), candidate.get()));
     }
     (!carriers.is_empty()).then_some((body, carriers))
 }

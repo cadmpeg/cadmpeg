@@ -88,7 +88,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
         .model
         .procedural_curves
         .iter()
-        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
+        .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
     assert!(result.report().losses.iter().all(|loss| {
         !loss
             .message
@@ -259,7 +259,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
         let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
         assert!(result.ir().model.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
-                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((matched_payload.parameter_range(),), (parameter_range,) if *parameter_range == expected), _ => false }
+                && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 

@@ -1810,10 +1810,6 @@ pub(in crate::decode) fn planar_curve_pcurve(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs_intrinsic_parameter_range(nurbs)?;
-            nurbs
-                .weights()
-                .is_none_or(|weights| weights.iter().all(|weight| weight.is_finite()))
-                .then_some(())?;
             let tolerance = EPS_AGREE * nurbs_control_extent(nurbs)?;
             let control_points = nurbs
                 .control_points()
@@ -1824,7 +1820,7 @@ pub(in crate::decode) fn planar_curve_pcurve(
                 nurbs.degree(),
                 nurbs.knots().to_vec(),
                 control_points,
-                nurbs.weights(),
+                nurbs.pole_rows().weights(),
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),

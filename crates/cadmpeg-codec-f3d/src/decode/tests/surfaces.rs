@@ -140,8 +140,8 @@ fn nurbs_surface_block_decodes_to_carrier() {
     let s = decode_surface_cache(&b).expect("surface block decodes");
     assert_eq!((s.u_degree(), s.v_degree()), (1, 1));
     assert_eq!((s.u_count(), s.v_count()), (2, 2));
-    assert_eq!(s.u_knots(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(s.v_knots(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.u_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(s.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
     let poles = s.poles();
     assert_eq!(poles.len(), 4);
     assert!(s.weights().is_none());
@@ -163,7 +163,12 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("exact spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        assert_eq!(procedural.cache_fit_tolerance(), Some(0.015));
+        assert_eq!(
+            procedural
+                .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(0.015)
+        );
         assert_eq!(
             procedural.definition(),
             &ProceduralSurfaceDefinition::Exact(
@@ -223,7 +228,12 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             )
             .expect("ruled spline surface decode");
         let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-        assert_eq!(procedural.cache_fit_tolerance(), Some(0.025));
+        assert_eq!(
+            procedural
+                .cache_fit_tolerance()
+                .map(cadmpeg_ir::geometry::FitTolerance::get),
+            Some(0.025)
+        );
         let ProceduralSurfaceDefinition::Ruled { first, second, .. } = procedural.definition()
         else {
             panic!("expected ruled surface construction")
@@ -285,7 +295,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                     .find(|curve| curve.id == *profile)
                     .map(|curve| &curve.geometry),
                 Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
-            if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+            if curve.degree() == 1 && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
             ));
         }
     }
@@ -525,7 +535,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                 && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, 3.0, 4.0),
                         cadmpeg_ir::math::Point3::new(7.0, 1.0, 5.0),
@@ -568,7 +578,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let v_sense = definition_payload.v_sense();
         let _ = definition_payload.linear_support_extension();
         let extension = definition_payload.extension();
-        assert_eq!(*distance, -12.5);
+        assert_eq!(distance.get(), -12.5);
         assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
         let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags, .. } = extension else {
             panic!("expected legacy offset extension")
@@ -601,7 +611,10 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         let u_sense = definition_payload.u_sense();
         let v_sense = definition_payload.v_sense();
         let extension = definition_payload.extension();
-        assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
+        assert_eq!(
+            (distance.get(), *u_sense, *v_sense),
+            (-12.5, Some(3), Some(-4))
+        );
         let cadmpeg_ir::geometry::OffsetExtension::Legacy { flags, .. } = extension else {
             panic!("expected legacy offset extension")
         };
@@ -709,7 +722,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         let pcurve = definition_payload.pcurve();
         let parameter = definition_payload.parameter();
         let taper = definition_payload.taper();
-        assert_eq!(*parameter, 0.35);
+        assert_eq!(parameter.get(), 0.35);
         assert!(pcurve.is_some());
         assert!(result
             .ir()
@@ -781,7 +794,7 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                 && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                         cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
@@ -927,7 +940,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
                 .map(|curve| &curve.geometry),
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [-1.0, -1.0, 2.0, 2.0]
+                && curve.knots().as_slice() == [-1.0, -1.0, 2.0, 2.0]
                 && curve.control_points() == [
                         cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
                         cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
@@ -1057,7 +1070,12 @@ fn generated_t_spline_surface_decodes_and_writes_inline_subtransform() {
         )
         .expect("T-spline surface decode");
     let native = construction(decoded.ir().model.procedural_surfaces[0].definition()).clone();
-    assert_eq!(native.parameter_ranges(), [[-20.0, 30.0], [-40.0, 50.0]]);
+    assert_eq!(
+        native
+            .parameter_ranges()
+            .map(cadmpeg_ir::topology::ParameterInterval::endpoints),
+        [[-20.0, 30.0], [-40.0, 50.0]]
+    );
     assert_eq!((native.type_code(), native.trailing_value()), (7, 9));
     let TSplineSubtransform::Inline(inline) = native.subtransform() else {
         panic!("expected inline T-spline subtransform")
@@ -1107,7 +1125,7 @@ fn generated_helix_surfaces_decode_and_write_exact_constructions() {
         let profile = construction.profile();
         let center = path.center();
         let pitch = path.pitch();
-        assert_eq!(*angle_range, [-0.5, 0.5]);
+        assert_eq!(angle_range.get(), [-0.5, 0.5]);
         assert_eq!(center.z, 30.0);
         assert_eq!(pitch.z, 40.0);
         assert_eq!(circular, matches!(profile, HelixSurfaceProfile::Circle(_)));

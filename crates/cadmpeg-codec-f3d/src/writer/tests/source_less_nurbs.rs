@@ -238,7 +238,9 @@ fn generated_source_less_face_writes_rational_nurbs_edge_curve() {
         &expected
     );
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range(),
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-1.0, 2.0])
     );
 }
@@ -336,8 +338,7 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
                 previous.wrapper_reversed,
                 previous.native_tail_flags,
                 cadmpeg_ir::units::FiniteVector::new(replacement).expect("finite fixture range"),
-                cadmpeg_ir::geometry::FitTolerance::try_new(previous.fit_tolerance())
-                    .expect("admitted fit tolerance"),
+                previous.fit_tolerance(),
             ))
         })
     }
@@ -352,7 +353,9 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less line pcurve round trip");
     assert_eq!(
-        round_trip.ir().model.pcurves[0].parameter_range(),
+        round_trip.ir().model.pcurves[0]
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-2.0, 3.0])
     );
     assert_eq!(
@@ -383,7 +386,7 @@ fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     assert!(matches!(
         &expected.geometry,
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
-            if nurbs.weights() == Some(vec![1.0, 0.5])
+            if nurbs.pole_rows().weights() == Some(vec![1.0, 0.5])
     ));
 
     let mut encoded = Vec::new();
@@ -884,7 +887,9 @@ fn generated_source_less_multi_face_writes_torus_and_circle_carriers() {
         CurveGeometry::Solved(expected_curve)
     );
     assert_eq!(
-        round_trip.ir().model.edges[0].param_range(),
+        round_trip.ir().model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 1.5])
     );
 }
@@ -1038,16 +1043,19 @@ fn generated_source_less_writes_translational_extrusion_definition() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [0.25, 0.25, 0.75, 0.75]
+                && curve.knots().as_slice() == [0.25, 0.25, 0.75, 0.75]
                 && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(5.5, 9.0, -4.75),
                     cadmpeg_ir::math::Point3::new(6.5, 7.0, -4.25),
                 ]
     ));
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
-    assert_eq!(parameter_interval, Some([0.25, 0.75]));
     assert_eq!(
-        native_position,
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
+    assert_eq!(
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
 }
@@ -1085,7 +1093,12 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         expected_revision_surface_tail_discontinuities()
     );
     assert!(!form.tail_flag);
-    assert_eq!(expected.cache_fit_tolerance(), Some(0.02));
+    assert_eq!(
+        expected
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.02)
+    );
 
     let mut encoded = Vec::new();
     F3dCodec
@@ -1112,9 +1125,13 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         *definition_payload_0 =
             cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                 definition_payload_0.directrix().clone(),
-                definition_payload_0.parameter_interval(),
-                *definition_payload_0.direction(),
-                definition_payload_0.native_position(),
+                definition_payload_0
+                    .parameter_interval()
+                    .map(cadmpeg_ir::units::FiniteVector::get),
+                definition_payload_0.direction().get(),
+                definition_payload_0
+                    .native_position()
+                    .map(cadmpeg_ir::features::FinitePoint3::get),
                 cadmpeg_ir::geometry::CacheContract::from_form(revision_form),
             )
             .unwrap();
@@ -1200,10 +1217,13 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     let None = definition_payload.revision_form() else {
         panic!("expected extrusion definition")
     };
-    assert_eq!(parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(
+        parameter_interval.map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.25, 0.75])
+    );
     assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
     assert_eq!(
-        native_position,
+        native_position.map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
     let directrix_geometry = decoded
@@ -1328,7 +1348,9 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                 definition_payload.directrix().clone(),
                 Some([0.0, std::f64::consts::TAU]),
                 Vector3::new(0.0, 0.0, -20.0),
-                definition_payload.native_position(),
+                definition_payload
+                    .native_position()
+                    .map(cadmpeg_ir::features::FinitePoint3::get),
                 cadmpeg_ir::geometry::CacheContract::from_form(
                     definition_payload.revision_form().cloned(),
                 ),
@@ -1520,7 +1542,7 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [0.0, 0.0, 1.0, 1.0]
+                && curve.knots().as_slice() == [0.0, 0.0, 1.0, 1.0]
                 && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(-2.0, 4.0, 1.0),
                     cadmpeg_ir::math::Point3::new(1.0, 3.0, 3.0),

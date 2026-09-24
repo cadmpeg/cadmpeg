@@ -28,7 +28,7 @@ const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
     nurbs
         .weights()
-        .is_none_or(|weights| weights.iter().all(|weight| *weight > 0.0))
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
 }
 
 /// Sink for carrier records whose lanes the IR carrier refuses.
@@ -189,10 +189,11 @@ pub(crate) fn reverse_pcurve_geometry(
             match PcurveNurbs::from_lanes(
                 nurbs.degree(),
                 reversed_knots,
-                nurbs.control_points().iter().rev().copied().collect(),
+                nurbs.pole_rows().points().into_iter().rev().collect(),
                 nurbs
+                    .pole_rows()
                     .weights()
-                    .map(|weights| weights.iter().rev().copied().collect()),
+                    .map(|weights| weights.into_iter().rev().collect()),
                 nurbs.periodic(),
             ) {
                 Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
@@ -299,10 +300,11 @@ pub(crate) fn reverse_nurbs_curve(
     NurbsCurve::from_lanes(
         curve.degree(),
         reverse_knots(curve.knots(), range),
-        curve.control_points().iter().rev().copied().collect(),
+        curve.pole_rows().points().into_iter().rev().collect(),
         curve
+            .pole_rows()
             .weights()
-            .map(|weights| weights.iter().rev().copied().collect()),
+            .map(|weights| weights.into_iter().rev().collect()),
         curve.periodic(),
     )
 }
@@ -397,11 +399,11 @@ pub(crate) fn reverse_helix_definition(
     let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
-    if range != *angle_range {
+    if range != angle_range.get() {
         return None;
     }
     let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
-    let radial_scale_at_end = 1.0 + apex_factor * revolutions;
+    let radial_scale_at_end = 1.0 + apex_factor.get() * revolutions;
     if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
         return None;
     }
@@ -413,9 +415,9 @@ pub(crate) fn reverse_helix_definition(
     let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
     let major = major_at_end.scale(radial_scale_at_end);
     let minor = minor_at_end.scale(radial_scale_at_end);
-    let center = center.translated(*pitch, revolutions);
+    let center = center.translated(pitch.get(), revolutions);
     let pitch = pitch.scale(-1.0);
-    let apex_factor = -apex_factor / radial_scale_at_end;
+    let apex_factor = -apex_factor.get() / radial_scale_at_end;
     let axis = axis.scale(-1.0);
     if ![center.x, center.y, center.z, apex_factor]
         .into_iter()
@@ -431,7 +433,7 @@ pub(crate) fn reverse_helix_definition(
     Some((
         ProceduralCurveDefinition::Helix(
             cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                *angle_range,
+                angle_range.get(),
                 cadmpeg_ir::geometry::HelixFrame {
                     center,
                     major,
@@ -488,7 +490,7 @@ pub(crate) fn circular_helix_cache(
         return None;
     };
     let angle_range = helix_payload.angle_range();
-    if !readable_range(*angle_range, true, refusal, record) {
+    if !readable_range(angle_range.get(), true, refusal, record) {
         return None;
     }
     let major = helix_payload.major();
@@ -517,7 +519,7 @@ pub(crate) fn circular_helix_cache(
         || (axis_norm - 1.0).abs() > EPS_HELIX_FRAME
         || !pitch_norm.is_finite()
         || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
-        || apex_factor != 0.0
+        || apex_factor.get() != 0.0
     {
         return None;
     }
@@ -949,11 +951,11 @@ mod tests {
             let apex_factor = helix_payload.apex_factor();
 
             let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-            let scale = 1.0 + apex_factor * fraction;
+            let scale = 1.0 + apex_factor.get() * fraction;
             center
-                .translated(*major, scale * angle.cos())
-                .translated(*minor, scale * angle.sin())
-                .translated(*pitch, fraction)
+                .translated(major.get(), scale * angle.cos())
+                .translated(minor.get(), scale * angle.sin())
+                .translated(pitch.get(), fraction)
         };
         for angle in [range[0], 0.75, range[1]] {
             let actual = evaluate(&reversed, angle);
@@ -996,7 +998,7 @@ mod tests {
             curve.control_points(),
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
         );
-        assert_eq!(curve.weights(), Some(vec![tiny, tiny]));
+        assert_eq!(curve.pole_rows().weights(), Some(vec![tiny, tiny]));
     }
 
     #[test]
@@ -1068,12 +1070,6 @@ mod tests {
         assert_eq!(cache.curve.knots()[1], range[0]);
         assert_eq!(cache.curve.knots()[cache.curve.knots().len() - 2], range[1]);
         assert!(cache.fit_tolerance.get() > 0.0);
-        assert!(cache
-            .curve
-            .control_points()
-            .iter()
-            .copied()
-            .all(|point| point.is_finite()));
     }
 
     /// A tolerance at or past the diameter bounds every chord, so the step it
@@ -1198,15 +1194,15 @@ mod tests {
             let apex_factor = helix_payload.apex_factor();
             let axis = *helix_payload.axis();
             *helix_payload = cadmpeg_ir::geometry::HelixCurveConstruction::try_new(
-                angle_range,
+                angle_range.get(),
                 cadmpeg_ir::geometry::HelixFrame {
                     center,
-                    major,
-                    minor,
+                    major: major.get(),
+                    minor: minor.get(),
                     pitch: Vector3::new(1.0, 0.0, 0.0),
-                    axis,
+                    axis: axis.get(),
                 },
-                apex_factor,
+                apex_factor.get(),
                 None,
             )
             .expect("valid HelixCurveConstruction fixture");

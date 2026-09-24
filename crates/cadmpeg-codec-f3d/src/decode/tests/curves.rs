@@ -94,7 +94,7 @@ fn nurbs_curve_block_decodes_to_carrier() {
     assert_eq!(c.degree(), 2);
     assert_eq!(c.control_points().len(), 3);
     // Clamped knots: [0,0,0,1,1,1] (endpoint mult 2 + 1 = 3 each).
-    assert_eq!(c.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(c.knots().as_slice(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(c.control_points()[1].x, 10.0);
     assert_eq!(c.control_points()[1].y, 20.0);
     assert!(c.weights().is_none());
@@ -116,7 +116,12 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
         ..
     } if native_kind == "surf_surf_int_cur"
     ));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.005)
+    );
     assert_eq!(result.ir().model.curves.len(), 1);
 }
 
@@ -150,14 +155,19 @@ fn decode_retains_generated_helix_construction() {
     let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
-    assert_eq!(*angle_range, [0.0, std::f64::consts::TAU]);
+    assert_eq!(angle_range.get(), [0.0, std::f64::consts::TAU]);
     assert_eq!(*center, Point3::new(10.0, 20.0, 30.0));
     assert_eq!(*major, cadmpeg_ir::math::Vector3::new(20.0, 0.0, 0.0));
     assert_eq!(*minor, cadmpeg_ir::math::Vector3::new(0.0, 20.0, 0.0));
     assert_eq!(*pitch, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 40.0));
-    assert_eq!(apex_factor, 0.25);
+    assert_eq!(apex_factor.get(), 0.25);
     assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.005));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.005)
+    );
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Helix(
@@ -224,7 +234,9 @@ fn decode_retains_generated_helix_construction() {
         &edited_definition
     );
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        regenerated.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.012)
     );
     assert!(regenerated
@@ -251,7 +263,9 @@ fn decode_retains_generated_helix_construction() {
         &expected
     );
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.005)
     );
 }
@@ -410,7 +424,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
     let parameter_range = definition_payload.parameter_range();
     let offset = definition_payload.offset();
     let roles = definition_payload.roles();
-    assert_eq!(*parameter_range, [-2.0, 5.0]);
+    assert_eq!(parameter_range.endpoints(), [-2.0, 5.0]);
     assert_eq!(*offset, cadmpeg_ir::math::Vector3::new(5.0, -10.0, 20.0));
     assert_eq!(
         *roles,
@@ -425,7 +439,12 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .curves
         .iter()
         .any(|curve| curve.id == *source));
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.008));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.008)
+    );
     let expected_range = *parameter_range;
     let expected_offset = *offset;
     let expected_roles = *roles;
@@ -435,9 +454,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         let ProceduralCurveDefinition::VectorOffset(definition_payload) = definition else {
             panic!("expected editable vector offset")
         };
-        let mut parameter_range_value = *definition_payload.parameter_range();
+        let mut parameter_range_value = definition_payload.parameter_range().endpoints();
         let parameter_range = &mut parameter_range_value;
-        let mut offset_value = *definition_payload.offset();
+        let mut offset_value = definition_payload.offset().get();
         let offset = &mut offset_value;
         {
             *parameter_range = [-3.0, 6.0];
@@ -475,7 +494,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         &edited_definition
     );
     assert_eq!(
-        regenerated.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        regenerated.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.015)
     );
 
@@ -535,7 +556,9 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
         .iter()
         .any(|curve| curve.id == *source));
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.008)
     );
     assert!(matches!(
@@ -548,7 +571,7 @@ fn generated_vector_offset_curve_decodes_and_writes_source_less() {
             .map(|curve| &curve.geometry),
         Some(cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
             if curve.degree() == 1
-                && curve.knots() == [-2.0, -2.0, 5.0, 5.0]
+                && curve.knots().as_slice() == [-2.0, -2.0, 5.0, 5.0]
                 && curve.control_points() == [
                     cadmpeg_ir::math::Point3::new(-9.0, 2.0, 3.0),
                     cadmpeg_ir::math::Point3::new(5.0, 9.0, -0.5),
@@ -576,7 +599,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let source = definition_payload.source();
     let parameter_range = definition_payload.parameter_range();
     let _ = definition_payload.sense();
-    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    assert_eq!(parameter_range.endpoints(), [-1.5, 3.5]);
     assert!(result
         .ir()
         .model
@@ -587,6 +610,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         (result.ir().model.procedural_curves[0]
             .cache_fit_tolerance()
             .expect("subset fit tolerance")
+            .get()
             - 0.006)
             .abs()
             < 1.0e-12
@@ -597,7 +621,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
         let ProceduralCurveDefinition::Subset(definition_payload) = definition else {
             unreachable!()
         };
-        let mut parameter_range_value = *definition_payload.parameter_range();
+        let mut parameter_range_value = definition_payload.parameter_range().endpoints();
         let parameter_range = &mut parameter_range_value;
         {
             *parameter_range = [-2.0, 4.0];
@@ -675,7 +699,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
     let source = definition_payload.source();
     let parameter_range = definition_payload.parameter_range();
     let _ = definition_payload.sense();
-    assert_eq!(*parameter_range, [-1.5, 3.5]);
+    assert_eq!(parameter_range.endpoints(), [-1.5, 3.5]);
     assert!(round_trip
         .ir()
         .model
@@ -724,7 +748,9 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         }
     );
     assert_eq!(
-        result.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        result.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.004)
     );
 
@@ -746,7 +772,9 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
         }
     );
     assert_eq!(
-        round_trip.ir().model.procedural_curves[0].cache_fit_tolerance(),
+        round_trip.ir().model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.004)
     );
 }
@@ -1015,6 +1043,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         (result.ir().model.procedural_curves[0]
             .cache_fit_tolerance()
             .expect("compound fit tolerance")
+            .get()
             - 0.003)
             .abs()
             < 1.0e-12
@@ -1114,7 +1143,10 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         };
         assert_eq!(curve.degree(), 1);
         let range = [ordinal as f64 * 0.5, (ordinal + 1) as f64 * 0.5];
-        assert_eq!(curve.knots(), [range[0], range[0], range[1], range[1]]);
+        assert_eq!(
+            curve.knots().as_slice(),
+            [range[0], range[0], range[1], range[1]]
+        );
     }
 }
 
@@ -1150,7 +1182,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         .sides()
         .iter()
         .all(|side| side.surface.is_none() && side.pcurve.is_none()));
-    assert_eq!(*offsets, [-2.0, 4.0]);
+    assert_eq!(offsets.get(), [-2.0, 4.0]);
 
     let mut edited = result.ir().clone();
     edited.model.procedural_curves[0].edit_definition(|definition| {
@@ -1161,7 +1193,7 @@ fn generated_two_sided_offset_decodes_and_writes_source_less() {
         let context = &mut context_value;
         let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
         let discontinuity_flag = &mut discontinuity_flag_value;
-        let mut offsets_value = *definition_payload.offsets();
+        let mut offsets_value = definition_payload.offsets().get();
         let offsets = &mut offsets_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
@@ -1247,7 +1279,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
     };
     let context = definition_payload.context();
     let offsets = definition_payload.offsets();
-    assert_eq!(*offsets, [-1.0, 3.0]);
+    assert_eq!(offsets.get(), [-1.0, 3.0]);
     for side in context.sides() {
         let surface_id = side.surface.as_ref().expect("embedded support surface");
         assert!(result.ir().model.surfaces.iter().any(|surface| {
@@ -1276,7 +1308,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         let context = &mut context_value;
         let mut discontinuity_flag_value = *definition_payload.discontinuity_flag();
         let discontinuity_flag = &mut discontinuity_flag_value;
-        let mut offsets_value = *definition_payload.offsets();
+        let mut offsets_value = definition_payload.offsets().get();
         let offsets = &mut offsets_value;
         edit::replace(context, |previous| {
             let sides = previous.sides().clone();
@@ -1373,7 +1405,7 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
         cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
             expected_context,
             *expected_payload.discontinuity_flag(),
-            *expected_payload.offsets(),
+            expected_payload.offsets().get(),
             None,
         )
         .unwrap();
@@ -1440,7 +1472,7 @@ fn generated_mixed_offset_supports_write_source_less() {
             cadmpeg_ir::geometry::curve_payloads::TwoSidedOffsetCurveConstruction::try_new(
                 context_value,
                 *definition_payload.discontinuity_flag(),
-                *definition_payload.offsets(),
+                definition_payload.offsets().get(),
                 None,
             )
             .unwrap();
@@ -1524,7 +1556,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     };
     let context = definition_payload.context();
     let offsets = definition_payload.offsets();
-    assert_eq!(*offsets, [-1.5, 2.5]);
+    assert_eq!(offsets.get(), [-1.5, 2.5]);
     let supports = context.sides().each_ref().map(|side| {
         result
             .ir()
@@ -1570,7 +1602,7 @@ fn generated_analytic_offset_supports_decode_and_write_source_less() {
     };
     let context = definition_payload.context();
     let offsets = definition_payload.offsets();
-    assert_eq!(*offsets, [-1.5, 2.5]);
+    assert_eq!(offsets.get(), [-1.5, 2.5]);
     for (side, expected) in context.sides().iter().zip(expected_geometries) {
         let actual = round_trip
             .ir()

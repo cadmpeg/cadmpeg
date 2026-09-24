@@ -507,7 +507,7 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     }
     if curve
         .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
         || sketch_geometry_parameter_range(&nurbs_entity.geometry)
             != Some(nurbs.boundary.parameter_range.endpoints())
     {
@@ -517,11 +517,11 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     if (point_distance(center, shared) - radius).abs() > tolerance {
         return false;
     }
-    let first_shared = point_distance(curve.control_points()[0], shared) <= tolerance;
+    let first_shared = point_distance(curve.control_points()[0].get(), shared) <= tolerance;
     let last_shared = curve
         .control_points()
         .last()
-        .is_some_and(|point| point_distance(*point, shared) <= tolerance);
+        .is_some_and(|point| point_distance(point.get(), shared) <= tolerance);
     if first_shared == last_shared {
         return false;
     }
@@ -533,19 +533,19 @@ fn arrangement_arc_nurbs_meet_only_at_endpoint(
     let normal = Point2::new(shared.u - center.u, shared.v - center.v);
     let support = |point: Point2| normal.u * (point.u - shared.u) + normal.v * (point.v - shared.v);
     let threshold = tolerance * radius;
-    support(curve.control_points()[endpoint]).abs() <= threshold
+    support(curve.control_points()[endpoint].get()).abs() <= threshold
         && (curve
             .control_points()
             .iter()
             .enumerate()
             .filter(|(index, _)| *index != endpoint)
-            .all(|(_, point)| support(*point) > threshold)
+            .all(|(_, point)| support(point.get()) > threshold)
             || curve
                 .control_points()
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| *index != endpoint)
-                .all(|(_, point)| point_distance(center, *point) < radius - tolerance))
+                .all(|(_, point)| point_distance(center, point.get()) < radius - tolerance))
 }
 
 fn arrangement_line_nurbs_meet_only_at_endpoint(
@@ -584,7 +584,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
     }
     if curve
         .weights()
-        .is_some_and(|weights| weights.iter().any(|weight| *weight <= 0.0))
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
     {
         return false;
     }
@@ -595,7 +595,7 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
         return false;
     }
     let shared = nodes[shared_nodes[0]];
-    let control_points = curve.control_points();
+    let control_points = curve.pole_rows().points();
     let first_shared = point_distance(control_points[0], shared) <= tolerance;
     let last_shared = control_points
         .last()
@@ -1196,8 +1196,8 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),
                 curve.knots(),
@@ -1758,8 +1758,8 @@ fn certified_nurbs_tubes(
     let speed = nurbs_speed_bound(curve)?;
     let degree = curve.degree() as usize;
     let knots = curve.knots();
-    let control_points = curve.control_points();
-    let weights = curve.weights();
+    let control_points = curve.pole_rows().points();
+    let weights = curve.pole_rows().weights();
     let count = control_points.len();
     let mut tubes = Vec::new();
     for span in knots[degree..=count].windows(2) {
@@ -1817,7 +1817,7 @@ fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
         .iter()
         .map(|p| [p.u, p.v])
         .collect::<Vec<_>>();
-    let weights = match curve.weights() {
+    let weights = match curve.pole_rows().weights() {
         Some(weights) => weights,
         None => alloc_filled(points.len(), 1.0, "f3d_nurbs_weights").ok()?,
     };
@@ -2516,8 +2516,8 @@ pub(super) fn point_on_sketch_entity(
             }
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
                 curve.degree(),
                 curve.knots(),
@@ -3069,8 +3069,8 @@ pub(super) fn sketch_entity_endpoints(
             Some([point_at(start_angle.get()), point_at(end_angle.get())])
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.control_points();
-            let weights = curve.weights();
+            let control_points = curve.pole_rows().points();
+            let weights = curve.pole_rows().weights();
             let start_parameter = curve.knots()[curve.degree() as usize];
             let end_parameter = curve.knots()[control_points.len()];
             Some([

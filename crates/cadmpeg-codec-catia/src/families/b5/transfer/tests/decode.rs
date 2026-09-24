@@ -130,12 +130,10 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         ),
         3
     );
-    assert!(result
-        .ir()
-        .model
-        .pcurves
-        .iter()
-        .all(|pcurve| pcurve.parameter_range() == Some([0.0, 1.0])));
+    assert!(result.ir().model.pcurves.iter().all(|pcurve| pcurve
+        .parameter_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        == Some([0.0, 1.0])));
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),

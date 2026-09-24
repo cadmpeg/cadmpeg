@@ -206,11 +206,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Start"),
-                curve.start().to_string(),
+                curve.domain().lower().to_string(),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("End"),
-                curve.end().to_string(),
+                curve.domain().upper().to_string(),
             );
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(

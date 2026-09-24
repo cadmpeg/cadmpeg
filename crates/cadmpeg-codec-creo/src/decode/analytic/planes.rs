@@ -1848,11 +1848,7 @@ pub(in crate::decode) fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Optio
     nurbs_intrinsic_parameter_range(nurbs)?;
     nurbs
         .weights()
-        .is_none_or(|weights| {
-            weights
-                .iter()
-                .all(|weight| weight.is_finite() && *weight > 0.0)
-        })
+        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
         .then_some(())
 }
 

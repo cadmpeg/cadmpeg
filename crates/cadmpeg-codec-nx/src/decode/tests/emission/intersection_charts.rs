@@ -878,8 +878,14 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     else {
         unreachable!()
     };
-    assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
-    assert_eq!(nurbs.control_points().last(), Some(&Point2::new(1.0, 0.0)));
+    assert_eq!(
+        nurbs.pole_rows().points().first(),
+        Some(&Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        nurbs.pole_rows().points().last(),
+        Some(&Point2::new(1.0, 0.0))
+    );
 }
 
 #[test]
@@ -1034,11 +1040,18 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     let supports = intersection.supports();
 
     assert_eq!(
-        ir.model.procedural_curves[0].cache_fit_tolerance(),
+        ir.model.procedural_curves[0]
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(1.0e-8)
     );
-    assert_eq!(parameterization.parameter_range(), [0.0, 1.0]);
-    assert_eq!(ir.model.edges[0].param_range(), Some([0.0, 1.0]));
+    assert_eq!(parameterization.parameter_range().endpoints(), [0.0, 1.0]);
+    assert_eq!(
+        ir.model.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, 1.0])
+    );
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let owner = ir
             .model
@@ -1214,7 +1227,12 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         .procedural_curves
         .last()
         .expect("boundary construction");
-    assert_eq!(procedural.cache_fit_tolerance(), Some(0.25));
+    assert_eq!(
+        procedural
+            .cache_fit_tolerance()
+            .map(cadmpeg_ir::geometry::FitTolerance::get),
+        Some(0.25)
+    );
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
         panic!("intersection construction");
     };
