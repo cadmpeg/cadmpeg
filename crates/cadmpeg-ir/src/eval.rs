@@ -1558,23 +1558,61 @@ pub fn nurbs_curve_point(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Option<FinitePoint3> {
+    nurbs_curve_point_with(
+        degree,
+        knots,
+        control_points.len(),
+        |index| FinitePoint3::new(*control_points.get(index)?),
+        weights,
+        t,
+    )
+}
+
+/// [`nurbs_curve_point`] over `count` poles that `pole` hands out admitted.
+/// The projected coordinates are finite, so the point needs no check.
+fn nurbs_curve_point_with(
+    degree: u32,
+    knots: &[f64],
+    count: usize,
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<FinitePoint3> {
     let degree = usize::try_from(degree).ok()?;
-    let span = bspline_span(knots, degree, control_points.len(), t)?;
+    let span = bspline_span(knots, degree, count, t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let sum = |values: &[f64]| {
-        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-            let index = span - degree + local;
-            Some((
-                [basis, 1.0],
-                weights
-                    .and_then(|weights| weights.get(index).copied())
-                    .unwrap_or(1.0),
-                *control_points.get(index)?,
-            ))
-        }))
-    };
-    let base = sum(&basis)?;
-    FinitePoint3::new(Point3::from(base.project(base, &[])?))
+    let poles = local_poles(span, degree, pole)?;
+    let base = homogeneous_curve_sum(&basis, &poles, weights, span - degree)?;
+    let [x, y, z] = base.project(base, &[])?;
+    Some(FinitePoint3::from_coordinates(x, y, z))
+}
+
+/// The `degree + 1` poles that support span `span`, in parameter order.
+fn local_poles(
+    span: usize,
+    degree: usize,
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+) -> Option<Vec<FinitePoint3>> {
+    (span - degree..=span).map(pole).collect()
+}
+
+/// The homogeneous sum of `poles`, the first of which is global pole `first`,
+/// blended by `values`.
+fn homogeneous_curve_sum(
+    values: &[f64],
+    poles: &[FinitePoint3],
+    weights: Option<&[f64]>,
+    first: usize,
+) -> Option<Homogeneous> {
+    Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
+        Some((
+            [basis, 1.0],
+            weights
+                .and_then(|weights| weights.get(first + local).copied())
+                .unwrap_or(1.0),
+            *poles.get(local)?,
+        ))
+    }))
 }
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
@@ -1650,11 +1688,13 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     }
     let weights = validated_nurbs_curve_weights(curve)?;
     let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?.get();
+    let poles = curve.control_points();
     let distance = |parameter| {
-        let position = nurbs_curve_point(
+        let position = nurbs_curve_point_with(
             curve.degree(),
             curve.knots(),
-            &curve.pole_rows().points(),
+            poles.len(),
+            |index| poles.get(index).copied(),
             Some(weights.as_ref()),
             parameter,
         )?;
@@ -1717,11 +1757,13 @@ fn nurbs_curve_parameter_near_point_newton(
     let [lower, upper] =
         parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
     let mut parameter = seed.clamp(lower, upper);
+    let poles = curve.control_points();
     for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
-        let position = nurbs_curve_point(
+        let position = nurbs_curve_point_with(
             curve.degree(),
             curve.knots(),
-            &curve.pole_rows().points(),
+            poles.len(),
+            |index| poles.get(index).copied(),
             Some(weights),
             parameter,
         )?;
@@ -1736,10 +1778,11 @@ fn nurbs_curve_parameter_near_point_newton(
         let tangent = nurbs_curve_tangent(
             curve.degree(),
             curve.knots(),
-            &curve.pole_rows().points(),
+            &poles,
             Some(weights),
             parameter,
-        )?;
+        )?
+        .get();
         let denominator = tangent.dot(tangent);
         if !denominator.is_finite() || denominator <= 0.0 {
             return None;
@@ -2122,6 +2165,14 @@ struct PcurveDifferential {
     acceleration: Option<Point2>,
 }
 
+/// The parameter-plane pole `(u, v)` as the model-space pole `(u, v, 0)`.
+fn planar_pole(pole: FinitePoint2) -> FinitePoint3 {
+    let [u, v] = pole.coordinates();
+    FinitePoint3::from_coordinates(u, v, FiniteReal::ZERO)
+}
+
+/// [`nurbs_pcurve_differential_with`] over raw `(u, v)` poles, each admitted
+/// as the span that supports `t` reads it.
 fn nurbs_pcurve_differential(
     degree: u32,
     knots: &[f64],
@@ -2129,23 +2180,35 @@ fn nurbs_pcurve_differential(
     weights: Option<&[f64]>,
     t: f64,
 ) -> Option<PcurveDifferential> {
+    nurbs_pcurve_differential_with(
+        degree,
+        knots,
+        control_points.len(),
+        |index| FinitePoint2::new(*control_points.get(index)?).map(planar_pole),
+        weights,
+        t,
+    )
+}
+
+/// The point and first two derivatives at `t` of a possibly-rational
+/// B-spline over `count` planar poles that `pole` hands out admitted and
+/// placed in the model-space plane `z = 0`.
+fn nurbs_pcurve_differential_with(
+    degree: u32,
+    knots: &[f64],
+    count: usize,
+    pole: impl Fn(usize) -> Option<FinitePoint3>,
+    weights: Option<&[f64]>,
+    t: f64,
+) -> Option<PcurveDifferential> {
     let degree = usize::try_from(degree).ok()?;
-    let span = bspline_span(knots, degree, control_points.len(), t)?;
+    let span = bspline_span(knots, degree, count, t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
-    let sum = |values: &[f64]| {
-        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-            let index = span - degree + local;
-            let pole = control_points.get(index)?;
-            Some((
-                [basis, 1.0],
-                weights.and_then(|w| w.get(index).copied()).unwrap_or(1.0),
-                Point3::new(pole.u, pole.v, 0.0),
-            ))
-        }))
-    };
+    let poles = local_poles(span, degree, pole)?;
+    let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
     let base = sum(&basis)?;
     let point = base.project(base, &[])?;
-    let uv = |p: [f64; 3]| Point2::new(p[0], p[1]);
+    let uv = |p: [FiniteReal; 3]| Point2::new(p[0].get(), p[1].get());
     let point_only = || PcurveDifferential {
         point: uv(point),
         tangent: None,
@@ -2167,10 +2230,6 @@ fn nurbs_pcurve_differential(
             return Some(point_only());
         }
         if degree == 1 {
-            let poles = [
-                Point3::new(control_points[span - 1].u, control_points[span - 1].v, 0.0),
-                Point3::new(control_points[span].u, control_points[span].v, 0.0),
-            ];
             let local_weights = weights.map(|weights| {
                 [
                     weights.get(span - 1).copied().unwrap_or(1.0),
@@ -2231,14 +2290,14 @@ fn nurbs_pcurve_differential(
         point: uv(point),
         tangent: first.and_then(|value| {
             Some(Point2::new(
-                unscale(value[0], false)?,
-                unscale(value[1], false)?,
+                unscale(value[0].get(), false)?,
+                unscale(value[1].get(), false)?,
             ))
         }),
         acceleration: second.and_then(|value| {
             Some(Point2::new(
-                unscale(value[0], true)?,
-                unscale(value[1], true)?,
+                unscale(value[0].get(), true)?,
+                unscale(value[1].get(), true)?,
             ))
         }),
     })
@@ -2379,14 +2438,15 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
                             Some((
                                 [u_value, v_value],
                                 surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                                surface.pole(pole_u, pole_v)?.get(),
+                                surface.pole(pole_u, pole_v)?,
                             ))
                         })
                 }),
         )
     };
     let base = sum(&u_basis, &v_basis)?;
-    FinitePoint3::new(Point3::from(base.project(base, &[])?))
+    let [x, y, z] = base.project(base, &[])?;
+    Some(FinitePoint3::from_coordinates(x, y, z))
 }
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)` within a caller-owned
@@ -2474,11 +2534,11 @@ pub fn nurbs_surface_isocurve(
                 Some((
                     [basis, 1.0],
                     surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                    surface.pole(pole_u, pole_v)?.get(),
+                    surface.pole(pole_u, pole_v)?,
                 ))
             },
         ))?;
-        let point = Point3::from(sum.project(sum, &[])?);
+        let point = Point3::from(sum.project(sum, &[])?.map(FiniteReal::get));
         control_points.push(point);
         sums.push(sum);
     }
@@ -2611,7 +2671,7 @@ pub fn nurbs_surface_second_partials(
                             Some((
                                 [u_value, v_value],
                                 surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                                surface.pole(pole_u, pole_v)?.get(),
+                                surface.pole(pole_u, pole_v)?,
                             ))
                         })
                 }),
@@ -2626,13 +2686,14 @@ pub fn nurbs_surface_second_partials(
     let point = base.project(base, &[])?;
     let du = u.project(base, &[(u, point)])?;
     let dv = v.project(base, &[(v, point)])?;
+    let raw = |values: [FiniteReal; 3]| values.map(FiniteReal::get);
     Some(SurfaceSecondPartials {
-        point: Point3::from(point),
-        du: Vector3::from(du),
-        dv: Vector3::from(dv),
-        duu: Vector3::from(uu.project(base, &[(uu, point), (u, du), (u, du)])?),
-        duv: Vector3::from(uv.project(base, &[(uv, point), (u, dv), (v, du)])?),
-        dvv: Vector3::from(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?),
+        point: Point3::from(raw(point)),
+        du: Vector3::from(raw(du)),
+        dv: Vector3::from(raw(dv)),
+        duu: Vector3::from(raw(uu.project(base, &[(uu, point), (u, du), (u, du)])?)),
+        duv: Vector3::from(raw(uv.project(base, &[(uv, point), (u, dv), (v, du)])?)),
+        dvv: Vector3::from(raw(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?)),
     })
 }
 
@@ -2689,7 +2750,7 @@ pub fn curve_tangent_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fi
     if !t.is_finite() {
         return None;
     }
-    curve_tangent_inner(geometry, t).and_then(FiniteVector3::new)
+    curve_tangent_inner(geometry, t)
 }
 
 /// Evaluate the exact second derivative of a directly stored curve. The
@@ -2701,7 +2762,7 @@ pub fn curve_second_derivative_solved(
     if !t.is_finite() {
         return None;
     }
-    curve_second_derivative_inner(geometry, t).and_then(FiniteVector3::new)
+    curve_second_derivative_inner(geometry, t)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -2830,14 +2891,14 @@ fn nurbs_curve_derivative_evaluation_cost(
 
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
-fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
+fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<FiniteVector3> {
     match geometry {
-        SolvedCurveGeometry::Line(line_curve) => Some(*line_curve.direction().as_raw()),
+        SolvedCurveGeometry::Line(line_curve) => Some(FiniteVector3::from(line_curve.direction())),
         SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.frame().axis().as_raw();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (-radius * t.sin(), *ref_direction),
                 (radius * t.cos(), axis.cross(*ref_direction)),
             ]))
@@ -2847,7 +2908,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (-major_radius * t.sin(), *major_direction),
                 (minor_radius * t.cos(), axis.cross(*major_direction)),
             ]))
@@ -2856,7 +2917,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             let axis = parabola_curve.frame().axis().as_raw();
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (
                     product_quotient([2.0, focal_distance, t], [])?.get(),
                     *major_direction,
@@ -2872,7 +2933,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (scaled_sinh_cosh(major_radius, t)?.0.get(), *major_direction),
                 (
                     scaled_sinh_cosh(minor_radius, t)?.1.get(),
@@ -2885,7 +2946,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             nurbs_curve_tangent(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.pole_rows().points(),
+                &nurbs.control_points(),
                 nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
@@ -2895,8 +2956,7 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
             polyline_tangent(&points, &parameters, t)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_tangent_inner(placed.basis(), t)
-            .and_then(|tangent| placed.transform().apply_vector(tangent))
-            .map(FiniteVector3::get),
+            .and_then(|tangent| placed.transform().apply_vector(tangent.get())),
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
         SolvedCurveGeometry::Unknown { .. } => None,
@@ -2905,15 +2965,14 @@ fn curve_tangent_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3
 
 /// The descent is bounded by [`PlacedCurve`](crate::geometry::PlacedCurve)
 /// construction; no arm follows an arena id.
-fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<Vector3> {
-    let zero = Vector3::new(0.0, 0.0, 0.0);
+fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Option<FiniteVector3> {
     match geometry {
-        SolvedCurveGeometry::Line(_) => Some(zero),
+        SolvedCurveGeometry::Line(_) => Some(FiniteVector3::ZERO),
         SolvedCurveGeometry::Circle(circle_curve) => {
             let axis = circle_curve.frame().axis().as_raw();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (-radius * t.cos(), *ref_direction),
                 (-radius * t.sin(), axis.cross(*ref_direction)),
             ]))
@@ -2923,7 +2982,7 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (-major_radius * t.cos(), *major_direction),
                 (-minor_radius * t.sin(), axis.cross(*major_direction)),
             ]))
@@ -2931,7 +2990,7 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
-            Some(vector_sum(&[(
+            FiniteVector3::new(vector_sum(&[(
                 product_quotient([2.0, focal_distance], [])?.get(),
                 *major_direction,
             )]))
@@ -2941,7 +3000,7 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
-            Some(vector_sum(&[
+            FiniteVector3::new(vector_sum(&[
                 (scaled_sinh_cosh(major_radius, t)?.1.get(), *major_direction),
                 (
                     scaled_sinh_cosh(minor_radius, t)?.0.get(),
@@ -2954,19 +3013,18 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
             nurbs_curve_second_derivative(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.pole_rows().points(),
+                &nurbs.control_points(),
                 nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let (points, parameters) = polyline_samples(polyline);
-            polyline_tangent(&points, &parameters, t).map(|_| zero)
+            polyline_tangent(&points, &parameters, t).map(|_| FiniteVector3::ZERO)
         }
         SolvedCurveGeometry::Transformed(placed) => {
             curve_second_derivative_inner(placed.basis(), t)
-                .and_then(|derivative| placed.transform().apply_vector(derivative))
-                .map(FiniteVector3::get)
+                .and_then(|derivative| placed.transform().apply_vector(derivative.get()))
         }
         SolvedCurveGeometry::Degenerate(_) => None,
         SolvedCurveGeometry::Composite { .. } => None,
@@ -2977,10 +3035,10 @@ fn curve_second_derivative_inner(geometry: &SolvedCurveGeometry, t: f64) -> Opti
 fn nurbs_curve_tangent(
     degree: u32,
     knots: &[f64],
-    control_points: &[Point3],
+    control_points: &[FinitePoint3],
     weights: Option<&[f64]>,
     t: f64,
-) -> Option<Vector3> {
+) -> Option<FiniteVector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
@@ -2998,43 +3056,33 @@ fn nurbs_curve_tangent(
         derivatives = bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?.0;
         scale
     };
-    let sum = |values: &[f64]| {
-        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-            let index = span - degree + local;
-            Some((
-                [basis, 1.0],
-                weights
-                    .and_then(|weights| weights.get(index).copied())
-                    .unwrap_or(1.0),
-                *control_points.get(index)?,
-            ))
-        }))
-    };
+    let poles = local_poles(span, degree, |index| control_points.get(index).copied())?;
+    let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
     let base = sum(&basis)?;
     let derivative = sum(&derivatives)?;
     let point = base.project(base, &[])?;
-    let projected = derivative.project(base, &[(derivative, point)])?;
-    let unscale = |value| {
+    let [x, y, z] = derivative.project(base, &[(derivative, point)])?;
+    let unscale = |value: FiniteReal| {
         if scale == 1.0 {
             Some(value)
         } else {
-            difference_quotient(value, 0.0, scale, 0.0).map(FiniteReal::get)
+            difference_quotient(value.get(), 0.0, scale, 0.0)
         }
     };
-    Some(Vector3::new(
-        unscale(projected[0])?,
-        unscale(projected[1])?,
-        unscale(projected[2])?,
+    Some(FiniteVector3::from_components(
+        unscale(x)?,
+        unscale(y)?,
+        unscale(z)?,
     ))
 }
 
 fn nurbs_curve_second_derivative(
     degree: u32,
     knots: &[f64],
-    control_points: &[Point3],
+    control_points: &[FinitePoint3],
     weights: Option<&[f64]>,
     t: f64,
-) -> Option<Vector3> {
+) -> Option<FiniteVector3> {
     let degree = usize::try_from(degree).ok()?;
     let span = bspline_span(knots, degree, control_points.len(), t)?;
     let basis = bspline_basis(knots, degree, span, t)?;
@@ -3058,44 +3106,33 @@ fn nurbs_curve_second_derivative(
             bspline_basis_scaled_derivatives(knots, degree, span, t, scale)?;
         scale
     };
-    let sum = |values: &[f64]| {
-        Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
-            let index = span - degree + local;
-            Some((
-                [basis, 1.0],
-                weights
-                    .and_then(|weights| weights.get(index).copied())
-                    .unwrap_or(1.0),
-                *control_points.get(index)?,
-            ))
-        }))
-    };
+    let poles = local_poles(span, degree, |index| control_points.get(index).copied())?;
+    let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
     let base = sum(&basis)?;
     let first_sum = sum(&first_basis)?;
     let second_sum = sum(&second_basis)?;
     let point = base.project(base, &[])?;
     let first = first_sum.project(base, &[(first_sum, point)])?;
-    let projected = second_sum.project(
+    let [x, y, z] = second_sum.project(
         base,
         &[(second_sum, point), (first_sum, first), (first_sum, first)],
     )?;
-    let unscale = |value| {
+    let unscale = |value: FiniteReal| {
         if scale == 1.0 {
             Some(value)
         } else {
             difference_quotient(
-                difference_quotient(value, 0.0, scale, 0.0)?.get(),
+                difference_quotient(value.get(), 0.0, scale, 0.0)?.get(),
                 0.0,
                 scale,
                 0.0,
             )
-            .map(FiniteReal::get)
         }
     };
-    Some(Vector3::new(
-        unscale(projected[0])?,
-        unscale(projected[1])?,
-        unscale(projected[2])?,
+    Some(FiniteVector3::from_components(
+        unscale(x)?,
+        unscale(y)?,
+        unscale(z)?,
     ))
 }
 
@@ -3104,12 +3141,12 @@ fn nurbs_curve_second_derivative(
 /// weight; neither derivative basis coefficient needs to fit in `f64`.
 fn linear_nurbs_derivative(
     basis: &[f64],
-    control_points: &[Point3],
+    control_points: &[FinitePoint3],
     weights: Option<&[f64]>,
     span: usize,
     width: f64,
     second: bool,
-) -> Option<Vector3> {
+) -> Option<FiniteVector3> {
     use crate::math::sum::{product_sum, scaled_finite, ProductSum};
     let start = span.checked_sub(1)?;
     let first = *control_points.get(start)?;
@@ -3136,22 +3173,19 @@ fn linear_nurbs_derivative(
             sum.add_factors([weight0, weight1, weight1, left]);
             sum.add_factors([weight0, weight1, weight0, right]);
             sum.add_factors([-weight0, weight1, weight0, left]);
-            sum.finish().map_or(Some(0.0), |numerator| {
+            sum.finish().map_or(Some(FiniteReal::ZERO), |numerator| {
                 numerator
                     .quotient_by_factors(&[base_weight, base_weight, base_weight, width, width], 1)
-                    .map(FiniteReal::get)
             })
         } else {
             sum.add_factors([weight0, weight1, right]);
             sum.add_factors([-weight0, weight1, left]);
-            sum.finish().map_or(Some(0.0), |numerator| {
-                numerator
-                    .quotient_by_factors(&[base_weight, base_weight, width], 0)
-                    .map(FiniteReal::get)
+            sum.finish().map_or(Some(FiniteReal::ZERO), |numerator| {
+                numerator.quotient_by_factors(&[base_weight, base_weight, width], 0)
             })
         }
     };
-    Some(Vector3::new(
+    Some(FiniteVector3::from_components(
         coordinate(first.x, last.x)?,
         coordinate(first.y, last.y)?,
         coordinate(first.z, last.z)?,
@@ -4466,17 +4500,19 @@ pub fn curve_point_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<Fini
         SolvedCurveGeometry::Degenerate(degenerate_curve) => Some(degenerate_curve.point()),
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter = map_nurbs_curve_parameter(nurbs, t)?.get();
-            nurbs_curve_point(
+            let poles = nurbs.control_points();
+            nurbs_curve_point_with(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.pole_rows().points(),
+                poles.len(),
+                |index| poles.get(index).copied(),
                 nurbs.pole_rows().weights().as_deref(),
                 parameter,
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
             let (points, parameters) = polyline_samples(polyline);
-            polyline_point(&points, &parameters, t).and_then(FinitePoint3::new)
+            polyline_point(&points, &parameters, t)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_point_solved(placed.basis(), t)
             .and_then(|point| placed.transform().apply_point(point.get())),
@@ -7491,7 +7527,7 @@ fn difference_quotient(
         .map_or(Some(FiniteReal::ZERO), |value| value.quotient(denominator))
 }
 
-fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<Point3> {
+fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<FinitePoint3> {
     if points.len() < 2 || points.len() != parameters.len() || !t.is_finite() {
         return None;
     }
@@ -7508,14 +7544,14 @@ fn polyline_point(points: &[Point3], parameters: &[f64], t: f64) -> Option<Point
     let start = points[segment];
     let end = points[segment + 1];
     let lerp = |start, end| crate::math::sum::finite_dot([1.0 - fraction, fraction], [start, end]);
-    Some(Point3::new(
-        lerp(start.x, end.x)?.get(),
-        lerp(start.y, end.y)?.get(),
-        lerp(start.z, end.z)?.get(),
+    Some(FinitePoint3::from_coordinates(
+        lerp(start.x, end.x)?,
+        lerp(start.y, end.y)?,
+        lerp(start.z, end.z)?,
     ))
 }
 
-fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<Vector3> {
+fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<FiniteVector3> {
     if points.len() < 2 || points.len() != parameters.len() || !t.is_finite() {
         return None;
     }
@@ -7526,10 +7562,10 @@ fn polyline_tangent(points: &[Point3], parameters: &[f64], t: f64) -> Option<Vec
         }
         let start = points[segment];
         let end = points[segment + 1];
-        let candidate = Vector3::new(
-            difference_quotient(end.x, start.x, window[1], window[0])?.get(),
-            difference_quotient(end.y, start.y, window[1], window[0])?.get(),
-            difference_quotient(end.z, start.z, window[1], window[0])?.get(),
+        let candidate = FiniteVector3::from_components(
+            difference_quotient(end.x, start.x, window[1], window[0])?,
+            difference_quotient(end.y, start.y, window[1], window[0])?,
+            difference_quotient(end.z, start.z, window[1], window[0])?,
         );
         if tangent.is_some_and(|tangent| tangent != candidate) {
             return None;
@@ -7814,27 +7850,28 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             });
         }
         PcurveGeometry::PolarNurbs { nurbs } => {
-            let radial_control_points = nurbs
-                .poles()
-                .iter()
-                .map(|pole| pole.radial)
-                .collect::<Vec<_>>();
-            let radial = nurbs_pcurve_differential(
+            let radial_control_points = nurbs.radial_control_points();
+            let radial = nurbs_pcurve_differential_with(
                 nurbs.degree(),
                 nurbs.knots(),
-                &radial_control_points,
+                radial_control_points.len(),
+                |index| radial_control_points.get(index).copied().map(planar_pole),
                 nurbs.pole_rows().weights().as_deref(),
                 t,
             )?;
-            let axial_points = nurbs
-                .poles()
-                .iter()
-                .map(|pole| Point2::new(pole.axial, 0.0))
-                .collect::<Vec<_>>();
-            let axial = nurbs_pcurve_differential(
+            let axial_values = nurbs.axial_control_values();
+            let axial = nurbs_pcurve_differential_with(
                 nurbs.degree(),
                 nurbs.knots(),
-                &axial_points,
+                axial_values.len(),
+                |index| {
+                    let axial = *axial_values.get(index)?;
+                    Some(FinitePoint3::from_coordinates(
+                        axial,
+                        FiniteReal::ZERO,
+                        FiniteReal::ZERO,
+                    ))
+                },
                 nurbs.pole_rows().weights().as_deref(),
                 t,
             )?;
@@ -7890,10 +7927,12 @@ fn pcurve_uv_differential(geometry: &PcurveGeometry, t: f64) -> Option<PcurveDif
             });
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            return nurbs_pcurve_differential(
+            let control_points = nurbs.control_points();
+            return nurbs_pcurve_differential_with(
                 nurbs.degree(),
                 nurbs.knots(),
-                &nurbs.pole_rows().points(),
+                control_points.len(),
+                |index| control_points.get(index).copied().map(planar_pole),
                 nurbs.pole_rows().weights().as_deref(),
                 t,
             );

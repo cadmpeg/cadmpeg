@@ -499,6 +499,34 @@ impl crate::geometry::DirectedParameterRange {
     }
 }
 
+impl crate::features::FinitePoint3 {
+    /// Return the coordinates as finite reals. The point admits only finite
+    /// coordinates, so nothing is checked. The route lives beside
+    /// [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub const fn coordinates(self) -> [FiniteReal; 3] {
+        let point = self.get();
+        [
+            FiniteReal(point.x),
+            FiniteReal(point.y),
+            FiniteReal(point.z),
+        ]
+    }
+}
+
+impl crate::geometry::pcurve::PolarPcurveNurbs {
+    /// Axial pole values in parameter order. [`Self::new`] admits every pole
+    /// finite, so each value is carried without a check. The route lives
+    /// beside [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub fn axial_control_values(&self) -> Vec<FiniteReal> {
+        self.poles()
+            .into_iter()
+            .map(|pole| FiniteReal(pole.axial))
+            .collect()
+    }
+}
+
 impl crate::units::FinitePoint2 {
     /// Return the coordinates as finite reals. The point admits only finite
     /// coordinates, so nothing is checked. The route lives beside

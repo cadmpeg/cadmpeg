@@ -186,6 +186,13 @@ checked_feature_geometry!(
     "FiniteVector3 components must be finite", get, as_raw
 );
 impl FiniteVector3 {
+    /// The zero displacement.
+    pub const ZERO: Self = Self(Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+    });
+
     /// The vector with three finite components. Every component is finite,
     /// so the vector is admitted without a check.
     #[must_use]
