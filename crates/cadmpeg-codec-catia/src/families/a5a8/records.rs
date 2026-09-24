@@ -430,13 +430,13 @@ pub(in crate::families) struct A8Pcurve {
     /// Knot-aligned UV jet sites.
     pub(in crate::families) sites: Vec<A8PcurveSite>,
     /// Native parameter range.
-    pub(in crate::families) range: [f64; 2],
+    pub(in crate::families) range: [FiniteReal; 2],
 }
 
 /// One knot and its complete UV jet.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::families) struct A8PcurveSite {
-    knot: f64,
+    knot: FiniteReal,
     point: [f64; 2],
     first_derivative: [f64; 2],
     second_derivative: [f64; 2],
@@ -445,7 +445,7 @@ pub(in crate::families) struct A8PcurveSite {
 impl A8Pcurve {
     pub(in crate::families) const DEGREE: u32 = 5;
 
-    pub(in crate::families) fn knots(&self) -> Vec<f64> {
+    pub(in crate::families) fn knots(&self) -> Vec<FiniteReal> {
         self.sites.iter().map(|site| site.knot).collect()
     }
 
@@ -457,7 +457,11 @@ impl A8Pcurve {
     pub(in crate::families) fn bspline(&self) -> Option<(Vec<f64>, Vec<[f64; 2]>)> {
         crate::nurbs::quintic_jet_bspline(
             Self::DEGREE,
-            &self.knots(),
+            &self
+                .sites
+                .iter()
+                .map(|site| site.knot.get())
+                .collect::<Vec<_>>(),
             &self.sites.iter().map(|site| site.point).collect::<Vec<_>>(),
             &self
                 .sites
@@ -1162,15 +1166,18 @@ fn parse_object_stream_pcurve(
     if at.checked_add(known_bytes)? > end {
         return None;
     }
-    let read = |at: &mut usize| -> Option<Vec<f64>> {
+    let read_finite = |at: &mut usize| -> Option<Vec<FiniteReal>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
-            values.push(f64_le(data, *at)?.get());
+            values.push(f64_le(data, *at)?);
             *at += 8;
         }
         Some(values)
     };
-    let knots = read(&mut at)?;
+    let read = |at: &mut usize| {
+        read_finite(at).map(|values| values.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
+    };
+    let knots = read_finite(&mut at)?;
     let mut multiplicities = Vec::with_capacity(count);
     for _ in 0..count {
         multiplicities.push(compact_int(data, &mut at)?);
@@ -1193,11 +1200,11 @@ fn parse_object_stream_pcurve(
     at += 1;
     let ddu = read(&mut at)?;
     let ddv = read(&mut at)?;
-    let range = [f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()];
+    let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
     at += 16;
     if data.get(at) != Some(&0x07)
         || mode % 4 != 1
-        || !knots_strictly_increasing(&knots)
+        || !knots.windows(2).all(|pair| pair[0] < pair[1])
         || multiplicities.first() != Some(&6)
         || multiplicities.last() != Some(&6)
         || multiplicities[1..multiplicities.len() - 1]

@@ -128,7 +128,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 object_id: 20,
                 surface: 10,
                 degree: 1,
-                distinct_knots: angular_range.into_iter().collect(),
+                distinct_knots: crate::test_support::test_b5::finite_lane(&angular_range),
                 multiplicities: vec![2, 2],
                 control_points: vec![[0.5, angular_range[0]], [0.5, angular_range[1]]],
                 weights: None,
@@ -162,7 +162,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                     object_id: 40,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: angular_range[0],
+                        parameter: crate::test_support::test_b5::finite(angular_range[0]),
                         control: 0,
                     }],
                 },
@@ -173,7 +173,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                     object_id: 41,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: angular_range[1],
+                        parameter: crate::test_support::test_b5::finite(angular_range[1]),
                         control: 0,
                     }],
                 },
@@ -228,7 +228,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 2.0], [3.0, 2.0]],
         weights: None,
@@ -281,7 +281,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
         weights: None,
@@ -383,7 +383,7 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         object_id: 1,
         surface: 2,
         degree: 2,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
         control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
         weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
@@ -478,7 +478,7 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
         object_id: 1,
         surface: 2,
         degree: 2,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![3, 3],
         control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
         weights: Some(vec![1.0, 2.0, 1.0]),
@@ -588,7 +588,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[11.0, 3.0], [13.0, 3.0]],
         weights: None,
@@ -819,7 +819,10 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 3.0 * std::f64::consts::PI],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[
+            0.0,
+            3.0 * std::f64::consts::PI,
+        ]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
         weights: None,
@@ -874,11 +877,12 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
         chart_origin: 0.0,
     };
     let pcurve = B5SphereGreatCirclePcurve {
-        chart_bounds: [[0.0, 8.0], [0.0, std::f64::consts::TAU * 8.0]],
-        chart_shift: 0.0,
-        chart_scale: 8.0,
-        slope: -1.0,
-        phase: -std::f64::consts::FRAC_PI_2,
+        u_bounds: crate::test_support::test_b5::increasing([0.0, 8.0]),
+        v_bounds: crate::test_support::test_b5::finite_pair([0.0, std::f64::consts::TAU * 8.0]),
+        chart_shift: crate::test_support::test_b5::finite(0.0),
+        chart_scale: crate::test_support::test_b5::positive(8.0),
+        slope: crate::test_support::test_b5::finite(-1.0),
+        phase: crate::test_support::test_b5::finite(-std::f64::consts::FRAC_PI_2),
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
         sphere_great_circle_geometry(&pcurve, &sphere)
@@ -901,7 +905,7 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
 
     let (geometry, range) =
         sphere_great_circle_pcurve(&pcurve).expect("exact parameter-space curve");
-    assert_eq!(range, [0.0, 8.0]);
+    assert_eq!(range, crate::test_support::test_b5::finite_pair([0.0, 8.0]));
     let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, 8.0).expect("chart endpoint");
     assert_eq!(uv.u, 1.0);
     assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1.0e-12);
@@ -919,16 +923,20 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
     *construction_radius = tiny;
     *radius = crate::test_support::test_b5::positive_length(tiny);
     let tiny_pcurve = B5SphereGreatCirclePcurve {
-        chart_bounds: [[0.0, tiny], [0.0, std::f64::consts::TAU * tiny]],
-        chart_shift: 0.0,
-        chart_scale: tiny,
-        slope: -1.0,
-        phase: 0.0,
+        u_bounds: crate::test_support::test_b5::increasing([0.0, tiny]),
+        v_bounds: crate::test_support::test_b5::finite_pair([0.0, std::f64::consts::TAU * tiny]),
+        chart_shift: crate::test_support::test_b5::finite(0.0),
+        chart_scale: crate::test_support::test_b5::positive(tiny),
+        slope: crate::test_support::test_b5::finite(-1.0),
+        phase: crate::test_support::test_b5::finite(0.0),
     };
     assert!(sphere_great_circle_geometry(&tiny_pcurve, &tiny_sphere).is_some());
     let (geometry, range) =
         sphere_great_circle_pcurve(&tiny_pcurve).expect("tiny parameter-space curve");
-    assert_eq!(range, [0.0, tiny]);
+    assert_eq!(
+        range,
+        crate::test_support::test_b5::finite_pair([0.0, tiny])
+    );
     let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, tiny).expect("tiny chart endpoint");
     assert_eq!(uv.u, 1.0);
 }
@@ -964,11 +972,15 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
                 class: 0x1d,
                 payload: Vec::new(),
                 sphere_great_circle: Some(B5SphereGreatCirclePcurve {
-                    chart_bounds: [parameter_range, [0.0, std::f64::consts::TAU * chart_scale]],
-                    chart_shift: 0.0,
-                    chart_scale,
-                    slope: 0.0,
-                    phase: 0.0,
+                    u_bounds: crate::test_support::test_b5::increasing(parameter_range),
+                    v_bounds: crate::test_support::test_b5::finite_pair([
+                        0.0,
+                        std::f64::consts::TAU * chart_scale,
+                    ]),
+                    chart_shift: crate::test_support::test_b5::finite(0.0),
+                    chart_scale: crate::test_support::test_b5::positive(chart_scale),
+                    slope: crate::test_support::test_b5::finite(0.0),
+                    phase: crate::test_support::test_b5::finite(0.0),
                 }),
             },
         )]),
@@ -1030,12 +1042,16 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
                 .expect("valid SphericalGreatCirclePcurve fixture")
             ),
             false,
-            parameter_range,
+            crate::test_support::test_b5::finite_pair(parameter_range),
         ))
     );
     assert_eq!(
         plan.edge_support_plan.get(&5),
-        Some(&vec![(2, 4, parameter_range)])
+        Some(&vec![(
+            2,
+            4,
+            crate::test_support::test_b5::finite_pair(parameter_range)
+        )])
     );
     assert!(plan.exact_support_edges.contains(&5));
 
@@ -1125,11 +1141,15 @@ fn synthetic_spherical_graph(components: &[SyntheticSphericalComponent]) -> B5Gr
                 class: 0x1d,
                 payload: Vec::new(),
                 sphere_great_circle: Some(B5SphereGreatCirclePcurve {
-                    chart_bounds: [parameter_range, [0.0, std::f64::consts::TAU * chart_scale]],
-                    chart_shift: 0.0,
-                    chart_scale,
-                    slope: 0.0,
-                    phase: 0.0,
+                    u_bounds: crate::test_support::test_b5::increasing(parameter_range),
+                    v_bounds: crate::test_support::test_b5::finite_pair([
+                        0.0,
+                        std::f64::consts::TAU * chart_scale,
+                    ]),
+                    chart_shift: crate::test_support::test_b5::finite(0.0),
+                    chart_scale: crate::test_support::test_b5::positive(chart_scale),
+                    slope: crate::test_support::test_b5::finite(0.0),
+                    phase: crate::test_support::test_b5::finite(0.0),
                 }),
             },
         );
@@ -1278,7 +1298,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
         weights: None,
@@ -1353,7 +1373,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 3.0], [4.0, 7.0]],
         weights: None,

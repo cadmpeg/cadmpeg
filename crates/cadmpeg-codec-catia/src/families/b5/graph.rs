@@ -14,6 +14,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, PositiveLength, PositiveReal};
+use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 /// Admitted topology control bytes.
@@ -145,7 +146,11 @@ impl B5Graph {
 
 /// Return the ordered start/end stations for one edge's occurrence of a
 /// pcurve when both native endpoint incidences name that pcurve consistently.
-pub(super) fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
+pub(super) fn edge_pcurve_parameters(
+    graph: &B5Graph,
+    edge: u32,
+    pcurve: u32,
+) -> Option<[FiniteReal; 2]> {
     edge_pcurve_parameter_values(
         &graph.edge_parameter_incidences,
         &graph.parameter_incidences,
@@ -159,7 +164,7 @@ fn edge_pcurve_parameter_values(
     parameter_incidences: &BTreeMap<u32, B5ParameterIncidence>,
     edge: u32,
     pcurve: u32,
-) -> Option<[f64; 2]> {
+) -> Option<[FiniteReal; 2]> {
     edge_parameter_incidences
         .get(&edge)?
         .map(|incidence_id| {
@@ -464,7 +469,7 @@ pub(super) enum B5ExtrusionDirectrix {
         /// Persistent directrix object id.
         object_id: u32,
         /// Ordered `(surface, pcurve, pcurve range)` support sides.
-        supports: [(u32, u32, [f64; 2]); 2],
+        supports: [(u32, u32, [FiniteReal; 2]); 2],
         /// Increasing solved-curve parameter range.
         parameter_range: [f64; 2],
         /// Positive fit tolerance of the serialized sampled cache.
@@ -475,7 +480,7 @@ pub(super) enum B5ExtrusionDirectrix {
         /// Persistent wrapper object id.
         object_id: u32,
         /// `(surface, pcurve, pcurve range)` support side.
-        support: (u32, u32, [f64; 2]),
+        support: (u32, u32, [FiniteReal; 2]),
         /// Increasing curve parameter range.
         parameter_range: [f64; 2],
     },
@@ -534,7 +539,7 @@ impl B5ExtrusionDirectrix {
         }
     }
 
-    pub(super) fn supports(&self) -> Vec<(u32, u32, [f64; 2])> {
+    pub(super) fn supports(&self) -> Vec<(u32, u32, [FiniteReal; 2])> {
         match self {
             Self::Intersection { supports, .. } => supports.to_vec(),
             Self::SurfaceCurve { support, .. } => vec![*support],
@@ -593,7 +598,7 @@ pub(in crate::families) struct B5IncidenceLane {
     /// Referenced curve or pcurve object id.
     pub(super) curve: u32,
     /// Finite native parameter on that curve.
-    pub(super) parameter: f64,
+    pub(super) parameter: FiniteReal,
     /// Compact native control for this lane.
     pub(super) control: u32,
 }
@@ -637,7 +642,7 @@ pub(in crate::families) struct B5Pcurve {
     /// B-spline degree.
     pub(super) degree: u32,
     /// Distinct knot values, strictly increasing.
-    pub(super) distinct_knots: Vec<f64>,
+    pub(super) distinct_knots: Vec<FiniteReal>,
     /// Per-knot multiplicities, index-aligned with `distinct_knots`.
     pub(super) multiplicities: Vec<u32>,
     /// `(u, v)` control points in the surface's parameter space.
@@ -645,7 +650,7 @@ pub(in crate::families) struct B5Pcurve {
     /// Per-pole rational weights. `None` denotes a polynomial pcurve.
     pub(super) weights: Option<Vec<f64>>,
     /// Explicit occurrence parameter interval when the pcurve record stores one.
-    pub(super) parameter_range: Option<[f64; 2]>,
+    pub(super) parameter_range: Option<[FiniteReal; 2]>,
     /// Coordinate convention for evaluating the stored knot vector.
     pub(super) parameterization: B5PcurveParameterization,
     /// Positive scalar stored in the exact class-`21` suffix. When a class-`21`
@@ -667,23 +672,26 @@ pub(super) enum B5PcurveParameterization {
     /// vector starts at `native_origin`.
     Translated {
         /// Native knot coordinate corresponding to occurrence station zero.
-        native_origin: f64,
+        native_origin: FiniteReal,
     },
 }
 
 /// Exact great-circle fields carried by a class-`1d` sphere pcurve.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct B5SphereGreatCirclePcurve {
-    /// Length-valued bounds of the curve in the sphere chart.
-    pub(super) chart_bounds: [[f64; 2]; 2],
+    /// Increasing length-valued U bounds of the curve in the sphere chart.
+    pub(super) u_bounds: IncreasingParameterInterval,
+    /// Length-valued V bounds of the curve in the sphere chart.
+    pub(super) v_bounds: [FiniteReal; 2],
     /// Length-valued shift contributing to the great-circle plane phase.
-    pub(super) chart_shift: f64,
-    /// Length scale converting the sphere chart's angular coordinates.
-    pub(super) chart_scale: f64,
+    pub(super) chart_shift: FiniteReal,
+    /// Positive length scale converting the sphere chart's angular
+    /// coordinates.
+    pub(super) chart_scale: PositiveReal,
     /// Signed slope in `tan(latitude) = slope * cos(azimuth - phase)`.
-    pub(super) slope: f64,
+    pub(super) slope: FiniteReal,
     /// Stored phase term. The geometric phase is `chart_shift / chart_scale + phase`.
-    pub(super) phase: f64,
+    pub(super) phase: FiniteReal,
 }
 
 /// An identity- and support-resolved pcurve whose native chart equation is
@@ -1550,16 +1558,21 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
     if position.checked_add(minimum_known_bytes)? > payload.len() {
         return None;
     }
-    let read_values = |position: &mut usize| -> Option<Vec<f64>> {
+    let read_values = |position: &mut usize| -> Option<Vec<FiniteReal>> {
         let mut values = Vec::with_capacity(knot_count);
         for _ in 0..knot_count {
-            values.push(f64_le(payload, *position)?.get());
+            values.push(f64_le(payload, *position)?);
             *position = position.checked_add(8)?;
         }
         Some(values)
     };
     let distinct_knots = read_values(&mut position)?;
-    knots_strictly_increasing(&distinct_knots).then_some(())?;
+    let knot_values = distinct_knots
+        .iter()
+        .copied()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
+    knots_strictly_increasing(&knot_values).then_some(())?;
     let multiplicities = (0..knot_count)
         .map(|_| wire::tokens::compact_uint(payload, &mut position))
         .collect::<Option<Vec<_>>>()?;
@@ -1569,12 +1582,16 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
             .iter()
             .all(|multiplicity| *multiplicity == 3))
     .then_some(())?;
-    let u = read_values(&mut position)?;
-    let v = read_values(&mut position)?;
-    let du = read_values(&mut position)?;
-    let dv = read_values(&mut position)?;
-    let ddu = read_values(&mut position)?;
-    let ddv = read_values(&mut position)?;
+    let read_lane = |position: &mut usize| {
+        read_values(position)
+            .map(|values| values.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
+    };
+    let u = read_lane(&mut position)?;
+    let v = read_lane(&mut position)?;
+    let du = read_lane(&mut position)?;
+    let dv = read_lane(&mut position)?;
+    let ddu = read_lane(&mut position)?;
+    let ddv = read_lane(&mut position)?;
     let points = u
         .into_iter()
         .zip(v)
@@ -1591,7 +1608,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         .map(|(u, v)| [u, v])
         .collect::<Vec<_>>();
     let (_, control_points) =
-        crate::nurbs::quintic_jet_bspline(degree, &distinct_knots, &points, &first, &second)?;
+        crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)?;
     let tail = payload.get(position..)?;
     let tail_control = tail.get(..2);
     let extension_control = tail.get(34..36);
@@ -2055,27 +2072,26 @@ fn incidence_vertex_coordinates(
 /// coordinate instead of allowing an earlier member to win.
 fn lift_parameter_incidence(
     pcurve_id: u32,
-    parameter: f64,
+    parameter: FiniteReal,
     geometry: &B5PcurveContext<'_>,
 ) -> Option<[f64; 3]> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
         let domain = pcurve_parameter_domain(pcurve)?;
-        (parameter.is_finite() && parameter >= domain[0] && parameter <= domain[1]).then_some(())?;
-        let uv = evaluate_pcurve(pcurve, parameter)?;
-        let point = lift_pcurve_endpoints(
+        (parameter >= domain[0] && parameter <= domain[1]).then_some(())?;
+        let uv = evaluate_pcurve(pcurve, parameter.get())?;
+        return lift_pcurve_endpoints(
             geometry.surfaces.get(&pcurve.surface)?,
             geometry.profiles,
             &[uv, uv],
-        )?[0];
-        return point.into_iter().all(f64::is_finite).then_some(point);
+        )
+        .map(|[point, _]| point);
     }
     let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
-    let point = sphere_great_circle_point(
+    sphere_great_circle_point(
         opaque.sphere_great_circle.as_ref()?,
         geometry.surfaces.get(&opaque.surface)?,
         parameter,
-    )?;
-    point.into_iter().all(f64::is_finite).then_some(point)
+    )
 }
 
 fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLink> {
@@ -2112,7 +2128,7 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
     let mut parameters = Vec::with_capacity(count);
     let mut controls = Vec::with_capacity(count);
     for _ in 0..count {
-        parameters.push(f64_le(&record.payload, position)?.get());
+        parameters.push(f64_le(&record.payload, position)?);
         position += 8;
         controls.push(wire::tokens::compact_uint(&record.payload, &mut position)?);
     }
@@ -2191,7 +2207,10 @@ fn implicit_pcurve_bindings(
 }
 
 pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
-    let knots = pcurve_nurbs_knots(pcurve)?;
+    let knots = pcurve_nurbs_knots(pcurve)?
+        .into_iter()
+        .map(FiniteReal::get)
+        .collect::<Vec<_>>();
     let control_points: Vec<Point2> = pcurve
         .control_points
         .iter()
@@ -2207,7 +2226,7 @@ pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64;
     Some([point.u, point.v])
 }
 
-fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
+fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
     let mut knots = Vec::new();
     for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
         knots.extend(std::iter::repeat_n(
@@ -2218,26 +2237,20 @@ fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-/// Return the knot vector in the pcurve's occurrence coordinate system.
-pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
+/// Return the knot vector in the pcurve's occurrence coordinate system. A
+/// translated knot is admitted finite, since the translation can overflow.
+pub(super) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<FiniteReal>> {
     let knots = pcurve_knots(pcurve)?;
     match pcurve.parameterization {
         B5PcurveParameterization::Native => Some(knots),
-        B5PcurveParameterization::Translated { native_origin } => {
-            (native_origin.is_finite()).then_some(())?;
-            let translated = knots
-                .into_iter()
-                .map(|knot| knot - native_origin)
-                .collect::<Vec<_>>();
-            translated
-                .iter()
-                .all(|knot| knot.is_finite())
-                .then_some(translated)
-        }
+        B5PcurveParameterization::Translated { native_origin } => knots
+            .into_iter()
+            .map(|knot| FiniteReal::new(knot.get() - native_origin.get()))
+            .collect(),
     }
 }
 
-pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[FiniteReal; 2]> {
     let knots = pcurve_nurbs_knots(pcurve)?;
     let degree = usize::try_from(pcurve.degree).ok()?;
     let spline_domain = [
@@ -2247,7 +2260,7 @@ pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
             .checked_sub(degree + 1)
             .and_then(|index| knots.get(index))?,
     ];
-    if !spline_domain.into_iter().all(f64::is_finite) || spline_domain[0] >= spline_domain[1] {
+    if spline_domain[0] >= spline_domain[1] {
         return None;
     }
     match pcurve.parameter_range {
@@ -2256,27 +2269,33 @@ pub(super) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
     }
 }
 
-/// Clamp a finite occurrence range to a finite, increasing native domain.
-pub(super) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
+/// Clamp an occurrence range to an increasing native domain.
+pub(super) fn bounded_occurrence_range(
+    parameters: [FiniteReal; 2],
+    domain: [FiniteReal; 2],
+) -> Option<[FiniteReal; 2]> {
     const RELATIVE_PARAMETER_TOLERANCE: f64 = EPS_B5_GRAPH_DEGENERATE;
 
-    let domain_span = domain[1] - domain[0];
-    if !domain.into_iter().all(f64::is_finite)
-        || !domain_span.is_finite()
-        || domain_span <= 0.0
-        || !parameters.into_iter().all(f64::is_finite)
-        || parameters[0] == parameters[1]
-    {
+    let [lower, upper] = domain;
+    let domain_span = upper.get() - lower.get();
+    if !domain_span.is_finite() || domain_span <= 0.0 || parameters[0] == parameters[1] {
         return None;
     }
     let tolerance = RELATIVE_PARAMETER_TOLERANCE * domain_span;
-    if parameters
-        .iter()
-        .any(|parameter| *parameter < domain[0] - tolerance || *parameter > domain[1] + tolerance)
-    {
+    if parameters.iter().any(|parameter| {
+        parameter.get() < lower.get() - tolerance || parameter.get() > upper.get() + tolerance
+    }) {
         return None;
     }
-    Some(parameters.map(|parameter| parameter.clamp(domain[0], domain[1])))
+    Some(parameters.map(|parameter| {
+        if parameter < lower {
+            lower
+        } else if parameter > upper {
+            upper
+        } else {
+            parameter
+        }
+    }))
 }
 
 struct BoundNativeVertices {
@@ -2638,8 +2657,8 @@ fn pcurve_endpoints(
             return pcurve.lifted_endpoints;
         };
         let uv = [
-            evaluate_pcurve(pcurve, parameters[0])?,
-            evaluate_pcurve(pcurve, parameters[1])?,
+            evaluate_pcurve(pcurve, parameters[0].get())?,
+            evaluate_pcurve(pcurve, parameters[1].get())?,
         ];
         let Some(surface) = geometry.surfaces.get(&pcurve.surface) else {
             return pcurve.lifted_endpoints;
@@ -2655,8 +2674,8 @@ fn pcurve_endpoints(
         edge_id,
         pcurve_id,
     )
-    .and_then(|parameters| bounded_occurrence_range(parameters, pcurve.chart_bounds[0]))
-    .unwrap_or(pcurve.chart_bounds[0]);
+    .and_then(|parameters| bounded_occurrence_range(parameters, pcurve.u_bounds.finite_endpoints()))
+    .unwrap_or(pcurve.u_bounds.finite_endpoints());
     Some([
         sphere_great_circle_point(pcurve, surface, start)?,
         sphere_great_circle_point(pcurve, surface, end)?,
@@ -3248,7 +3267,7 @@ fn extrusion_offset_construction_agrees(
                 .iter()
                 .copied()
                 .zip(support.2)
-                .all(|(left, right)| left.to_bits() == right.to_bits())
+                .all(|(left, right)| left.to_bits() == right.get().to_bits())
         })
         && curve_distance.to_bits() == distance.get().to_bits()
         && *direction == source.direction
@@ -3416,9 +3435,9 @@ struct B5OffsetCache {
 struct B5ObjectStreamPcurve {
     class: u8,
     surface: u32,
-    parameter_range: [f64; 2],
+    parameter_range: [FiniteReal; 2],
     class_21_suffix_scalar: Option<f64>,
-    distinct_knots: Vec<f64>,
+    distinct_knots: Vec<FiniteReal>,
 }
 
 fn parse_offset_cache(record: &B5Record) -> Option<B5OffsetCache> {
@@ -3605,15 +3624,17 @@ fn terminal_span_directrix(
             *pcurve.distinct_knots.first()?,
             *pcurve.distinct_knots.last()?,
         ])
-        .all(|(left, right)| left.to_bits() == right.to_bits())
+        .all(|(left, right)| left.get().to_bits() == right.get().to_bits())
         .then_some(())?;
-    parameter_spans_agree(source_range[1] - source_range[0], active[1] - active[0]).then_some(
-        B5ExtrusionDirectrix::SurfaceCurve {
-            object_id: directrix_id,
-            support: (pcurve.surface, directrix_id, source_range),
-            parameter_range: active,
-        },
+    parameter_spans_agree(
+        source_range[1].get() - source_range[0].get(),
+        active[1] - active[0],
     )
+    .then_some(B5ExtrusionDirectrix::SurfaceCurve {
+        object_id: directrix_id,
+        support: (pcurve.surface, directrix_id, source_range),
+        parameter_range: active,
+    })
 }
 
 fn translated_directrix_span_count(
@@ -3641,15 +3662,15 @@ fn translated_directrix_span_count(
     let start = pcurve
         .distinct_knots
         .iter()
-        .position(|knot| knot.to_bits() == source[0].to_bits())?;
+        .position(|knot| knot.get().to_bits() == source[0].to_bits())?;
     let end = pcurve
         .distinct_knots
         .iter()
-        .position(|knot| knot.to_bits() == source[1].to_bits())?;
+        .position(|knot| knot.get().to_bits() == source[1].to_bits())?;
     (end.checked_sub(start)? == source_span_count).then_some(())?;
     pcurve.distinct_knots[start..=end]
         .windows(2)
-        .all(|knots| parameter_spans_agree(knots[1] - knots[0], suffix_span))
+        .all(|knots| parameter_spans_agree(knots[1].get() - knots[0].get(), suffix_span))
         .then_some(source_span_count)
 }
 
@@ -3770,11 +3791,11 @@ fn parse_surface_curve_directrix(
         return None;
     }
     position += 2;
-    let [start, end, zero] = read_f64_array::<3>(&record.payload, position)?.map(FiniteReal::get);
+    let [start, end, zero] = read_f64_array::<3>(&record.payload, position)?;
     position += 24;
     if record.payload.get(position..) != Some(&[0x01])
         || start >= end
-        || zero.to_bits() != 0.0f64.to_bits()
+        || zero.get().to_bits() != 0.0f64.to_bits()
     {
         return None;
     }
@@ -3792,12 +3813,16 @@ fn parse_surface_curve_directrix(
     parameter_range
         .into_iter()
         .all(|value| {
-            cadmpeg_ir::math::parameter_in_domain(value, pcurve_range, 64.0 * f64::EPSILON)
+            cadmpeg_ir::math::parameter_in_domain(
+                value.get(),
+                pcurve_range.map(FiniteReal::get),
+                64.0 * f64::EPSILON,
+            )
         })
         .then_some(B5ExtrusionDirectrix::SurfaceCurve {
             object_id: record.object_id,
             support: (surface, pcurve, parameter_range),
-            parameter_range,
+            parameter_range: parameter_range.map(FiniteReal::get),
         })
 }
 
@@ -3838,7 +3863,7 @@ fn parse_offset_curve_directrix(
                 .2
                 .into_iter()
                 .zip(source_parameter_range)
-                .all(|(left, right)| left.to_bits() == right.to_bits())
+                .all(|(left, right)| left.get().to_bits() == right.to_bits())
         })
     {
         return None;
@@ -3859,7 +3884,7 @@ fn pcurve_surface_reference(record: &B5Record) -> Option<u32> {
     wire::tokens::object_ref(&record.payload, &mut position, true)
 }
 
-fn analytic_pcurve_range(record: &B5Record) -> Option<[f64; 2]> {
+fn analytic_pcurve_range(record: &B5Record) -> Option<[FiniteReal; 2]> {
     match record.class {
         0x18 => parse_line_pcurve(record).and_then(|pcurve| {
             Some([
@@ -4212,14 +4237,10 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     view.seek(position)?;
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
-        let value = view.f64_le()?;
-        if !value.is_finite() {
-            return None;
-        }
-        distinct_knots.push(value);
+        distinct_knots.push(FiniteReal::new(view.f64_le()?)?);
     }
     position = view.position();
-    if !knots_strictly_increasing(&distinct_knots) {
+    if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
         return None;
     }
     let mut multiplicities = Vec::with_capacity(knot_count);
@@ -4245,7 +4266,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     let tail = record.payload.get(position..)?;
     let suffix_scalar = f64_le(tail, 10)?.get();
     let native_origin = *distinct_knots.first()?;
-    let native_span = distinct_knots[1] - native_origin;
+    let native_span = distinct_knots[1].get() - native_origin.get();
     if tail.len() != 36
         || tail.get(..2) != Some(&[0x05, 0x05])
         || f64_le(tail, 2)?.get() != 0.0
@@ -4417,11 +4438,14 @@ fn rational_arc_pcurve(
     }
     distinct_knots.push(end);
     multiplicities.push(3);
-    if distinct_knots.iter().any(|knot| !knot.is_finite())
-        || control_points
-            .iter()
-            .flatten()
-            .any(|coordinate| !coordinate.is_finite())
+    let distinct_knots = distinct_knots
+        .into_iter()
+        .map(FiniteReal::new)
+        .collect::<Option<Vec<_>>>()?;
+    if control_points
+        .iter()
+        .flatten()
+        .any(|coordinate| !coordinate.is_finite())
         || weights.iter().any(|weight| !weight.is_finite())
     {
         return None;
@@ -4497,17 +4521,22 @@ fn parse_sphere_great_circle_pcurve(
     let mut position = 1;
     wire::tokens::object_ref(&record.payload, &mut position, true)?;
     (record.payload.len() == position.checked_add(99)?).then_some(())?;
-    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?.map(FiniteReal::get);
+    let [u0, u1, v0, v1] = read_f64_array::<4>(&record.payload, position)?;
     position += 32;
     (record.payload.get(position..position + 2) == Some(&[0x05, 0x81])).then_some(())?;
-    let [chart_shift, direction, zero0] =
-        read_f64_array::<3>(&record.payload, position + 2)?.map(FiniteReal::get);
+    let [chart_shift, direction, zero0] = read_f64_array::<3>(&record.payload, position + 2)?;
+    let (direction, zero0) = (direction.get(), zero0.get());
     position += 26;
     (record.payload.get(position) == Some(&0x1d)).then_some(())?;
     let [chart_scale, slope, reciprocal_scale, phase, zero1] =
-        read_f64_array::<5>(&record.payload, position + 1)?.map(FiniteReal::get);
+        read_f64_array::<5>(&record.payload, position + 1)?;
+    let u_bounds = IncreasingParameterInterval::new([u0.get(), u1.get()])?;
+    let v_bounds = [v0, v1];
+    let chart_scale = PositiveReal::new(chart_scale.get())?;
+    let (u0, u1, v0, v1) = (u0.get(), u1.get(), v0.get(), v1.get());
+    let (reciprocal_scale, zero1) = (reciprocal_scale.get(), zero1.get());
 
-    let surface_u_bounds = azimuth_range.map(|angle| chart_scale * angle);
+    let surface_u_bounds = azimuth_range.map(|angle| chart_scale.get() * angle);
     let u_scale = surface_u_bounds
         .into_iter()
         .chain([u0, u1])
@@ -4517,27 +4546,26 @@ fn parse_sphere_great_circle_pcurve(
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
-        && chart_scale > 0.0
-        && u0 < u1
-        && chart_scale == *sphere_chart_scale
-        && reciprocal_scale == -direction / chart_scale
+        && chart_scale.get() == *sphere_chart_scale
+        && reciprocal_scale == -direction / chart_scale.get()
         && u0 >= surface_u_bounds[0] - u_tolerance
         && u1 <= surface_u_bounds[1] + u_tolerance
         && v0 == *chart_origin
-        && v1 == chart_origin + std::f64::consts::TAU * chart_scale)
-        .then_some(B5SphereGreatCirclePcurve {
-            chart_bounds: [[u0, u1], [v0, v1]],
-            chart_shift,
-            chart_scale,
-            slope,
-            phase,
-        })
+        && v1 == chart_origin + std::f64::consts::TAU * chart_scale.get())
+    .then_some(B5SphereGreatCirclePcurve {
+        u_bounds,
+        v_bounds,
+        chart_shift,
+        chart_scale,
+        slope,
+        phase,
+    })
 }
 
 fn sphere_great_circle_point(
     pcurve: &B5SphereGreatCirclePcurve,
     surface: &B5Surface,
-    parameter: f64,
+    parameter: FiniteReal,
 ) -> Option<[f64; 3]> {
     let B5Surface::Sphere {
         center,
@@ -4556,23 +4584,17 @@ fn sphere_great_circle_point(
         components(frame.axis()),
         radius.get(),
     );
-    let [start, end] = pcurve.chart_bounds[0];
-    if ![start, end, parameter].into_iter().all(f64::is_finite)
-        || start >= end
-        || parameter < start
-        || parameter > end
-        || !pcurve.chart_scale.is_finite()
-        || pcurve.chart_scale <= 0.0
-        || pcurve.chart_scale != *construction_radius
-        || !pcurve.chart_shift.is_finite()
-        || !pcurve.slope.is_finite()
-        || !pcurve.phase.is_finite()
+    let parameter = parameter.get();
+    let chart_scale = pcurve.chart_scale.get();
+    if parameter < pcurve.u_bounds.lower()
+        || parameter > pcurve.u_bounds.upper()
+        || chart_scale != *construction_radius
     {
         return None;
     }
-    let azimuth = parameter / pcurve.chart_scale;
-    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
-    let latitude = (pcurve.slope * (azimuth - phase).cos()).atan();
+    let azimuth = parameter / chart_scale;
+    let phase = pcurve.chart_shift.get() / chart_scale + pcurve.phase.get();
+    let latitude = (pcurve.slope.get() * (azimuth - phase).cos()).atan();
     let cos_latitude = latitude.cos();
     let sin_latitude = latitude.sin();
     let cos_azimuth = azimuth.cos();
@@ -4624,8 +4646,8 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     position += 1;
     let (start, end, control_points) = match mode {
         0x01 if record.payload.len() == position.checked_add(48)? => {
-            let [u, v, du, dv, start, end] =
-                read_f64_array::<6>(&record.payload, position)?.map(FiniteReal::get);
+            let [u, v, du, dv, start, end] = read_f64_array::<6>(&record.payload, position)?;
+            let [u, v, du, dv] = [u, v, du, dv].map(FiniteReal::get);
             if du == 0.0 && dv == 0.0 {
                 return None;
             }
@@ -4633,20 +4655,28 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
                 start,
                 end,
                 vec![
-                    [u + start * du, v + start * dv],
-                    [u + end * du, v + end * dv],
+                    [u + start.get() * du, v + start.get() * dv],
+                    [u + end.get() * du, v + end.get() * dv],
                 ],
             )
         }
         0x05 if record.payload.len() == position.checked_add(24)? => {
-            let [constant, start, end] =
-                read_f64_array::<3>(&record.payload, position)?.map(FiniteReal::get);
-            (start, end, vec![[constant, start], [constant, end]])
+            let [constant, start, end] = read_f64_array::<3>(&record.payload, position)?;
+            let constant = constant.get();
+            (
+                start,
+                end,
+                vec![[constant, start.get()], [constant, end.get()]],
+            )
         }
         0x09 if record.payload.len() == position.checked_add(24)? => {
-            let [constant, start, end] =
-                read_f64_array::<3>(&record.payload, position)?.map(FiniteReal::get);
-            (start, end, vec![[start, constant], [end, constant]])
+            let [constant, start, end] = read_f64_array::<3>(&record.payload, position)?;
+            let constant = constant.get();
+            (
+                start,
+                end,
+                vec![[start.get(), constant], [end.get(), constant]],
+            )
         }
         _ => return None,
     };

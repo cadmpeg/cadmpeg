@@ -565,7 +565,10 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
         (0x5678, 0x1234)
     );
     assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
-    assert_eq!(pcurves[0].range, [0.0, 1.0]);
+    assert_eq!(
+        pcurves[0].range,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0])
+    );
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
     wrong_degree[15] = 17;

@@ -255,15 +255,23 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
     assert_eq!(
         pcurve.parameterization,
         B5PcurveParameterization::Translated {
-            native_origin: 10.0,
+            native_origin: crate::test_support::test_b5::finite(10.0),
         }
     );
-    assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+    assert_eq!(
+        pcurve.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[10.0, 20.0])
+    );
     assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
-    assert_eq!(pcurve_parameter_domain(&pcurve), Some([0.0, 10.0]));
+    assert_eq!(
+        pcurve_parameter_domain(&pcurve),
+        Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
+    );
     assert_eq!(
         pcurve_nurbs_knots(&pcurve),
-        Some(vec![0.0, 0.0, 10.0, 10.0])
+        Some(crate::test_support::test_b5::finite_lane(&[
+            0.0, 0.0, 10.0, 10.0
+        ]))
     );
     assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([0.0, 0.0]));
     assert_eq!(evaluate_pcurve(&pcurve, 10.0), Some([1.0, 0.0]));
@@ -292,11 +300,11 @@ fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
         parameter_incidences: &parameter_incidences,
     };
     assert_eq!(
-        lift_parameter_incidence(2, 0.0, &geometry),
+        lift_parameter_incidence(2, crate::test_support::test_b5::finite(0.0), &geometry),
         Some([0.0, 0.0, 0.0])
     );
     assert_eq!(
-        lift_parameter_incidence(2, 10.0, &geometry),
+        lift_parameter_incidence(2, crate::test_support::test_b5::finite(10.0), &geometry),
         Some([1.0, 0.0, 0.0])
     );
 }
@@ -839,14 +847,15 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
         class: 0x1d,
         payload: Vec::new(),
         sphere_great_circle: Some(B5SphereGreatCirclePcurve {
-            chart_bounds: [
-                [0.0, parameter_end],
-                [0.0, chart_scale * std::f64::consts::TAU],
-            ],
-            chart_shift: 0.0,
-            chart_scale,
-            slope: 0.0,
-            phase: 0.0,
+            u_bounds: crate::test_support::test_b5::increasing([0.0, parameter_end]),
+            v_bounds: crate::test_support::test_b5::finite_pair([
+                0.0,
+                chart_scale * std::f64::consts::TAU,
+            ]),
+            chart_shift: crate::test_support::test_b5::finite(0.0),
+            chart_scale: crate::test_support::test_b5::positive(chart_scale),
+            slope: crate::test_support::test_b5::finite(0.0),
+            phase: crate::test_support::test_b5::finite(0.0),
         }),
     };
     let loop_ = B5Loop {
@@ -902,7 +911,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
                 object_id: 20,
                 lanes: vec![B5IncidenceLane {
                     curve: 2,
-                    parameter: trimmed_start,
+                    parameter: crate::test_support::test_b5::finite(trimmed_start),
                     control: 1,
                 }],
             },
@@ -913,7 +922,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
                 object_id: 21,
                 lanes: vec![B5IncidenceLane {
                     curve: 2,
-                    parameter: trimmed_end,
+                    parameter: crate::test_support::test_b5::finite(trimmed_end),
                     control: 1,
                 }],
             },
@@ -934,7 +943,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
                 .as_ref()
                 .expect("great circle"),
             &surfaces[&4],
-            trimmed_start,
+            crate::test_support::test_b5::finite(trimmed_start),
         )
         .expect("trimmed start"),
         sphere_great_circle_point(
@@ -943,7 +952,7 @@ fn sphere_great_circle_pcurve_binds_endpoint_rows() {
                 .as_ref()
                 .expect("great circle"),
             &surfaces[&4],
-            trimmed_end,
+            crate::test_support::test_b5::finite(trimmed_end),
         )
         .expect("trimmed end"),
     ];
@@ -970,7 +979,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
             object_id: 2,
             surface: 4,
             degree: 1,
-            distinct_knots: vec![0.0, 1.0],
+            distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
@@ -1076,7 +1085,7 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             object_id: 2,
             surface: 4,
             degree: 1,
-            distinct_knots: vec![0.0, 1.0],
+            distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 0.0], [10.0, 0.0]],
             weights: None,
@@ -1104,7 +1113,7 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
                 object_id: 20,
                 lanes: vec![B5IncidenceLane {
                     curve: 2,
-                    parameter: 0.25,
+                    parameter: crate::test_support::test_b5::finite(0.25),
                     control: 1,
                 }],
             },
@@ -1115,7 +1124,7 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
                 object_id: 21,
                 lanes: vec![B5IncidenceLane {
                     curve: 2,
-                    parameter: 0.75,
+                    parameter: crate::test_support::test_b5::finite(0.75),
                     control: 1,
                 }],
             },
@@ -1160,11 +1169,11 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
             object_id: 2,
             surface: 4,
             degree: 1,
-            distinct_knots: vec![2.0, 8.0],
+            distinct_knots: crate::test_support::test_b5::finite_lane(&[2.0, 8.0]),
             multiplicities: vec![2, 2],
             control_points: vec![[2.0, 0.0], [8.0, 0.0]],
             weights: None,
-            parameter_range: Some([2.0, 8.0]),
+            parameter_range: Some(crate::test_support::test_b5::finite_pair([2.0, 8.0])),
             parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
             lifted_endpoints: None,
@@ -1211,11 +1220,15 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
             class: 0x1d,
             payload: Vec::new(),
             sphere_great_circle: Some(B5SphereGreatCirclePcurve {
-                chart_bounds: [[0.0, parameter], [0.0, chart_scale * std::f64::consts::TAU]],
-                chart_shift: 0.0,
-                chart_scale,
-                slope: 0.0,
-                phase: 0.0,
+                u_bounds: crate::test_support::test_b5::increasing([0.0, parameter]),
+                v_bounds: crate::test_support::test_b5::finite_pair([
+                    0.0,
+                    chart_scale * std::f64::consts::TAU,
+                ]),
+                chart_shift: crate::test_support::test_b5::finite(0.0),
+                chart_scale: crate::test_support::test_b5::positive(chart_scale),
+                slope: crate::test_support::test_b5::finite(0.0),
+                phase: crate::test_support::test_b5::finite(0.0),
             }),
         },
     )]);
@@ -1280,7 +1293,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         incidence.lanes,
         [B5IncidenceLane {
             curve: 2,
-            parameter,
+            parameter: crate::test_support::test_b5::finite(parameter),
             // The compact token 0x01 encodes 4 * 0 + 1.
             control: 0,
         }]
@@ -1293,7 +1306,7 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
                     .as_ref()
                     .expect("great circle"),
                 &surfaces[&4],
-                parameter,
+                crate::test_support::test_b5::finite(parameter),
             )
             .expect("sphere endpoint"),
             [0.0, 5.0, 0.0]
@@ -1399,7 +1412,7 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
         object_id,
         surface: object_id + 20,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,

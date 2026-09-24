@@ -673,7 +673,10 @@ fn line_pcurve_decodes_every_complete_mode() {
     let general = parse_line_pcurve(&record(0x01, &[2.0, 3.0, 4.0, -2.0, 1.0, 5.0]))
         .expect("general line pcurve");
     assert_eq!(general.surface, 2);
-    assert_eq!(general.distinct_knots, [1.0, 5.0]);
+    assert_eq!(
+        general.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[1.0, 5.0])
+    );
     assert_eq!(general.control_points, [[6.0, 1.0], [22.0, -7.0]]);
     let tiny = parse_line_pcurve(&record(0x01, &[0.0, 0.0, 1e-200, -1e-200, 1.0, 5.0]))
         .expect("tiny nonzero line direction");
@@ -684,12 +687,18 @@ fn line_pcurve_decodes_every_complete_mode() {
 
     let constant_u =
         parse_line_pcurve(&record(0x05, &[3.0, -2.0, 7.0])).expect("constant-U pcurve");
-    assert_eq!(constant_u.distinct_knots, [-2.0, 7.0]);
+    assert_eq!(
+        constant_u.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
+    );
     assert_eq!(constant_u.control_points, [[3.0, -2.0], [3.0, 7.0]]);
 
     let constant_v =
         parse_line_pcurve(&record(0x09, &[3.0, -2.0, 7.0])).expect("constant-V pcurve");
-    assert_eq!(constant_v.distinct_knots, [-2.0, 7.0]);
+    assert_eq!(
+        constant_v.distinct_knots,
+        crate::test_support::test_b5::finite_lane(&[-2.0, 7.0])
+    );
     assert_eq!(constant_v.control_points, [[-2.0, 3.0], [7.0, 3.0]]);
 }
 
@@ -739,7 +748,11 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
     assert_eq!(pcurve.degree, 2);
     assert_eq!(
         pcurve.distinct_knots,
-        [0.0, std::f64::consts::PI, 2.0 * std::f64::consts::PI]
+        crate::test_support::test_b5::finite_lane(&[
+            0.0,
+            std::f64::consts::PI,
+            2.0 * std::f64::consts::PI
+        ])
     );
     assert_eq!(pcurve.multiplicities, [3, 2, 3]);
     assert_eq!(pcurve.control_points.len(), 5);
@@ -782,7 +795,11 @@ fn class_1a_pcurve_uses_diameter_period_parameterization() {
     assert_eq!(pcurve.surface, 0x1234);
     assert_eq!(
         pcurve.distinct_knots,
-        [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        crate::test_support::test_b5::finite_lane(&[
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI
+        ])
     );
     assert_eq!(pcurve.multiplicities, [3, 2, 3]);
     assert_eq!(pcurve.control_points.len(), 5);
@@ -868,7 +885,7 @@ fn pcurve_evaluation_preserves_the_native_parameter() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![-1.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[-1.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[2.0, 3.0], [4.0, 7.0]],
         weights: None,
@@ -975,17 +992,18 @@ fn class_1d_pcurve_decodes_a_sphere_great_circle_plane() {
     assert_eq!(
         parse_sphere_great_circle_pcurve(&record, &sphere),
         Some(B5SphereGreatCirclePcurve {
-            chart_bounds: [
-                [chart_scale * 0.25, chart_scale * 1.25],
-                [
-                    chart_origin,
-                    chart_origin + std::f64::consts::TAU * chart_scale,
-                ],
-            ],
-            chart_shift: 2.0,
-            chart_scale,
-            slope: -0.75,
-            phase: -1.25,
+            u_bounds: crate::test_support::test_b5::increasing([
+                chart_scale * 0.25,
+                chart_scale * 1.25
+            ]),
+            v_bounds: crate::test_support::test_b5::finite_pair([
+                chart_origin,
+                chart_origin + std::f64::consts::TAU * chart_scale,
+            ]),
+            chart_shift: crate::test_support::test_b5::finite(2.0),
+            chart_scale: crate::test_support::test_b5::positive(chart_scale),
+            slope: crate::test_support::test_b5::finite(-0.75),
+            phase: crate::test_support::test_b5::finite(-1.25),
         })
     );
 
@@ -1503,7 +1521,14 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
             ]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 5,
-                supports: [(6, 3, [-3.0, 4.0]), (7, 4, [10.0, 20.0])],
+                supports: [
+                    (6, 3, crate::test_support::test_b5::finite_pair([-3.0, 4.0])),
+                    (
+                        7,
+                        4,
+                        crate::test_support::test_b5::finite_pair([10.0, 20.0])
+                    )
+                ],
                 parameter_range: [-3.0, 4.0],
                 cache_fit_tolerance: 0.01,
             },

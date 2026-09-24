@@ -7,7 +7,7 @@ fn test_pcurve(object_id: u32, surface: u32) -> B5Pcurve {
         object_id,
         surface,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
@@ -23,6 +23,7 @@ fn object_stream_pcurve(
     distinct_knots: Vec<f64>,
     suffix: Option<f64>,
 ) -> B5ObjectStreamPcurve {
+    let distinct_knots = crate::test_support::test_b5::finite_lane(&distinct_knots);
     B5ObjectStreamPcurve {
         class: 0x21,
         surface,

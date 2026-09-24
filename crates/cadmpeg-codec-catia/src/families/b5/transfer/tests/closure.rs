@@ -133,19 +133,25 @@ fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
         object_id: 1,
         surface: 2,
         degree: 1,
-        distinct_knots: vec![0.0, 10.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 10.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
-        parameter_range: Some([2.0, 8.0]),
+        parameter_range: Some(crate::test_support::test_b5::finite_pair([2.0, 8.0])),
         parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    assert_eq!(pcurve_parameter_domain(&pcurve), Some([2.0, 8.0]));
+    assert_eq!(
+        pcurve_parameter_domain(&pcurve),
+        Some(crate::test_support::test_b5::finite_pair([2.0, 8.0]))
+    );
     pcurve.parameter_range = None;
-    assert_eq!(pcurve_parameter_domain(&pcurve), Some([0.0, 10.0]));
-    pcurve.parameter_range = Some([-1.0, 8.0]);
+    assert_eq!(
+        pcurve_parameter_domain(&pcurve),
+        Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
+    );
+    pcurve.parameter_range = Some(crate::test_support::test_b5::finite_pair([-1.0, 8.0]));
     assert_eq!(pcurve_parameter_domain(&pcurve), None);
 }
 
@@ -183,7 +189,18 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             parameter_bounds: crate::test_support::test_b5::finite_bounds([[0.0, 1.0], [0.0, 2.0]]),
             directrix: B5ExtrusionDirectrix::Intersection {
                 object_id: 80,
-                supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
+                supports: [
+                    (
+                        90,
+                        91,
+                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+                    ),
+                    (
+                        100,
+                        101,
+                        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+                    ),
+                ],
                 parameter_range: [0.0, 1.0],
                 cache_fit_tolerance: 1.0e-6,
             },
@@ -219,26 +236,61 @@ fn surface_closure_follows_aliases_to_native_constructions() {
 
 #[test]
 fn occurrence_interval_orders_and_bounds_native_stations() {
-    assert_eq!(ordered_subrange([8.0, 2.0], [0.0, 10.0]), Some([2.0, 8.0]));
     assert_eq!(
-        ordered_subrange([-5e-10, 10.0 + 5e-10], [0.0, 10.0]),
-        Some([0.0, 10.0])
+        ordered_subrange(
+            crate::test_support::test_b5::finite_pair([8.0, 2.0]),
+            crate::test_support::test_b5::finite_pair([0.0, 10.0])
+        ),
+        Some(crate::test_support::test_b5::finite_pair([2.0, 8.0]))
     );
-    assert!(ordered_subrange([2.0, 2.0], [0.0, 10.0]).is_none());
-    assert!(ordered_subrange([-2e-9, 8.0], [0.0, 10.0]).is_none());
-    assert!(ordered_subrange([2.0, 12.0], [0.0, 10.0]).is_none());
     assert_eq!(
-        bounded_occurrence_range([8.0, 2.0], [0.0, 10.0]),
-        Some([8.0, 2.0])
+        ordered_subrange(
+            crate::test_support::test_b5::finite_pair([-5e-10, 10.0 + 5e-10]),
+            crate::test_support::test_b5::finite_pair([0.0, 10.0])
+        ),
+        Some(crate::test_support::test_b5::finite_pair([0.0, 10.0]))
+    );
+    assert!(ordered_subrange(
+        crate::test_support::test_b5::finite_pair([2.0, 2.0]),
+        crate::test_support::test_b5::finite_pair([0.0, 10.0])
+    )
+    .is_none());
+    assert!(ordered_subrange(
+        crate::test_support::test_b5::finite_pair([-2e-9, 8.0]),
+        crate::test_support::test_b5::finite_pair([0.0, 10.0])
+    )
+    .is_none());
+    assert!(ordered_subrange(
+        crate::test_support::test_b5::finite_pair([2.0, 12.0]),
+        crate::test_support::test_b5::finite_pair([0.0, 10.0])
+    )
+    .is_none());
+    assert_eq!(
+        bounded_occurrence_range(
+            crate::test_support::test_b5::finite_pair([8.0, 2.0]),
+            crate::test_support::test_b5::finite_pair([0.0, 10.0])
+        ),
+        Some(crate::test_support::test_b5::finite_pair([8.0, 2.0]))
     );
 
     let tiny = 1e-200_f64;
     assert_eq!(
-        bounded_occurrence_range([0.0, tiny], [0.0, tiny]),
-        Some([0.0, tiny])
+        bounded_occurrence_range(
+            crate::test_support::test_b5::finite_pair([0.0, tiny]),
+            crate::test_support::test_b5::finite_pair([0.0, tiny])
+        ),
+        Some(crate::test_support::test_b5::finite_pair([0.0, tiny]))
     );
-    assert!(bounded_occurrence_range([0.0, 2.0 * tiny], [0.0, tiny]).is_none());
-    assert!(bounded_occurrence_range([0.0, tiny], [tiny, 0.0]).is_none());
+    assert!(bounded_occurrence_range(
+        crate::test_support::test_b5::finite_pair([0.0, 2.0 * tiny]),
+        crate::test_support::test_b5::finite_pair([0.0, tiny])
+    )
+    .is_none());
+    assert!(bounded_occurrence_range(
+        crate::test_support::test_b5::finite_pair([0.0, tiny]),
+        crate::test_support::test_b5::finite_pair([tiny, 0.0])
+    )
+    .is_none());
 }
 
 #[test]
@@ -263,7 +315,7 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
                     object_id: 40,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: 0.0,
+                        parameter: crate::test_support::test_b5::finite(0.0),
                         control: 0,
                     }],
                 },
@@ -274,7 +326,7 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
                     object_id: 41,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: 1.0,
+                        parameter: crate::test_support::test_b5::finite(1.0),
                         control: 0,
                     }],
                 },
@@ -296,9 +348,15 @@ fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         profiles: BTreeMap::new(),
     };
 
-    assert_eq!(edge_pcurve_parameters(&graph, 30, 20), Some([0.0, 1.0]));
+    assert_eq!(
+        edge_pcurve_parameters(&graph, 30, 20),
+        Some(crate::test_support::test_b5::finite_pair([0.0, 1.0]))
+    );
     graph.edge_parameter_incidences.insert(30, [41, 40]);
-    assert_eq!(edge_pcurve_parameters(&graph, 30, 20), Some([1.0, 0.0]));
+    assert_eq!(
+        edge_pcurve_parameters(&graph, 30, 20),
+        Some(crate::test_support::test_b5::finite_pair([1.0, 0.0]))
+    );
 }
 
 /// An incomplete graph keeps the face whose loop members all carry vertex
@@ -318,7 +376,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         object_id,
         surface,
         degree: 1,
-        distinct_knots: vec![0.0, 1.0],
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
@@ -331,7 +389,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         object_id,
         lanes: vec![B5IncidenceLane {
             curve,
-            parameter,
+            parameter: crate::test_support::test_b5::finite(parameter),
             control: 0,
         }],
     };
@@ -474,7 +532,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 object_id: 20,
                 surface: 10,
                 degree: 1,
-                distinct_knots: vec![0.0, 1.0],
+                distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
                 multiplicities: vec![2, 2],
                 control_points: vec![[0.0, 0.0], [1.0, 0.0]],
                 weights: None,
@@ -507,7 +565,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                     object_id: 40,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: 0.0,
+                        parameter: crate::test_support::test_b5::finite(0.0),
                         control: 0,
                     }],
                 },
@@ -518,7 +576,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                     object_id: 41,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: 0.5,
+                        parameter: crate::test_support::test_b5::finite(0.5),
                         control: 0,
                     }],
                 },
@@ -529,7 +587,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                     object_id: 42,
                     lanes: vec![B5IncidenceLane {
                         curve: 20,
-                        parameter: 1.0,
+                        parameter: crate::test_support::test_b5::finite(1.0),
                         control: 0,
                     }],
                 },
@@ -676,12 +734,34 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
         .expect("valid LinePcurve fixture"),
     );
     let pcurves = BTreeMap::from([
-        (20, (pcurve_20.clone(), false, [2.0, 4.0])),
-        (21, (pcurve_21.clone(), false, [2.0, 5.0])),
+        (
+            20,
+            (
+                pcurve_20.clone(),
+                false,
+                crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+            ),
+        ),
+        (
+            21,
+            (
+                pcurve_21.clone(),
+                false,
+                crate::test_support::test_b5::finite_pair([2.0, 5.0]),
+            ),
+        ),
     ]);
-    let (_, _, one_sided) =
-        b5_edge_support_definition(&[(10, 20, [2.0, 4.0])], &surfaces, &pcurves, None)
-            .expect("one-sided surface curve");
+    let (_, _, one_sided) = b5_edge_support_definition(
+        &[(
+            10,
+            20,
+            crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+        )],
+        &surfaces,
+        &pcurves,
+        None,
+    )
+    .expect("one-sided surface curve");
     assert!(matches!(
         one_sided,
         ProceduralCurveDefinition::SurfaceCurve { family }
@@ -696,7 +776,18 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     ));
 
     let (_, _, intersection) = b5_edge_support_definition(
-        &[(10, 20, [2.0, 4.0]), (11, 21, [2.0, 4.0])],
+        &[
+            (
+                10,
+                20,
+                crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+            ),
+            (
+                11,
+                21,
+                crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+            ),
+        ],
         &surfaces,
         &pcurves,
         None,
@@ -717,7 +808,18 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
                 .all(|side| side.pcurve_parameter_range().is_none())
     ));
     let (_, _, independently_parameterized) = b5_edge_support_definition(
-        &[(10, 20, [2.0, 4.0]), (11, 21, [5.0, 2.0])],
+        &[
+            (
+                10,
+                20,
+                crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+            ),
+            (
+                11,
+                21,
+                crate::test_support::test_b5::finite_pair([5.0, 2.0]),
+            ),
+        ],
         &surfaces,
         &pcurves,
         None,
@@ -731,7 +833,11 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
             && context.sides()[1].pcurve_parameter_range() == Some([5.0, 2.0])
     ));
     let (_, _, distance_parameterized) = b5_edge_support_definition(
-        &[(10, 20, [2.0, 4.0])],
+        &[(
+            10,
+            20,
+            crate::test_support::test_b5::finite_pair([2.0, 4.0]),
+        )],
         &surfaces,
         &pcurves,
         Some([0.0, 8.0]),
@@ -771,7 +877,7 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
                     .expect("valid LinePcurve fixture"),
                 ),
                 false,
-                [0.0, 1.0],
+                crate::test_support::test_b5::finite_pair([0.0, 1.0]),
             ),
         ),
         (
@@ -785,11 +891,15 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
                     .expect("valid LinePcurve fixture"),
                 ),
                 false,
-                [0.0, 1.0],
+                crate::test_support::test_b5::finite_pair([0.0, 1.0]),
             ),
         ),
     ]);
-    let supports = [(10, 20, [0.0, 1.0])];
+    let supports = [(
+        10,
+        20,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+    )];
     assert!(b5_supports_follow_edge(
         &supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
@@ -811,7 +921,11 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     ));
-    let mut reversed_supports = [(10, 20, [1.0, 0.0])];
+    let mut reversed_supports = [(
+        10,
+        20,
+        crate::test_support::test_b5::finite_pair([1.0, 0.0]),
+    )];
     orient_b5_supports_to_edge(
         &mut reversed_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
@@ -819,7 +933,10 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     );
-    assert_eq!(reversed_supports[0].2, [0.0, 1.0]);
+    assert_eq!(
+        reversed_supports[0].2,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0])
+    );
     assert!(b5_supports_follow_edge(
         &reversed_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
@@ -827,7 +944,11 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     ));
-    let mut tolerance_ambiguous_supports = [(10, 20, [1.0, 0.0])];
+    let mut tolerance_ambiguous_supports = [(
+        10,
+        20,
+        crate::test_support::test_b5::finite_pair([1.0, 0.0]),
+    )];
     orient_b5_supports_to_edge(
         &mut tolerance_ambiguous_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
@@ -835,8 +956,22 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     );
-    assert_eq!(tolerance_ambiguous_supports[0].2, [0.0, 1.0]);
-    let mut oppositely_parameterized_supports = [(10, 20, [0.0, 1.0]), (11, 21, [0.0, 1.0])];
+    assert_eq!(
+        tolerance_ambiguous_supports[0].2,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0])
+    );
+    let mut oppositely_parameterized_supports = [
+        (
+            10,
+            20,
+            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+        ),
+        (
+            11,
+            21,
+            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+        ),
+    ];
     orient_b5_supports_to_edge(
         &mut oppositely_parameterized_supports,
         [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
@@ -844,7 +979,10 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         &surfaces,
         &pcurves,
     );
-    assert_eq!(oppositely_parameterized_supports[1].2, [1.0, 0.0]);
+    assert_eq!(
+        oppositely_parameterized_supports[1].2,
+        crate::test_support::test_b5::finite_pair([1.0, 0.0])
+    );
     assert!(b5_supports_agree(
         &oppositely_parameterized_supports,
         &surfaces,
@@ -1159,7 +1297,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                     object_id: 20,
                     lanes: vec![B5IncidenceLane {
                         curve: 2,
-                        parameter: 0.25,
+                        parameter: crate::test_support::test_b5::finite(0.25),
                         control: 0,
                     }],
                 },
@@ -1170,7 +1308,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                     object_id: 21,
                     lanes: vec![B5IncidenceLane {
                         curve: 2,
-                        parameter: 0.75,
+                        parameter: crate::test_support::test_b5::finite(0.75),
                         control: 0,
                     }],
                 },
@@ -1211,7 +1349,7 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
                 .expect("valid test pcurve"),
             },
             false,
-            [0.0, 1.0],
+            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
         ),
     )]);
     let surfaces = BTreeMap::from([(
@@ -1228,7 +1366,14 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
             procedure: None,
         },
     )]);
-    let supports = HashMap::from([(3, vec![(4, 2, [0.25, 0.75])])]);
+    let supports = HashMap::from([(
+        3,
+        vec![(
+            4,
+            2,
+            crate::test_support::test_b5::finite_pair([0.25, 0.75]),
+        )],
+    )]);
 
     let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
     assert!((tolerances[&0] - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
