@@ -149,7 +149,7 @@ pub(crate) fn push_revision_loft_body(
 /// The single revision-gated profile member of a decoded loft construction.
 pub(crate) fn decoded_revision_loft_member(
     ir: &cadmpeg_ir::document::CadIr,
-) -> &cadmpeg_ir::geometry::LoftProfileMember {
+) -> cadmpeg_ir::geometry::LoftProfileMember {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) = &ir
         .model
         .procedural_surfaces
@@ -163,7 +163,7 @@ pub(crate) fn decoded_revision_loft_member(
     let revision_form = definition_payload.revision_form();
 
     assert!(revision_form.is_some());
-    &sections[0].entries[0].profile[0]
+    sections[0].entries[0].profile[0].to_raw()
 }
 
 /// Byte-exact re-emission of the decoded construction's subtype span.

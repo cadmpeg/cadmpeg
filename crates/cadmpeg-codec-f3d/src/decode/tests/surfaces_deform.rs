@@ -169,7 +169,7 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     else {
         panic!("expected deformable surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let DeformableSurfaceData::Minimal { vectors, selector } = &construction.data else {
         panic!("expected minimal deformable surface")
@@ -210,7 +210,7 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
         else {
             panic!("expected deformable surface")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         match &construction.data {
             DeformableSurfaceData::Plain {
@@ -269,7 +269,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     else {
         panic!("expected deformable surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let revision_form = construction.cache.form().expect("revision deformable form");
     assert_eq!(revision_form.revision.get(), 22_506);
@@ -311,7 +311,7 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     else {
         panic!("expected round-trip deformable surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(
         construction
@@ -344,7 +344,7 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     else {
         panic!()
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let DeformableSurfaceData::SurfaceCurve {
         native_id,
@@ -417,7 +417,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         else {
             panic!()
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         let DeformableSurfaceData::Full {
             selector,
@@ -471,7 +471,7 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         else {
             panic!()
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert!(matches!(
             construction.data,
@@ -552,7 +552,10 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     let (profile, spine, Some(native)) = (
         definition_payload.profile(),
         definition_payload.spine(),
-        definition_payload.native(),
+        definition_payload
+            .native()
+            .as_deref()
+            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -614,7 +617,10 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     let (profile, spine, Some(native)) = (
         definition_payload.profile(),
         definition_payload.spine(),
-        definition_payload.native(),
+        definition_payload
+            .native()
+            .as_deref()
+            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected round-trip explicit formula sweep")
     };
@@ -659,7 +665,10 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             panic!("expected generated sweep")
         };
-        let mut edited_native = definition_payload.native().clone();
+        let mut edited_native = definition_payload
+            .native()
+            .as_deref()
+            .map(|native| Box::new(native.to_raw()));
         let native = &mut edited_native;
 
         *native = None;
@@ -700,7 +709,10 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     let (profile, spine, Some(native)) = (
         definition_payload.profile(),
         definition_payload.spine(),
-        definition_payload.native(),
+        definition_payload
+            .native()
+            .as_deref()
+            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -796,7 +808,10 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     let (profile, spine, Some(native)) = (
         definition_payload.profile(),
         definition_payload.spine(),
-        definition_payload.native(),
+        definition_payload
+            .native()
+            .as_deref()
+            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -887,7 +902,10 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     let (profile, spine, Some(native)) = (
         definition_payload.profile(),
         definition_payload.spine(),
-        definition_payload.native(),
+        definition_payload
+            .native()
+            .as_deref()
+            .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),
     ) else {
         panic!("expected native sweep")
     };
@@ -976,7 +994,11 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     else {
         panic!("expected native sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected native sweep")
     };
 
@@ -1013,7 +1035,11 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     else {
         panic!("expected round-tripped native sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected round-tripped native sweep")
     };
 
@@ -1050,7 +1076,11 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     else {
         panic!("expected native revision sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected native revision sweep")
     };
 
@@ -1097,7 +1127,11 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     else {
         panic!("expected round-tripped revision sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected round-tripped revision sweep")
     };
 
@@ -1130,7 +1164,11 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     let ProceduralSurfaceDefinition::Sweep(definition_payload) = procedural.definition() else {
         panic!("expected cacheless native revision sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected cacheless native revision sweep")
     };
 
@@ -1174,7 +1212,11 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     let ProceduralSurfaceDefinition::Sweep(definition_payload) = procedural.definition() else {
         panic!("expected round-tripped cacheless native revision sweep")
     };
-    let (Some(native),) = (definition_payload.native(),) else {
+    let (Some(native),) = (definition_payload
+        .native()
+        .as_deref()
+        .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw),)
+    else {
         panic!("expected round-tripped cacheless native revision sweep")
     };
 

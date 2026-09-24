@@ -342,7 +342,7 @@ fn decode_places_uniform_offset_circle_with_a_proper_transform() {
         panic!("expected an offset construction");
     };
     assert_eq!(source.as_str(), "iges:model:curve#D3-placed-source");
-    assert!(vector_distance(*normal, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(normal.get(), Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -585,7 +585,10 @@ fn decode_solves_a_parameter_linear_line_offset() {
             panic!("expected a retained linear offset law");
         };
         assert_eq!(*basis, expected_basis);
-        assert_eq!(*distances, [1.0, 3.0]);
+        assert_eq!(
+            cadmpeg_ir::scalar::FiniteReal::raw_array(*distances),
+            [1.0, 3.0]
+        );
         assert_eq!(control_range.endpoints(), [0.0, 10.0]);
         assert!(result.report().losses.is_empty());
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -642,8 +645,8 @@ fn decode_solves_a_polynomial_coordinate_function_offset() {
     assert_eq!(function.as_str(), "iges:model:curve#D3");
     assert_eq!(coordinate.get(), 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
-    assert_eq!(*function_parameter_offset, 0.0);
-    assert_eq!(*function_parameter_scale, 0.1);
+    assert_eq!(function_parameter_offset.get(), 0.0);
+    assert_eq!(function_parameter_scale.get(), 0.1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

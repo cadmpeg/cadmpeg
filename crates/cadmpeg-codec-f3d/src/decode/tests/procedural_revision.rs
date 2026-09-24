@@ -84,9 +84,9 @@ fn generated_revision_exact_surface_carries_two_unextended_intervals() {
     let ProceduralSurfaceDefinition::Exact(definition_payload) = procedural.definition() else {
         panic!("expected exact definition");
     };
-    let spline = definition_payload.spline();
+    let spline = definition_payload.spline().to_raw();
 
-    let ExactSpline::Revision { intervals, .. } = spline else {
+    let ExactSpline::Revision { intervals, .. } = &spline else {
         panic!("expected revision exact-spline layout")
     };
     assert_eq!(
@@ -145,10 +145,10 @@ fn generated_revision_loft_surface_carries_one_nonempty_wrap_interval() {
     let ProceduralSurfaceDefinition::Loft(definition_payload) = procedural.definition() else {
         panic!("expected loft definition");
     };
-    let parameters = definition_payload.parameters();
+    let parameters = definition_payload.parameters().to_raw();
 
     assert_eq!(
-        parameters,
+        &parameters,
         &SplineSurfaceParameters::RevisionRanges {
             intervals: [[Some(0.0), Some(1.0)], [Some(1.0), Some(0.0)]],
         }
@@ -278,7 +278,7 @@ fn generated_parameterized_revision_g2_blend_round_trips() {
     else {
         panic!("expected a revision g2 blend construction")
     };
-    assert_parameterized_tail(construction.cache());
+    assert_parameterized_tail(&construction.cache().to_raw());
 }
 
 #[test]
@@ -364,7 +364,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
     else {
         panic!("expected variable blend")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         &construction.cross_section,
@@ -383,7 +383,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction == &expected)));
+        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }
 
 #[test]
@@ -420,7 +420,7 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
         else {
             panic!("expected variable blend")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(
             construction.cross_section.as_ref(),
@@ -439,7 +439,7 @@ fn generated_variable_blend_round_trips_parameterized_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("parameterized cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction == &expected)));
+            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
     }
 }
 
@@ -471,7 +471,7 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
         else {
             panic!("expected variable blend")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(
             construction.cross_section,
@@ -490,7 +490,7 @@ fn generated_variable_blend_round_trips_unclassified_bare_cross_sections() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("bare cross-section round trip");
         assert!(matches!(
-            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction == &expected_construction)));
+            &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected_construction)));
     }
 }
 
@@ -552,7 +552,7 @@ fn generated_parameterized_revision_compound_loft_round_trips() {
     else {
         panic!("expected a revision compound loft construction")
     };
-    assert_parameterized_tail(construction.cache());
+    assert_parameterized_tail(&construction.cache().to_raw());
 }
 
 #[test]
@@ -772,7 +772,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         else {
             panic!("expected vertex blend")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         let owner = result
             .ir()
@@ -875,7 +875,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         else {
             panic!("expected round-trip vertex blend")
         };
-        let actual = definition_payload.construction();
+        let actual = &definition_payload.construction().to_raw();
 
         assert_eq!(actual, &expected);
         for (curve, range) in bounded_curves {
@@ -1037,7 +1037,9 @@ fn generated_f3d_rewrites_translational_extrusion_header() {
                 direction_value,
                 native_position_value,
                 cadmpeg_ir::geometry::CacheContract::from_form(
-                    definition_payload.revision_form().cloned(),
+                    definition_payload
+                        .revision_form()
+                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
                 ),
             )
             .unwrap();
@@ -1492,7 +1494,10 @@ fn generated_solved_plane_plane_blend_decodes_as_analytic_cylinder() {
                     edited_radius,
                     definition_payload.cross_section().clone(),
                     cadmpeg_ir::geometry::CacheContract::from_form(
-                        definition_payload.native().cloned().map(Box::new),
+                        definition_payload
+                            .native()
+                            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                            .map(Box::new),
                     ),
                 )
                 .unwrap();
@@ -1641,7 +1646,10 @@ fn generated_f3d_rewrites_rolling_ball_radius_law() {
             edited_radius,
             definition_payload.cross_section().clone(),
             cadmpeg_ir::geometry::CacheContract::from_form(
-                definition_payload.native().cloned().map(Box::new),
+                definition_payload
+                    .native()
+                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                    .map(Box::new),
             ),
         )
         .unwrap();

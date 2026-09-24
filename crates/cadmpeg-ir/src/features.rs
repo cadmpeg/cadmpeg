@@ -129,6 +129,20 @@ impl FinitePoint3 {
     pub fn negated(self) -> Self {
         Self(Point3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+
+    /// Admit every point, or none of them.
+    pub(crate) fn array<const N: usize>(values: [Point3; N]) -> Option<[Self; N]> {
+        values
+            .iter()
+            .all(Point3::is_finite)
+            .then(|| values.map(Self))
+    }
+
+    /// The raw points of the array, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_array<const N: usize>(values: [Self; N]) -> [Point3; N] {
+        values.map(Self::get)
+    }
 }
 
 checked_feature_geometry!(
@@ -160,6 +174,20 @@ impl FiniteVector3 {
     #[must_use]
     pub fn negated(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+
+    /// Admit every vector, or none of them.
+    pub(crate) fn array<const N: usize>(values: [Vector3; N]) -> Option<[Self; N]> {
+        values
+            .iter()
+            .all(Vector3::is_finite)
+            .then(|| values.map(Self))
+    }
+
+    /// The raw vectors of the array, for a reader that writes or edits them.
+    #[must_use]
+    pub fn raw_array<const N: usize>(values: [Self; N]) -> [Vector3; N] {
+        values.map(Self::get)
     }
 }
 

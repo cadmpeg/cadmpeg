@@ -54,7 +54,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             else {
                 panic!("expected G2 blend")
             };
-            let construction = definition_payload.construction();
+            let construction = &definition_payload.construction().to_raw();
 
             assert_eq!(construction.first.label, "first");
             assert_eq!(construction.second.label, "second");
@@ -140,7 +140,7 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             else {
                 panic!("expected round-trip G2 blend")
             };
-            let construction = definition_payload.construction();
+            let construction = &definition_payload.construction().to_raw();
 
             assert_eq!(construction.singularity, if full { 11 } else { 12 });
             assert_eq!(construction.center_parameters, [-0.5, 1.5]);
@@ -202,7 +202,10 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         else {
             panic!("expected complete rolling-ball graph")
         };
-        let (Some(native),) = (definition_payload.native(),) else {
+        let (Some(native),) = (definition_payload
+            .native()
+            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+        else {
             panic!("expected complete rolling-ball graph")
         };
 
@@ -331,11 +334,14 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         else {
             panic!("expected complete round-trip rolling-ball graph")
         };
-        let (Some(actual),) = (definition_payload.native(),) else {
+        let (Some(actual),) = (definition_payload
+            .native()
+            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+        else {
             panic!("expected complete round-trip rolling-ball graph")
         };
 
-        assert_eq!(actual, &expected);
+        assert_eq!(&actual, &expected);
         for side in actual.sides.iter() {
             assert!(matches!(
                 round_trip
@@ -438,7 +444,7 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     else {
         panic!("expected variable-blend construction")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(construction.cache.parameterization().is_some());
     assert_eq!(
@@ -463,7 +469,10 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
             panic!("expected complete rolling-ball graph")
         };
-        let (Some(native),) = (definition_payload.native(),) else {
+        let (Some(native),) = (definition_payload
+            .native()
+            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+        else {
             panic!("expected complete rolling-ball graph")
         };
 
@@ -505,7 +514,10 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    let Some(form) = definition_payload_0.revision_form() else {
+    let Some(form) = definition_payload_0
+        .revision_form()
+        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+    else {
         panic!("expected a parameterized revision-gated extrusion")
     };
     assert!(form.cache.parameterization().is_some());
@@ -640,7 +652,10 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
         assert_eq!(actual.cache_fit_tolerance(), None);
         let (parameterized, parameterization) = match actual.definition() {
             ProceduralSurfaceDefinition::Blend(definition_payload) => {
-                match (definition_payload.native(),) {
+                match (definition_payload
+                    .native()
+                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw),)
+                {
                     (Some(native),) => (
                         native.cache.parameterization().is_some(),
                         native.cache.parameterization().cloned(),
@@ -651,7 +666,7 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
                 }
             }
             ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
-                let construction = definition_payload.construction();
+                let construction = &definition_payload.construction().to_raw();
                 (
                     construction.cache.parameterization().is_some(),
                     construction.cache.parameterization().cloned(),
@@ -689,7 +704,7 @@ fn variable_blend_second_interval_decodes_unbounded_upper_bound() {
     else {
         panic!("expected variable blend")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(construction.u_range, [-1.0, 2.0]);
     assert_eq!(construction.v_lower, Some(-0.5));
@@ -730,7 +745,7 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
         else {
             panic!("expected variable blend")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         let VariableBlendValuePayload::Interpolated {
             function, points, ..
@@ -776,7 +791,7 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
     else {
         panic!("expected variable blend")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let VariableBlendValuePayload::EdgeOffset {
         scalars, lengths, ..
@@ -837,7 +852,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(construction.subtype, subtype);
         assert_eq!(construction.revision.get(), 23100);
@@ -992,7 +1007,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected round-trip variable blend")
         };
-        let actual = definition_payload.construction();
+        let actual = &definition_payload.construction().to_raw();
 
         assert_eq!(actual, &expected);
         assert!(matches!(
@@ -1053,7 +1068,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     else {
         panic!("expected variable blend")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         &construction.radii,
@@ -1097,7 +1112,7 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("two-radii variable-blend round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction == &expected)));
+        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }
 
 #[test]
@@ -1120,7 +1135,7 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     else {
         panic!("expected variable blend")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(construction.radii, VariableBlendRadii::Two { .. }));
     assert!(matches!(
@@ -1140,5 +1155,5 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("selector-zero round trip");
     assert!(matches!(
-        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction == &expected)));
+        &round_trip.ir().model.procedural_surfaces[0].definition(), ProceduralSurfaceDefinition::VariableBlend(definition_payload) if matches!((definition_payload.construction(),), (construction,) if construction.to_raw() == expected)));
 }

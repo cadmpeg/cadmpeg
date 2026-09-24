@@ -717,7 +717,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
     else {
         panic!("expected spring construction")
     };
-    let layout = definition_payload.layout();
+    let layout = &definition_payload.layout().to_raw();
     let direction = definition_payload.direction();
 
     let cadmpeg_ir::geometry::SpringLayout::CacheFirst { context, form } = layout else {
@@ -900,7 +900,11 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
                     .base_endpoints()
                     .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
             ),
-            cadmpeg_ir::geometry::CacheContract::from_form(actual_payload.cache_first().cloned()),
+            cadmpeg_ir::geometry::CacheContract::from_form(
+                actual_payload
+                    .cache_first()
+                    .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw),
+            ),
             actual_payload.distance().get(),
             [actual_payload.shift().get(), actual_payload.scale().get()],
         )
@@ -991,7 +995,7 @@ fn generated_parameterized_revision_offset_surface_round_trips() {
     else {
         panic!("expected offset surface construction")
     };
-    let extension = definition_payload.extension();
+    let extension = &definition_payload.extension().to_raw();
     let cadmpeg_ir::geometry::OffsetExtension::Revision { form } = extension else {
         panic!("expected revision form")
     };
@@ -1149,7 +1153,9 @@ fn generated_parameterized_revision_loft_surface_round_trips() {
     else {
         panic!("expected a loft construction")
     };
-    let revision_form = definition_payload.revision_form();
+    let revision_form = definition_payload
+        .revision_form()
+        .map(cadmpeg_ir::geometry::LoftRevisionForm::to_raw);
 
     let form = revision_form.as_ref().expect("revision form");
     assert_parameterized_tail(&form.cache);

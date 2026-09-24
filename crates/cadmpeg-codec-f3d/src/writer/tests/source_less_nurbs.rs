@@ -1081,7 +1081,10 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
     let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = expected.definition() else {
         panic!("expected a revision-gated extrusion")
     };
-    let Some(form) = definition_payload_0.revision_form() else {
+    let Some(form) = definition_payload_0
+        .revision_form()
+        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+    else {
         panic!("expected a revision-gated extrusion")
     };
     assert_eq!(form.revision.get(), 23100);
@@ -1117,7 +1120,9 @@ fn generated_source_less_writes_revision_gated_extrusion_definition() {
         let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = definition else {
             unreachable!("revision-gated extrusion")
         };
-        let mut revision_form = definition_payload_0.revision_form().cloned();
+        let mut revision_form = definition_payload_0
+            .revision_form()
+            .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
         let Some(form) = &mut revision_form else {
             unreachable!("revision-gated extrusion")
         };
@@ -1182,7 +1187,10 @@ fn generated_source_less_writes_parameterized_extrusion_definition() {
     let ProceduralSurfaceDefinition::Extrusion(definition_payload_0) = actual.definition() else {
         panic!("expected a parameterized revision-gated extrusion")
     };
-    let Some(form) = definition_payload_0.revision_form() else {
+    let Some(form) = definition_payload_0
+        .revision_form()
+        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+    else {
         panic!("expected a parameterized revision-gated extrusion")
     };
     assert!(form.cache.parameterization().is_some());
@@ -1352,7 +1360,9 @@ fn generated_cacheless_circle_extrusion_decodes_as_analytic_cylinder() {
                     .native_position()
                     .map(cadmpeg_ir::features::FinitePoint3::get),
                 cadmpeg_ir::geometry::CacheContract::from_form(
-                    definition_payload.revision_form().cloned(),
+                    definition_payload
+                        .revision_form()
+                        .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw),
                 ),
             )
             .unwrap();

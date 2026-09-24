@@ -1312,7 +1312,10 @@ fn decode_retains_nurbs_surface_parameter_subranges() {
         panic!("expected exact Type 128 construction")
     };
 
-    assert_eq!(*ranges, [[0.2, 0.8], [-1.0, 1.0]]);
+    assert_eq!(
+        cadmpeg_ir::scalar::FiniteReal::raw_grid(*ranges),
+        [[0.2, 0.8], [-1.0, 1.0]]
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

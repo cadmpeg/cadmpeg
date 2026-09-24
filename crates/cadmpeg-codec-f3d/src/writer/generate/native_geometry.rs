@@ -145,7 +145,7 @@ fn native_procedural_surface_definition(
     match procedural.definition() {
         ProceduralSurfaceDefinition::Deformable(definition_payload) => {
             use cadmpeg_ir::geometry::DeformableSurfaceData;
-            let construction = definition_payload.construction();
+            let construction = definition_payload.construction().to_raw();
             let cache_fit_tolerance = procedural.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::Malformed(
                     "deformable surface requires a native cache-fit tolerance".into(),
@@ -426,9 +426,12 @@ fn native_procedural_surface_definition(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "t_spl_sur")?;
-            if let Some(form) = construction.revision_form() {
+            if let Some(form) = construction
+                .revision_form()
+                .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+            {
                 native_i64(bytes, form.revision.get());
-                native_revision_surface_tail(bytes, "T-spline surface", form, Some(solved_cache))?;
+                native_revision_surface_tail(bytes, "T-spline surface", &form, Some(solved_cache))?;
                 for bound in &form.support_bounds {
                     native_optional_f64(bytes, *bound);
                 }
@@ -468,12 +471,12 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Exact(definition_payload) => {
-            let spline = definition_payload.spline();
+            let spline = definition_payload.spline().to_raw();
 
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
-            match spline {
+            match &spline {
                 cadmpeg_ir::geometry::ExactSpline::Revision {
                     intervals,
                     extension,
@@ -531,7 +534,7 @@ fn native_procedural_surface_definition(
                 })?,
             );
             for component in components {
-                native_f64(bytes, component.parameter);
+                native_f64(bytes, component.parameter.get());
             }
             for item in components {
                 let component = &item.component;
@@ -561,8 +564,10 @@ fn native_procedural_surface_definition(
             let reference = definition_payload.reference();
             let pcurve = definition_payload.pcurve();
             let parameter = definition_payload.parameter();
-            let taper = definition_payload.taper();
-            let revision_form = definition_payload.revision_form();
+            let taper = &definition_payload.taper().to_raw();
+            let revision_form = definition_payload
+                .revision_form()
+                .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
             {
                 let support = target
                     .model
@@ -596,7 +601,7 @@ fn native_procedural_surface_definition(
                     cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
                     cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
                 };
-                if let Some(form) = revision_form {
+                if let Some(form) = &revision_form {
                     if !matches!(
                         taper,
                         cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
@@ -690,31 +695,46 @@ fn native_procedural_surface_definition(
             }
         }
         ProceduralSurfaceDefinition::Loft(definition_payload) => {
-            let sections = definition_payload.sections();
-            let revision_form = definition_payload.revision_form();
-            let parameters = definition_payload.parameters();
+            let sections = definition_payload
+                .sections()
+                .each_ref()
+                .map(cadmpeg_ir::geometry::LoftSection::to_raw);
+            let revision_form = definition_payload
+                .revision_form()
+                .map(cadmpeg_ir::geometry::LoftRevisionForm::to_raw);
+            let parameters = definition_payload.parameters().to_raw();
             let closures = definition_payload.closures();
             let singularities = definition_payload.singularities();
             let mode = definition_payload.mode();
-            let bridge = definition_payload.bridge();
+            let bridge = definition_payload
+                .bridge()
+                .iter()
+                .map(cadmpeg_ir::geometry::LoftBridgeToken::to_raw)
+                .collect::<Vec<_>>();
             encode_native_loft(
                 bytes,
                 target,
                 procedural,
-                sections,
-                revision_form,
-                parameters,
+                &sections,
+                revision_form.as_ref(),
+                &parameters,
                 closures,
                 singularities,
                 *mode,
-                bridge,
+                &bridge,
                 Some(solved_cache),
             )?;
         }
         ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_compound_loft(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_compound_loft(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                solved_cache,
+            )?;
         }
         ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) => {
             let construction = definition_payload.construction();
@@ -723,24 +743,42 @@ fn native_procedural_surface_definition(
                 bytes,
                 target,
                 procedural,
-                construction,
+                &construction.to_raw(),
                 Some(solved_cache),
             )?;
         }
         ProceduralSurfaceDefinition::Skin(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_skin_surface(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_skin_surface(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                solved_cache,
+            )?;
         }
         ProceduralSurfaceDefinition::Law(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_law_surface(bytes, target, procedural, construction, Some(solved_cache))?;
+            encode_native_law_surface(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                Some(solved_cache),
+            )?;
         }
         ProceduralSurfaceDefinition::Net(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_net_surface(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_net_surface(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                solved_cache,
+            )?;
         }
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
             match (
@@ -754,7 +792,7 @@ fn native_procedural_surface_definition(
                     procedural,
                     profile,
                     spine,
-                    construction,
+                    &construction.to_raw(),
                     Some(solved_cache),
                 )?,
                 _ => {
@@ -769,7 +807,13 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::G2Blend(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
+            encode_native_g2_blend(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                solved_cache,
+            )?;
         }
         ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
             encode_native_revision_compound_loft(bytes, target, construction, Some(solved_cache))?;
@@ -780,7 +824,12 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
             let construction = definition_payload.construction();
 
-            encode_native_variable_blend(bytes, target, construction, Some(solved_cache))?;
+            encode_native_variable_blend(
+                bytes,
+                target,
+                &construction.to_raw(),
+                Some(solved_cache),
+            )?;
         }
         ProceduralSurfaceDefinition::VertexBlend(..) => {
             return Err(CodecError::NotImplemented(format!(
@@ -837,7 +886,10 @@ fn native_procedural_surface_definition(
             let first = definition_payload.first();
             let second = definition_payload.second();
             let basepoint = definition_payload.basepoint();
-            if let Some(form) = definition_payload.revision_form() {
+            if let Some(form) = &definition_payload
+                .revision_form()
+                .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw)
+            {
                 native_surface_base(bytes, "spline")?;
                 bytes.push(0x0f);
                 native_ident(bytes, "sum_spl_sur")?;
@@ -939,7 +991,9 @@ fn native_procedural_surface_definition(
                 .map(IncreasingParameterInterval::endpoints);
             let parameter_interval = definition_payload.parameter_interval();
             let transposed = definition_payload.transposed();
-            let revision_form = definition_payload.revision_form();
+            let revision_form = definition_payload
+                .revision_form()
+                .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
             {
                 if angular_parameter_interval
                     .is_some_and(|parameter_interval| parameter_interval != angular_interval)
@@ -949,7 +1003,7 @@ fn native_procedural_surface_definition(
                             .into(),
                     ));
                 }
-                if let Some(form) = revision_form {
+                if let Some(form) = &revision_form {
                     native_surface_base(bytes, "spline")?;
                     bytes.push(0x0f);
                     native_ident(bytes, "rot_spl_sur")?;
@@ -1054,7 +1108,7 @@ fn native_procedural_surface_definition(
             let distance = definition_payload.distance();
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
-            let extension = definition_payload.extension();
+            let extension = &definition_payload.extension().to_raw();
             {
                 let support = target
                     .model
@@ -1135,7 +1189,9 @@ fn native_procedural_surface_definition(
             let parameter_interval = definition_payload.parameter_interval();
             let direction = definition_payload.direction();
             let native_position = definition_payload.native_position();
-            let revision_form = definition_payload.revision_form();
+            let revision_form = definition_payload
+                .revision_form()
+                .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
             encode_native_extrusion(
                 bytes,
                 target,
@@ -1156,7 +1212,7 @@ fn native_procedural_surface_definition(
                         )
                     })?
                     .get(),
-                revision_form,
+                revision_form.as_ref(),
                 Some(solved_cache),
             )?;
         }
@@ -1168,7 +1224,12 @@ fn native_procedural_surface_definition(
             let native = definition_payload.native();
 
             if let Some(native) = native {
-                encode_complete_native_rolling_ball(bytes, target, native, Some(solved_cache))?;
+                encode_complete_native_rolling_ball(
+                    bytes,
+                    target,
+                    &native.to_raw(),
+                    Some(solved_cache),
+                )?;
             } else {
                 encode_native_rolling_ball(
                     bytes,
@@ -1909,7 +1970,9 @@ fn native_cacheless_procedural_surface_definition(
         let parameter_interval = definition_payload.parameter_interval();
         let direction = definition_payload.direction();
         let native_position = definition_payload.native_position();
-        let revision_form = definition_payload.revision_form();
+        let revision_form = definition_payload
+            .revision_form()
+            .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
         encode_native_extrusion(
             bytes,
             target,
@@ -1930,7 +1993,7 @@ fn native_cacheless_procedural_surface_definition(
                     )
                 })?
                 .get(),
-            revision_form,
+            revision_form.as_ref(),
             None,
         )?;
         return Ok(true);
@@ -2067,7 +2130,13 @@ fn native_cacheless_procedural_surface_definition(
             construction.shape,
             cadmpeg_ir::geometry::ScaledCompoundLoftShape::None { .. }
         ) {
-            encode_native_scaled_compound_loft(bytes, target, procedural, construction, None)?;
+            encode_native_scaled_compound_loft(
+                bytes,
+                target,
+                procedural,
+                &construction.to_raw(),
+                None,
+            )?;
             return Ok(true);
         }
     }
@@ -2078,7 +2147,7 @@ fn native_cacheless_procedural_surface_definition(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full { .. }
         ) {
-            encode_native_law_surface(bytes, target, procedural, construction, None)?;
+            encode_native_law_surface(bytes, target, procedural, &construction.to_raw(), None)?;
             return Ok(true);
         }
     }
@@ -2104,7 +2173,7 @@ fn native_cacheless_procedural_surface_definition(
     if let ProceduralSurfaceDefinition::VertexBlend(definition_payload) = procedural.definition() {
         let construction = definition_payload.construction();
 
-        encode_native_vertex_blend(bytes, target, construction)?;
+        encode_native_vertex_blend(bytes, target, &construction.to_raw())?;
         return Ok(true);
     }
     if let ProceduralSurfaceDefinition::Sweep(definition_payload) = procedural.definition() {
@@ -2124,7 +2193,7 @@ fn native_cacheless_procedural_surface_definition(
                     procedural,
                     profile,
                     spine,
-                    construction,
+                    &construction.to_raw(),
                     None,
                 )?;
                 return Ok(true);
@@ -2136,7 +2205,7 @@ fn native_cacheless_procedural_surface_definition(
     if let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() {
         if let (Some(construction),) = (definition_payload.native(),) {
             if construction.cache.parameterization().is_some() {
-                encode_complete_native_rolling_ball(bytes, target, construction, None)?;
+                encode_complete_native_rolling_ball(bytes, target, &construction.to_raw(), None)?;
                 return Ok(true);
             }
         }
@@ -2146,7 +2215,7 @@ fn native_cacheless_procedural_surface_definition(
         let construction = definition_payload.construction();
 
         if construction.cache.parameterization().is_some() {
-            encode_native_variable_blend(bytes, target, construction, None)?;
+            encode_native_variable_blend(bytes, target, &construction.to_raw(), None)?;
             return Ok(true);
         }
     }
@@ -2165,13 +2234,18 @@ fn native_cacheless_procedural_surface_definition(
                     bytes,
                     target,
                     procedural,
-                    sections,
-                    Some(form),
-                    parameters,
+                    &sections
+                        .each_ref()
+                        .map(cadmpeg_ir::geometry::LoftSection::to_raw),
+                    Some(&form.to_raw()),
+                    &parameters.to_raw(),
                     closures,
                     singularities,
                     *mode,
-                    bridge,
+                    &bridge
+                        .iter()
+                        .map(cadmpeg_ir::geometry::LoftBridgeToken::to_raw)
+                        .collect::<Vec<_>>(),
                     None,
                 )?;
                 return Ok(true);
@@ -3752,7 +3826,7 @@ fn encode_native_revision_compound_loft(
     native_revision_tail_head(
         bytes,
         "compound-loft surface",
-        construction.cache(),
+        &construction.cache().to_raw(),
         solved_cache,
     )?;
     native_revision_tail_discontinuities(
@@ -3763,8 +3837,12 @@ fn encode_native_revision_compound_loft(
     native_revision_cl_scale(
         bytes,
         target,
-        construction.base_profile(),
-        construction.base_path(),
+        &construction
+            .base_profile()
+            .iter()
+            .map(cadmpeg_ir::geometry::LoftProfileMember::to_raw)
+            .collect::<Vec<_>>(),
+        &construction.base_path().to_raw(),
     )?;
     native_i64(
         bytes,
@@ -3773,6 +3851,7 @@ fn encode_native_revision_compound_loft(
         })?,
     );
     for entry in construction.entries() {
+        let entry = entry.to_raw();
         native_revision_cl_scale(bytes, target, &entry.profile, &entry.path)?;
         native_f64(bytes, entry.parameter);
     }
@@ -3818,7 +3897,7 @@ fn encode_native_revision_g2_blend(
         native_f64(bytes, parameter.get());
     }
     for side in construction.sides() {
-        native_rolling_ball_side(bytes, target, side)?;
+        native_rolling_ball_side(bytes, target, &side.to_raw())?;
     }
     let center_range = match construction.center_range() {
         [Some(lower), Some(upper)] => Some([lower.get(), upper.get()]),
@@ -3847,7 +3926,12 @@ fn encode_native_revision_g2_blend(
     native_f64(bytes, construction.shape_parameter().get());
     native_f64(bytes, construction.shape_length().get() / LEN_TO_MM);
     native_i64(bytes, construction.shape_tail());
-    native_revision_tail_head(bytes, "G2 blend", construction.cache(), solved_cache)?;
+    native_revision_tail_head(
+        bytes,
+        "G2 blend",
+        &construction.cache().to_raw(),
+        solved_cache,
+    )?;
     native_revision_tail_discontinuities(
         bytes,
         &cadmpeg_ir::scalar::FiniteReal::raw_lanes(construction.discontinuities()),
@@ -4729,7 +4813,11 @@ mod native_interval_curve_tests {
                 panic!("sweep construction")
             };
             let profile = payload.profile().clone();
-            let mut native = payload.native().clone().unwrap();
+            let mut native = payload
+                .native()
+                .as_deref()
+                .map(cadmpeg_ir::geometry::SweepSurfaceConstruction::to_raw)
+                .unwrap();
             let SweepSurfaceLayout::LawDriven { profile_range, .. } = &mut native.layout else {
                 panic!("law-driven layout")
             };
@@ -4737,7 +4825,7 @@ mod native_interval_curve_tests {
             let replacement = SweepSurfacePayload::try_new(
                 profile.clone(),
                 payload.spine().clone(),
-                Some(native),
+                Some(Box::new(native)),
             )
             .expect("finite interval endpoints are admitted by the construction");
             procedural.edit_definition(|definition| {
@@ -4870,14 +4958,14 @@ pub(crate) fn native_procedural_curve(
             native_intcurve_support_context(bytes, target, context)?;
         }
         native_i64(bytes, *extension);
-        native_law_formula(bytes, target, primary.formula())?;
+        native_law_formula(bytes, target, &primary.formula().to_raw())?;
         native_i64(
             bytes,
             i64::try_from(additional.len())
                 .map_err(|_| CodecError::NotImplemented("law formula count exceeds i64".into()))?,
         );
         for formula in additional {
-            native_law_formula(bytes, target, formula.formula())?;
+            native_law_formula(bytes, target, &formula.formula().to_raw())?;
         }
         bytes.push(0x10);
         return Ok(true);
@@ -4886,10 +4974,10 @@ pub(crate) fn native_procedural_curve(
         procedural.definition()
     {
         let context = definition_payload.context();
-        let cache_first = definition_payload.cache_first();
+        let cache_first = &definition_payload.cache_first().to_raw();
         let source = definition_payload.source();
         let source_parameter_range = definition_payload.source_parameter_range();
-        let data = definition_payload.data();
+        let data = &definition_payload.data().to_raw();
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
@@ -5047,7 +5135,7 @@ pub(crate) fn native_procedural_curve(
             } => {
                 bytes.push(native_bool(*flag));
                 for value in parameter_range {
-                    native_f64(bytes, *value);
+                    native_f64(bytes, value.get());
                 }
                 native_string(bytes, role.as_str())?;
                 native_nurbs_curve(bytes, solved_cache)?;
@@ -5082,7 +5170,7 @@ pub(crate) fn native_procedural_curve(
             })?,
         );
         for item in components {
-            native_f64(bytes, item.parameter);
+            native_f64(bytes, item.parameter.get());
         }
         bytes.push(0x0b);
         for (ordinal, component) in components.iter().enumerate() {
@@ -5175,7 +5263,7 @@ pub(crate) fn native_procedural_curve(
                 context,
                 &cadmpeg_ir::geometry::CacheFirstCurveForm {
                     revision: tail.revision(),
-                    cache: tail.cache().clone(),
+                    cache: tail.cache().to_raw(),
                     support_bounds: tail
                         .support_bounds()
                         .map(cadmpeg_ir::geometry::RecordBounds::get),
@@ -5244,7 +5332,9 @@ pub(crate) fn native_procedural_curve(
         let base = definition_payload.base();
         let base_range = definition_payload.base_range();
         let base_endpoints = definition_payload.base_endpoints();
-        let cache_first = definition_payload.cache_first();
+        let cache_first = definition_payload
+            .cache_first()
+            .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw);
         let distance = definition_payload.distance();
         let shift = definition_payload.shift();
         let scale = definition_payload.scale();
@@ -5263,7 +5353,7 @@ pub(crate) fn native_procedural_curve(
         native_curve_base(bytes, "intcurve")?;
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
-        if let Some(form) = cache_first {
+        if let Some(form) = &cache_first {
             native_cache_first_curve_context(bytes, target, context, form, Some(solved_cache))?;
             for range in [base_u_range, base_v_range] {
                 for value in range.endpoints() {
@@ -5304,7 +5394,7 @@ pub(crate) fn native_procedural_curve(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring(definition_payload) =
         procedural.definition()
     {
-        let layout = definition_payload.layout();
+        let layout = &definition_payload.layout().to_raw();
         let direction = definition_payload.direction();
 
         native_curve_base(bytes, "intcurve")?;
@@ -5898,7 +5988,7 @@ mod pcurve_chart_tests {
                 let ProceduralCurveDefinition::Spring(payload) = definition else {
                     panic!("fixture must retain its spring construction");
                 };
-                let mut layout = payload.layout().clone();
+                let mut layout = payload.layout().to_raw();
                 let SpringLayout::ContextFirst { first_pcurve, .. } = &mut layout else {
                     panic!("fixture must retain its context-first spring layout");
                 };

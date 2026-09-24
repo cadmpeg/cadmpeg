@@ -3,11 +3,11 @@
 
 use super::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, CompoundComponent, CompoundLoftConstruction,
-    DeformableSurfaceConstruction, ExactSpline, G2BlendConstruction, LawSurfaceConstruction,
-    LoftBridgeToken, LoftRevisionForm, LoftSection, NetSurfaceConstruction,
-    RollingBallConstruction, ScaledCompoundLoftConstruction, SkinSurfaceConstruction,
-    SplineSurfaceParameters, SweepSurfaceConstruction, VariableBlendConstruction,
-    VertexBlendConstruction,
+    CompoundLoftTail, DeformableSurfaceConstruction, ExactSpline, G2BlendConstruction,
+    LawSurfaceConstruction, LoftBridgeToken, LoftRevisionForm, LoftSection, NetSurfaceConstruction,
+    RollingBallConstruction, ScaledCompoundLoftConstruction, ScaledCompoundLoftShape,
+    SkinSurfaceConstruction, SplineSurfaceParameters, SweepSurfaceConstruction,
+    VariableBlendConstruction, VertexBlendBoundaryGeometry, VertexBlendConstruction,
 };
 use super::{CacheContract, LegacyCache, LegacyCacheSlot};
 use crate::features::{FinitePoint3, FiniteVector3};
@@ -104,11 +104,11 @@ pub struct TaperSurfaceConstruction {
     /// Native taper parameter or draft magnitude.
     parameter: FiniteReal,
     /// Subtype-specific taper tail.
-    taper: TaperSurfaceKind,
+    taper: TaperSurfaceKind<FiniteReal, FiniteVector3>,
     /// Cache contract: the revision-gated form, or the legacy
     /// solved-cache tolerance this construction states instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<RevisionSurfaceForm>,
+    cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
 #[derive(Deserialize)]
@@ -158,32 +158,13 @@ impl TaperSurfaceConstruction {
         taper: TaperSurfaceKind,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let tail_finite = match &taper {
-            crate::geometry::TaperSurfaceKind::Standard {}
-            | crate::geometry::TaperSurfaceKind::Orthogonal { .. } => true,
-            crate::geometry::TaperSurfaceKind::Edge { draft } => draft.is_finite(),
-            crate::geometry::TaperSurfaceKind::Shadow {
-                draft,
-                sine,
-                cosine,
-            }
-            | crate::geometry::TaperSurfaceKind::Swept {
-                draft,
-                sine,
-                cosine,
-            } => draft.is_finite() && sine.is_finite() && cosine.is_finite(),
-            crate::geometry::TaperSurfaceKind::Ruled {
-                draft,
-                sine,
-                cosine,
-                factor,
-            } => draft.is_finite() && sine.is_finite() && cosine.is_finite() && factor.is_finite(),
-        };
-        if !tail_finite || !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
+        let (Some(taper), Some(cache)) =
+            (taper.admit(), cache.admit_form(RevisionSurfaceForm::admit))
+        else {
             return Err(ProceduralGeometryError::Payload(
                 "taper surface parameter or subtype tail is invalid",
             ));
-        }
+        };
 
         Ok(Self {
             support,
@@ -213,11 +194,11 @@ impl TaperSurfaceConstruction {
         self.parameter
     }
     /// Return the taper.
-    pub fn taper(&self) -> &TaperSurfaceKind {
+    pub fn taper(&self) -> &TaperSurfaceKind<FiniteReal, FiniteVector3> {
         &self.taper
     }
     /// Return the revision form.
-    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm<Vec<bool>, FiniteReal>> {
         self.cache.form()
     }
 }
@@ -261,7 +242,7 @@ pub struct ExtrusionSurfaceConstruction {
     /// solved-cache tolerance this construction states instead.
     /// The directrix parameter interval is `parameter_interval`.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<RevisionSurfaceForm>,
+    cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
 #[derive(Deserialize)]
@@ -316,11 +297,9 @@ impl ExtrusionSurfaceConstruction {
         native_position: Option<Point3>,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
-            return Err(ProceduralGeometryError::Payload(
-                "Extrusion.cache is invalid",
-            ));
-        }
+        let cache = cache.admit_form(RevisionSurfaceForm::admit).ok_or(
+            ProceduralGeometryError::Payload("Extrusion.cache is invalid"),
+        )?;
         Ok(Self {
             directrix,
             parameter_interval: parameter_interval
@@ -391,7 +370,7 @@ impl ExtrusionSurfaceConstruction {
         self.native_position = native_position;
     }
     /// Return the revision form.
-    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm<Vec<bool>, FiniteReal>> {
         self.cache.form()
     }
 }
@@ -467,7 +446,7 @@ pub struct RevolutionSurfaceConstruction {
     /// solved-cache tolerance this construction states instead.
     /// The profile curve's optional endpoints are `reference_endpoints`.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<RevisionSurfaceForm>,
+    cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
 #[derive(Deserialize)]
@@ -534,11 +513,9 @@ impl RevolutionSurfaceConstruction {
         transposed: bool,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
-            return Err(ProceduralGeometryError::Payload(
-                "revolution cache form is invalid",
-            ));
-        }
+        let cache = cache.admit_form(RevisionSurfaceForm::admit).ok_or(
+            ProceduralGeometryError::Payload("revolution cache form is invalid"),
+        )?;
         let angular_interval = admit_revolution_interval(
             angular_interval,
             "revolution angular_interval must be finite and strictly increasing",
@@ -634,7 +611,7 @@ impl RevolutionSurfaceConstruction {
         &self.transposed
     }
     /// Return the revision form.
-    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm<Vec<bool>, FiniteReal>> {
         self.cache.form()
     }
 }
@@ -683,7 +660,7 @@ pub struct OffsetSurfaceConstruction {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     linear_support_extension: bool,
     /// Legacy conditional extension flags or the revision-gated form.
-    extension: OffsetExtension,
+    extension: OffsetExtension<FiniteReal>,
 }
 
 #[derive(Deserialize)]
@@ -745,15 +722,9 @@ impl OffsetSurfaceConstruction {
         linear_support_extension: bool,
         extension: OffsetExtension,
     ) -> Result<Self, ProceduralGeometryError> {
-        let extension_valid = match &extension {
-            OffsetExtension::Legacy { .. } => true,
-            OffsetExtension::Revision { form } => form.is_valid(),
-        };
-        if !extension_valid {
-            return Err(ProceduralGeometryError::Payload(
-                "Offset.extension is invalid",
-            ));
-        }
+        let extension = extension.admit().ok_or(ProceduralGeometryError::Payload(
+            "Offset.extension is invalid",
+        ))?;
         Ok(Self {
             support,
             distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
@@ -808,7 +779,7 @@ impl OffsetSurfaceConstruction {
         self.linear_support_extension
     }
     /// Return the extension.
-    pub fn extension(&self) -> &OffsetExtension {
+    pub fn extension(&self) -> &OffsetExtension<FiniteReal> {
         &self.extension
     }
 }
@@ -1168,7 +1139,7 @@ pub struct SumSurfaceConstruction {
     /// The first curve's optional endpoints are `reference_endpoints`
     /// and the second curve's are `second_endpoints`.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<RevisionSurfaceForm>,
+    cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
 #[derive(Deserialize)]
@@ -1207,11 +1178,9 @@ impl SumSurfaceConstruction {
         basepoint: Vector3,
         cache: CacheContract<RevisionSurfaceForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if !cache.form().is_none_or(RevisionSurfaceForm::is_valid) {
-            return Err(ProceduralGeometryError::Payload(
-                "sum cache form is invalid",
-            ));
-        }
+        let cache = cache.admit_form(RevisionSurfaceForm::admit).ok_or(
+            ProceduralGeometryError::Payload("sum cache form is invalid"),
+        )?;
         Ok(Self {
             first,
             second,
@@ -1239,7 +1208,7 @@ impl SumSurfaceConstruction {
         self.basepoint = basepoint;
     }
     /// Return the revision form.
-    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm> {
+    pub const fn revision_form(&self) -> Option<&RevisionSurfaceForm<Vec<bool>, FiniteReal>> {
         self.cache.form()
     }
 }
@@ -1257,7 +1226,7 @@ impl TryFrom<SumSurfaceConstructionWire> for SumSurfaceConstruction {
 #[cfg_attr(feature = "schema", schemars(with = "ExactSurfacePayloadWire"))]
 #[serde(try_from = "ExactSurfacePayloadWire")]
 pub struct ExactSurfacePayload {
-    spline: ExactSpline,
+    spline: ExactSpline<FiniteReal>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1269,30 +1238,19 @@ struct ExactSurfacePayloadWire {
 impl ExactSurfacePayload {
     /// Admit the construction parameters.
     pub fn try_new(spline: ExactSpline) -> Result<Self, ProceduralGeometryError> {
-        let valid = match &spline {
-            crate::geometry::ExactSpline::Legacy { ranges, .. } => ranges
-                .iter()
-                .all(|range| range.iter().all(|value| value.is_finite()) && range[0] <= range[1]),
-            crate::geometry::ExactSpline::Revision {
-                intervals, form, ..
-            } => {
-                intervals
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .all(|value| value.is_finite())
-                    && form.is_valid()
-            }
-        };
-        if !valid {
-            return Err(ProceduralGeometryError::Payload(
+        let spline = spline
+            .admit()
+            .filter(|spline| match spline {
+                ExactSpline::Legacy { ranges, .. } => ranges.iter().all(ordered),
+                ExactSpline::Revision { .. } => true,
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "exact spline surface parameter fields are invalid",
-            ));
-        }
+            ))?;
         Ok(Self { spline })
     }
     /// Return the spline.
-    pub fn spline(&self) -> &ExactSpline {
+    pub fn spline(&self) -> &ExactSpline<FiniteReal> {
         &self.spline
     }
 }
@@ -1309,7 +1267,7 @@ impl TryFrom<ExactSurfacePayloadWire> for ExactSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfacePayloadWire"))]
 #[serde(try_from = "CompoundSurfacePayloadWire")]
 pub struct CompoundSurfacePayload {
-    components: Vec<CompoundComponent<SurfaceId>>,
+    components: Vec<CompoundComponent<SurfaceId, FiniteReal>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
@@ -1334,15 +1292,17 @@ impl CompoundSurfacePayload {
         components: Vec<CompoundComponent<SurfaceId>>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if components.iter().any(|item| !item.parameter.is_finite()) {
-            return Err(ProceduralGeometryError::Payload(
+        let components = components
+            .into_iter()
+            .map(CompoundComponent::admit)
+            .collect::<Option<Vec<_>>>()
+            .ok_or(ProceduralGeometryError::Payload(
                 "compound surface parameters and components are inconsistent",
-            ));
-        }
+            ))?;
         Ok(Self { components, cache })
     }
     /// Return the components.
-    pub fn components(&self) -> &Vec<CompoundComponent<SurfaceId>> {
+    pub fn components(&self) -> &Vec<CompoundComponent<SurfaceId, FiniteReal>> {
         &self.components
     }
 }
@@ -1359,9 +1319,9 @@ impl TryFrom<CompoundSurfacePayloadWire> for CompoundSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "LoftSurfacePayloadWire"))]
 #[serde(try_from = "LoftSurfacePayloadWire")]
 pub struct LoftSurfacePayload {
-    sections: [LoftSection; 2],
+    sections: [LoftSection<FiniteReal, FiniteVector3>; 2],
 
-    parameters: SplineSurfaceParameters,
+    parameters: SplineSurfaceParameters<FiniteReal>,
 
     closures: [i64; 2],
 
@@ -1369,10 +1329,10 @@ pub struct LoftSurfacePayload {
 
     mode: i64,
 
-    bridge: Vec<LoftBridgeToken>,
+    bridge: Vec<LoftBridgeToken<FiniteReal>>,
 
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<LoftRevisionForm>,
+    cache: CacheContract<LoftRevisionForm<FiniteReal>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1411,34 +1371,25 @@ impl LoftSurfacePayload {
         bridge: Vec<LoftBridgeToken>,
         cache: CacheContract<LoftRevisionForm>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let parameters_valid = match &parameters {
-            crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => ranges
-                .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]),
-            crate::geometry::SplineSurfaceParameters::RevisionRanges { intervals } => intervals
-                .iter()
-                .flatten()
-                .flatten()
-                .all(|value| value.is_finite()),
-        };
-        let sections_valid = sections
-            .iter()
-            .all(crate::geometry::LoftSection::values_are_finite);
-        let cache_valid = cache
-            .form()
-            .is_none_or(crate::geometry::LoftRevisionForm::is_valid);
-        let bridge_valid = bridge.iter().all(|token| match token {
-            crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-            crate::geometry::LoftBridgeToken::Boolean(_)
-            | crate::geometry::LoftBridgeToken::Integer(_)
-            | crate::geometry::LoftBridgeToken::Text(_)
-            | crate::geometry::LoftBridgeToken::Enum(_) => true,
-        });
-        if !parameters_valid || !sections_valid || !cache_valid || !bridge_valid {
+        let [first, second] = sections;
+        let (Some(parameters), Some(first), Some(second), Some(cache), Some(bridge)) = (
+            parameters.admit().filter(|parameters| match parameters {
+                SplineSurfaceParameters::OrderedRanges { ranges } => ranges.iter().all(ordered),
+                SplineSurfaceParameters::RevisionRanges { .. } => true,
+            }),
+            first.admit(),
+            second.admit(),
+            cache.admit_form(LoftRevisionForm::admit),
+            bridge
+                .into_iter()
+                .map(LoftBridgeToken::admit)
+                .collect::<Option<Vec<_>>>(),
+        ) else {
             return Err(ProceduralGeometryError::Payload(
                 "loft construction payload is invalid",
             ));
-        }
+        };
+        let sections = [first, second];
         Ok(Self {
             sections,
             parameters,
@@ -1450,11 +1401,11 @@ impl LoftSurfacePayload {
         })
     }
     /// Return the sections.
-    pub fn sections(&self) -> &[LoftSection; 2] {
+    pub fn sections(&self) -> &[LoftSection<FiniteReal, FiniteVector3>; 2] {
         &self.sections
     }
     /// Return the parameters.
-    pub fn parameters(&self) -> &SplineSurfaceParameters {
+    pub fn parameters(&self) -> &SplineSurfaceParameters<FiniteReal> {
         &self.parameters
     }
     /// Return the closures.
@@ -1470,11 +1421,11 @@ impl LoftSurfacePayload {
         &self.mode
     }
     /// Return the bridge.
-    pub fn bridge(&self) -> &Vec<LoftBridgeToken> {
+    pub fn bridge(&self) -> &Vec<LoftBridgeToken<FiniteReal>> {
         &self.bridge
     }
     /// Return the revision form.
-    pub const fn revision_form(&self) -> Option<&LoftRevisionForm> {
+    pub const fn revision_form(&self) -> Option<&LoftRevisionForm<FiniteReal>> {
         self.cache.form()
     }
 }
@@ -1499,7 +1450,7 @@ impl TryFrom<LoftSurfacePayloadWire> for LoftSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftSurfacePayloadWire"))]
 #[serde(try_from = "CompoundLoftSurfacePayloadWire")]
 pub struct CompoundLoftSurfacePayload {
-    construction: Box<CompoundLoftConstruction>,
+    construction: Box<CompoundLoftConstruction<FiniteReal, FiniteVector3>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
@@ -1524,51 +1475,24 @@ impl CompoundLoftSurfacePayload {
         construction: Box<CompoundLoftConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-        let tail_valid = match &construction.tail {
-            crate::geometry::CompoundLoftTail::Six {
-                scale,
-                direction,
-                parameter_range,
-                ..
-            } => {
-                scales.push(scale.as_ref());
-                direction.is_finite()
-                    && parameter_range.iter().all(|value| value.is_finite())
-                    && parameter_range[0] <= parameter_range[1]
-            }
-            crate::geometry::CompoundLoftTail::Seven {
-                first_scale,
-                second_scale,
-                direction,
-                ..
-            } => {
-                scales.extend(first_scale.iter().map(Box::as_ref));
-                scales.push(second_scale.as_ref());
-                direction.is_finite()
-            }
-            crate::geometry::CompoundLoftTail::Zero { direction, .. } => {
-                direction.values_are_finite()
-            }
-        };
-        let scales_valid = scales.iter().all(|scale| {
-            scale
-                .members
-                .iter()
-                .all(|member| member.data.values_are_finite())
-        });
-        if !tail_valid || !scales_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .filter(|construction| match &construction.tail {
+                CompoundLoftTail::Six {
+                    parameter_range, ..
+                } => ordered(parameter_range),
+                CompoundLoftTail::Seven { .. } | CompoundLoftTail::Zero { .. } => true,
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "compound loft construction payload is invalid",
-            ));
-        }
+            ))?;
         Ok(Self {
-            construction,
+            construction: Box::new(construction),
             cache,
         })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &CompoundLoftConstruction {
+    pub fn construction(&self) -> &CompoundLoftConstruction<FiniteReal, FiniteVector3> {
         &self.construction
     }
 }
@@ -1588,7 +1512,7 @@ impl TryFrom<CompoundLoftSurfacePayloadWire> for CompoundLoftSurfacePayload {
 )]
 #[serde(try_from = "ScaledCompoundLoftSurfacePayloadWire")]
 pub struct ScaledCompoundLoftSurfacePayload {
-    construction: Box<ScaledCompoundLoftConstruction>,
+    construction: Box<ScaledCompoundLoftConstruction<FiniteReal, FiniteVector3>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cache: Option<LegacyCache>,
@@ -1609,64 +1533,24 @@ impl ScaledCompoundLoftSurfacePayload {
         construction: Box<ScaledCompoundLoftConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let shape_valid = match &construction.shape {
-            crate::geometry::ScaledCompoundLoftShape::Full {} => true,
-            crate::geometry::ScaledCompoundLoftShape::None {
-                parameter_ranges,
-                parameters,
-            } => {
-                parameter_ranges
-                    .iter()
-                    .flatten()
-                    .chain(parameters.iter().flatten())
-                    .all(|value| value.is_finite())
-                    && parameter_ranges.iter().all(|range| range[0] <= range[1])
-            }
-        };
-        let mut scales = construction.scales.as_slice().iter().collect::<Vec<_>>();
-        let branch_valid = match &construction.branch {
-            crate::geometry::ScaledCompoundLoftBranch::ExtendedVector {
-                first_scale,
-                second_scale,
-                direction,
-                ..
-            } => {
-                scales.extend(first_scale.iter().map(Box::as_ref));
-                scales.push(second_scale.as_ref());
-                direction.is_finite()
-            }
-            crate::geometry::ScaledCompoundLoftBranch::ExtendedCurve { scale, .. } => {
-                scales.extend(scale.iter().map(Box::as_ref));
-                true
-            }
-            crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
-                direction.values_are_finite()
-            }
-        };
-        let scales_valid = scales.iter().all(|scale| {
-            scale
-                .members
-                .iter()
-                .all(|member| member.data.values_are_finite())
-        });
-        let scalars_valid = construction
-            .discontinuities
-            .iter()
-            .flatten()
-            .all(|value| value.is_finite())
-            && construction.tail_directions.iter().all(Vector3::is_finite);
-        if !shape_valid || !branch_valid || !scales_valid || !scalars_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .filter(|construction| match &construction.shape {
+                ScaledCompoundLoftShape::Full {} => true,
+                ScaledCompoundLoftShape::None {
+                    parameter_ranges, ..
+                } => parameter_ranges.iter().all(ordered),
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "scaled compound loft construction payload is invalid",
-            ));
-        }
+            ))?;
         Ok(Self {
-            construction,
+            construction: Box::new(construction),
             cache,
         })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &ScaledCompoundLoftConstruction {
+    pub fn construction(&self) -> &ScaledCompoundLoftConstruction<FiniteReal, FiniteVector3> {
         &self.construction
     }
 }
@@ -1683,7 +1567,7 @@ impl TryFrom<ScaledCompoundLoftSurfacePayloadWire> for ScaledCompoundLoftSurface
 #[cfg_attr(feature = "schema", schemars(with = "LawSurfacePayloadWire"))]
 #[serde(try_from = "LawSurfacePayloadWire")]
 pub struct LawSurfacePayload {
-    construction: Box<LawSurfaceConstruction>,
+    construction: Box<LawSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1697,40 +1581,17 @@ impl LawSurfacePayload {
     pub fn try_new(
         construction: Box<LawSurfaceConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let formula_valid = crate::geometry::LawFormula::values_are_finite;
-        let tail_valid = match &construction.tail {
-            crate::geometry::LawSurfaceTail::Summary { parameters, .. } => {
-                parameters.iter().flatten().all(|value| value.is_finite())
-            }
-            crate::geometry::LawSurfaceTail::None {
-                parameter_ranges, ..
-            } => parameter_ranges
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite()),
-            crate::geometry::LawSurfaceTail::Full { .. }
-            | crate::geometry::LawSurfaceTail::Historical {}
-            | crate::geometry::LawSurfaceTail::Optimal {} => true,
-        };
-        let valid = construction
-            .parameter_ranges
-            .iter()
-            .flatten()
-            .flatten()
-            .chain(construction.discontinuities.iter().flatten())
-            .all(|value| value.is_finite())
-            && tail_valid
-            && formula_valid(&construction.primary)
-            && construction.additional.iter().all(formula_valid);
-        if !valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .ok_or(ProceduralGeometryError::Payload(
                 "law surface construction payload is invalid",
-            ));
-        }
-        Ok(Self { construction })
+            ))?;
+        Ok(Self {
+            construction: Box::new(construction),
+        })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &LawSurfaceConstruction {
+    pub fn construction(&self) -> &LawSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -1747,7 +1608,7 @@ impl TryFrom<LawSurfacePayloadWire> for LawSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "SkinSurfacePayloadWire"))]
 #[serde(try_from = "SkinSurfacePayloadWire")]
 pub struct SkinSurfacePayload {
-    construction: Box<SkinSurfaceConstruction>,
+    construction: Box<SkinSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
@@ -1772,43 +1633,20 @@ impl SkinSurfacePayload {
         construction: Box<SkinSurfaceConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let layout_valid = match &construction.layout {
-            crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
-                profiles.iter().all(|profile| {
-                    let table = &profile.data.subdata;
-                    table.row_values_are_finite()
-                        && profile
-                            .data
-                            .direction
-                            .as_ref()
-                            .is_none_or(Vector3::is_finite)
-                })
-            }
-            crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
-                subdata.row_values_are_finite()
-            }
-        };
-        let formula_valid = construction.formula.values_are_finite();
-        let scalars_valid = construction.parameter.is_finite()
-            && construction.trailing_parameter.is_finite()
-            && construction.direction.is_finite()
-            && construction
-                .discontinuities
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite());
-        if !layout_valid || !formula_valid || !scalars_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .ok_or(ProceduralGeometryError::Payload(
                 "skin surface construction payload is invalid",
-            ));
-        }
+            ))?;
         Ok(Self {
-            construction,
+            construction: Box::new(construction),
             cache,
         })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &SkinSurfaceConstruction {
+    pub fn construction(
+        &self,
+    ) -> &SkinSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -1825,7 +1663,7 @@ impl TryFrom<SkinSurfacePayloadWire> for SkinSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "NetSurfacePayloadWire"))]
 #[serde(try_from = "NetSurfacePayloadWire")]
 pub struct NetSurfacePayload {
-    construction: Box<NetSurfaceConstruction>,
+    construction: Box<NetSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
@@ -1850,32 +1688,18 @@ impl NetSurfacePayload {
         construction: Box<NetSurfaceConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let sections_valid = construction
-            .sections
-            .iter()
-            .all(crate::geometry::LoftSection::values_are_finite);
-        let formulas_valid = construction
-            .formulas
-            .iter()
-            .all(crate::geometry::LawFormula::values_are_finite);
-        let scalars_valid = construction
-            .frame_parameters
-            .iter()
-            .chain(construction.discontinuities.iter().flatten())
-            .all(|value| value.is_finite())
-            && construction.directions.iter().all(Vector3::is_finite);
-        if !sections_valid || !formulas_valid || !scalars_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .ok_or(ProceduralGeometryError::Payload(
                 "net surface construction payload is invalid",
-            ));
-        }
+            ))?;
         Ok(Self {
-            construction,
+            construction: Box::new(construction),
             cache,
         })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &NetSurfaceConstruction {
+    pub fn construction(&self) -> &NetSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -1896,12 +1720,8 @@ pub struct SweepSurfacePayload {
 
     spine: CurveId,
 
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_native"
-    )]
-    native: Option<Box<SweepSurfaceConstruction>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    native: Option<Box<SweepSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1928,134 +1748,12 @@ impl SweepSurfacePayload {
         spine: CurveId,
         native: Option<Box<SweepSurfaceConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if let Some(construction) = &native {
-            let formula_valid = crate::geometry::LawFormula::values_are_finite;
-            let layout_valid = match &construction.layout {
-                crate::geometry::SweepSurfaceLayout::ProfileFirst {
-                    directions,
-                    origin,
-                    parameters,
-                    formulas,
-                    ..
-                } => {
-                    directions.iter().all(Vector3::is_finite)
-                        && origin.is_finite()
-                        && parameters.iter().all(|value| value.is_finite())
-                        && formulas.iter().all(formula_valid)
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitFormula {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    formula,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame
-                            .as_ref()
-                            .is_none_or(|(point, vector)| point.is_finite() && vector.is_finite())
-                        && origin.is_finite()
-                        && directions.iter().all(Vector3::is_finite)
-                        && path_parameter.is_finite()
-                        && formula_valid(formula)
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitGuide {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    guide_range,
-                    guide_parameters,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .chain(guide_range)
-                        .chain(guide_parameters)
-                        .all(|value| value.is_finite())
-                        && profile_frame
-                            .as_ref()
-                            .is_none_or(|(point, vector)| point.is_finite() && vector.is_finite())
-                        && origin.is_finite()
-                        && directions.iter().all(Vector3::is_finite)
-                        && path_parameter.is_finite()
-                }
-                crate::geometry::SweepSurfaceLayout::ExplicitSurface {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path_range,
-                    path_parameter,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame
-                            .as_ref()
-                            .is_none_or(|(point, vector)| point.is_finite() && vector.is_finite())
-                        && origin.is_finite()
-                        && directions.iter().all(Vector3::is_finite)
-                        && path_parameter.is_finite()
-                }
-                crate::geometry::SweepSurfaceLayout::LawDriven {
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    first_law,
-                    first_range,
-                    law_direction,
-                    path_range,
-                    path_parameter,
-                    second_law,
-                    formula,
-                    ..
-                } => {
-                    profile_range
-                        .iter()
-                        .chain(first_range)
-                        .chain(path_range)
-                        .all(|value| value.is_finite())
-                        && profile_frame
-                            .as_ref()
-                            .is_none_or(|(point, vector)| point.is_finite() && vector.is_finite())
-                        && origin.is_finite()
-                        && directions.iter().all(Vector3::is_finite)
-                        && law_direction.is_finite()
-                        && path_parameter.is_finite()
-                        && first_law.values_are_finite()
-                        && second_law.values_are_finite()
-                        && formula_valid(formula)
-                }
-            };
-            let scalars_valid = layout_valid
-                && construction
-                    .discontinuities
-                    .iter()
-                    .flatten()
-                    .all(|value| value.is_finite())
-                && construction
-                    .cache
-                    .form()
-                    .is_none_or(crate::geometry::SweepRevisionForm::values_are_finite);
-            if !scalars_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "sweep surface construction payload is invalid",
-                ));
-            }
-        }
+        let native = match native {
+            None => None,
+            Some(construction) => Some(Box::new((*construction).admit().ok_or(
+                ProceduralGeometryError::Payload("sweep surface construction payload is invalid"),
+            )?)),
+        };
         Ok(Self {
             profile,
             spine,
@@ -2071,7 +1769,9 @@ impl SweepSurfacePayload {
         &self.spine
     }
     /// Return the native.
-    pub fn native(&self) -> &Option<Box<SweepSurfaceConstruction>> {
+    pub fn native(
+        &self,
+    ) -> &Option<Box<SweepSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>> {
         &self.native
     }
 }
@@ -2088,7 +1788,7 @@ impl TryFrom<SweepSurfacePayloadWire> for SweepSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "DeformableSurfacePayloadWire"))]
 #[serde(try_from = "DeformableSurfacePayloadWire")]
 pub struct DeformableSurfacePayload {
-    construction: Box<DeformableSurfaceConstruction>,
+    construction: Box<DeformableSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2102,103 +1802,19 @@ impl DeformableSurfacePayload {
     pub fn try_new(
         construction: Box<DeformableSurfaceConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let frame_valid = |frame: &crate::geometry::DeformableSurfaceFrame| {
-            frame.leading_vectors.iter().all(Vector3::is_finite)
-                && frame.secondary_vectors.iter().all(Vector3::is_finite)
-                && frame.leading_parameter.is_finite()
-                && frame.secondary_parameter.is_finite()
-                && frame.point.is_finite()
-        };
-        let data_valid = match &construction.data {
-            crate::geometry::DeformableSurfaceData::Full {
-                leading_vectors,
-                leading_parameter,
-                first_parameter,
-                second_parameter,
-                frames,
-                ..
-            } => {
-                leading_vectors.iter().all(Vector3::is_finite)
-                    && leading_parameter.is_finite()
-                    && first_parameter.is_finite()
-                    && second_parameter.is_finite()
-                    && frames.iter().all(|frame| {
-                        frame.vectors.iter().all(Vector3::is_finite) && frame.parameter.is_finite()
-                    })
-            }
-            crate::geometry::DeformableSurfaceData::SurfaceCurve {
-                first_parameter,
-                second_parameter,
-                vectors,
-                frame_parameter,
-                parameter_triples,
-                ..
-            } => {
-                first_parameter.is_finite()
-                    && second_parameter.is_finite()
-                    && vectors.iter().all(Vector3::is_finite)
-                    && frame_parameter.is_finite()
-                    && parameter_triples
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-            }
-            crate::geometry::DeformableSurfaceData::Plain {
-                frame,
-                parameter_triples,
-            } => {
-                frame_valid(frame)
-                    && parameter_triples
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite())
-            }
-            crate::geometry::DeformableSurfaceData::Guided {
-                frame,
-                guide_parameter,
-                ..
-            } => frame_valid(frame) && guide_parameter.is_finite(),
-            crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
-                vectors.iter().all(Vector3::is_finite)
-            }
-            crate::geometry::DeformableSurfaceData::RevisionMode3 {
-                leading_vectors,
-                leading_parameter,
-                trailing_point,
-                trailing_vectors,
-                frame_parameter,
-                parameters,
-                trailing_parameter,
-                ..
-            } => {
-                leading_vectors.iter().all(Vector3::is_finite)
-                    && leading_parameter.is_finite()
-                    && trailing_point.is_finite()
-                    && trailing_vectors.iter().all(Vector3::is_finite)
-                    && frame_parameter.is_finite()
-                    && parameters.iter().all(|value| value.is_finite())
-                    && trailing_parameter.is_finite()
-            }
-        };
-        if !data_valid
-            || !construction
-                .discontinuities
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite())
-            || !construction
-                .cache
-                .form()
-                .is_none_or(RevisionSurfaceForm::is_valid)
-        {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .ok_or(ProceduralGeometryError::Payload(
                 "deformable surface construction payload is invalid",
-            ));
-        }
-        Ok(Self { construction })
+            ))?;
+        Ok(Self {
+            construction: Box::new(construction),
+        })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &DeformableSurfaceConstruction {
+    pub fn construction(
+        &self,
+    ) -> &DeformableSurfaceConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -2215,7 +1831,7 @@ impl TryFrom<DeformableSurfacePayloadWire> for DeformableSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "G2BlendSurfacePayloadWire"))]
 #[serde(try_from = "G2BlendSurfacePayloadWire")]
 pub struct G2BlendSurfacePayload {
-    construction: Box<G2BlendConstruction>,
+    construction: Box<G2BlendConstruction<FiniteReal, FiniteVector3>>,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
         default,
@@ -2240,50 +1856,19 @@ impl G2BlendSurfacePayload {
         construction: Box<G2BlendConstruction>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let first_shape_valid = match &construction.first_shape {
-            crate::geometry::G2BlendFirstShape::Full { .. } => true,
-            crate::geometry::G2BlendFirstShape::None {
-                coefficients,
-                extension,
-                ..
-            } => {
-                coefficients.iter().all(|value| value.is_finite())
-                    && extension.as_ref().is_none_or(|token| match token {
-                        crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
-                        crate::geometry::LoftBridgeToken::Boolean(_)
-                        | crate::geometry::LoftBridgeToken::Integer(_)
-                        | crate::geometry::LoftBridgeToken::Text(_)
-                        | crate::geometry::LoftBridgeToken::Enum(_) => true,
-                    })
-            }
-        };
-        let ranges_valid = construction
-            .parameter_ranges
-            .iter()
-            .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
-        let scalars_valid = construction
-            .center_parameters
-            .iter()
-            .chain(construction.trailing_parameters.iter())
-            .chain(construction.discontinuities.iter().flatten())
-            .all(|value| value.is_finite());
-        if !construction.first.direction.is_finite()
-            || !construction.second.direction.is_finite()
-            || !first_shape_valid
-            || !ranges_valid
-            || !scalars_valid
-        {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .filter(|construction| construction.parameter_ranges.iter().all(ordered))
+            .ok_or(ProceduralGeometryError::Payload(
                 "G2 blend construction payload is invalid",
-            ));
-        }
+            ))?;
         Ok(Self {
-            construction,
+            construction: Box::new(construction),
             cache,
         })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &G2BlendConstruction {
+    pub fn construction(&self) -> &G2BlendConstruction<FiniteReal, FiniteVector3> {
         &self.construction
     }
 }
@@ -2300,7 +1885,7 @@ impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "VariableBlendSurfacePayloadWire"))]
 #[serde(try_from = "VariableBlendSurfacePayloadWire")]
 pub struct VariableBlendSurfacePayload {
-    construction: Box<VariableBlendConstruction>,
+    construction: Box<VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2314,66 +1899,31 @@ impl VariableBlendSurfacePayload {
     pub fn try_new(
         construction: Box<VariableBlendConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
-            && construction.u_range[0] <= construction.u_range[1]
-            && construction.v_lower.is_none_or(f64::is_finite)
-            && [&construction.post_range, &construction.slice_range]
-                .into_iter()
-                .chain(
-                    construction
-                        .secondary_curve
-                        .as_ref()
-                        .map(|curve| &curve.parameter_range),
-                )
-                .all(|range| {
-                    range.iter().flatten().all(|value| value.is_finite())
-                        && match (range[0], range[1]) {
-                            (Some(lower), Some(upper)) => lower <= upper,
-                            (None | Some(_), None) | (None, Some(_)) => true,
-                        }
-                });
-        let sides_valid = construction
-            .sides
-            .iter()
-            .all(crate::geometry::RollingBallSide::values_are_finite);
-        let values_valid = match &construction.radii {
-            crate::geometry::VariableBlendRadii::Single { value } => {
-                variable_blend_value_valid(value)
-            }
-            crate::geometry::VariableBlendRadii::Two { first, second } => {
-                variable_blend_value_valid(first) && variable_blend_value_valid(second)
-            }
-        } && construction
-            .cross_section
-            .as_ref()
-            .is_none_or(|cross_section| match cross_section {
-                crate::geometry::VariableBlendCrossSection::Circular {} => true,
-                crate::geometry::VariableBlendCrossSection::Thumbweights { parameters }
-                | crate::geometry::VariableBlendCrossSection::G2Round { parameters } => {
-                    parameters.iter().all(|value| value.is_finite())
-                }
-                crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius } => {
-                    radius.as_deref().is_none_or(variable_blend_value_valid)
-                }
-                crate::geometry::VariableBlendCrossSection::UnclassifiedBare { .. } => true,
-            });
-        let scalar_tail_valid = construction
-            .offsets
-            .iter()
-            .chain(construction.discontinuities.iter().flatten())
-            .all(|value| value.is_finite())
-            && construction.shape_parameter.is_finite()
-            && construction.shape_length.is_finite()
-            && construction.cache.values_are_finite();
-        if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .filter(|construction| {
+                ordered(&construction.u_range)
+                    && [&construction.post_range, &construction.slice_range]
+                        .into_iter()
+                        .chain(
+                            construction
+                                .secondary_curve
+                                .as_ref()
+                                .map(|curve| &curve.parameter_range),
+                        )
+                        .all(optional_ordered)
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "variable blend construction payload is invalid",
-            ));
-        }
-        Ok(Self { construction })
+            ))?;
+        Ok(Self {
+            construction: Box::new(construction),
+        })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &VariableBlendConstruction {
+    pub fn construction(
+        &self,
+    ) -> &VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -2390,7 +1940,7 @@ impl TryFrom<VariableBlendSurfacePayloadWire> for VariableBlendSurfacePayload {
 #[cfg_attr(feature = "schema", schemars(with = "VertexBlendSurfacePayloadWire"))]
 #[serde(try_from = "VertexBlendSurfacePayloadWire")]
 pub struct VertexBlendSurfacePayload {
-    construction: Box<VertexBlendConstruction>,
+    construction: Box<VertexBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2404,61 +1954,34 @@ impl VertexBlendSurfacePayload {
     pub fn try_new(
         construction: Box<VertexBlendConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let boundaries_valid = construction.boundaries.iter().all(|boundary| {
-            boundary.magic.is_finite()
-                && boundary.fullness.is_finite()
-                && match &boundary.geometry {
-                    crate::geometry::VertexBlendBoundaryGeometry::Circle {
-                        curve_endpoints,
-                        twists,
-                        parameters,
-                        ..
-                    } => {
-                        twists.entries().iter().all(crate::math::Point3::is_finite)
-                            && parameters
-                                .iter()
-                                .chain(curve_endpoints.iter().flatten())
-                                .all(|value| value.is_finite())
-                    }
-                    crate::geometry::VertexBlendBoundaryGeometry::Degenerate {
-                        location,
-                        normals,
-                    } => {
-                        location.is_finite()
-                            && normals
-                                .iter()
-                                .all(|normal| normal.is_finite() && (normal.norm() > f64::EPSILON))
-                    }
-                    crate::geometry::VertexBlendBoundaryGeometry::Pcurve {
-                        support_bounds, ..
-                    } => support_bounds
-                        .iter()
-                        .flatten()
-                        .all(|value| value.is_finite()),
-                    crate::geometry::VertexBlendBoundaryGeometry::Plane {
-                        normal,
-                        parameters,
-                        curve_endpoints,
-                        ..
-                    } => {
-                        normal.is_finite()
-                            && (normal.norm() > f64::EPSILON)
-                            && parameters
-                                .iter()
-                                .chain(curve_endpoints.iter().flatten())
-                                .all(|value| value.is_finite())
-                    }
-                }
-        });
-        if !boundaries_valid {
-            return Err(ProceduralGeometryError::Payload(
+        let construction = (*construction)
+            .admit()
+            .filter(|construction| {
+                construction
+                    .boundaries
+                    .iter()
+                    .all(|boundary| match &boundary.geometry {
+                        VertexBlendBoundaryGeometry::Degenerate { normals, .. } => {
+                            normals.iter().all(|normal| normal.norm() > f64::EPSILON)
+                        }
+                        VertexBlendBoundaryGeometry::Plane { normal, .. } => {
+                            normal.norm() > f64::EPSILON
+                        }
+                        VertexBlendBoundaryGeometry::Circle { .. }
+                        | VertexBlendBoundaryGeometry::Pcurve { .. } => true,
+                    })
+            })
+            .ok_or(ProceduralGeometryError::Payload(
                 "vertex blend construction payload is invalid",
-            ));
-        }
-        Ok(Self { construction })
+            ))?;
+        Ok(Self {
+            construction: Box::new(construction),
+        })
     }
     /// Return the construction.
-    pub fn construction(&self) -> &VertexBlendConstruction {
+    pub fn construction(
+        &self,
+    ) -> &VertexBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
     }
 }
@@ -2491,7 +2014,7 @@ pub struct BlendSurfacePayload {
     /// Cache contract: the native rolling-ball construction, which states its
     /// own cache form, or the legacy solved-cache tolerance stated instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
-    cache: CacheContract<Box<RollingBallConstruction>>,
+    cache: CacheContract<Box<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2528,42 +2051,19 @@ impl BlendSurfacePayload {
         cross_section: BlendCrossSection,
         cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
-        if let Some(construction) = cache.form() {
-            let ranges_valid = [&construction.u_range, &construction.v_range]
-                .iter()
-                .all(|range| {
-                    range.iter().flatten().all(|value| value.is_finite())
-                        && match range {
-                            [Some(lower), Some(upper)] => lower <= upper,
-                            [None | Some(_), None] | [None, Some(_)] => true,
-                        }
-                });
-            let selector_valid = match construction.radius_selector {
-                crate::geometry::RollingBallRadiusSelector::None {} => true,
-                crate::geometry::RollingBallRadiusSelector::Value { value } => value.is_finite(),
-            };
-            let scalars_valid = construction
-                .offsets
-                .iter()
-                .chain(construction.parameters.iter())
-                .chain(construction.discontinuities.iter().flatten())
-                .chain(construction.slice_range.iter().flatten())
-                .all(|value| value.is_finite())
-                && construction.cache.values_are_finite();
-            let sides_valid = construction
-                .sides
-                .iter()
-                .all(crate::geometry::RollingBallSide::values_are_finite);
-            let third_valid = construction
-                .third
-                .as_ref()
-                .is_none_or(|side| side.direction.is_finite());
-            if !ranges_valid || !selector_valid || !scalars_valid || !sides_valid || !third_valid {
-                return Err(ProceduralGeometryError::Payload(
-                    "rolling-ball blend construction payload is invalid",
-                ));
-            }
-        }
+        let cache = cache
+            .admit_form(|construction| {
+                (*construction)
+                    .admit()
+                    .filter(|construction| {
+                        optional_ordered(&construction.u_range)
+                            && optional_ordered(&construction.v_range)
+                    })
+                    .map(Box::new)
+            })
+            .ok_or(ProceduralGeometryError::Payload(
+                "rolling-ball blend construction payload is invalid",
+            ))?;
         Ok(Self {
             supports,
             spine,
@@ -2589,7 +2089,9 @@ impl BlendSurfacePayload {
         &self.cross_section
     }
     /// Return the native.
-    pub fn native(&self) -> Option<&RollingBallConstruction> {
+    pub fn native(
+        &self,
+    ) -> Option<&RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>> {
         self.cache.form().map(Box::as_ref)
     }
 }
@@ -2607,7 +2109,9 @@ impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
 }
 
 impl ExactSurfacePayload {
-    pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
+    pub(super) fn revision_cache(
+        &self,
+    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
         match &self.spline {
             ExactSpline::Revision { form, .. } => Some(&form.cache),
             ExactSpline::Legacy { .. } => None,
@@ -2630,7 +2134,9 @@ impl ExactSurfacePayload {
 }
 
 impl LoftSurfacePayload {
-    pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
+    pub(super) fn revision_cache(
+        &self,
+    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
         self.cache.form().map(|form| &form.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
@@ -2647,7 +2153,9 @@ impl LoftSurfacePayload {
 }
 
 impl SweepSurfacePayload {
-    pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
+    pub(super) fn revision_cache(
+        &self,
+    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
         self.native
             .as_ref()
             .and_then(|construction| construction.cache.form())
@@ -2670,7 +2178,9 @@ impl SweepSurfacePayload {
 }
 
 impl DeformableSurfacePayload {
-    pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
+    pub(super) fn revision_cache(
+        &self,
+    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
         self.construction.cache.form().map(|form| &form.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
@@ -2690,7 +2200,9 @@ impl DeformableSurfacePayload {
 }
 
 impl BlendSurfacePayload {
-    pub(super) fn revision_cache(&self) -> Option<&super::RevisionCacheForm> {
+    pub(super) fn revision_cache(
+        &self,
+    ) -> Option<&super::RevisionCacheForm<super::RevisionSurfaceParameterization<FiniteReal>>> {
         self.cache.form().map(|construction| &construction.cache)
     }
     pub(super) fn write_revision_fit_tolerance(
@@ -2732,55 +2244,16 @@ impl BlendSurfacePayload {
     }
 }
 
-fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bool {
-    use crate::geometry::VariableBlendValuePayload;
-    let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
-    match &value.payload {
-        VariableBlendValuePayload::TwoEnds {
-            parameters, radii, ..
-        } => finite(parameters) && finite(radii),
-        VariableBlendValuePayload::FixedWidth {
-            parameters, width, ..
-        } => finite(parameters) && width.is_finite(),
-        VariableBlendValuePayload::EdgeOffset {
-            scalars, lengths, ..
-        } => finite(scalars) && finite(lengths),
-        VariableBlendValuePayload::Functional {
-            parameter,
-            radius,
-            terminal,
-            ..
-        } => {
-            parameter.is_finite()
-                && radius.is_finite()
-                && !matches!(terminal, crate::geometry::VariableBlendTerminal::Double(v) if !v.is_finite())
-        }
-        VariableBlendValuePayload::Constant {
-            parameters,
-            radius,
-            nested,
-            ..
-        } => finite(parameters) && radius.is_finite() && variable_blend_value_valid(nested),
-        VariableBlendValuePayload::Interpolated {
-            parameter,
-            radius,
-            points,
-            ..
-        } => {
-            parameter.is_finite()
-                && radius.is_finite()
-                && points.iter().all(|point| {
-                    point.parameter.is_finite()
-                        && point.radius.is_finite()
-                        && point
-                            .tangents
-                            .iter()
-                            .flatten()
-                            .all(|value| value.is_finite())
-                        && point.location.is_finite()
-                        && point.normal.is_finite()
-                })
-        }
+/// Whether an admitted pair is ordered.
+fn ordered(range: &[FiniteReal; 2]) -> bool {
+    range[0] <= range[1]
+}
+
+/// Whether an admitted optional pair is ordered when both ends are present.
+fn optional_ordered(range: &[Option<FiniteReal>; 2]) -> bool {
+    match range {
+        [Some(lower), Some(upper)] => lower <= upper,
+        [None | Some(_), None] | [None, Some(_)] => true,
     }
 }
 

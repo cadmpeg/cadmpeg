@@ -64,12 +64,12 @@ fn a_variable_blend_cache_carries_no_key_of_another_form() {
         json!({"cache": {"kind": "parameterization", "shape_prefix": 1}}),
         json!({"cache": {
             "kind": "stale",
-            "parameterization": RevisionSurfaceParameterization::default()
+            "parameterization": RevisionSurfaceParameterization::<f64>::default()
         }}),
         json!({"cache": {
             "kind": "parameterization",
             "shape_prefix": 0,
-            "parameterization": RevisionSurfaceParameterization::default(),
+            "parameterization": RevisionSurfaceParameterization::<f64>::default(),
             "fit_tolerance": 0.125
         }}),
     ] {

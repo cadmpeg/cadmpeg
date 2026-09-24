@@ -131,7 +131,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     else {
         panic!("expected compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let scale = &construction.scales.as_slice()[0];
     assert_eq!(construction.scales.as_slice().len(), 1);
@@ -202,7 +202,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     else {
         panic!("expected round-trip compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(construction.scales.as_slice().len(), 1);
     assert_eq!(construction.flags, [true, false]);
@@ -245,7 +245,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
     else {
         panic!("expected compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
@@ -300,7 +300,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
             let ProceduralSurfaceDefinition::CompoundLoft(definition_payload) = definition else {
                 unreachable!()
             };
-            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let mut edited_construction = Box::new(definition_payload.construction().to_raw());
             let construction = &mut edited_construction;
 
             construction.tail = expected.clone();
@@ -333,7 +333,7 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         else {
             panic!("expected round-trip compound loft")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         match (&expected, &construction.tail) {
             (
@@ -396,7 +396,7 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     else {
         panic!("expected scaled compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.shape,
@@ -469,7 +469,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
     else {
         panic!("expected scaled compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let scale = construction.scales.as_slice()[0].clone();
     let curve = scale.path.clone();
@@ -513,7 +513,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             else {
                 unreachable!()
             };
-            let mut edited_construction = Box::new(definition_payload.construction().clone());
+            let mut edited_construction = Box::new(definition_payload.construction().to_raw());
             let construction = &mut edited_construction;
 
             construction.shape = shape;
@@ -547,7 +547,7 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         else {
             panic!("expected round-trip scaled compound loft")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert!(matches!(
             (&construction.shape, &construction.branch),
@@ -581,7 +581,7 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     else {
         panic!("expected scaled compound loft")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.shape,
@@ -653,7 +653,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     else {
         panic!("expected skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(construction.surface_boolean, 1);
     assert_eq!(construction.surface_normal, 2);
@@ -698,7 +698,7 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     else {
         panic!("expected round-trip skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.formula.variables(),
@@ -726,7 +726,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         else {
             panic!("expected law surface")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(
             construction.parameter_ranges,
@@ -774,7 +774,7 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         else {
             panic!("expected round-trip law surface")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(
             construction.parameter_ranges,
@@ -877,7 +877,7 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         else {
             panic!("expected law surface")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert!(match (&construction.tail, selector) {
             (
@@ -938,7 +938,7 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         else {
             panic!("expected round-trip law surface")
         };
-        let construction = definition_payload.construction();
+        let construction = &definition_payload.construction().to_raw();
 
         assert_eq!(construction.tail, expected_tail);
     }
@@ -959,7 +959,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     else {
         panic!("expected skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.formula.variables(),
@@ -1011,7 +1011,7 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     else {
         panic!("expected round-trip skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(construction.formula.variables().len(), 3);
     let LawExpression::Edge { curve, .. } = &construction.formula.variables()[2] else {
@@ -1046,7 +1046,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     else {
         panic!("expected skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     let SkinSurfaceLayout::Profiles { profiles, tail, .. } = &construction.layout else {
         panic!("expected expanded skin profiles")
@@ -1090,7 +1090,7 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     else {
         panic!("expected round-trip skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         &construction.layout,
@@ -1128,7 +1128,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     else {
         panic!("expected skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.formula.variables(),
@@ -1165,7 +1165,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     else {
         panic!("expected round-trip skin surface")
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert_eq!(construction.formula.variables().len(), 2);
 }
@@ -1187,7 +1187,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
             panic!()
         };
-        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let mut edited_construction = Box::new(definition_payload.construction().to_raw());
         let construction = &mut edited_construction;
 
         let LawFormula::Named { variables, .. } = &mut construction.formula else {
@@ -1217,7 +1217,7 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
             panic!()
         };
-        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let mut edited_construction = Box::new(definition_payload.construction().to_raw());
         let construction = &mut edited_construction;
 
         let LawFormula::Named { variables, .. } = &mut construction.formula else {
@@ -1262,7 +1262,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
             panic!()
         };
-        let mut edited_construction = Box::new(definition_payload.construction().clone());
+        let mut edited_construction = Box::new(definition_payload.construction().to_raw());
         let construction = &mut edited_construction;
 
         let LawFormula::Named { variables, .. } = &mut construction.formula else {
@@ -1332,7 +1332,7 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     else {
         panic!()
     };
-    let construction = definition_payload.construction();
+    let construction = &definition_payload.construction().to_raw();
 
     assert!(matches!(
         construction.formula.variables(),

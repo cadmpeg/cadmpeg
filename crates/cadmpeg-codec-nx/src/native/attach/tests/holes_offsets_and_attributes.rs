@@ -1020,7 +1020,7 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
                         *previous.u_sense(),
                         *previous.v_sense(),
                         previous.linear_support_extension(),
-                        previous.extension().clone(),
+                        previous.extension().to_raw(),
                     )
                 })
             }
@@ -1149,7 +1149,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                     definition_payload.radius().clone(),
                     definition_payload.cross_section().clone(),
                     cadmpeg_ir::geometry::CacheContract::from_form(
-                        definition_payload.native().cloned().map(Box::new),
+                        definition_payload
+                            .native()
+                            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                            .map(Box::new),
                     ),
                 )
                 .unwrap();

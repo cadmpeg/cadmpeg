@@ -139,7 +139,9 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
                         .map(|endpoint| endpoint.map(cadmpeg_ir::scalar::FiniteReal::get)),
                 ),
                 cadmpeg_ir::geometry::CacheContract::from_form(
-                    definition_payload.cache_first().cloned(),
+                    definition_payload
+                        .cache_first()
+                        .map(cadmpeg_ir::geometry::CacheFirstCurveForm::to_raw),
                 ),
                 distance_value,
                 [shift_value, scale_value],
@@ -232,7 +234,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         let ProceduralCurveDefinition::Spring(definition_payload) = definition else {
             unreachable!()
         };
-        let mut edited_layout = definition_payload.layout().clone();
+        let mut edited_layout = definition_payload.layout().to_raw();
         let mut edited_direction = *definition_payload.direction();
         let layout = &mut edited_layout;
         let direction = &mut edited_direction;
@@ -274,7 +276,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
                 parameter_range,
                 discontinuity_flag,
                 ..
-            }, 4,) if *discontinuity_flag == expected_flag && *parameter_range == [-2.0, 3.0])));
+            }, 4,) if *discontinuity_flag == expected_flag && parameter_range.endpoints() == [-2.0, 3.0])));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -308,7 +310,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
     else {
         panic!("expected spring construction")
     };
-    let layout = definition_payload.layout();
+    let layout = &definition_payload.layout().to_raw();
     let direction = definition_payload.direction();
 
     assert_eq!(*direction, 4);
@@ -378,7 +380,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         let cache_first = definition_payload.cache_first();
         let source = definition_payload.source();
         let source_parameter_range = definition_payload.source_parameter_range();
-        let data = definition_payload.data();
+        let data = &definition_payload.data().to_raw();
         let cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve: source } = source else {
             panic!("expected resolved deformable source")
         };
@@ -449,7 +451,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
             panic!("expected round-trip deformable construction")
         };
         let round_source = definition_payload.source();
-        let round_data = definition_payload.data();
+        let round_data = &definition_payload.data().to_raw();
         let cadmpeg_ir::geometry::DeformableCurveSource::Curve {
             curve: round_source,
         } = round_source
@@ -515,12 +517,12 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         *definition_payload =
             cadmpeg_ir::geometry::curve_payloads::DeformableCurveConstruction::try_new(
                 definition_payload.context().clone(),
-                definition_payload.cache_first().clone(),
+                definition_payload.cache_first().to_raw(),
                 source_value,
                 definition_payload
                     .source_parameter_range()
                     .map(|bound| bound.map(cadmpeg_ir::scalar::FiniteReal::get)),
-                definition_payload.data().clone(),
+                definition_payload.data().to_raw(),
             )
             .unwrap();
     });

@@ -1904,7 +1904,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         *previous.u_sense(),
                         *previous.v_sense(),
                         replacement,
-                        previous.extension().clone(),
+                        previous.extension().to_raw(),
                     )
                 })
                 .unwrap();
@@ -1927,7 +1927,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         *previous.u_sense(),
                         *previous.v_sense(),
                         replacement,
-                        previous.extension().clone(),
+                        previous.extension().to_raw(),
                     )
                 })
                 .unwrap();
@@ -1941,7 +1941,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
                         *previous.u_sense(),
                         *previous.v_sense(),
                         previous.linear_support_extension(),
-                        previous.extension().clone(),
+                        previous.extension().to_raw(),
                     )
                 })
             }

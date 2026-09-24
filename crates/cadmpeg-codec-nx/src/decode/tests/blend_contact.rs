@@ -909,7 +909,10 @@ fn blend_contact_matches_concentric_blend_carriers() {
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
             cadmpeg_ir::geometry::CacheContract::from_form(
-                definition_payload.native().cloned().map(Box::new),
+                definition_payload
+                    .native()
+                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                    .map(Box::new),
             ),
         )
         .unwrap();
@@ -1823,7 +1826,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             definition_payload.radius().clone(),
             definition_payload.cross_section().clone(),
             cadmpeg_ir::geometry::CacheContract::from_form(
-                definition_payload.native().cloned().map(Box::new),
+                definition_payload
+                    .native()
+                    .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                    .map(Box::new),
             ),
         )
         .unwrap();
