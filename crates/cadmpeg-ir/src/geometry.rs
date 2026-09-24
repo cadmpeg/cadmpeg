@@ -4151,7 +4151,7 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: PositiveI64,
     /// Two ordered primary support sides.
-    pub sides: Box<[RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2]>,
+    pub sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2],
     /// Stored slice or center curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
@@ -4601,7 +4601,7 @@ pub struct VariableBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: PositiveI64,
     /// Two ordered support-side graphs in the rolling-ball side layout.
-    pub sides: Box<[RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2]>,
+    pub sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, R, P>; 2],
     /// Stored slice curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
@@ -4686,7 +4686,7 @@ pub struct RevisionG2BlendConstruction {
     revision: PositiveI64,
     leading_parameters: [FiniteReal; 2],
     #[cfg_attr(feature = "schema", schemars(with = "Box<[RollingBallSide; 2]>"))]
-    sides: Box<[RollingBallSide<SurfaceId, CurveId, PcurveGeometry, FiniteReal, FinitePoint3>; 2]>,
+    sides: [RollingBallSide<SurfaceId, CurveId, PcurveGeometry, FiniteReal, FinitePoint3>; 2],
     center: CurveId,
     #[serde(default)]
     center_range: [Option<FiniteReal>; 2],
@@ -4792,7 +4792,7 @@ impl RevisionG2BlendConstruction {
         Ok(Self {
             revision: wire.revision,
             leading_parameters,
-            sides: Box::new([first, second]),
+            sides: [first, second],
             center: wire.center,
             center_range,
             radii,

@@ -3164,7 +3164,7 @@ fn spatial_reflection_symmetry(
     for entity in entities {
         match *entity.geometry.definition() {
             SpatialSketchGeometryDefinition::Point { position } => {
-                points.push((entity, position.get()))
+                points.push((entity, position.get()));
             }
             SpatialSketchGeometryDefinition::Line { start, end } if axis.is_none() => {
                 axis = Some((entity, start.get(), end.get()));

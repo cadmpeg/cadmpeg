@@ -3969,7 +3969,7 @@ fn encode_native_variable_blend(
         },
     )?;
     native_i64(bytes, construction.revision.get());
-    for side in construction.sides.iter() {
+    for side in &construction.sides {
         native_rolling_ball_side(bytes, target, side)?;
     }
     let slice_range = match construction.slice_range {
@@ -4257,7 +4257,7 @@ fn encode_complete_native_rolling_ball(
         },
     )?;
     native_i64(bytes, construction.revision.get());
-    for side in construction.sides.iter() {
+    for side in &construction.sides {
         native_rolling_ball_side(bytes, target, side)?;
     }
     let slice_range = match construction.slice_range {

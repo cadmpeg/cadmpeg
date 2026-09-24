@@ -36,29 +36,20 @@ use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
 
-/// Admit every present pair of an optional array, or none of them.
-fn optional_pair(values: Option<[f64; 2]>) -> Option<Option<[FiniteReal; 2]>> {
-    values
-        .map(FiniteReal::array)
-        .map_or(Some(None), |pair| pair.map(Some))
+/// A present value that admission refused.
+struct Refused;
+
+/// Admit a present value with `admit`, or keep an absent one.
+fn admit_present<T, U>(
+    value: Option<T>,
+    admit: impl FnOnce(T) -> Option<U>,
+) -> Result<Option<U>, Refused> {
+    value.map(|value| admit(value).ok_or(Refused)).transpose()
 }
 
-/// Admit an optional point and vector frame, or refuse it.
-fn optional_frame(
-    frame: Option<(Point3, Vector3)>,
-) -> Option<Option<(FinitePoint3, FiniteVector3)>> {
-    match frame {
-        None => Some(None),
-        Some((point, vector)) => Some(Some((
-            FinitePoint3::new(point)?,
-            FiniteVector3::new(vector)?,
-        ))),
-    }
-}
-
-/// Admit an optional vector, or refuse it.
-fn optional_vector(vector: Option<Vector3>) -> Option<Option<FiniteVector3>> {
-    vector.map_or(Some(None), |vector| FiniteVector3::new(vector).map(Some))
+/// Admit a point and vector frame.
+fn admit_frame((point, vector): (Point3, Vector3)) -> Option<(FinitePoint3, FiniteVector3)> {
+    Some((FinitePoint3::new(point)?, FiniteVector3::new(vector)?))
 }
 
 /// The raw form of an optional point and vector frame.
@@ -886,7 +877,7 @@ impl LoftSubdataRow {
         Some(LoftSubdataRow {
             parameters: FiniteReal::array(self.parameters)?,
             columns: FiniteReal::rows(self.columns)?,
-            extra: optional_pair(self.extra)?,
+            extra: admit_present(self.extra, FiniteReal::array).ok()?,
         })
     }
 }
@@ -965,7 +956,7 @@ impl ClassicLoftProfileData {
             first_flag: self.first_flag,
             asm_extension: self.asm_extension,
             subdata: self.subdata.admit()?,
-            direction: optional_vector(self.direction)?,
+            direction: admit_present(self.direction, FiniteVector3::new).ok()?,
         })
     }
 }
@@ -1006,7 +997,7 @@ impl LoftMemberForm {
                 first_flag,
                 asm_extension,
                 subdata: subdata.admit()?,
-                direction: optional_vector(direction)?,
+                direction: admit_present(direction, FiniteVector3::new).ok()?,
             },
             Self::PcurvePair {
                 pcurve,
@@ -1019,7 +1010,7 @@ impl LoftMemberForm {
                 secondary_pcurve,
                 asm_extension,
                 subdata: subdata.admit()?,
-                direction: optional_vector(direction)?,
+                direction: admit_present(direction, FiniteVector3::new).ok()?,
             },
         })
     }
@@ -1498,10 +1489,10 @@ impl RollingBallConstruction {
     pub(super) fn admit(
         self,
     ) -> Option<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>> {
-        let [first, second] = *self.sides;
+        let [first, second] = self.sides;
         Some(RollingBallConstruction {
             revision: self.revision,
-            sides: Box::new([first.admit()?, second.admit()?]),
+            sides: [first.admit()?, second.admit()?],
             slice: self.slice,
             slice_range: FiniteReal::optional(self.slice_range)?,
             offsets: FiniteReal::array(self.offsets)?,
@@ -1529,7 +1520,7 @@ impl RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
     pub fn to_raw(&self) -> RollingBallConstruction {
         RollingBallConstruction {
             revision: self.revision,
-            sides: Box::new([self.sides[0].to_raw(), self.sides[1].to_raw()]),
+            sides: [self.sides[0].to_raw(), self.sides[1].to_raw()],
             slice: self.slice.clone(),
             slice_range: FiniteReal::raw_optional(self.slice_range),
             offsets: FiniteReal::raw_array(self.offsets),
@@ -1872,11 +1863,11 @@ impl VariableBlendConstruction {
     pub(super) fn admit(
         self,
     ) -> Option<VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>> {
-        let [first, second] = *self.sides;
+        let [first, second] = self.sides;
         Some(VariableBlendConstruction {
             subtype: self.subtype,
             revision: self.revision,
-            sides: Box::new([first.admit()?, second.admit()?]),
+            sides: [first.admit()?, second.admit()?],
             slice: self.slice,
             slice_range: FiniteReal::optional(self.slice_range)?,
             offsets: FiniteReal::array(self.offsets)?,
@@ -1917,7 +1908,7 @@ impl VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         VariableBlendConstruction {
             subtype: self.subtype,
             revision: self.revision,
-            sides: Box::new([self.sides[0].to_raw(), self.sides[1].to_raw()]),
+            sides: [self.sides[0].to_raw(), self.sides[1].to_raw()],
             slice: self.slice.clone(),
             slice_range: FiniteReal::raw_optional(self.slice_range),
             offsets: FiniteReal::raw_array(self.offsets),
@@ -2196,16 +2187,6 @@ impl CompoundLoftScale<FiniteReal, FiniteVector3> {
     }
 }
 
-/// Admit an optional boxed scale block, or refuse it.
-fn optional_scale(
-    scale: Option<Box<CompoundLoftScale>>,
-) -> Option<Option<Box<CompoundLoftScale<FiniteReal, FiniteVector3>>>> {
-    match scale {
-        None => Some(None),
-        Some(scale) => Some(Some(Box::new(scale.admit()?))),
-    }
-}
-
 impl CompoundLoftDirection {
     /// The direction with an admitted vector.
     pub(super) fn admit(self) -> Option<CompoundLoftDirection<FiniteVector3>> {
@@ -2261,7 +2242,8 @@ impl CompoundLoftTail {
                 trailing_flags,
             } => CompoundLoftTail::Seven {
                 first_flag,
-                first_scale: optional_scale(first_scale)?,
+                first_scale: admit_present(first_scale, |scale| scale.admit().map(Box::new))
+                    .ok()?,
                 second_flag,
                 second_scale: Box::new(second_scale.admit()?),
                 selector,
@@ -2418,7 +2400,8 @@ impl ScaledCompoundLoftBranch {
                 selector,
                 direction,
             } => ScaledCompoundLoftBranch::ExtendedVector {
-                first_scale: optional_scale(first_scale)?,
+                first_scale: admit_present(first_scale, |scale| scale.admit().map(Box::new))
+                    .ok()?,
                 second_scale: Box::new(second_scale.admit()?),
                 selector,
                 direction: FiniteVector3::new(direction)?,
@@ -2429,7 +2412,7 @@ impl ScaledCompoundLoftBranch {
                 singularity,
                 curve,
             } => ScaledCompoundLoftBranch::ExtendedCurve {
-                scale: optional_scale(scale)?,
+                scale: admit_present(scale, |scale| scale.admit().map(Box::new)).ok()?,
                 flag,
                 singularity,
                 curve,
@@ -2978,7 +2961,7 @@ impl SweepSurfaceLayout {
             } => SweepSurfaceLayout::ExplicitFormula {
                 mode,
                 profile_range: FiniteReal::array(profile_range)?,
-                profile_frame: optional_frame(profile_frame)?,
+                profile_frame: admit_present(profile_frame, admit_frame).ok()?,
                 origin: FinitePoint3::new(origin)?,
                 directions: FiniteVector3::array(directions)?,
                 trajectory_flag,
@@ -3006,7 +2989,7 @@ impl SweepSurfaceLayout {
             } => SweepSurfaceLayout::ExplicitGuide {
                 mode,
                 profile_range: FiniteReal::array(profile_range)?,
-                profile_frame: optional_frame(profile_frame)?,
+                profile_frame: admit_present(profile_frame, admit_frame).ok()?,
                 origin: FinitePoint3::new(origin)?,
                 directions: FiniteVector3::array(directions)?,
                 trajectory_flag,
@@ -3036,7 +3019,7 @@ impl SweepSurfaceLayout {
             } => SweepSurfaceLayout::ExplicitSurface {
                 mode,
                 profile_range: FiniteReal::array(profile_range)?,
-                profile_frame: optional_frame(profile_frame)?,
+                profile_frame: admit_present(profile_frame, admit_frame).ok()?,
                 origin: FinitePoint3::new(origin)?,
                 directions: FiniteVector3::array(directions)?,
                 trajectory_flag,
@@ -3070,7 +3053,7 @@ impl SweepSurfaceLayout {
             } => SweepSurfaceLayout::LawDriven {
                 mode,
                 profile_range: FiniteReal::array(profile_range)?,
-                profile_frame: optional_frame(profile_frame)?,
+                profile_frame: admit_present(profile_frame, admit_frame).ok()?,
                 origin: FinitePoint3::new(origin)?,
                 directions: FiniteVector3::array(directions)?,
                 first_law: Box::new(first_law.admit()?),

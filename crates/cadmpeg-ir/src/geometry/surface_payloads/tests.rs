@@ -401,7 +401,7 @@ fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() 
         })
     };
     let admitted =
-        CompoundLoftSurfacePayload::try_new(construction(Some(Vector3::new(0.0, 0.0, 1.0))), None)
+        CompoundLoftSurfacePayload::try_new(*construction(Some(Vector3::new(0.0, 0.0, 1.0))), None)
             .unwrap();
     let definition = ProceduralSurfaceDefinition::CompoundLoft(admitted);
     let wire = serde_json::to_value(&definition).unwrap();
@@ -409,10 +409,10 @@ fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() 
         serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         definition
     );
-    assert!(CompoundLoftSurfacePayload::try_new(construction(None), None).is_ok());
+    assert!(CompoundLoftSurfacePayload::try_new(*construction(None), None).is_ok());
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(CompoundLoftSurfacePayload::try_new(
-            construction(Some(Vector3::new(value, 0.0, 1.0))),
+            *construction(Some(Vector3::new(value, 0.0, 1.0))),
             None
         )
         .is_err());
@@ -884,7 +884,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
         Box::new(VariableBlendConstruction {
             subtype: VariableBlendSurfaceSubtype::VariableBlend,
             revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
-            sides: Box::new([side(fields), side(admitted)]),
+            sides: [side(fields), side(admitted)],
             slice: curve(),
             slice_range: fields.slice_range,
             offsets: [0.0, 0.0],
@@ -930,7 +930,7 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
     let rolling = |fields: Fields| {
         CacheContract::from_form(Some(Box::new(RollingBallConstruction {
             revision: crate::scalar::PositiveI64::new(1).expect("positive revision"),
-            sides: Box::new([side(fields), side(admitted)]),
+            sides: [side(fields), side(admitted)],
             slice: curve(),
             slice_range: fields.slice_range,
             offsets: [0.0, 0.0],
@@ -1459,7 +1459,7 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
             fit_tolerance: FitTolerance::try_new(0.0).unwrap(),
         })
     };
-    let vertex = |fields: Fields| VertexBlendSurfacePayload::try_new(vertex_construction(fields));
+    let vertex = |fields: Fields| VertexBlendSurfacePayload::try_new(*vertex_construction(fields));
     let vertex_wire = |fields: Fields| {
         VertexBlendSurfacePayload::try_from(VertexBlendSurfacePayloadWire {
             construction: vertex_construction(fields),
