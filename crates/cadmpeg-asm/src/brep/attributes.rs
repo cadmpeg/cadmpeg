@@ -20,7 +20,7 @@ pub fn collect_attributes(
     emitted: &mut HashSet<i64>,
     out: &mut Vec<SourceAttribute>,
     format: IdFormat,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut current = entity.ref_at(0);
     let mut chain = HashSet::new();
     while let Some(index) = current.filter(|index| chain.insert(*index)) {
@@ -28,10 +28,11 @@ pub fn collect_attributes(
             break;
         };
         if emitted.insert(index) {
-            out.push(source_attribute(record, target.clone(), format));
+            out.push(source_attribute(record, target.clone(), format)?);
         }
         current = attribute_next(record);
     }
+    Ok(())
 }
 
 fn is_integer(token: Option<&Token>) -> bool {
@@ -140,35 +141,45 @@ pub fn attribute_key(attribute: &SourceAttribute) -> &str {
 }
 
 /// Serialize one attribute record's value chunks as a [`SourceAttribute`]
-/// bound to `target`.
+/// bound to `target`. A NaN or infinite number refuses the record.
 pub fn source_attribute(
     record: &Record,
     target: AttributeTarget,
     format: IdFormat,
-) -> SourceAttribute {
-    SourceAttribute {
+) -> Result<SourceAttribute, cadmpeg_core::CodecError> {
+    // Chunks, not raw tokens: the serialized value list is defined over the
+    // value tokens, and a payload identifier names an embedded construction
+    // rather than carrying an attribute value.
+    let values = record
+        .chunks()
+        .map(|token| {
+            attribute_value(token, format).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "attribute record {} ({}) holds a non-finite number",
+                    record.index, record.name
+                ))
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
         target,
         name: record.name.clone(),
-        // Chunks, not raw tokens: the serialized value list is defined over the
-        // value tokens, and a payload identifier names an embedded construction
-        // rather than carrying an attribute value.
-        values: record
-            .chunks()
-            .map(|token| attribute_value(token, format))
-            .collect(),
-    }
+        values,
+    })
 }
 
-fn attribute_value(token: &Token, format: IdFormat) -> AttributeValue {
-    match token {
+/// The attribute value one token carries, or `None` for a number that is not
+/// finite.
+fn attribute_value(token: &Token, format: IdFormat) -> Option<AttributeValue> {
+    Some(match token {
         Token::Char(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Short(value) => AttributeValue::Integer(i64::from(*value)),
         Token::Long(value) | Token::Enum(value) | Token::Int64(value) => {
             AttributeValue::Integer(*value)
         }
-        Token::Float(value) => AttributeValue::Float(f64::from(*value)),
-        Token::Double(value) => AttributeValue::Float(*value),
+        Token::Float(value) => AttributeValue::float(f64::from(*value))?,
+        Token::Double(value) => AttributeValue::float(*value)?,
         Token::Str(value) => AttributeValue::String(value.clone()),
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
@@ -177,10 +188,10 @@ fn attribute_value(token: &Token, format: IdFormat) -> AttributeValue {
         }
         Token::SubtypeOpen => AttributeValue::String("subtype_open".into()),
         Token::SubtypeClose => AttributeValue::String("subtype_close".into()),
-        Token::Position(value) | Token::Vector3(value) => AttributeValue::Vector(value.to_vec()),
-        Token::Vector2(value) => AttributeValue::Vector(value.to_vec()),
+        Token::Position(value) | Token::Vector3(value) => AttributeValue::vector(*value)?,
+        Token::Vector2(value) => AttributeValue::vector(*value)?,
         Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(value.clone()),
-    }
+    })
 }
 
 /// Decode a native transform record into an IR affine transform, scaling the

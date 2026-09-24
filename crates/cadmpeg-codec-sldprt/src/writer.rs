@@ -15,6 +15,7 @@ use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{BodyKind, Color, Sense};
 use cadmpeg_ir::Annotations;
 
@@ -1028,7 +1029,6 @@ fn patch_retained_swobjects_metadata(
     sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::attributes::AttributeValue;
     use std::cmp::Reverse;
 
     let mut attributes = metadata_attributes(ir)
@@ -1062,137 +1062,63 @@ fn patch_retained_swobjects_metadata(
         let offset = usize::try_from(offset).map_err(|_| {
             CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
         })?;
-        match attribute.name.as_str() {
-            "bounding_envelope" => {
-                let [AttributeValue::Vector(values)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                };
-                if values.len() != 4 {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                }
+        match MetadataRecord::project(attribute, length_scale)? {
+            Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let token = b"moBBoxCenterData_c";
                 require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(32);
                 for value in values {
-                    bytes.extend((value * length_scale).to_le_bytes());
+                    bytes.extend(value.to_le_bytes());
                 }
                 overwrite_bytes(payload, offset + token.len() + 4, &bytes)?;
             }
-            "default_reference_plane" => {
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                };
-                if origin.len() != 3 || frame.len() != 6 {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                }
+            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
                 let token = b"moDefaultRefPlnData_c";
                 require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(72);
-                for value in origin {
-                    bytes.extend((value * length_scale).to_le_bytes());
-                }
-                for value in frame {
+                for value in origin.into_iter().chain(frame) {
                     bytes.extend(value.to_le_bytes());
                 }
                 overwrite_bytes(payload, offset + token.len(), &bytes)?;
             }
-            "transformed_reference_plane" => {
-                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                };
-                if center.len() != 3 || extents.len() != 2 || auxiliary.len() != 3 {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                }
+            Some(MetadataRecord::TransformedReferencePlane {
+                center,
+                extents,
+                auxiliary,
+                diagonal,
+            }) => {
                 let token = b"moTransRefPlaneData_c";
                 require_token(payload, offset, token)?;
                 let mut bytes = Vec::with_capacity(72);
-                for value in center.iter().chain(extents) {
-                    bytes.extend((value * length_scale).to_le_bytes());
-                }
-                for value in auxiliary {
+                for value in center
+                    .into_iter()
+                    .chain(extents)
+                    .chain(auxiliary)
+                    .chain([diagonal])
+                {
                     bytes.extend(value.to_le_bytes());
                 }
-                bytes.extend((diagonal * length_scale).to_le_bytes());
                 overwrite_bytes(payload, offset + token.len() + 8, &bytes)?;
             }
-            "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed("invalid part record".into()));
-                };
+            Some(MetadataRecord::PartRecord { id, version }) => {
                 let token = b"moPart_c";
                 require_token(payload, offset, token)?;
-                overwrite_bytes(
-                    payload,
-                    offset + token.len(),
-                    &u32::try_from(*id)
-                        .map_err(|_| CodecError::Malformed("invalid part id".into()))?
-                        .to_le_bytes(),
-                )?;
-                overwrite_bytes(
-                    payload,
-                    offset + token.len() + 8,
-                    &u32::try_from(*version)
-                        .map_err(|_| CodecError::Malformed("invalid part version".into()))?
-                        .to_le_bytes(),
-                )?;
+                overwrite_bytes(payload, offset + token.len(), &id.to_le_bytes())?;
+                overwrite_bytes(payload, offset + token.len() + 8, &version.to_le_bytes())?;
             }
-            "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid configuration manager".into(),
-                    ));
-                };
+            Some(MetadataRecord::ConfigurationManager {
+                minor,
+                states,
+                filetime,
+            }) => {
                 let token = b"moConfigurationMgr_c";
                 require_token(payload, offset, token)?;
                 let start = offset + token.len();
-                overwrite_bytes(
-                    payload,
-                    start + 66,
-                    &u32::try_from(*minor)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration minor version".into())
-                        })?
-                        .to_le_bytes(),
-                )?;
-                overwrite_bytes(
-                    payload,
-                    start + 107,
-                    &[u8::try_from(*states).map_err(|_| {
-                        CodecError::Malformed("invalid configuration state count".into())
-                    })?],
-                )?;
-                overwrite_bytes(
-                    payload,
-                    start + 117,
-                    &u64::try_from(*filetime)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration timestamp".into())
-                        })?
-                        .to_le_bytes(),
-                )?;
+                overwrite_bytes(payload, start + 66, &minor.to_le_bytes())?;
+                overwrite_bytes(payload, start + 107, &[states])?;
+                overwrite_bytes(payload, start + 117, &filetime.to_le_bytes())?;
             }
-            "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit name".into(),
-                    ));
-                };
+            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 let token = b"moLengthUserUnits_c";
                 require_token(payload, offset, token)?;
                 let marker = offset + token.len();
@@ -1204,23 +1130,12 @@ fn patch_retained_swobjects_metadata(
                 let old_len = usize::from(*payload.get(marker + 3).ok_or_else(|| {
                     CodecError::Malformed("truncated retained SLDPRT unit name".into())
                 })?);
-                let units = name.encode_utf16().collect::<Vec<_>>();
-                // The resident u16 vector already occupies this byte count.
-                let byte_len = units.len() * 2;
-                let new_len = u8::try_from(byte_len).map_err(|_| {
-                    CodecError::NotImplemented("source linear unit name is too long".into())
-                })?;
-                if units.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
-                }
-                if usize::from(new_len) != old_len {
+                if usize::from(byte_len) != old_len {
                     return Err(CodecError::NotImplemented(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
                     ));
                 }
-                let mut replacement = vec![0xff, 0xfe, 0xff, new_len];
+                let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
                 replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
                 let end = marker.checked_add(4 + old_len).ok_or_else(|| {
                     CodecError::Malformed("retained SLDPRT unit-name range overflow".into())
@@ -1232,9 +1147,10 @@ fn patch_retained_swobjects_metadata(
                 }
                 payload.splice(marker..end, replacement);
             }
-            name => {
+            Some(MetadataRecord::SourceLinearUnitCode(_)) | None => {
                 return Err(CodecError::NotImplemented(format!(
-                    "unsupported retained SLDPRT metadata attribute {name}"
+                    "unsupported retained SLDPRT metadata attribute {}",
+                    attribute.name
                 )));
             }
         }
@@ -1533,6 +1449,159 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
     Some((section.parse().ok()?, offset.parse().ok()?))
 }
 
+/// One `SWObjects` metadata attribute admitted for writing. Its values have
+/// the shape the record states, and each length, multiplied into source
+/// units, is finite. Both metadata writers take their bytes from here.
+enum MetadataRecord {
+    /// Four envelope lengths in source units.
+    BoundingEnvelope([f64; 4]),
+    /// The plane origin in source units and its six unitless frame values.
+    DefaultReferencePlane { origin: [f64; 3], frame: [f64; 6] },
+    /// Center, extents and diagonal in source units, and three unitless
+    /// auxiliary values.
+    TransformedReferencePlane {
+        center: [f64; 3],
+        extents: [f64; 2],
+        auxiliary: [f64; 3],
+        diagonal: f64,
+    },
+    /// Part identity and version.
+    PartRecord { id: u32, version: u32 },
+    /// Configuration-manager version, state count and timestamp.
+    ConfigurationManager {
+        minor: u32,
+        states: u8,
+        filetime: u64,
+    },
+    /// Source linear unit code.
+    SourceLinearUnitCode(i64),
+    /// A non-empty UTF-16 unit name and its byte length.
+    SourceLinearUnitName { units: Vec<u16>, byte_len: u8 },
+}
+
+impl MetadataRecord {
+    /// Admit one metadata attribute, or `None` for a name no writer states.
+    fn project(
+        attribute: &cadmpeg_ir::attributes::SourceAttribute,
+        length_scale: f64,
+    ) -> Result<Option<Self>, CodecError> {
+        use cadmpeg_ir::attributes::AttributeValue;
+
+        let invalid = |kind: &str| CodecError::malformed(format_args!("invalid {kind}"));
+        let values = attribute.values.as_slice();
+        Ok(Some(match attribute.name.as_str() {
+            "bounding_envelope" => {
+                let kind = "bounding envelope";
+                let [AttributeValue::Vector(values)] = values else {
+                    return Err(invalid(kind));
+                };
+                Self::BoundingEnvelope(lengths(values, length_scale).ok_or_else(|| invalid(kind))?)
+            }
+            "default_reference_plane" => {
+                let kind = "default reference plane";
+                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
+                    return Err(invalid(kind));
+                };
+                let (Some(origin), Some(frame)) = (lengths(origin, length_scale), ratios(frame))
+                else {
+                    return Err(invalid(kind));
+                };
+                Self::DefaultReferencePlane { origin, frame }
+            }
+            "transformed_reference_plane" => {
+                let kind = "transformed reference plane";
+                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
+                    values
+                else {
+                    return Err(invalid(kind));
+                };
+                let (Some(center), Some(extents), Some(auxiliary), Some([diagonal])) = (
+                    lengths(center, length_scale),
+                    lengths(extents, length_scale),
+                    ratios(auxiliary),
+                    scaled([diagonal.get()], length_scale),
+                ) else {
+                    return Err(invalid(kind));
+                };
+                Self::TransformedReferencePlane {
+                    center,
+                    extents,
+                    auxiliary,
+                    diagonal,
+                }
+            }
+            "part_record" => {
+                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] = values else {
+                    return Err(invalid("part record"));
+                };
+                Self::PartRecord {
+                    id: u32::try_from(*id).map_err(|_| invalid("part id"))?,
+                    version: u32::try_from(*version).map_err(|_| invalid("part version"))?,
+                }
+            }
+            "configuration_manager" => {
+                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
+                    values
+                else {
+                    return Err(invalid("configuration manager"));
+                };
+                Self::ConfigurationManager {
+                    minor: u32::try_from(*minor)
+                        .map_err(|_| invalid("configuration minor version"))?,
+                    states: u8::try_from(*states)
+                        .map_err(|_| invalid("configuration state count"))?,
+                    filetime: u64::try_from(*filetime)
+                        .map_err(|_| invalid("configuration timestamp"))?,
+                }
+            }
+            "source_linear_unit_code" => {
+                let [AttributeValue::Integer(code)] = values else {
+                    return Err(invalid("source linear unit code"));
+                };
+                Self::SourceLinearUnitCode(*code)
+            }
+            "source_linear_unit_name" => {
+                let [AttributeValue::String(name)] = values else {
+                    return Err(invalid("source linear unit name"));
+                };
+                let units = name.encode_utf16().collect::<Vec<_>>();
+                // The resident u16 vector occupies two bytes per unit.
+                let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
+                    CodecError::NotImplemented("source linear unit name is too long".into())
+                })?;
+                if units.is_empty() {
+                    return Err(CodecError::Malformed(
+                        "source linear unit name is empty".into(),
+                    ));
+                }
+                Self::SourceLinearUnitName { units, byte_len }
+            }
+            _ => return Ok(None),
+        }))
+    }
+}
+
+/// `N` lengths multiplied into source units, or `None` for another count or
+/// a product that is not finite.
+fn lengths<const N: usize>(values: &[FiniteReal], scale: f64) -> Option<[f64; N]> {
+    scaled(ratios(values)?, scale)
+}
+
+/// `N` unitless values, or `None` for another count.
+fn ratios<const N: usize>(values: &[FiniteReal]) -> Option<[f64; N]> {
+    let values: &[FiniteReal; N] = values.try_into().ok()?;
+    Some(values.map(FiniteReal::get))
+}
+
+/// Each value multiplied by `scale`, or `None` when a product is not finite.
+fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
+    let products = values.map(|value| value * scale);
+    products
+        .iter()
+        .all(|product| product.is_finite())
+        .then_some(products)
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
@@ -1555,7 +1624,7 @@ fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
-    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
@@ -1565,160 +1634,63 @@ fn metadata_payloads(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
         }
-        match attribute.name.as_str() {
-            "bounding_envelope" => {
-                let [AttributeValue::Vector(values)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                };
-                if values.len() != 4 {
-                    return Err(CodecError::Malformed("invalid bounding envelope".into()));
-                }
+        match MetadataRecord::project(attribute, length_scale)? {
+            Some(MetadataRecord::BoundingEnvelope(values)) => {
                 objects.extend_from_slice(b"moBBoxCenterData_c");
                 objects.extend_from_slice(&1u32.to_le_bytes());
                 for value in values {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-            }
-            "default_reference_plane" => {
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                };
-                if origin.len() != 3 || frame.len() != 6 {
-                    return Err(CodecError::Malformed(
-                        "invalid default reference plane".into(),
-                    ));
-                }
-                objects.extend_from_slice(b"moDefaultRefPlnData_c");
-                for value in origin {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-                for value in frame {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            "transformed_reference_plane" => {
-                let [AttributeValue::Vector(center), AttributeValue::Vector(extents), AttributeValue::Vector(auxiliary), AttributeValue::Float(diagonal)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                };
-                if center.len() != 3 || extents.len() != 2 || auxiliary.len() != 3 {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
+            Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
+                objects.extend_from_slice(b"moDefaultRefPlnData_c");
+                for value in origin.into_iter().chain(frame) {
+                    objects.extend_from_slice(&value.to_le_bytes());
                 }
+            }
+            Some(MetadataRecord::TransformedReferencePlane {
+                center,
+                extents,
+                auxiliary,
+                diagonal,
+            }) => {
                 objects.extend_from_slice(b"moTransRefPlaneData_c");
                 objects.extend_from_slice(&[0xff; 8]);
                 for value in center
-                    .iter()
+                    .into_iter()
                     .chain(extents)
-                    .chain(std::iter::once(diagonal))
+                    .chain(auxiliary)
+                    .chain([diagonal])
                 {
-                    if !value.is_finite() {
-                        return Err(CodecError::Malformed(
-                            "invalid transformed reference plane".into(),
-                        ));
-                    }
-                }
-                if auxiliary.iter().any(|value| !value.is_finite()) {
-                    return Err(CodecError::Malformed(
-                        "invalid transformed reference plane".into(),
-                    ));
-                }
-                for value in center.iter().chain(extents) {
-                    objects.extend_from_slice(&(value * length_scale).to_le_bytes());
-                }
-                for value in auxiliary {
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
-                objects.extend_from_slice(&(diagonal * length_scale).to_le_bytes());
             }
-            "part_record" => {
-                let [AttributeValue::Integer(id), AttributeValue::Integer(version)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed("invalid part record".into()));
-                };
+            Some(MetadataRecord::PartRecord { id, version }) => {
                 objects.extend_from_slice(b"moPart_c");
-                objects.extend_from_slice(
-                    &u32::try_from(*id)
-                        .map_err(|_| CodecError::Malformed("invalid part id".into()))?
-                        .to_le_bytes(),
-                );
+                objects.extend_from_slice(&id.to_le_bytes());
                 objects.extend_from_slice(&0u32.to_le_bytes());
-                objects.extend_from_slice(
-                    &u32::try_from(*version)
-                        .map_err(|_| CodecError::Malformed("invalid part version".into()))?
-                        .to_le_bytes(),
-                );
+                objects.extend_from_slice(&version.to_le_bytes());
                 objects.push(0);
             }
-            "configuration_manager" => {
-                let [AttributeValue::Integer(minor), AttributeValue::Integer(states), AttributeValue::Integer(filetime)] =
-                    attribute.values.as_slice()
-                else {
-                    return Err(CodecError::Malformed(
-                        "invalid configuration manager".into(),
-                    ));
-                };
+            Some(MetadataRecord::ConfigurationManager {
+                minor,
+                states,
+                filetime,
+            }) => {
                 let mut record = [0u8; 125];
-                record[66..70].copy_from_slice(
-                    &u32::try_from(*minor)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration minor version".into())
-                        })?
-                        .to_le_bytes(),
-                );
-                record[107] = u8::try_from(*states).map_err(|_| {
-                    CodecError::Malformed("invalid configuration state count".into())
-                })?;
-                record[117..125].copy_from_slice(
-                    &u64::try_from(*filetime)
-                        .map_err(|_| {
-                            CodecError::Malformed("invalid configuration timestamp".into())
-                        })?
-                        .to_le_bytes(),
-                );
+                record[66..70].copy_from_slice(&minor.to_le_bytes());
+                record[107] = states;
+                record[117..125].copy_from_slice(&filetime.to_le_bytes());
                 objects.extend_from_slice(b"moConfigurationMgr_c");
                 objects.extend_from_slice(&record);
             }
-            "source_linear_unit_code" => {
-                let [AttributeValue::Integer(code)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit code".into(),
-                    ));
-                };
-                unit_code = Some(*code);
-            }
-            "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid source linear unit name".into(),
-                    ));
-                };
-                let bytes = name
-                    .encode_utf16()
-                    .flat_map(u16::to_le_bytes)
-                    .collect::<Vec<_>>();
-                let length = u8::try_from(bytes.len()).map_err(|_| {
-                    CodecError::NotImplemented("source linear unit name is too long".into())
-                })?;
-                if bytes.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
-                }
+            Some(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
+            Some(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 objects.extend_from_slice(b"moLengthUserUnits_c");
-                objects.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
-                objects.extend_from_slice(&bytes);
+                objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
+                objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
-            _ => {
+            None => {
                 return Err(CodecError::NotImplemented(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name

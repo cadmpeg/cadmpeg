@@ -4650,13 +4650,14 @@ pub(super) fn emit_containers(
 
 /// Emit direct and inherited entity attributes and derive the link, tag, and
 /// timestamp projections. Returns the set of emitted attribute record indices.
+/// An attribute holding a NaN or infinite number refuses the stream.
 pub(super) fn emit_attributes(
     out: &mut AsmBrep,
     records: &[Record],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat,
-) -> HashSet<i64> {
+) -> Result<HashSet<i64>, cadmpeg_core::CodecError> {
     let Reachable {
         faces: kept_faces,
         loops: kept_loops,
@@ -4721,7 +4722,7 @@ pub(super) fn emit_attributes(
                 &mut emitted_attributes,
                 &mut out.attributes,
                 format,
-            );
+            )?;
         }
     }
 
@@ -4735,10 +4736,10 @@ pub(super) fn emit_attributes(
         {
             emitted_attributes.insert(index);
             out.attributes
-                .push(source_attribute(record, target, format));
+                .push(source_attribute(record, target, format)?);
         }
     }
-    emitted_attributes
+    Ok(emitted_attributes)
 }
 
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
