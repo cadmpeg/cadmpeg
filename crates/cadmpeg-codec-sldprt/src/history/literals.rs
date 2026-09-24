@@ -7,7 +7,7 @@ use cadmpeg_ir::{
         edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
         FaceMotion, FeatureDefinition, FeatureOperation, ParameterValue,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, FiniteReal, Length},
 };
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
@@ -88,8 +88,13 @@ pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<f64> {
     })
 }
 
-pub(crate) fn format_length_mm(value: f64) -> String {
-    format!("{}mm", format_f64_literal(value))
+pub(crate) fn format_length_mm(value: Length) -> String {
+    format!("{}mm", finite_literal(value.get()))
+}
+
+/// The literal of a length's millimetre number, without a unit.
+pub(crate) fn format_length_number(value: Length) -> String {
+    finite_literal(value.get())
 }
 
 pub(crate) fn parse_angle_rad(value: &str) -> Option<f64> {
@@ -119,11 +124,17 @@ pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
     parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
 }
 
-pub(crate) fn format_angle_rad(value: f64) -> String {
-    format!("{}rad", format_f64_literal(value))
+pub(crate) fn format_angle_rad(value: Angle) -> String {
+    format!("{}rad", finite_literal(value.get()))
 }
 
-pub(super) fn format_f64_literal(value: f64) -> String {
+pub(super) fn format_f64_literal(value: FiniteReal) -> String {
+    finite_literal(value.get())
+}
+
+/// The literal of a finite value. Every caller passes the value of a checked
+/// scalar.
+fn finite_literal(value: f64) -> String {
     let magnitude = value.abs();
     if magnitude != 0.0 && !(EPS_LITERALS_FORMAT_F64_LITERAL_E6..1.0e15).contains(&magnitude) {
         format!("{value:e}")
@@ -313,15 +324,9 @@ pub(super) fn parse_neutral_parameter_literal(
 
 pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
-        ParameterValue::Length(value) => {
-            let value = value.get();
-            format_length_mm(value)
-        }
-        ParameterValue::Angle(value) => {
-            let value = value.get();
-            format_angle_rad(value)
-        }
-        ParameterValue::Real(value) => format_f64_literal(value.get()),
+        ParameterValue::Length(value) => format_length_mm(*value),
+        ParameterValue::Angle(value) => format_angle_rad(*value),
+        ParameterValue::Real(value) => format_f64_literal(*value),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),

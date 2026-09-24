@@ -79,7 +79,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad(angle.get()),
+                            format_angle_rad((*angle).into()),
                         );
                     }
                     RevolveExtent::Symmetric {
@@ -91,7 +91,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad(angle.get()),
+                            format_angle_rad((*angle).into()),
                         );
                     }
                     RevolveExtent::TwoSided {
@@ -104,11 +104,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle"),
-                            format_angle_rad(first.get()),
+                            format_angle_rad((*first).into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("Angle2"),
-                            format_angle_rad(second.get()),
+                            format_angle_rad((*second).into()),
                         );
                     }
                     _ => {
@@ -128,11 +128,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                    format_point3_mm(axis.origin.get()),
+                    format_point3_mm(axis.origin.into()),
                 );
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("AxisDirection"),
-                    format_vector3(axis.direction.get()),
+                    format_vector3(axis.direction.into()),
                 );
             }
             if *op != BooleanOp::Unresolved {
@@ -265,7 +265,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 Some(twist) => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Twist"),
-                        format_angle_rad(twist.get()),
+                        format_angle_rad(*twist),
                     );
                 }
                 None => {

@@ -12,6 +12,11 @@ use super::eval::{
 use super::{bare_text_parameter_literal, formatted_text_dimension_literal};
 use cadmpeg_ir::features::{DimensionDisplay, ParameterValue};
 
+/// A finite test value as the formatter's checked input.
+fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
+    cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")
+}
+
 #[test]
 fn native_scalar_literals_are_compact_and_bit_exact() {
     for value in [
@@ -22,13 +27,13 @@ fn native_scalar_literals_are_compact_and_bit_exact() {
         7.745_183_829_698_638e-127,
         -5.486_124_068_793_69e307,
     ] {
-        let literal = format_f64_literal(value);
+        let literal = format_f64_literal(real(value));
         let parsed = literal.parse::<f64>().expect("required invariant");
         assert_eq!(parsed.to_bits(), value.to_bits(), "{literal}");
     }
-    assert_eq!(format_f64_literal(0.125), "0.125");
+    assert_eq!(format_f64_literal(real(0.125)), "0.125");
     assert_eq!(
-        format_f64_literal(7.745_183_829_698_638e-127),
+        format_f64_literal(real(7.745_183_829_698_638e-127)),
         "7.745183829698638e-127"
     );
 }

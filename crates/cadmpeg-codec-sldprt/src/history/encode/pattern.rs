@@ -53,14 +53,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(thickness) = construction.thickness {
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("Thickness"),
-                    format_length_mm(thickness.get()),
+                    format_length_mm(thickness.into()),
                 );
             }
             match construction.draft {
                 RibDraft::Angle(draft) => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Draft"),
-                        format_angle_rad(draft.get()),
+                        format_angle_rad(draft.into()),
                     );
                 }
                 RibDraft::None => {
@@ -83,7 +83,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(direction) = construction.direction {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Direction"),
-                    format_vector3(direction.get()),
+                    format_vector3(direction.into()),
                 );
             }
             if let Some(side) = construction.side {
@@ -230,7 +230,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         Some(direction) => {
                             properties.insert(
                                 cadmpeg_core::nonblank_literal!("Direction"),
-                                format_vector3(direction.get()),
+                                format_vector3((*direction).into()),
                             );
                         }
                         None if existing.is_some() => {}
@@ -257,7 +257,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         spacing_key.clone(),
                         format_length_like(
-                            spacing.get(),
+                            (*spacing).into(),
                             existing
                                 .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
@@ -267,11 +267,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     if let Some(second) = second {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("Direction2"),
-                            format_vector3(second.direction.get()),
+                            format_vector3(second.direction.into()),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("D4"),
-                            format_length_like(second.spacing.get(), None),
+                            format_length_like(second.spacing.into(), None),
                         );
                         parameters.insert(
                             cadmpeg_core::nonblank_literal!("D2"),
@@ -287,15 +287,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                        format_point3_mm(axis_origin.get()),
+                        format_point3_mm(*axis_origin),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("AxisDirection"),
-                        format_vector3(axis_dir.get()),
+                        format_vector3((*axis_dir).into()),
                     );
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Angle"),
-                        format_angle_rad(angle.get()),
+                        format_angle_rad((*angle).into()),
                     );
                     parameters.insert(cadmpeg_core::nonblank_literal!("Count"), count.to_string());
                 }
@@ -338,7 +338,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         spacing_key.clone(),
                         format_length_like(
-                            spacing.get(),
+                            (*spacing).into(),
                             existing
                                 .and_then(|record| record.parameters.get(spacing_key.as_str()))
                                 .map(String::as_str),
@@ -352,11 +352,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("PlaneOrigin"),
-                        format_point3_mm(plane_origin.get()),
+                        format_point3_mm(*plane_origin),
                     );
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("PlaneNormal"),
-                        format_vector3(plane_normal.get()),
+                        format_vector3((*plane_normal).into()),
                     );
                 }
                 PatternTransform::MirrorReference { .. } => {

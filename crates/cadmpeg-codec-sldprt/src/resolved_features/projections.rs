@@ -281,11 +281,23 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         Some(cadmpeg_ir::features::ParameterValue::Real(_))
                     ) && !scalar_is_detached;
                     if scalar_is_detached && length_scalars.contains(scalar.id.as_str()) {
-                        parameter.expression =
-                            crate::history::literals::format_length_mm(scalar.value * 1000.0);
+                        parameter.expression = crate::history::literals::format_length_mm(
+                            cadmpeg_ir::scalar::Length::new(scalar.value * 1000.0).ok_or_else(
+                                || {
+                                    cadmpeg_core::CodecError::Malformed(
+                                        "SolidWorks projected length must be finite".into(),
+                                    )
+                                },
+                            )?,
+                        );
                     } else if scalar_is_detached && angle_scalars.contains(scalar.id.as_str()) {
-                        parameter.expression =
-                            crate::history::literals::format_angle_rad(scalar.value);
+                        parameter.expression = crate::history::literals::format_angle_rad(
+                            cadmpeg_ir::scalar::Angle::new(scalar.value).ok_or_else(|| {
+                                cadmpeg_core::CodecError::Malformed(
+                                    "SolidWorks projected angle must be finite".into(),
+                                )
+                            })?,
+                        );
                     }
                     let evaluated = if length_scalars.contains(scalar.id.as_str())
                         && !scalar_is_untyped_real
@@ -508,15 +520,18 @@ fn relation_display_parameter_value(
     value: f64,
 ) -> Option<(ParameterValue, Option<DimensionDisplay>, String)> {
     Some(match family {
-        FeatureInputRelationFamily::Angle => (
-            ParameterValue::Angle(Angle::new(value)?),
-            None,
-            crate::history::literals::format_angle_rad(value),
-        ),
-        FeatureInputRelationFamily::CircleDiameter => {
-            let millimetres = value * 1000.0;
+        FeatureInputRelationFamily::Angle => {
+            let angle = Angle::new(value)?;
             (
-                ParameterValue::Length(Length::new(millimetres)?),
+                ParameterValue::Angle(angle),
+                None,
+                crate::history::literals::format_angle_rad(angle),
+            )
+        }
+        FeatureInputRelationFamily::CircleDiameter => {
+            let millimetres = Length::new(value * 1000.0)?;
+            (
+                ParameterValue::Length(millimetres),
                 Some(DimensionDisplay::Diameter),
                 format!(
                     "<MOD-DIAM>{}",
@@ -529,9 +544,9 @@ fn relation_display_parameter_value(
         | FeatureInputRelationFamily::PointLineDistance
         | FeatureInputRelationFamily::PointPointHorizontalDistance
         | FeatureInputRelationFamily::PointPointVerticalDistance => {
-            let millimetres = value * 1000.0;
+            let millimetres = Length::new(value * 1000.0)?;
             (
-                ParameterValue::Length(Length::new(millimetres)?),
+                ParameterValue::Length(millimetres),
                 None,
                 crate::history::literals::format_length_mm(millimetres),
             )
@@ -567,10 +582,9 @@ pub(crate) fn type_display_relation_parameters(
             FeatureInputRelationFamily::Angle => {
                 // Every relation that owns the parameter is an angle relation.
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
-                    parameter.expression = crate::history::literals::format_angle_rad(value.get());
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(
-                        cadmpeg_ir::scalar::Angle::from_assigned_real(value),
-                    ));
+                    let angle = cadmpeg_ir::scalar::Angle::from_assigned_real(value);
+                    parameter.expression = crate::history::literals::format_angle_rad(angle);
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Angle(angle));
                 }
             }
             FeatureInputRelationFamily::LineLineDistance
@@ -580,8 +594,12 @@ pub(crate) fn type_display_relation_parameters(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => {
                 if let Some(cadmpeg_ir::features::ParameterValue::Real(value)) = parameter.value {
-                    let value = value.get();
-                    let value = value * 1000.0;
+                    let value =
+                        cadmpeg_ir::scalar::Length::new(value.get() * 1000.0).ok_or_else(|| {
+                            cadmpeg_core::CodecError::Malformed(
+                                "SolidWorks projected length must be finite".into(),
+                            )
+                        })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         format!(
                             "<MOD-DIAM>{}",
@@ -590,13 +608,7 @@ pub(crate) fn type_display_relation_parameters(
                     } else {
                         crate::history::literals::format_length_mm(value)
                     };
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                        cadmpeg_ir::scalar::Length::new(value).ok_or_else(|| {
-                            cadmpeg_core::CodecError::Malformed(
-                                "SolidWorks projected length must be finite".into(),
-                            )
-                        })?,
-                    ));
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(value));
                 }
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
                     parameter.value.as_ref()
@@ -605,6 +617,11 @@ pub(crate) fn type_display_relation_parameters(
                     else {
                         continue;
                     };
+                    let value = cadmpeg_ir::scalar::Length::new(value).ok_or_else(|| {
+                        cadmpeg_core::CodecError::Malformed(
+                            "SolidWorks projected length must be finite".into(),
+                        )
+                    })?;
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         format!(
                             "<MOD-DIAM>{}",
@@ -613,13 +630,7 @@ pub(crate) fn type_display_relation_parameters(
                     } else {
                         crate::history::literals::format_length_mm(value)
                     };
-                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-                        cadmpeg_ir::scalar::Length::new(value).ok_or_else(|| {
-                            cadmpeg_core::CodecError::Malformed(
-                                "SolidWorks projected length must be finite".into(),
-                            )
-                        })?,
-                    ));
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(value));
                 }
                 if family == FeatureInputRelationFamily::CircleDiameter
                     && matches!(

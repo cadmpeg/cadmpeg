@@ -2,7 +2,7 @@
 //! Tree-node, cosmetic-thread, native, curve, helix, and unsupported write encoders.
 
 use super::super::literals::{
-    format_angle_rad, format_f64_literal, format_length_mm, valid_direction,
+    format_angle_rad, format_length_mm, format_length_number, valid_direction,
 };
 use super::format::{format_angle_like, format_length_like, format_point3_mm, format_vector3};
 use super::support::{
@@ -91,7 +91,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
                 parameters.insert(
                     cadmpeg_core::nonblank_literal!("D2"),
-                    format!("{prefix}{}", format_f64_literal(diameter.get())),
+                    format!("{prefix}{}", format_length_number((*diameter).into())),
                 );
             }
             match extent {
@@ -99,7 +99,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("D1"),
                         format_length_like(
-                            length.get(),
+                            (*length).into(),
                             record.parameters.get("D1").map(String::as_str),
                         ),
                     );
@@ -267,7 +267,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 CurveProjectionDirection::Vector(direction) => {
                     properties.insert(
                         cadmpeg_core::nonblank_literal!("Direction"),
-                        format_vector3(direction.get()),
+                        format_vector3((*direction).into()),
                     );
                 }
                 CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal) => {
@@ -366,16 +366,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if ![axis_origin.x, axis_origin.y, axis_origin.z]
-                .into_iter()
-                .all(f64::is_finite)
-                || !valid_direction(*axis_direction)
-            {
+            let (Some(axis_origin), Some(axis_direction)) = (
+                cadmpeg_ir::features::FinitePoint3::new(*axis_origin),
+                cadmpeg_ir::features::FiniteVector3::new(*axis_direction)
+                    .filter(|direction| valid_direction(direction.get())),
+            ) else {
                 return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid helix geometry",
                     feature.id
                 )));
-            }
+            };
             if existing.is_some_and(|record| !is_helix(record)) {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} changes operation family",
@@ -387,11 +387,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Radius"),
-                format_length_mm(radius.get()),
+                format_length_mm((*radius).into()),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Pitch"),
-                format_length_mm(pitch.get()),
+                format_length_mm((*pitch).into()),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Revolutions"),
@@ -399,16 +399,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("StartAngle"),
-                format_angle_rad(start_angle.get()),
+                format_angle_rad(*start_angle),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                format_point3_mm(*axis_origin),
+                format_point3_mm(axis_origin),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisDirection"),
-                format_vector3(*axis_direction),
+                format_vector3(axis_direction),
             );
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Clockwise"),
@@ -455,14 +455,11 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let mut parameters = record.parameters.clone();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D3"),
-                format_length_like(
-                    axial_rise.get(),
-                    record.parameters.get("D3").map(String::as_str),
-                ),
+                format_length_like(*axial_rise, record.parameters.get("D3").map(String::as_str)),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D4"),
-                format_length_like(pitch.get(), record.parameters.get("D4").map(String::as_str)),
+                format_length_like(*pitch, record.parameters.get("D4").map(String::as_str)),
             );
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D5"),
@@ -471,9 +468,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("D7"),
                 format_angle_like(
-                    start_angle.get(),
+                    *start_angle,
                     record.parameters.get("D7").map(String::as_str),
-                ),
+                )?,
             );
             let mut properties = feature.source_properties.clone();
             if properties.contains_key("Clockwise") || *clockwise {
