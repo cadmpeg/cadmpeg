@@ -693,7 +693,8 @@ fn the_nurbs_surface_pole_lane_is_the_admitted_count() {
     assert_eq!(pole_count, 4);
     assert_eq!(surface.poles().len(), 4);
 
-    let payload = super::super::nurbs_surface_payload(&surface, pole_count);
+    let payload = super::super::nurbs_surface_payload(&surface, pole_count)
+        .expect("finite homogeneous poles");
     // 0x10 version byte, eight i32 header lanes, six f64 bounding-box
     // coordinates, then each of the two knot lanes as one i32 count and two
     // interior f64 knots.

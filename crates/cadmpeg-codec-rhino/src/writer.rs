@@ -190,16 +190,14 @@ fn write_seekable(
             )?)?;
         }
     }
-    for (id, curve) in &plan.curves {
-        let (class, payload) = curve.payload();
+    for (id, (class, payload)) in &plan.curves {
         output.write_all(&attributed_object_record(
-            4, class, &payload, id, None, None, None,
+            4, *class, payload, id, None, None, None,
         )?)?;
     }
-    for (id, surface) in &plan.surfaces {
-        let (class, payload) = surface.payload();
+    for (id, (class, payload)) in &plan.surfaces {
         output.write_all(&attributed_object_record(
-            8, class, &payload, id, None, None, None,
+            8, *class, payload, id, None, None, None,
         )?)?;
     }
     for mesh in &ir.model.tessellations {
@@ -279,9 +277,14 @@ struct BrepPayload {
     direct: Vec<u8>,
 }
 
+/// A native class identifier and the payload encoded for it.
+type ClassPayload = ([u8; 16], Vec<u8>);
+
 struct WritePlan<'a> {
-    curves: Vec<(&'a str, WritableObjectCurve<'a>)>,
-    surfaces: Vec<(&'a str, WritableFaceSurface<'a>)>,
+    /// Each free curve's identity and encoded payload.
+    curves: Vec<(&'a str, ClassPayload)>,
+    /// Each free surface's identity and encoded payload.
+    surfaces: Vec<(&'a str, ClassPayload)>,
     brep_records: std::fs::File,
     topology_points: std::collections::BTreeSet<String>,
     point_groups: Vec<PointGroup>,
@@ -650,17 +653,23 @@ fn prepare_write(
         .iter()
         .filter(|curve| !topology_curves.contains(curve.id.as_str()))
         .map(|curve| {
-            WritableObjectCurve::try_new(curve).map(|geometry| (curve.id.as_str(), geometry))
+            Ok((
+                curve.id.as_str(),
+                WritableObjectCurve::try_new(curve)?.payload()?,
+            ))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let surfaces = model
         .surfaces
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
         .map(|surface| {
-            WritableFaceSurface::try_new(surface).map(|geometry| (surface.id.as_str(), geometry))
+            Ok((
+                surface.id.as_str(),
+                WritableFaceSurface::try_new(surface)?.payload()?,
+            ))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, CodecError>>()?;
     for mesh in &model.tessellations {
         check_mesh(mesh)?;
     }
@@ -854,13 +863,13 @@ fn brep_payload(
         .edges
         .iter()
         .map(|edge| brep_c3_curve(model, edge))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(polymorphic_array(c3.iter()));
     let surfaces = model
         .surfaces
         .iter()
         .map(|surface| surface.payload())
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     payload.extend(polymorphic_array(surfaces.iter()));
     let vertices = model
         .vertices
@@ -1102,18 +1111,21 @@ fn close_point(
         && (left.z - right.z).abs() <= tolerance
 }
 
-fn brep_c3_curve(model: &WritableModel<'_>, edge: &WritableEdge<'_>) -> ([u8; 16], Vec<u8>) {
-    match edge.curve {
+fn brep_c3_curve(
+    model: &WritableModel<'_>,
+    edge: &WritableEdge<'_>,
+) -> Result<([u8; 16], Vec<u8>), CodecError> {
+    Ok(match edge.curve {
         WritableEdgeCurve::Line(_) => {
             let from = model.vertices[edge.start].point;
             let to = model.vertices[edge.end].point;
             (
                 LINE_CLASS,
-                bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], edge.domain, 3),
+                bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], edge.domain, 3)?,
             )
         }
-        WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
-    }
+        WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
+    })
 }
 
 fn generated_projected_brep_c2_curve(
@@ -1142,7 +1154,7 @@ fn generated_projected_brep_c2_curve(
                     plane_uv(to, origin, u_axis, v_axis),
                     edge.domain,
                     2,
-                ),
+                )?,
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => {
@@ -1169,7 +1181,7 @@ fn generated_projected_brep_c2_curve(
             }
             (
                 NURBS_CURVE_CLASS,
-                nurbs_curve_payload_dimension(&projected, 2),
+                nurbs_curve_payload_dimension(&projected, 2)?,
             )
         }
     })
@@ -1221,7 +1233,7 @@ fn admit_pcurve<'a>(
                 0.0,
             ];
             (
-                (LINE_CLASS, bounded_line_payload(from, to, domain, 2)),
+                (LINE_CLASS, bounded_line_payload(from, to, domain, 2)?),
                 vec![
                     cadmpeg_ir::math::Point2::new(from[0], from[1]),
                     cadmpeg_ir::math::Point2::new(to[0], to[1]),
@@ -1245,7 +1257,7 @@ fn admit_pcurve<'a>(
                 )));
             }
             (
-                (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)),
+                (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?),
                 nurbs.pole_rows().raw_points(),
             )
         }
@@ -1425,13 +1437,34 @@ fn plane_uv(
     ]
 }
 
-fn bounded_line_payload(from: [f64; 3], to: [f64; 3], domain: [f64; 2], dimension: i32) -> Vec<u8> {
+/// A bounded line from its endpoints, which callers compute, and its domain.
+fn bounded_line_payload(
+    from: [f64; 3],
+    to: [f64; 3],
+    domain: [f64; 2],
+    dimension: i32,
+) -> Result<Vec<u8>, CodecError> {
     let mut payload = vec![0x10];
-    for value in from.into_iter().chain(to).chain(domain) {
+    for value in from.into_iter().chain(to) {
+        payload.extend(computed(value, "line endpoint coordinate")?.to_le_bytes());
+    }
+    for value in domain {
         payload.extend(value.to_le_bytes());
     }
     payload.extend(dimension.to_le_bytes());
-    payload
+    Ok(payload)
+}
+
+/// Admit a number the writer computed for `field`. A 3DM archive states no
+/// non-finite number.
+fn computed(value: f64, field: &str) -> Result<f64, CodecError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(CodecError::NotImplemented(format!(
+            "Rhino writer computed the non-finite {field} {value}, which 3DM cannot state"
+        )))
+    }
 }
 
 fn polymorphic_array<'a>(
@@ -1912,13 +1945,17 @@ fn circle_payload(
     axis: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     radius: f64,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let y = cadmpeg_ir::math::Vector3::new(
         axis.y * x.z - axis.z * x.y,
         axis.z * x.x - axis.x * x.z,
         axis.x * x.y - axis.y * x.x,
     );
-    let equation_d = -(axis.x * center.x + axis.y * center.y + axis.z * center.z);
+    let equation_d = computed(
+        -(axis.x * center.x + axis.y * center.y + axis.z * center.z),
+        "circle plane equation constant",
+    )?;
+    let arc_point = |value: f64| computed(value, "circle arc point coordinate");
     let mut payload = vec![0x10];
     for value in [
         center.x,
@@ -1938,15 +1975,15 @@ fn circle_payload(
         axis.z,
         equation_d,
         radius,
-        center.x + radius * x.x,
-        center.y + radius * x.y,
-        center.z + radius * x.z,
-        center.x + radius * y.x,
-        center.y + radius * y.y,
-        center.z + radius * y.z,
-        center.x - radius * x.x,
-        center.y - radius * x.y,
-        center.z - radius * x.z,
+        arc_point(center.x + radius * x.x)?,
+        arc_point(center.y + radius * x.y)?,
+        arc_point(center.z + radius * x.z)?,
+        arc_point(center.x + radius * y.x)?,
+        arc_point(center.y + radius * y.y)?,
+        arc_point(center.z + radius * y.z)?,
+        arc_point(center.x - radius * x.x)?,
+        arc_point(center.y - radius * x.y)?,
+        arc_point(center.z - radius * x.z)?,
         0.0,
         std::f64::consts::TAU,
         0.0,
@@ -1955,17 +1992,19 @@ fn circle_payload(
         payload.extend(value.to_le_bytes());
     }
     payload.extend(3_i32.to_le_bytes());
-    payload
+    Ok(payload)
 }
 
-fn nurbs_curve_payload(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve) -> Vec<u8> {
+fn nurbs_curve_payload(
+    curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
+) -> Result<Vec<u8>, CodecError> {
     nurbs_curve_payload_dimension(curve, 3)
 }
 
 fn nurbs_curve_payload_dimension(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     dimension: i32,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let rational = i32::from(curve.weights().is_some());
     let order = (curve.degree() + 1) as i32;
     let count = curve.control_points().len() as i32;
@@ -1993,27 +2032,31 @@ fn nurbs_curve_payload_dimension(
         payload.extend(knot.to_le_bytes());
     }
     payload.extend(count.to_le_bytes());
+    let homogeneous = |value: f64| computed(value, "NURBS curve homogeneous pole coordinate");
     for (index, point) in curve.control_points().iter().enumerate() {
         let weight = curve.weights().map_or(1.0, |weights| weights[index].get());
-        payload.extend((point.x * weight).to_le_bytes());
-        payload.extend((point.y * weight).to_le_bytes());
+        payload.extend(homogeneous(point.x * weight)?.to_le_bytes());
+        payload.extend(homogeneous(point.y * weight)?.to_le_bytes());
         if dimension == 3 {
-            payload.extend((point.z * weight).to_le_bytes());
+            payload.extend(homogeneous(point.z * weight)?.to_le_bytes());
         }
         if rational != 0 {
             payload.extend(weight.to_le_bytes());
         }
     }
-    payload
+    Ok(payload)
 }
 
 fn plane_surface_payload(
     origin: cadmpeg_ir::math::Point3,
     normal: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let y = normal.cross(x);
-    let d = -(normal.x * origin.x + normal.y * origin.y + normal.z * origin.z);
+    let d = computed(
+        -(normal.x * origin.x + normal.y * origin.y + normal.z * origin.z),
+        "plane equation constant",
+    )?;
     let mut payload = vec![0x10];
     for value in [
         origin.x, origin.y, origin.z, x.x, x.y, x.z, y.x, y.y, y.z, normal.x, normal.y, normal.z,
@@ -2021,7 +2064,7 @@ fn plane_surface_payload(
     ] {
         payload.extend(value.to_le_bytes());
     }
-    payload
+    Ok(payload)
 }
 
 /// Serializes a NURBS surface.
@@ -2031,7 +2074,7 @@ fn plane_surface_payload(
 fn nurbs_surface_payload(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     pole_count: i32,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, CodecError> {
     let rational = i32::from(surface.weights().is_some());
     let mut payload = vec![0x10];
     for value in [
@@ -2064,18 +2107,19 @@ fn nurbs_surface_payload(
     }
     payload.extend(pole_count.to_le_bytes());
     let pole_weights = surface.pole_weights();
+    let homogeneous = |value: f64| computed(value, "NURBS surface homogeneous pole coordinate");
     for (index, point) in poles.iter().enumerate() {
         let weight = pole_weights
             .as_ref()
             .map_or(1.0, |weights| weights[index].get());
-        payload.extend((point.x * weight).to_le_bytes());
-        payload.extend((point.y * weight).to_le_bytes());
-        payload.extend((point.z * weight).to_le_bytes());
+        payload.extend(homogeneous(point.x * weight)?.to_le_bytes());
+        payload.extend(homogeneous(point.y * weight)?.to_le_bytes());
+        payload.extend(homogeneous(point.z * weight)?.to_le_bytes());
         if rational != 0 {
             payload.extend(weight.to_le_bytes());
         }
     }
-    payload
+    Ok(payload)
 }
 
 struct MeshPayload {
