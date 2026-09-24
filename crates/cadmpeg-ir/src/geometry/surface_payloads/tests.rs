@@ -1614,7 +1614,7 @@ fn an_axis_revolution_replaces_its_origin_and_keeps_the_admitted_direction() {
         .map(f64::to_bits),
         [moved.x, moved.y, moved.z].map(f64::to_bits)
     );
-    assert_eq!(*payload.axis_direction(), direction);
+    assert_eq!(*payload.axis_direction().as_raw(), direction);
 }
 
 #[test]
@@ -1683,7 +1683,10 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
     // A direction within the tolerance is stored as given, not renormalized.
     let near_unit = Vector3::new(0.0, 0.0, 1.0 + 1.0e-10);
     let payload = RevolutionSurfaceConstruction::try_from(wire(origin, near_unit)).unwrap();
-    assert_eq!(payload.axis_direction().z.to_bits(), near_unit.z.to_bits());
+    assert_eq!(
+        payload.axis_direction().as_raw().z.to_bits(),
+        near_unit.z.to_bits()
+    );
     assert_eq!(
         payload,
         RevolutionSurfaceConstruction::try_new(

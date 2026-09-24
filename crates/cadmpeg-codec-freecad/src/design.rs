@@ -4137,10 +4137,10 @@ fn extrusion_shape(
             ProfileRef::Planar(PlanarProfileRef::Native(_)) => profile_normal,
             _ => return None,
         }
-        .and_then(Vector3::unit);
+        .and_then(cadmpeg_ir::units::UnitVector3::normalized);
         match normal {
             Some(vector) => cadmpeg_ir::features::ExtrudeDirection::Explicit {
-                vector: cadmpeg_ir::features::FeatureDirection3::new(vector)?,
+                vector: cadmpeg_ir::features::FeatureDirection3::from(vector),
                 source: Some(ExtrusionDirectionSource::ProfileNormal {}),
             },
             None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
@@ -5403,13 +5403,14 @@ fn helical_sweep_definition(
         3 => HelicalSweepLaw::HeightTurnsGrowth,
         _ => return None,
     };
-    let (axis_origin, axis_direction) = vector_property(properties, "Base")
-        .zip(vector_property(properties, "Axis"))
-        .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
-        .or_else(|| {
-            axis_reference(properties, "ReferenceAxis", objects, properties_by_owner)
-                .map(|(origin, direction)| (origin, Vector3::from(direction)))
-        })?;
+    let (axis_origin, axis_direction) =
+        match vector_property(properties, "Base").zip(vector_property(properties, "Axis")) {
+            Some((origin, direction)) => (
+                Point3::new(origin.x, origin.y, origin.z),
+                cadmpeg_ir::units::UnitVector3::normalized(direction)?,
+            ),
+            None => axis_reference(properties, "ReferenceAxis", objects, properties_by_owner)?,
+        };
     let profile = profile_ref(owner, properties, sketches);
     if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
         return None;
@@ -5417,7 +5418,7 @@ fn helical_sweep_definition(
     let construction = HelicalSweepConstruction {
         profile: profile.planar().cloned()?,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
-        axis_direction: cadmpeg_ir::units::UnitVector3::normalized(axis_direction)?,
+        axis_direction,
         law,
         pitch: cadmpeg_ir::scalar::NonNegativeLength::new(scalar_named(properties, "Pitch")?)?,
         travel: cadmpeg_ir::features::HelicalSweepTravel::new(

@@ -408,7 +408,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .any(|surface| matches!(
             surface.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution(definition_payload)
-                if definition_payload.axis_direction().z == 1.0
+                if definition_payload.axis_direction().as_raw().z == 1.0
         )));
     assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
         match surface.definition() {

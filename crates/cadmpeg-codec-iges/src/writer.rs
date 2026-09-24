@@ -36,7 +36,6 @@ use std::f64::consts::TAU;
 use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const EPS_WRITE_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
@@ -56,7 +55,6 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "quarantined_parameter_records",
     "transformations",
 ];
-const FRAME_REPAIR_DOT_LIMIT: f64 = EPS_WRITE_COARSE_GEOMETRY;
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
@@ -4386,9 +4384,8 @@ fn point_entity_with_status(position: Point3, status: EntityStatus) -> Entity {
     }
 }
 
-fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
-    let direction = unit(direction, "analytic surface direction")?;
-    Ok(Entity {
+fn direction_entity(direction: Vector3) -> Entity {
+    Entity {
         type_code: 123,
         form: 0,
         label: "DIRECTN",
@@ -4401,21 +4398,16 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         )
         .into_bytes(),
         transform: None,
-    })
+    }
 }
 
 fn pointer_surface_support(
     base_index: usize,
     location: Point3,
-    axis: Vector3,
-    reference: Vector3,
+    frame: &OrthonormalFrame3,
 ) -> Result<(Vec<Entity>, usize, usize, usize), CodecError> {
     ensure_finite_point(location, "analytic surface location")?;
-    let (axis, reference) = orthonormal_pair(
-        axis,
-        reference,
-        "analytic surface axis and reference direction",
-    )?;
+    let (axis, reference) = orthonormal_pair(frame);
     let location_index = base_index;
     let axis_index = base_index
         .checked_add(1)
@@ -4426,8 +4418,8 @@ fn pointer_surface_support(
     Ok((
         vec![
             point_entity_with_status(location, EntityStatus::PhysicallyDependent),
-            direction_entity(axis)?,
-            direction_entity(reference)?,
+            direction_entity(axis),
+            direction_entity(reference),
         ],
         location_index,
         axis_index,
@@ -4795,8 +4787,7 @@ fn revolution_surface_entities(
     })?;
     ensure_finite_point(start, "Type 120 generatrix start")?;
     ensure_finite_point(end, "Type 120 generatrix terminate")?;
-    let axis_direction = UnitVector3::normalized(*axis_direction)
-        .ok_or_else(|| CodecError::malformed("IGES Type 120 axis direction is degenerate"))?;
+    let axis_direction = axis_direction.to_unit_length();
     let axis_end = axis_origin.translated(*axis_direction.as_raw(), 1.0);
     let axis_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::new(
@@ -4861,10 +4852,8 @@ fn surface_entities(
     match geometry {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis().as_raw();
-            let u_axis = plane_surface.frame().reference().as_raw();
             if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
-                let (normal, u_axis) = orthonormal_pair(*normal, *u_axis, "legacy plane basis")?;
+                let (normal, u_axis) = orthonormal_pair(plane_surface.frame());
                 let v_axis = normal.cross(u_axis);
                 return Ok(vec![Entity {
                     // Type 108 Form 0 is the unbounded plane carrier in the
@@ -4876,11 +4865,11 @@ fn surface_entities(
                     label: "PLANE",
                     status: EntityStatus::Independent,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
-                    transform: Some(placement(origin, u_axis, v_axis, normal)?),
+                    transform: Some(placement(origin, u_axis, v_axis)?),
                 }]);
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, *normal, *u_axis)?;
+                pointer_surface_support(base_index, origin, plane_surface.frame())?;
             entities.push(Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES plane has no analytic surface family".into())
@@ -4902,11 +4891,9 @@ fn surface_entities(
         SolvedSurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis().as_raw();
-            let ref_direction = cylinder_surface.frame().reference().as_raw();
             let radius = cylinder_surface.radius().get();
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, origin, cylinder_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cylinder has no analytic surface family".into())
@@ -4929,8 +4916,6 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
@@ -4945,7 +4930,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, origin, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, origin, cone_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES cone has no analytic surface family".into())
@@ -4969,8 +4954,6 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.frame().axis().as_raw();
-            let ref_direction = sphere_surface.frame().reference().as_raw();
             let radius = sphere_surface.radius().get();
             if radius <= 0.0 {
                 return Err(CodecError::NotImplemented(
@@ -4978,7 +4961,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, center, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, center, sphere_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES sphere has no analytic surface family".into())
@@ -5001,8 +4984,6 @@ fn surface_entities(
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
-            let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             if minor_radius <= 0.0 || minor_radius >= major_radius {
@@ -5011,7 +4992,7 @@ fn surface_entities(
                 ));
             }
             let (mut entities, location, axis, reference) =
-                pointer_surface_support(base_index, center, *axis, *ref_direction)?;
+                pointer_surface_support(base_index, center, torus_surface.frame())?;
             let surface = Entity {
                 type_code: analytic_type_code.ok_or_else(|| {
                     CodecError::Malformed("IGES torus has no analytic surface family".into())
@@ -5787,10 +5768,8 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius().get();
-            let (axis, reference) = orthonormal_pair(*axis, *ref_direction, "circle basis")?;
+            let (axis, reference) = orthonormal_pair(circle_curve.frame());
             let y_axis = axis.cross(reference);
             validate_arc_sweep(range)?;
             let start_xy = [radius * range[0].cos(), radius * range[0].sin()];
@@ -5812,16 +5791,14 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(center, reference, y_axis, axis)?),
+                transform: Some(placement(center, reference, y_axis)?),
             })
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            let (axis, major) = orthonormal_pair(*axis, *major_direction, "ellipse basis")?;
+            let (axis, major) = orthonormal_pair(ellipse_curve.frame());
             let y_axis = axis.cross(major);
             validate_arc_sweep(range)?;
             let start_xy = [major_radius * range[0].cos(), minor_radius * range[0].sin()];
@@ -5855,20 +5832,18 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(center, major, y_axis, axis)?),
+                transform: Some(placement(center, major, y_axis)?),
             })
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.frame().axis().as_raw();
-            let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance().get();
             if range[0] == range[1] {
                 return Err(CodecError::NotImplemented(
                     "IGES parabola requires a finite non-zero parameter span".into(),
                 ));
             }
-            let (axis, major) = orthonormal_pair(*axis, *major_direction, "parabola basis")?;
+            let (axis, major) = orthonormal_pair(parabola_curve.frame());
             let x_axis = major.cross(axis);
             let start_xy = parabola_point(focal_distance, range[0])?;
             let end_xy = parabola_point(focal_distance, range[1])?;
@@ -5886,13 +5861,11 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(vertex, x_axis, major, axis)?),
+                transform: Some(placement(vertex, x_axis, major)?),
             })
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.frame().axis().as_raw();
-            let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
             if range[0] == range[1] {
@@ -5900,7 +5873,7 @@ fn curve_entity(
                     "IGES hyperbola requires a finite non-zero parameter span".into(),
                 ));
             }
-            let (axis, major) = orthonormal_pair(*axis, *major_direction, "hyperbola basis")?;
+            let (axis, major) = orthonormal_pair(hyperbola_curve.frame());
             let y_axis = axis.cross(major);
             let start_xy = hyperbola_point(major_radius, minor_radius, range[0])?;
             let end_xy = hyperbola_point(major_radius, minor_radius, range[1])?;
@@ -5925,7 +5898,7 @@ fn curve_entity(
                     number(end_xy[1])
                 )
                 .into_bytes(),
-                transform: Some(placement(center, major, y_axis, axis)?),
+                transform: Some(placement(center, major, y_axis)?),
             })
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
@@ -6313,44 +6286,46 @@ fn apply_rigid_transform(
     })
 }
 
-fn unit(vector: Vector3, label: &str) -> Result<Vector3, CodecError> {
-    vector
-        .unit()
-        .ok_or_else(|| CodecError::malformed(format_args!("IGES {label} is degenerate")))
+/// The axis of `frame` at unit length, and the reference minus its component
+/// along that axis, divided by its length.
+///
+/// IGES reads a Type 124 matrix at its printed precision of 17 significant
+/// digits, which is finer than the `1e-9` unit-length and perpendicularity
+/// tolerance of the frame. The projected reference has a length within about
+/// `2e-9` of one, so the division is by a finite nonzero length, and the two
+/// results are unit length and perpendicular to rounding.
+fn orthonormal_pair(frame: &OrthonormalFrame3) -> (Vector3, Vector3) {
+    let primary = *frame.axis().to_unit_length().as_raw();
+    let reference = *frame.reference().as_raw();
+    let projected = reference - primary.scale(primary.dot(reference));
+    let length = projected.norm();
+    (
+        primary,
+        Vector3::new(
+            projected.x / length,
+            projected.y / length,
+            projected.z / length,
+        ),
+    )
 }
 
-fn orthonormal_pair(
-    primary: Vector3,
-    reference: Vector3,
-    label: &str,
-) -> Result<(Vector3, Vector3), CodecError> {
-    let primary = unit(primary, label)?;
-    let reference = unit(reference, label)?;
-    let residual = primary.dot(reference);
-    if residual.abs() > FRAME_REPAIR_DOT_LIMIT {
-        return Err(CodecError::malformed(format_args!(
-            "IGES {label} exceeds the frame repair bound"
-        )));
-    }
-    let reference = unit(reference - primary.scale(residual), label)?;
-    Ok((primary, reference))
-}
-
-fn placement(
-    origin: Point3,
-    x_axis: Vector3,
-    y_axis: Vector3,
-    z_axis: Vector3,
-) -> Result<Placement, CodecError> {
+/// The Type 124 matrix of a right-handed frame placed at `origin`: the x axis
+/// divided by its length, the y axis minus its component along x divided by
+/// its length, and their cross product divided by its length.
+///
+/// Every caller passes perpendicular directions of unit length to rounding,
+/// one of them a cross product, so each length is within rounding of one. The
+/// divisions give the unit columns that a reader checks at the printed
+/// precision of 17 significant digits.
+fn placement(origin: Point3, x_axis: Vector3, y_axis: Vector3) -> Result<Placement, CodecError> {
     ensure_finite_point(origin, "placement origin")?;
-    let (x_axis, y_axis) = orthonormal_pair(x_axis, y_axis, "placement x/y axes")?;
-    let supplied_z = unit(z_axis, "placement z axis")?;
-    let z_axis = unit(x_axis.cross(y_axis), "placement derived z axis")?;
-    if z_axis.dot(supplied_z) <= 0.0 || z_axis.cross(supplied_z).norm() > FRAME_REPAIR_DOT_LIMIT {
-        return Err(CodecError::Malformed(
-            "IGES placement z axis exceeds the frame repair bound".into(),
-        ));
-    }
+    let divided = |vector: Vector3| {
+        let length = vector.norm();
+        Vector3::new(vector.x / length, vector.y / length, vector.z / length)
+    };
+    let x_axis = divided(x_axis);
+    let y_axis = divided(y_axis - x_axis.scale(x_axis.dot(y_axis)));
+    let z_axis = divided(x_axis.cross(y_axis));
     Ok(Placement {
         rows: [
             [x_axis.x, y_axis.x, z_axis.x, origin.x],

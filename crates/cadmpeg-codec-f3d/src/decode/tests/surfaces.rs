@@ -440,7 +440,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
         };
         let directrix = definition_payload.directrix();
         let axis_origin = definition_payload.axis_origin();
-        let axis_direction = definition_payload.axis_direction();
+        let axis_direction = *definition_payload.axis_direction().as_raw();
         let angular_interval = definition_payload.angular_interval().endpoints();
         let angular_parameter_interval = definition_payload
             .angular_parameter_interval()
@@ -457,7 +457,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0)
         );
         assert_eq!(
-            *axis_direction,
+            axis_direction,
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(angular_interval, [0.0, 1.0]);

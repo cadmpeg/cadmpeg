@@ -1141,8 +1141,11 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
 fn conical_trim_uses_scaled_angular_coordinate() {
     let trim = ConicalTrim {
         origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        frame: cadmpeg_ir::units::OrthonormalFrame3::new(
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
         radius: 3.0,
         ratio: 0.5,
         slope: 1.0,

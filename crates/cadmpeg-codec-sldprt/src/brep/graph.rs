@@ -30,7 +30,6 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
@@ -806,11 +805,8 @@ fn ensure_surface_support(
             if !out.surfaces.iter().any(|surface| surface.id == id)
                 && !emitted_face_surface_by_carrier.contains_key(&attr)
             {
-                let mut geometry = carrier.geometry.clone();
-                if let (Some((u_reference, v_reference)), SurfaceGeometry::Solved(solved)) =
-                    (carrier.frame(), &mut geometry)
-                {
-                    fold_surface_frame(solved, u_reference, v_reference).ok()?;
+                let geometry = carrier.geometry.clone();
+                if let SurfaceGeometry::Solved(solved) = &geometry {
                     annotate_surface_frame(annotations, id.as_str(), solved).ok()?;
                 }
                 annotations
@@ -1890,27 +1886,13 @@ fn decode_graph(
                 annotations
                     .note(id_surf(f.bridge_attr), &source_stream, c.offset as u64)
                     .tag("compact_surface");
-                let mut geometry = c.geometry.clone();
-                if let Some((u_reference, v_reference)) = c.frame() {
-                    let folded = match &mut geometry {
-                        SurfaceGeometry::Solved(solved) => {
-                            fold_surface_frame(solved, u_reference, v_reference).is_ok()
-                        }
-                        SurfaceGeometry::Procedural { .. } => false,
-                    };
-                    if folded {
-                        if let SurfaceGeometry::Solved(solved) = &geometry {
-                            annotate_surface_frame(
-                                &mut annotations,
-                                id_surf(f.bridge_attr).as_str(),
-                                solved,
-                            )?;
-                        }
-                    } else {
-                        geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
-                            record: None,
-                        });
-                    }
+                let geometry = c.geometry.clone();
+                if let SurfaceGeometry::Solved(solved) = &geometry {
+                    annotate_surface_frame(
+                        &mut annotations,
+                        id_surf(f.bridge_attr).as_str(),
+                        solved,
+                    )?;
                 }
                 out.surfaces.push(Surface {
                     id: id_surf(f.bridge_attr),
@@ -2485,87 +2467,6 @@ fn prune_rejected_topology(out: &mut Brep) {
             })
         })
         .count();
-}
-
-fn fold_surface_frame(
-    geometry: &mut SolvedSurfaceGeometry,
-    u_reference: cadmpeg_ir::math::Vector3,
-    v_reference: cadmpeg_ir::math::Vector3,
-) -> Result<(), &'static str> {
-    // The carrier's axis is already a unit direction; only the stored
-    // reference is admitted, and then its perpendicularity to that axis.
-    let about_held_axis = |axis: UnitVector3, refusal: &'static str| {
-        UnitVector3::new(u_reference)
-            .and_then(|reference| OrthonormalFrame3::from_units(axis, reference))
-            .ok_or(refusal)
-    };
-    match geometry {
-        SolvedSurfaceGeometry::Plane(payload) => {
-            let frame = about_held_axis(
-                *payload.frame().axis(),
-                "PlaneSurface.normal/u_axis must form an orthonormal frame",
-            )?;
-            *payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(payload.origin(), frame);
-        }
-        SolvedSurfaceGeometry::Cylinder(payload) => {
-            let frame = about_held_axis(
-                *payload.frame().axis(),
-                "CylinderSurface.axis/ref_direction must form an orthonormal frame",
-            )?;
-            *payload = cadmpeg_ir::geometry::analytic::CylinderSurface::new(
-                payload.origin(),
-                frame,
-                payload.radius(),
-            );
-        }
-        SolvedSurfaceGeometry::Cone(payload) => {
-            let frame = about_held_axis(
-                *payload.frame().axis(),
-                "ConeSurface.axis/ref_direction must form an orthonormal frame",
-            )?;
-            *payload = cadmpeg_ir::geometry::analytic::ConeSurface::new(
-                payload.origin(),
-                frame,
-                payload.radius(),
-                payload.ratio(),
-                payload.half_angle(),
-            );
-        }
-        SolvedSurfaceGeometry::Torus(payload) => {
-            let frame = about_held_axis(
-                *payload.frame().axis(),
-                "TorusSurface.axis/ref_direction must form an orthonormal frame",
-            )?;
-            *payload = cadmpeg_ir::geometry::analytic::TorusSurface::new(
-                payload.center(),
-                frame,
-                payload.major_radius(),
-                payload.minor_radius(),
-            );
-        }
-        SolvedSurfaceGeometry::Sphere(payload) => {
-            let frame = OrthonormalFrame3::new(v_reference, u_reference)
-                .ok_or("SphereSurface.axis/ref_direction must form an orthonormal frame")?;
-            *payload = cadmpeg_ir::geometry::analytic::SphereSurface::new(
-                payload.center(),
-                frame,
-                payload.radius(),
-            );
-        }
-        SolvedSurfaceGeometry::Transformed(placed) => {
-            // The placement re-admits its basis, so the frame is folded into a
-            // candidate and the carrier is rebuilt from it. The recursion is
-            // bounded by the depth `PlacedSurface::try_new` admits.
-            let mut basis = placed.basis().clone();
-            fold_surface_frame(&mut basis, u_reference, v_reference)?;
-            *placed =
-                cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), *placed.transform())?;
-        }
-        SolvedSurfaceGeometry::Nurbs(_)
-        | SolvedSurfaceGeometry::Polygonal(_)
-        | SolvedSurfaceGeometry::Unknown { .. } => {}
-    }
-    Ok(())
 }
 
 fn annotate_surface_frame(
@@ -7362,71 +7263,6 @@ mod tests {
 
         assert!(brep.pcurves.is_empty());
         assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);
-    }
-
-    #[test]
-    fn folded_analytic_frames_keep_the_held_axis_and_admit_the_stored_reference() {
-        use cadmpeg_ir::geometry::analytic::{
-            ConeSurface, CylinderSurface, PlaneSurface, TorusSurface,
-        };
-        use cadmpeg_ir::math::{Point3, Vector3};
-
-        let origin = Point3::new(1.0, 2.0, 3.0);
-        let axis = Vector3::new(0.6, 0.0, 0.8);
-        let carriers = |reference: Vector3| {
-            [
-                (
-                    SolvedSurfaceGeometry::Plane(
-                        PlaneSurface::try_new(origin, axis, reference).expect("valid test fixture"),
-                    ),
-                    "PlaneSurface.normal/u_axis must form an orthonormal frame",
-                ),
-                (
-                    SolvedSurfaceGeometry::Cylinder(
-                        CylinderSurface::try_new(origin, axis, reference, 2.0)
-                            .expect("valid test fixture"),
-                    ),
-                    "CylinderSurface.axis/ref_direction must form an orthonormal frame",
-                ),
-                (
-                    SolvedSurfaceGeometry::Cone(
-                        ConeSurface::try_new(origin, axis, reference, 2.0, 1.0, 0.5)
-                            .expect("valid test fixture"),
-                    ),
-                    "ConeSurface.axis/ref_direction must form an orthonormal frame",
-                ),
-                (
-                    SolvedSurfaceGeometry::Torus(
-                        TorusSurface::try_new(origin, axis, reference, 3.0, 1.0)
-                            .expect("valid test fixture"),
-                    ),
-                    "TorusSurface.axis/ref_direction must form an orthonormal frame",
-                ),
-            ]
-        };
-        let stored_reference = Vector3::new(0.0, 1.0, 0.0);
-        let v_reference = Vector3::new(0.0, 0.0, 1.0);
-        for ((carrier, refusal), (expected, _)) in carriers(Vector3::new(0.8, 0.0, -0.6))
-            .into_iter()
-            .zip(carriers(stored_reference))
-        {
-            let mut folded = carrier.clone();
-            assert_eq!(
-                super::fold_surface_frame(&mut folded, stored_reference, v_reference),
-                Ok(())
-            );
-            assert_eq!(folded, expected);
-            // A reference of another length, or one along the held axis, is
-            // refused with the carrier's message and leaves it unchanged.
-            for rejected in [Vector3::new(0.0, 2.0, 0.0), axis] {
-                let mut unchanged = carrier.clone();
-                assert_eq!(
-                    super::fold_surface_frame(&mut unchanged, rejected, v_reference),
-                    Err(refusal)
-                );
-                assert_eq!(unchanged, carrier);
-            }
-        }
     }
 }
 

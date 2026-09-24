@@ -14,6 +14,7 @@ use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::HashMap;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
@@ -1140,7 +1141,6 @@ impl PlaneFrame {
     fn new(origin: Point3, normal: Vector3, u_axis: Vector3) -> Option<Self> {
         let normal = normal.unit()?;
         let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
-        normal.cross(u_axis).unit()?;
         origin.is_finite().then_some(Self {
             origin,
             normal,
@@ -1235,8 +1235,7 @@ enum HoleConstraint<'a> {
 #[derive(Debug, Clone, Copy)]
 struct CylindricalTrim {
     origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
+    frame: OrthonormalFrame3,
     radius: f64,
     min_axial: f64,
     max_axial: f64,
@@ -1247,8 +1246,7 @@ struct CylindricalTrim {
 #[derive(Debug, Clone, Copy)]
 struct ConicalTrim {
     origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
+    frame: OrthonormalFrame3,
     radius: f64,
     ratio: f64,
     slope: f64,
@@ -1269,8 +1267,10 @@ impl CylindricalTrim {
             let Some(point) = inverse_body.apply_point(*point) else {
                 return false;
             };
-            let axial = point.vector_from(self.origin).dot(self.axis);
-            let angular = cylinder_angle(point, self.origin, self.axis, self.ref_direction);
+            let axial = point
+                .vector_from(self.origin)
+                .dot(*self.frame.axis().as_raw());
+            let angular = cylinder_angle(point, self.origin, &self.frame);
             axial.is_finite()
                 && axial >= self.min_axial - tolerance
                 && axial <= self.max_axial + tolerance
@@ -1298,15 +1298,11 @@ impl ConicalTrim {
             let Some(point) = inverse_body.apply_point(*point) else {
                 return false;
             };
-            let axial = point.vector_from(self.origin).dot(self.axis);
+            let axial = point
+                .vector_from(self.origin)
+                .dot(*self.frame.axis().as_raw());
             let local_radius = self.radius + axial * self.slope;
-            let angular = cone_angle(
-                point,
-                self.origin,
-                self.axis,
-                self.ref_direction,
-                self.ratio,
-            );
+            let angular = cone_angle(point, self.origin, &self.frame, self.ratio);
             axial.is_finite()
                 && local_radius.is_finite()
                 && axial >= self.min_axial - tolerance
@@ -1438,9 +1434,8 @@ fn closed_planar_circle(
         return None;
     };
     let center = circle_curve.center().get();
-    let axis = circle_curve.frame().axis().as_raw();
+    let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let axis = axis.unit()?;
     let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
     let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
     if radius <= tolerance
@@ -1473,12 +1468,9 @@ fn planar_boundary_samples(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis().as_raw();
-            let ref_direction = circle_curve.frame().reference().as_raw();
+            let axis = *circle_curve.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(circle_curve.frame());
             let radius = circle_curve.radius().get();
-            let axis = axis.unit()?;
-            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-            let transverse = axis.cross(reference).unit()?;
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || radius <= tolerance
                 || analytic_surface_residual(surface.solved()?, center)? > tolerance
@@ -1523,16 +1515,11 @@ fn planar_boundary_samples(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis().as_raw();
-            let major_direction = ellipse_curve.frame().reference().as_raw();
+            let axis = *ellipse_curve.frame().axis().as_raw();
+            let major_direction = *ellipse_curve.frame().reference().as_raw();
+            let minor_direction = *ellipse_curve.frame().binormal().as_raw();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            let axis = axis.unit()?;
-            if major_direction.dot(axis).abs() > EPS_AXIS_ALIGNMENT {
-                return None;
-            }
-            let major_direction = major_direction.unit()?;
-            let minor_direction = axis.cross(major_direction).unit()?;
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || major_radius <= tolerance
                 || minor_radius <= tolerance
@@ -1886,10 +1873,9 @@ fn cylindrical_trim(
         return None;
     };
     let origin = cylinder_surface.origin().get();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
+    let frame = *cylinder_surface.frame();
+    let axis = *frame.axis().as_raw();
     let radius = cylinder_surface.radius().get();
-    let axis = axis.unit()?;
     if radius <= EPS_DISPLAY_QUANTIZATION {
         return None;
     }
@@ -1913,14 +1899,14 @@ fn cylindrical_trim(
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
-                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let curve_axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
-                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                if curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                     || (curve_radius - radius).abs() > tolerance
                 {
                     return None;
@@ -1954,7 +1940,7 @@ fn cylindrical_trim(
                 .into_iter()
                 .map(|vertex_id| {
                     let point = *points.get(&vertices.get(&vertex_id)?.point)?;
-                    cylinder_angle(point, origin, axis, *ref_direction)
+                    cylinder_angle(point, origin, &frame)
                 })
                 .collect::<Option<Vec<_>>>()
         })
@@ -1965,8 +1951,7 @@ fn cylindrical_trim(
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
         origin,
-        axis,
-        ref_direction: *ref_direction,
+        frame,
         radius,
         min_axial,
         max_axial,
@@ -1990,12 +1975,11 @@ fn conical_trim(
         return None;
     };
     let origin = cone_surface.origin().get();
-    let axis = cone_surface.frame().axis().as_raw();
-    let ref_direction = cone_surface.frame().reference().as_raw();
+    let frame = *cone_surface.frame();
+    let axis = *frame.axis().as_raw();
     let radius = cone_surface.radius().get();
     let ratio = cone_surface.ratio().get();
     let half_angle = cone_surface.half_angle().get();
-    let axis = axis.unit()?;
     let slope = half_angle.tan();
     if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
         return None;
@@ -2021,7 +2005,7 @@ fn conical_trim(
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
-                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                     return None;
                 }
             }
@@ -2042,12 +2026,10 @@ fn conical_trim(
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
                 let center = ellipse_curve.center().get();
                 let curve_axis = ellipse_curve.frame().axis().as_raw();
-                let major_direction = ellipse_curve.frame().reference().as_raw();
+                let major_direction = *ellipse_curve.frame().reference().as_raw();
                 let major_radius = ellipse_curve.major_radius().get();
                 let minor_radius = ellipse_curve.minor_radius().get();
-                let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-                let transverse = axis.cross(reference).unit()?;
-                let major_direction = major_direction.unit()?;
+                let (reference, transverse) = perpendicular_basis(&frame);
                 let center_delta = center.vector_from(origin);
                 let center_axial = center_delta.dot(axis);
                 let center_radial = center_delta - axis.scale(center_axial);
@@ -2063,7 +2045,7 @@ fn conical_trim(
                 } else {
                     false
                 };
-                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                if curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                     || major_radius <= tolerance
                     || minor_radius <= tolerance
                     || center_radial.norm() > tolerance
@@ -2077,7 +2059,7 @@ fn conical_trim(
                 let curve_axis = circle_curve.frame().axis().as_raw();
                 let curve_radius = circle_curve.radius().get();
                 if (ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
-                    || curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 {
                     return None;
                 }
@@ -2099,7 +2081,7 @@ fn conical_trim(
                 return None;
             }
             let axial = point.vector_from(origin).dot(axis);
-            let angle = cone_angle(point, origin, axis, *ref_direction, ratio)?;
+            let angle = cone_angle(point, origin, &frame, ratio)?;
             if !axial.is_finite() || !angle.is_finite() {
                 return None;
             }
@@ -2114,8 +2096,7 @@ fn conical_trim(
     let (angular_start, angular_span) = circular_interval(&angles)?;
     (max_axial - min_axial > tolerance).then_some(ConicalTrim {
         origin,
-        axis,
-        ref_direction: *ref_direction,
+        frame,
         radius,
         ratio,
         slope,
@@ -2126,15 +2107,25 @@ fn conical_trim(
     })
 }
 
-fn cylinder_angle(
-    point: Point3,
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-) -> Option<f64> {
-    let axis = axis.unit()?;
-    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-    let transverse = axis.cross(reference).unit()?;
+/// The reference of `frame` minus its component along the axis, and the axis
+/// cross that projection, each divided by its length.
+///
+/// The frame holds unit directions perpendicular within `1e-9`, so each length
+/// is within about `2e-9` of one, and the two results are unit length and
+/// perpendicular to the axis and to each other to rounding.
+fn perpendicular_basis(frame: &OrthonormalFrame3) -> (Vector3, Vector3) {
+    let divided = |vector: Vector3| {
+        let length = vector.norm();
+        Vector3::new(vector.x / length, vector.y / length, vector.z / length)
+    };
+    let axis = *frame.axis().as_raw();
+    let reference = *frame.reference().as_raw();
+    let reference = divided(reference - axis.scale(reference.dot(axis)));
+    (reference, divided(axis.cross(reference)))
+}
+
+fn cylinder_angle(point: Point3, origin: Point3, frame: &OrthonormalFrame3) -> Option<f64> {
+    let (reference, transverse) = perpendicular_basis(frame);
     let delta = point.vector_from(origin);
     let angle = delta.dot(transverse).atan2(delta.dot(reference));
     angle
@@ -2142,19 +2133,11 @@ fn cylinder_angle(
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn cone_angle(
-    point: Point3,
-    origin: Point3,
-    axis: Vector3,
-    ref_direction: Vector3,
-    ratio: f64,
-) -> Option<f64> {
+fn cone_angle(point: Point3, origin: Point3, frame: &OrthonormalFrame3, ratio: f64) -> Option<f64> {
     if !ratio.is_finite() || ratio <= 0.0 {
         return None;
     }
-    let axis = axis.unit()?;
-    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-    let transverse = axis.cross(reference).unit()?;
+    let (reference, transverse) = perpendicular_basis(frame);
     let delta = point.vector_from(origin);
     let major = delta.dot(reference);
     let minor = delta.dot(transverse);
@@ -2625,14 +2608,10 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
     };
     match surface {
-        SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let normal = plane_surface.frame().axis().as_raw();
-            normal.unit()
-        }
+        SolvedSurfaceGeometry::Plane(plane_surface) => Some(*plane_surface.frame().axis().as_raw()),
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis().as_raw();
-            let axis = axis.unit()?;
+            let axis = *cylinder_surface.frame().axis().as_raw();
             let delta = subtract(point, origin);
             let radial = delta - axis.scale(delta.dot(axis));
             radial.unit()
@@ -2643,9 +2622,8 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
+            let axis = *torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            let axis = axis.unit()?;
             let delta = subtract(point, center);
             let axial = delta.dot(axis);
             let radial = delta - axis.scale(axial);
@@ -2654,14 +2632,11 @@ fn analytic_surface_normal(surface: &SolvedSurfaceGeometry, point: Point3) -> Op
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let ref_direction = cone_surface.frame().reference().as_raw();
+            let axis = *cone_surface.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(cone_surface.frame());
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
-            let axis = axis.unit()?;
-            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
-            let transverse = axis.cross(reference).unit()?;
             let slope = half_angle.tan();
             if !slope.is_finite() {
                 return None;
@@ -2704,20 +2679,14 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
-            Some(subtract(point, origin).dot(*normal).abs() / normal.norm())
+            Some(subtract(point, origin).dot(*normal).abs())
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis().as_raw();
+            let axis = *cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
             let delta = subtract(point, origin);
-            let axis_length = axis.norm();
-            let axial = delta.dot(*axis) / axis_length;
-            let radial = Vector3::new(
-                delta.x - axis.x * axial / axis_length,
-                delta.y - axis.y * axial / axis_length,
-                delta.z - axis.z * axial / axis_length,
-            );
+            let radial = delta - axis.scale(delta.dot(axis));
             Some((radial.norm() - radius).abs())
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
@@ -2727,17 +2696,12 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
+            let axis = *torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
             let delta = subtract(point, center);
-            let axis_length = axis.norm();
-            let axial = delta.dot(*axis) / axis_length;
-            let radial = Vector3::new(
-                delta.x - axis.x * axial / axis_length,
-                delta.y - axis.y * axial / axis_length,
-                delta.z - axis.z * axial / axis_length,
-            );
+            let axial = delta.dot(axis);
+            let radial = delta - axis.scale(axial);
             Some(
                 (((radial.norm() - major_radius).powi(2) + axial.powi(2)).sqrt() - minor_radius)
                     .abs(),
@@ -2745,18 +2709,11 @@ fn analytic_surface_residual(surface: &SolvedSurfaceGeometry, point: Point3) -> 
         }
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let ref_direction = cone_surface.frame().reference().as_raw();
+            let axis = *cone_surface.frame().axis().as_raw();
+            let (reference, transverse) = perpendicular_basis(cone_surface.frame());
             let radius = cone_surface.radius().get();
             let ratio = cone_surface.ratio().get();
             let half_angle = cone_surface.half_angle().get();
-            let unit = |vector: Vector3| {
-                let length = vector.norm();
-                (length.is_finite() && length > f64::EPSILON).then(|| vector.scale(1.0 / length))
-            };
-            let axis = unit(*axis)?;
-            let reference = unit(*ref_direction - axis.scale((*ref_direction).dot(axis)))?;
-            let transverse = unit(axis.cross(reference))?;
             let slope = half_angle.tan();
             if !slope.is_finite() {
                 return None;

@@ -312,6 +312,23 @@ impl UnitVector3 {
     pub const fn as_raw(&self) -> &Vector3 {
         &self.0
     }
+    /// The direction divided by its length.
+    ///
+    /// The admission holds the length within `1e-9` of one and does not
+    /// rescale the direction. The length is therefore finite and nonzero,
+    /// and the quotients have unit length to rounding, which keeps the
+    /// admission. A reader that needs unit length to rounding, such as a
+    /// rotation about the direction or a matrix read at printed precision,
+    /// uses this value.
+    #[must_use]
+    pub fn to_unit_length(self) -> Self {
+        let length = self.0.norm();
+        Self(Vector3::new(
+            self.0.x / length,
+            self.0.y / length,
+            self.0.z / length,
+        ))
+    }
     /// Reverse the direction.
     #[must_use]
     pub fn reversed(self) -> Self {
@@ -739,6 +756,29 @@ mod tests {
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn an_admitted_direction_at_unit_length_is_divided_by_its_length() {
+        for (admitted, expected) in [
+            (
+                Vector3::new(0.0, 0.0, 1.0 + 5.0e-10),
+                Vector3::new(0.0, 0.0, 1.0),
+            ),
+            (
+                Vector3::new(-1.0 + 8.0e-10, 0.0, 0.0),
+                Vector3::new(-1.0, 0.0, 0.0),
+            ),
+            (Vector3::new(0.6, 0.8, 0.0), Vector3::new(0.6, 0.8, 0.0)),
+        ] {
+            let direction = UnitVector3::new(admitted).expect("admitted direction");
+            let unit = direction.to_unit_length();
+            assert!((unit.as_raw().x - expected.x).abs() <= f64::EPSILON);
+            assert!((unit.as_raw().y - expected.y).abs() <= f64::EPSILON);
+            assert!((unit.as_raw().z - expected.z).abs() <= f64::EPSILON);
+            assert!((unit.as_raw().norm() - 1.0).abs() <= 2.0 * f64::EPSILON);
+            assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+        }
+    }
 
     #[test]
     fn a_normalized_direction_keeps_the_unit_admission() {

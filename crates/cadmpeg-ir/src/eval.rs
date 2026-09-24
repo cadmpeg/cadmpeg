@@ -32,6 +32,7 @@ use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{NonNegativeLength, NonNegativeReal};
 use crate::transform::Transform;
+use crate::units::UnitVector3;
 use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
@@ -3343,6 +3344,14 @@ fn model_curve_differential_by_id_inner(
     })
 }
 
+/// The admitted revolution axis scaled by the reciprocal of its length. The
+/// admission holds the length within `1e-9` of one without rescaling, and the
+/// rotation needs unit length to rounding.
+fn unit_length_axis(direction: UnitVector3) -> Vector3 {
+    let direction = *direction.as_raw();
+    scale_vector(direction, 1.0 / direction.norm())
+}
+
 fn unit_axis(direction: Vector3) -> Option<Vector3> {
     let length = direction.norm();
     (length.is_finite() && length > f64::EPSILON).then(|| scale_vector(direction, 1.0 / length))
@@ -3362,7 +3371,7 @@ fn model_axis_revolution_point(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     axis_origin: Point3,
-    axis_direction: Vector3,
+    axis_direction: UnitVector3,
     angle: f64,
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
@@ -3370,7 +3379,7 @@ fn model_axis_revolution_point(
     if !angle.is_finite() {
         return None;
     }
-    let axis = unit_axis(axis_direction)?;
+    let axis = unit_length_axis(axis_direction);
     let point = budget.map_or_else(
         || model_curve_point_by_id(index, directrix, parameter),
         |budget| model_curve_point_by_id_with_budget(index, directrix, parameter, budget),
@@ -3390,7 +3399,7 @@ fn model_axis_revolution_partials(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     axis_origin: Point3,
-    axis_direction: Vector3,
+    axis_direction: UnitVector3,
     angle: f64,
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
@@ -3398,7 +3407,7 @@ fn model_axis_revolution_partials(
     if !angle.is_finite() {
         return None;
     }
-    let axis = unit_axis(axis_direction)?;
+    let axis = unit_length_axis(axis_direction);
     let differential = budget.map_or_else(
         || model_curve_differential_by_id(index, directrix, parameter),
         |budget| model_curve_differential_by_id_with_budget(index, directrix, parameter, budget),
@@ -3667,7 +3676,7 @@ fn model_native_revolution_partials(
         index,
         directrix,
         *construction.axis_origin(),
-        *construction.axis_direction(),
+        construction.axis_direction(),
         angle,
         directrix_parameter,
         budget,
@@ -5023,7 +5032,7 @@ pub fn model_surface_point(
                 &index,
                 definition_payload.directrix(),
                 *definition_payload.axis_origin(),
-                *definition_payload.axis_direction(),
+                definition_payload.axis_direction(),
                 u,
                 v,
                 None,
@@ -6663,7 +6672,7 @@ fn model_surface_point_by_id_inner(
                     index,
                     definition_payload.directrix(),
                     *definition_payload.axis_origin(),
-                    *definition_payload.axis_direction(),
+                    definition_payload.axis_direction(),
                     u,
                     v,
                     budget,
@@ -7166,7 +7175,7 @@ fn model_surface_mapping(
                     index,
                     definition_payload.directrix(),
                     *definition_payload.axis_origin(),
-                    *definition_payload.axis_direction(),
+                    definition_payload.axis_direction(),
                     u,
                     v,
                     budget,
