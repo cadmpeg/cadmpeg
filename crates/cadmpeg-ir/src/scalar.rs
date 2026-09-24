@@ -434,6 +434,25 @@ impl FiniteReal {
         Self(self.0.atan2(x.0))
     }
 
+    /// An index as a real. Every `usize` converts to a finite `f64`.
+    #[must_use]
+    pub(crate) fn from_index(index: usize) -> Self {
+        Self(index as f64)
+    }
+
+    /// Half the value. Half a finite value is finite.
+    #[must_use]
+    pub(crate) fn halved(self) -> Self {
+        Self(self.0 * 0.5)
+    }
+
+    /// The midpoint of `self` and `other`. The midpoint of two finite values
+    /// is finite.
+    #[must_use]
+    pub(crate) fn midpoint(self, other: Self) -> Self {
+        Self(self.0.midpoint(other.0))
+    }
+
     /// Admit a normal value or a zero. Every normal value and every zero is
     /// finite, so the one predicate states the whole admission.
     pub(crate) fn normal_or_zero(value: f64) -> Option<Self> {
@@ -569,6 +588,37 @@ impl crate::topology::ParameterInterval {
         let [start, end] = self.endpoints();
         [FiniteReal(start), FiniteReal(end)]
     }
+
+    /// The point of the interval nearest `value`: `value` itself inside the
+    /// interval, its nearer endpoint outside. The endpoints are finite and
+    /// ordered, so the nearest point is finite and nothing is checked. The
+    /// route lives beside [`FiniteReal`] because only this module constructs
+    /// one.
+    #[must_use]
+    pub(crate) fn project(self, value: ExtendedReal) -> FiniteReal {
+        let [start, end] = self.endpoints();
+        FiniteReal(value.0.clamp(start, end))
+    }
+}
+
+impl<const N: usize> crate::units::FiniteVector<N> {
+    /// The components as finite reals. The vector admits only finite
+    /// components, so nothing is checked. The route lives beside
+    /// [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub(crate) fn finite_components(self) -> [FiniteReal; N] {
+        self.get().map(FiniteReal)
+    }
+}
+
+impl crate::geometry::nurbs::KnotVector {
+    /// The knot at `index` as a finite real, absent past the last knot. The
+    /// vector admits only finite knots, so nothing is checked. The route
+    /// lives beside [`FiniteReal`] because only this module constructs one.
+    #[must_use]
+    pub(crate) fn finite_knot(&self, index: usize) -> Option<FiniteReal> {
+        self.as_slice().get(index).map(|knot| FiniteReal(*knot))
+    }
 }
 
 impl crate::geometry::DirectedParameterRange {
@@ -636,6 +686,17 @@ impl ExtendedReal {
     /// A finite value.
     pub(crate) const fn from_finite(value: FiniteReal) -> Self {
         Self(value.0)
+    }
+
+    /// Admit a value that is not NaN.
+    pub(crate) fn new(value: f64) -> Option<Self> {
+        (!value.is_nan()).then_some(Self(value))
+    }
+
+    /// `origin - scale * step`. The product of two finite values is finite
+    /// or infinite, and a finite value less it is finite or infinite.
+    pub(crate) fn stepped(origin: FiniteReal, scale: FiniteReal, step: FiniteReal) -> Self {
+        Self(origin.0 - scale.0 * step.0)
     }
 
     /// The hypotenuse `hypot(x, y)` of two finite values: finite or `+inf`.

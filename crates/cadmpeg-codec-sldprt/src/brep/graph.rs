@@ -3998,7 +3998,7 @@ fn intersection_support_pcurve(
                         control_points.last().copied(),
                         support_data.fit_tolerance_mm,
                     )?;
-                    control_points.push(parameters);
+                    control_points.push(parameters.get());
                 }
                 (control_points, IntersectionPcurveSource::NurbsInverse)
             }
@@ -4067,7 +4067,8 @@ fn intersection_support_pcurve(
                 target,
                 Some(control_points[index]),
                 tolerance,
-            )?;
+            )?
+            .get();
         }
     } else {
         let adjust_periodic = |parameter: f64, reference: f64| {
@@ -4923,7 +4924,7 @@ fn nurbs_edge_endpoint_parameters(
     let project = |point| {
         let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
         let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
-        (Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters)
+        (Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters.get())
     };
     Some([project(first.get())?, project(last.get())?])
 }
@@ -4940,7 +4941,8 @@ fn nurbs_curve_surface_deviation(
         let point = nurbs_curve_point_at(curve, parameter)?;
         let parameters = seed
             .and_then(|seed| nurbs_surface_parameter_near_point(surface, point.get(), Some(seed)))
-            .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?;
+            .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?
+            .get();
         let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v)?;
         seed = Some(parameters);
         maximum = maximum.max(Point3::distance(point.get(), surface_point.get()));
@@ -4965,7 +4967,8 @@ fn nurbs_degree_one_cache_lanes(
     for point in &curve_points {
         let parameters = seed
             .and_then(|seed| nurbs_surface_parameter_near_point(surface, *point, Some(seed)))
-            .or_else(|| nurbs_surface_parameter_near_point(surface, *point, None))?;
+            .or_else(|| nurbs_surface_parameter_near_point(surface, *point, None))?
+            .get();
         seed = Some(parameters);
         control_points.push(parameters);
     }

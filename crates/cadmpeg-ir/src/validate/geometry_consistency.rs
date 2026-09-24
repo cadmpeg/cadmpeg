@@ -17,7 +17,8 @@ use crate::report::{
     check::{Check, Finding},
     Severity,
 };
-use crate::topology::Sense;
+use crate::scalar::{ExtendedReal, FiniteReal};
+use crate::topology::{ParameterInterval, Sense};
 
 use crate::units::COINCIDENCE_TOLERANCE;
 
@@ -705,7 +706,7 @@ fn pcurve_parameter_ranges(
     ranges.extend(pcurve_parameter_extremes(pcurve));
     if !ranges.is_empty() {
         if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
-            ranges.push(domain);
+            ranges.push(domain.endpoints());
         }
     }
     (!ranges.is_empty()).then_some(ranges)
@@ -741,17 +742,22 @@ fn edge_pcurve_parameter_ranges(
         .filter_map(|seed| {
             mapped_pcurve_parameter_near_point(context, &first.geometry, start, seed, tolerance)
         });
-    let start_parameters = unique_finite(start_parameters);
+    let start_parameters = unique(start_parameters);
     let end_parameters = pcurve_parameter_seeds_on_surface(context, last)
         .into_iter()
         .filter_map(|seed| {
             mapped_pcurve_parameter_near_point(context, &last.geometry, end, seed, tolerance)
         });
-    let end_parameters = unique_finite(end_parameters);
+    let end_parameters = unique(end_parameters);
     let ranges = start_parameters
         .iter()
         .copied()
-        .flat_map(|start| end_parameters.iter().copied().map(move |end| [start, end]))
+        .flat_map(|start| {
+            end_parameters
+                .iter()
+                .copied()
+                .map(move |end| [start.get(), end.get()])
+        })
         .collect::<Vec<_>>();
     if !ranges.is_empty() {
         return Some(ranges);
@@ -773,17 +779,22 @@ fn edge_pcurve_parameter_ranges(
         .into_iter()
         .chain(pcurve_parameter_seeds_on_surface(context, last))
         .collect::<Vec<_>>();
-    let start_parameters = seeds
-        .iter()
-        .filter_map(|&seed| curve_parameter_near_point(curve_geometry, start, seed, tolerance));
-    let start_parameters = unique_finite(start_parameters);
+    let start_parameters = seeds.iter().filter_map(|seed| {
+        curve_parameter_near_point(curve_geometry, start, seed.get(), tolerance)
+    });
+    let start_parameters = unique(start_parameters);
     let end_parameters = seeds
         .iter()
-        .filter_map(|&seed| curve_parameter_near_point(curve_geometry, end, seed, tolerance));
-    let end_parameters = unique_finite(end_parameters);
+        .filter_map(|seed| curve_parameter_near_point(curve_geometry, end, seed.get(), tolerance));
+    let end_parameters = unique(end_parameters);
     let ranges = start_parameters
         .into_iter()
-        .flat_map(|start| end_parameters.iter().copied().map(move |end| [start, end]))
+        .flat_map(|start| {
+            end_parameters
+                .iter()
+                .copied()
+                .map(move |end| [start.get(), end.get()])
+        })
         .collect::<Vec<_>>();
     (!ranges.is_empty()).then_some(ranges)
 }
@@ -796,18 +807,26 @@ fn mapped_pcurve_parameter_near_point(
     context: &SurfacePcurveContext<'_, '_>,
     pcurve_geometry: &PcurveGeometry,
     target: Point3,
-    seed: f64,
+    seed: FiniteReal,
     tolerance: f64,
-) -> Option<f64> {
-    if !seed.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
+) -> Option<FiniteReal> {
+    if !tolerance.is_finite() || tolerance < 0.0 {
         return None;
     }
-    let domain = pcurve_parameter_domain(pcurve_geometry);
-    let clamp_to_domain =
-        |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
+    let domain = pcurve_parameter_domain(pcurve_geometry).map(ParameterInterval::from);
+    // A step projects onto the pcurve domain. Without a domain, a step past
+    // the finite range reaches no pcurve point at a finite distance, so the
+    // search ends there.
+    let stepped = |parameter: FiniteReal, step: FiniteReal| match domain {
+        Some(domain) => {
+            Some(domain.project(ExtendedReal::stepped(parameter, FiniteReal::ONE, step)))
+        }
+        None => FiniteReal::new(parameter.get() - step.get()),
+    };
     // A non-finite pcurve or surface point is evaluated as a finite one is;
     // the search reads its non-finite distance.
-    let evaluate = |parameter: f64| {
+    let evaluate = |parameter: FiniteReal| {
+        let parameter = parameter.get();
         let uv = match pcurve_uv(pcurve_geometry, parameter) {
             Ok(uv) => uv.get(),
             Err(failure) => failure.non_finite()?,
@@ -826,21 +845,24 @@ fn mapped_pcurve_parameter_near_point(
         Some((point, tangent))
     };
     let mismatch = |point: Point3| Point3::distance(point, target);
-    let mut parameter = clamp_to_domain(seed);
+    let mut parameter = domain.map_or(seed, |domain| {
+        domain.project(ExtendedReal::from_finite(seed))
+    });
     for _ in 0..32 {
         let (point, tangent) = evaluate(parameter)?;
         let error = mismatch(point);
         if error.is_finite() && error <= tolerance {
             return Some(parameter);
         }
-        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?.get();
-        let mut candidate = clamp_to_domain(parameter - step);
+        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?;
+        let mut candidate = stepped(parameter, step)?;
         let mut candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
         for _ in 0..12 {
             if candidate_error <= error {
                 break;
             }
-            candidate = clamp_to_domain(candidate.midpoint(parameter));
+            // Both parameters lie in the domain, so their midpoint does too.
+            candidate = candidate.midpoint(parameter);
             candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
         }
         if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
@@ -851,10 +873,14 @@ fn mapped_pcurve_parameter_near_point(
     None
 }
 
-fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<f64> {
+fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<FiniteReal> {
+    unique(values.into_iter().filter_map(FiniteReal::new))
+}
+
+fn unique(values: impl IntoIterator<Item = FiniteReal>) -> Vec<FiniteReal> {
     let mut unique = Vec::new();
     for value in values {
-        if value.is_finite() && !unique.contains(&value) {
+        if !unique.contains(&value) {
             unique.push(value);
         }
     }
@@ -866,22 +892,23 @@ fn pcurve_parameter_seeds(pcurve: &crate::geometry::pcurve::Pcurve) -> Vec<f64> 
     if let Some(range) = pcurve.parameter_range() {
         seeds.extend(range.get());
     }
-    if let Some([start, end]) = pcurve_parameter_domain(&pcurve.geometry) {
+    if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
+        let [start, end] = domain.endpoints();
         seeds.extend([start, start + (end - start) * 0.5, end]);
     }
-    unique_finite(seeds)
+    seeds
 }
 
 fn pcurve_parameter_seeds_on_surface(
     context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::pcurve::Pcurve,
-) -> Vec<f64> {
+) -> Vec<FiniteReal> {
     let mut seeds = pcurve_parameter_seeds(pcurve);
     let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
-        return seeds;
+        return unique_finite(seeds);
     };
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(context) else {
-        return seeds;
+        return unique_finite(seeds);
     };
     for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
         if direction.u != 0.0 {

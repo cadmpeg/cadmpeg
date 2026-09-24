@@ -198,7 +198,8 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
         target.get(),
         1.5,
     )
-    .expect("helix inverse");
+    .expect("helix inverse")
+    .get();
     assert!((0.25..=2.0).contains(&inverse));
     let resolved = super::model_curve_point_by_id(&index, &curve_id, inverse)
         .expect("forward-validated helix inverse");

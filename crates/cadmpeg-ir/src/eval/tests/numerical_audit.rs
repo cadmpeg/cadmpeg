@@ -310,21 +310,26 @@ fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
 #[test]
 fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     use super::super::{polyline_point, polyline_tangent};
+    use crate::features::FinitePoint3;
+    use crate::scalar::FiniteReal;
+    let far = [
+        FinitePoint3::new(Point3::new(-1e308, 0.0, 0.0)).unwrap(),
+        FinitePoint3::new(Point3::new(1e308, 0.0, 0.0)).unwrap(),
+    ];
     assert_eq!(
-        polyline_point(
-            &[Point3::new(-1e308, 0.0, 0.0), Point3::new(1e308, 0.0, 0.0)],
-            &[0.0, 1.0],
-            0.5
-        )
-        .map(crate::features::FinitePoint3::get),
+        polyline_point(&far, &[FiniteReal::ZERO, FiniteReal::ONE], 0.5).map(FinitePoint3::get),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
-    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let points = [
+        FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+    ];
+    let wide = FiniteReal::array([-1e308, 1e308]).unwrap();
     assert_eq!(
-        polyline_point(&points, &[-1e308, 1e308], 0.0).map(crate::features::FinitePoint3::get),
+        polyline_point(&points, &wide, 0.0).map(FinitePoint3::get),
         Some(Point3::new(0.5, 0.0, 0.0))
     );
-    let tangent = polyline_tangent(&points, &[-1e308, 1e308], 0.0).unwrap();
+    let tangent = polyline_tangent(&points, &wide, 0.0).unwrap();
     assert!((tangent.x / 5e-309 - 1.0).abs() <= 8.0 * f64::EPSILON);
 }
 

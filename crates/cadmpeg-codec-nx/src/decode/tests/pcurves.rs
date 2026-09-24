@@ -436,7 +436,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             parameter,
         )
         .unwrap_or_else(|| panic!("closed intersection inverts at parameter {parameter}"));
-        assert!((inverse - parameter).abs() < 1.0e-10);
+        assert!((inverse.get() - parameter).abs() < 1.0e-10);
     }
 }
 

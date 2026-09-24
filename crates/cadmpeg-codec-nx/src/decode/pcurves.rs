@@ -1783,9 +1783,6 @@ fn exact_boundary_pcurve_with_index(
         )?,
     ];
     for index in 0..2 {
-        if !parameters[index].u.is_finite() || !parameters[index].v.is_finite() {
-            return None;
-        }
         if !geometry_budget.charge() {
             return None;
         }
@@ -3147,6 +3144,7 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache(
                 tolerance,
                 geometry_budget,
             )
+            .map(FinitePoint2::get)
         }
         None => {
             let offset = match seed {

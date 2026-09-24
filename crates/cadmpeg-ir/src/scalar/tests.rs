@@ -370,3 +370,63 @@ fn a_finite_point_carries_its_coordinates_into_a_finite_vector() {
     let point = FinitePoint2::new(Point2::new(-1.5, 4.0)).unwrap();
     assert_eq!(FiniteVector::from(point).get(), [-1.5, 4.0]);
 }
+
+#[test]
+fn an_interval_projects_a_value_onto_its_nearest_point() {
+    use crate::scalar::{ExtendedReal, FiniteReal};
+    use crate::topology::ParameterInterval;
+
+    let interval = ParameterInterval::new([-1.0, 2.0]).unwrap();
+    let project = |value| interval.project(ExtendedReal::new(value).unwrap()).get();
+    assert_eq!(project(0.5), 0.5);
+    assert_eq!(project(-3.0), -1.0);
+    assert_eq!(project(5.0), 2.0);
+    assert_eq!(project(f64::INFINITY), 2.0);
+    assert_eq!(project(f64::NEG_INFINITY), -1.0);
+    assert!(ExtendedReal::new(f64::NAN).is_none());
+
+    // A step past the finite range projects onto the nearer endpoint.
+    let far = FiniteReal::new(-f64::MAX).unwrap();
+    let step = FiniteReal::new(f64::MAX).unwrap();
+    assert_eq!(
+        interval
+            .project(ExtendedReal::stepped(far, FiniteReal::ONE, step))
+            .get(),
+        -1.0
+    );
+    assert_eq!(
+        interval
+            .project(ExtendedReal::stepped(step, FiniteReal::ONE, far))
+            .get(),
+        2.0
+    );
+    assert_eq!(
+        interval
+            .project(ExtendedReal::stepped(
+                FiniteReal::ONE,
+                FiniteReal::new(0.5).unwrap(),
+                FiniteReal::ONE
+            ))
+            .get(),
+        0.5
+    );
+}
+
+#[test]
+fn finite_reals_halve_average_and_count_without_a_check() {
+    use crate::scalar::FiniteReal;
+    use crate::units::FiniteVector;
+
+    let max = FiniteReal::new(f64::MAX).unwrap();
+    assert_eq!(max.midpoint(max).get(), f64::MAX);
+    assert_eq!(max.midpoint(max.negated()).get(), 0.0);
+    assert_eq!(max.halved().get(), f64::MAX / 2.0);
+    assert_eq!(FiniteReal::from_index(7).get(), 7.0);
+    assert_eq!(
+        FiniteVector::<2>::new([1.5, -2.0])
+            .unwrap()
+            .finite_components()
+            .map(FiniteReal::get),
+        [1.5, -2.0]
+    );
+}

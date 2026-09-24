@@ -71,8 +71,9 @@ fn curve_search_admits_its_tolerance_before_the_search() {
         );
     }
     let tolerance = crate::scalar::NonNegativeLength::new(2e-3).unwrap();
+    let seed = crate::scalar::FiniteReal::new(0.5).unwrap();
     let parameter =
-        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, 0.5);
+        nurbs_curve_parameter_near_point_with_nonnegative_tolerance(&curve, point, tolerance, seed);
     assert!(parameter.is_some());
     assert_eq!(
         parameter,
@@ -98,7 +99,8 @@ fn numerical_followup_rational_search_retains_common_weight_scaling() {
             Some(1.0)
         );
         assert_eq!(
-            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.),
+            nurbs_curve_parameter_near_point(&curve, poles[0], 0., 0.)
+                .map(crate::scalar::FiniteReal::get),
             Some(0.0)
         );
         assert_eq!(
@@ -207,7 +209,7 @@ fn analytic_line_search_preserves_subnormal_scale_residuals() {
         direct_curve_parameter_near_point(
             &line,
             Point3::new(0., 1e-200, 0.),
-            0.,
+            crate::scalar::FiniteReal::ZERO,
             crate::scalar::NonNegativeLength::ZERO,
         ),
         None

@@ -1310,7 +1310,10 @@ fn initial_surface_parameters_with_index_and_budget(
     let carrier = index.surfaces(surface.as_str())?;
     match &carrier.geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => fit_tolerance.map_or_else(
-            || nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget),
+            || {
+                nurbs_surface_closest_parameter_with_budget(nurbs, point, seed, geometry_budget)
+                    .map(FinitePoint2::get)
+            },
             |tolerance| {
                 nurbs_surface_parameter_within_tolerance_with_budget(
                     nurbs,
@@ -1319,6 +1322,7 @@ fn initial_surface_parameters_with_index_and_budget(
                     tolerance,
                     geometry_budget,
                 )
+                .map(FinitePoint2::get)
             },
         ),
         SurfaceGeometry::Procedural { construction, .. } => {
@@ -1591,6 +1595,7 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                     fit_tolerance,
                     geometry_budget,
                 )
+                .map(FinitePoint2::get)
             }
             SurfaceGeometry::Procedural { .. } => {
                 offset_surface_parameters_with_tolerance_with_index_and_budget(

@@ -23,6 +23,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 
@@ -122,7 +123,7 @@ pub(super) fn infer_edge_parameter_ranges(
                 start,
                 start_seed,
             )?;
-            let end_seed = curve_endpoint_seed(geometry.solved()?, true, start_parameter);
+            let end_seed = curve_endpoint_seed(geometry.solved()?, true, start_parameter.get());
             let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
@@ -168,10 +169,11 @@ fn curve_endpoint_seed(geometry: &SolvedCurveGeometry, upper: bool, fallback: f6
     }
 }
 
-fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
-    if !start.is_finite() || !end.is_finite() {
-        return None;
-    }
+fn edge_parameter_range(
+    geometry: &SolvedCurveGeometry,
+    start: FiniteReal,
+    end: FiniteReal,
+) -> Option<[f64; 2]> {
     let periodic_domain = match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             Some([0.0, std::f64::consts::TAU])
@@ -185,6 +187,7 @@ fn edge_parameter_range(geometry: &SolvedCurveGeometry, start: f64, end: f64) ->
         }
         _ => None,
     };
+    let (start, end) = (start.get(), end.get());
     let Some([lower, upper]) = periodic_domain else {
         return (end > start).then_some([start, end]);
     };
@@ -3857,6 +3860,7 @@ fn curve_parameter_at_point(
         SolvedCurveGeometry::Nurbs(curve) => {
             let domain = nurbs_curve_parameter_domain(curve)?.endpoints();
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
+                .map(FiniteReal::get)
         }
         SolvedCurveGeometry::Transformed(placed) => curve_parameter_at_point(
             placed.basis(),

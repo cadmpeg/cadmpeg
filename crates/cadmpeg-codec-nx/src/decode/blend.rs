@@ -3403,6 +3403,7 @@ fn surface_contact_direction_with_index_and_budget(
                 radius + tolerance,
                 geometry_budget,
             )
+            .map(cadmpeg_ir::units::FinitePoint2::get)
         }
         None => offset_surface_parameters_with_tolerance_with_index_and_budget(
             index,

@@ -558,7 +558,11 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
         },
         metadata: PcurveMetadata::default(),
     };
-    assert_eq!(pcurve_parameter_domain(&pcurve.geometry), Some([0.0, 1.0]));
+    assert_eq!(
+        pcurve_parameter_domain(&pcurve.geometry)
+            .map(crate::topology::IncreasingParameterInterval::endpoints),
+        Some([0.0, 1.0])
+    );
     assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
 }
 
@@ -581,7 +585,11 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
         )
         .unwrap(),
     );
-    assert_eq!(pcurve_parameter_domain(&geometry), Some([0.0, 1.0]));
+    assert_eq!(
+        pcurve_parameter_domain(&geometry)
+            .map(crate::topology::IncreasingParameterInterval::endpoints),
+        Some([0.0, 1.0])
+    );
 }
 
 #[test]
@@ -644,7 +652,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         geometry: &surface,
     };
     let seeds = pcurve_parameter_seeds_on_surface(&context, &pcurve);
-    assert!(seeds.contains(&0.5));
+    assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
     let ranges = edge_pcurve_parameter_ranges(
         &context,
@@ -1305,11 +1313,68 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         target_parameter,
         0.0,
     );
-    let parameter =
-        mapped_pcurve_parameter_near_point(&context, &parabola, target, 1.0e152, 1.0e300)
-            .expect("the halved step reaches the target");
+    let seed = crate::scalar::FiniteReal::new(1.0e152).expect("finite seed");
+    let parameter = mapped_pcurve_parameter_near_point(&context, &parabola, target, seed, 1.0e300)
+        .expect("the halved step reaches the target")
+        .get();
     assert!(
         (parameter / target_parameter - 1.0).abs() < 1.0e-6,
         "{parameter}"
+    );
+}
+
+#[test]
+fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite_range() {
+    // The line pcurve `(t / 2, 0)` on the plane through the origin maps to
+    // `(t / 2, 0, 0)`. From t = -1e308 the Newton step toward x = -1e308
+    // lands at t = -2e308, past the finite range; toward x = -4e307 it
+    // lands at t = -8e307.
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let surface_id =
+        SurfaceId::mint("test:model:surface#far-line".to_string()).expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface.clone(),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let context = SurfacePcurveContext {
+        index: &index,
+        surface_id: &surface_id,
+        geometry: &surface,
+    };
+    let line = PcurveGeometry::Line(
+        crate::geometry::pcurve::LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0))
+            .unwrap(),
+    );
+    let seed = crate::scalar::FiniteReal::new(-1.0e308).expect("finite seed");
+    assert_eq!(
+        mapped_pcurve_parameter_near_point(
+            &context,
+            &line,
+            Point3::new(-1.0e308, 0.0, 0.0),
+            seed,
+            1.0
+        ),
+        None
+    );
+    assert_eq!(
+        mapped_pcurve_parameter_near_point(
+            &context,
+            &line,
+            Point3::new(-4.0e307, 0.0, 0.0),
+            seed,
+            1.0
+        )
+        .map(crate::scalar::FiniteReal::get),
+        Some(-8.0e307)
     );
 }
