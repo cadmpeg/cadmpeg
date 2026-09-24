@@ -579,3 +579,21 @@ fn a_vector_charts_by_the_binade_of_its_largest_component() {
     assert!((0.5..1.0).contains(&x.get()));
     assert!(FiniteVector3::ZERO.binade_chart().is_none());
 }
+
+#[test]
+fn a_unit_component_below_the_normal_range_is_one_quotient_of_its_component() {
+    use crate::features::FiniteVector3;
+    use crate::math::Vector3;
+
+    // The chart halves (1, 1e-320, 0): 1e-320 charts below the normal range,
+    // so its unit component is 1e-320 over the chart's norm 1/2, times 1/2,
+    // rounded once: 1e-320 itself.
+    let tiny = 1.0e-320;
+    let unit = FiniteVector3::new(Vector3::new(1.0, tiny, 0.0))
+        .expect("finite vector")
+        .unit_nonzero()
+        .expect("a nonzero vector has a direction");
+    assert_eq!(unit.x, 1.0);
+    assert_eq!(unit.y.to_bits(), tiny.to_bits());
+    assert_eq!(unit.z, 0.0);
+}
