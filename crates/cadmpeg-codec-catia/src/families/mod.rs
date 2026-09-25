@@ -26,16 +26,6 @@ pub(crate) struct FamilyOutput {
     pub(crate) unknowns: Vec<UnknownRecord>,
 }
 
-impl FamilyOutput {
-    pub(crate) fn admit_entities(self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let count = u64::try_from(self.ir.model.entity_count()).map_err(|_| {
-            ctx.refuse_codec_limit("count CATIA family entities", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_entities(count, "admit CATIA family entities")?;
-        Ok(self)
-    }
-}
-
 /// One entry in the ordered decode route table.
 ///
 /// `applicable` gates the route on the identified container [`Variant`].

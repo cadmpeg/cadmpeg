@@ -207,6 +207,12 @@ fn finish_decode(
             .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
     }
     report.losses.extend(refusal.take_notes());
+    ctx.charge_entities(
+        u64::try_from(ir.model.entity_count()).map_err(|_| {
+            ctx.refuse_codec_limit("count CATIA route entities", u64::MAX, u64::MAX)
+        })?,
+        "admit CATIA route entities",
+    )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
     let native = CatiaNative::decode_with_record_sources(
         ctx,

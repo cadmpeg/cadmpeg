@@ -2703,12 +2703,12 @@ fn try_decode_standard_population(
         crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
         consolidated_curve_bindings.standard_face_pcurves,
     );
-    Some(FamilyOutput {
+    Some(Ok(FamilyOutput {
         ir,
         report,
         annotations,
         unknowns,
-    }.admit_entities(ctx))
+    }))
     })()
     .transpose()
 }
