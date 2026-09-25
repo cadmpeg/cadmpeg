@@ -17,6 +17,7 @@ use crate::design::dimensions::point_lies_on_sketch_geometry;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -26,6 +27,53 @@ use cadmpeg_ir::sketches::{
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
     WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
+}
+
+#[test]
+fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
+    let sketch_id = SketchId::mint("synthetic:test:id#wide-profile").unwrap();
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let entity = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#wide-profile-curve").unwrap(),
+        sketch_id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
+    );
+    let points = super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01)
+        .expect("finite wide NURBS profile samples");
+    assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert!(points.iter().all(Point2::is_finite));
+}
+
+#[test]
+fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
+    let sketch_id = SketchId::mint("synthetic:test:id#high-domain-profile").unwrap();
+    let lower = f64::MAX * 0.5;
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![lower, lower, f64::MAX, f64::MAX],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let entity = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#high-domain-profile-curve").unwrap(),
+        sketch_id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
+    );
+    let points = super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01)
+        .expect("finite midpoint near the float limit");
+    assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
+    assert!(points.iter().any(|point| point.u > 0.0 && point.u < 1.0));
 }
 
 #[test]

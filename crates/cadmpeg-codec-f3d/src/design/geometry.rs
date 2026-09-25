@@ -1129,10 +1129,16 @@ fn profile_use_polyline(
 ) -> Option<Vec<Point2>> {
     let travel =
         sketch_geometry_speed_bound(&entity.geometry, range)? * (range[1] - range[0]).abs();
+    let ordinary_midpoint = (range[0] + range[1]) * 0.5;
+    let midpoint = if ordinary_midpoint.is_finite() {
+        ordinary_midpoint
+    } else {
+        cadmpeg_ir::math::interpolate(range[0], range[1], 0.5)?.get()
+    };
     let scale = [
         sketch_geometry_point(&entity.geometry, range[0])?,
         sketch_geometry_point(&entity.geometry, range[1])?,
-        sketch_geometry_point(&entity.geometry, (range[0] + range[1]) * 0.5)?,
+        sketch_geometry_point(&entity.geometry, midpoint)?,
     ]
     .into_iter()
     .flat_map(|point| [point.u.abs(), point.v.abs()])
@@ -1141,10 +1147,20 @@ fn profile_use_polyline(
     // This bounded polyline supplies tangent order, winding sign, and
     // intersection witnesses only. Exact output retains source parameter
     // intervals rather than this derived representation.
-    let count = (travel / target).ceil().clamp(2.0, 256.0) as usize;
+    let count = if travel.is_finite() {
+        (travel / target).ceil().clamp(2.0, 256.0) as usize
+    } else {
+        256
+    };
     let mut points = (0..=count)
         .map(|index| {
-            let parameter = range[0] + (range[1] - range[0]) * index as f64 / count as f64;
+            let fraction = index as f64 / count as f64;
+            let ordinary = range[0] + (range[1] - range[0]) * fraction;
+            let parameter = if ordinary.is_finite() {
+                ordinary
+            } else {
+                cadmpeg_ir::math::interpolate(range[0], range[1], fraction)?.get()
+            };
             sketch_geometry_point(&entity.geometry, parameter)
         })
         .collect::<Option<Vec<_>>>()?;
