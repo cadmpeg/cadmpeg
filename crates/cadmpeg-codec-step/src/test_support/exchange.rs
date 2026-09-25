@@ -4,7 +4,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, DecodeFailure};
 
 use crate::export::write_step;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
@@ -22,12 +22,16 @@ pub(crate) fn export(ir: &CadIr) -> String {
 }
 
 pub(crate) fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
+    decode_inline_result(records).expect("decode inline STEP")
+}
+
+pub(crate) fn decode_inline_result(
+    records: &str,
+) -> Result<cadmpeg_ir::codec::DecodeResult, DecodeFailure> {
     let source = format!(
         "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'2;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n{records}\nENDSEC;\nEND-ISO-10303-21;\n"
     );
-    StepCodec::default()
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
-        .expect("decode inline STEP")
+    StepCodec::default().decode(&mut Cursor::new(source), &DecodeOptions::default())
 }
 
 pub(crate) fn equivalent_seam_source() -> String {

@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
 use crate::parse::Value;
-use crate::test_support::exchange::decode_inline;
+use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::StepCodec;
 
 const EPS_SAME_POINT: f64 = 1.0e-12;
@@ -850,13 +850,28 @@ fn shared_tessellation_item_is_not_assigned_to_an_arbitrary_body() {
 }
 
 #[test]
-fn malformed_complex_strip_does_not_discard_valid_strips() {
-    let result = decode_inline(
+fn malformed_complex_strip_refuses_the_aggregate() {
+    let error = decode_inline_result(
         "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
 #2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,((1,2),(1,2,3,4)),());",
+    )
+    .expect_err("a short strip must refuse the aggregate");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)) if message.contains("#2 strip row 1"))
     );
-    assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert_eq!(result.ir().model.tessellations[0].triangles().len(), 2);
+}
+
+#[test]
+fn tri_ext1_2_nonreference_tessellation_item_refuses_the_aggregate() {
+    let error = decode_inline_result(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));
+#3=TESSELLATED_SOLID('',(#2,$),$);",
+    )
+    .expect_err("a non-reference item must refuse the aggregate");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)) if message.contains("TESSELLATED_SOLID #3 item 2"))
+    );
 }
 
 #[test]
@@ -875,23 +890,22 @@ fn complex_triangle_strip_alternates_winding() {
 
 #[test]
 fn complex_strip_and_malformed_strip_witnesses_preserve_winding() {
-    let cases = [
-        (
-            include_bytes!("tests/data/ap07_complex_strip_and_fan.p21").as_slice(),
-            vec![[0, 1, 2], [2, 1, 3], [0, 3, 4]],
-        ),
-        (
-            include_bytes!("tests/data/ap07_malformed_short_strip.p21").as_slice(),
-            vec![[0, 1, 2], [2, 1, 3]],
-        ),
-    ];
-    for (input, expected) in cases {
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(input), &DecodeOptions::default())
-            .expect("decode strip witness");
-        assert_eq!(result.ir().model.tessellations.len(), 1);
-        assert_eq!(result.ir().model.tessellations[0].triangles(), expected);
-    }
+    let valid = include_bytes!("tests/data/ap07_complex_strip_and_fan.p21").as_slice();
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(valid), &DecodeOptions::default())
+        .expect("decode strip and fan witness");
+    assert_eq!(result.ir().model.tessellations.len(), 1);
+    assert_eq!(
+        result.ir().model.tessellations[0].triangles(),
+        [[0, 1, 2], [2, 1, 3], [0, 3, 4]]
+    );
+    let malformed = include_bytes!("tests/data/ap07_malformed_short_strip.p21").as_slice();
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(malformed), &DecodeOptions::default())
+        .expect_err("short strip must refuse the aggregate");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)) if message.contains("#2 strip row 1"))
+    );
 }
 
 #[test]
