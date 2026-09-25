@@ -280,7 +280,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             0.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(6.0, 0.0, 0.0))
+        Ok(Point3::new(6.0, 0.0, 0.0))
     );
     assert_eq!(
         model_curve_point_by_id(
@@ -289,7 +289,7 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
             2.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(12.0, 0.0, 0.0))
+        Ok(Point3::new(12.0, 0.0, 0.0))
     );
 
     let mut output = Vec::new();
@@ -817,7 +817,7 @@ fn replicas_retain_bounded_parent_relations() {
             0.0,
         )
         .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(3.0, 0.0, 0.0))
+        Ok(Point3::new(3.0, 0.0, 0.0))
     );
     assert_eq!(
         model_surface_point_by_id(

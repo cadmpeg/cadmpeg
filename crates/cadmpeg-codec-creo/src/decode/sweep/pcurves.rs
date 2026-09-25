@@ -316,7 +316,7 @@ pub(in super::super) fn revolution_face_sense(
             cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
         let parameter = lower + (upper - lower) * 0.5;
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-        let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
+        let point = cadmpeg_ir::eval::curve_point(&carrier, parameter).ok()?;
         let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
         (
             [point.x, point.y],

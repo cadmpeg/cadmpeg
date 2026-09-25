@@ -1192,7 +1192,7 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
         assert_eq!(
             cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
-            Some(Point3::new(10.5, 20.0, 30.0))
+            Ok(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
             cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5)

@@ -55,6 +55,7 @@ impl WritableEdgeCurve<'_> {
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
                 parameter,
             )
+            .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point_at(
                 nurbs,

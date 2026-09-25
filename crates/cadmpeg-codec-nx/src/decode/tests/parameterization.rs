@@ -1400,7 +1400,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         .find(|curve| curve.id == spine_curve)
         .expect("blend spine carrier");
     assert!(
-        cadmpeg_ir::eval::curve_point(&spine_carrier.geometry, 0.0).is_some(),
+        cadmpeg_ir::eval::curve_point(&spine_carrier.geometry, 0.0).is_ok(),
         "spine carrier: {:?}",
         spine_carrier.geometry
     );

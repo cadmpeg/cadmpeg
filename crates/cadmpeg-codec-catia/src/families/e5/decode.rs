@@ -2705,16 +2705,16 @@ fn e5_circle_carriers_have_same_ordered_sweep(
     {
         return false;
     }
-    let Some(left_start) = cadmpeg_ir::eval::curve_point(left, left_range[0]) else {
+    let Ok(left_start) = cadmpeg_ir::eval::curve_point(left, left_range[0]) else {
         return false;
     };
-    let Some(left_end) = cadmpeg_ir::eval::curve_point(left, left_range[1]) else {
+    let Ok(left_end) = cadmpeg_ir::eval::curve_point(left, left_range[1]) else {
         return false;
     };
-    let Some(right_start) = cadmpeg_ir::eval::curve_point(right, right_range[0]) else {
+    let Ok(right_start) = cadmpeg_ir::eval::curve_point(right, right_range[0]) else {
         return false;
     };
-    let Some(right_end) = cadmpeg_ir::eval::curve_point(right, right_range[1]) else {
+    let Ok(right_end) = cadmpeg_ir::eval::curve_point(right, right_range[1]) else {
         return false;
     };
     left_start.distance(right_start.get()) <= E5_ENDPOINT_MATCH_TOLERANCE

@@ -1452,10 +1452,10 @@ fn edge_range_matches_curve(
         return false;
     }
     let geometry = &curve.geometry;
-    let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
+    let Ok(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
         return false;
     };
-    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
+    let Ok(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
         return false;
     };
     close(evaluated_start.get(), start, tolerance) && close(evaluated_end.get(), end, tolerance)

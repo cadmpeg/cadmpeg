@@ -1928,7 +1928,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                         .param_range()
                         .is_some_and(|edge_range| same_range(edge_range.get(), range.get()))
                     && vertex_position(ir, &edge.start)
-                        .zip(curve_point(&curve.geometry, range[0]))
+                        .zip(curve_point(&curve.geometry, range[0]).ok())
                         .is_some_and(|(start, evaluated)| {
                             same_point_with_tolerance(
                                 start.get(),
@@ -1937,7 +1937,7 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                             )
                         })
                     && vertex_position(ir, &edge.end)
-                        .zip(curve_point(&curve.geometry, range[1]))
+                        .zip(curve_point(&curve.geometry, range[1]).ok())
                         .is_some_and(|(end, evaluated)| {
                             same_point_with_tolerance(
                                 end.get(),
@@ -3968,7 +3968,7 @@ fn generated_endpoint_coordinate_scale(ir: &CadIr) -> f64 {
             continue;
         };
         for parameter in range {
-            if let Some(point) = curve_point(&curve.geometry, parameter) {
+            if let Ok(point) = curve_point(&curve.geometry, parameter) {
                 scale = scale.max(point_coordinate_scale(point));
             }
         }
@@ -4588,13 +4588,19 @@ fn extrusion_surface_entities(
         } else {
             [start_parameter, terminate_parameter]
         };
-        let start = curve_point(&geometry, evaluation_interval[0]).ok_or_else(|| {
-            CodecError::Malformed("IGES Type 122 directrix start cannot be evaluated".into())
-        })?;
-        let end = curve_point(&geometry, evaluation_interval[1]).ok_or_else(|| {
-            CodecError::Malformed("IGES Type 122 directrix terminate cannot be evaluated".into())
-        })?;
-        (start, end)
+        // A directrix end outside the finite range is refused as the composite
+        // directrix's non-finite end is.
+        let directrix_end = |parameter, label: &str| match curve_point(&geometry, parameter) {
+            Ok(point) => Ok(point),
+            Err(EvaluationFailure::NonFinite(_)) => Err(non_finite_point(label)),
+            Err(EvaluationFailure::NoValue) => Err(CodecError::malformed(format_args!(
+                "IGES {label} cannot be evaluated"
+            ))),
+        };
+        (
+            directrix_end(evaluation_interval[0], "Type 122 directrix start")?,
+            directrix_end(evaluation_interval[1], "Type 122 directrix terminate")?,
+        )
     };
     let inferred_target = admitted_point(
         start.translated(direction.get(), 1.0),
@@ -4765,10 +4771,10 @@ fn revolution_surface_entities(
     } else {
         [start_parameter, terminate_parameter]
     };
-    let start = curve_point(&geometry, evaluation_interval[0]).ok_or_else(|| {
+    let start = curve_point(&geometry, evaluation_interval[0]).map_err(|_| {
         CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
     })?;
-    let end = curve_point(&geometry, evaluation_interval[1]).ok_or_else(|| {
+    let end = curve_point(&geometry, evaluation_interval[1]).map_err(|_| {
         CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
     })?;
     let axis_direction = axis_direction.to_unit_length();
@@ -5444,12 +5450,12 @@ fn curve_reference_span_inner(
                     let range = default_range(geometry.solved().ok_or_else(|| {
                         CodecError::NotImplemented("IGES carrier has no solved geometry".into())
                     })?)?;
-                    let start = curve_point(geometry, range[0]).ok_or_else(|| {
+                    let start = curve_point(geometry, range[0]).map_err(|_| {
                         CodecError::NotImplemented(format!(
                             "IGES composite child curve {curve_id} has no evaluable start"
                         ))
                     })?;
-                    let end = curve_point(geometry, range[1]).ok_or_else(|| {
+                    let end = curve_point(geometry, range[1]).map_err(|_| {
                         CodecError::NotImplemented(format!(
                             "IGES composite child curve {curve_id} has no evaluable end"
                         ))
@@ -5574,13 +5580,13 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 | SolvedCurveGeometry::Polyline(_)
         )
     ) {
-        let evaluated_start = curve_point(geometry, range[0]).ok_or_else(|| {
+        let evaluated_start = curve_point(geometry, range[0]).map_err(|_| {
             CodecError::malformed(format_args!(
                 "IGES edge {} start cannot be evaluated on its curve",
                 edge.id
             ))
         })?;
-        let evaluated_end = curve_point(geometry, range[1]).ok_or_else(|| {
+        let evaluated_end = curve_point(geometry, range[1]).map_err(|_| {
             CodecError::malformed(format_args!(
                 "IGES edge {} end cannot be evaluated on its curve",
                 edge.id
@@ -6460,11 +6466,14 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
 }
 
 fn admitted_point(point: Point3, label: &str) -> Result<FinitePoint3, CodecError> {
-    FinitePoint3::new(point).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "IGES point {label} has non-finite coordinates"
-        ))
-    })
+    FinitePoint3::new(point).ok_or_else(|| non_finite_point(label))
+}
+
+/// The refusal of a point `label` whose coordinates are not finite.
+fn non_finite_point(label: &str) -> CodecError {
+    CodecError::malformed(format_args!(
+        "IGES point {label} has non-finite coordinates"
+    ))
 }
 
 #[derive(Clone)]

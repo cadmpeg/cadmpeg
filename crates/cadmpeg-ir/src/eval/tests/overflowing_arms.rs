@@ -440,25 +440,59 @@ fn a_nurbs_surface_whose_point_overflows_reports_the_point_it_reached() {
 }
 
 #[test]
-fn a_nurbs_surface_whose_partial_overflows_reports_its_finite_point_as_left_the_finite_range() {
+fn a_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_point_routes() {
     // Over the `u` span `1e-300` the partial `1e10 / 1e-300` overflows at the
-    // finite point `(5e9, 0.5, 0)`.
+    // finite point `(5e9, 0.5, 0)`. Both point routes evaluate the point
+    // alone, so neither fails on the partial.
     let surface = solved(SolvedSurfaceGeometry::Nurbs(bilinear_nurbs(
         [0.0, 0.0, 1.0e-300, 1.0e-300],
         1.0e10,
     )));
     let budget = WorkBudget::new(64);
-    // The point route evaluates the point alone; the partials route
-    // evaluates it with the partials.
     assert_eq!(
         surface_point_with_budget(&surface, 5.0e-301, 0.5, &budget)
             .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
     assert_eq!(
-        surface_point(&surface, 5.0e-301, 0.5),
-        Err(EvaluationFailure::NonFinite(Point3::new(5.0e9, 0.5, 0.0)))
+        surface_point(&surface, 5.0e-301, 0.5).map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(5.0e9, 0.5, 0.0))
     );
+}
+
+#[test]
+fn a_placed_surface_whose_partial_overflows_has_its_finite_point_on_both_point_routes() {
+    // The cylinder of radius 2 about the z axis, stretched by MAX in x: at
+    // u = acos(1/4) its point x is MAX / 2 and its u partial x is
+    // -2 sin(u) MAX, which overflows.
+    let cylinder = SolvedSurfaceGeometry::Cylinder(
+        crate::geometry::analytic::CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("cylinder fixture"),
+    );
+    let surface = solved(SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(cylinder),
+            crate::transform::Transform::affine([
+                [f64::MAX, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed surface fixture"),
+    ));
+    let u = 0.25_f64.acos();
+    assert!(crate::eval::surface_partials(&surface, u, 1.0).is_none());
+    let budget = WorkBudget::new(64);
+    let with_budget = surface_point_with_budget(&surface, u, 1.0, &budget);
+    let point = surface_point(&surface, u, 1.0);
+    assert!(point.is_ok(), "{point:?}");
+    assert_eq!(point, with_budget);
 }
 
 fn procedural_surface_model(
@@ -635,7 +669,7 @@ fn a_tolerant_intersection_reads_the_point_of_a_pcurve_whose_placed_tangent_over
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_curve_point_by_id(&index, &curve, 0.0).map(crate::features::FinitePoint3::get),
-        Some(Point3::new(0.0, 0.0, 0.0))
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
 }
 
@@ -656,7 +690,11 @@ fn a_tolerant_intersection_has_no_point_where_its_offset_pcurve_point_overflows(
     ));
     let (ir, curve) = tolerant_intersection_model(offset);
     let index = crate::index::ModelIndex::new(&ir);
-    assert_eq!(model_curve_point_by_id(&index, &curve, 0.0), None);
+    assert!(matches!(
+        model_curve_point_by_id(&index, &curve, 0.0),
+        Err(EvaluationFailure::NonFinite(point))
+            if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
+    ));
 }
 
 #[test]

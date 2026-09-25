@@ -342,7 +342,7 @@ fn bounded_evaluable_curve(
     let geometry = geometry.clone();
     parameter_interval
         .into_iter()
-        .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
+        .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_ok())
         .then_some((
             CurveGeometry::Solved(geometry.solved()?.clone()),
             parameter_interval,
@@ -1418,8 +1418,7 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
-            let Some(start) =
-                cadmpeg_ir::eval::curve_point(&directrix_geometry, carrier_interval[0])
+            let Ok(start) = cadmpeg_ir::eval::curve_point(&directrix_geometry, carrier_interval[0])
             else {
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;

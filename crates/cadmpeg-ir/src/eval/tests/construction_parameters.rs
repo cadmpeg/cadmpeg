@@ -36,10 +36,10 @@ fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
             &id,
             5e-301,
             crate::scalar::FiniteReal::array([0.0, 1e308]),
-            Some([0.0, 1e-300]),
+            crate::scalar::FiniteReal::array([0.0, 1e-300]),
             false,
         ),
-        None
+        Err(crate::eval::EvaluationFailure::NonFinite(()))
     );
     assert_eq!(
         super::super::construction_curve_parameter(
@@ -50,7 +50,7 @@ fn construction_mapping_refuses_nonfinite_widths_and_derivatives() {
             None,
             false,
         ),
-        None
+        Err(crate::eval::EvaluationFailure::NonFinite(()))
     );
 }
 
@@ -71,7 +71,7 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
     let partials = super::super::model_native_extrusion_partials(
         &index,
         &extrusion(direction).unwrap(),
-        Some([0.0, 1.0]),
+        crate::scalar::FiniteReal::array([0.0, 1.0]),
         0.5,
         0.0,
         None,

@@ -533,6 +533,12 @@ impl FiniteReal {
         Self(index as f64)
     }
 
+    /// An integer as a real. Every `i64` converts to a finite `f64`.
+    #[must_use]
+    pub(crate) fn from_integer(value: i64) -> Self {
+        Self(value as f64)
+    }
+
     /// Half the value. Half a finite value is finite.
     #[must_use]
     pub(crate) fn halved(self) -> Self {
@@ -731,6 +737,16 @@ impl crate::geometry::DirectedParameterRange {
     pub const fn finite_endpoints(self) -> [FiniteReal; 2] {
         let [start, end] = self.endpoints();
         [FiniteReal(start), FiniteReal(end)]
+    }
+}
+
+impl crate::geometry::RecordBounds {
+    /// The present values as finite reals. The quartet admits only finite
+    /// values, so nothing is checked. The route lives beside [`FiniteReal`]
+    /// because only this module constructs one.
+    #[must_use]
+    pub(crate) fn finite_values(self) -> [Option<FiniteReal>; 4] {
+        self.get().map(|value| value.map(FiniteReal))
     }
 }
 

@@ -282,7 +282,7 @@ fn bind_consolidated_revolution_faces_and_seams(
                 continue;
             };
             let parameter = start + (end - start) * 0.5;
-            if let Some(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
+            if let Ok(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
                 witnesses.push(point.get());
             }
         }
@@ -3766,7 +3766,7 @@ fn standard_limit_curve_bindings(
                 continue;
             };
             let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curves[curve].clone()));
-            let Some(midpoint) =
+            let Ok(midpoint) =
                 cadmpeg_ir::eval::curve_point(&geometry, 0.5 * (start_parameter + end_parameter))
             else {
                 continue;
@@ -7056,7 +7056,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
                 else {
                     continue;
                 };
-                if let Some(point) =
+                if let Ok(point) =
                     cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end))
                 {
                     witnesses.push(point.get());

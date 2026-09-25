@@ -263,7 +263,7 @@ pub(super) fn b5_supports_follow_curve(
     let Some(range) = curve_plan_parameter_range(curve) else {
         return false;
     };
-    let solved = range.map(|parameter| curve_point(&curve.geometry, parameter));
+    let solved = range.map(|parameter| curve_point(&curve.geometry, parameter).ok());
     let [Some(solved_start), Some(solved_end)] = solved else {
         return false;
     };

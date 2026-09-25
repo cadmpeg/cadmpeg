@@ -1416,7 +1416,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 curve_contains_points(candidate, points)
                     && [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().all(|parameter| {
                         let point = cadmpeg_ir::eval::curve_point(candidate, parameter);
-                        point.is_some_and(|point| {
+                        point.is_ok_and(|point| {
                             curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
                         })
                     })

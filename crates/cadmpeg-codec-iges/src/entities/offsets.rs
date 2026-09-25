@@ -203,8 +203,8 @@ fn source_parameter_range(
             let range = edge.param_range()?;
             let start = point_position(&edge.start)?;
             let end = point_position(&edge.end)?;
-            let evaluated_start = cadmpeg_ir::eval::curve_point_solved(geometry, range[0])?;
-            let evaluated_end = cadmpeg_ir::eval::curve_point_solved(geometry, range[1])?;
+            let evaluated_start = cadmpeg_ir::eval::curve_point_solved(geometry, range[0]).ok()?;
+            let evaluated_end = cadmpeg_ir::eval::curve_point_solved(geometry, range[1]).ok()?;
             (evaluated_start.distance(start) <= tolerance
                 && evaluated_end.distance(end) <= tolerance)
                 .then_some(range)
@@ -574,7 +574,7 @@ pub(super) fn project(
                     distances[0] + alpha * (distances[1] - distances[0])
                 };
                 let offset_direction = normal.cross(direction);
-                let Some(source_start) = cadmpeg_ir::eval::curve_point(
+                let Ok(source_start) = cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     start,
                 ) else {
@@ -584,7 +584,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(source_end) = cadmpeg_ir::eval::curve_point(
+                let Ok(source_end) = cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     end,
                 ) else {
@@ -749,7 +749,7 @@ pub(super) fn project(
                         break;
                     };
                     let independent = inverse_parameter(function_parameter);
-                    let Some(base) = cadmpeg_ir::eval::curve_point(
+                    let Ok(base) = cadmpeg_ir::eval::curve_point(
                         &CurveGeometry::Solved(offset_source_geometry.clone()),
                         source_parameter(independent),
                     ) else {
@@ -775,7 +775,7 @@ pub(super) fn project(
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
-                let Some(function_start) =
+                let Ok(function_start) =
                     cadmpeg_ir::eval::curve_point(&function.geometry, function_range[0])
                 else {
                     losses.push(entity_loss(
@@ -823,14 +823,14 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
+        let Ok(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
             losses.push(entity_loss(
                 entry,
                 "offset start parameter cannot be evaluated",
             ));
             continue;
         };
-        let Some(end_position) = cadmpeg_ir::eval::curve_point(&geometry, end) else {
+        let Ok(end_position) = cadmpeg_ir::eval::curve_point(&geometry, end) else {
             losses.push(entity_loss(
                 entry,
                 "offset end parameter cannot be evaluated",

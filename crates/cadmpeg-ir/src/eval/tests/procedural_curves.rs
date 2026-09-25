@@ -57,7 +57,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         let expected = Point3::new(if sense { 3.0 } else { 4.0 }, 0.0, 0.0);
         assert_eq!(
             model_curve_point_by_id(&index, &subset, 1.0).map(crate::features::FinitePoint3::get),
-            Some(expected)
+            Ok(expected)
         );
         let differential = model_curve_differential_by_id(&index, &subset, 1.0).unwrap();
         assert_eq!(differential.point, expected);
@@ -78,6 +78,9 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
             .map(crate::scalar::FiniteReal::get),
             Some(1.0),
         );
-        assert_eq!(model_curve_point_by_id(&index, &subset, 4.0), None);
+        assert_eq!(
+            model_curve_point_by_id(&index, &subset, 4.0),
+            Err(crate::eval::EvaluationFailure::NoValue)
+        );
     }
 }

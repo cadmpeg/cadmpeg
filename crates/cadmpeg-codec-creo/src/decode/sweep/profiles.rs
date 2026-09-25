@@ -45,8 +45,8 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
             let [lower, upper] =
                 cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
-            let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
-            let last = cadmpeg_ir::eval::curve_point(&carrier, upper)?;
+            let first = cadmpeg_ir::eval::curve_point(&carrier, lower).ok()?;
+            let last = cadmpeg_ir::eval::curve_point(&carrier, upper).ok()?;
             Some(([first.x, first.y], [last.x, last.y]))
         }
         _ => None,
@@ -782,9 +782,9 @@ fn append_nurbs_profile_span(
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
-    let middle_point = cadmpeg_ir::eval::curve_point(span.carrier, middle)?;
-    let first_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, first_quarter)?;
-    let third_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, third_quarter)?;
+    let middle_point = cadmpeg_ir::eval::curve_point(span.carrier, middle).ok()?;
+    let first_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, first_quarter).ok()?;
+    let third_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, third_quarter).ok()?;
     let middle_point = [middle_point.x, middle_point.y];
     let first_quarter_point = [first_quarter_point.x, first_quarter_point.y];
     let third_quarter_point = [third_quarter_point.x, third_quarter_point.y];
@@ -829,7 +829,7 @@ fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64
     let [lower, upper] =
         cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
     let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
+    let first = cadmpeg_ir::eval::curve_point(&carrier, lower).ok()?;
     let first = [first.x, first.y];
     let mut points = vec![first];
     for pair in nurbs.knots().windows(2) {
@@ -838,8 +838,8 @@ fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64
         if start >= end {
             continue;
         }
-        let start_point = cadmpeg_ir::eval::curve_point(&carrier, start)?;
-        let end_point = cadmpeg_ir::eval::curve_point(&carrier, end)?;
+        let start_point = cadmpeg_ir::eval::curve_point(&carrier, start).ok()?;
+        let end_point = cadmpeg_ir::eval::curve_point(&carrier, end).ok()?;
         let start_point = [start_point.x, start_point.y];
         let end_point = [end_point.x, end_point.y];
         if points.last().copied() != Some(start_point) {
@@ -885,7 +885,7 @@ fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) ->
             .zip(NURBS_AREA_GAUSS_WEIGHTS)
         {
             let parameter = middle + half_width * node;
-            let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
+            let point = cadmpeg_ir::eval::curve_point(&carrier, parameter).ok()?;
             let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
             area_twice += weight * (point.x * tangent.y - point.y * tangent.x) * half_width;
         }

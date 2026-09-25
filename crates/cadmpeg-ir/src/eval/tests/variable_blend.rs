@@ -441,8 +441,9 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
 }
 
-#[test]
-fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
+/// The constant rolling ball of radius 3 between the planes `z = 0` and
+/// `x = 0`, with `slice` as its section-center curve.
+fn constant_rolling_ball_fixture(slice: CurveGeometry) -> (CadIr, SurfaceId) {
     let (mut ir, blend_surface) = variable_blend_eval_fixture(
         Point3::new(0.0, 0.0, 0.0),
         [
@@ -452,13 +453,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         [3.0, 3.0],
         Some(VariableBlendCrossSection::Circular {}),
     );
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        crate::geometry::analytic::LineCurve::try_new(
-            Point3::new(3.0, 0.0, 3.0),
-            Vector3::new(0.0, 1.0, 0.0),
-        )
-        .unwrap(),
-    ));
+    ir.model.curves[0].geometry = slice;
     let ProceduralSurfaceDefinition::VariableBlend(definition_payload) =
         ir.model.procedural_surfaces[0].definition()
     else {
@@ -512,6 +507,19 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
             .unwrap(),
         );
     });
+    (ir, blend_surface)
+}
+
+#[test]
+fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
+    let (mut ir, blend_surface) =
+        constant_rolling_ball_fixture(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(3.0, 0.0, 3.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        )));
 
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
@@ -712,6 +720,83 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
 }
 
+/// Both surface routes of `surface` at `(u, v)` left the finite range at a
+/// point with no coordinate.
+fn both_routes_reach_no_coordinate(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> bool {
+    let index = crate::index::ModelIndex::new(ir);
+    let geometry = &ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == *surface)
+        .expect("blend surface")
+        .geometry;
+    [
+        model_surface_point_by_id(&index, surface, u, v),
+        model_surface_point(ir, geometry, u, v),
+    ]
+    .into_iter()
+    .all(|route| {
+        matches!(
+            route,
+            Err(crate::eval::EvaluationFailure::NonFinite(point))
+                if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
+        )
+    })
+}
+
+#[test]
+fn a_constant_rolling_ball_whose_section_center_overflows_reaches_no_coordinate() {
+    // The slice line along y through (MAX, 0, 0), placed by a transform that
+    // adds MAX to x, reaches x = +inf: the section has no finite center.
+    let slice = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        crate::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(f64::MAX, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            Transform::affine([
+                [1.0, 0.0, 0.0, f64::MAX],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .unwrap(),
+        )
+        .unwrap(),
+    ));
+    let (ir, blend_surface) = constant_rolling_ball_fixture(slice);
+    assert!(both_routes_reach_no_coordinate(
+        &ir,
+        &blend_surface,
+        0.5,
+        0.5
+    ));
+}
+
+#[test]
+fn a_circular_variable_blend_whose_radius_overflows_reaches_no_coordinate() {
+    // The radius runs from MAX to -MAX over [0, 1]; at v = 0.5 the
+    // interpolation reaches -inf.
+    let (ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(2.0, 0.0), Point2::new(2.0, 1.0)),
+            (Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)),
+        ],
+        [f64::MAX, -f64::MAX],
+        Some(VariableBlendCrossSection::Circular {}),
+    );
+    assert!(both_routes_reach_no_coordinate(
+        &ir,
+        &blend_surface,
+        0.5,
+        0.5
+    ));
+}
+
 #[test]
 fn rolling_ball_partials_follow_a_changing_section_angle() {
     let section_angle = std::f64::consts::FRAC_PI_3;
@@ -772,15 +857,15 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
     .expect("finite value");
     assert_eq!(
         variable_blend_radius(&value, 2.0).map(FiniteReal::get),
-        Some(5.0)
+        Ok(5.0)
     );
     assert_eq!(
         variable_blend_radius(&value, 3.0).map(FiniteReal::get),
-        Some(7.0)
+        Ok(7.0)
     );
     assert_eq!(
         variable_blend_radius(&value, 5.0).map(FiniteReal::get),
-        Some(11.0)
+        Ok(11.0)
     );
 }
 
@@ -807,6 +892,6 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
     .expect("finite value");
     assert_eq!(
         variable_blend_radius(&value, 0.5).map(FiniteReal::get),
-        Some(3.5)
+        Ok(3.5)
     );
 }
