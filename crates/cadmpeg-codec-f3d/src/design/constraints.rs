@@ -276,7 +276,7 @@ pub(crate) fn project_sketch_constraints(
 struct RectangularPatternSourceDirection {
     direction: [f64; 2],
     count: u32,
-    distance: f64,
+    distance: cadmpeg_ir::scalar::NonNegativeLength,
     distance_parameter: Option<cadmpeg_ir::features::ParameterId>,
     count_parameter: Option<cadmpeg_ir::features::ParameterId>,
 }
@@ -330,13 +330,13 @@ fn exact_rectangular_pattern(
             }) {
                 return None;
             }
-            let distance = direction.evaluated_distance.get() * 10.0;
-            if !distance.is_finite()
-                || distance < 0.0
-                || (count == 1 && !scalar_close(distance, 0.0))
+            let distance = cadmpeg_ir::scalar::NonNegativeLength::new(
+                direction.evaluated_distance.get() * 10.0,
+            )?;
+            if (count == 1 && !scalar_close(distance.get(), 0.0))
                 || distance_parameter.is_some_and(|parameter| {
                     design_length(parameter)
-                        .is_none_or(|value| !scalar_close(value.get(), distance))
+                        .is_none_or(|value| !scalar_close(value.get(), distance.get()))
                 })
             {
                 return None;
@@ -377,10 +377,10 @@ fn rectangular_pattern_directions(
         .iter()
         .map(|source| {
             let spacing = match distance_form {
-                RectangularPatternDistanceForm::AdjacentSpacing => source.distance,
+                RectangularPatternDistanceForm::AdjacentSpacing => source.distance.get(),
                 RectangularPatternDistanceForm::SeedToFinalSpan => {
                     if source.count > 1 {
-                        source.distance / f64::from(source.count - 1)
+                        source.distance.get() / f64::from(source.count - 1)
                     } else {
                         0.0
                     }
