@@ -571,8 +571,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
 }
 
-#[test]
-pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
+fn wire_body_ir(alpha: f32) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.model.edges[0].clone();
     let curve = edge.curve().cloned().expect("cube edge curve");
@@ -607,9 +606,14 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.bodies.truncate(1);
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.bodies[0].color =
-        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"));
+        Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, alpha).expect("valid color"));
     ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
+    ir
+}
 
+#[test]
+pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
+    let ir = wire_body_ir(1.0);
     let mut output = Vec::new();
     write_step(
         &ir,
@@ -637,6 +641,27 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn translucent_direct_wire_body_color_reports_curve_style_alpha_loss() {
+    let ir = wire_body_ir(0.5);
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("write translucent wire body");
+    let text = String::from_utf8(output).expect("wire STEP is UTF-8");
+    assert!(text.contains("CURVE_STYLE"));
+    assert!(!text.contains("SURFACE_STYLE_TRANSPARENT"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::WireBodyTransparencyOmitted.kind()
+            && loss.message.contains("wire body")
+            && loss.message.contains("transparency")
+    }));
 }
 
 #[test]

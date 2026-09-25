@@ -8,6 +8,7 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -1597,9 +1598,8 @@ fn elliptical_cone_reduction_is_reported() {
     }));
 }
 
-/// Writes a document whose single surface is a circular cone of `half_angle`
-/// and returns the export report.
-fn circular_cone_report(half_angle: f64) -> cadmpeg_ir::report::export::ExportReport {
+/// Plans a document whose single surface is a circular cone of `half_angle`.
+fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1613,57 +1613,41 @@ fn circular_cone_report(half_angle: f64) -> cadmpeg_ir::report::export::ExportRe
         .unwrap(),
     ));
 
-    write_step(
-        &ir,
-        &mut Vec::new(),
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
+    StepCodec::default().plan(
+        EncodeInput::new(&ir, None),
+        TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
     )
-    .unwrap()
-}
-
-/// Whether the report carries the out-of-domain semi-angle note.
-fn reports_cone_semi_angle_out_of_domain(
-    report: &cadmpeg_ir::report::export::ExportReport,
-) -> bool {
-    report
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::ConeSemiAngleOutOfDomain.kind())
 }
 
 #[test]
-fn cone_semi_angle_inside_wr2_is_not_reported() {
-    let report = circular_cone_report(0.5);
-
-    assert!(!reports_cone_semi_angle_out_of_domain(&report));
+fn cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(0.5).is_ok());
 }
 
 #[test]
-fn zero_cone_semi_angle_is_reported() {
-    let report = circular_cone_report(0.0);
-
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::ConeSemiAngleOutOfDomain.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Warning
-            && loss
-                .message
-                .contains("1 conical surface(s) were written with a semi-angle outside")
-    }));
+fn zero_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(0.0).expect_err("zero cone angle is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
 }
 
 #[test]
-fn negative_cone_semi_angle_is_reported() {
-    let report = circular_cone_report(-0.715_584_993_317_674_8);
-
-    assert!(reports_cone_semi_angle_out_of_domain(&report));
+fn negative_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(-0.715_584_993_317_674_8)
+        .expect_err("negative cone angle is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle -0.7155849933176748"))
+    );
 }
 
 #[test]
-fn right_angle_cone_semi_angle_is_reported() {
-    let report = circular_cone_report(std::f64::consts::FRAC_PI_2);
-
-    assert!(reports_cone_semi_angle_out_of_domain(&report));
+fn right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
+        .expect_err("right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
 }
 
 /// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.
@@ -1676,17 +1660,21 @@ fn replica_transform() -> Transform {
     .expect("a scaled rotation is a similarity transform")
 }
 
-/// Writes a document whose single surface places `basis` through a similarity
-/// transform, and returns the export report with the STEP text.
-fn transformed_surface_report(
-    basis: SolvedSurfaceGeometry,
-) -> (cadmpeg_ir::report::export::ExportReport, String) {
+/// A document whose single surface places `basis` through a similarity transform.
+fn transformed_surface_ir(basis: SolvedSurfaceGeometry) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
         cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(basis), replica_transform())
             .expect("placed surface"),
     ));
+    ir
+}
 
+/// Writes a transformed surface and returns the report with STEP text.
+fn transformed_surface_report(
+    basis: SolvedSurfaceGeometry,
+) -> (cadmpeg_ir::report::export::ExportReport, String) {
+    let ir = transformed_surface_ir(basis);
     let mut buf = Vec::new();
     let report = write_step(
         &ir,
@@ -1699,13 +1687,8 @@ fn transformed_surface_report(
     (report, text)
 }
 
-/// A transformed cone basis of `ratio` and `half_angle`, and the export report
-/// with the STEP text.
-fn transformed_cone_report(
-    ratio: f64,
-    half_angle: f64,
-) -> (cadmpeg_ir::report::export::ExportReport, String) {
-    transformed_surface_report(SolvedSurfaceGeometry::Cone(
+fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry {
+    SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
@@ -1715,21 +1698,26 @@ fn transformed_cone_report(
             half_angle,
         )
         .unwrap(),
-    ))
+    )
 }
 
 #[test]
-fn transformed_cone_basis_outside_wr2_is_reported() {
-    let (report, text) = transformed_cone_report(1.0, 0.0);
-
-    assert!(text.contains("SURFACE_REPLICA"));
-    assert!(text.contains("CONICAL_SURFACE"));
-    assert!(reports_cone_semi_angle_out_of_domain(&report));
+fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
+    let ir = transformed_surface_ir(transformed_cone_basis(1.0, 0.0));
+    let error = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .expect_err("transformed cone basis remains outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
 }
 
 #[test]
 fn transformed_elliptical_cone_basis_is_reported() {
-    let (report, text) = transformed_cone_report(0.4, 0.5);
+    let (report, text) = transformed_surface_report(transformed_cone_basis(0.4, 0.5));
 
     assert!(text.contains("SURFACE_REPLICA"));
     assert!(text.contains("CONICAL_SURFACE"));
@@ -1827,7 +1815,7 @@ fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
 }
 
 #[test]
-fn a_cone_cache_written_for_an_unwritable_construction_is_reported() {
+fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1841,8 +1829,8 @@ fn a_cone_cache_written_for_an_unwritable_construction_is_reported() {
         .unwrap(),
     ));
     let owner = ir.model.surfaces[0].id.clone();
-    // A compound construction has no STEP record, so the writer emits the
-    // solved cache instead and the file holds that cone.
+    // A compound construction has no STEP record, so its solved cache is the
+    // candidate STEP carrier.
     ir.model
         .add_procedural_surface(
             owner,
@@ -1863,18 +1851,15 @@ fn a_cone_cache_written_for_an_unwritable_construction_is_reported() {
         )
         .expect("a cone carrier admits a compound construction");
 
-    let mut buf = Vec::new();
-    let report = write_step(
-        &ir,
-        &mut buf,
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )
-    .unwrap();
-    let text = String::from_utf8(buf).expect("STEP output is UTF-8");
-
-    assert!(text.contains("CONICAL_SURFACE"));
-    assert!(reports_cone_semi_angle_out_of_domain(&report));
+    let error = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
+        )
+        .expect_err("a cached cone outside WR2 cannot be written");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle 0"))
+    );
 }
 
 #[test]

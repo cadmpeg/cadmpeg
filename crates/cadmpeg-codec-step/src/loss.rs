@@ -191,8 +191,6 @@ pub(crate) enum StepLossCode {
     AnalyticSurfaceNormalized,
     /// Elliptical cone surfaces were reduced to circular `CONICAL_SURFACE`.
     EllipticalConeReduced,
-    /// `CONICAL_SURFACE` records carry a semi-angle outside ISO 10303-42 `WR2`.
-    ConeSemiAngleOutOfDomain,
     /// Edges have no typed 3D curve or carry an unsupported transform.
     CurvelessEdgeOmitted,
     /// Faces rest on an unknown or STEP-unsupported surface.
@@ -259,6 +257,8 @@ pub(crate) enum StepLossCode {
     PassthroughRecordOmitted,
     /// Display colors had no emitted STEP item.
     DisplayColorUnstyled,
+    /// A wire body's direct color alpha was omitted from RGB curve styling.
+    WireBodyTransparencyOmitted,
     /// Appearance assets were reduced to `STYLED_ITEM` base colors.
     AppearanceReducedToBaseColor,
     /// Appearance bindings carry source object or channel metadata.
@@ -400,7 +400,6 @@ impl StepLossCode {
         Self::TopologyUnreachableFromRegion,
         Self::AnalyticSurfaceNormalized,
         Self::EllipticalConeReduced,
-        Self::ConeSemiAngleOutOfDomain,
         Self::CurvelessEdgeOmitted,
         Self::UnknownSurfaceFaceOmitted,
         Self::GeometryCarrierNotWritten,
@@ -434,6 +433,7 @@ impl StepLossCode {
         Self::SourceAssociationOmitted,
         Self::PassthroughRecordOmitted,
         Self::DisplayColorUnstyled,
+        Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
         Self::AppearanceBindingMetadataReduced,
         Self::SourceAttributeNotWritten,
@@ -566,7 +566,6 @@ impl StepLossCode {
             Self::TopologyUnreachableFromRegion => "topology.unreachable-from-region",
             Self::AnalyticSurfaceNormalized => "geometry.analytic-surface-normalized",
             Self::EllipticalConeReduced => "geometry.elliptical-cone-reduced",
-            Self::ConeSemiAngleOutOfDomain => "geometry.cone-semi-angle-out-of-domain",
             Self::CurvelessEdgeOmitted => "geometry.curveless-edge-omitted",
             Self::UnknownSurfaceFaceOmitted => "geometry.unknown-surface-face-omitted",
             Self::GeometryCarrierNotWritten => "geometry.carrier-not-written",
@@ -602,6 +601,7 @@ impl StepLossCode {
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::PassthroughRecordOmitted => "native.passthrough-record-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
+            Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
@@ -677,6 +677,7 @@ impl StepLossCode {
             | Self::SourceAssociationOmitted
             | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
+            | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
             | Self::AppearanceBindingMetadataReduced
             | Self::SourceAttributeNotWritten
@@ -811,16 +812,15 @@ impl StepLossCode {
             Self::TessellationRequiresAp242
             | Self::TessellationInvalidCardinality
             | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
-            Self::AnalyticSurfaceNormalized | Self::ConeSemiAngleOutOfDomain => {
-                LossTaxonomy::AnalyticSurfaceNormalized
-            }
+            Self::AnalyticSurfaceNormalized => LossTaxonomy::AnalyticSurfaceNormalized,
             Self::EllipticalConeReduced => LossTaxonomy::EllipticalConeReduced,
             Self::CurvelessEdgeOmitted => LossTaxonomy::CurvelessEdgeOmitted,
             Self::UnknownSurfaceFaceOmitted => LossTaxonomy::UnknownSurfaceFaceOmitted,
             Self::HiddenBodyOmitted => LossTaxonomy::HiddenBodyOmitted,
             Self::AppearanceBindingMissingAsset
             | Self::AppearanceBindingNoBaseColor
-            | Self::AppearanceBindingTargetConflict => LossTaxonomy::MaterialNotTransferred,
+            | Self::AppearanceBindingTargetConflict
+            | Self::WireBodyTransparencyOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::SubdOmitted => LossTaxonomy::SubdOmitted,
             Self::ParametricDesignRecordsOmitted | Self::SourceNativeRecordOmitted => {
                 LossTaxonomy::ParametricRecordOmitted
@@ -949,7 +949,6 @@ mod tests {
                 "topology.unreachable-from-region",
                 "geometry.analytic-surface-normalized",
                 "geometry.elliptical-cone-reduced",
-                "geometry.cone-semi-angle-out-of-domain",
                 "geometry.curveless-edge-omitted",
                 "geometry.unknown-surface-face-omitted",
                 "geometry.carrier-not-written",
@@ -983,6 +982,7 @@ mod tests {
                 "source.association-omitted",
                 "native.passthrough-record-omitted",
                 "appearance.display-color-unstyled",
+                "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
                 "appearance.binding-metadata-reduced",
                 "attribute.source-record-not-written",
