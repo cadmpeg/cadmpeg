@@ -22,7 +22,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 
 pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
@@ -74,11 +74,6 @@ pub(super) fn exact_fixed_extrude_parameters(
             return None;
         }
         seen_fixed_ordinals[ordinal] = true;
-        let scalar = DesignFixedExtrudeScalar {
-            value: lane.value,
-            record_index,
-            value_offset: lane.value_offset,
-        };
         let source_kind = parameter_owners
             .iter()
             .find(|owner| {
@@ -96,18 +91,44 @@ pub(super) fn exact_fixed_extrude_parameters(
                     .map(crate::records::parameters::DesignParameter::source_kind)
             });
         match source_kind {
-            Some("AlongDistance") if lane.value.get() != 0.0 && along_distance.is_none() => {
-                along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
+            Some("AlongDistance") if along_distance.is_none() => {
+                let value = NonZeroReal::new(lane.value.get())?;
+                along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
+                    DesignFixedExtrudeScalar {
+                        value,
+                        record_index,
+                        value_offset: lane.value_offset,
+                    },
+                ));
             }
-            Some("TaperAngle") if taper_angle.is_none() => taper_angle = Some(scalar),
+            Some("TaperAngle") if taper_angle.is_none() => {
+                taper_angle = Some(DesignFixedExtrudeScalar {
+                    value: lane.value,
+                    record_index,
+                    value_offset: lane.value_offset,
+                });
+            }
             Some("AlongDistance") if along_distance.is_some() && lane.value.get() == 0.0 => {}
             Some(_) => return None,
             None => match lane.ordinal {
-                0 if lane.value.get() != 0.0 && along_distance.is_none() => {
-                    along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(scalar));
+                0 if along_distance.is_none() && lane.value.get() != 0.0 => {
+                    let value = NonZeroReal::new(lane.value.get())?;
+                    along_distance = Some(DesignFixedExtrudeDistance::FixedScalar(
+                        DesignFixedExtrudeScalar {
+                            value,
+                            record_index,
+                            value_offset: lane.value_offset,
+                        },
+                    ));
                 }
                 0 if along_distance.is_some() && lane.value.get() == 0.0 => {}
-                1 if taper_angle.is_none() => taper_angle = Some(scalar),
+                1 if taper_angle.is_none() => {
+                    taper_angle = Some(DesignFixedExtrudeScalar {
+                        value: lane.value,
+                        record_index,
+                        value_offset: lane.value_offset,
+                    });
+                }
                 _ => return None,
             },
         }
@@ -126,7 +147,7 @@ fn exact_embedded_extrude_distance(
     records: &IndexedRecordOffsets,
     record_index: u32,
     scope_record_index: u32,
-) -> Option<FixedScalarFrame> {
+) -> Option<FixedScalarFrame<PositiveReal>> {
     let candidates = records
         .frames(record_index)
         .filter_map(|(start, end)| {
@@ -156,8 +177,8 @@ fn exact_embedded_extrude_distance(
             {
                 return None;
             }
-            let value = FiniteReal::new(View::f64_le_at(bytes, start + 51)?)?;
-            (value.get() > 0.0).then_some(FixedScalarFrame {
+            let value = PositiveReal::new(View::f64_le_at(bytes, start + 51)?)?;
+            Some(FixedScalarFrame {
                 owner_record_index: Some(scope_record_index),
                 ordinal: 0,
                 value,

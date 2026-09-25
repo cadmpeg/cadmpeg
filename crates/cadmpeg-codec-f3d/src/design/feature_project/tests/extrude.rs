@@ -1117,7 +1117,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         let value = Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
                 DesignFixedExtrudeScalar {
-                    value: crate::test_support::real(0.55),
+                    value: cadmpeg_ir::scalar::PositiveReal::new(0.55).unwrap(),
                     record_index: 105,
                     value_offset: 600,
                 },
