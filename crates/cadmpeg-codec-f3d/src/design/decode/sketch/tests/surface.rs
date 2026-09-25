@@ -2,8 +2,7 @@
 use crate::design::decode::sketch::parse_sketch_surface;
 use cadmpeg_ir::math::Point3;
 
-#[test]
-fn sketch_surface_parser_recovers_tensor_product_grid() {
+fn canonical_surface_payload() -> Vec<u8> {
     let mut payload = vec![0; 315];
     payload[20] = 1;
     payload[21..25].copy_from_slice(&2u32.to_le_bytes());
@@ -43,13 +42,59 @@ fn sketch_surface_parser_recovers_tensor_product_grid() {
     payload[at..at + 4].copy_from_slice(&2u32.to_le_bytes());
     payload[at + 4..at + 8].copy_from_slice(&2u32.to_le_bytes());
 
-    let surface = parse_sketch_surface(&payload).expect("canonical surface payload");
+    payload
+}
+
+#[test]
+fn sketch_surface_parser_recovers_tensor_product_grid() {
+    let payload = canonical_surface_payload();
+    let surface = parse_sketch_surface(&payload, 0)
+        .expect("surface admission")
+        .expect("canonical surface payload");
     assert_eq!(surface.entity_genesis, Some(17));
     assert_eq!(surface.persistent_id.get(), 29);
-    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
-    assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(surface.control_points.len(), 2);
-    assert_eq!(surface.control_points[0].len(), 2);
-    assert_eq!(surface.control_points[1][1], Point3::new(30.0, 20.0, 10.0));
+    assert_eq!(
+        (
+            surface.geometry.u_degree.get(),
+            surface.geometry.v_degree.get()
+        ),
+        (1, 1)
+    );
+    assert_eq!(
+        surface
+            .geometry
+            .u_knots
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        surface
+            .geometry
+            .v_knots
+            .iter()
+            .copied()
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+            .collect::<Vec<_>>(),
+        [0.0, 0.0, 1.0, 1.0]
+    );
+    assert_eq!(surface.geometry.control_points.len(), 2);
+    assert_eq!(surface.geometry.control_points[0].len(), 2);
+    assert_eq!(
+        surface.geometry.control_points[1][1].get(),
+        Point3::new(30.0, 20.0, 10.0)
+    );
+}
+
+#[test]
+fn sketch_surface_parser_refuses_scaled_coordinate_overflow() {
+    let mut payload = canonical_surface_payload();
+    payload[131..139].copy_from_slice(&f64::MAX.to_le_bytes());
+    let error = parse_sketch_surface(&payload, 0).expect_err("scaled coordinate overflow");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(error
+        .to_string()
+        .contains("control point 0 overflows millimetres"));
 }

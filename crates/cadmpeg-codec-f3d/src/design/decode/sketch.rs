@@ -22,7 +22,7 @@ use crate::records::{
     sketch_geometry::{
         SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchPointClosure,
         SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
-        SketchSurface, SketchText, SketchTextAlignment, SketchTextLayout,
+        SketchSurface, SketchSurfaceGeometry, SketchText, SketchTextAlignment, SketchTextLayout,
     },
     sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
     sketch_relations::{SketchGlyphTransform, SketchRelation, SketchRelationOperand},
@@ -31,7 +31,6 @@ use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
@@ -2686,17 +2685,25 @@ pub(crate) fn decode_sketch_curve_identities(
     Ok(out)
 }
 
+#[derive(Debug)]
 struct ParsedSketchSurface {
+    entity_genesis: Option<u64>,
+    persistent_id: std::num::NonZeroU64,
+    geometry: SketchSurfaceGeometry,
+}
+
+struct SketchSurfaceFrame {
     entity_genesis: Option<u64>,
     persistent_id: std::num::NonZeroU64,
     u_degree: u32,
     v_degree: u32,
     u_knots: Vec<f64>,
     v_knots: Vec<f64>,
-    control_points: Vec<Vec<Point3>>,
+    coordinates: Vec<f64>,
+    v_count: usize,
 }
 
-fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface> {
+fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
     if payload.get(20) != Some(&1)
         || View::u32_le_at(payload, 21) != Some(2)
         || View::u32_le_at(payload, 25) != Some(13)
@@ -2733,37 +2740,63 @@ fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface> {
     let grid_at = v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?;
     let u_count = usize::try_from(View::u32_le_at(payload, grid_at)?).ok()?;
     let v_count = usize::try_from(View::u32_le_at(payload, grid_at.checked_add(4)?)?).ok()?;
-    let expected_u_knots = u_count.checked_add(usize::try_from(u_degree).ok()?.checked_add(1)?)?;
-    let expected_v_knots = v_count.checked_add(usize::try_from(v_degree).ok()?.checked_add(1)?)?;
-    if u_degree == 0
-        || v_degree == 0
-        || u_count.checked_mul(v_count) != Some(point_count)
-        || u_knot_count != expected_u_knots
-        || v_knot_count != expected_v_knots
-        || coordinates.iter().any(|value| !value.is_finite())
-        || u_knots.iter().any(|value| !value.is_finite())
-        || v_knots.iter().any(|value| !value.is_finite())
-        || !knots_nondecreasing(&u_knots)
-        || !knots_nondecreasing(&v_knots)
-    {
+    // The grid count determines safe row framing. Geometry admission follows
+    // after source coordinates are scaled to millimetres.
+    if u_count.checked_mul(v_count) != Some(point_count) {
         return None;
     }
-    let control_points = coordinates
-        .chunks_exact(3)
-        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
-        .collect::<Vec<_>>()
-        .chunks(v_count)
-        .map(<[Point3]>::to_vec)
-        .collect();
-    Some(ParsedSketchSurface {
+    Some(SketchSurfaceFrame {
         entity_genesis,
         persistent_id,
         u_degree,
         v_degree,
         u_knots,
         v_knots,
-        control_points,
+        coordinates,
+        v_count,
     })
+}
+
+fn parse_sketch_surface(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<ParsedSketchSurface>, CodecError> {
+    let Some(frame) = parse_sketch_surface_frame(payload) else {
+        return Ok(None);
+    };
+    let mut points = Vec::with_capacity(frame.coordinates.len() / 3);
+    for (ordinal, values) in frame.coordinates.chunks_exact(3).enumerate() {
+        let source = Point3::new(values[0], values[1], values[2]);
+        if !source.is_finite() {
+            return Ok(None);
+        }
+        let scaled = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
+        let point = FinitePoint3::new(scaled).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "F3D sketch surface at byte {record_at} control point {ordinal} overflows millimetres"
+            ))
+        })?;
+        points.push(point);
+    }
+    let control_points = points
+        .chunks(frame.v_count)
+        .map(<[FinitePoint3]>::to_vec)
+        .collect();
+    let Some(geometry) = SketchSurfaceGeometry::from_checked_parts(
+        frame.u_degree,
+        frame.v_degree,
+        frame.u_knots,
+        frame.v_knots,
+        control_points,
+    )
+    .ok() else {
+        return Ok(None);
+    };
+    Ok(Some(ParsedSketchSurface {
+        entity_genesis: frame.entity_genesis,
+        persistent_id: frame.persistent_id,
+        geometry,
+    }))
 }
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
@@ -2789,7 +2822,7 @@ pub(crate) fn decode_sketch_surfaces(
                 continue;
             };
             let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(payload) else {
+            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
                 continue;
             };
             out.push(SketchSurface {
@@ -2800,11 +2833,7 @@ pub(crate) fn decode_sketch_surfaces(
                 byte_offset: record_at as u64,
                 entity_genesis: surface.entity_genesis,
                 persistent_id: surface.persistent_id,
-                u_degree: surface.u_degree,
-                v_degree: surface.v_degree,
-                u_knots: surface.u_knots,
-                v_knots: surface.v_knots,
-                control_points: surface.control_points,
+                geometry: surface.geometry,
             });
         }
     }

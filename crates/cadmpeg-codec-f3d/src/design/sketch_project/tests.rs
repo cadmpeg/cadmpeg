@@ -1093,14 +1093,17 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         byte_offset: 109,
         entity_genesis: None,
         persistent_id: std::num::NonZeroU64::new(8).unwrap(),
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
-            vec![Point3::new(1.0, 2.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
-            vec![Point3::new(4.0, 2.0, 0.0), Point3::new(4.0, 5.0, 0.0)],
-        ],
+        geometry: crate::records::sketch_geometry::SketchSurfaceGeometry::from_parts(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                vec![Point3::new(1.0, 2.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
+                vec![Point3::new(4.0, 2.0, 0.0), Point3::new(4.0, 5.0, 0.0)],
+            ],
+        )
+        .unwrap(),
     };
     let mut point_on_surface_relation = relation.clone();
     point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
@@ -1262,14 +1265,17 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
         byte_offset: 0,
         entity_genesis: None,
         persistent_id: std::num::NonZeroU64::new(2).unwrap(),
-        u_degree: 1,
-        v_degree: 1,
-        u_knots: vec![0.0, 0.0, 1.0, 1.0],
-        v_knots: vec![0.0, 0.0, 1.0, 1.0],
-        control_points: vec![
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        ],
+        geometry: crate::records::sketch_geometry::SketchSurfaceGeometry::from_parts(
+            1,
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        )
+        .unwrap(),
     };
     let placements = [placement];
     let (planar, planar_entities) =

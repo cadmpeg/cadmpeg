@@ -716,16 +716,29 @@ pub(crate) fn project_spatial_sketch_design(
                 sketch,
                 SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::NurbsSurface {
                     surface: cadmpeg_ir::geometry::nurbs::BsplineSurface::new(
-                        surface.u_degree,
-                        surface.v_degree,
-                        surface.u_knots.clone(),
-                        surface.v_knots.clone(),
+                        surface.geometry.u_degree.get(),
+                        surface.geometry.v_degree.get(),
                         surface
+                            .geometry
+                            .u_knots
+                            .iter()
+                            .copied()
+                            .map(cadmpeg_ir::scalar::FiniteReal::get)
+                            .collect(),
+                        surface
+                            .geometry
+                            .v_knots
+                            .iter()
+                            .copied()
+                            .map(cadmpeg_ir::scalar::FiniteReal::get)
+                            .collect(),
+                        surface
+                            .geometry
                             .control_points
                             .iter()
                             .map(|row| {
                                 row.iter()
-                                    .map(|point| transform_point(placement, point))
+                                    .map(|point| transform_point(placement, &point.get()))
                                     .collect()
                             })
                             .collect(),
