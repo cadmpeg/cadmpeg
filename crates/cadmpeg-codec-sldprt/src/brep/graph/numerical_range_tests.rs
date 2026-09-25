@@ -220,14 +220,7 @@ fn numerical_0922b_wide_curve_inverse() {
             InverseResolution::Ambiguous => panic!("ambiguous"),
         };
         println!("SW chart{d:?}: inverse{result:?}");
-        let hit = nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            None,
-            result.unwrap(),
-        )
-        .unwrap();
+        let hit = nurbs_curve_point_at(&curve, result.unwrap()).unwrap();
         assert!((hit.x - 0.3).abs() < INVERSE_FIT_TOLERANCE);
     }
 }

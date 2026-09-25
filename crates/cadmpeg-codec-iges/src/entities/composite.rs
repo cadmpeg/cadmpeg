@@ -1251,7 +1251,7 @@ fn concatenate_nurbs<T>(
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
         cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t)
-            .ok_or(CompositeCurveError::EndpointEvaluation { t })
+            .map_err(|_| CompositeCurveError::EndpointEvaluation { t })
     };
     endpoint(0.0)?;
     endpoint(cursor)?;
@@ -1576,8 +1576,8 @@ fn anchor_analytic_nurbs_endpoint_poles(
     };
     let start = point_for_vertex(ir, &edge.start, index)?;
     let end = point_for_vertex(ir, &edge.end, index)?;
-    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0])?;
-    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1])?;
+    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0]).ok()?;
+    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1]).ok()?;
     if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
         || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
     {
@@ -2038,7 +2038,7 @@ fn project_with_type_130_policy(
             continue;
         };
         let cursor = segments.end();
-        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0) else {
+        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0) else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,
@@ -2056,7 +2056,7 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor) else {
+        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor) else {
             let (edge, loss) = project_degraded_composite(
                 ir,
                 &mut index,

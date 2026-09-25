@@ -93,18 +93,19 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
 fn rational_quadratic_arc_evaluates_on_the_circle() {
     // Quarter circle of radius 5 as a rational quadratic Bezier.
     let weight = 0.5_f64.sqrt();
-    let point = crate::eval::nurbs_curve_point(
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
         2,
-        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        &[
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
             Point3::new(5.0, 0.0, 0.0),
             Point3::new(5.0, 5.0, 0.0),
             Point3::new(0.0, 5.0, 0.0),
         ],
-        Some(&[1.0, weight, 1.0]),
-        0.5,
+        Some(vec![1.0, weight, 1.0]),
+        false,
     )
     .unwrap();
+    let point = crate::eval::nurbs_curve_point_at(&curve, 0.5).unwrap();
     let radius = (point.x * point.x + point.y * point.y).sqrt();
     assert!((radius - 5.0).abs() < 1.0e-12, "mid-span radius {radius}");
 }

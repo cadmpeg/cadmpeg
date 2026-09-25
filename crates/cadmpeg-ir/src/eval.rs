@@ -1552,30 +1552,17 @@ fn bspline_basis_scaled_derivative_level(
     Some(derivative)
 }
 
-/// Evaluate a possibly-rational B-spline curve over 3D poles. The point is
-/// absent when a coordinate is not finite.
-pub fn nurbs_curve_point(
-    degree: u32,
-    knots: &[f64],
-    control_points: &[Point3],
-    weights: Option<&[f64]>,
-    t: f64,
-) -> Option<FinitePoint3> {
-    nurbs_curve_point_evaluation(
-        degree,
-        knots,
-        control_points.len(),
-        |index| FinitePoint3::new(*control_points.get(index)?),
-        weights,
-        FiniteReal::new(t)?,
-    )
-    .ok()
-}
-
 /// Evaluate a NURBS curve at knot-domain parameter `t` over its admitted
-/// poles. The point is absent when `t` is outside the knot domain or a
-/// homogeneous sum is not finite.
-pub fn nurbs_curve_point_at(curve: &NurbsCurve, t: f64) -> Option<FinitePoint3> {
+/// poles, or report why it has no finite point there.
+///
+/// A parameter that is not finite, a knot vector that states no span at `t`,
+/// and a zero weight sum have no value. A basis that leaves the finite range
+/// reaches no coordinate, and each reads NaN; a projection that overflows
+/// carries each coordinate it reached.
+pub fn nurbs_curve_point_at(
+    curve: &NurbsCurve,
+    t: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let poles = curve.control_points();
     nurbs_curve_point_evaluation(
         curve.degree(),
@@ -1583,9 +1570,8 @@ pub fn nurbs_curve_point_at(curve: &NurbsCurve, t: f64) -> Option<FinitePoint3> 
         poles.len(),
         |index| poles.get(index).copied(),
         curve.pole_rows().weights().as_deref(),
-        FiniteReal::new(t)?,
+        FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
     )
-    .ok()
 }
 
 /// The point at `t` of a possibly-rational B-spline over `count` poles that
@@ -2021,13 +2007,10 @@ fn parameter_interval_containing(
 ///
 /// Periodic parameters retain their serialized phase outside this operation
 /// and are interpreted modulo the positive knot-domain period.
-pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<FiniteReal> {
+pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: FiniteReal) -> Option<FiniteReal> {
     let domain = nurbs_curve_parameter_domain(curve)?;
     let [lower, upper] = domain.endpoints();
-    if !parameter.is_finite() {
-        return None;
-    }
-    if !curve.periodic() && !(lower..=upper).contains(&parameter) {
+    if !curve.periodic() && !(lower..=upper).contains(&parameter.get()) {
         return None;
     }
     let mapped = periodic_parameter(
@@ -2527,7 +2510,7 @@ fn nurbs_surface_point_evaluation(
         u_degree,
         u_count,
         surface.u_periodic(),
-        u_at,
+        FiniteReal::new(u_at).ok_or(no_value)?,
     )
     .ok_or(no_value)?
     .get();
@@ -2536,7 +2519,7 @@ fn nurbs_surface_point_evaluation(
         v_degree,
         v_count,
         surface.v_periodic(),
-        v_at,
+        FiniteReal::new(v_at).ok_or(no_value)?,
     )
     .ok_or(no_value)?
     .get();
@@ -2653,7 +2636,7 @@ pub fn nurbs_surface_isocurve(
         fixed_degree,
         fixed_count,
         fixed_periodic,
-        fixed_parameter,
+        FiniteReal::new(fixed_parameter)?,
     )?
     .get();
     let fixed_span = bspline_span(fixed_knots, fixed_degree, fixed_count, fixed_parameter)?;
@@ -2865,7 +2848,7 @@ pub fn nurbs_surface_second_partials(
         u_degree,
         u_count,
         surface.u_periodic(),
-        u_at,
+        FiniteReal::new(u_at)?,
     )?
     .get();
     let v_at = periodic_parameter(
@@ -2873,7 +2856,7 @@ pub fn nurbs_surface_second_partials(
         v_degree,
         v_count,
         surface.v_periodic(),
-        v_at,
+        FiniteReal::new(v_at)?,
     )?
     .get();
     let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
@@ -2962,15 +2945,14 @@ fn periodic_parameter(
     degree: usize,
     count: usize,
     periodic: bool,
-    parameter: f64,
+    parameter: FiniteReal,
 ) -> Option<FiniteReal> {
-    let admitted = FiniteReal::new(parameter)?;
     let start = *knots.get(degree)?;
     let end = *knots.get(count)?;
-    if !periodic || (start..=end).contains(&parameter) {
-        return Some(admitted);
+    if !periodic || (start..=end).contains(&parameter.get()) {
+        return Some(parameter);
     }
-    crate::math::wrap_parameter(parameter, start, end)
+    crate::math::wrap_parameter(parameter.get(), start, end)
 }
 
 /// Evaluate the exact first derivative of a directly stored curve. The
@@ -3237,7 +3219,7 @@ fn curve_derivative_evaluation(
         }
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
-                map_nurbs_curve_parameter(nurbs, t).ok_or(EvaluationFailure::NoValue)?;
+                map_nurbs_curve_parameter(nurbs, parameter).ok_or(EvaluationFailure::NoValue)?;
             nurbs_curve_derivative(
                 nurbs.degree(),
                 nurbs.knots(),
@@ -4984,7 +4966,7 @@ pub fn curve_point_solved(
         SolvedCurveGeometry::Degenerate(degenerate_curve) => Ok(degenerate_curve.point()),
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
-                map_nurbs_curve_parameter(nurbs, t).ok_or(EvaluationFailure::NoValue)?;
+                map_nurbs_curve_parameter(nurbs, parameter()?).ok_or(EvaluationFailure::NoValue)?;
             let poles = nurbs.control_points();
             nurbs_curve_point_evaluation(
                 nurbs.degree(),

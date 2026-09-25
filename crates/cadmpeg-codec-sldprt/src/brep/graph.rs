@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
-    nurbs_curve_point_at, nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
+    analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point_at,
+    nurbs_pcurve_uv, nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
     nurbs_surface_point, surface_point,
 };
@@ -3206,7 +3206,7 @@ fn nurbs_parameter_at_point(
     target: cadmpeg_ir::math::Point3,
 ) -> InverseResolution<f64> {
     let squared_distance = |parameter: f64| {
-        let point = nurbs_curve_point_at(nurbs, parameter)?;
+        let point = nurbs_curve_point_at(nurbs, parameter).ok()?;
         Some(
             (point.x - target.x).powi(2)
                 + (point.y - target.y).powi(2)
@@ -4764,7 +4764,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     ];
     if overlap[0] < overlap[1] {
         let parameter = overlap[0].midpoint(overlap[1]);
-        if let Some(point) = nurbs_curve_point_at(curve, parameter) {
+        if let Ok(point) = nurbs_curve_point_at(curve, parameter) {
             let tolerance = inverse_coordinate_tolerance(
                 surface
                     .poles()
@@ -4911,7 +4911,7 @@ fn nurbs_edge_endpoint_parameters(
     range: [f64; 2],
 ) -> Option<[cadmpeg_ir::math::Point2; 2]> {
     let curve_points = range.map(|parameter| nurbs_curve_point_at(curve, parameter));
-    let [Some(first), Some(last)] = curve_points else {
+    let [Ok(first), Ok(last)] = curve_points else {
         return None;
     };
     // The inverse-projection tolerance of this surface's coordinates against
@@ -4943,7 +4943,7 @@ fn nurbs_curve_surface_deviation(
     let mut seed = None;
     let mut maximum = 0.0_f64;
     for parameter in parameters {
-        let point = nurbs_curve_point_at(curve, parameter)?;
+        let point = nurbs_curve_point_at(curve, parameter).ok()?;
         let parameters = seed
             .and_then(|seed| nurbs_surface_parameter_near_point(surface, point.get(), Some(seed)))
             .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?
@@ -4977,16 +4977,12 @@ fn nurbs_degree_one_cache_lanes(
         seed = Some(parameters);
         control_points.push(parameters);
     }
-    let uv_control_points = control_points
-        .iter()
-        .map(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
-        .collect::<Vec<_>>();
     let parameters = nurbs_curve_sample_parameters(curve, range)?;
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
-        let model_point = nurbs_curve_point_at(curve, parameter)?;
-        let uv = nurbs_curve_point(1, curve.knots(), &uv_control_points, None, parameter)?;
-        let mapped_point = nurbs_surface_point(surface, uv.x, uv.y)?;
+        let model_point = nurbs_curve_point_at(curve, parameter).ok()?;
+        let uv = nurbs_pcurve_uv(1, curve.knots(), &control_points, None, parameter)?;
+        let mapped_point = nurbs_surface_point(surface, uv.u, uv.v)?;
         fit_tolerance = fit_tolerance.max(Point3::distance(model_point.get(), mapped_point.get()));
     }
     if !fit_tolerance.is_finite() {

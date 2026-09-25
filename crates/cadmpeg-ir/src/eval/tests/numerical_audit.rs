@@ -52,7 +52,7 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
     use super::super::{
-        nurbs_curve_derivative, nurbs_curve_point, nurbs_surface_isocurve,
+        nurbs_curve_derivative, nurbs_curve_point_at, nurbs_surface_isocurve,
         nurbs_surface_second_partials, CurveDerivative, SurfaceParameterAxis,
     };
     use crate::math::Vector3;
@@ -61,8 +61,17 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
         let knots = [0.0, 0.0, 1.0, 1.0];
         let weights = [weight; 2];
+        let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            knots.to_vec(),
+            poles.to_vec(),
+            Some(weights.to_vec()),
+            false,
+        )
+        .unwrap();
         assert_eq!(
-            nurbs_curve_point(1, &knots, &poles, Some(&weights), 0.5)
+            nurbs_curve_point_at(&curve, 0.5)
+                .ok()
                 .map(crate::features::FinitePoint3::get),
             Some(Point3::new(3.0, 0.0, 0.0))
         );
@@ -128,25 +137,32 @@ fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
 
 #[test]
 fn numerical_audit_tiny_knot_spans_and_wide_periodic_offsets_stay_finite() {
-    use super::super::{nurbs_curve_point, periodic_parameter};
+    use super::super::{nurbs_curve_point_at, periodic_parameter};
     let tiny = 1.0e-310;
     let parameter = tiny * 0.5;
-    let point = nurbs_curve_point(
+    let curve = crate::geometry::nurbs::NurbsCurve::from_lanes(
         1,
-        &[0.0, 0.0, tiny, tiny],
-        &[Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
+        vec![0.0, 0.0, tiny, tiny],
+        vec![Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)],
         None,
-        parameter,
+        false,
     )
     .unwrap();
+    let point = nurbs_curve_point_at(&curve, parameter).unwrap();
     // The subnormal parameter can round away from the mathematical midpoint.
     let expected = 2.0 + 2.0 * (parameter / tiny);
     assert!((point.x - expected).abs() <= 8.0 * f64::EPSILON * expected);
     assert_eq!((point.y, point.z), (0.0, 0.0));
     let knots = [-1.0e308, -1.0e308, -9.0e307, -9.0e307];
-    let wrapped = periodic_parameter(&knots, 1, 2, true, 1.0e308)
-        .unwrap()
-        .get();
+    let wrapped = periodic_parameter(
+        &knots,
+        1,
+        2,
+        true,
+        crate::scalar::FiniteReal::new(1.0e308).unwrap(),
+    )
+    .unwrap()
+    .get();
     assert!(wrapped.is_finite() && (knots[1]..=knots[2]).contains(&wrapped));
 }
 

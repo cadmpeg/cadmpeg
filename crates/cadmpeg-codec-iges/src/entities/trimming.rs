@@ -727,7 +727,9 @@ fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<
     )?
     .into_iter()
     .map(|parameter| {
-        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter).map(FinitePoint3::get)
+        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter)
+            .ok()
+            .map(FinitePoint3::get)
     })
     .collect()
 }

@@ -15,7 +15,7 @@ use crate::eval::model_surface_point_by_id;
 use crate::eval::model_surface_point_by_id_with_budget;
 use crate::eval::model_surface_second_partials_by_id;
 use crate::eval::nurbs_curve_parameter_near_point;
-use crate::eval::nurbs_curve_point;
+use crate::eval::nurbs_curve_point_at;
 use crate::eval::nurbs_curve_speed_bound;
 use crate::eval::nurbs_surface_isocurve;
 use crate::eval::nurbs_surface_isoline;
@@ -814,16 +814,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
                 IsolineDirection::ConstantV => (sample, at),
             };
             let expected = nurbs_surface_point(&surface, u, v).expect("surface point");
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
-            let actual = nurbs_curve_point(
-                curve.degree(),
-                curve.knots(),
-                &control_points,
-                weights.as_deref(),
-                sample,
-            )
-            .expect("curve point");
+            let actual = nurbs_curve_point_at(&curve, sample).expect("curve point");
             for (left, right) in [
                 (actual.x, expected.x),
                 (actual.y, expected.y),

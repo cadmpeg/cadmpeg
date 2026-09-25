@@ -1428,6 +1428,7 @@ fn linear_nurbs_boundary_points(
     .into_iter()
     .map(|parameter| {
         cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter)
+            .ok()
             .map(cadmpeg_ir::features::FinitePoint3::get)
     })
     .collect()

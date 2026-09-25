@@ -99,6 +99,20 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
 
 /// The refusal of a trim over the unit NURBS square whose pcurve is `geometry`.
 fn trim_error(geometry: PcurveGeometry) -> String {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1., 0.)],
+        None,
+        false,
+    )
+    .unwrap();
+    trim_refusal(geometry, &curve, [0., 1.])
+}
+
+/// The refusal of a trim over the unit NURBS square whose pcurve is
+/// `geometry` and whose edge runs along `curve` over `domain`.
+fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) -> String {
     let source = Edge {
         id: EdgeId::mint("test:overflow:edge#1").unwrap(),
         carrier: EdgeCarrier::new(
@@ -123,14 +137,6 @@ fn trim_error(geometry: PcurveGeometry) -> String {
         false,
     )
     .unwrap();
-    let curve = NurbsCurve::from_lanes(
-        1,
-        vec![0., 0., 1., 1.],
-        vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1., 0.)],
-        None,
-        false,
-    )
-    .unwrap();
     let p = Pcurve {
         id: PcurveId::mint("test:overflow:pcurve#1").unwrap(),
         geometry,
@@ -140,12 +146,9 @@ fn trim_error(geometry: PcurveGeometry) -> String {
         source: &source,
         start: 0,
         end: 1,
-        domain: [
-            cadmpeg_ir::scalar::FiniteReal::ZERO,
-            cadmpeg_ir::scalar::FiniteReal::ONE,
-        ],
+        domain: domain.map(|end| cadmpeg_ir::scalar::FiniteReal::new(end).unwrap()),
         curve_id: "overflow-line",
-        curve: WritableEdgeCurve::Nurbs(&curve),
+        curve: WritableEdgeCurve::Nurbs(curve),
         uses: vec![],
     };
     let explicit = WritablePcurve {
@@ -198,6 +201,38 @@ fn a_trim_pcurve_whose_placed_point_overflows_leaves_the_surface_domain() {
     ));
     assert!(
         error.contains("pcurve test:overflow:pcurve#1 leaves its NURBS surface parameter domain"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_trim_edge_curve_whose_point_overflows_misses_its_pcurve_by_the_distance_it_reached() {
+    // At t = 1/2 the homogeneous weight of (1, -1 + 2^-40) is 2^-41, so the
+    // projected second pole row reaches y = -inf; the pcurve maps the same
+    // parameter to (1/2, 1/2, 0), infinitely far from the edge point.
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0., 0., 1., 1.],
+        vec![Point3::new(0.5, 0., 0.), Point3::new(0.5, 1.0e300, 0.)],
+        Some(vec![1., -1. + 2f64.powi(-40)]),
+        false,
+    )
+    .unwrap();
+    let error = trim_refusal(
+        PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.5, 0.),
+                Point2::new(0., 1.),
+            )
+            .unwrap(),
+        ),
+        &curve,
+        [0.5, 0.75],
+    );
+    assert!(
+        error.contains(
+            "pcurve test:overflow:pcurve#1 misses directed edge curve overflow-line by inf"
+        ),
         "{error}"
     );
 }

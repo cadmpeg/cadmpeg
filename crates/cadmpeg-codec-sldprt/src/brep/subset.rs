@@ -65,6 +65,7 @@ fn point_at(curve: &CurveGeometry, parameter: f64) -> Option<Point3> {
                 return None;
             }
             cadmpeg_ir::eval::nurbs_curve_point_at(curve, parameter)
+                .ok()
                 .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,

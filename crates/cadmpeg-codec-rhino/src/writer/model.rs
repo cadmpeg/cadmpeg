@@ -49,19 +49,24 @@ pub(super) enum WritableEdgeCurve<'a> {
 }
 
 impl WritableEdgeCurve<'_> {
-    pub(super) fn point(self, parameter: f64) -> Option<Point3> {
+    /// The edge curve's point at `parameter`, or why it has no finite point
+    /// there. A NURBS parameter outside the evaluable domain has no value.
+    pub(super) fn point(
+        self,
+        parameter: FiniteReal,
+    ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
+    {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::curve_point(
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
-                parameter,
-            )
-            .ok()
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+                parameter.get(),
+            ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::nurbs_curve_point_at(
                 nurbs,
-                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)?.get(),
-            )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
+                    .ok_or(cadmpeg_ir::eval::EvaluationFailure::NoValue)?
+                    .get(),
+            ),
         }
     }
 }

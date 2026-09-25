@@ -161,8 +161,8 @@ fn add_edge(
     parameter_range: [f64; 2],
     sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
-    let start = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0])?;
-    let end = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1])?;
+    let start = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]).ok()?;
+    let end = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]).ok()?;
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
     sequences.record_point(&start_point, &stem);

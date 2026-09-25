@@ -340,15 +340,11 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
             "control_points must contain more than degree 4 poles, found 2".into()
         ))
     );
+    // At t = 3 the weights -1 and 2 blend to -1 * 2/3 + 2 * 1/3 = 0, so the
+    // homogeneous point has no projection.
     assert_eq!(
         crate::eval::nurbs_curve_point_at(&curve, 3.0),
-        crate::eval::nurbs_curve_point(
-            1,
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            curve.pole_rows().weights().as_deref(),
-            3.0,
-        )
+        Err(crate::eval::EvaluationFailure::NoValue)
     );
 
     let mut mapped = curve.clone();

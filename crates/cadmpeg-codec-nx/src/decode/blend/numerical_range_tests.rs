@@ -134,25 +134,11 @@ fn numerical_0922b_unclamped_curve_inverse() {
             false,
         )
         .unwrap();
-        let target = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            None,
-            0.,
-        )
-        .unwrap();
+        let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.).unwrap();
         let budget = GeometryWorkBudget::new(100_000);
         let p =
             closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
-        let actual = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            None,
-            p,
-        )
-        .unwrap();
+        let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
         println!(
             "NX knots{:?}, exact start{target:?}: inverse{p}, residual{}",
             curve.knots(),
@@ -176,25 +162,11 @@ fn numerical_0922b_small_domain_inverse() {
             false,
         )
         .unwrap();
-        let target = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            None,
-            0.75 * d,
-        )
-        .unwrap();
+        let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.75 * d).unwrap();
         let budget = GeometryWorkBudget::new(100_000);
         let p =
             closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget).unwrap();
-        let actual = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve.pole_rows().raw_points(),
-            None,
-            p,
-        )
-        .unwrap();
+        let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
         println!(
             "NX d{d:e},target{target:?}:inverse{},residual{}",
             p / d,
@@ -224,14 +196,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         &GeometryWorkBudget::new(100_000),
     )
     .unwrap();
-    let actual = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &curve.pole_rows().raw_points(),
-        None,
-        p,
-    )
-    .unwrap();
+    let actual = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, p).unwrap();
     println!("NX discontinuous quadratic target11: parameter{p}, actual{actual:?}");
     assert!(actual.distance(target) < 1e-14);
 }
@@ -298,16 +263,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
         )
         .unwrap();
         assert!(
-            (cadmpeg_ir::eval::nurbs_curve_point(
-                1,
-                curve.knots(),
-                &curve.pole_rows().raw_points(),
-                None,
-                t
-            )
-            .unwrap()
-            .x - 0.3)
-                .abs()
+            (cadmpeg_ir::eval::nurbs_curve_point_at(&curve, t).unwrap().x - 0.3).abs()
                 < 64. * f64::EPSILON
         );
         let p = PcurveGeometry::Nurbs {
