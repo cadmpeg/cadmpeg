@@ -128,6 +128,84 @@ fn affine_curve_ranges_reparameterize_without_changing_geometry() {
 }
 
 #[test]
+fn wide_affine_nurbs_range_maps_finite_exterior_knots() {
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![-0.01, 0.0, 1.0, 1.01],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("finite NURBS with exterior knots");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        [0.0, 1.0],
+        crate::test_support::test_b5::increasing([-9.0e307, 9.0e307]),
+        &"wide interval",
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("wide target maps finite exterior knots") else {
+        panic!("NURBS carrier");
+    };
+    let knots = mapped.knots().as_slice();
+    assert!(knots.iter().all(|knot| knot.is_finite()));
+    assert!((knots[0] / 9.0e307 + 1.02).abs() <= 4.0 * f64::EPSILON);
+    assert_eq!(&knots[1..3], &[-9.0e307, 9.0e307]);
+    assert!((knots[3] / 9.0e307 - 1.02).abs() <= 4.0 * f64::EPSILON);
+}
+
+#[test]
+fn tiny_affine_nurbs_range_maps_when_scale_ratio_overflows() {
+    let tiny = f64::MIN_POSITIVE / 4.0;
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, tiny, tiny],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("finite NURBS with a tiny domain");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+        [0.0, tiny],
+        crate::test_support::test_b5::increasing([0.0, 1.0]),
+        &"tiny interval",
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("finite target despite overflowing scale ratio") else {
+        panic!("NURBS carrier");
+    };
+    assert_eq!(mapped.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn wide_affine_line_range_keeps_finite_endpoints() {
+    let line = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("finite line");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mapped)) = curve_on_parameter_range(
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+        [0.0, 1.0],
+        crate::test_support::test_b5::increasing([-f64::MAX, f64::MAX]),
+        &"wide interval",
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("wide line range keeps its finite endpoint points") else {
+        panic!("NURBS line carrier");
+    };
+    assert_eq!(
+        mapped.knots().as_slice(),
+        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+    );
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]
+    );
+}
+
+#[test]
 fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
     let mut pcurve = B5Pcurve {
         object_id: 1,

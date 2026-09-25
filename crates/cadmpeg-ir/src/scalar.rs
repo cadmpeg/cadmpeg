@@ -786,7 +786,7 @@ impl crate::topology::IncreasingParameterInterval {
     /// product sum forms the affine numerator before division by the scaled
     /// source width, so neither width needs to fit in binary64. `reversed`
     /// maps the source start to this interval's upper endpoint.
-    pub(crate) fn map_from(
+    pub fn map_from(
         self,
         source: Self,
         parameter: FiniteReal,
