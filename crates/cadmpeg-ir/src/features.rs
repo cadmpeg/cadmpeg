@@ -340,6 +340,15 @@ impl FeatureUnitPlaneFrame {
         let origin = FinitePoint3::new(origin)?;
         let u_axis = UnitVector3::new(u_axis)?;
         let v_axis = UnitVector3::new(v_axis)?;
+        Self::from_parts(origin, u_axis, v_axis)
+    }
+
+    /// Build a plane frame from checked parts; only perpendicularity remains to check.
+    pub fn from_parts(
+        origin: FinitePoint3,
+        u_axis: UnitVector3,
+        v_axis: UnitVector3,
+    ) -> Option<Self> {
         (u_axis.as_raw().dot(*v_axis.as_raw()).abs() <= EPS_FEATURE_UNIT_FRAME).then_some(Self {
             origin,
             u_axis,
