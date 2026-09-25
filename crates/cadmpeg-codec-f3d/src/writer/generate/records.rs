@@ -531,7 +531,7 @@ fn encode_sketch_point(
         .copy_from_slice(&(point.coordinates().u / LEN_TO_MM).to_le_bytes());
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates().v / LEN_TO_MM).to_le_bytes());
-    record.extend_from_slice(&(depth / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&(depth.get() / LEN_TO_MM).to_le_bytes());
     record.extend_from_slice(&closure.selector().to_le_bytes());
     record.push(closure.state());
     record.extend_from_slice(&[0; 12]);

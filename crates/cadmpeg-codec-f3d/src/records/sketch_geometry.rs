@@ -436,7 +436,7 @@ impl SketchPointClosure10Inline {
 
 /// Serialized member sequence of one sketch-point record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum SketchPointRecordForm {
+pub(crate) enum SketchPointRecordForm<T = f64> {
     /// Class version 0: one flag, two coordinates, and no persistent identity.
     Version0 { flag: bool },
     /// Class version 8: seven flags and an eight-zero closure lane.
@@ -444,12 +444,12 @@ pub(crate) enum SketchPointRecordForm {
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         /// Third sketch coordinate in millimetres.
-        depth: f64,
+        depth: T,
     },
     /// Class version 10 with same-segment references and seven flags.
     Version10 {
         /// Third sketch coordinate in millimetres.
-        depth: f64,
+        depth: T,
         persistent_id: std::num::NonZeroU64,
         flags: [bool; 7],
         closure: SketchPointClosure10,
@@ -457,7 +457,7 @@ pub(crate) enum SketchPointRecordForm {
     /// Class version 10 with inline target-type GUIDs on its references.
     Version10InlineTyped {
         /// Third sketch coordinate in millimetres.
-        depth: f64,
+        depth: T,
         /// Final inline-typed reference following the repeated companion reference.
         trailing_reference: u32,
         persistent_id: std::num::NonZeroU64,
@@ -467,7 +467,7 @@ pub(crate) enum SketchPointRecordForm {
     /// Class version 11 with same-segment references and eight flags.
     Version11 {
         /// Third sketch coordinate in millimetres.
-        depth: f64,
+        depth: T,
         /// Optional origin bitfield preceding the persistent identity.
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
@@ -481,7 +481,7 @@ pub(crate) enum SketchPointRecordForm {
     /// Class version 11 with inline target-type GUIDs on its references and eight flags.
     Version11InlineTyped {
         /// Third sketch coordinate in millimetres.
-        depth: f64,
+        depth: T,
         /// Optional origin bitfield preceding the persistent identity.
         entity_genesis: Option<u64>,
         /// Final inline-typed reference following the repeated companion reference.
@@ -494,7 +494,7 @@ pub(crate) enum SketchPointRecordForm {
     },
 }
 
-impl SketchPointRecordForm {
+impl SketchPointRecordForm<f64> {
     #[cfg(test)]
     pub(crate) fn version11(
         persistent_id: u64,
@@ -512,7 +512,105 @@ impl SketchPointRecordForm {
             closure,
         }
     }
+}
 
+impl<T> SketchPointRecordForm<T> {
+    fn try_map_depth<U, E>(
+        self,
+        mut map: impl FnMut(T) -> Result<U, E>,
+    ) -> Result<SketchPointRecordForm<U>, E> {
+        Ok(match self {
+            Self::Version0 { flag } => SketchPointRecordForm::Version0 { flag },
+            Self::Version8 {
+                persistent_id,
+                flags,
+                depth: value,
+            } => SketchPointRecordForm::Version8 {
+                persistent_id,
+                flags,
+                depth: map(value)?,
+            },
+            Self::Version10 {
+                persistent_id,
+                flags,
+                closure,
+                depth: value,
+            } => SketchPointRecordForm::Version10 {
+                persistent_id,
+                flags,
+                closure,
+                depth: map(value)?,
+            },
+            Self::Version10InlineTyped {
+                persistent_id,
+                flags,
+                closure,
+                trailing_reference,
+                depth: value,
+            } => SketchPointRecordForm::Version10InlineTyped {
+                persistent_id,
+                flags,
+                closure,
+                trailing_reference,
+                depth: map(value)?,
+            },
+            Self::Version11 {
+                persistent_id,
+                flags,
+                closure,
+                entity_genesis,
+                padded_paired_reference,
+                companion_prefix_present_zero,
+                depth: value,
+            } => SketchPointRecordForm::Version11 {
+                persistent_id,
+                flags,
+                closure,
+                entity_genesis,
+                padded_paired_reference,
+                companion_prefix_present_zero,
+                depth: map(value)?,
+            },
+            Self::Version11InlineTyped {
+                persistent_id,
+                flags,
+                closure,
+                entity_genesis,
+                trailing_reference,
+                companion_prefix_present_zero,
+                depth: value,
+            } => SketchPointRecordForm::Version11InlineTyped {
+                persistent_id,
+                flags,
+                closure,
+                entity_genesis,
+                trailing_reference,
+                companion_prefix_present_zero,
+                depth: map(value)?,
+            },
+        })
+    }
+}
+
+impl SketchPointRecordForm<f64> {
+    fn try_checked(self) -> Result<SketchPointRecordForm<FiniteReal>, String> {
+        self.try_map_depth(|value| {
+            FiniteReal::new(value).ok_or_else(|| "sketch point depth must be finite".to_owned())
+        })
+    }
+}
+
+impl SketchPointRecordForm<FiniteReal> {
+    #[cfg(test)]
+    pub(crate) fn into_raw(self) -> SketchPointRecordForm<f64> {
+        match self.try_map_depth(|value| Ok::<f64, std::convert::Infallible>(value.get())) {
+            Ok(form) => form,
+            Err(never) => match never {},
+        }
+    }
+}
+
+impl<T: Copy + Into<f64>> SketchPointRecordForm<T> {
     pub(crate) fn depth(&self) -> f64 {
         match *self {
             Self::Version0 { .. } => 0.0,
@@ -520,7 +618,7 @@ impl SketchPointRecordForm {
             | Self::Version10 { depth, .. }
             | Self::Version10InlineTyped { depth, .. }
             | Self::Version11 { depth, .. }
-            | Self::Version11InlineTyped { depth, .. } => depth,
+            | Self::Version11InlineTyped { depth, .. } => depth.into(),
         }
     }
 
@@ -712,12 +810,12 @@ pub(crate) struct SketchPoint {
     /// Byte offset of the first coordinate relative to the record start.
     pub(crate) coordinate_offset: u32,
     /// Serialized point-record member sequence, identity, flags, and closure.
-    record_form: SketchPointRecordForm,
+    record_form: SketchPointRecordForm<FiniteReal>,
     companion: SketchPointCompanion,
     /// Record index of the paired reverse curve-incidence companion.
     pub(crate) paired_reference: u32,
     /// First two sketch coordinates in millimetres.
-    coordinates: Point2,
+    coordinates: FinitePoint2,
 }
 
 #[derive(Debug, Clone)]
@@ -747,12 +845,9 @@ pub(crate) struct SketchPointDraft {
 impl TryFrom<SketchPointDraft> for SketchPoint {
     type Error = String;
     fn try_from(draft: SketchPointDraft) -> Result<Self, Self::Error> {
-        if !draft.coordinates.is_finite() {
-            return Err("sketch point coordinates must be finite".into());
-        }
-        if !draft.record_form.depth().is_finite() {
-            return Err("sketch point depth must be finite".into());
-        }
+        let coordinates = FinitePoint2::new(draft.coordinates)
+            .ok_or_else(|| "sketch point coordinates must be finite".to_owned())?;
+        let record_form = draft.record_form.try_checked()?;
         draft.companion.validate()?;
         Ok(Self {
             id: draft.id,
@@ -761,26 +856,24 @@ impl TryFrom<SketchPointDraft> for SketchPoint {
             class_tag: draft.class_tag,
             byte_offset: draft.byte_offset,
             coordinate_offset: draft.coordinate_offset,
-            record_form: draft.record_form,
+            record_form,
             companion: draft.companion,
             paired_reference: draft.paired_reference,
-            coordinates: draft.coordinates,
+            coordinates,
         })
     }
 }
 
 impl SketchPoint {
     pub(crate) fn coordinates(&self) -> Point2 {
-        self.coordinates
+        self.coordinates.get()
     }
-    pub(crate) fn record_form(&self) -> &SketchPointRecordForm {
+    pub(crate) fn record_form(&self) -> &SketchPointRecordForm<FiniteReal> {
         &self.record_form
     }
     pub(crate) fn try_set_coordinates(&mut self, coordinates: Point2) -> Result<(), String> {
-        if !coordinates.is_finite() {
-            return Err("sketch point coordinates must be finite".into());
-        }
-        self.coordinates = coordinates;
+        self.coordinates = FinitePoint2::new(coordinates)
+            .ok_or_else(|| "sketch point coordinates must be finite".to_owned())?;
         Ok(())
     }
     #[cfg(test)]
@@ -788,10 +881,7 @@ impl SketchPoint {
         &mut self,
         record_form: SketchPointRecordForm,
     ) -> Result<(), String> {
-        if !record_form.depth().is_finite() {
-            return Err("sketch point depth must be finite".into());
-        }
-        self.record_form = record_form;
+        self.record_form = record_form.try_checked()?;
         Ok(())
     }
 
@@ -1090,7 +1180,7 @@ impl From<SketchPoint> for SketchPointSerde {
             persistent_id,
             paired_reference: point.paired_reference,
             flags,
-            coordinates: point.coordinates,
+            coordinates: point.coordinates.get(),
             depth,
             closure,
             companion,

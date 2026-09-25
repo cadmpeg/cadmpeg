@@ -971,7 +971,7 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let mut form = native.sketch_points[1].record_form().clone();
+        let mut form = native.sketch_points[1].record_form().clone().into_raw();
         let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
             persistent_id, ..
         } = &mut form
@@ -1020,7 +1020,7 @@ fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_ow
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let mut form = native.sketch_points[1].record_form().clone();
+        let mut form = native.sketch_points[1].record_form().clone().into_raw();
         let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
             persistent_id, ..
         } = &mut form
@@ -1066,7 +1066,7 @@ fn validation_accepts_sketch_geometry_identities_with_unknown_owner() {
         let source_id = native.sketch_points[0]
             .persistent_id()
             .expect("generated point identity");
-        let mut form = native.sketch_points[1].record_form().clone();
+        let mut form = native.sketch_points[1].record_form().clone().into_raw();
         let crate::records::sketch_geometry::SketchPointRecordForm::Version11 {
             persistent_id, ..
         } = &mut form

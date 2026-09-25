@@ -1873,7 +1873,7 @@ fn sketch_point_requires_a_distinct_companion_on_every_route() {
         class_tag: "000".to_owned().try_into().unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
-        record_form: original.record_form().clone(),
+        record_form: original.record_form().clone().into_raw(),
         paired_reference: 2,
         coordinates: original.coordinates(),
         companion: duplicate.clone(),
