@@ -1011,7 +1011,20 @@ fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
     if mapped.is_finite() {
         mapped
     } else {
-        (extents[1] - extents[0]).mul_add(fraction, extents[0])
+        let fallback = (extents[1] - extents[0]).mul_add(fraction, extents[0]);
+        if fallback.is_finite() {
+            return fallback;
+        }
+        if let (Some(source), Some(target), Some(parameter)) = (
+            cadmpeg_ir::topology::IncreasingParameterInterval::new(domain),
+            cadmpeg_ir::topology::IncreasingParameterInterval::new(extents),
+            FiniteReal::new(value),
+        ) {
+            if let Ok(mapped) = target.map_from(source, parameter, false) {
+                return mapped.get();
+            }
+        }
+        fallback
     }
 }
 
