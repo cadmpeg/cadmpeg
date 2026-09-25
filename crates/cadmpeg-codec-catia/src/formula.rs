@@ -475,6 +475,13 @@ pub(crate) fn transfer_parameters(
             .then(|| object.id.clone())
         })
         .collect();
+    let transferred = candidates.len();
+    ctx.charge_entities(
+        u64::try_from(transferred).map_err(|_| {
+            ctx.refuse_codec_limit("count CATIA formula parameters", u64::MAX, u64::MAX)
+        })?,
+        "admit CATIA formula parameters",
+    )?;
     let mut parameters = candidates.into_values().collect::<Vec<_>>();
     parameters.sort_by_key(|candidate| candidate.source_order);
     let Some(parameters) = parameters
@@ -511,13 +518,6 @@ pub(crate) fn transfer_parameters(
         }
     }
     *annotations = annotation_builder.build();
-    let transferred = parameters.len();
-    ctx.charge_entities(
-        u64::try_from(transferred).map_err(|_| {
-            ctx.refuse_codec_limit("count CATIA formula parameters", u64::MAX, u64::MAX)
-        })?,
-        "admit CATIA formula parameters",
-    )?;
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
