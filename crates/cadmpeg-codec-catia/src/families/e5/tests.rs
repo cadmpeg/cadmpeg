@@ -482,6 +482,25 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
 }
 
 #[test]
+fn e5_route_propagates_station_collection_refusal() {
+    let mut stream = e5_d8_rolling_ball_stream();
+    for id in 100..109 {
+        append_e5_record(&mut stream, 0xfe, id, &[]);
+    }
+    let file = object_main_catpart(&stream);
+    let mut options = DecodeOptions::default();
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    options.policy.limits.max_collection_items = 13;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("two E5 stations need 14 collection items");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "decode CATIA E5 rolling-ball stations"));
+}
+
+#[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     let stream = e5_torus_topology_stream();
     crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");

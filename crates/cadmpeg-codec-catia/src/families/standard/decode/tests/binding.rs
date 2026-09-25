@@ -762,7 +762,16 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         forward: true,
     }];
 
-    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &stream,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("synthetic E5 stream fits the service profile");
+    let jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &stream)
+        .expect("two E5 stations fit the collection limit");
+    let associated = associate_standard_freeform_e5_rolling_ball_jets(&records, &stream, &jets);
     assert!(matches!(
         associated.get(&7),
         Some(StandardSurfaceProcedure::RollingBall {
@@ -779,7 +788,8 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     };
     *forward = false;
     assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream).is_empty()
+        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &stream, &jets)
+            .is_empty()
     );
 
     let mut reverse_stream = stream.clone();
@@ -793,14 +803,18 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
     assert_eq!(Some(sense_offset), encoded_sense_offset);
     reverse_stream[sense_offset..sense_offset + std::mem::size_of::<i32>()]
         .copy_from_slice(&1_i32.to_le_bytes());
+    let reverse_jets = crate::families::e5::records::e5_rolling_ball_jets(&ctx, &reverse_stream)
+        .expect("reverse stream has two admitted stations");
     assert_eq!(
-        crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
+        reverse_jets[0].sense,
         crate::families::e5::graph::Sign::Positive
     );
-    assert!(
-        associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
-            .contains_key(&7)
-    );
+    assert!(associate_standard_freeform_e5_rolling_ball_jets(
+        &opposite_records,
+        &reverse_stream,
+        &reverse_jets
+    )
+    .contains_key(&7));
 }
 
 #[test]

@@ -279,29 +279,31 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _scan: &crate::container::ContainerScan,
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Option<crate::families::FamilyOutput> {
-        crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![
-                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                ],
-                Some(vec![1.0]),
-                false,
-            ),
-            refusal,
-            "e5 NURBS pcurve record at byte 96",
-        )?;
-        Some(crate::families::FamilyOutput {
-            ir: cadmpeg_ir::CadIr::empty(),
-            report: cadmpeg_ir::codec::DecodeBody::new(
-                cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-            ),
-            annotations: cadmpeg_ir::Annotations::default(),
-            unknowns: Vec::new(),
-        })
+    ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
+        Ok((|| {
+            crate::nurbs::note_refusal(
+                cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![
+                        cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                        cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    ],
+                    Some(vec![1.0]),
+                    false,
+                ),
+                refusal,
+                "e5 NURBS pcurve record at byte 96",
+            )?;
+            Some(crate::families::FamilyOutput {
+                ir: cadmpeg_ir::CadIr::empty(),
+                report: cadmpeg_ir::codec::DecodeBody::new(
+                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                ),
+                annotations: cadmpeg_ir::Annotations::default(),
+                unknowns: Vec::new(),
+            })
+        })())
     }
 
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {

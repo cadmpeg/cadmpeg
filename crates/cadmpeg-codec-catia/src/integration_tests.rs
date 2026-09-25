@@ -302,6 +302,72 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
 }
 
 #[test]
+fn container_only_raw_payload_refuses_entity_before_copy() {
+    let mut options = DecodeOptions::default();
+    options.container_only = true;
+    options.policy.limits.max_entities = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("one retained record exceeds zero entities");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA retained source record"));
+}
+
+#[test]
+fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
+    let bytes = standard_catpart();
+    let retained_len = crate::container::scan_bytes(bytes.clone())
+        .brep
+        .expect("standard B-rep")
+        .len();
+    let mut options = DecodeOptions::default();
+    options.container_only = true;
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(retained_len - 1).expect("small fixture");
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("retained copy exceeds byte limit");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA raw payload"));
+}
+
+#[test]
+fn full_route_raw_payload_refuses_entity_before_copy() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(standard_catpart()), &options)
+        .expect_err("one retained record exceeds zero entities");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA retained source record"));
+}
+
+#[test]
+fn full_route_raw_payload_refuses_retained_bytes_before_copy() {
+    let bytes = standard_catpart();
+    let retained_len = crate::container::scan_bytes(bytes.clone())
+        .brep
+        .expect("standard B-rep")
+        .len();
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(retained_len - 1).expect("small fixture");
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("retained copy exceeds byte limit");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA raw payload"));
+}
+
+#[test]
 fn decode_refuses_when_max_entities_is_zero() {
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 0;
