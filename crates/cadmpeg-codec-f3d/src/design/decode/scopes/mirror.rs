@@ -68,7 +68,7 @@ fn exact_legacy_mirror_scope_count(
         || owner.scope_record_index != scope.record_index
         || owner.local_ordinal != mirror_441_count::LOCAL_ORDINAL_VALUE
         || owner.owned_ordinal != mirror_441_count::OWNED_ORDINAL_VALUE
-        || owner.evaluated_value != f64::from(mirror_441_count::COUNT_VALUE)
+        || owner.evaluated_value.get() != f64::from(mirror_441_count::COUNT_VALUE)
         || owner.frame_length != u64::try_from(mirror_441_count::LEN).ok()?
         || owner.parameter_record_index != count_record_index.checked_add(2)?
         || owner.companion_record_index != count_record_index.checked_add(1)?

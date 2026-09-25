@@ -588,6 +588,27 @@ impl TryFrom<DesignParameterOwnerWire> for DesignParameterOwner {
     fn try_from(wire: DesignParameterOwnerWire) -> Result<Self, Self::Error> {
         let evaluated_value =
             FiniteReal::new(wire.evaluated_value).ok_or("evaluated_value must be finite")?;
+        Self::from_parts(DesignParameterOwnerWire {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            frame_length: wire.frame_length,
+            class_tag: wire.class_tag,
+            record_index: wire.record_index,
+            scope_record_index: wire.scope_record_index,
+            local_ordinal: wire.local_ordinal,
+            evaluated_value,
+            evaluated_value_offset: wire.evaluated_value_offset,
+            parameter_record_index: wire.parameter_record_index,
+            owned_ordinal: wire.owned_ordinal,
+            variant: wire.variant,
+            companion_record_index: wire.companion_record_index,
+        })
+    }
+}
+
+impl DesignParameterOwner {
+    pub(crate) fn from_parts(wire: DesignParameterOwnerWire<FiniteReal>) -> Result<Self, String> {
+        let evaluated_value = wire.evaluated_value;
         let (base_index, order) = if wire.record_index.checked_add(1)
             == Some(wire.parameter_record_index)
             && wire.record_index.checked_add(2) == Some(wire.companion_record_index)
@@ -680,9 +701,9 @@ impl From<DesignParameterOwner> for DesignParameterOwnerWire {
     }
 }
 
-/// Unchecked parameter owner fields.
+/// Parameter owner fields before aggregate validation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignParameterOwnerWire {
+pub(crate) struct DesignParameterOwnerWire<T = f64> {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Byte offset of the indexed record header in its Design `BulkStream`.
@@ -699,7 +720,7 @@ pub(crate) struct DesignParameterOwnerWire {
     /// Position among parameters in the same scope.
     pub(crate) local_ordinal: u32,
     /// Evaluated scalar duplicated from the parameter record.
-    pub(crate) evaluated_value: f64,
+    pub(crate) evaluated_value: T,
     /// Byte offset of `evaluated_value`.
     pub(crate) evaluated_value_offset: u64,
     /// Indexed parameter record owned by this frame.

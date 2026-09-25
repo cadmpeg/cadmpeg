@@ -26,6 +26,7 @@ use crate::records::{
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -597,7 +598,7 @@ pub(in crate::design) struct ParsedParameterOwner {
     pub(super) record_index: u32,
     pub(super) scope_record_index: u32,
     pub(super) local_ordinal: u32,
-    pub(super) evaluated_value: f64,
+    pub(super) evaluated_value: FiniteReal,
     pub(super) evaluated_value_offset: FrameRelative,
     pub(super) parameter_record_index: u32,
     pub(super) owned_ordinal: u32,
@@ -612,7 +613,7 @@ impl ParsedParameterOwner {
         stream: &str,
         frame_start: u64,
     ) -> Option<DesignParameterOwner> {
-        crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwner::from_parts(
             crate::records::parameters::DesignParameterOwnerWire {
                 id: ids::native_design_parameter_owner_id(stream, frame_start),
                 byte_offset: frame_start,
@@ -719,15 +720,15 @@ pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedPar
         }
         _ => return None,
     };
+    let evaluated_value = FiniteReal::new(evaluated_value)?;
     let parameter_record_index = View::u32_le_at(frame, parameter_marker + 1)?;
     let companion_record_index = View::u32_le_at(frame, companion_marker + 1)?;
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
-    if !evaluated_value.is_finite()
-        || !(consecutive(record_index, parameter_record_index, companion_record_index)
-            || consecutive(parameter_record_index, record_index, companion_record_index)
-            || consecutive(record_index, companion_record_index, parameter_record_index))
+    if !(consecutive(record_index, parameter_record_index, companion_record_index)
+        || consecutive(parameter_record_index, record_index, companion_record_index)
+        || consecutive(record_index, companion_record_index, parameter_record_index))
     {
         return None;
     }
@@ -779,9 +780,8 @@ fn parse_legacy_parameter_owner_68(
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
-    if !evaluated.value.is_finite()
-        || !consecutive(record_index, parameter_record_index, companion_record_index)
-    {
+    let evaluated_value = FiniteReal::new(evaluated.value)?;
+    if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
     Some(ParsedParameterOwner {
@@ -790,7 +790,7 @@ fn parse_legacy_parameter_owner_68(
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
-        evaluated_value: evaluated.value,
+        evaluated_value,
         evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_68::OWNED_ORDINAL)?,
@@ -841,9 +841,8 @@ fn parse_legacy_parameter_owner_88(
     let consecutive = |first: u32, second: u32, third: u32| {
         first.checked_add(1) == Some(second) && second.checked_add(1) == Some(third)
     };
-    if !evaluated.value.is_finite()
-        || !consecutive(record_index, parameter_record_index, companion_record_index)
-    {
+    let evaluated_value = FiniteReal::new(evaluated.value)?;
+    if !consecutive(record_index, parameter_record_index, companion_record_index) {
         return None;
     }
     Some(ParsedParameterOwner {
@@ -852,7 +851,7 @@ fn parse_legacy_parameter_owner_88(
         record_index,
         scope_record_index,
         local_ordinal: 0,
-        evaluated_value: evaluated.value,
+        evaluated_value,
         evaluated_value_offset: FrameRelative::between(evaluated.offset, frame_start),
         parameter_record_index,
         owned_ordinal: View::u32_le_at(frame, legacy_owner_88::OWNED_ORDINAL)?,
