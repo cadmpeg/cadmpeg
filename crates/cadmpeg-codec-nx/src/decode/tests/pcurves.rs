@@ -620,6 +620,50 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
 }
 
 #[test]
+fn rational_generator_does_not_get_an_affine_boundary_certificate() {
+    let mut ir = CadIr::empty();
+    let surface = SurfaceId::mint("test:model:entity#nx:test:rational-generator-cylinder")
+        .expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("finite cylinder"),
+        )),
+        source_object: None,
+    });
+    let rational = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
+            Some(vec![1.0, 2.0]),
+            false,
+        )
+        .expect("rational generator"),
+    };
+    let linear = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.0, 1.0),
+        )
+        .expect("linear generator"),
+    );
+    assert!(!coincident_pcurve_pair(
+        &ir,
+        [&surface, &surface],
+        [&rational, &linear],
+        [0.0, 1.0],
+        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+    ));
+}
+
+#[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
@@ -659,6 +703,52 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     let direction = line_pcurve.direction().as_raw();
                     origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
                 }));
+}
+
+#[test]
+fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
+    let mut ir = CadIr::empty();
+    let curve = CurveId::mint("test:model:entity#nx:test:wide-nurbs-boundary-curve")
+        .expect("identity grammar");
+    let surface = SurfaceId::mint("test:model:entity#nx:test:wide-nurbs-boundary-surface")
+        .expect("identity grammar");
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("finite wide boundary curve"),
+        )),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: affine_nurbs_surface(0.0),
+        source_object: None,
+    });
+    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+        &ir,
+        &curve,
+        &surface,
+        [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+        [-f64::MAX, f64::MAX],
+        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+    ) else {
+        panic!("finite wide NURBS boundary pcurve");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
+    );
+    assert_eq!(
+        nurbs.knots().as_slice(),
+        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+    );
 }
 
 fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {

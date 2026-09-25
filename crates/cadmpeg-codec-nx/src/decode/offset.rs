@@ -1251,10 +1251,18 @@ pub(super) fn coarse_model_surface_parameters(
     for ui in 0..u_samples.get() {
         for vi in 0..v_samples.get() {
             let parameters = Point2::new(
-                u_domain[0]
-                    + (u_domain[1] - u_domain[0]) * ui as f64 / u_samples.intervals() as f64,
-                v_domain[0]
-                    + (v_domain[1] - v_domain[0]) * vi as f64 / v_samples.intervals() as f64,
+                cadmpeg_ir::math::interpolate(
+                    u_domain[0],
+                    u_domain[1],
+                    ui as f64 / u_samples.intervals() as f64,
+                )?
+                .get(),
+                cadmpeg_ir::math::interpolate(
+                    v_domain[0],
+                    v_domain[1],
+                    vi as f64 / v_samples.intervals() as f64,
+                )?
+                .get(),
             );
             let Some(candidate) = model_surface_point_by_id_with_budget(
                 index,
@@ -1406,7 +1414,16 @@ fn clamp_surface_parameters(parameters: &mut Point2, domain: Option<([f64; 2], [
 pub(super) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
     domain.map_or_else(
         || EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (1.0 + parameter.abs()),
-        |domain| EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (domain[1] - domain[0]).abs().max(1.0),
+        |domain| {
+            let width = (domain[1] - domain[0]).abs();
+            if width.is_finite() {
+                EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * width.max(1.0)
+            } else {
+                (EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6
+                    * (domain[1] * 0.5 - domain[0] * 0.5).abs())
+                    * 2.0
+            }
+        },
     )
 }
 
@@ -2356,6 +2373,53 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::scalar::NonNegativeLength;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn coarse_surface_search_samples_a_wide_finite_nurbs_domain() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
+        use cadmpeg_ir::geometry::Surface;
+
+        let mut ir = CadIr::empty();
+        let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
+            .expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                NurbsSurface::from_lanes(
+                    NurbsSurfaceAxis::new(1, vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX], false),
+                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                    NurbsSurfaceLanes::new(
+                        vec![
+                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                        ],
+                        None,
+                    ),
+                    false,
+                )
+                .expect("finite wide surface"),
+            )),
+            source_object: None,
+        });
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+        let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+        let parameters = super::coarse_model_surface_parameters(
+            &index,
+            &surface,
+            Point3::new(1.0, 0.5, 0.0),
+            ([-f64::MAX, f64::MAX], [0.0, 1.0]),
+            &geometry_budget,
+        )
+        .expect("finite grid candidate");
+        assert!(parameters.is_finite());
+        assert_eq!(parameters.u, 0.0);
+    }
+
+    #[test]
+    fn offset_derivative_step_remains_finite_across_a_wide_domain() {
+        let step = super::parameter_derivative_step(0.0, Some([-f64::MAX, f64::MAX]));
+        assert!(step.is_finite() && step > 0.0);
+    }
 
     #[test]
     fn damped_rank_deficient_solve_preserves_scale() {

@@ -743,7 +743,8 @@ pub(super) fn blend_surface_parameter_grid_with_index_and_budget(
     }
     let mut grid = Vec::with_capacity(9 * 5);
     for u_index in 0..=8 {
-        let u = domain[0] + (domain[1] - domain[0]) * f64::from(u_index) / 8.0;
+        let u =
+            cadmpeg_ir::math::interpolate(domain[0], domain[1], f64::from(u_index) / 8.0)?.get();
         let frame = blend_surface_frame_with_index_and_budget(
             index,
             surface,

@@ -1876,25 +1876,37 @@ fn exact_boundary_pcurve_with_index(
                     [parameters[0].u, parameters[1].u]
                 };
                 let (varying_origin, delta) = affine_pcurve_coordinate(range, varying)?;
-                {
-                    if !(delta.is_finite() && delta != 0.0) {
-                        return None;
-                    }
-                    let (origin, direction) = if constant_axis == 0 {
-                        (
-                            Point2::new(boundary, varying_origin),
-                            Point2::new(0.0, delta),
-                        )
-                    } else {
-                        (
-                            Point2::new(varying_origin, boundary),
-                            Point2::new(delta, 0.0),
-                        )
-                    };
-                    cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction)
-                        .ok()
-                        .map(PcurveGeometry::Line)
+                if !(delta.is_finite() && delta != 0.0) {
+                    return None;
                 }
+                let (origin, direction, controls) = if constant_axis == 0 {
+                    (
+                        Point2::new(boundary, varying_origin),
+                        Point2::new(0.0, delta),
+                        varying.map(|value| Point2::new(boundary, value)),
+                    )
+                } else {
+                    (
+                        Point2::new(varying_origin, boundary),
+                        Point2::new(delta, 0.0),
+                        varying.map(|value| Point2::new(value, boundary)),
+                    )
+                };
+                Some(
+                    match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(origin, direction) {
+                        Ok(line) => PcurveGeometry::Line(line),
+                        Err(_) => PcurveGeometry::Nurbs {
+                            nurbs: PcurveNurbs::from_lanes(
+                                1,
+                                vec![range[0], range[0], range[1], range[1]],
+                                controls.to_vec(),
+                                None,
+                                false,
+                            )
+                            .ok()?,
+                        },
+                    },
+                )
             })
         })
         .filter(|candidate| {
@@ -2281,11 +2293,59 @@ fn boundary_curve_affine_breaks_with_index(
             if nurbs.degree() == 1
                 && !nurbs.periodic()
                 && points.len() == 2
+                && !nurbs
+                    .weights()
+                    .is_some_and(|weights| weights.windows(2).any(|pair| pair[0] != pair[1]))
                 && points[0].u == points[1].u
                 && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
             {
                 return Some(range.to_vec());
             }
+        }
+    }
+    if let (Some(SolvedSurfaceGeometry::Nurbs(surface)), PcurveGeometry::Nurbs { nurbs }) =
+        (carrier.geometry.solved(), pcurve)
+    {
+        let points = nurbs.control_points();
+        if nurbs.degree() == 1
+            && !nurbs.periodic()
+            && points.len() == 2
+            && !nurbs
+                .weights()
+                .is_some_and(|weights| weights.windows(2).any(|pair| pair[0] != pair[1]))
+            && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
+        {
+            let (axis, fixed, varying) = if points[0].u == points[1].u {
+                (
+                    SurfaceParameterAxis::U,
+                    points[0].u,
+                    [points[0].v, points[1].v],
+                )
+            } else if points[0].v == points[1].v {
+                (
+                    SurfaceParameterAxis::V,
+                    points[0].v,
+                    [points[0].u, points[1].u],
+                )
+            } else {
+                return None;
+            };
+            let isocurve = piecewise_linear_nurbs_surface_isocurve(surface, axis, fixed)?;
+            let degree = usize::try_from(isocurve.degree()).ok()?;
+            let count = isocurve.control_points().len();
+            let mut breaks = isocurve
+                .knots()
+                .get(degree..=count)?
+                .iter()
+                .filter_map(|parameter| {
+                    let fraction =
+                        cadmpeg_ir::math::parameter_fraction(*parameter, varying[0], varying[1])?;
+                    cadmpeg_ir::math::interpolate(range[0], range[1], fraction.get())
+                        .map(cadmpeg_ir::scalar::FiniteReal::get)
+                })
+                .collect::<Vec<_>>();
+            breaks.extend(range);
+            return Some(breaks);
         }
     }
     let PcurveGeometry::Line(line_pcurve) = pcurve else {

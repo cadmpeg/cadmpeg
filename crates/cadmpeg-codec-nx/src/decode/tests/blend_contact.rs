@@ -62,6 +62,98 @@ fn test_pcurve(
     }
 }
 
+#[test]
+fn blend_grid_samples_a_wide_finite_spine_domain() {
+    use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let first =
+        SurfaceId::mint("test:model:entity#nx:test:wide-blend-first").expect("identity grammar");
+    let second =
+        SurfaceId::mint("test:model:entity#nx:test:wide-blend-second").expect("identity grammar");
+    for (id, normal) in [
+        (first.clone(), Vector3::new(1.0, 0.0, 0.0)),
+        (second.clone(), Vector3::new(0.0, 1.0, 0.0)),
+    ] {
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    normal,
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("finite support plane"),
+            )),
+            source_object: None,
+        });
+    }
+    let spine =
+        CurveId::mint("test:model:entity#nx:test:wide-blend-spine").expect("identity grammar");
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                1,
+                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                vec![Point3::new(2.0, 2.0, 0.0), Point3::new(2.0, 2.0, 1.0)],
+                None,
+                false,
+            )
+            .expect("finite wide spine"),
+        )),
+        source_object: None,
+    });
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:wide-blend-surface").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:entity#nx:test:wide-blend-construction")
+            .expect("identity grammar");
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Blend(
+            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                [
+                    Some(BlendSupport {
+                        surface: first,
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second,
+                        reversed: false,
+                    }),
+                ],
+                Some(spine),
+                BlendRadiusLaw::constant(2.0).expect("positive radius"),
+                BlendCrossSection::Circular,
+                cadmpeg_ir::geometry::CacheContract::from_form(None),
+            )
+            .expect("valid blend"),
+        ),
+        None,
+    ));
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
+        &index, &surface, 0, &budget,
+    )
+    .expect("finite wide blend grid");
+    assert!(grid
+        .iter()
+        .any(|(uv, point)| uv.u == 0.0 && point.is_finite()));
+}
+
 const TEST_SURFACE_INVERSION_WORK: usize = 1_000_000;
 
 #[test]
