@@ -76,236 +76,245 @@ fn e5_isoparametric_direction(direction: Point2) -> Option<E5IsoparametricDirect
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
 pub(in crate::families) fn try_decode_e5(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
-    let stream_range = container::e5_record_stream(&scan.data)?;
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    let Some(stream_range) = container::e5_record_stream(&scan.data) else {
+        return Ok(None);
+    };
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
     let mut surfaces = crate::families::e5::records::e5_surfaces(stream, refusal);
-    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
-    let topology = crate::families::e5::graph::parse_topology(stream);
-    let vertex_count = topology.as_ref().map_or_else(
-        || {
-            crate::families::e5::records::e5_edges(stream)
-                .into_iter()
-                .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
-                .collect::<HashSet<_>>()
-                .len()
-        },
-        |topology| topology.vertex_refs.len(),
-    );
-    let points = {
-        let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
-        if roster.len() == vertex_count {
-            roster
-        } else {
-            match topology
-                .as_ref()
-                .and_then(|topology| derive_e5_vertices(topology, &surfaces, refusal))
-            {
-                // A derived vertex that is not finite states no point, so the
-                // decode refuses it where the vertex list is admitted.
-                Some(derived) => derived
+    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, stream)?;
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+        let topology = crate::families::e5::graph::parse_topology(stream);
+        let vertex_count = topology.as_ref().map_or_else(
+            || {
+                crate::families::e5::records::e5_edges(stream)
                     .into_iter()
-                    .map(FinitePoint3::new)
-                    .collect::<Option<Vec<_>>>()?,
-                None => Vec::new(),
-            }
-        }
-    };
-    if let Some(topology) = &topology {
-        append_e5_planes(stream, topology, &points, &mut surfaces);
-    }
-    if circles.is_empty()
-        && surfaces.is_empty()
-        && rolling_ball_jets.is_empty()
-        && points.is_empty()
-    {
-        return None;
-    }
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    let payload_index = preserve_raw_payload(
-        &mut unknowns,
-        &mut annotations,
-        scan,
-        cadmpeg_ir::ids::UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-            cadmpeg_ir::identity_key!("e5"),
-        ),
-    );
-    for (index, point) in points.iter().enumerate() {
-        let point_id =
-            PointId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index);
-        annotate(
-            &mut annotations,
-            &point_id,
-            "e5_0d_03",
-            0,
-            "vertex_05_08_01",
-            Exactness::ByteExact,
+                    .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
+                    .collect::<HashSet<_>>()
+                    .len()
+            },
+            |topology| topology.vertex_refs.len(),
         );
-        ir.model
-            .points
-            .push(Point::new(point_id.clone(), *point, None));
-        let vertex_id =
-            VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
-        annotate(
-            &mut annotations,
-            &vertex_id,
-            "MainDataStream+SurfacicReps",
-            0,
-            "vertex_05_08_01",
-            Exactness::ByteExact,
-        );
-        annotations.derived(&vertex_id, "point").ok()?;
-        ir.model.vertices.push(Vertex {
-            id: vertex_id,
-            point: point_id,
-            tolerance: None,
-        });
-    }
-    for (index, circle) in circles.iter().enumerate() {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
-            index,
-        );
-        annotate(
-            &mut annotations,
-            &id,
-            "e5_0d_03",
-            circle.pos as u64,
-            "circle_carrier",
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id,
-            geometry: circle.geometry.clone(),
-            source_object: None,
-        });
-    }
-    for (index, surface) in surfaces.iter().enumerate() {
-        let id = SurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-            index,
-        );
-        annotate(
-            &mut annotations,
-            &id,
-            "e5_0d_03",
-            surface.pos as u64,
-            "analytic_surface",
-            if matches!(
-                surface.geometry,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
-            ) {
-                Exactness::Derived
+        let points = {
+            let roster = crate::families::e5::records::e5_vertices(&scan.data, vertex_count);
+            if roster.len() == vertex_count {
+                roster
             } else {
-                Exactness::ByteExact
-            },
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: surface.geometry.clone(),
-            source_object: None,
-        });
-    }
-    for (index, jet) in rolling_ball_jets.iter().enumerate() {
-        let surface_index = surfaces.len() + index;
-        let surface_id = SurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
-            surface_index,
-        );
-        let procedural_id = ProceduralSurfaceId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
-            surface_index,
-        );
-        annotate(
-            &mut annotations,
-            &surface_id,
-            "e5_0d_03",
-            jet.pos as u64,
-            "rolling_ball_jet_carrier",
-            Exactness::ByteExact,
-        );
-        annotations.derived(&surface_id, "geometry").ok()?;
-        ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
-            geometry: SurfaceGeometry::Procedural {
-                construction: procedural_id.clone(),
-                cache: None,
-            },
-            source_object: None,
-        });
-        annotate(
-            &mut annotations,
-            &procedural_id,
-            "e5_0d_03",
-            jet.pos as u64,
-            "rolling_ball_jet_definition",
-            Exactness::ByteExact,
-        );
-        annotations
-            .derived(&procedural_id, "surface")
-            .ok()?
-            .derived(&procedural_id, "definition")
-            .ok()?;
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
-            procedural_id,
-            jet.definition()?,
-            None,
-        ));
-    }
-    let mut topology_ir = ir.clone();
-    let mut topology_annotations = annotations.clone();
-    let topology_transferred = topology.as_ref().is_some_and(|topology| {
-        transfer_e5_topology(
-            &mut topology_ir,
-            &mut topology_annotations,
-            topology,
-            &surfaces,
-            refusal,
-        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
-    });
-    if topology_transferred {
-        ir = topology_ir;
-        annotations = topology_annotations;
-    } else if !ir.model.vertices.is_empty() {
-        attach_e5_free_vertices(&mut ir, &mut annotations);
-    }
-    let mut losses = if topology_transferred {
-        let message = if topology
-            .as_ref()
-            .is_some_and(|topology| topology.bodies.is_empty())
-        {
-            "The E5 reference graph is closed; body ownership and shell orientation use an incidence-derived gauge because the stream has no class-0x01 body root."
-        } else {
-            "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
+                match topology
+                    .as_ref()
+                    .and_then(|topology| derive_e5_vertices(topology, &surfaces, refusal))
+                {
+                    // A derived vertex that is not finite states no point, so the
+                    // decode refuses it where the vertex list is admitted.
+                    Some(derived) => derived
+                        .into_iter()
+                        .map(FinitePoint3::new)
+                        .collect::<Option<Vec<_>>>()?,
+                    None => Vec::new(),
+                }
+            }
         };
-        vec![CatiaLossCode::TopologyE5GaugeSubstituted.note(message)]
-    } else {
-        vec![CatiaLossCode::TopologyE5GraphUnclosed.note(
+        if let Some(topology) = &topology {
+            append_e5_planes(stream, topology, &points, &mut surfaces);
+        }
+        if circles.is_empty()
+            && surfaces.is_empty()
+            && rolling_ball_jets.is_empty()
+            && points.is_empty()
+        {
+            return None;
+        }
+        let mut ir = CadIr::empty();
+        let mut annotations = AnnotationBuilder::new();
+        let mut unknowns = Vec::new();
+        let payload_index = match preserve_raw_payload(
+            ctx,
+            &mut unknowns,
+            &mut annotations,
+            scan,
+            cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+                cadmpeg_ir::identity_key!("e5"),
+            ),
+        ) {
+            Ok(index) => index,
+            Err(error) => return Some(Err(error)),
+        };
+        for (index, point) in points.iter().enumerate() {
+            let point_id =
+                PointId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "pt"), index);
+            annotate(
+                &mut annotations,
+                &point_id,
+                "e5_0d_03",
+                0,
+                "vertex_05_08_01",
+                Exactness::ByteExact,
+            );
+            ir.model
+                .points
+                .push(Point::new(point_id.clone(), *point, None));
+            let vertex_id =
+                VertexId::compose(&cadmpeg_ir::identity_namespace!("catia", "e5", "v"), index);
+            annotate(
+                &mut annotations,
+                &vertex_id,
+                "MainDataStream+SurfacicReps",
+                0,
+                "vertex_05_08_01",
+                Exactness::ByteExact,
+            );
+            annotations.derived(&vertex_id, "point").ok()?;
+            ir.model.vertices.push(Vertex {
+                id: vertex_id,
+                point: point_id,
+                tolerance: None,
+            });
+        }
+        for (index, circle) in circles.iter().enumerate() {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "curve"),
+                index,
+            );
+            annotate(
+                &mut annotations,
+                &id,
+                "e5_0d_03",
+                circle.pos as u64,
+                "circle_carrier",
+                Exactness::ByteExact,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry: circle.geometry.clone(),
+                source_object: None,
+            });
+        }
+        for (index, surface) in surfaces.iter().enumerate() {
+            let id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+                index,
+            );
+            annotate(
+                &mut annotations,
+                &id,
+                "e5_0d_03",
+                surface.pos as u64,
+                "analytic_surface",
+                if matches!(
+                    surface.geometry,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
+                ) {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: surface.geometry.clone(),
+                source_object: None,
+            });
+        }
+        for (index, jet) in rolling_ball_jets.iter().enumerate() {
+            let surface_index = surfaces.len() + index;
+            let surface_id = SurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "surf"),
+                surface_index,
+            );
+            let procedural_id = ProceduralSurfaceId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "e5", "procedural-surf"),
+                surface_index,
+            );
+            annotate(
+                &mut annotations,
+                &surface_id,
+                "e5_0d_03",
+                jet.pos as u64,
+                "rolling_ball_jet_carrier",
+                Exactness::ByteExact,
+            );
+            annotations.derived(&surface_id, "geometry").ok()?;
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+            annotate(
+                &mut annotations,
+                &procedural_id,
+                "e5_0d_03",
+                jet.pos as u64,
+                "rolling_ball_jet_definition",
+                Exactness::ByteExact,
+            );
+            annotations
+                .derived(&procedural_id, "surface")
+                .ok()?
+                .derived(&procedural_id, "definition")
+                .ok()?;
+            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                procedural_id,
+                jet.definition()?,
+                None,
+            ));
+        }
+        let mut topology_ir = ir.clone();
+        let mut topology_annotations = annotations.clone();
+        let topology_transferred = topology.as_ref().is_some_and(|topology| {
+            transfer_e5_topology(
+                &mut topology_ir,
+                &mut topology_annotations,
+                topology,
+                &surfaces,
+                refusal,
+            ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        });
+        if topology_transferred {
+            ir = topology_ir;
+            annotations = topology_annotations;
+        } else if !ir.model.vertices.is_empty() {
+            attach_e5_free_vertices(&mut ir, &mut annotations);
+        }
+        let mut losses = if topology_transferred {
+            let message = if topology
+                .as_ref()
+                .is_some_and(|topology| topology.bodies.is_empty())
+            {
+                "The E5 reference graph is closed; body ownership and shell orientation use an incidence-derived gauge because the stream has no class-0x01 body root."
+            } else {
+                "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
+            };
+            vec![CatiaLossCode::TopologyE5GaugeSubstituted.note(message)]
+        } else {
+            vec![CatiaLossCode::TopologyE5GraphUnclosed.note(
             "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         )]
-    };
-    insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
-    let annotations = annotations.build();
-    Some(FamilyOutput {
-        ir,
-        report: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-            coverage: cadmpeg_ir::report::decode::Coverage::default(),
-            losses,
-            notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-        },
-        annotations,
-        unknowns,
-    })
+        };
+        insert_unresolved_carrier_loss(&ir, &mut losses);
+        link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+        let annotations = annotations.build();
+        Some(Ok(FamilyOutput {
+            ir,
+            report: DecodeBody {
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+                coverage: cadmpeg_ir::report::decode::Coverage::default(),
+                losses,
+                notes: Vec::new(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+            },
+            annotations,
+            unknowns,
+        }))
+    })()
+    .transpose()
 }
 
 fn derive_e5_vertices(

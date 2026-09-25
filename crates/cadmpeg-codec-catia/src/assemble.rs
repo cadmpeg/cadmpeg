@@ -570,8 +570,9 @@ pub(crate) fn build_geometry_report(
 }
 
 pub(crate) fn build_metadata_fallback(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), cadmpeg_core::CodecError> {
     let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -582,12 +583,12 @@ pub(crate) fn build_metadata_fallback(
     // the only place the payload survives.
     let (bytes, stream, key) = match scan.brep.as_ref() {
         Some(brep) => (
-            brep.clone(),
+            brep.as_slice(),
             "MainDataStream+SurfacicReps",
             cadmpeg_ir::identity_key!("brep-stream"),
         ),
         None => (
-            scan.data.as_ref().to_vec(),
+            scan.data.as_ref(),
             "CATPart",
             cadmpeg_ir::identity_key!("container"),
         ),
@@ -596,6 +597,8 @@ pub(crate) fn build_metadata_fallback(
         &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
         key,
     );
+    ctx.charge_entities(1, "admit CATIA retained source record")?;
+    let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
     annotate(
         &mut annotations,
         &id,
@@ -605,22 +608,25 @@ pub(crate) fn build_metadata_fallback(
         Exactness::Unknown,
     );
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
-    (ir, annotations.build(), unknowns)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are
 /// additive views; unrecovered record families must remain byte-addressable.
 /// Returns the index of the preserved payload record in `unknowns`.
 pub(crate) fn preserve_raw_payload(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     unknowns: &mut Vec<UnknownRecord>,
     annotations: &mut AnnotationBuilder,
     scan: &ContainerScan,
     id: UnknownId,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let (bytes, stream) = match scan.brep.as_ref() {
         Some(brep) => (brep.as_slice(), "MainDataStream+SurfacicReps"),
         None => (scan.data.as_ref(), "CATPart"),
     };
+    ctx.charge_entities(1, "admit CATIA retained source record")?;
+    let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
     annotate(
         annotations,
         &id,
@@ -629,8 +635,8 @@ pub(crate) fn preserve_raw_payload(
         scan.variant.id().to_string(),
         Exactness::Unknown,
     );
-    unknowns.push(UnknownRecord::retained(id, 0, bytes.to_vec(), Vec::new()));
-    unknowns.len() - 1
+    unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
+    Ok(unknowns.len() - 1)
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding

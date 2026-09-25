@@ -1336,10 +1336,11 @@ fn associate_standard_freeform_e5_surfaces(
 fn associate_standard_freeform_e5_rolling_ball_jets(
     records: &[crate::families::standard::records::StandardSurfaceRecord],
     data: &[u8],
+    decoded_jets: &[crate::families::e5::records::E5RollingBallJet],
 ) -> HashMap<u32, StandardSurfaceProcedure> {
     let carrier_ids = standard_freeform_e5_carrier_ids(data);
     let mut jets = HashMap::<u32, Option<crate::families::e5::records::E5RollingBallJet>>::new();
-    for jet in crate::families::e5::records::e5_rolling_ball_jets(data) {
+    for jet in decoded_jets.iter().cloned() {
         match jets
             .entry(jet.record_id)
             .or_insert_with(|| Some(jet.clone()))
@@ -1425,13 +1426,16 @@ pub(in crate::families) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, &scan.data)?;
     match standard_population_selections(scan) {
-        None => try_decode_standard_population(ctx, scan, None, refusal),
+        None => try_decode_standard_population(ctx, scan, None, refusal, &e5_jets),
         Some((first, rest)) if rest.is_empty() => {
-            try_decode_standard_population(ctx, scan, Some(&first), refusal)
+            try_decode_standard_population(ctx, scan, Some(&first), refusal, &e5_jets)
         }
-        Some((first, rest)) => try_decode_standard_populations(ctx, scan, &first, &rest, refusal),
+        Some((first, rest)) => {
+            try_decode_standard_populations(ctx, scan, &first, &rest, refusal, &e5_jets)
+        }
     }
 }
 
@@ -1538,12 +1542,22 @@ fn try_decode_standard_populations(
     first: &StandardPopulationSelection,
     rest: &[StandardPopulationSelection],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
-    let mut merged = try_decode_standard_population(ctx, scan, Some(first), refusal)?;
-    let outputs = rest
-        .iter()
-        .map(|selection| try_decode_standard_population(ctx, scan, Some(selection), refusal))
-        .collect::<Option<Vec<_>>>()?;
+    e5_jets: &[crate::families::e5::records::E5RollingBallJet],
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    let Some(mut merged) =
+        try_decode_standard_population(ctx, scan, Some(first), refusal, e5_jets)?
+    else {
+        return Ok(None);
+    };
+    let mut outputs = Vec::new();
+    for selection in rest {
+        let Some(output) =
+            try_decode_standard_population(ctx, scan, Some(selection), refusal, e5_jets)?
+        else {
+            return Ok(None);
+        };
+        outputs.push(output);
+    }
     let attached_topology_count = std::iter::once(&merged)
         .chain(outputs.iter())
         .map(|output| {
@@ -1596,18 +1610,21 @@ fn try_decode_standard_populations(
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
         let mut rewriter = StandardPopulationScope { scope: &scope };
-        merged
+        if merged
             .ir
             .model
             .extend_rewritten(model, &mut rewriter)
-            .ok()?;
+            .is_err()
+        {
+            return Ok(None);
+        }
         if let Err(error) = merge_standard_population_annotations(
             &mut merged.annotations,
             output.annotations,
             &scope,
         ) {
             refusal.push_annotation_collision(&error);
-            return None;
+            return Ok(None);
         }
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -1680,7 +1697,7 @@ fn try_decode_standard_populations(
         typed.torus,
     )));
     crate::assemble::insert_unresolved_carrier_loss(&merged.ir, &mut merged.report.losses);
-    Some(merged)
+    Ok(Some(merged))
 }
 
 fn try_decode_standard_population(
@@ -1688,7 +1705,9 @@ fn try_decode_standard_population(
     scan: &ContainerScan,
     selection: Option<&StandardPopulationSelection>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
+    e5_jets: &[crate::families::e5::records::E5RollingBallJet],
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
@@ -1828,7 +1847,7 @@ fn try_decode_standard_population(
     }
     let mut freeform_procedural_surfaces = object_evidence.procedural_surfaces.clone();
     let e5_freeform_procedural_surfaces =
-        associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data);
+        associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data, e5_jets);
     for (tag, procedure) in e5_freeform_procedural_surfaces {
         match freeform_procedural_surfaces.get(&tag) {
             Some(existing) if existing != &procedure => {
@@ -2000,7 +2019,8 @@ fn try_decode_standard_population(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_index = preserve_raw_payload(
+    let payload_index = match preserve_raw_payload(
+        ctx,
         &mut unknowns,
         &mut annotations,
         scan,
@@ -2008,7 +2028,10 @@ fn try_decode_standard_population(
             &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
             cadmpeg_ir::identity_key!("brep-stream"),
         ),
-    );
+    ) {
+        Ok(index) => index,
+        Err(error) => return Some(Err(error)),
+    };
     let mut procedural_supports = HashMap::<u32, SurfaceId>::new();
     let mut extrusion_definitions = HashMap::<u32, ProceduralSurfaceDefinition>::new();
     for (index, surface, tag, procedure) in procedural_surface_plans {
@@ -2648,12 +2671,14 @@ fn try_decode_standard_population(
         crate::coverage::BOUND_CONSOLIDATED_STANDARD_FACE_PCURVE_COUNT,
         consolidated_curve_bindings.standard_face_pcurves,
     );
-    Some(FamilyOutput {
+    Some(Ok(FamilyOutput {
         ir,
         report,
         annotations,
         unknowns,
-    })
+    }))
+    })()
+    .transpose()
 }
 
 #[derive(Default)]

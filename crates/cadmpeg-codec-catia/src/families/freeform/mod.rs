@@ -280,396 +280,407 @@ pub(super) fn try_decode_freeform_surfaces(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
-    let logical_streams = container::logical_record_streams(scan);
-    let selection_budget =
-        ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
-    let object_selection = crate::families::b5::graph::select_object_stream_population(
-        &logical_streams,
-        Some(&selection_budget),
-    );
-    let (
-        object_stream_run_count,
-        selected_object_stream_run_count,
-        object_stream_selection_exhausted,
-        object_source,
-        object_frames,
-        selected_object_records,
-        census_object_records,
-    ) = match object_selection {
-        crate::families::b5::graph::ObjectStreamSelection::Exhausted { run_count } => (
-            run_count,
-            0,
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+        let logical_streams = container::logical_record_streams(scan);
+        let selection_budget =
+            ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
+        let object_selection = crate::families::b5::graph::select_object_stream_population(
+            &logical_streams,
+            Some(&selection_budget),
+        );
+        let (
+            object_stream_run_count,
+            selected_object_stream_run_count,
+            object_stream_selection_exhausted,
+            object_source,
+            object_frames,
+            selected_object_records,
+            census_object_records,
+        ) = match object_selection {
+            crate::families::b5::graph::ObjectStreamSelection::Exhausted { run_count } => (
+                run_count,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+            crate::families::b5::graph::ObjectStreamSelection::Unselected {
+                run_count,
+                census_records,
+            } => (
+                run_count,
+                0,
+                false,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                census_records,
+            ),
+            crate::families::b5::graph::ObjectStreamSelection::Selected {
+                source,
+                frames,
+                records,
+                census_records,
+                run_count,
+            } => (run_count, 1, false, source, frames, records, census_records),
+        };
+        let consolidated_records = crate::wire::records::consolidated_records_in_sources(
+            &scan.data,
+            container::consolidated_record_sources(scan),
+        );
+        let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
+            &object_source,
+            &selected_object_records,
+            &object_frames,
             true,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ),
-        crate::families::b5::graph::ObjectStreamSelection::Unselected {
-            run_count,
-            census_records,
-        } => (
-            run_count,
-            0,
-            false,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-            census_records,
-        ),
-        crate::families::b5::graph::ObjectStreamSelection::Selected {
-            source,
-            frames,
-            records,
-            census_records,
-            run_count,
-        } => (run_count, 1, false, source, frames, records, census_records),
-    };
-    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
-        &scan.data,
-        container::consolidated_record_sources(scan),
-    );
-    let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
-        &object_source,
-        &selected_object_records,
-        &object_frames,
-        true,
-        Some(&selection_budget),
-        refusal,
-    );
-    let face_terminal_controls = b5_graph.as_ref().map(|graph| {
-        graph.faces.iter().fold([0usize; 3], |mut counts, face| {
-            match face.terminal_control {
-                Some(B5FramingControl::Control03) => counts[0] += 1,
-                Some(B5FramingControl::Control05) => counts[1] += 1,
-                None => counts[2] += 1,
-            }
-            counts
-        })
-    });
-    let typed_face_counts = if let Some(graph) = &b5_graph {
-        Some(typed_face_counts(&graph.face_records, &graph.faces))
-    } else {
-        let records =
-            crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
-        (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
-    };
-    let typed_multi_surface_face_count = b5_graph
-        .as_ref()
-        .map(typed_multi_surface_face_count)
-        .unwrap_or_default();
-    let typed_edge_records =
-        crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
-    let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
-        typed_edge_records
-            .values()
-            .fold([0usize; 8], |mut counts, edge| {
-                let index = match edge.terminal_control {
-                    B5EdgeTerminalControl::Control01 => 0,
-                    B5EdgeTerminalControl::Control02 => 1,
-                    B5EdgeTerminalControl::Control21 => 2,
-                    B5EdgeTerminalControl::Control22 => 3,
-                    B5EdgeTerminalControl::Control25 => 4,
-                    B5EdgeTerminalControl::Control26 => 5,
-                    B5EdgeTerminalControl::Control29 => 6,
-                    B5EdgeTerminalControl::Control2A => 7,
-                };
-                counts[index] += 1;
+            Some(&selection_budget),
+            refusal,
+        );
+        let face_terminal_controls = b5_graph.as_ref().map(|graph| {
+            graph.faces.iter().fold([0usize; 3], |mut counts, face| {
+                match face.terminal_control {
+                    Some(B5FramingControl::Control03) => counts[0] += 1,
+                    Some(B5FramingControl::Control05) => counts[1] += 1,
+                    None => counts[2] += 1,
+                }
                 counts
             })
-    });
-    let typed_vertex_incidence_links =
-        crate::families::b5::graph::typed_vertex_incidence_links_from_records(
-            &census_object_records,
-        );
-    let vertex_incidence_terminal_controls =
-        (!typed_vertex_incidence_links.is_empty()).then(|| {
-            typed_vertex_incidence_links
+        });
+        let typed_face_counts = if let Some(graph) = &b5_graph {
+            Some(typed_face_counts(&graph.face_records, &graph.faces))
+        } else {
+            let records =
+                crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
+            (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
+        };
+        let typed_multi_surface_face_count = b5_graph
+            .as_ref()
+            .map(typed_multi_surface_face_count)
+            .unwrap_or_default();
+        let typed_edge_records =
+            crate::families::b5::graph::typed_edge_records_from_records(&census_object_records);
+        let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
+            typed_edge_records
                 .values()
-                .fold([0usize; 2], |mut counts, link| {
-                    match link.terminal_control {
-                        B5VertexIncidenceControl::Control00 => counts[0] += 1,
-                        B5VertexIncidenceControl::Control04 => counts[1] += 1,
-                    }
+                .fold([0usize; 8], |mut counts, edge| {
+                    let index = match edge.terminal_control {
+                        B5EdgeTerminalControl::Control01 => 0,
+                        B5EdgeTerminalControl::Control02 => 1,
+                        B5EdgeTerminalControl::Control21 => 2,
+                        B5EdgeTerminalControl::Control22 => 3,
+                        B5EdgeTerminalControl::Control25 => 4,
+                        B5EdgeTerminalControl::Control26 => 5,
+                        B5EdgeTerminalControl::Control29 => 6,
+                        B5EdgeTerminalControl::Control2A => 7,
+                    };
+                    counts[index] += 1;
                     counts
                 })
         });
-    let resolved_loop_metadata_counts = b5_graph
-        .as_ref()
-        .map(|graph| loop_metadata_counts(graph.loops.values()));
-    let typed_loop_records =
-        crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
-    let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
-        (
-            loop_metadata_counts(typed_loop_records.values()),
-            typed_loop_records
-                .keys()
-                .filter(|id| {
-                    b5_graph
-                        .as_ref()
-                        .is_none_or(|graph| !graph.loops.contains_key(id))
-                })
-                .count(),
-        )
-    });
-    let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
-        graph
-            .pcurves
-            .values()
-            .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
-            .count()
-    });
-    let typed_class_21_pcurve_count =
-        crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
-            .len();
-    let typed_parameter_incidences =
-        crate::families::b5::graph::typed_parameter_incidences_from_records(&census_object_records);
-    let typed_parameter_incidence_member_count = typed_parameter_incidences
-        .values()
-        .map(|incidence| incidence.lanes.len())
-        .sum();
-    let typed_vertex_incidence_rosters =
-        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
-            &census_object_records,
-        );
-    let typed_vertex_incidence_roster_member_count =
-        typed_vertex_incidence_rosters.values().map(Vec::len).sum();
-    let mut fallback_surfaces = if b5_graph.is_none() {
-        Some(freeform_surface_carriers(
-            &scan.data,
-            &consolidated_records,
-            refusal,
-        ))
-    } else {
-        None
-    };
-    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
-        &scan.data,
-        &consolidated_records,
-        refusal,
-    );
-    let b2_nurbs_curve_count = b2_nurbs_curves.len();
-    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
-        &scan.data,
-        &consolidated_records,
-        refusal,
-    );
-    let a5_nurbs_curve_count = a5_nurbs_curves.len();
-    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
-        &scan.data,
-        &consolidated_records,
-    );
-    let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
-        &scan.data,
-        &consolidated_records,
-    )
-    .len();
-    let resolved_consolidated_revolutions =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(
-            &scan.data,
-            &consolidated_records,
-        );
-    let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
-    let b2_spatial_circle_count = b2_spatial_circles.len();
-    if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
-        && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
-        && b2_nurbs_curves.is_empty()
-        && a5_nurbs_curves.is_empty()
-        && b2_spatial_circles.is_empty()
-        && b2_line_profile_count == 0
-        && resolved_consolidated_revolution_count == 0
-    {
-        return None;
-    }
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let mut unknowns = Vec::new();
-    let payload_id = UnknownId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
-        cadmpeg_ir::identity_key!("freeform"),
-    );
-    let payload_index =
-        preserve_raw_payload(&mut unknowns, &mut annotations, scan, payload_id.clone());
-    let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
-    // The graph moves into the transfer below. Keep the record identities the
-    // topology loss notes must name.
-    let b5_face_object_ids = b5_graph
-        .as_ref()
-        .map(|graph| {
-            graph
-                .faces
-                .iter()
-                .map(|face| face.object_id)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let b5_loop_object_ids = b5_graph
-        .as_ref()
-        .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
-        .unwrap_or_default();
-    let census_face_object_ids = census_object_records
-        .iter()
-        .filter(|record| record.class == B5_FACE_CLASS)
-        .map(|record| record.object_id)
-        .collect::<Vec<_>>();
-    let mut topology_ir = ir.clone();
-    let mut topology_annotations = annotations.clone();
-    let topology_transferred = b5_graph.take().is_some_and(|graph| {
-        crate::families::b5::transfer::transfer(
-            &mut topology_ir,
-            &mut topology_annotations,
-            graph,
-            &payload_id,
-            refusal,
-        ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
-    });
-    if topology_transferred {
-        ir = topology_ir;
-        annotations = topology_annotations;
-    }
-    if !topology_transferred {
-        let surfaces = match fallback_surfaces.take() {
-            Some(surfaces) => surfaces,
-            None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
-        };
-        for (index, surface) in surfaces.iter().enumerate() {
-            let id = SurfaceId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
-                index,
+        let typed_vertex_incidence_links =
+            crate::families::b5::graph::typed_vertex_incidence_links_from_records(
+                &census_object_records,
             );
+        let vertex_incidence_terminal_controls =
+            (!typed_vertex_incidence_links.is_empty()).then(|| {
+                typed_vertex_incidence_links
+                    .values()
+                    .fold([0usize; 2], |mut counts, link| {
+                        match link.terminal_control {
+                            B5VertexIncidenceControl::Control00 => counts[0] += 1,
+                            B5VertexIncidenceControl::Control04 => counts[1] += 1,
+                        }
+                        counts
+                    })
+            });
+        let resolved_loop_metadata_counts = b5_graph
+            .as_ref()
+            .map(|graph| loop_metadata_counts(graph.loops.values()));
+        let typed_loop_records =
+            crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
+        let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
+            (
+                loop_metadata_counts(typed_loop_records.values()),
+                typed_loop_records
+                    .keys()
+                    .filter(|id| {
+                        b5_graph
+                            .as_ref()
+                            .is_none_or(|graph| !graph.loops.contains_key(id))
+                    })
+                    .count(),
+            )
+        });
+        let class_21_suffix_scalar_count = b5_graph.as_ref().map(|graph| {
+            graph
+                .pcurves
+                .values()
+                .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
+                .count()
+        });
+        let typed_class_21_pcurve_count =
+            crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
+                .len();
+        let typed_parameter_incidences =
+            crate::families::b5::graph::typed_parameter_incidences_from_records(
+                &census_object_records,
+            );
+        let typed_parameter_incidence_member_count = typed_parameter_incidences
+            .values()
+            .map(|incidence| incidence.lanes.len())
+            .sum();
+        let typed_vertex_incidence_rosters =
+            crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(
+                &census_object_records,
+            );
+        let typed_vertex_incidence_roster_member_count =
+            typed_vertex_incidence_rosters.values().map(Vec::len).sum();
+        let mut fallback_surfaces = if b5_graph.is_none() {
+            Some(freeform_surface_carriers(
+                &scan.data,
+                &consolidated_records,
+                refusal,
+            ))
+        } else {
+            None
+        };
+        let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
+            &scan.data,
+            &consolidated_records,
+            refusal,
+        );
+        let b2_nurbs_curve_count = b2_nurbs_curves.len();
+        let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
+            &scan.data,
+            &consolidated_records,
+            refusal,
+        );
+        let a5_nurbs_curve_count = a5_nurbs_curves.len();
+        let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
+            &scan.data,
+            &consolidated_records,
+        );
+        let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
+            &scan.data,
+            &consolidated_records,
+        )
+        .len();
+        let resolved_consolidated_revolutions =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(
+                &scan.data,
+                &consolidated_records,
+            );
+        let resolved_consolidated_revolution_count = resolved_consolidated_revolutions.len();
+        let b2_spatial_circle_count = b2_spatial_circles.len();
+        if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
+            && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
+            && b2_nurbs_curves.is_empty()
+            && a5_nurbs_curves.is_empty()
+            && b2_spatial_circles.is_empty()
+            && b2_line_profile_count == 0
+            && resolved_consolidated_revolution_count == 0
+        {
+            return None;
+        }
+        let mut ir = CadIr::empty();
+        let mut annotations = AnnotationBuilder::new();
+        let mut unknowns = Vec::new();
+        let payload_id = UnknownId::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
+            cadmpeg_ir::identity_key!("freeform"),
+        );
+        let payload_index = match preserve_raw_payload(
+            ctx,
+            &mut unknowns,
+            &mut annotations,
+            scan,
+            payload_id.clone(),
+        ) {
+            Ok(index) => index,
+            Err(error) => return Some(Err(error)),
+        };
+        let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
+        // The graph moves into the transfer below. Keep the record identities the
+        // topology loss notes must name.
+        let b5_face_object_ids = b5_graph
+            .as_ref()
+            .map(|graph| {
+                graph
+                    .faces
+                    .iter()
+                    .map(|face| face.object_id)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let b5_loop_object_ids = b5_graph
+            .as_ref()
+            .map(|graph| graph.loops.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let census_face_object_ids = census_object_records
+            .iter()
+            .filter(|record| record.class == B5_FACE_CLASS)
+            .map(|record| record.object_id)
+            .collect::<Vec<_>>();
+        let mut topology_ir = ir.clone();
+        let mut topology_annotations = annotations.clone();
+        let topology_transferred = b5_graph.take().is_some_and(|graph| {
+            crate::families::b5::transfer::transfer(
+                &mut topology_ir,
+                &mut topology_annotations,
+                graph,
+                &payload_id,
+                refusal,
+            ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        });
+        if topology_transferred {
+            ir = topology_ir;
+            annotations = topology_annotations;
+        }
+        if !topology_transferred {
+            let surfaces = match fallback_surfaces.take() {
+                Some(surfaces) => surfaces,
+                None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
+            };
+            for (index, surface) in surfaces.iter().enumerate() {
+                let id = SurfaceId::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "a8", "surf"),
+                    index,
+                );
+                annotate(
+                    &mut annotations,
+                    &id,
+                    "object_stream_a8_03",
+                    surface.pos as u64,
+                    &surface.source_tag,
+                    Exactness::ByteExact,
+                );
+                ir.model.surfaces.push(Surface {
+                    id,
+                    geometry: surface.geometry.clone(),
+                    source_object: Some(surface.source_object.clone()),
+                });
+            }
+        }
+        // The bindings this call returns are read by the standard-family route
+        // alone; here the call is made for the curves and surfaces it appends.
+        append_consolidated_revolutions(
+            &mut ir,
+            &mut annotations,
+            &resolved_consolidated_revolutions,
+        );
+        append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
+        let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
+        let mut standalone_wires = line_profiles
+            .iter()
+            .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
+            .collect::<Vec<_>>();
+        append_consolidated_line_profiles(&mut ir, &mut annotations, line_profiles);
+        for curve in b2_nurbs_curves {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = curve.geometry.full_knot_endpoints();
             annotate(
                 &mut annotations,
                 &id,
-                "object_stream_a8_03",
-                surface.pos as u64,
-                &surface.source_tag,
+                "consolidated_b2_03_16",
+                curve.pos as u64,
+                format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
-            ir.model.surfaces.push(Surface {
-                id,
-                geometry: surface.geometry.clone(),
-                source_object: Some(surface.source_object.clone()),
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
+                source_object: Some(cgm_source_key(
+                    "b2-nurbs-curve-frame",
+                    format!("{:010}", curve.pos),
+                )),
             });
+            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
         }
-    }
-    // The bindings this call returns are read by the standard-family route
-    // alone; here the call is made for the curves and surfaces it appends.
-    append_consolidated_revolutions(
-        &mut ir,
-        &mut annotations,
-        &resolved_consolidated_revolutions,
-    );
-    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
-    let mut standalone_wires = line_profiles
-        .iter()
-        .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
-        .collect::<Vec<_>>();
-    append_consolidated_line_profiles(&mut ir, &mut annotations, line_profiles);
-    for curve in b2_nurbs_curves {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = curve.geometry.full_knot_endpoints();
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_b2_03_16",
-            curve.pos as u64,
-            format!("header_token:{:08x}", curve.header_token),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
-            source_object: Some(cgm_source_key(
-                "b2-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
-    }
-    for curve in a5_nurbs_curves {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = curve.geometry.full_knot_endpoints();
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_a5_13_16",
-            curve.pos as u64,
-            format!("header_token:{:08x}", curve.header_token),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
-            source_object: Some(cgm_source_key(
-                "a5-nurbs-curve-frame",
-                format!("{:010}", curve.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
-    }
-    for circle in b2_spatial_circles {
-        let id = CurveId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
-            ir.model.curves.len(),
-        );
-        let parameter_range = [
-            circle.range.lower() / circle.radius.get(),
-            circle.range.upper() / circle.radius.get(),
-        ];
-        annotate(
-            &mut annotations,
-            &id,
-            "consolidated_b2_03_0f",
-            circle.pos as u64,
-            format!(
-                "header_token:{:08x}:range:{:?}:chart_shift:{}",
-                circle.header_token,
-                circle.range.endpoints(),
-                circle.chart_shift.get()
-            ),
-            Exactness::ByteExact,
-        );
-        ir.model.curves.push(Curve {
-            id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    circle.center,
-                    circle.frame,
-                    circle.radius,
+        for curve in a5_nurbs_curves {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "a5", "nurbs-curve"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = curve.geometry.full_knot_endpoints();
+            annotate(
+                &mut annotations,
+                &id,
+                "consolidated_a5_13_16",
+                curve.pos as u64,
+                format!("header_token:{:08x}", curve.header_token),
+                Exactness::ByteExact,
+            );
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
+                source_object: Some(cgm_source_key(
+                    "a5-nurbs-curve-frame",
+                    format!("{:010}", curve.pos),
+                )),
+            });
+            standalone_wires.push((id, parameter_range.endpoints(), curve.pos));
+        }
+        for circle in b2_spatial_circles {
+            let id = CurveId::compose(
+                &cadmpeg_ir::identity_namespace!("catia", "b2", "circle"),
+                ir.model.curves.len(),
+            );
+            let parameter_range = [
+                circle.range.lower() / circle.radius.get(),
+                circle.range.upper() / circle.radius.get(),
+            ];
+            annotate(
+                &mut annotations,
+                &id,
+                "consolidated_b2_03_0f",
+                circle.pos as u64,
+                format!(
+                    "header_token:{:08x}:range:{:?}:chart_shift:{}",
+                    circle.header_token,
+                    circle.range.endpoints(),
+                    circle.chart_shift.get()
                 ),
-            )),
-            source_object: Some(cgm_source_key(
-                "b2-spatial-circle-frame",
-                format!("{:010}", circle.pos),
-            )),
-        });
-        standalone_wires.push((id, parameter_range, circle.pos));
-    }
-    let wire_topology_transferred = !topology_transferred
-        && ir.model.surfaces.is_empty()
-        && standalone_wires.len() == ir.model.curves.len()
-        && !standalone_wires.is_empty()
-        && attach_standalone_wires(&mut ir, &mut annotations, &standalone_wires);
-    let mut losses = if wire_topology_transferred {
-        Vec::new()
-    } else if topology_transferred && b5_complete {
-        vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
-            "The B5 reference graph is closed; face sense and body kind use a deterministic \
+                Exactness::ByteExact,
+            );
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                    cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                        circle.center,
+                        circle.frame,
+                        circle.radius,
+                    ),
+                )),
+                source_object: Some(cgm_source_key(
+                    "b2-spatial-circle-frame",
+                    format!("{:010}", circle.pos),
+                )),
+            });
+            standalone_wires.push((id, parameter_range, circle.pos));
+        }
+        let wire_topology_transferred = !topology_transferred
+            && ir.model.surfaces.is_empty()
+            && standalone_wires.len() == ir.model.curves.len()
+            && !standalone_wires.is_empty()
+            && attach_standalone_wires(&mut ir, &mut annotations, &standalone_wires);
+        let mut losses = if wire_topology_transferred {
+            Vec::new()
+        } else if topology_transferred && b5_complete {
+            vec![CatiaLossCode::TopologyB5GaugeSubstituted.note(format!(
+                "The B5 reference graph is closed; face sense and body kind use a deterministic \
              topology gauge because their source fields remain unresolved. Gauged b5 03 5f face \
              records, by object id ({}): {}.",
-            b5_face_object_ids.len(),
-            identity_statement(&b5_face_object_ids)
-        ))]
-    } else if topology_transferred {
-        vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
+                b5_face_object_ids.len(),
+                identity_statement(&b5_face_object_ids)
+            ))]
+        } else if topology_transferred {
+            vec![CatiaLossCode::TopologyB5SubsetIncomplete.note(format!(
             "A maximal reference-closed B5 face/loop/pcurve/edge subset was transferred; variant \
              nodes and unresolved endpoint lifts remain outside the connected graph. Transferred \
              b5 03 5f face records, by object id ({}): {}. Transferred b5 03 62 loop records, by \
@@ -679,227 +690,229 @@ pub(super) fn try_decode_freeform_surfaces(
             b5_loop_object_ids.len(),
             identity_statement(&b5_loop_object_ids)
         ))]
-    } else if object_stream_selection_exhausted {
-        vec![
-            CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
+        } else if object_stream_selection_exhausted {
+            vec![
+                CatiaLossCode::TopologyObjectStreamWorkSliceExhausted.note(format!(
             "The object-stream graph exceeds the bounded frame-index and record-materialization \
              work slice; its topology remains native. The {object_stream_run_count} object runs \
              stay inside retained record {payload_id}."
         )),
-        ]
-    } else {
-        vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
-            "Object-stream and consolidated NURBS carriers were decoded, but the \
+            ]
+        } else {
+            vec![CatiaLossCode::TopologyB5GraphUnclosed.note(format!(
+                "Object-stream and consolidated NURBS carriers were decoded, but the \
              face/loop/pcurve/edge graph did not close. Unclosed b5 03 5f face records, by object \
              id ({}): {}. The records stay inside retained record {payload_id}.",
-            census_face_object_ids.len(),
-            identity_statement(&census_face_object_ids)
-        ))]
-    };
-    insert_unresolved_carrier_loss(&ir, &mut losses);
-    link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
-    let annotations = annotations.build();
-    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-    coverage.record(
-        crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
-        object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
-        selected_object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
-        object_stream_run_count - selected_object_stream_run_count,
-    );
-    coverage.record(
-        crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
-        usize::from(object_stream_selection_exhausted),
-    );
-    coverage.record(
-        crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
-        b2_nurbs_curve_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
-        a5_nurbs_curve_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
-        b2_spatial_circle_count,
-    );
-    coverage.record(
-        crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
-        usize::from(wire_topology_transferred) * standalone_wires.len(),
-    );
-    if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
+                census_face_object_ids.len(),
+                identity_statement(&census_face_object_ids)
+            ))]
+        };
+        insert_unresolved_carrier_loss(&ir, &mut losses);
+        link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+        let annotations = annotations.build();
+        let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
-            control_03,
+            crate::coverage::DECODED_OBJECT_STREAM_RUN_COUNT,
+            object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
-            control_05,
+            crate::coverage::SELECTED_OBJECT_STREAM_RUN_COUNT,
+            selected_object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
-            uncounted,
-        );
-    }
-    if topology_transferred {
-        coverage.record(
-            crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
-            ir.model.faces.len(),
+            crate::coverage::UNSELECTED_OBJECT_STREAM_RUN_COUNT,
+            object_stream_run_count - selected_object_stream_run_count,
         );
         coverage.record(
-            crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
-            ir.model.loops.len(),
-        );
-    }
-    if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
-            control_03,
+            crate::coverage::EXHAUSTED_OBJECT_STREAM_SELECTION_COUNT,
+            usize::from(object_stream_selection_exhausted),
         );
         coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
-            control_05,
+            crate::coverage::DECODED_B2_NURBS_CURVE_COUNT,
+            b2_nurbs_curve_count,
         );
         coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
-            uncounted,
+            crate::coverage::DECODED_A5_NURBS_CURVE_COUNT,
+            a5_nurbs_curve_count,
         );
         coverage.record(
-            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
-            unresolved,
+            crate::coverage::DECODED_B2_SPATIAL_CIRCLE_COUNT,
+            b2_spatial_circle_count,
         );
-    }
-    if typed_multi_surface_face_count != 0 {
         coverage.record(
-            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
-            typed_multi_surface_face_count,
+            crate::coverage::ATTACHED_STANDALONE_WIRE_EDGE_COUNT,
+            usize::from(wire_topology_transferred) * standalone_wires.len(),
         );
-    }
-    if let Some(counts) = edge_terminal_controls {
-        for (key, count) in [
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
-        ]
-        .into_iter()
-        .zip(counts)
+        if let Some([control_03, control_05, uncounted]) = face_terminal_controls {
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
+                control_03,
+            );
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
+                control_05,
+            );
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+                uncounted,
+            );
+        }
+        if topology_transferred {
+            coverage.record(
+                crate::coverage::TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
+                ir.model.faces.len(),
+            );
+            coverage.record(
+                crate::coverage::TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
+                ir.model.loops.len(),
+            );
+        }
+        if let Some([control_03, control_05, uncounted, unresolved]) = typed_face_counts {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT,
+                control_03,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT,
+                control_05,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_UNCOUNTED_FACE_COUNT,
+                uncounted,
+            );
+            coverage.record(
+                crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_FACE_COUNT,
+                unresolved,
+            );
+        }
+        if typed_multi_surface_face_count != 0 {
+            coverage.record(
+                crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT,
+                typed_multi_surface_face_count,
+            );
+        }
+        if let Some(counts) = edge_terminal_controls {
+            for (key, count) in [
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_01_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_02_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_22_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_25_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_26_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_29_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,
+            ]
+            .into_iter()
+            .zip(counts)
+            {
+                coverage.record(key, count);
+            }
+        }
+        if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
+                control_00,
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
+                control_04,
+            );
+        }
+        if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
+            resolved_loop_metadata_counts
         {
-            coverage.record(key, count);
+            for (key, count) in [
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+                    controls_03_03,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+                    controls_03_05,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+                    controls_05_03,
+                ),
+                (
+                    crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
+                    controls_05_05,
+                ),
+            ] {
+                coverage.record(key, count);
+            }
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
+                extended,
+            );
         }
-    }
-    if let Some([control_00, control_04]) = vertex_incidence_terminal_controls {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_00_COUNT,
-            control_00,
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_TERMINAL_CONTROL_04_COUNT,
-            control_04,
-        );
-    }
-    if let Some([controls_03_03, controls_03_05, controls_05_03, controls_05_05, extended]) =
-        resolved_loop_metadata_counts
-    {
-        for (key, count) in [
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
-                controls_03_03,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
-                controls_03_05,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
-                controls_05_03,
-            ),
-            (
-                crate::coverage::RESOLVED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
-                controls_05_05,
-            ),
-        ] {
-            coverage.record(key, count);
+        if let Some((counts, unresolved)) = typed_loop_metadata_counts {
+            for (key, count) in [
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
+                crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
+            ]
+            .into_iter()
+            .zip(counts[..4].iter().copied())
+            {
+                coverage.record(key, count);
+            }
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
+                counts[4],
+            );
+            coverage.record(
+                crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
+                unresolved,
+            );
         }
-        coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
-            extended,
-        );
-    }
-    if let Some((counts, unresolved)) = typed_loop_metadata_counts {
-        for (key, count) in [
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_03_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_03_05_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_03_COUNT,
-            crate::coverage::TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT,
-        ]
-        .into_iter()
-        .zip(counts[..4].iter().copied())
-        {
-            coverage.record(key, count);
+        if let Some(count) = class_21_suffix_scalar_count {
+            coverage.record(
+                crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
+                count,
+            );
         }
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_EXTENDED_LOOP_METADATA_COUNT,
-            counts[4],
-        );
-        coverage.record(
-            crate::coverage::TYPED_UNRESOLVED_OBJECT_STREAM_LOOP_COUNT,
-            unresolved,
-        );
-    }
-    if let Some(count) = class_21_suffix_scalar_count {
-        coverage.record(
-            crate::coverage::RESOLVED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
-            count,
-        );
-    }
-    if typed_class_21_pcurve_count != 0 {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
-            typed_class_21_pcurve_count,
-        );
-    }
-    if !typed_parameter_incidences.is_empty() {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
-            typed_parameter_incidences.len(),
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
-            typed_parameter_incidence_member_count,
-        );
-    }
-    if !typed_vertex_incidence_rosters.is_empty() {
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
-            typed_vertex_incidence_rosters.len(),
-        );
-        coverage.record(
-            crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
-            typed_vertex_incidence_roster_member_count,
-        );
-    }
-    Some(FamilyOutput {
-        ir,
-        report: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-            coverage,
-            losses,
-            notes: Vec::new(),
-            transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-        },
-        annotations,
-        unknowns,
-    })
+        if typed_class_21_pcurve_count != 0 {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
+                typed_class_21_pcurve_count,
+            );
+        }
+        if !typed_parameter_incidences.is_empty() {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT,
+                typed_parameter_incidences.len(),
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_MEMBER_COUNT,
+                typed_parameter_incidence_member_count,
+            );
+        }
+        if !typed_vertex_incidence_rosters.is_empty() {
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_COUNT,
+                typed_vertex_incidence_rosters.len(),
+            );
+            coverage.record(
+                crate::coverage::TYPED_OBJECT_STREAM_VERTEX_INCIDENCE_ROSTER_MEMBER_COUNT,
+                typed_vertex_incidence_roster_member_count,
+            );
+        }
+        Some(Ok(FamilyOutput {
+            ir,
+            report: DecodeBody {
+                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+                coverage,
+                losses,
+                notes: Vec::new(),
+                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+            },
+            annotations,
+            unknowns,
+        }))
+    })()
+    .transpose()
 }
 
 fn attach_standalone_wires(

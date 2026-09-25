@@ -77,7 +77,7 @@ fn decode_over_routes(
     let matched = crate::dialect::classify(&scan);
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
         let report = build_container_report(&scan);
         return decode_result(&scan, &matched, ir, report, annotations, unknowns);
     }
@@ -89,7 +89,8 @@ fn decode_over_routes(
     let mut fell_through = Vec::new();
     for (index, route) in applicable.iter().enumerate() {
         let stated = refusal.note_count();
-        if let Some(out) = (route.decode)(ctx, &scan, refusal) {
+        let output = (route.decode)(ctx, &scan, refusal)?;
+        if let Some(out) = output {
             return finish_decode(
                 ctx,
                 &scan,
@@ -116,7 +117,7 @@ fn decode_over_routes(
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(&scan);
+    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -206,9 +207,6 @@ fn finish_decode(
             .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
     }
     report.losses.extend(refusal.take_notes());
-    // Retained unknown records are source entities even when a route transfers
-    // no neutral model entity (for example, an unrecognized storage variant).
-    ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
     // Charge route-built entities before native decode and transfer work so
     // max_entities refuses that work rather than only reporting afterward.
     let mut admitted_entities = 0_u64;

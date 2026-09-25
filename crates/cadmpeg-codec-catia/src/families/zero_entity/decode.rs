@@ -676,7 +676,8 @@ pub(in crate::families) fn try_decode_zero_entity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FamilyOutput> {
+) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     let preamble = container::outer_preamble_range(&scan.data)?;
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces_in_range(
         &scan.data,
@@ -698,7 +699,8 @@ pub(in crate::families) fn try_decode_zero_entity(
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let payload_index = preserve_raw_payload(
+    let payload_index = match preserve_raw_payload(
+        ctx,
         &mut unknowns,
         &mut annotations,
         scan,
@@ -706,7 +708,10 @@ pub(in crate::families) fn try_decode_zero_entity(
             &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
             cadmpeg_ir::identity_key!("zero-entity"),
         ),
-    );
+    ) {
+        Ok(index) => index,
+        Err(error) => return Some(Err(error)),
+    };
 
     let mut surface_ids_by_position = HashMap::new();
     for (index, surface) in surfaces.into_iter().enumerate() {
@@ -1006,7 +1011,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    Some(FamilyOutput {
+    Some(Ok(FamilyOutput {
         ir,
         report: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -1017,7 +1022,9 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
-    })
+    }))
+    })()
+    .transpose()
 }
 
 #[cfg(test)]
