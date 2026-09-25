@@ -488,9 +488,12 @@ fn e5_route_propagates_station_collection_refusal() {
         append_e5_record(&mut stream, 0xfe, id, &[]);
     }
     let file = object_main_catpart(&stream);
-    let mut options = DecodeOptions::default();
-    options.policy = cadmpeg_core::decode::DecodePolicy::service();
-    options.policy.limits.max_collection_items = 13;
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 13;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
     let error = CatiaCodec
         .decode(&mut Cursor::new(file), &options)
         .expect_err("two E5 stations need 14 collection items");

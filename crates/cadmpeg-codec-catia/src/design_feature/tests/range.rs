@@ -89,11 +89,14 @@ fn transfers_exact_range_fields_as_unresolved_operation_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     let properties = &ir.model.features[0].source_properties;

@@ -491,6 +491,7 @@ fn nearest_feature_for_design_object(
 
 /// Transfer exact owner-bound reference history nodes.
 pub(crate) fn transfer_design_features(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: &crate::decode::ModelingGraphScope,
@@ -517,6 +518,12 @@ pub(crate) fn transfer_design_features(
         .filter(|object| native_operation_candidate(object, &records).is_some())
         .map(|object| object.id.as_str())
         .collect::<HashSet<_>>();
+    let operation_sources = NativeOperationSources {
+        object_records: &records,
+        entities: &entities,
+        design_objects: &design_objects,
+        object_ids: &native_operation_object_ids,
+    };
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -535,24 +542,16 @@ pub(crate) fn transfer_design_features(
             native_operation,
         ) {
             (Some(candidate), None, None, None) => {
-                transfer_principal_plane(ir, &mut transfer, candidate)?;
+                transfer_principal_plane(ctx, ir, &mut transfer, candidate)?;
             }
             (None, Some(owner_record), None, None) => {
-                transfer_sketch(ir, &mut transfer, object, owner_record);
+                transfer_sketch(ctx, ir, &mut transfer, object, owner_record)?;
             }
             (None, None, Some(candidate), None) => {
-                transfer_reference_plane(ir, &mut transfer, &candidate)?;
+                transfer_reference_plane(ctx, ir, &mut transfer, &candidate)?;
             }
             (None, None, None, Some(candidate)) => {
-                transfer_native_operation(
-                    ir,
-                    &mut transfer,
-                    &candidate,
-                    &records,
-                    &entities,
-                    &design_objects,
-                    &native_operation_object_ids,
-                )?;
+                transfer_native_operation(ctx, ir, &mut transfer, &candidate, &operation_sources)?;
             }
             _ => {
                 // One object cannot safely occupy two neutral feature identities.
@@ -568,6 +567,7 @@ pub(crate) fn transfer_design_features(
 }
 
 fn transfer_principal_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: PrincipalPlaneCandidate<'_>,
@@ -577,6 +577,7 @@ fn transfer_principal_plane(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
+    ctx.charge_entities(1, "admit CATIA design feature")?;
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -606,6 +607,7 @@ fn transfer_principal_plane(
 }
 
 fn transfer_reference_plane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &ReferencePlaneCandidate<'_>,
@@ -615,6 +617,7 @@ fn transfer_reference_plane(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
+    ctx.charge_entities(1, "admit CATIA design feature")?;
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -641,17 +644,19 @@ fn transfer_reference_plane(
 }
 
 fn transfer_sketch(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let Ok(identity) = cadmpeg_ir::ids::Identity::new(object.id.clone()) else {
-        return;
+        return Ok(());
     };
     let sketch_id = SketchId::from(identity.with_kind(&cadmpeg_ir::identity_component!("sketch")));
     let feature_id =
         FeatureId::from(identity.with_kind(&cadmpeg_ir::identity_component!("feature")));
+    ctx.charge_entities(1, "admit CATIA design sketch")?;
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -661,6 +666,7 @@ fn transfer_sketch(
         profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: Some(object.id.clone()),
     });
+    ctx.charge_entities(1, "admit CATIA design feature")?;
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -683,6 +689,7 @@ fn transfer_sketch(
     transfer
         .sketch_owner_records
         .insert(owner_record.id.clone());
+    Ok(())
 }
 
 struct NativeOperationCandidate<'a> {
@@ -786,14 +793,19 @@ fn is_admitted_native_reference_plane_class(name: &str) -> bool {
     matches!(name, "GSMPlaneAngle" | "GSMPlaneOffset")
 }
 
+struct NativeOperationSources<'a> {
+    object_records: &'a HashMap<&'a str, &'a CatiaObjectRecord>,
+    entities: &'a HashMap<&'a str, &'a CatiaEntityRecord>,
+    design_objects: &'a HashMap<&'a str, &'a CatiaDesignObject>,
+    object_ids: &'a HashSet<&'a str>,
+}
+
 fn transfer_native_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &NativeOperationCandidate<'_>,
-    object_records: &HashMap<&str, &CatiaObjectRecord>,
-    entities: &HashMap<&str, &CatiaEntityRecord>,
-    design_objects: &HashMap<&str, &CatiaDesignObject>,
-    native_operation_object_ids: &HashSet<&str>,
+    sources: &NativeOperationSources<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let object = candidate.object;
     let kind = candidate.kind;
@@ -807,16 +819,17 @@ fn transfer_native_operation(
         range_records,
     } = native_operation_definition_properties(
         object,
-        object_records,
-        entities,
-        design_objects,
-        native_operation_object_ids,
+        sources.object_records,
+        sources.entities,
+        sources.design_objects,
+        sources.object_ids,
     );
     let definition = native_operation_definition(kind, &object.id);
     let feature_id = FeatureId::from(neutral_history_id(
         &object.id,
         &cadmpeg_ir::identity_component!("feature"),
     )?);
+    ctx.charge_entities(1, "admit CATIA design feature")?;
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,

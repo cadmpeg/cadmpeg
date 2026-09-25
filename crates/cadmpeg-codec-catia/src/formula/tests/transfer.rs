@@ -948,15 +948,52 @@ fn decode_transfers_a_closed_formula_with_bare_symbols() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut excluded_ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::Annotations::default();
-    let excluded = crate::formula::transfer_parameters(
-        &mut excluded_ir,
-        &native,
-        &mut annotations,
-        &crate::decode::ModelingGraphScope::Unresolved,
-    )
+    let excluded = crate::test_support::with_service_context(|ctx| {
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut excluded_ir,
+            &native,
+            &mut annotations,
+            &crate::decode::ModelingGraphScope::Unresolved,
+        )
+    })
     .expect("valid exactness fields");
     assert!(excluded_ir.model.parameters.is_empty());
     assert!(excluded.consumed_object_records.is_empty());
+}
+
+#[test]
+fn formula_parameter_entity_limit_refuses_before_model_extend() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("formula input fits service input limit");
+    let mut ir = CadIr::empty();
+    let Err(error) = crate::formula::transfer_parameters(
+        &ctx,
+        &mut ir,
+        &native,
+        &mut cadmpeg_ir::Annotations::default(),
+        &crate::decode::ModelingGraphScope::Unscoped,
+    ) else {
+        panic!("two parameters exceed one entity");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA formula parameters")
+    );
+    assert!(ir.model.parameters.is_empty());
 }
 
 #[test]

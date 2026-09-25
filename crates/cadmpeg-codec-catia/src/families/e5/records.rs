@@ -382,7 +382,6 @@ pub(in crate::families) fn e5_surfaces(
 /// channel is the opening angle. The tail range, radius, and sense are kept on
 /// the native record; the neutral definition contains the complete value and
 /// derivative jets.
-#[must_use]
 pub(in crate::families) fn e5_rolling_ball_jets(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -424,7 +423,7 @@ fn parse_e5_rolling_ball_jet(
                 == station_count
                     .checked_mul(252)
                     .and_then(|size| size.checked_add(88))?)
-        .then(|| (view, station_count))
+        .then_some((view, station_count))
     })() else {
         return Ok(None);
     };

@@ -899,18 +899,21 @@ pub(super) fn try_decode_freeform_surfaces(
                 typed_vertex_incidence_roster_member_count,
             );
         }
-        Some(Ok(FamilyOutput {
-            ir,
-            report: DecodeBody {
-                transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-                coverage,
-                losses,
-                notes: Vec::new(),
-                transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-            },
-            annotations,
-            unknowns,
-        }))
+        Some(
+            FamilyOutput {
+                ir,
+                report: DecodeBody {
+                    transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+                    coverage,
+                    losses,
+                    notes: Vec::new(),
+                    transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+                },
+                annotations,
+                unknowns,
+            }
+            .admit_entities(ctx),
+        )
     })()
     .transpose()
 }
