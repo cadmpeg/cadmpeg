@@ -1313,6 +1313,7 @@ fn linear_pcurve_carrier(
 }
 
 pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1441,6 +1442,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             "analytic_pcurve_carrier",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry: geometry.clone(),
@@ -2325,8 +2327,10 @@ mod tests {
         assert_eq!(diagnostics.complete_records, 0);
 
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
-            .expect("valid source object identity");
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+        })
+        .expect("valid source object identity");
         assert_eq!(
             transferred,
             BTreeSet::from([
@@ -2662,8 +2666,10 @@ mod tests {
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
-            .expect("valid source object identity");
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+        })
+        .expect("valid source object identity");
         assert!(transferred.is_empty(), "{transferred:?}");
         assert!(ir.model.curves.is_empty());
 
@@ -2673,8 +2679,10 @@ mod tests {
             .surfaces
             .extend([unit_plane_surface(10), unit_plane_surface(11)]);
         scan.curves.pcurves[0].face_1_endpoints = [[1.0, 2.0], [3.0, 4.0]];
-        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut finite, &mut annotations)
-            .expect("valid source object identity");
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(ctx, &scan, &mut finite, &mut annotations)
+        })
+        .expect("valid source object identity");
         assert_eq!(
             transferred,
             BTreeSet::from([
@@ -2817,8 +2825,10 @@ mod tests {
         assert_eq!(diagnostics.unevaluable_paths, 0);
         assert!(!evidence.contains_key(&7));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        let transferred = transfer_analytic_pcurve_carriers(&scan, &mut ir, &mut annotations)
-            .expect("valid source object identity");
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_analytic_pcurve_carriers(ctx, &scan, &mut ir, &mut annotations)
+        })
+        .expect("valid source object identity");
         assert!(transferred.is_empty(), "{transferred:?}");
         assert!(ir.model.curves.is_empty());
     }

@@ -121,12 +121,13 @@ mod tests {
 }
 
 pub(super) fn transfer_part_product(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(model_name) = scan.framing.model_name.as_ref() else {
-        return false;
+        return Ok(false);
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
@@ -154,6 +155,7 @@ pub(super) fn transfer_part_product(
         "part_product_occurrence",
         Exactness::Derived,
     );
+    ctx.charge_entities(1, "admit Creo model product_definitions")?;
     ir.model.product_definitions.push(ProductDefinition {
         id: product_id.clone(),
         kind: ProductDefinitionKind::Part,
@@ -165,6 +167,7 @@ pub(super) fn transfer_part_product(
         bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
         native_ref: None,
     });
+    ctx.charge_entities(1, "admit Creo model occurrences")?;
     ir.model.occurrences.push(Occurrence {
         id: occurrence_id,
         prototype: PrototypeReference::Local {
@@ -180,7 +183,7 @@ pub(super) fn transfer_part_product(
         link: None,
         native_ref: None,
     });
-    true
+    Ok(true)
 }
 
 pub(super) fn fc05_model_frame(
@@ -306,6 +309,7 @@ pub(super) fn fc05_cap_pair_model_frame(
 }
 
 pub(super) fn transfer_fc05_cap_circles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -406,6 +410,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 "fc05_cap_circle",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
@@ -451,6 +456,7 @@ pub(super) fn transfer_fc05_cap_circles(
             "fc05_axis_cylinder",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
