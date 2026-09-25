@@ -1083,6 +1083,7 @@ fn byte_accounting(
     }
     let mut lexer = crate::lex::Lexer::new(input);
     lexer.set_context(Some(ctx));
+    lexer.set_transient_literals();
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {

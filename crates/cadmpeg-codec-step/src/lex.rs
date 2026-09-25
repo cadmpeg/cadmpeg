@@ -128,6 +128,7 @@ pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: Option<&'ctx DecodeContext<'arena>>,
+    transient_literals: bool,
     at: usize,
     allow_print_controls: bool,
     previous_was_signature: bool,
@@ -146,6 +147,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         Self {
             input,
             budget: None,
+            transient_literals: false,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
@@ -155,6 +157,10 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
 
     pub(crate) fn set_context(&mut self, budget: Option<&'ctx DecodeContext<'arena>>) {
         self.budget = budget;
+    }
+
+    pub(crate) fn set_transient_literals(&mut self) {
+        self.transient_literals = true;
     }
 
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
@@ -711,10 +717,20 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             return Err(Self::error(start, "unused binary bits are not zero"));
         }
         let packed_len = digits.len().div_ceil(2);
-        if let Some(ctx) = self.budget {
-            ctx.charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
-                .map_err(|error| Self::resource_error(start, error))?;
-        }
+        let _packed_temporary = if self.transient_literals {
+            self.budget
+                .map(|ctx| {
+                    ctx.reserve_scoped(u64_from_index(packed_len), "step_binary_packed_temp")
+                })
+                .transpose()
+                .map_err(|error| Self::resource_error(start, error))?
+        } else {
+            if let Some(ctx) = self.budget {
+                ctx.charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
+                    .map_err(|error| Self::resource_error(start, error))?;
+            }
+            None
+        };
         let mut data = alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
         let mut output = 0usize;
@@ -762,9 +778,11 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .map(|ctx| ctx.reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp"))
             .transpose()
             .map_err(|error| Self::resource_error(start, error))?;
-        if let Some(ctx) = self.budget {
-            ctx.charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
-                .map_err(|error| Self::resource_error(start, error))?;
+        if !self.transient_literals {
+            if let Some(ctx) = self.budget {
+                ctx.charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
+                    .map_err(|error| Self::resource_error(start, error))?;
+            }
         }
         let mut value = alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
             .map_err(|error| Self::resource_error(start, error))?;
