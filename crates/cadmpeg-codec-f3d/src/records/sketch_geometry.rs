@@ -5,7 +5,9 @@ use super::references::DesignClassTag;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
+use cadmpeg_ir::scalar::{
+    Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -1376,17 +1378,8 @@ pub(crate) enum SketchCurveGeometry {
         subtype_class_tag: DesignClassTag,
         /// Record index of the NURBS subtype record.
         subtype_record_index: u32,
-        /// Polynomial degree of the curve.
-        degree: u32,
-        /// Source fit tolerance used when the curve was fitted, in millimetres.
-        fit_tolerance: f64,
-        /// Width in scalars of each control-point record as stored in the source
-        /// (control point components plus weight, before decoding into `poles`).
-        scalar_width: u32,
-        /// Knot vector, non-decreasing, length `poles.point_count() + degree + 1`.
-        knots: Vec<f64>,
-        /// Polynomial control points or rational point/weight pairs.
-        poles: SketchNurbsPoles,
+        /// Admitted degree, fit tolerance, knots and poles; source scalar width is eight.
+        geometry: SketchNurbsGeometry,
     },
 }
 
@@ -1496,6 +1489,99 @@ impl SketchCurveGeometry {
             Angle::new(end_angle).ok_or("arc end angle is not finite")?,
         )
     }
+
+    pub(crate) fn nurbs_from_parts(
+        carrier_reference: Option<u64>,
+        subtype_class_tag: DesignClassTag,
+        subtype_record_index: u32,
+        geometry: SketchNurbsGeometry,
+    ) -> Self {
+        Self::Nurbs {
+            carrier_reference,
+            subtype_class_tag,
+            subtype_record_index,
+            geometry,
+        }
+    }
+}
+
+/// Control lanes and their shared source and native admission for one sketch spline.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SketchNurbsGeometry {
+    degree: u32,
+    fit_tolerance: NonNegativeLength,
+    knots: Vec<FiniteReal>,
+    poles: SketchNurbsPoles,
+}
+
+impl SketchNurbsGeometry {
+    pub(crate) fn from_parts(
+        degree: u32,
+        fit_tolerance: f64,
+        scalar_width: u32,
+        knots: Vec<f64>,
+        poles: SketchNurbsPoles,
+    ) -> Result<Self, String> {
+        if scalar_width != 8 {
+            return Err("sketch NURBS scalar_width must be 8".into());
+        }
+        let fit_tolerance = NonNegativeLength::new(fit_tolerance)
+            .ok_or("sketch NURBS fit_tolerance must be finite and nonnegative")?;
+        Self::from_checked_parts(degree, fit_tolerance, knots, poles)
+    }
+
+    pub(crate) fn from_checked_parts(
+        degree: u32,
+        fit_tolerance: NonNegativeLength,
+        knots: Vec<f64>,
+        poles: SketchNurbsPoles,
+    ) -> Result<Self, String> {
+        if knots.len() > 100_000 || poles.point_count() > 100_000 || poles.weights().len() > 100_000
+        {
+            return Err("sketch NURBS lane count exceeds source limit".into());
+        }
+        let expected_knots = poles
+            .point_count()
+            .checked_add(usize::try_from(degree).map_err(|_| "sketch NURBS degree overflows")?)
+            .and_then(|count| count.checked_add(1))
+            .ok_or("sketch NURBS knot count overflows")?;
+        if knots.len() != expected_knots {
+            return Err("sketch NURBS knot count must equal control points + degree + 1".into());
+        }
+        if !knots_nondecreasing(&knots) {
+            return Err("sketch NURBS knots must be nondecreasing".into());
+        }
+        let knots = knots
+            .into_iter()
+            .map(|knot| FiniteReal::new(knot).ok_or("sketch NURBS knot is not finite".into()))
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self {
+            degree,
+            fit_tolerance,
+            knots,
+            poles,
+        })
+    }
+
+    pub(crate) fn degree(&self) -> u32 {
+        self.degree
+    }
+
+    pub(crate) fn fit_tolerance(&self) -> NonNegativeLength {
+        self.fit_tolerance
+    }
+
+    pub(crate) fn knots(&self) -> Vec<f64> {
+        self.knots.iter().map(|knot| knot.get()).collect()
+    }
+
+    pub(crate) fn knot_count(&self) -> usize {
+        self.knots.len()
+    }
+
+    pub(crate) fn poles(&self) -> &SketchNurbsPoles {
+        &self.poles
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1591,17 +1677,19 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
                 knots,
                 weights,
                 control_points,
-            } => Self::Nurbs {
+            } => Self::nurbs_from_parts(
                 carrier_reference,
-                subtype_class_tag: DesignClassTag::try_from(subtype_class_tag)
+                DesignClassTag::try_from(subtype_class_tag)
                     .map_err(|error| format!("subtype_class_tag: {error}"))?,
                 subtype_record_index,
-                degree,
-                fit_tolerance,
-                scalar_width,
-                knots,
-                poles: SketchNurbsPoles::from_wire(control_points, weights)?,
-            },
+                SketchNurbsGeometry::from_parts(
+                    degree,
+                    fit_tolerance,
+                    scalar_width,
+                    knots,
+                    SketchNurbsPoles::from_wire(control_points, weights)?,
+                )?,
+            ),
         })
     }
 }
@@ -1639,27 +1727,26 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                 carrier_reference,
                 subtype_class_tag,
                 subtype_record_index,
-                degree,
-                fit_tolerance,
-                scalar_width,
-                knots,
-                poles,
+                geometry,
             } => {
-                let (control_points, weights) = match poles {
-                    SketchNurbsPoles::Polynomial(points) => (points, Vec::new()),
+                let (control_points, weights) = match geometry.poles {
+                    SketchNurbsPoles::Polynomial(points) => (
+                        points.into_iter().map(FinitePoint3::get).collect(),
+                        Vec::new(),
+                    ),
                     SketchNurbsPoles::Rational(poles) => poles
                         .into_iter()
-                        .map(|pole| (pole.point, pole.weight))
+                        .map(|pole| (pole.point.get(), pole.weight.get()))
                         .unzip(),
                 };
                 Self::Nurbs {
                     carrier_reference,
                     subtype_class_tag: subtype_class_tag.into(),
                     subtype_record_index,
-                    degree,
-                    fit_tolerance,
-                    scalar_width,
-                    knots,
+                    degree: geometry.degree,
+                    fit_tolerance: geometry.fit_tolerance.get(),
+                    scalar_width: 8,
+                    knots: geometry.knots.into_iter().map(FiniteReal::get).collect(),
                     weights,
                     control_points,
                 }
@@ -1671,14 +1758,14 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
 /// Control data for a polynomial or rational sketch spline.
 #[derive(Debug, Clone)]
 pub(crate) enum SketchNurbsPoles {
-    Polynomial(Vec<Point3>),
+    Polynomial(Vec<FinitePoint3>),
     Rational(Vec<SketchNurbsPole>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct SketchNurbsPole {
-    pub(crate) point: Point3,
-    pub(crate) weight: f64,
+    point: FinitePoint3,
+    weight: PositiveReal,
 }
 
 impl PartialEq for SketchNurbsPoles {
@@ -1689,6 +1776,22 @@ impl PartialEq for SketchNurbsPoles {
 
 impl SketchNurbsPoles {
     pub(crate) fn from_wire(points: Vec<Point3>, weights: Vec<f64>) -> Result<Self, String> {
+        if !weights.is_empty() && points.len() != weights.len() {
+            return Err("weights must be absent or match every control_points entry".into());
+        }
+        let points = points
+            .into_iter()
+            .map(|point| {
+                FinitePoint3::new(point).ok_or("sketch NURBS control point is not finite".into())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Self::from_checked_points(points, weights)
+    }
+
+    pub(crate) fn from_checked_points(
+        points: Vec<FinitePoint3>,
+        weights: Vec<f64>,
+    ) -> Result<Self, String> {
         if weights.is_empty() {
             return Ok(Self::Polynomial(points));
         }
@@ -1699,8 +1802,14 @@ impl SketchNurbsPoles {
             points
                 .into_iter()
                 .zip(weights)
-                .map(|(point, weight)| SketchNurbsPole { point, weight })
-                .collect(),
+                .map(|(point, weight)| {
+                    Ok(SketchNurbsPole {
+                        point,
+                        weight: PositiveReal::new(weight)
+                            .ok_or("sketch NURBS weight is not positive and finite")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?,
         ))
     }
 
@@ -1712,30 +1821,22 @@ impl SketchNurbsPoles {
     }
 
     pub(crate) fn points(&self) -> impl DoubleEndedIterator<Item = &Point3> {
-        let (points, poles): (&[Point3], &[SketchNurbsPole]) = match self {
+        let (points, poles): (&[FinitePoint3], &[SketchNurbsPole]) = match self {
             Self::Polynomial(points) => (points, &[]),
             Self::Rational(poles) => (&[], poles),
         };
-        points.iter().chain(poles.iter().map(|pole| &pole.point))
+        points
+            .iter()
+            .map(FinitePoint3::as_raw)
+            .chain(poles.iter().map(|pole| pole.point.as_raw()))
     }
 
-    pub(crate) fn weights(&self) -> impl ExactSizeIterator<Item = &f64> {
+    pub(crate) fn weights(&self) -> impl ExactSizeIterator<Item = f64> + '_ {
         let poles: &[SketchNurbsPole] = match self {
             Self::Polynomial(_) => &[],
             Self::Rational(poles) => poles,
         };
-        poles.iter().map(|pole| &pole.weight)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn points_mut(&mut self) -> impl Iterator<Item = &mut Point3> {
-        let (points, poles): (&mut [Point3], &mut [SketchNurbsPole]) = match self {
-            Self::Polynomial(points) => (points, &mut []),
-            Self::Rational(poles) => (&mut [], poles),
-        };
-        points
-            .iter_mut()
-            .chain(poles.iter_mut().map(|pole| &mut pole.point))
+        poles.iter().map(|pole| pole.weight.get())
     }
 }
 

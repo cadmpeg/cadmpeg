@@ -472,24 +472,28 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(21).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Nurbs {
-            carrier_reference: None,
-            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
-                "304".to_owned(),
+        geometry: Some(SketchCurveGeometry::nurbs_from_parts(
+            None,
+            crate::records::references::DesignClassTag::try_from("304".to_owned()).unwrap(),
+            219,
+            crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+                2,
+                1.0e-6,
+                8,
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+                    vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(2.0, 0.0, 0.0),
+                        Point3::new(2.0, 2.0, 0.0),
+                        Point3::new(4.0, 2.0, 0.0),
+                    ],
+                    vec![],
+                )
+                .unwrap(),
             )
             .unwrap(),
-            subtype_record_index: 219,
-            degree: 2,
-            fit_tolerance: 1.0e-6,
-            scalar_width: 8,
-            knots: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            poles: crate::records::sketch_geometry::SketchNurbsPoles::Polynomial(vec![
-                Point3::new(0.0, 0.0, 0.0),
-                Point3::new(2.0, 0.0, 0.0),
-                Point3::new(2.0, 2.0, 0.0),
-                Point3::new(4.0, 2.0, 0.0),
-            ]),
-        }),
+        )),
     };
 
     let placements = vec![placement];
@@ -921,28 +925,23 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     curves.push(curve(
         104,
         4,
-        SketchCurveGeometry::Nurbs {
-            carrier_reference: None,
-            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
-                "302".to_owned(),
+        SketchCurveGeometry::nurbs_from_parts(
+            None,
+            crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
+            104,
+            crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+                1,
+                1.0e-8,
+                8,
+                vec![0.0, 0.0, 1.0, 1.0],
+                crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+                    vec![Point3::new(2.0, 3.0, 4.0), Point3::new(5.0, 6.0, 7.0)],
+                    vec![1.0, 1.0],
+                )
+                .unwrap(),
             )
             .unwrap(),
-            subtype_record_index: 104,
-            degree: 1,
-            fit_tolerance: 1.0e-8,
-            scalar_width: 4,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(vec![
-                crate::records::sketch_geometry::SketchNurbsPole {
-                    point: Point3::new(2.0, 3.0, 4.0),
-                    weight: 1.0,
-                },
-                crate::records::sketch_geometry::SketchNurbsPole {
-                    point: Point3::new(5.0, 6.0, 7.0),
-                    weight: 1.0,
-                },
-            ]),
-        },
+        ),
     ));
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
         id: "f3d:Design/BulkStream.dat:relation#105".into(),
@@ -1295,69 +1294,14 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
 }
 
 #[test]
-fn a_refused_sketch_nurbs_carrier_reaches_the_codec_error() {
-    let placement = DesignSketchPlacement {
-        frame: crate::records::sketch_placement::DesignSketchFrame::new(
-            100,
-            crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit(
-                crate::records::sketch_placement::SketchPlacementMatrix::try_from([
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ])
-                .unwrap(),
-            ),
-        )
-        .unwrap(),
-        id: "f3d:native:placement#0".into(),
-        scope_record_index: Some(177),
-        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
-            .expect("valid entity ID"),
-        visibility: None,
-        class_tag: crate::records::references::DesignClassTag::try_from("356".to_owned()).unwrap(),
-        record_index: 185,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
-            .unwrap(),
-    };
-    let refused = SketchCurveIdentity {
-        id: "f3d:native:curve#218".into(),
-        record_index: 218,
-        owner_reference: Some(172),
-        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
-        byte_offset: 700,
-        geometry_offset: 100,
-        entity_genesis: None,
-        primary_id: std::num::NonZeroU64::new(21).unwrap(),
-        secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Nurbs {
-            carrier_reference: None,
-            subtype_class_tag: crate::records::references::DesignClassTag::try_from(
-                "304".to_owned(),
-            )
-            .unwrap(),
-            subtype_record_index: 219,
-            degree: 1,
-            fit_tolerance: 1.0e-6,
-            scalar_width: 8,
-            knots: vec![0.0, 0.0, 1.0, 1.0],
-            poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(vec![
-                crate::records::sketch_geometry::SketchNurbsPole {
-                    point: Point3::new(0.0, 0.0, 0.0),
-                    weight: 1.0,
-                },
-                crate::records::sketch_geometry::SketchNurbsPole {
-                    point: Point3::new(2.0, 0.0, 0.0),
-                    weight: 0.0,
-                },
-            ]),
-        }),
-    };
-    let error = project_sketch_design(&[placement], &[], &[refused], &[], &[], 1.0e-6)
-        .expect_err("a refused pole carrier is not dropped in silence");
+fn sketch_nurbs_refuses_nonpositive_weight_before_projection() {
+    let error = crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        vec![1.0, 0.0],
+    )
+    .expect_err("nonpositive weight must be refused at admission");
     assert!(
-        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
-            if message.contains("is not a usable weight")),
-        "the refusal reaches the codec error: {error:?}"
+        error.contains("weight is not positive and finite"),
+        "{error}"
     );
 }

@@ -668,13 +668,15 @@ pub(crate) fn patch_sketch_curves(
                     12,
                 )
             }
-            SketchCurveGeometry::Nurbs {
-                fit_tolerance,
-                knots,
-                poles,
-                ..
-            } => {
-                patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, poles)?;
+            SketchCurveGeometry::Nurbs { geometry, .. } => {
+                let knots = geometry.knots();
+                patch_sketch_nurbs(
+                    bytes,
+                    start,
+                    geometry.fit_tolerance().get(),
+                    &knots,
+                    geometry.poles(),
+                )?;
                 continue;
             }
         };

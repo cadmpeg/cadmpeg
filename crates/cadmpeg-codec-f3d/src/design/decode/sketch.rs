@@ -32,7 +32,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -2772,12 +2772,10 @@ fn parse_sketch_surface(
     };
     let mut points = Vec::with_capacity(frame.coordinates.len() / 3);
     for (ordinal, values) in frame.coordinates.chunks_exact(3).enumerate() {
-        let source = Point3::new(values[0], values[1], values[2]);
-        if !source.is_finite() {
+        let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
             return Ok(None);
-        }
-        let scaled = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
-        let point = FinitePoint3::new(scaled).ok_or_else(|| {
+        };
+        let point = scaled_sketch_point(source).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "F3D sketch surface at byte {record_at} control point {ordinal} overflows millimetres"
             ))
@@ -3127,9 +3125,14 @@ fn decode_sketch_curve_geometry(
                 None
             }
         }
-        SketchCurveClass::Nurbs => decode_legacy_sketch_nurbs(geometry_payload)
-            .or_else(|| decode_sketch_nurbs(geometry_payload))
-            .map(|(geometry, _)| (geometry, 133)),
+        SketchCurveClass::Nurbs => {
+            let legacy = decode_legacy_sketch_nurbs(geometry_payload, record_at).transpose()?;
+            let geometry = match legacy {
+                Some(geometry) => Some(geometry),
+                None => decode_sketch_nurbs(geometry_payload, record_at).transpose()?,
+            };
+            geometry.map(|(geometry, _)| (geometry, 133))
+        }
         SketchCurveClass::TextFrameLine => {
             decode_text_frame_line(payload, geometry_shift, record_index, record_at)?.and_then(
                 |(geometry, end)| {
@@ -3192,14 +3195,16 @@ fn scale_sketch_point(
     record_at: usize,
     kind: &str,
 ) -> Result<FinitePoint3, CodecError> {
+    scaled_sketch_point(point_centimetres).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "F3D sketch {kind} at byte {record_at} overflows millimetres"
+        ))
+    })
+}
+
+fn scaled_sketch_point(point_centimetres: FinitePoint3) -> Option<FinitePoint3> {
     let point = point_centimetres.get();
-    FinitePoint3::new(Point3::new(point.x * 10.0, point.y * 10.0, point.z * 10.0)).ok_or_else(
-        || {
-            CodecError::malformed(format_args!(
-                "F3D sketch {kind} at byte {record_at} overflows millimetres"
-            ))
-        },
-    )
+    FinitePoint3::new(Point3::new(point.x * 10.0, point.y * 10.0, point.z * 10.0))
 }
 
 fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {
@@ -3253,7 +3258,10 @@ fn decode_text_frame_line(
     Ok(decode_line_values(payload, values_at, record_at)?.map(|geometry| (geometry, end)))
 }
 
-fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
+fn decode_sketch_nurbs(
+    payload: &[u8],
+    record_at: usize,
+) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
     let base = 133usize;
     let carrier = View::u64_le_at(payload, base)?;
     let carrier_reference = (carrier != u64::MAX).then_some(carrier);
@@ -3268,7 +3276,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let degree = View::u32_le_at(payload, base + 90)?;
     let fit_tolerance = View::f64_le_at(payload, base + 94)?;
     let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
-    if View::u32_le_at(payload, base + 106)? as usize != knot_count
+    if usize::try_from(View::u32_le_at(payload, base + 106)?).ok()? != knot_count
         || View::u32_le_at(payload, base + 110)? != 8
         || knot_count > 100_000
     {
@@ -3277,7 +3285,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let knots = f64s_at(payload, base + 114, knot_count)?;
     let weights_at = base + 114 + knot_count * 8;
     let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
-    if View::u32_le_at(payload, weights_at + 4)? as usize != weight_count
+    if usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()? != weight_count
         || View::u32_le_at(payload, weights_at + 8)? != 8
         || weight_count > 100_000
     {
@@ -3286,51 +3294,43 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let weights = f64s_at(payload, weights_at + 12, weight_count)?;
     let points_at = weights_at + 12 + weight_count * 8;
     let point_count = usize::try_from(View::u32_le_at(payload, points_at)?).ok()?;
-    if View::u32_le_at(payload, points_at + 4)? as usize != point_count
+    if usize::try_from(View::u32_le_at(payload, points_at + 4)?).ok()? != point_count
         || View::u32_le_at(payload, points_at + 8)? != 8
-        || knot_count != point_count.checked_add(degree as usize + 1)?
+        || knot_count
+            != point_count
+                .checked_add(usize::try_from(degree).ok()?)?
+                .checked_add(1)?
     {
         return None;
     }
     let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
-    let fit_tolerance_mm = fit_tolerance * 10.0;
-    if knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
-        || weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        || coordinates.iter().any(|value| !value.is_finite())
-        || !fit_tolerance_mm.is_finite()
-    {
-        return None;
-    }
-    let control_points = coordinates
-        .chunks_exact(3)
-        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
-        .collect::<Vec<_>>();
-    if control_points.iter().any(|point| !point.is_finite()) {
-        return None;
-    }
-    Some((
-        SketchCurveGeometry::Nurbs {
+    let geometry = match admit_source_sketch_nurbs(
+        degree,
+        fit_tolerance,
+        knots,
+        weights,
+        &coordinates,
+        record_at,
+    ) {
+        Ok(Some(geometry)) => geometry,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok((
+        SketchCurveGeometry::nurbs_from_parts(
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: View::u32_le_at(payload, base + 15)?,
-            degree,
-            fit_tolerance: fit_tolerance_mm,
-            scalar_width: 8,
-            knots,
-            poles: crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
-                control_points,
-                weights,
-            )
-            .ok()?,
-        },
+            View::u32_le_at(payload, base + 15)?,
+            geometry,
+        ),
         points_at + 12 + point_count * 24,
-    ))
+    )))
 }
 
-fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
+fn decode_legacy_sketch_nurbs(
+    payload: &[u8],
+    record_at: usize,
+) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
     let base = 133usize;
     let carrier = View::u64_le_at(payload, base)?;
     let carrier_reference = (carrier != u64::MAX).then_some(carrier);
@@ -3385,46 +3385,76 @@ fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, us
     if point_capacity < point_count
         || point_capacity > 100_000
         || View::u32_le_at(payload, points_at + 8)? != 8
-        || knot_count != point_count.checked_add(degree as usize + 1)?
+        || knot_count
+            != point_count
+                .checked_add(usize::try_from(degree).ok()?)?
+                .checked_add(1)?
     {
         return None;
     }
     let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
-    let fit_tolerance_mm = fit_tolerance * 10.0;
-    if knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
-        || weights
-            .iter()
-            .any(|weight| !weight.is_finite() || *weight <= 0.0)
-        || coordinates.iter().any(|value| !value.is_finite())
-        || !fit_tolerance_mm.is_finite()
-    {
-        return None;
-    }
-    let control_points = coordinates
-        .chunks_exact(3)
-        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
-        .collect::<Vec<_>>();
-    if control_points.iter().any(|point| !point.is_finite()) {
-        return None;
-    }
-    Some((
-        SketchCurveGeometry::Nurbs {
+    let geometry = match admit_source_sketch_nurbs(
+        degree,
+        fit_tolerance,
+        knots,
+        weights,
+        &coordinates,
+        record_at,
+    ) {
+        Ok(Some(geometry)) => geometry,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok((
+        SketchCurveGeometry::nurbs_from_parts(
             carrier_reference,
             subtype_class_tag,
-            subtype_record_index: View::u32_le_at(payload, base + 15)?,
-            degree,
-            fit_tolerance: fit_tolerance_mm,
-            scalar_width: 8,
-            knots,
-            poles: crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
-                control_points,
-                weights,
-            )
-            .ok()?,
-        },
+            View::u32_le_at(payload, base + 15)?,
+            geometry,
+        ),
         points_at + 12 + point_count * 24,
-    ))
+    )))
+}
+
+fn admit_source_sketch_nurbs(
+    degree: u32,
+    fit_tolerance_cm: f64,
+    knots: Vec<f64>,
+    weights: Vec<f64>,
+    coordinates: &[f64],
+    record_at: usize,
+) -> Result<Option<crate::records::sketch_geometry::SketchNurbsGeometry>, CodecError> {
+    let Some(fit_tolerance_cm) = NonNegativeLength::new(fit_tolerance_cm) else {
+        return Ok(None);
+    };
+    let fit_tolerance_mm = fit_tolerance_cm.get() * 10.0;
+    let Some(fit_tolerance_mm) = NonNegativeLength::new(fit_tolerance_mm) else {
+        return Err(CodecError::malformed(format_args!(
+            "F3D sketch NURBS at byte {record_at} fit tolerance overflows millimetres"
+        )));
+    };
+    let mut control_points = Vec::with_capacity(coordinates.len() / 3);
+    for point in coordinates.chunks_exact(3) {
+        let Some(source) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
+            return Ok(None);
+        };
+        control_points.push(scale_sketch_point(source, record_at, "NURBS")?);
+    }
+    let Ok(poles) = crate::records::sketch_geometry::SketchNurbsPoles::from_checked_points(
+        control_points,
+        weights,
+    ) else {
+        return Ok(None);
+    };
+    Ok(
+        crate::records::sketch_geometry::SketchNurbsGeometry::from_checked_parts(
+            degree,
+            fit_tolerance_mm,
+            knots,
+            poles,
+        )
+        .ok(),
+    )
 }
 
 fn decode_line(

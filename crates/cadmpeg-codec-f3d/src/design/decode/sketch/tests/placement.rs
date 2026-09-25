@@ -603,6 +603,66 @@ fn text_frame_line_decodes_after_point_references() {
     ));
 }
 
+fn modern_sketch_nurbs_payload() -> Vec<u8> {
+    let base = 133;
+    let mut bytes = vec![0; base + 114];
+    bytes[base..base + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+    bytes[base + 8..base + 12].copy_from_slice(&3u32.to_le_bytes());
+    bytes[base + 12..base + 15].copy_from_slice(b"302");
+    bytes[base + 15..base + 19].copy_from_slice(&7u32.to_le_bytes());
+    bytes[base + 88] = 1;
+    bytes[base + 90..base + 94].copy_from_slice(&1u32.to_le_bytes());
+    bytes[base + 94..base + 102].copy_from_slice(&0.125f64.to_le_bytes());
+    bytes[base + 102..base + 106].copy_from_slice(&4u32.to_le_bytes());
+    bytes[base + 106..base + 110].copy_from_slice(&4u32.to_le_bytes());
+    bytes[base + 110..base + 114].copy_from_slice(&8u32.to_le_bytes());
+    for knot in [0.0f64, 0.0, 1.0, 1.0] {
+        bytes.extend_from_slice(&knot.to_le_bytes());
+    }
+    for value in [0u32, 0, 8, 2, 2, 8] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for coordinate in [0.0f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
+        bytes.extend_from_slice(&coordinate.to_le_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn modern_sketch_nurbs_reports_fit_tolerance_scale_overflow_at_source() {
+    let mut bytes = modern_sketch_nurbs_payload();
+    assert!(
+        crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+            .transpose()
+            .unwrap()
+            .is_some()
+    );
+    bytes[133 + 94..133 + 102].copy_from_slice(&1.0e308f64.to_le_bytes());
+    let error = crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+        .transpose()
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("byte 17 fit tolerance overflows millimetres"));
+}
+
+#[test]
+fn modern_sketch_nurbs_reports_control_point_scale_overflow_at_source() {
+    let mut bytes = modern_sketch_nurbs_payload();
+    assert!(
+        crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+            .transpose()
+            .unwrap()
+            .is_some()
+    );
+    let first_coordinate = 133 + 114 + 4 * 8 + 12 + 12;
+    bytes[first_coordinate..first_coordinate + 8].copy_from_slice(&1.0e308f64.to_le_bytes());
+    let error = crate::design::decode::sketch::decode_sketch_nurbs(&bytes, 17)
+        .transpose()
+        .unwrap_err();
+    assert!(error.to_string().contains("byte 17 overflows millimetres"));
+}
+
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     let mut bytes = Vec::new();
@@ -653,36 +713,44 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         }
     }
 
-    let (geometry, end) =
-        crate::design::decode::sketch::decode_legacy_sketch_nurbs(&bytes).expect("legacy NURBS");
-    let SketchCurveGeometry::Nurbs {
-        degree,
-        fit_tolerance,
-        knots,
-        poles,
-        ..
-    } = geometry
-    else {
+    let (geometry, end) = crate::design::decode::sketch::decode_legacy_sketch_nurbs(&bytes, 0)
+        .transpose()
+        .expect("valid source scaling")
+        .expect("legacy NURBS");
+    let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
         panic!("expected NURBS");
     };
     assert_eq!(end, bytes.len());
-    assert_eq!(degree, 2);
-    assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-    assert_eq!(poles.weights().copied().collect::<Vec<_>>(), [1.0; 3]);
+    assert_eq!(geometry.degree(), 2);
+    assert_eq!(geometry.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(geometry.poles().weights().collect::<Vec<_>>(), [1.0; 3]);
     assert_eq!(
-        poles.points().nth(1).copied().unwrap(),
+        geometry.poles().points().nth(1).copied().unwrap(),
         Point3::new(5.0, 7.5, 0.0)
     );
-    assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
+    assert!((geometry.fit_tolerance().get() - 0.000_1).abs() <= f64::EPSILON);
 
+    let mut invalid = bytes.clone();
+    invalid[133 + 114..133 + 122].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(
+        crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid, 0)
+            .transpose()
+            .unwrap()
+            .is_none()
+    );
     for (offset, value) in [
-        (133 + 114, f64::NAN),
-        (133 + 42, 1.0e308),
+        (133 + 42, 1.0e308_f64),
         (133 + 114 + 6 * 8 + 12 + 3 * 8 + 12, 1.0e308),
     ] {
         let mut invalid = bytes.clone();
         invalid[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
-        assert!(crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid).is_none());
+        assert!(
+            crate::design::decode::sketch::decode_legacy_sketch_nurbs(&invalid, 17)
+                .transpose()
+                .unwrap_err()
+                .to_string()
+                .contains("byte 17")
+        );
     }
 
     push_marked_reference(&mut bytes, 201);

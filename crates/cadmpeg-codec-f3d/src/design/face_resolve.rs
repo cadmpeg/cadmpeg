@@ -2223,8 +2223,8 @@ pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
                     <= EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9
                 && sketch_normal_sign(normal.as_raw()).is_some())
         }
-        Some(SketchCurveGeometry::Nurbs { poles, .. }) => {
-            poles.points().any(|point| !planar_point(point))
+        Some(SketchCurveGeometry::Nurbs { geometry, .. }) => {
+            geometry.poles().points().any(|point| !planar_point(point))
         }
         None => false,
     }

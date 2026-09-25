@@ -465,7 +465,16 @@ fn sketch_auxiliary_rows_preserve_absent_and_complete_offset_runs() {
 
 #[test]
 fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
-    let base = r#"{"kind":"nurbs","subtype_class_tag":"302","subtype_record_index":7,"degree":1,"fit_tolerance":0.125,"scalar_width":4,"knots":[0.0,0.0,1.0,1.0],"weights":[],"control_points":[{"x":2.0,"y":3.0,"z":4.0},{"x":5.0,"y":6.0,"z":7.0}]}"#;
+    let source_refused = r#"{"kind":"nurbs","subtype_class_tag":"302","subtype_record_index":7,"degree":1,"fit_tolerance":0.125,"scalar_width":4,"knots":[0.0,0.0,1.0,1.0],"weights":[],"control_points":[{"x":2.0,"y":3.0,"z":4.0},{"x":5.0,"y":6.0,"z":7.0}]}"#;
+    assert!(
+        serde_json::from_str::<crate::records::sketch_geometry::SketchCurveGeometry>(
+            source_refused
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("scalar_width")
+    );
+    let base = source_refused.replace("\"scalar_width\":4", "\"scalar_width\":8");
     for weights in ["[]", "[1.0,0.5]"] {
         let expected = base.replace("\"weights\":[]", &format!("\"weights\":{weights}"));
         let curve: crate::records::sketch_geometry::SketchCurveGeometry =
@@ -481,22 +490,86 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
                 .contains("weights")
         );
     }
-    let empty = crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
-        carrier_reference: None,
-        subtype_class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned())
-            .unwrap(),
-        subtype_record_index: 7,
-        degree: 1,
-        fit_tolerance: 0.125,
-        scalar_width: 4,
-        knots: vec![0.0, 1.0],
-        poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(Vec::new()),
-    };
+    let empty = crate::records::sketch_geometry::SketchCurveGeometry::nurbs_from_parts(
+        None,
+        crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
+        7,
+        crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+            1,
+            0.125,
+            8,
+            vec![0.0, 1.0],
+            crate::records::sketch_geometry::SketchNurbsPoles::Rational(Vec::new()),
+        )
+        .unwrap(),
+    );
     let wire = serde_json::to_string(&empty).unwrap();
     assert_eq!(
         serde_json::from_str::<crate::records::sketch_geometry::SketchCurveGeometry>(&wire)
             .unwrap(),
         empty
+    );
+}
+
+#[test]
+fn native_sketch_nurbs_refuses_decreasing_knots_and_negative_weight() {
+    let wire = serde_json::json!({
+        "kind": "nurbs", "subtype_class_tag": "302", "subtype_record_index": 7,
+        "degree": 1, "fit_tolerance": 0.125, "scalar_width": 8,
+        "knots": [0.0, 0.0, 1.0, 1.0], "weights": [1.0, 1.0],
+        "control_points": [
+            {"x": 2.0, "y": 3.0, "z": 4.0},
+            {"x": 5.0, "y": 6.0, "z": 7.0}
+        ]
+    });
+    let mut decreasing = wire.clone();
+    decreasing["knots"] = serde_json::json!([1.0, 0.0, 1.0, 1.0]);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(decreasing)
+            .unwrap_err()
+            .to_string()
+            .contains("nondecreasing")
+    );
+    let mut negative_weight = wire;
+    negative_weight["weights"] = serde_json::json!([-1.0, 1.0]);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
+            negative_weight
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("positive and finite")
+    );
+}
+
+#[test]
+fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
+    let wire = serde_json::json!({
+        "kind": "nurbs", "subtype_class_tag": "302", "subtype_record_index": 7,
+        "degree": 1, "fit_tolerance": 0.125, "scalar_width": 8,
+        "knots": [0.0, 0.0, 1.0, 1.0], "weights": [],
+        "control_points": [
+            {"x": 2.0, "y": 3.0, "z": 4.0},
+            {"x": 5.0, "y": 6.0, "z": 7.0}
+        ]
+    });
+    let mut wrong_count = wire.clone();
+    wrong_count["degree"] = serde_json::json!(2);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(wrong_count)
+            .unwrap_err()
+            .to_string()
+            .contains("knot count")
+    );
+    let mut negative_fit = wire;
+    negative_fit["fit_tolerance"] = serde_json::json!(-0.125);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchCurveGeometry>(
+            negative_fit
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("fit_tolerance")
     );
 }
 
