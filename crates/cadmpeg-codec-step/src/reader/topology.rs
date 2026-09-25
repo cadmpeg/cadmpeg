@@ -82,20 +82,23 @@ pub(super) fn representation_bodies(
     active: &mut BTreeSet<u64>,
     depth: usize,
     ctx: Option<&DecodeContext<'_>>,
-) -> Vec<BodyId> {
+) -> Result<Vec<BodyId>, cadmpeg_core::CodecError> {
     if let Some(bodies) = cache.get(&representation) {
-        return bodies.clone();
+        return Ok(bodies.clone());
     }
-    if depth >= super::record_graph_limit(ctx) {
-        return Vec::new();
+    if ctx.is_none() && depth >= super::record_graph_limit(None) {
+        return Ok(Vec::new());
     }
+    let _depth_guard = ctx
+        .map(|ctx| ctx.enter_nested("step_representation_body_walk"))
+        .transpose()?;
     if let Some(bodies) = topology.body_by_root.get(&representation) {
         let bodies = bodies.clone();
         cache.insert(representation, bodies.clone());
-        return bodies;
+        return Ok(bodies);
     }
     if !active.insert(representation) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut body_ids = BTreeSet::new();
     if let Some(items) = exchange
@@ -125,7 +128,7 @@ pub(super) fn representation_bodies(
                 active,
                 depth + 1,
                 ctx,
-            ));
+            )?);
         }
     }
     for related in topology
@@ -143,12 +146,12 @@ pub(super) fn representation_bodies(
             active,
             depth + 1,
             ctx,
-        ));
+        )?);
     }
     let bodies = body_ids.into_iter().collect::<Vec<_>>();
     active.remove(&representation);
     cache.insert(representation, bodies.clone());
-    bodies
+    Ok(bodies)
 }
 
 /// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
@@ -212,7 +215,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<TopologyData> {
+) -> Result<StageOutcome<TopologyData>, cadmpeg_core::CodecError> {
     let mut commit_session = CommitSession::new(ir);
     let mut result = StageOutcome {
         value: TopologyData {
@@ -608,7 +611,7 @@ pub(super) fn decode(
             &mut BTreeSet::new(),
             0,
             ctx,
-        )
+        )?
         .is_empty();
         if has_body {
             result.claims.insert(id);
@@ -642,7 +645,7 @@ pub(super) fn decode(
         }
     }
     result.losses.append(&mut losses);
-    result
+    Ok(result)
 }
 
 fn geometric_set_omissions(

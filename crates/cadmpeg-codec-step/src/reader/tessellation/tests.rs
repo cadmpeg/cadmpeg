@@ -4,9 +4,13 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use std::fmt::Write as _;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::loss::StepLossCode;
@@ -26,6 +30,26 @@ fn assert_vector3_close(actual: Vector3, expected: Vector3) {
     assert!((actual.x - expected.x).abs() < EPS_SAME_POINT);
     assert!((actual.y - expected.y).abs() < EPS_SAME_POINT);
     assert!((actual.z - expected.z).abs() < EPS_SAME_POINT);
+}
+
+fn decode_tessellation_under_policy(
+    records: &str,
+    policy: DecodePolicy,
+) -> Result<CadIr, CodecError> {
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let mut ir = CadIr::empty();
+    let geometry = super::super::geometry::decode(&exchange, &mut ir).value;
+    let index = super::super::index::CarrierIndex::from_ir(&ir);
+    let topology = super::super::topology::decode(&exchange, &mut ir, &index, None)
+        .expect("test topology decodes")
+        .value;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
+    super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
+    Ok(ir)
 }
 
 #[test]
@@ -871,6 +895,162 @@ fn tri_ext1_2_nonreference_tessellation_item_refuses_the_aggregate() {
     .expect_err("a non-reference item must refuse the aggregate");
     assert!(
         matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(message)) if message.contains("TESSELLATED_SOLID #3 item 2"))
+    );
+}
+
+#[test]
+fn malformed_complex_fan_refuses_the_aggregate() {
+    let error = decode_inline_result(
+        "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,(),((1,2),(1,2,3,4)));",
+    )
+    .expect_err("a short fan must refuse the aggregate");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message.contains("#2 fan row 1"))
+    );
+}
+
+#[test]
+fn nested_tessellation_container_nonreference_item_is_refused() {
+    let error = decode_inline_result(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));
+#3=TESSELLATED_GEOMETRIC_SET('',(#2,$));
+#4=TESSELLATED_SOLID('',(#3),$);",
+    )
+    .expect_err("nested non-reference item must refuse the aggregate");
+    assert!(
+        matches!(error, cadmpeg_ir::DecodeFailure::Codec(CodecError::Malformed(message)) if message.contains("TESSELLATED_GEOMETRIC_SET #3 item 2"))
+    );
+}
+
+#[test]
+fn tessellation_association_depth_uses_the_session_limit() {
+    let mut records = String::from(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));\n#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));\n",
+    );
+    for id in 3..=15 {
+        writeln!(
+            records,
+            "#{id}=TESSELLATED_GEOMETRIC_SET('',(#{}));",
+            id - 1
+        )
+        .expect("write nested set");
+    }
+    records.push_str("#16=TESSELLATED_SOLID('',(#15),$);");
+    let service = DecodePolicy::service();
+    let accepted = decode_tessellation_under_policy(&records, service)
+        .expect("service depth admits the association chain");
+    assert_eq!(accepted.model.tessellations.len(), 1);
+    let mut limited = service;
+    limited.limits.max_recursion_depth = 13;
+    let error = decode_tessellation_under_policy(&records, limited)
+        .expect_err("association chain exceeds the selected depth");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.operation == "step_tessellation_association")
+    );
+}
+
+#[test]
+fn tessellation_representation_body_walk_uses_the_session_limit() {
+    let mut records = String::from("#1=TESSELLATED_SHAPE_REPRESENTATION('mesh',(),$);\n");
+    for id in 2..=15 {
+        writeln!(records, "#{id}=SHAPE_REPRESENTATION('',(),$);").expect("write representation");
+        writeln!(
+            records,
+            "#{}=SHAPE_REPRESENTATION_RELATIONSHIP('','',#{},#{id});",
+            id + 100,
+            id - 1
+        )
+        .expect("write relationship");
+    }
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(&records, service)
+        .expect("service depth admits the representation chain");
+    let mut limited = service;
+    limited.limits.max_recursion_depth = 13;
+    let error = decode_tessellation_under_policy(&records, limited)
+        .expect_err("representation chain exceeds the selected depth");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RecursionDepth && limit.operation == "step_representation_body_walk")
+    );
+}
+
+#[test]
+fn single_tessellation_normal_replication_charges_collection_items() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((0.,0.,1.)),$,((1,2,3)));";
+    let service = DecodePolicy::service();
+    let accepted = decode_tessellation_under_policy(records, service)
+        .expect("service items admit three replicated normals");
+    assert_eq!(accepted.model.tessellations[0].vertex_normals().len(), 3);
+    let mut limited = service;
+    limited.limits.max_collection_items = 2;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("three normal copies exceed the selected item limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_normal_replication")
+    );
+}
+
+#[test]
+fn tessellation_container_items_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));
+#3=TESSELLATED_SOLID('',(#2,#2),$);";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service).expect("service admits both items");
+    let mut limited = service;
+    limited.limits.max_collection_items = 1;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("two container items exceed one admitted item");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_container_items")
+    );
+}
+
+#[test]
+fn complex_tessellation_rows_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,((1,2,3),(1,2,3,4)),());";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service).expect("service admits both strips");
+    let mut limited = service;
+    limited.limits.max_collection_items = 1;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("two strip rows exceed one admitted item");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_complex_tessellation_rows")
+    );
+}
+
+#[test]
+fn complex_tessellation_indices_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)),());";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service).expect("service admits three indices");
+    let mut limited = service;
+    limited.limits.max_collection_items = 3;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("one row plus three indices exceed three admitted items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_complex_tessellation_indices")
+    );
+}
+
+#[test]
+fn complex_tessellation_triangles_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)),());";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service).expect("service admits one triangle");
+    let mut limited = service;
+    limited.limits.max_collection_items = 4;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("one triangle exceeds the four prior admitted items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_complex_tessellation_triangles")
     );
 }
 

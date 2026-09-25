@@ -4,7 +4,7 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
@@ -26,6 +26,7 @@ pub(super) fn decode(
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let coordinates = exchange
         .records()
@@ -56,7 +57,7 @@ pub(super) fn decode(
             );
             continue;
         };
-        let item_ids = container_item_ids(items, kind, id)?;
+        let item_ids = container_item_ids(items, kind, id, ctx)?;
         declared_items.extend(item_ids.iter().copied());
         let candidates = linked_bodies(record, kind, topology);
         if candidates.is_empty() {
@@ -76,9 +77,10 @@ pub(super) fn decode(
             body_context_items: &mut body_context_items,
             mode: AssociationMode::BodyItems,
             active: BTreeSet::new(),
+            ctx,
         };
         for item in item_ids {
-            associator.visit(item, 0, None)?;
+            associator.visit(item, None)?;
         }
         typed.insert(id);
     }
@@ -104,8 +106,8 @@ pub(super) fn decode(
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
-            None,
-        );
+            Some(ctx),
+        )?;
         let product_linked = product_representations.contains(&id)
             || items
                 .iter()
@@ -126,9 +128,10 @@ pub(super) fn decode(
             body_context_items: &mut body_context_items,
             mode: AssociationMode::Placements,
             active: BTreeSet::new(),
+            ctx,
         };
         for item in items {
-            associator.visit(item, 0, None)?;
+            associator.visit(item, None)?;
         }
     }
     for (&id, record) in exchange.records() {
@@ -154,8 +157,9 @@ pub(super) fn decode(
             body_context_items: &mut body_context_items,
             mode: AssociationMode::DetachedAnnotation,
             active: BTreeSet::new(),
+            ctx,
         };
-        associator.visit(item, 0, None)?;
+        associator.visit(item, None)?;
     }
     for id in unresolved_placements {
         let message = format!(
@@ -239,6 +243,7 @@ pub(super) fn decode(
                     entity_parameter(record, kind, 2, offset),
                     kind,
                     id,
+                    ctx,
                 )?
             }
         };
@@ -333,19 +338,11 @@ pub(super) fn decode(
         // that spelling and an omitted lane as an absent normal lane.
         let mut normals = match source_normals.len() {
             0 => None,
-            1 => match alloc_filled(
+            1 => Some(ctx.alloc_filled(
                 local_vertices.len(),
                 source_normals[0],
-                "STEP tessellation normal rows",
-            ) {
-                Ok(normals) => Some(normals),
-                Err(error) => {
-                    losses.push(StepLossCode::DecodeWarning.note(format!(
-                        "{kind} #{id} normal-row allocation refused: {error}"
-                    )));
-                    None
-                }
-            },
+                "step_tessellation_normal_replication",
+            )?),
             count if count == local_vertices.len() => Some(source_normals),
             count => match &addressing {
                 CoordinateAddressing::TriangleIndices(coordinate_indices)
@@ -512,7 +509,7 @@ enum AssociationMode {
     DetachedAnnotation,
 }
 
-struct TessellationItemAssociator<'a> {
+struct TessellationItemAssociator<'a, 'ctx, 'arena> {
     bodies: &'a [BodyId],
     exchange: &'a Exchange,
     item_bodies: &'a mut BTreeMap<u64, BTreeSet<BodyId>>,
@@ -525,16 +522,13 @@ struct TessellationItemAssociator<'a> {
     body_context_items: &'a mut BTreeSet<u64>,
     mode: AssociationMode,
     active: BTreeSet<u64>,
+    ctx: &'ctx DecodeContext<'arena>,
 }
 
-impl TessellationItemAssociator<'_> {
-    fn visit(
-        &mut self,
-        id: u64,
-        depth: usize,
-        inherited_placement: Option<Transform>,
-    ) -> Result<(), CodecError> {
-        if depth >= super::record_graph_limit(None) || !self.active.insert(id) {
+impl TessellationItemAssociator<'_, '_, '_> {
+    fn visit(&mut self, id: u64, inherited_placement: Option<Transform>) -> Result<(), CodecError> {
+        let _depth_guard = self.ctx.enter_nested("step_tessellation_association")?;
+        if !self.active.insert(id) {
             return Ok(());
         }
         let Some(record) = self.exchange.records().get(&id) else {
@@ -605,11 +599,11 @@ impl TessellationItemAssociator<'_> {
             }
             let item_ids = entity_parameter(record, kind, 0, 1)
                 .and_then(ValueExt::list)
-                .map(|items| container_item_ids(items, kind, id))
+                .map(|items| container_item_ids(items, kind, id, self.ctx))
                 .transpose()?
                 .unwrap_or_default();
             for item in item_ids {
-                self.visit(item, depth + 1, placement)?;
+                self.visit(item, placement)?;
             }
         } else if self.mode == AssociationMode::BodyItems {
             self.declared_items.insert(id);
@@ -762,7 +756,16 @@ fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
         .collect()
 }
 
-fn container_item_ids(items: &[Value], kind: &str, id: u64) -> Result<Vec<u64>, CodecError> {
+fn container_item_ids(
+    items: &[Value],
+    kind: &str,
+    id: u64,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<u64>, CodecError> {
+    ctx.charge_collection_items(
+        u64_from_index(items.len()),
+        "step_tessellation_container_items",
+    )?;
     items
         .iter()
         .enumerate()
@@ -894,9 +897,21 @@ fn complex_triangles(
     fans: Option<&Value>,
     kind: &str,
     id: u64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<[u32; 3]>>, CodecError> {
-    let strips = index_rows(strips, kind, id, "strip")?;
-    let fans = index_rows(fans, kind, id, "fan")?;
+    let strips = index_rows(strips, kind, id, "strip", ctx)?;
+    let fans = index_rows(fans, kind, id, "fan", ctx)?;
+    let triangle_count = strips
+        .iter()
+        .chain(fans.iter())
+        .try_fold(0usize, |count, row| count.checked_add(row.len() - 2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("step_complex_triangle_count", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_collection_items(
+        u64_from_index(triangle_count),
+        "step_complex_tessellation_triangles",
+    )?;
     let mut triangles = Vec::new();
     for strip in strips {
         for index in 0..strip.len() - 2 {
@@ -920,28 +935,34 @@ fn index_rows(
     kind: &str,
     id: u64,
     lane: &str,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<u32>>, CodecError> {
     let Some(rows) = value.and_then(ValueExt::list) else {
         return Ok(Vec::new());
     };
+    ctx.charge_collection_items(u64_from_index(rows.len()), "step_complex_tessellation_rows")?;
     rows.iter()
         .enumerate()
         .map(|(row_index, row)| {
-            let indices = row
-                .list()
-                .and_then(|values| {
-                    values
-                        .iter()
-                        .map(|value| u32::try_from(value.integer()?).ok())
-                        .collect::<Option<Vec<_>>>()
-                })
-                .filter(|indices| indices.len() >= 3);
-            indices.ok_or_else(|| {
+            let invalid = || {
                 CodecError::malformed(format_args!(
                     "{kind} #{id} {lane} row {} is invalid",
                     row_index + 1
                 ))
-            })
+            };
+            let Some(values) = row.list().filter(|values| values.len() >= 3) else {
+                return Err(invalid());
+            };
+            ctx.charge_collection_items(
+                u64_from_index(values.len()),
+                "step_complex_tessellation_indices",
+            )?;
+            values
+                .iter()
+                .map(|value| {
+                    u32::try_from(value.integer().ok_or_else(invalid)?).map_err(|_| invalid())
+                })
+                .collect()
         })
         .collect()
 }
