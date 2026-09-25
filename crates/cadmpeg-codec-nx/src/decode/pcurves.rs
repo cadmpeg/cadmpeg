@@ -1761,13 +1761,30 @@ fn exact_boundary_pcurve_with_index(
         let [first, second] = [first?, second?].map(Point2::from);
         let (varying_origin, varying_scale) = affine_pcurve_coordinate(range, [first.v, second.v])?;
         (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
-        let candidate = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(first.u, varying_origin),
-                Point2::new(0.0, varying_scale),
-            )
-            .ok()?,
-        );
+        let candidate = match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(first.u, varying_origin),
+            Point2::new(0.0, varying_scale),
+        ) {
+            Ok(line) => PcurveGeometry::Line(line),
+            Err(_) => {
+                (first.u == second.u
+                    && matches!(
+                        carrier.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
+                    ))
+                .then_some(())?;
+                PcurveGeometry::Nurbs {
+                    nurbs: PcurveNurbs::from_lanes(
+                        1,
+                        vec![range[0], range[0], range[1], range[1]],
+                        vec![first, second],
+                        None,
+                        false,
+                    )
+                    .ok()?,
+                }
+            }
+        };
         for (endpoint, parameter) in endpoints.into_iter().zip(range) {
             let uv = pcurve_uv(&candidate, parameter).ok()?;
             if !geometry_budget.charge() {
@@ -2254,6 +2271,22 @@ fn boundary_curve_affine_breaks_with_index(
         Some(SolvedSurfaceGeometry::Plane(_))
     ) {
         return Some(range.to_vec());
+    }
+    if matches!(
+        carrier.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_))
+    ) {
+        if let PcurveGeometry::Nurbs { nurbs } = pcurve {
+            let points = nurbs.control_points();
+            if nurbs.degree() == 1
+                && !nurbs.periodic()
+                && points.len() == 2
+                && points[0].u == points[1].u
+                && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
+            {
+                return Some(range.to_vec());
+            }
+        }
     }
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;

@@ -566,6 +566,60 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
 }
 
 #[test]
+fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
+    let mut ir = CadIr::empty();
+    let curve =
+        CurveId::mint("test:model:entity#nx:test:wide-generator-curve").expect("identity grammar");
+    let surface = SurfaceId::mint("test:model:entity#nx:test:wide-generator-cylinder")
+        .expect("identity grammar");
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+                None,
+                false,
+            )
+            .expect("finite wide generator"),
+        )),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("finite cylinder"),
+        )),
+        source_object: None,
+    });
+    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+        &ir,
+        &curve,
+        &surface,
+        [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0)],
+        [-f64::MAX, f64::MAX],
+        NonNegativeReal::new(EPS_BOUNDARY_FIT).expect("nonnegative tolerance"),
+    ) else {
+        panic!("finite generator pcurve");
+    };
+    assert_eq!(
+        nurbs.knots().as_slice(),
+        [-f64::MAX, -f64::MAX, f64::MAX, f64::MAX]
+    );
+    assert_eq!(
+        nurbs.control_points(),
+        vec![Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)]
+    );
+}
+
+#[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
