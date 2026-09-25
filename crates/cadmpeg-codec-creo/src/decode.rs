@@ -63,7 +63,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         brep_diagnostics,
         transfer_losses,
     } = if ctx.container_only() {
-        build_container_ir(&scan, &classification)?
+        build_container_ir(ctx, &scan, &classification)?
     } else {
         build_ir(ctx, &scan, &classification)?
     };
