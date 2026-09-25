@@ -10,7 +10,7 @@ use cadmpeg_ir::scalar::{
 };
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
@@ -88,14 +88,14 @@ pub(crate) struct SketchTextAlignment {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum SketchTextLayout {
     TxtTag {
-        placement: TextPlacement,
+        placement: TextPlacement<FinitePoint2>,
     },
     TextexTag {
         width_factor: NonNegativeReal,
         alignment: Option<SketchTextAlignment>,
         first_reference: Option<u32>,
         second_reference: Option<u32>,
-        placement: Option<TextPlacement>,
+        placement: Option<TextPlacement<FinitePoint2>>,
     },
 }
 
@@ -107,7 +107,7 @@ impl SketchText {
         }
     }
 
-    pub(crate) fn placement(&self) -> Option<TextPlacement> {
+    pub(crate) fn placement(&self) -> Option<TextPlacement<FinitePoint2>> {
         match self.layout {
             SketchTextLayout::TxtTag { placement } => Some(placement),
             SketchTextLayout::TextexTag { placement, .. } => placement,
@@ -206,7 +206,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
         let placement = match (wire.anchor, wire.rotation) {
             (None, None) => None,
             (Some(anchor), Some(rotation)) => Some(TextPlacement {
-                anchor,
+                anchor: FinitePoint2::new(anchor).ok_or("sketch text anchor must be finite")?,
                 rotation: Angle::new(rotation).ok_or("sketch text rotation must be finite")?,
             }),
             _ => return Err("sketch text anchor and rotation must occur together".into()),
@@ -305,7 +305,7 @@ impl From<SketchText> for SketchTextSerde {
             height: text.height.get(),
             width_factor,
             color: text.color,
-            anchor: placement.map(|value| value.anchor),
+            anchor: placement.map(|value| value.anchor.get()),
             rotation: placement.map(|value| value.rotation.get()),
             horizontal_alignment: alignment.map(|value| value.horizontal),
             vertical_alignment: alignment.map(|value| value.vertical),
