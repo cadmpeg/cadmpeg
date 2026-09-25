@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::parameter_records;
 use crate::scalar;
 use crate::surface::decode_inline_four_bound_cylinder_envelope;
 use crate::surface::decode_inline_referenced_cylinder_envelope;
@@ -8,7 +9,6 @@ use crate::surface::decode_inline_selector_cylinder_envelope;
 use crate::surface::decode_positional_cone_frame;
 use crate::surface::inline_close;
 use crate::surface::inline_surface_body;
-use crate::surface::parameter_records;
 use crate::surface::InlineSurfaceCarrier;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceKind;

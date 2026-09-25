@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::parameter_records;
 use super::EPS_FRAME_COMPONENT;
 use crate::scalar;
 use crate::surface::cylinder_frame_readers::decode_complete_directrix_interval_cylinder_frame;
 use crate::surface::{
-    parameter_records, PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord,
-    Type24RoundEdgeEnvelope,
+    PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord, Type24RoundEdgeEnvelope,
 };
 use cadmpeg_ir::scalar::PositiveLength;
 

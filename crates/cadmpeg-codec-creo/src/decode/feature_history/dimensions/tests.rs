@@ -92,9 +92,10 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         });
     }
 
-    let (transferred, _) =
-        transfer_feature_dimensions(&scan, &mut ir, &mut AnnotationBuilder::new())
-            .expect("valid test fixture");
+    let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_feature_dimensions(ctx, &scan, &mut ir, &mut AnnotationBuilder::new())
+    })
+    .expect("valid test fixture");
 
     assert_eq!(transferred, 1);
     assert!(ir

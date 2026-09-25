@@ -60,6 +60,7 @@ fn existing_plane_agrees_with_topology(
 }
 
 pub(in crate::decode) fn transfer_topology_bound_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -173,6 +174,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             "plane_topology_boundary",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -195,6 +197,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
 }
 
 pub(in crate::decode) fn retain_unresolved_surface_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -231,6 +234,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 },
                 Exactness::Unknown,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -272,6 +276,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             "unresolved_visible_curve_carrier",
             Exactness::Unknown,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {

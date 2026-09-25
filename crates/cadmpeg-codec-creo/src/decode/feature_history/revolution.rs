@@ -44,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// surface, so the refusal is a loss note naming the feature and the spline
 /// offset.
 pub(in super::super) fn transfer_resolved_revolution_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -202,6 +203,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 "evaluated_analytic_revolution_surface",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id,
                 geometry: surface,
@@ -263,6 +265,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     "evaluated_saved_analytic_revolution_surface",
                     Exactness::Derived,
                 );
+                ctx.charge_entities(1, "admit Creo model surfaces")?;
                 ir.model.surfaces.push(Surface {
                     id: surface_id,
                     geometry: surface,
@@ -369,6 +372,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 "revolution_surface_construction",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -440,6 +444,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
 mod tests;
 
 pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -520,6 +525,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             "evaluated_revolution_profile_vertex_orbit",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry,
@@ -541,6 +547,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
 }
 
 pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -606,6 +613,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             "evaluated_extrusion_profile_vertex_orbit",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry,

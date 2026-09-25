@@ -282,11 +282,14 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
 fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_absent() {
     let scan = slot_fillet_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let transferred = super::transfer_constrained_slot_fillet_cylinders(
-        &scan,
-        &mut ir,
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-    )
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_constrained_slot_fillet_cylinders(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        )
+    })
     .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
@@ -310,11 +313,12 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         2
     );
@@ -339,11 +343,12 @@ fn split_outline_rejects_duplicate_surface_rows() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         0
     );
@@ -398,11 +403,12 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         0
@@ -470,11 +476,12 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         0
@@ -530,11 +537,12 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         1
@@ -595,11 +603,12 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     ir.model.surfaces.push(model_cylinder(7, 0.75));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         0
@@ -818,11 +827,12 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         0
@@ -841,11 +851,12 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
     ir.model.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
-        super::transfer_positional_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity")
         .transferred,
         1
@@ -872,11 +883,14 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
     ]);
 
     assert_eq!(
-        super::transfer_constrained_slot_fillet_cylinders(
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            )
+        })
         .expect("valid source object identity"),
         1
     );
@@ -891,11 +905,14 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         .push(model_plane(3, [0.0, -0.5, 0.0], [0.0, 1.0, 0.0]));
 
     assert_eq!(
-        super::transfer_constrained_slot_fillet_cylinders(
-            &scan,
-            &mut ir,
-            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::transfer_constrained_slot_fillet_cylinders(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            )
+        })
         .expect("valid source object identity"),
         0
     );
@@ -952,11 +969,12 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
         .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
 
     assert_eq!(
-        super::transfer_rowless_round_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_rowless_round_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         0
     );
@@ -1037,11 +1055,12 @@ fn split_outline_rejects_conflicting_model_plane_carrier() {
         .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));
 
     assert_eq!(
-        super::transfer_split_outline_cylinders(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_split_outline_cylinders(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         0
     );
