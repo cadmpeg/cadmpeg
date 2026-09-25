@@ -2787,7 +2787,12 @@ fn unique_paired_surface_lift_match<'a, T>(
     candidates: impl Iterator<Item = (T, &'a SurfaceGeometry)>,
 ) -> Option<T> {
     const TOLERANCE: f64 = 2e-3;
-    let midpoint = parameter_range[0] + (parameter_range[1] - parameter_range[0]) * 0.5;
+    let ordinary_midpoint = parameter_range[0] + (parameter_range[1] - parameter_range[0]) * 0.5;
+    let midpoint = if ordinary_midpoint.is_finite() {
+        ordinary_midpoint
+    } else {
+        cadmpeg_ir::math::interpolate(parameter_range[0], parameter_range[1], 0.5)?.get()
+    };
     let parameters = [parameter_range[0], midpoint, parameter_range[1]];
     let resolved_lift = |parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(resolved_pcurve, parameter).ok()?;
@@ -3374,6 +3379,35 @@ mod tests {
                 [(7, &matching), (9, &matching)].into_iter(),
             ),
             None
+        );
+    }
+
+    #[test]
+    fn paired_surface_lifts_keep_a_finite_midpoint_in_a_wide_parameter_range() {
+        let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("valid plane"),
+        ));
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .expect("valid pcurve"),
+        );
+        assert_eq!(
+            unique_paired_surface_lift_match(
+                &pcurve,
+                &plane,
+                &pcurve,
+                [-f64::MAX, f64::MAX],
+                [(7, &plane)].into_iter(),
+            ),
+            Some(7)
         );
     }
 

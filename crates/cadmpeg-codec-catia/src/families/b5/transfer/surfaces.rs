@@ -346,7 +346,7 @@ pub(super) fn rational_arc(
             angle1,
         )));
         weights.push(1.0);
-        append_quadratic_span_knots(&mut knots, interval, span, span_count);
+        append_quadratic_span_knots(&mut knots, interval, span, span_count)?;
     }
     crate::nurbs::note_refusal(
         NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
@@ -397,7 +397,7 @@ pub(super) fn revolve_nurbs(
         angular_weights.push(middle_weight);
         angles.push((angle1, 1.0));
         angular_weights.push(1.0);
-        append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
+        append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count)?;
     }
     let profile_weights = match profile.pole_rows().weights() {
         Some(weights) => weights,
@@ -454,9 +454,19 @@ fn append_quadratic_span_knots(
     interval: [f64; 2],
     span: usize,
     span_count: usize,
-) {
-    let start = interval[0] + (interval[1] - interval[0]) * span as f64 / span_count as f64;
-    let end = interval[0] + (interval[1] - interval[0]) * (span + 1) as f64 / span_count as f64;
+) -> Option<()> {
+    let at = |index: usize| {
+        let fraction = index as f64 / span_count as f64;
+        let ordinary = interval[0] + (interval[1] - interval[0]) * fraction;
+        if ordinary.is_finite() {
+            Some(ordinary)
+        } else {
+            cadmpeg_ir::math::interpolate(interval[0], interval[1], fraction)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        }
+    };
+    let start = at(span)?;
+    let end = at(span + 1)?;
     if span == 0 {
         knots.extend([start, start, start]);
     } else {
@@ -465,6 +475,7 @@ fn append_quadratic_span_knots(
     if span + 1 == span_count {
         knots.extend([end, end, end]);
     }
+    Some(())
 }
 
 fn circle_point(
@@ -880,7 +891,7 @@ fn emit_extrusion_procedure(
 
 #[cfg(test)]
 mod tests {
-    use super::emit_extrusion_procedure;
+    use super::{append_quadratic_span_knots, emit_extrusion_procedure};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
@@ -899,6 +910,28 @@ mod tests {
     use crate::families::b5::transfer::{
         ResolvedExtrusionDirectrix, ResolvedExtrusionSupport, ResolvedExtrusionSurface,
     };
+
+    #[test]
+    fn quadratic_span_knots_remain_finite_across_a_wide_native_interval() {
+        let mut knots = Vec::new();
+        for span in 0..2 {
+            append_quadratic_span_knots(&mut knots, [-f64::MAX, f64::MAX], span, 2)
+                .expect("finite interval maps to finite knots");
+        }
+        assert_eq!(
+            knots,
+            vec![
+                -f64::MAX,
+                -f64::MAX,
+                -f64::MAX,
+                0.0,
+                0.0,
+                f64::MAX,
+                f64::MAX,
+                f64::MAX,
+            ]
+        );
+    }
 
     #[test]
     fn extrusion_emits_exact_two_support_intersection() {
