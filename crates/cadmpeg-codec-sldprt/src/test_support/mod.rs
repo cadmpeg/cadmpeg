@@ -36,6 +36,37 @@ pub(crate) fn serialize_history_after_refusal(
     crate::writer::write_semantic_with_records(ir, &fidelity.annotations, &records, writer)
 }
 
+pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
+    let unavailable = {
+        let record = fidelity
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .expect("decode retains the source image");
+        let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
+            .expect("decoded source image digest");
+        cadmpeg_ir::RetainedSourceRecord::from_bytes(
+            record.stream().to_owned(),
+            record.offset(),
+            cadmpeg_ir::source_fidelity::RetainedBytes::Digest {
+                byte_len: record.byte_len(),
+                sha256: digest,
+            },
+        )
+        .expect("source image extent")
+    };
+    fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .expect("decode retains the source image");
+    fidelity
+        .insert_retained_record(
+            crate::SOURCE_IMAGE_ID
+                .to_owned()
+                .try_into()
+                .expect("source image identity"),
+            unavailable,
+        )
+        .expect("source image identity is unique");
+}
+
 pub(crate) mod appearance;
 pub(crate) mod container;
 pub(crate) mod history;

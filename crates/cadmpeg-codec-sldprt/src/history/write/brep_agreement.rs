@@ -8,7 +8,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, FeatureOperation};
 
-use crate::history::hash::{configuration_hash, feature_hash, history_hash, parameter_hash};
+use crate::history::hash::{
+    configuration_feature_state_hash, configuration_hash, configuration_parameter_value_hash,
+    feature_hash, history_hash, parameter_hash,
+};
 use crate::history::parameters::project_parameters;
 
 use super::project_features_with_native_inputs;
@@ -189,15 +192,66 @@ pub(crate) fn validate(
                 )));
             }
         }
+    } else if native_history_changed {
+        if let Some(feature) = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|feature| {
+                ir.model.features.iter().any(|neutral| {
+                    neutral.native_ref.as_deref() == Some(feature.id.as_str())
+                        && feature_affects_brep(neutral, &ir.model.features)
+                })
+            })
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT writer cannot regenerate B-rep after native history edit {} without retained source image",
+                feature.id
+            )));
+        }
     }
-    if let (Some(scan), Some(expected)) = (
-        source_scan,
-        source
-            .attributes
-            .get("sldprt_neutral_configuration_local_sha256"),
-    ) {
+    if let Some(expected) = source
+        .attributes
+        .get("sldprt_neutral_configuration_local_sha256")
+    {
         if expected != &configuration_hash(&ir.model.configurations)? {
-            validate_configuration_design_edits(ir, scan)?;
+            if let Some(scan) = source_scan {
+                validate_configuration_design_edits(ir, scan)?;
+            } else {
+                let configurations = crate::writer::configurations_without_synthesized_snapshot(ir);
+                if expected == &configuration_hash(&configurations)? {
+                    return Ok(());
+                }
+                let parameter_values_changed = match source
+                    .attributes
+                    .get("sldprt_configuration_parameter_values_local_sha256")
+                {
+                    Some(baseline) => {
+                        baseline != &configuration_parameter_value_hash(&configurations)?
+                    }
+                    None => false,
+                };
+                let feature_states_changed = match source
+                    .attributes
+                    .get("sldprt_configuration_feature_states_local_sha256")
+                {
+                    Some(baseline) => {
+                        baseline != &configuration_feature_state_hash(&configurations)?
+                    }
+                    None => false,
+                };
+                if parameter_values_changed
+                    || feature_states_changed
+                    || configurations
+                        .iter()
+                        .any(|configuration| !configuration.parameter_overrides.is_empty())
+                {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT writer cannot regenerate B-rep after configuration design-state edit without retained source image"
+                            .into(),
+                    ));
+                }
+            }
         }
     }
     Ok(())
