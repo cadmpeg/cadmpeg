@@ -6378,14 +6378,12 @@ fn hyperbola_point(
 ) -> Result<[FiniteReal; 2], CodecError> {
     (|| {
         let parameter = FiniteReal::new(parameter)?;
-        Some([
-            cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter)
-                .ok()?
-                .1,
-            cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter)
-                .ok()?
-                .0,
-        ])
+        let (_, major_cosh) = cadmpeg_ir::math::scaled_sinh_cosh(major_radius, parameter).ok()?;
+        let minor_sinh = match cadmpeg_ir::math::scaled_sinh_cosh(minor_radius, parameter) {
+            Ok((sinh, _)) => Some(sinh),
+            Err((sinh, _)) => FiniteReal::new(sinh),
+        }?;
+        Some([major_cosh, minor_sinh])
     })()
     .ok_or_else(|| CodecError::NotImplemented("IGES hyperbola endpoint is non-finite".into()))
 }

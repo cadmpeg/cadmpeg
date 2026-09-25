@@ -301,3 +301,13 @@ projection.
 **Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
+
+## 5. Law formulas
+
+### LF-01. Value of `SIGN` at zero
+
+**Question.** What value does a `SIGN` law have when its operand is zero?
+
+**Known.** `asm.md` §6.3 `Law formulas` names `SIGN` as a unary operator. Its serialized form has one recursively framed operand and no field that selects a zero convention. The format model does not give its value at zero.
+
+**Need.** A source rule or a law-driven construction with a defined value at an operand zero must settle whether `SIGN(0)` is zero, positive one, negative one, or has no value. This determines the section of a cacheless law-driven sweep at that parameter.

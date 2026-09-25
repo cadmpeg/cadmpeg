@@ -87,7 +87,13 @@ impl Homogeneous {
         // weights. A preferred scale outside the admitted interval is not an
         // error: the nearest admitted scale is then the one that preserves the
         // relative weights.
-        let exponent = 0_i32.clamp(lower, upper);
+        let exponent = if 0 < lower {
+            lower
+        } else if 0 > upper {
+            upper
+        } else {
+            0
+        };
         weights
             .into_iter()
             .map(|weight| {

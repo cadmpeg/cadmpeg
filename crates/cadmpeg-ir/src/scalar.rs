@@ -595,6 +595,17 @@ impl FiniteReal {
         (tail, NonZeroReal((1.0 + tail * tail).powi(2)))
     }
 
+    /// The hypotenuse of this finite value and one is finite and at least one.
+    pub(crate) fn hypot_one_nonzero(self) -> NonZeroReal {
+        NonZeroReal(self.0.hypot(1.0))
+    }
+
+    /// `exp(-|self|)` and `1 + exp(-|self|)^2`; the sum is in `[1, 2]`.
+    pub(crate) fn hyperbolic_tail_unit_sum(self) -> (f64, NonZeroReal) {
+        let tail = (-self.0.abs()).exp();
+        (tail, NonZeroReal(1.0 + tail * tail))
+    }
+
     /// The value as a magnitude above one, or none where its magnitude is at
     /// most one.
     pub(crate) fn beyond_unit(self) -> Option<BeyondUnit> {
@@ -730,27 +741,65 @@ impl FiniteReal {
 }
 
 impl crate::topology::IncreasingParameterInterval {
-    /// The positive interval width in a scaled form. A finite subtraction is
-    /// nonzero because the endpoints are ordered. When it overflows, halving
-    /// both large operands is exact before their finite subtraction.
-    pub(crate) fn scaled_span(self) -> crate::math::sum::ScaledValue {
-        use crate::math::sum::ScaledValue;
+    /// The affine scale and offset that map this interval to `target`, when
+    /// both coefficients have finite nonzero scale and finite offset. Scaled
+    /// spans retain a ratio even when either width exceeds binary64.
+    pub fn affine_coefficients_to(self, target: Self) -> Option<(FiniteReal, FiniteReal)> {
+        use crate::math::sum::ExactSignedSum;
+        let scale = target.scaled_span().quotient(self.scaled_span()).ok()?;
+        if scale == FiniteReal::ZERO {
+            return None;
+        }
+        let mut offset = ExactSignedSum::default();
+        offset.add_product(target.lower(), 1.0);
+        offset.add_product(self.lower(), -scale.get());
+        Some((scale, offset.finite_sum()?))
+    }
+
+    /// The positive width as a finite factor, doubled when the full width
+    /// exceeds binary64. Halving both large operands is exact before their
+    /// finite subtraction.
+    pub(crate) fn span_factors(self) -> (f64, bool) {
         let [lower, upper] = self.endpoints();
         let span = upper - lower;
         if span.is_finite() {
-            ScaledValue::of_nonzero(NonZeroReal(span))
+            (span, false)
         } else {
-            ScaledValue::of_nonzero(NonZeroReal(upper * 0.5 - lower * 0.5)).doubled()
+            (upper * 0.5 - lower * 0.5, true)
+        }
+    }
+
+    /// The positive interval width in a scaled form. A finite subtraction is
+    /// nonzero because the endpoints are ordered.
+    pub(crate) fn scaled_span(self) -> crate::math::sum::ScaledValue {
+        use crate::math::sum::ScaledValue;
+        let (factor, doubled) = self.span_factors();
+        let span = ScaledValue::of_nonzero(NonZeroReal(factor));
+        if doubled {
+            span.doubled()
+        } else {
+            span
         }
     }
 
     /// Map a finite parameter from `source` into this interval. The exact
     /// product sum forms the affine numerator before division by the scaled
-    /// source width, so neither width needs to fit in binary64.
-    pub(crate) fn map_from(self, source: Self, parameter: FiniteReal) -> Result<FiniteReal, f64> {
+    /// source width, so neither width needs to fit in binary64. `reversed`
+    /// maps the source start to this interval's upper endpoint.
+    pub(crate) fn map_from(
+        self,
+        source: Self,
+        parameter: FiniteReal,
+        reversed: bool,
+    ) -> Result<FiniteReal, f64> {
         use crate::math::sum::ExactSignedSum;
         let [source_start, source_end] = source.endpoints();
-        let [target_start, target_end] = self.endpoints();
+        let [lower, upper] = self.endpoints();
+        let (target_start, target_end) = if reversed {
+            (upper, lower)
+        } else {
+            (lower, upper)
+        };
         let parameter = parameter.get();
         let mut numerator = ExactSignedSum::default();
         numerator.add_product(parameter, target_end);
@@ -1024,11 +1073,44 @@ pub(crate) enum SegmentPosition {
     Within(FiniteReal),
 }
 
+/// The cosine of two admitted unit directions, rounded into its closed
+/// mathematical range.
+#[derive(Clone, Copy)]
+pub(crate) struct UnitCosine(f64);
+
+impl UnitCosine {
+    /// The dot product of unit directions. Each product and their sum are
+    /// finite; rounding at the boundary can put the result just outside
+    /// `[-1, 1]`, so the boundary itself is the admitted value.
+    pub(crate) fn between(
+        first: crate::units::UnitVector3,
+        second: crate::units::UnitVector3,
+    ) -> Self {
+        let dot = first.as_raw().dot(*second.as_raw());
+        Self(if dot.abs() > 1.0 { dot.signum() } else { dot })
+    }
+
+    pub(crate) const fn get(self) -> f64 {
+        self.0
+    }
+}
+
 /// A finite value whose magnitude exceeds one.
 #[derive(Clone, Copy)]
 pub(crate) struct BeyondUnit(f64);
 
 impl BeyondUnit {
+    /// The nonzero magnitude of a value whose magnitude exceeds one.
+    pub(crate) fn magnitude(self) -> NonZeroReal {
+        NonZeroReal(self.0.abs())
+    }
+
+    /// The positive square-root factor in the arcsecant derivative.
+    pub(crate) fn arcsec_factor(self) -> NonZeroReal {
+        let magnitude = self.0.abs();
+        NonZeroReal((((magnitude - 1.0) / magnitude) * (1.0 + 1.0 / magnitude)).sqrt())
+    }
+
     /// `dividend / self`. The quotient's magnitude is below the dividend's,
     /// so it is finite and nothing is checked.
     pub(crate) fn quotient(self, dividend: FiniteReal) -> FiniteReal {
@@ -1073,6 +1155,16 @@ impl NonZeroReal {
     pub const ONE: Self = Self(1.0);
     /// One over the square root of two.
     pub const FRAC_1_SQRT_2: Self = Self(std::f64::consts::FRAC_1_SQRT_2);
+
+    /// The positive magnitude of a nonzero finite value.
+    pub(crate) fn magnitude(self) -> Self {
+        Self(self.0.abs())
+    }
+
+    /// `-expm1(-2|self|)` is positive for every nonzero binary64 input.
+    pub(crate) fn hyperbolic_sinh_denominator(self) -> Self {
+        Self(-(-2.0 * self.0.abs()).exp_m1())
+    }
 }
 #[cfg(test)]
 mod tests;

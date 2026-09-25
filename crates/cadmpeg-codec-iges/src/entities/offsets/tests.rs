@@ -3,6 +3,8 @@
 
 use std::io::Cursor;
 
+use super::SourceParameterMap;
+
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
@@ -23,6 +25,14 @@ use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::Param
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
 const EPS_PLACED_OFFSET: f64 = 1.0e-12;
+
+#[test]
+fn source_parameter_map_preserves_a_finite_ratio_of_wide_intervals() {
+    let map = SourceParameterMap::new([-f64::MAX, f64::MAX], [-f64::MAX, f64::MAX]).unwrap();
+    assert_eq!(map.scale(), 1.0);
+    assert_eq!(map.to_neutral(0.0), 0.0);
+    assert_eq!(map.to_neutral(f64::MAX), f64::MAX);
+}
 
 fn vector_distance(left: Vector3, right: Vector3) -> f64 {
     (left.x - right.x)

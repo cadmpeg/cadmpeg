@@ -1,7 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::bilinear_surface;
-use crate::eval::{nurbs_surface_parameter_segment_chord_bound, nurbs_surface_point};
+use crate::eval::{
+    nurbs_surface_parameter_segment_chord_bound, nurbs_surface_point,
+    rational_patch_parameter_segment, RationalBezierSurfacePatch,
+};
 use crate::math::{Point2, Point3};
+use crate::topology::IncreasingParameterInterval;
+use crate::units::FinitePoint2;
+
+#[test]
+fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
+    let patch = RationalBezierSurfacePatch {
+        u_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        v_domain: IncreasingParameterInterval::new([0.0, 1.0]).unwrap(),
+        u_degree: 1,
+        v_degree: 1,
+        controls: [[0.0, 0.0, 0.0, 1.0]; 4].to_vec(),
+    };
+    let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
+    let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
+    assert!(rational_patch_parameter_segment(&patch, start, end).is_none());
+}
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {

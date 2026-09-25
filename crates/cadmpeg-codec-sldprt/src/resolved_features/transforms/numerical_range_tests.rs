@@ -39,3 +39,22 @@ fn numerical_0922_hyperbola_loci_remain_finite() {
         &e, r[2].0
     ));
 }
+
+#[test]
+fn hyperbola_locus_uses_finite_minor_sinh_when_cosh_overflows() {
+    let e = entity(
+        "wide-minor-hyperbola",
+        SketchGeometryDefinition::Hyperbola {
+            center: Point2::new(0.0, 0.0),
+            major_angle: Angle::new(0.0).unwrap(),
+            major_radius: Length::new(1.0).unwrap(),
+            minor_radius: Length::new(f64::MAX).unwrap(),
+            bounds: Some([0.0, 1.0e-7]),
+        },
+    );
+    let loci = sketch_entity_loci(&e);
+    assert_eq!(loci.len(), 3);
+    let end = loci[2].0;
+    assert!((end.u - 1.0e-7_f64.cosh()).abs() < 16.0 * f64::EPSILON);
+    assert!((end.v / (f64::MAX * 1.0e-7_f64.sinh()) - 1.0).abs() < 16.0 * f64::EPSILON);
+}

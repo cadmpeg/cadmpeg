@@ -121,9 +121,10 @@ pub(crate) fn parabolic_arc_nurbs(
 ) -> Result<Option<NurbsCurve>, NurbsError> {
     let [start, end] = interval;
     let delta = end - start;
-    if !delta.is_finite() || delta <= 0.0 {
+    if !start.is_finite() || !end.is_finite() || start >= end {
         return Ok(None);
     }
+    let half_delta = end * 0.5 - start * 0.5;
     let focal_distance = focal_distance.get();
     let transverse = axis.cross(major_direction);
     let product = |a, b| {
@@ -140,8 +141,18 @@ pub(crate) fn parabolic_arc_nurbs(
     ) = (
         product(start, start),
         product(2.0, start),
-        product(start, delta),
-        product(1.0, delta),
+        if delta.is_finite() {
+            product(start, delta)
+        } else {
+            cadmpeg_ir::math::product_quotient([focal_distance, start, half_delta, 2.0], [1.0])
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        },
+        if delta.is_finite() {
+            product(1.0, delta)
+        } else {
+            cadmpeg_ir::math::product_quotient([focal_distance, half_delta, 2.0], [1.0])
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        },
         product(end, end),
         product(2.0, end),
     )

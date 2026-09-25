@@ -463,6 +463,53 @@ fn numerical_audit_rolling_ball_keeps_endpoint_when_unused_product_overflows() {
 }
 
 #[test]
+fn rolling_ball_jet_over_wide_knot_interval_keeps_finite_interior_point() {
+    use crate::geometry::{
+        ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
+        RollingBallJetStation, RollingBallJetStations,
+    };
+    use crate::math::Vector3;
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    let derivative = RollingBallJetDerivative {
+        first_limit: zero,
+        second_limit: zero,
+        center: zero,
+        angle: 0.0,
+    };
+    let site = RollingBallJetSite {
+        first_limit: Point3::new(1.0, 0.0, 0.0),
+        second_limit: Point3::new(0.0, 1.0, 0.0),
+        center: Point3::new(0.0, 0.0, 0.0),
+        angle: std::f64::consts::FRAC_PI_2,
+        first_derivative: derivative.clone(),
+        second_derivative: derivative,
+    };
+    let jet = ProceduralSurfaceDefinition::RollingBallJet(
+        RollingBallJetStations::try_new(
+            5,
+            vec![
+                RollingBallJetStation {
+                    knot: -f64::MAX,
+                    multiplicity: 6,
+                    site: site.clone(),
+                },
+                RollingBallJetStation {
+                    knot: f64::MAX,
+                    multiplicity: 6,
+                    site,
+                },
+            ],
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        super::super::rolling_ball_jet_point(&jet, 0.0, 0.0)
+            .map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
 fn a_rolling_ball_jet_whose_interpolated_limit_overflows_reaches_no_coordinate() {
     // At t = 0.5 the second-derivative rows of magnitude MAX move the first
     // limit to about MAX / 32 in x. The squared length of its direction

@@ -110,6 +110,35 @@ fn a_parabola_arc_has_exact_quadratic_points() {
 }
 
 #[test]
+fn parabola_arc_keeps_finite_poles_across_an_overflowing_parameter_span() {
+    let curve = parabolic_arc_nurbs(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        PositiveLength::new(f64::from_bits(1)).expect("positive subnormal focal distance"),
+        [-f64::MAX, f64::MAX],
+    )
+    .expect("parabola arc conversion")
+    .expect("finite parabola poles");
+    assert_eq!(
+        curve.knots().as_slice(),
+        &[
+            -f64::MAX,
+            -f64::MAX,
+            -f64::MAX,
+            f64::MAX,
+            f64::MAX,
+            f64::MAX
+        ]
+    );
+    assert_eq!(curve.control_points().len(), 3);
+    assert!(curve
+        .control_points()
+        .iter()
+        .all(|point| point.get().is_finite()));
+}
+
+#[test]
 fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
     let curve = parabolic_arc_nurbs(
         Point3::new(0., 0., 0.),

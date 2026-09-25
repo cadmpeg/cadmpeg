@@ -92,20 +92,10 @@ pub(crate) fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
 }
 
 pub(crate) fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
-    let source_width = source[1] - source[0];
-    let target_width = target[1] - target[0];
-    if !source
-        .iter()
-        .chain(target.iter())
-        .all(|value| value.is_finite())
-        || source_width <= 0.0
-        || target_width <= 0.0
-    {
-        return None;
-    }
-    let scale = target_width / source_width;
-    let offset = target[0] - source[0] * scale;
-    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
+    let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(source)?;
+    let target = cadmpeg_ir::topology::IncreasingParameterInterval::new(target)?;
+    let (scale, offset) = source.affine_coefficients_to(target)?;
+    Some((scale.get(), offset.get()))
 }
 
 mod analytic_surfaces;

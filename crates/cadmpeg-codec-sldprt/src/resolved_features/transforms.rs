@@ -774,8 +774,11 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             let point = |parameter: cadmpeg_ir::scalar::FiniteReal| {
                 let (_, x) =
                     cadmpeg_ir::math::scaled_sinh_cosh(major_radius.magnitude(), parameter).ok()?;
-                let (y, _) =
-                    cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.magnitude(), parameter).ok()?;
+                let y =
+                    match cadmpeg_ir::math::scaled_sinh_cosh(minor_radius.magnitude(), parameter) {
+                        Ok((sinh, _)) => Some(sinh),
+                        Err((sinh, _)) => cadmpeg_ir::scalar::FiniteReal::new(sinh),
+                    }?;
                 let (x, y) = (x.get(), y.get());
                 let (sine, cosine) = major_angle.get().sin_cos();
                 let point = Point2::new(

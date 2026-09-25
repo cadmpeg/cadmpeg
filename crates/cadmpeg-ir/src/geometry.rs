@@ -2442,8 +2442,8 @@ impl HelixCurveConstruction {
     /// Reverse the parameter while preserving points and derivatives.
     /// A zero radius at the new interval start has no admitted helix frame.
     pub fn try_reverse_parameterization(&mut self) -> Result<(), &'static str> {
-        let [start, end] = self.angle_range.get();
-        let turns = (end - start) / std::f64::consts::TAU;
+        let [start, end] = self.angle_range.finite_components();
+        let turns = end.turns_from(start).get();
         let radial_end = self.apex_factor.get().mul_add(turns, 1.0);
         if !turns.is_finite() || !radial_end.is_finite() || radial_end == 0.0 {
             return Err("helix curve reversal has no finite nonzero starting radius");

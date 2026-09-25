@@ -3,6 +3,7 @@
 use crate::eval::pcurve_tangent;
 use crate::eval::pcurve_uv;
 use crate::eval::pcurve_uv_differential;
+use crate::eval::EvaluationFailure;
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::math::Point2;
 use crate::transform::Transform2;
@@ -76,6 +77,46 @@ fn analytic_pcurves_preserve_angular_parameterization() {
     assert!((polar.v - 3.0).abs() < 1.0e-12);
     assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
     assert!((polar_nurbs.v - 4.0).abs() < 1.0e-12);
+}
+
+#[test]
+fn hyperbola_pcurve_keeps_its_point_when_only_the_tangent_overflows() {
+    let hyperbola = PcurveGeometry::Hyperbola(
+        crate::geometry::pcurve::HyperbolaPcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, 1.0),
+            1.0,
+            f64::MAX,
+        )
+        .unwrap(),
+    );
+    let point = pcurve_uv(&hyperbola, 1.0e-7).unwrap();
+    assert!((point.u - 1.0).abs() < 1.0e-12);
+    assert!(point.v.is_finite() && point.v > 1.0e300);
+    assert!(matches!(
+        pcurve_tangent(&hyperbola, 1.0e-7),
+        Err(EvaluationFailure::NonFinite(_))
+    ));
+}
+
+#[test]
+fn hyperbolic_pcurve_keeps_its_point_when_only_the_tangent_overflows() {
+    let hyperbolic = PcurveGeometry::Hyperbolic(
+        crate::geometry::pcurve::HyperbolicPcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(0.0, f64::MAX),
+        )
+        .unwrap(),
+    );
+    let point = pcurve_uv(&hyperbolic, 1.0e-7).unwrap();
+    assert!((point.u - 1.0).abs() < 1.0e-12);
+    assert!(point.v.is_finite() && point.v > 1.0e300);
+    assert!(matches!(
+        pcurve_tangent(&hyperbolic, 1.0e-7),
+        Err(EvaluationFailure::NonFinite(_))
+    ));
 }
 
 #[test]

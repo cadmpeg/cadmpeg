@@ -122,15 +122,6 @@ fn an_extrusion_whose_directrix_point_overflows_reports_the_point_its_extrusion_
     }
 }
 
-/// Whether `route` left the finite range at a point with no coordinate.
-fn reaches_no_coordinate(route: Result<FinitePoint3, EvaluationFailure<Point3>>) -> bool {
-    matches!(
-        route,
-        Err(EvaluationFailure::NonFinite(point))
-            if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
-    )
-}
-
 /// The line along `y` through the origin, placed by a transform that adds
 /// `f64::MAX` to `x` twice: every point it reaches has `x = +inf`.
 fn overflowing_placed_line() -> CurveGeometry {
@@ -249,8 +240,7 @@ fn a_replica_curve_whose_placement_overflows_reports_the_point_it_reached() {
 }
 
 #[test]
-fn a_subset_curve_whose_span_overflows_reaches_no_coordinate() {
-    // The span from -MAX to MAX has no finite length.
+fn a_subset_curve_whose_span_overflows_keeps_its_finite_local_point() {
     let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
             .expect("line fixture"),
@@ -267,9 +257,14 @@ fn a_subset_curve_whose_span_overflows_reaches_no_coordinate() {
         )
     });
     let index = crate::index::ModelIndex::new(&ir);
-    assert!(reaches_no_coordinate(model_curve_point_by_id(
-        &index, &subset, 1.0
-    )));
+    assert_eq!(
+        model_curve_point_by_id(&index, &subset, 1.0).map(FinitePoint3::get),
+        Ok(Point3::new(-f64::MAX, 0.0, 0.0))
+    );
+    assert_eq!(
+        model_curve_point_by_id(&index, &subset, f64::MAX).map(FinitePoint3::get),
+        Ok(Point3::new(0.0, 0.0, 0.0))
+    );
     assert_eq!(
         model_curve_point_by_id(&index, &subset, -1.0),
         Err(EvaluationFailure::NoValue)

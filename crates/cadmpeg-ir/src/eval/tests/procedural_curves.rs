@@ -87,3 +87,45 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         );
     }
 }
+
+#[test]
+fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
+    let source = CurveId::mint("test:model:curve#wide-source").unwrap();
+    let subset = CurveId::mint("test:model:curve#wide-subset").unwrap();
+    let mut ir = CadIr::empty();
+    for id in [&source, &subset] {
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    ir.model
+        .add_procedural_curve(
+            subset.clone(),
+            ProceduralCurve::new(
+                ProceduralCurveId::mint("test:model:procedural-curve#wide-subset").unwrap(),
+                ProceduralCurveDefinition::Subset(
+                    crate::geometry::curve_payloads::SubsetCurveConstruction::try_new(
+                        source,
+                        [-f64::MAX, f64::MAX],
+                        true,
+                        None,
+                    )
+                    .unwrap(),
+                ),
+            ),
+        )
+        .unwrap();
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_curve_point_by_id(&index, &subset, f64::MAX).map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(0.0, 0.0, 0.0))
+    );
+}
