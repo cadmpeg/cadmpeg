@@ -897,12 +897,6 @@ pub(super) fn encode_source_less_attributes(
         }
     };
     for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
-        if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D creation timestamp {} is non-finite",
-                timestamp.id
-            )));
-        }
         if index.creation_timestamps[..ordinal]
             .iter()
             .any(|before| before.target == timestamp.target)
@@ -1189,7 +1183,7 @@ pub(super) fn encode_source_less_attributes(
         );
         native_string(records, "Timestamp_attrib_def")?;
         native_i64(records, 1);
-        native_f64(records, timestamp.unix_microseconds);
+        native_f64(records, timestamp.unix_microseconds.get());
         records.push(0x11);
     }
     Ok(())

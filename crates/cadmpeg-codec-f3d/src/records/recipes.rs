@@ -4,6 +4,7 @@
 use super::identity::RecordedValue;
 use super::mesh::DesignRelaxedGuidText;
 use cadmpeg_ir::attributes::AttributeTarget;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_design_id, String, "design_id");
@@ -40,7 +41,7 @@ pub(crate) struct CreationTimestamp {
     /// Source SAB record index of the timestamp attribute.
     pub(crate) record_index: u32,
     /// Creation time as microseconds since the Unix epoch.
-    pub(crate) unix_microseconds: f64,
+    pub(crate) unix_microseconds: FiniteReal,
 }
 
 /// Design `BulkStream` regeneration-recipe family.

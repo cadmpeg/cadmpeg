@@ -1072,7 +1072,9 @@ fn decode_transfers_generated_custom_attribute() {
     )));
     assert_eq!(f3d_native(result.ir()).creation_timestamps.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).creation_timestamps[0].unix_microseconds,
+        f3d_native(result.ir()).creation_timestamps[0]
+            .unix_microseconds
+            .get(),
         1_579_392_000_000_007.0
     );
 }
@@ -1092,7 +1094,8 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
             id: "f3d:asm:creation-timestamp#generated".into(),
             target: AttributeTarget::Vertex(vertex),
             record_index: 0,
-            unix_microseconds: 1_579_392_000_000_037.0,
+            unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_037.0)
+                .unwrap(),
         }];
 
     let mut encoded = Vec::new();
@@ -1126,7 +1129,9 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         AttributeTarget::Vertex(tolerant_vertex.id.clone())
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).creation_timestamps[0].unix_microseconds,
+        f3d_native(round_trip.ir()).creation_timestamps[0]
+            .unix_microseconds
+            .get(),
         1_579_392_000_000_037.0
     );
 }
@@ -1141,7 +1146,8 @@ fn generated_f3d_rewrites_creation_timestamp() {
     let expected = 1_704_067_200_000_009.0;
     update_f3d_native(&mut edited, |native| {
         assert_eq!(native.creation_timestamps[0].record_index, 20);
-        native.creation_timestamps[0].unix_microseconds = expected;
+        native.creation_timestamps[0].unix_microseconds =
+            cadmpeg_ir::scalar::FiniteReal::new(expected).unwrap();
     });
 
     let mut regenerated = Vec::new();
@@ -1151,7 +1157,9 @@ fn generated_f3d_rewrites_creation_timestamp() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated timestamp decode");
     assert_eq!(
-        f3d_native(round_trip.ir()).creation_timestamps[0].unix_microseconds,
+        f3d_native(round_trip.ir()).creation_timestamps[0]
+            .unix_microseconds
+            .get(),
         expected
     );
 }

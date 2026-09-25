@@ -146,19 +146,13 @@ pub(super) fn validate_creation_timestamp_edits(
         if timestamp.unix_microseconds == before.unix_microseconds {
             continue;
         }
-        if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::malformed(format_args!(
-                "F3D creation timestamp {} is non-finite",
-                timestamp.id
-            )));
-        }
         let record_index = usize::try_from(timestamp.record_index).map_err(|_| {
             CodecError::malformed(format_args!(
                 "F3D timestamp record index exceeds usize: {}",
                 timestamp.id
             ))
         })?;
-        edits.insert(record_index, timestamp.unix_microseconds);
+        edits.insert(record_index, timestamp.unix_microseconds.get());
     }
     Ok(edits)
 }
