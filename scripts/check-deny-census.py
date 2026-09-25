@@ -2619,35 +2619,61 @@ def main():
 
         A generic parameter names no reader of its own. The set that can
         reach it is the declared default plus the argument every workspace
-        declaration states at this position; each is proved against the
-        declaration that spells it, so its own imports resolve it. An empty
-        set, or one argument this census cannot resolve, keeps the parameter
-        unproved — the parameter is never called safe because its other
-        instantiations are.
+        declaration states at this position. A forwarded parameter adds its
+        own default and instantiations to that set. Each concrete argument is
+        proved against the declaration that spells it, so its imports resolve
+        there. A cycle contributes no concrete argument; the traversal must
+        find and prove at least one concrete reader.
         """
-        candidates = [] if default is None else [(default, owner)]
-        candidates.extend(generic_arguments(owner.name, position, order))
-        if not candidates:
-            return False, (
-                f"generic parameter {parameter} has no default and no "
-                f"workspace instantiation"
-            )
-        for candidate, source in candidates:
-            argument, _ = type_parts(candidate)
-            if argument is not None and "::" not in argument:
-                if any(
-                    name == argument for name, _ in generic_parameters(source)
-                ):
-                    return False, (
-                        f"generic parameter {parameter} is instantiated with "
-                        f"the generic parameter {argument} of {source.name}"
-                    )
-            ok, reason = payload_proof(candidate, source)
-            if not ok:
+        pending = [(owner, parameter, position, default, "")]
+        visited = set()
+        concrete = 0
+        while pending:
+            current, name, at, fallback, route = pending.pop()
+            identity = (current.path, current.start, at)
+            if identity in visited:
+                continue
+            visited.add(identity)
+            candidates = [] if fallback is None else [(fallback, current)]
+            candidates.extend(generic_arguments(current.name, at, order))
+            if not candidates:
                 return False, (
-                    f"generic parameter {parameter} instantiated as "
-                    f"{candidate.strip()}: {reason}"
+                    f"{route}generic parameter {name} has no default and no "
+                    "workspace instantiation"
                 )
+            for candidate, source in candidates:
+                argument, _ = type_parts(candidate)
+                forwarded = None
+                if argument is not None and "::" not in argument:
+                    forwarded = next(
+                        (
+                            (parameter_index, candidate_default)
+                            for parameter_index, (candidate_name, candidate_default)
+                            in enumerate(generic_parameters(source))
+                            if argument == candidate_name
+                        ),
+                        None,
+                    )
+                if forwarded is not None:
+                    next_at, next_default = forwarded
+                    next_route = (
+                        f"{route}generic parameter {name} is instantiated with "
+                        f"the generic parameter {argument} of {source.name}: "
+                    )
+                    pending.append((source, argument, next_at, next_default, next_route))
+                    continue
+                ok, reason = payload_proof(candidate, source)
+                if not ok:
+                    return False, (
+                        f"{route}generic parameter {name} instantiated as "
+                        f"{candidate.strip()}: {reason}"
+                    )
+                concrete += 1
+        if not concrete:
+            return False, (
+                f"generic parameter {parameter} has no concrete workspace "
+                "instantiation"
+            )
         return True, (
             f"every instantiation of generic parameter {parameter} is checked"
         )

@@ -1694,14 +1694,14 @@ class DenyCensusTests(unittest.TestCase):
             #[derive(Deserialize)] #[serde(deny_unknown_fields)]
             enum Reader<T> { A(T) }
         '''}
-        generic_old = '''            return False, (
-                f"generic parameter {parameter} has no default and no "
-                f"workspace instantiation"
-            )'''
+        generic_old = '''                return False, (
+                    f"{route}generic parameter {name} has no default and no "
+                    "workspace instantiation"
+                )'''
         generic_mutated, generic_output = self.run_mutated_census(
             generic_fixture,
             generic_old,
-            '''            return True, "empty candidate set (mutated)"''',
+            '''                return True, "empty candidate set (mutated)"''',
         )
         self.assertEqual(generic_mutated, 0, generic_output)
 
@@ -2120,6 +2120,46 @@ class GenericParameterProofTests(unittest.TestCase):
         self.assertIn(
             "instantiated with the generic parameter U of Forwarder", output
         )
+
+    def test_two_generic_owners_forward_to_checked_readers(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct AlsoClosed { other: u8 }
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Middle<U = Closed> { inner: Reader<U> }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Outer<V = Closed> { inner: Middle<V> }
+            type Concrete = Outer<AlsoClosed>;
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_two_generic_owners_forward_to_an_open_reader(self) -> None:
+        status, output = self.run_census({"lib.rs": self.CLOSED + self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader<T = Closed> { A(T) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Middle<U = Closed> { inner: Reader<U> }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Outer<V = Closed> { inner: Middle<V> }
+            type Concrete = Outer<Open>;
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A: payload T:", output)
+        self.assertIn("generic parameter V instantiated as Open", output)
+        self.assertIn("payload reader Open lacks checked unknown-key refusal", output)
+
+    def test_generic_forwarding_cycle_without_a_concrete_reader_fails(self) -> None:
+        status, output = self.run_census({"lib.rs": '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Reader<T> { A(T), B(Forwarder<T>) }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Forwarder<U> { inner: Reader<U> }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A: payload T:", output)
+        self.assertIn("no concrete workspace instantiation", output)
 
     def test_an_uninhabited_instantiation_refuses_every_input(self) -> None:
         status, output = self.run_census({"lib.rs": self.CLOSED + '''
