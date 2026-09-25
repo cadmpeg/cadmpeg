@@ -1099,7 +1099,9 @@ fn curve_on_parameter_range(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    let target = target.endpoints();
+    let source_interval = IncreasingParameterInterval::new(source)?;
+    let target_interval = target;
+    let target = target_interval.endpoints();
     if target
         .into_iter()
         .all(|value| cadmpeg_ir::math::parameter_in_domain(value, source, 64.0 * f64::EPSILON))
@@ -1108,19 +1110,35 @@ fn curve_on_parameter_range(
     }
     let source_span = source[1] - source[0];
     let target_span = target[1] - target[0];
-    if !source_span.is_finite() || source_span <= 0.0 || !target_span.is_finite() {
-        return None;
-    }
     let target_per_source = target_span / source_span;
     let source_per_target = source_span / target_span;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(mut curve)) => {
+            let mapped = curve
+                .knots()
+                .iter()
+                .map(|knot| target[0] + (*knot - source[0]) * target_per_source)
+                .collect::<Vec<_>>();
+            let mapped = if mapped.iter().all(|knot| knot.is_finite()) {
+                mapped
+            } else {
+                curve
+                    .knots()
+                    .iter()
+                    .map(|knot| {
+                        target_interval
+                            .map_from(
+                                source_interval,
+                                cadmpeg_ir::scalar::FiniteReal::new(*knot)?,
+                                false,
+                            )
+                            .ok()
+                            .map(cadmpeg_ir::scalar::FiniteReal::get)
+                    })
+                    .collect::<Option<Vec<_>>>()?
+            };
             curve
-                .edit_knots(|knots| {
-                    for knot in knots {
-                        *knot = target[0] + (*knot - source[0]) * target_per_source;
-                    }
-                })
+                .edit_knots(|knots| knots.copy_from_slice(&mapped))
                 .ok()?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)))
         }
