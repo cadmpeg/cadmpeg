@@ -10,7 +10,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
@@ -45,6 +46,31 @@ pub(super) struct BodyNode {
     pub(super) offset: usize,
     /// First byte after the complete node.
     pub(super) end: usize,
+}
+
+struct BodyCandidate {
+    attr: u16,
+    node_id: u32,
+    topology_refs: [u32; 7],
+    ownership_refs: [u32; 7 + BODY_POST_TOPOLOGY_REF_MAX],
+    ownership_len: usize,
+    kind: BodyKind,
+    offset: usize,
+    end: usize,
+}
+
+impl BodyCandidate {
+    fn into_node(self) -> BodyNode {
+        BodyNode {
+            attr: self.attr,
+            node_id: self.node_id,
+            topology_refs: self.topology_refs,
+            ownership_refs: self.ownership_refs[..self.ownership_len].to_vec(),
+            kind: self.kind,
+            offset: self.offset,
+            end: self.end,
+        }
+    }
 }
 
 impl BodyNode {
@@ -606,7 +632,7 @@ fn parse_body_fields(
     payload: usize,
     mut at: usize,
     header_ref_count: usize,
-) -> Option<BodyNode> {
+) -> Option<BodyCandidate> {
     let attr = View::u16_be_at(bytes, payload)?;
     let node_id = View::u32_be_at(bytes, payload + 2)?;
     (attr > 1 && node_id != 0).then_some(())?;
@@ -634,44 +660,50 @@ fn parse_body_fields(
     let _nominal_geometry_state = *bytes.get(at)?;
     at += 1;
     let topology_refs = read_refs::<7>(bytes, &mut at)?;
-    let mut ownership_refs = topology_refs.to_vec();
+    let mut ownership_refs = [0; 7 + BODY_POST_TOPOLOGY_REF_MAX];
+    ownership_refs[..7].copy_from_slice(&topology_refs);
+    let mut ownership_len = 7;
     let mut tail_at = at;
     for _ in 0..BODY_POST_TOPOLOGY_REF_MAX {
         let Some(reference) = read_ref(bytes, &mut tail_at) else {
             break;
         };
-        ownership_refs.push(reference);
+        ownership_refs[ownership_len] = reference;
+        ownership_len += 1;
     }
     valid_resolution(size, linear).then_some(())?;
-    Some(BodyNode {
+    Some(BodyCandidate {
         attr,
         node_id,
         topology_refs,
         ownership_refs,
+        ownership_len,
         kind,
         offset,
         end: at,
     })
 }
 
-fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyNode> {
+fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<BodyCandidate> {
     // BODY is a fixed XT node.  Its fields begin immediately after the
     // attribute/node-id prefix; there is no additional length/index frame.
     // The embedded schema can add or remove leading reference fields, so the
     // field count is selected only when exactly one complete interpretation
     // passes the resolution, state, kind, and topology guards.
     let fields = payload.checked_add(6)?;
-    let candidates = (0..=BODY_HEADER_REF_MAX)
-        .filter_map(|header_ref_count| {
-            parse_body_fields(bytes, offset, payload, fields, header_ref_count)
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = candidates.into_iter();
-    let body = candidates.next()?;
-    candidates.next().is_none().then_some(body)
+    let mut candidate = None;
+    for header_ref_count in 0..=BODY_HEADER_REF_MAX {
+        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some(body);
+        }
+    }
+    candidate
 }
 
-fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyNode> {
+fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
     let (payload, _, _) = read_prefix(bytes, offset, BODY_TAG)?;
     parse_body_layout(bytes, offset, payload.checked_sub(6)?)
 }
@@ -768,7 +800,14 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
 }
 
 /// Scan one partition-style stream for strictly framed typed ownership nodes.
-pub(super) fn scan(bytes: &[u8]) -> Facts {
+fn admit_record(ctx: Option<&DecodeContext<'_>>) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "admit typed Parasolid record")?;
+    }
+    Ok(())
+}
+
+pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Facts, CodecError> {
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
     let mut shell_offsets = HashSet::new();
@@ -781,21 +820,28 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
             continue;
         }
         if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
+            admit_record(ctx)?;
             body_offsets.insert(body.offset);
-            facts.bodies.push(body);
+            facts.bodies.push(body.into_node());
         }
         if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
-            if shell_offsets.insert(shell.offset) {
+            if !shell_offsets.contains(&shell.offset) {
+                admit_record(ctx)?;
+                shell_offsets.insert(shell.offset);
                 facts.shells.push(shell);
             }
         }
         if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
-            if region_offsets.insert(region.offset) {
+            if !region_offsets.contains(&region.offset) {
+                admit_record(ctx)?;
+                region_offsets.insert(region.offset);
                 facts.regions.push(region);
             }
         }
         if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
-            if face_offsets.insert(face.offset) {
+            if !face_offsets.contains(&face.offset) {
+                admit_record(ctx)?;
+                face_offsets.insert(face.offset);
                 facts.faces.push(face);
             }
         }
@@ -803,18 +849,24 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
     for offset in 0..bytes.len().saturating_sub(2) {
         if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
             if let Some(body) = parse_tagged_body(bytes, offset) {
-                if body_offsets.insert(body.offset) {
-                    facts.bodies.push(body);
+                if !body_offsets.contains(&body.offset) {
+                    admit_record(ctx)?;
+                    body_offsets.insert(body.offset);
+                    facts.bodies.push(body.into_node());
                 }
             }
         }
         if let Some(shell) = parse_shell(bytes, offset) {
-            if shell_offsets.insert(shell.offset) {
+            if !shell_offsets.contains(&shell.offset) {
+                admit_record(ctx)?;
+                shell_offsets.insert(shell.offset);
                 facts.shells.push(shell);
             }
         }
         if let Some(region) = parse_region(bytes, offset) {
-            if region_offsets.insert(region.offset) {
+            if !region_offsets.contains(&region.offset) {
+                admit_record(ctx)?;
+                region_offsets.insert(region.offset);
                 facts.regions.push(region);
             }
         }
@@ -828,7 +880,9 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
                 // tagged node.  The tag carries the complete framing and is
                 // the stronger interpretation.
                 *existing = face;
-            } else if face_offsets.insert(face.offset) {
+            } else if !face_offsets.contains(&face.offset) {
+                admit_record(ctx)?;
+                face_offsets.insert(face.offset);
                 facts.faces.push(face);
             }
         }
@@ -837,7 +891,7 @@ pub(super) fn scan(bytes: &[u8]) -> Facts {
     facts.shells.sort_by_key(|node| node.offset);
     facts.regions.sort_by_key(|node| node.offset);
     facts.faces.sort_by_key(|node| node.offset);
-    facts
+    Ok(facts)
 }
 
 #[cfg(test)]
@@ -865,13 +919,37 @@ mod tests {
             )
             .unwrap();
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
-        let facts = scan(&body);
+        let facts = scan(&body, None).expect("typed scan");
 
         assert!(facts.has_valid_ownership());
         assert_eq!(facts.bodies.len(), 1);
         assert!(!facts.shells.is_empty());
         assert!(!facts.regions.is_empty());
         assert!(!facts.faces.is_empty());
+    }
+
+    #[test]
+    fn typed_brep_record_refuses_collection_limit_before_fact_insertion() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body = triangle_body();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        let error = scan(&body, Some(&ctx)).expect_err("typed record must be admitted");
+        assert!(matches!(error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit typed Parasolid record"));
+
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&body, &arena, &DecodePolicy::service()).expect("root");
+        assert!(!scan(&body, Some(&ctx))
+            .expect("service profile admits typed records")
+            .bodies
+            .is_empty());
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
@@ -1014,7 +1092,7 @@ mod tests {
         bytes.extend_from_slice(b"CCCCA");
         bytes.push(b'Z');
         bytes.extend(body_node(3, 0x18b9, 1));
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 3);
         assert_eq!(facts.bodies[0].kind, BodyKind::Solid);
@@ -1024,13 +1102,13 @@ mod tests {
     fn body_kind_is_stored_not_inferred() {
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 3));
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.bodies[0].kind, BodyKind::Sheet);
     }
 
     #[test]
     fn tagged_body_accepts_the_four_reference_header_form() {
-        let facts = scan(&tagged_four_ref_body(7, 0x18b9));
+        let facts = scan(&tagged_four_ref_body(7, 0x18b9), None).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].attr, 7);
         assert!(facts.bodies[0].ownership_refs.contains(&48));
@@ -1046,7 +1124,7 @@ mod tests {
             1,
             [7, 8, 0x8000, 10, 11, 12, 13],
         ));
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(
             facts.bodies[0].topology_refs,
@@ -1072,7 +1150,7 @@ mod tests {
         bytes.extend(typed_region(REGION as u16, 9, [1, BODY, 1, 1, SHELL], b'S'));
         bytes.extend(typed_face(FACE, 10, [1, 1, 1, SHELL, 12]));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         let hierarchy = facts
             .hierarchies(&HashSet::from([FACE]))
             .expect("extended typed references close the ownership graph");
@@ -1108,7 +1186,7 @@ mod tests {
             b'V',
         ));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.bodies.len(), 1);
         assert_eq!(facts.bodies[0].topology_refs, [7, 1, 8, 9, 10, 1, 1]);
         assert_eq!(facts.regions.len(), 1);
@@ -1125,7 +1203,7 @@ mod tests {
         }
         bytes.push(b'V');
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
@@ -1136,7 +1214,7 @@ mod tests {
         let mut bytes = vec![0, 0x0e, b'C', b'Z'];
         bytes.extend(typed_face(100, 900, [1, 1, 1, 8, 12]));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.faces.len(), 1);
         assert_eq!(facts.faces[0].offset, 4);
         assert_eq!(facts.faces[0].attr, 100);
@@ -1152,7 +1230,7 @@ mod tests {
         bytes.extend(typed_region(39, 815, [1, 3, 1, 11, 7], b'S'));
         bytes.extend(typed_face(100, 900, [1, 1, 49, 7, 8]));
 
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         let hierarchy = facts
             .hierarchies(&HashSet::from([100]))
             .expect("closed typed hierarchy");
@@ -1442,7 +1520,7 @@ mod tests {
     fn malformed_body_kind_is_withheld() {
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node(3, 7, 4));
-        assert!(scan(&bytes).bodies.is_empty());
+        assert!(scan(&bytes, None).expect("typed scan").bodies.is_empty());
     }
 
     #[test]
@@ -1451,7 +1529,7 @@ mod tests {
         for value in [9, 3, 8, 38, 42, 43, 39, 44] {
             push_ref(&mut bytes, value);
         }
-        let facts = scan(&bytes);
+        let facts = scan(&bytes, None).expect("typed scan");
         assert_eq!(facts.shells.len(), 1);
         assert_eq!(facts.shells[0].refs, [9, 3, 8, 38, 42, 43, 39, 44]);
     }

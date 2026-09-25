@@ -12,7 +12,9 @@ use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, Ve
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
-use cadmpeg_container::compression::{inflate_bounded_probe, inflate_deflate, inflate_zlib_member};
+use cadmpeg_container::compression::{
+    inflate_bounded_probe, inflate_deflate_owned, inflate_zlib_member_owned,
+};
 use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
@@ -355,9 +357,11 @@ pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
         );
     }
     let version = native_version(bytes);
-    let (blocks, directory, cache_cells) = match walk_native_markers(bytes, |off| {
-        Ok::<_, std::convert::Infallible>(try_block(bytes, off))
-    }) {
+    let (blocks, directory, cache_cells) = match walk_native_markers(
+        bytes,
+        |off| Ok::<_, std::convert::Infallible>(try_block(bytes, off)),
+        |_| Ok::<_, std::convert::Infallible>(()),
+    ) {
         Ok(frames) => frames,
         Err(never) => match never {},
     };
@@ -412,6 +416,7 @@ type NativeWalk<E> = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), E
 fn walk_native_markers<E>(
     bytes: &[u8],
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, E>,
+    mut admit: impl FnMut(&'static str) -> Result<(), E>,
 ) -> NativeWalk<E> {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
@@ -424,12 +429,15 @@ fn walk_native_markers<E>(
         }
         if let Some(block) = try_one_block(i)? {
             i = block.offset + block_hdr::LEN + block.preamble_len + block.comp_sz as usize;
+            admit("admit SLDPRT block")?;
             blocks.push(block.into_block());
             continue;
         }
         if let Some(cell) = try_cache_cell(bytes, i) {
+            admit("admit SLDPRT cache cell")?;
             cache_cells.push(cell);
         } else if let Some(entry) = try_directory_entry(bytes, i) {
+            admit("admit SLDPRT directory entry")?;
             directory.push(entry);
         }
         i += 1;
@@ -438,25 +446,26 @@ fn walk_native_markers<E>(
 }
 
 fn compound_stream(
+    ctx: Option<&DecodeContext<'_>>,
     path: String,
     directory_id: u32,
     start_sector: u32,
     bytes: Vec<u8>,
     decoded_bytes: Option<Vec<u8>>,
-) -> CompoundStream {
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes);
+) -> Result<CompoundStream, CodecError> {
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&bytes, ctx)?;
     let path = match cadmpeg_ir::StreamName::try_from(path) {
         Ok(path) => path,
         Err(_) => cadmpeg_ir::stream_name!("compound@").with_suffix(directory_id),
     };
-    CompoundStream {
+    Ok(CompoundStream {
         path,
         directory_id,
         start_sector,
         payload: bytes,
         decoded_payload: decoded_bytes,
         ps_streams,
-    }
+    })
 }
 
 /// Scans an in-memory image while routing inflate through the decode budget.
@@ -477,8 +486,14 @@ pub(crate) fn scan<'a>(
     }
     let bytes = root.window();
     let version = native_version(bytes);
-    let (blocks, directory, cache_cells) =
-        walk_native_markers(bytes, |off| try_block_budgeted(ctx, root, off))?;
+    let (blocks, directory, cache_cells) = walk_native_markers(
+        bytes,
+        |off| try_block_budgeted(ctx, root, off),
+        |operation| {
+            ctx.charge_collection_items(1, operation)?;
+            ctx.charge_entities(1, operation)
+        },
+    )?;
     Ok(completed_scan(
         bytes,
         version,
@@ -508,13 +523,14 @@ fn compound_streams<'a>(
             let view = snapshot.open(ctx, entry)?;
             let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
             let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
-            Ok(compound_stream(
+            compound_stream(
+                Some(ctx),
                 entry.path().to_owned(),
                 entry.id().directory_id(),
                 entry.start_sector(),
                 payload,
                 decoded,
-            ))
+            )
         })
         .collect()
 }
@@ -551,7 +567,7 @@ fn decode_wrapped_payload_budgeted<'a>(
         return Ok(None);
     };
     let (decoded, consumed) =
-        match inflate_zlib_member(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
+        match inflate_zlib_member_owned(ctx, member, ExpandSpec::Exact(uncompressed_size)) {
             Ok(result) => result,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(_) => return Ok(None),
@@ -559,8 +575,7 @@ fn decode_wrapped_payload_budgeted<'a>(
     if consumed != compressed_size {
         return Ok(None);
     }
-    ctx.copy_retained(decoded.window(), "retain decoded SolidWorks CFB stream")
-        .map(Some)
+    Ok(Some(decoded))
 }
 
 /// A block plus the preamble length needed to advance past it.
@@ -640,16 +655,17 @@ fn read_block_frame(bytes: &[u8], off: usize) -> Option<(BlockFrame, usize, usiz
 }
 
 fn block_from_inflated(
+    ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
     off: usize,
     frame: &BlockFrame,
     inflated: Vec<u8>,
-) -> Option<RawBlock> {
+) -> Result<Option<RawBlock>, CodecError> {
     if inflated.len() != frame.uncomp_sz as usize {
-        return None;
+        return Ok(None);
     }
     if crc32fast::hash(&inflated) != frame.crc {
-        return None;
+        return Ok(None);
     }
 
     let payload_start = off + block_hdr::LEN + frame.pre_sz as usize;
@@ -660,14 +676,14 @@ fn block_from_inflated(
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
+    let ps_streams = crate::parasolid::extract_streams_with_offsets(&inflated, ctx)?;
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
     } else {
         PayloadFamily::Parasolid
     };
 
-    Some(RawBlock {
+    Ok(Some(RawBlock {
         offset: off,
         type_id: frame.type_id,
         comp_sz: frame.comp_sz,
@@ -676,14 +692,16 @@ fn block_from_inflated(
         family,
         payload: inflated,
         ps_streams,
-    })
+    }))
 }
 
 fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     let (frame, payload_start, payload_end) = read_block_frame(bytes, off)?;
     let payload = bytes.get(payload_start..payload_end)?;
     let inflated = inflate_bounded_probe(payload, frame.uncomp_sz as usize)?;
-    block_from_inflated(bytes, off, &frame, inflated)
+    block_from_inflated(None, bytes, off, &frame, inflated)
+        .ok()
+        .flatten()
 }
 
 fn try_block_budgeted<'a>(
@@ -704,16 +722,16 @@ fn try_block_budgeted<'a>(
     let Some(payload_view) = root.child(abs_start, abs_end) else {
         return Ok(None);
     };
-    let inflated = match inflate_deflate(
+    let inflated = match inflate_deflate_owned(
         ctx,
         payload_view,
         ExpandSpec::Exact(u64::from(frame.uncomp_sz)),
     ) {
-        Ok(view) => view.window().to_vec(),
+        Ok(view) => view,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    Ok(block_from_inflated(bytes, off, &frame, inflated))
+    block_from_inflated(Some(ctx), bytes, off, &frame, inflated)
 }
 
 /// Test a marker hit against the cache-cell relational invariant
@@ -725,7 +743,7 @@ fn try_cache_cell(bytes: &[u8], off: usize) -> Option<CacheCell> {
     let l = View::u32_le_at(bytes, off + cache_hdr::L)?;
     let name_len = View::u32_le_at(bytes, off + cache_hdr::NAME_LEN)?;
 
-    if l == 0 || two_l != l.wrapping_mul(2) || half_l != l / 2 {
+    if l == 0 || l.checked_mul(2) != Some(two_l) || half_l != l / 2 {
         return None;
     }
     if name_len == 0 || name_len >= 500 {

@@ -126,7 +126,7 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
         let global = format!(
             "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1,1Ha,1Ho,11,0,0H,0H;"
         );
-        let (parsed, losses) = crate::global::parse(
+        let (parsed, losses) = crate::test_support::parse_global(
             &crate::card::scan(&fixed_ascii_with_global(global.as_bytes())).unwrap(),
         )
         .unwrap();

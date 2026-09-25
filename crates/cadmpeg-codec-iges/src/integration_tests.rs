@@ -281,7 +281,8 @@ fn decode_matrix(
             assert_matrix_destination(&matrix, subject_type, expected_arena);
             let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
             let scan = crate::card::scan(&bytes).expect("integration fixture cards");
-            let (global, _global_losses) = crate::global::parse(&scan).expect("integration global");
+            let (global, _global_losses) =
+                crate::test_support::parse_global(&scan).expect("integration global");
             let (directory, _quarantined) = crate::directory::parse(&scan, global.global_table());
             let subject_count = directory
                 .iter()
