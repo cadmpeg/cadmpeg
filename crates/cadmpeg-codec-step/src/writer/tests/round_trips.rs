@@ -274,6 +274,148 @@ fn emit_surface_only(g: &SurfaceGeometry) -> String {
     e.into_lines().expect("finite reals").join("\n")
 }
 
+#[test]
+fn negative_cone_writes_reversed_axis_positive_angle_and_exact_points() {
+    const EPS_CONE_POINT: f64 = 1.0e-9;
+    let origin = Point3::new(1.0, 2.0, 3.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let source = SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            origin, axis, reference, 2.0, 1.0, -0.5,
+        )
+        .expect("finite cone"),
+    );
+    let text = emit_surface_only(&SurfaceGeometry::Solved(source.clone()));
+    assert!(text.contains("CARTESIAN_POINT('',(1.,2.,3.))"));
+    assert!(text.contains("DIRECTION('',(-0.,-0.,-1.))"));
+    assert!(text.contains("DIRECTION('',(1.,0.,0.))"));
+    assert!(text.contains("CONICAL_SURFACE('',#4,2.,0.5)"));
+
+    let written = SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            origin,
+            Vector3::new(-axis.x, -axis.y, -axis.z),
+            reference,
+            2.0,
+            1.0,
+            0.5,
+        )
+        .expect("written STEP cone"),
+    );
+    for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
+        let source_point = cadmpeg_ir::eval::surface_point_solved(&source, u, v)
+            .expect("source point")
+            .get();
+        let written_point = cadmpeg_ir::eval::surface_point_solved(&written, -u, -v)
+            .expect("written point")
+            .get();
+        let distance = (source_point.x - written_point.x)
+            .hypot(source_point.y - written_point.y)
+            .hypot(source_point.z - written_point.z);
+        assert!(distance < EPS_CONE_POINT);
+    }
+}
+
+#[test]
+fn negative_cone_round_trip_preserves_point_set_and_face_sense() {
+    const EPS_CONE_ROUND_TRIP_POINT: f64 = 1.0e-9;
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let source = SolvedSurfaceGeometry::Cone(
+        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            -0.5,
+        )
+        .expect("finite cone"),
+    );
+    let source_surface = ir.model.surfaces[0].id.clone();
+    let source_face_sense = ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.surface == source_surface)
+        .expect("cone face")
+        .sense;
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(source.clone());
+
+    let output = export(&ir);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written cone");
+    let (surface_id, written) = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Cone(cone)) => {
+                Some((&surface.id, SolvedSurfaceGeometry::Cone(*cone)))
+            }
+            _ => None,
+        })
+        .expect("written cone surface");
+    let written_face = decoded
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| &face.surface == surface_id)
+        .expect("written cone face");
+    assert_eq!(written_face.sense, source_face_sense);
+    for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
+        let source_point = cadmpeg_ir::eval::surface_point_solved(&source, u, v)
+            .expect("source point")
+            .get();
+        let written_point = cadmpeg_ir::eval::surface_point_solved(&written, -u, -v)
+            .expect("written point")
+            .get();
+        let distance = (source_point.x - written_point.x)
+            .hypot(source_point.y - written_point.y)
+            .hypot(source_point.z - written_point.z);
+        assert!(distance < EPS_CONE_ROUND_TRIP_POINT);
+    }
+}
+
+#[test]
+fn negative_cone_rectangular_trim_maps_ranges_and_senses() {
+    let source = "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,2.,-0.5);
+#6=RECTANGULAR_TRIMMED_SURFACE('',#5,0.25,1.25,2.,3.,.T.,.F.);
+#7=GEOMETRIC_SET('',(#6));
+#8=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#7),#9);
+#9=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));";
+    let decoded = crate::test_support::exchange::decode_inline(source);
+    let output = export(decoded.ir());
+    assert!(output.contains("CONICAL_SURFACE("));
+    assert!(output.contains("RECTANGULAR_TRIMMED_SURFACE("));
+    assert!(output.contains(",-0.25,-1.25,-2.,-3.,.F.,.T.)"));
+}
+
+#[test]
+fn negative_cone_nested_trim_keeps_outer_local_ranges() {
+    let source = "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CONICAL_SURFACE('',#4,2.,-0.5);
+#6=RECTANGULAR_TRIMMED_SURFACE('',#5,0.25,1.25,2.,3.,.T.,.F.);
+#7=RECTANGULAR_TRIMMED_SURFACE('',#6,0.1,0.2,0.5,1.,.T.,.T.);
+#8=GEOMETRIC_SET('',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));";
+    let decoded = crate::test_support::exchange::decode_inline(source);
+    let output = export(decoded.ir());
+    assert!(output.contains(",-0.25,-1.25,-2.,-3.,.F.,.T.)"));
+    assert!(output.contains(",0.1,0.2,0.5,1.,.T.,.T.)"));
+}
+
 /// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
