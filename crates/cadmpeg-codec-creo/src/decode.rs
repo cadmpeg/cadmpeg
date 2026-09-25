@@ -48,7 +48,7 @@ mod tests;
 /// the returned IR contains source metadata and preserved geometry sections but
 /// no transferred entities.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan_bytes(root.window())?;
+    let scan = container::scan_bytes(ctx, root.window())?;
     let classification = crate::dialect::classify(&scan);
     // Charge section cardinality before IR construction so max_entities can
     // refuse the build rather than only the finalizer.

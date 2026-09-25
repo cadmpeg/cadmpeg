@@ -245,6 +245,37 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
 }
 
 #[test]
+fn compressed_toc_section_propagates_expansion_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let jpeg = jpeg_payload();
+    let compressed = unix_compress_literals(&jpeg);
+    let data = build_toc_section_prt("THMB_IMG_MAIN", &compressed, jpeg.len());
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_decompressed_bytes_per_expand =
+        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("TOC section expansion must propagate the resource refusal");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::DecompressedBytes
+                && limit.operation == "begin_expand"
+    ));
+
+    options.policy.limits.max_decompressed_bytes_per_expand =
+        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact per-expansion limit admits the section");
+}
+
+#[test]
 fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
