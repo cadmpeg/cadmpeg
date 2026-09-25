@@ -2236,6 +2236,7 @@ pub(crate) fn normalize_occt_curve_range(
             let tau = std::f64::consts::TAU;
             if !start.is_finite()
                 || !end.is_finite()
+                || !sweep.is_finite()
                 || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY
             {
                 return Some([start, end]);
