@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement,
 };
+
+const EPS_WIDE_NURBS_AREA: f64 = 1.0e-12;
 
 fn sketch(id: &SketchId, entity: &SketchEntityId) -> Sketch {
     Sketch {
@@ -41,6 +44,23 @@ fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
     assert!(sweep.is_finite());
     assert!((0.0..std::f64::consts::TAU).contains(&sweep));
     assert!((sweep - 1.161_306_304_240_227_4).abs() <= f64::EPSILON);
+}
+
+#[test]
+fn nurbs_profile_area_uses_finite_gauss_samples_on_a_wide_domain() {
+    let geometry = SketchGeometry::nurbs(
+        PcurveNurbs::from_lanes(
+            1,
+            vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+            vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .expect("wide finite sketch NURBS"),
+    );
+    let area =
+        super::nurbs_profile_signed_area_twice(&geometry, false).expect("finite wide-domain area");
+    assert!((area - 1.0).abs() <= EPS_WIDE_NURBS_AREA);
 }
 
 #[test]
