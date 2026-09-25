@@ -4284,37 +4284,28 @@ fn extrusion_directrix_reversed(
 }
 
 /// The angle of a native revolution at its angular parameter, and the
-/// angle's derivative, or why there is none. An angular span or angle that
-/// overflows reaches no coordinate.
+/// angle's derivative, or why there is none. An angle that overflows reaches
+/// no coordinate.
 fn native_revolution_angle(
     construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
     angular_parameter: FiniteReal,
 ) -> Result<(f64, f64), EvaluationFailure<Point3>> {
-    let angular_parameter = angular_parameter.get();
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
-    let angular_interval = construction.angular_interval().endpoints();
     let (angle, angular_derivative) = match construction.angular_parameter_interval() {
-        None => (angular_parameter, 1.0),
+        None => (angular_parameter.get(), 1.0),
         Some(parameter_interval) => {
-            // The admitted interval is finite and strictly increasing, so
-            // its span is positive.
-            let parameter_interval = parameter_interval.endpoints();
-            let parameter_span = parameter_interval[1] - parameter_interval[0];
-            let angular_span = angular_interval[1] - angular_interval[0];
-            if !angular_span.is_finite() {
-                return Err(unreached);
-            }
-            let angular_derivative = angular_span / parameter_span;
-            (
-                (angular_parameter - parameter_interval[0])
-                    .mul_add(angular_derivative, angular_interval[0]),
-                angular_derivative,
-            )
+            let angular_interval = construction.angular_interval();
+            let angle = angular_interval
+                .map_from(parameter_interval, angular_parameter)
+                .map_err(|_| unreached)?
+                .get();
+            let angular_derivative = angular_interval
+                .scaled_span()
+                .quotient(parameter_interval.scaled_span())
+                .map_or_else(|overflow| overflow, FiniteReal::get);
+            (angle, angular_derivative)
         }
     };
-    if !angle.is_finite() {
-        return Err(unreached);
-    }
     Ok((angle, angular_derivative))
 }
 
