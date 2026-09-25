@@ -563,7 +563,7 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
     assert_eq!(parsed.local_ordinal, 2);
-    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.owned_ordinal, 9);
     assert_eq!(parsed.variant, Some(1));
@@ -626,7 +626,7 @@ fn compact_parameter_owner_omits_the_variant_slot() {
     assert_eq!(parsed.companion_record_index, 6655);
     assert_eq!(parsed.owned_ordinal, 4);
     assert_eq!(parsed.variant, None);
-    assert_eq!(parsed.evaluated_value, 8.2);
+    assert_eq!(parsed.evaluated_value.get(), 8.2);
 }
 
 #[test]
@@ -634,7 +634,7 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
     let parsed =
         parse_parameter_owner(&counted_parameter_owner_frame()).expect("counted parameter owner");
     assert_eq!(parsed.frame_length, 101);
-    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
@@ -647,7 +647,7 @@ fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
     let parsed = parse_parameter_owner(&frame)
         .expect("legacy counted parameter owner with zero scalar marker");
     assert_eq!(parsed.frame_length, 101);
-    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
@@ -794,7 +794,7 @@ fn compact_typed_counted_parameter_owner_omits_variant_slot() {
     assert_eq!(parsed.record_index, 44);
     assert_eq!(parsed.scope_record_index, 12);
     assert_eq!(parsed.local_ordinal, 0);
-    assert_eq!(parsed.evaluated_value, 19.0);
+    assert_eq!(parsed.evaluated_value.get(), 19.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(41));
     assert_eq!(parsed.parameter_record_index, 46);
     assert_eq!(parsed.owned_ordinal, 9);
@@ -809,7 +809,7 @@ fn compact_counted_parameter_owner_omits_type_and_variant_markers() {
     frame[77..81].copy_from_slice(&45u32.to_le_bytes());
     let parsed = parse_parameter_owner(&frame).expect("compact counted parameter owner");
     assert_eq!(parsed.frame_length, 99);
-    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(40));
     assert_eq!(parsed.parameter_record_index, 46);
     assert_eq!(parsed.variant, None);
@@ -821,7 +821,7 @@ fn tagged_scalar_parameter_owner_carries_a_scalar_type_prefix() {
     let parsed = parse_parameter_owner(&tagged_scalar_parameter_owner_frame())
         .expect("tagged scalar parameter owner");
     assert_eq!(parsed.frame_length, 107);
-    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value.get(), 6.0);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.variant, None);
@@ -833,7 +833,7 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
     let parsed = parse_parameter_owner(&tagged_scalar_variant_parameter_owner_frame())
         .expect("tagged scalar variant parameter owner");
     assert_eq!(parsed.frame_length, 108);
-    assert_eq!(parsed.evaluated_value, 0.8);
+    assert_eq!(parsed.evaluated_value.get(), 0.8);
     assert_eq!(parsed.evaluated_value_offset, super::FrameRelative(44));
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.owned_ordinal, 73);
