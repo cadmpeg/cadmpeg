@@ -9,6 +9,8 @@ use crate::eval::tests::contact_track;
 use crate::eval::variable_blend_is_zero_radius;
 use crate::eval::variable_blend_radius;
 use crate::eval::ConstantRollingBallSection;
+use crate::eval::{cacheless_circular_variable_blend_section, ContactTrack, SurfaceFirstOrder};
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
@@ -390,6 +392,61 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
     assert!((partials.dv.x - (2.0 - transverse)).abs() <= derivative_tolerance);
     assert!((partials.dv.y - 1.0).abs() <= derivative_tolerance);
     assert!((partials.dv.z - (2.0 - transverse)).abs() <= derivative_tolerance);
+}
+
+#[test]
+fn circular_variable_blend_skips_non_finite_residual_before_valid_candidate() {
+    let (ir, _) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)),
+            (Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)),
+        ],
+        [f64::MAX, f64::MAX],
+        Some(VariableBlendCrossSection::Circular {}),
+    );
+    let ProceduralSurfaceDefinition::VariableBlend(payload) =
+        ir.model.procedural_surfaces[0].definition()
+    else {
+        panic!("variable blend fixture");
+    };
+    let track = ContactTrack {
+        support: SurfaceFirstOrder {
+            point: FinitePoint3::new(Point3::new(f64::MAX, 0.0, 0.0)).unwrap(),
+            first: Ok([
+                FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+                FiniteVector3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            ]),
+        },
+        uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
+        normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+    };
+    let index = crate::index::ModelIndex::new(&ir);
+    let section = cacheless_circular_variable_blend_section(
+        &index,
+        payload.construction(),
+        0.5,
+        [track, track],
+    )
+    .expect("later finite candidate");
+    assert_eq!(section.center, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(section.signs, [1.0, 1.0]);
+}
+
+#[test]
+fn contact_track_normal_exists_when_finite_partials_cross_outside_range() {
+    let track = ContactTrack {
+        support: SurfaceFirstOrder {
+            point: FinitePoint3::ZERO,
+            first: Ok([
+                FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0)).unwrap(),
+                FiniteVector3::new(Vector3::new(0.0, f64::MAX, 0.0)).unwrap(),
+            ]),
+        },
+        uv_tangent: Err(crate::eval::EvaluationFailure::NoValue),
+        normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+    };
+    assert_eq!(track.normal(), Ok(Vector3::new(0.0, 0.0, 1.0)));
 }
 
 #[test]

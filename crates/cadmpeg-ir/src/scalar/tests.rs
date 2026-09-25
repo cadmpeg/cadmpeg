@@ -344,6 +344,21 @@ fn an_increasing_interval_hands_its_endpoints_on_as_finite_reals() {
 }
 
 #[test]
+fn wide_intervals_have_finite_affine_coefficients() {
+    use crate::topology::IncreasingParameterInterval;
+
+    let wide = IncreasingParameterInterval::new([-f64::MAX, f64::MAX]).unwrap();
+    let unit = IncreasingParameterInterval::new([0.0, 1.0]).unwrap();
+    let (scale, offset) = wide.affine_coefficients_to(unit).unwrap();
+    assert!((scale.get() * f64::MAX - 0.5).abs() < 8.0 * f64::EPSILON);
+    assert!((offset.get() - 0.5).abs() < 8.0 * f64::EPSILON);
+    assert_eq!(
+        wide.affine_coefficients_to(wide),
+        Some((super::FiniteReal::ONE, super::FiniteReal::ZERO))
+    );
+}
+
+#[test]
 fn finite_lanes_optional_bounds_and_arrays_admit_all_or_nothing() {
     use super::FiniteReal;
 

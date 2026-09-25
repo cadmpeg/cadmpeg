@@ -115,25 +115,49 @@ fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
 struct SourceParameterMap {
     native: [f64; 2],
     neutral: [f64; 2],
+    wide_coefficients: Option<(f64, f64)>,
 }
 
 impl SourceParameterMap {
     fn new(native: [f64; 2], neutral: [f64; 2]) -> Option<Self> {
-        (native
+        if !native
             .iter()
             .chain(neutral.iter())
             .all(|value| value.is_finite())
-            && native[0] < native[1]
-            && neutral[0] < neutral[1])
-            .then_some(Self { native, neutral })
+            || native[0] >= native[1]
+            || neutral[0] >= neutral[1]
+        {
+            return None;
+        }
+        let wide_coefficients =
+            if (native[1] - native[0]).is_finite() && (neutral[1] - neutral[0]).is_finite() {
+                None
+            } else {
+                let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(native)?;
+                let target = cadmpeg_ir::topology::IncreasingParameterInterval::new(neutral)?;
+                source
+                    .affine_coefficients_to(target)
+                    .map(|(scale, offset)| (scale.get(), offset.get()))
+            };
+        Some(Self {
+            native,
+            neutral,
+            wide_coefficients,
+        })
     }
 
     fn scale(self) -> f64 {
-        (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0])
+        self.wide_coefficients.map_or_else(
+            || (self.neutral[1] - self.neutral[0]) / (self.native[1] - self.native[0]),
+            |(scale, _)| scale,
+        )
     }
 
     fn to_neutral(self, value: f64) -> f64 {
-        self.neutral[0] + (value - self.native[0]) * self.scale()
+        self.wide_coefficients.map_or_else(
+            || self.neutral[0] + (value - self.native[0]) * self.scale(),
+            |(scale, offset)| scale.mul_add(value, offset),
+        )
     }
 }
 

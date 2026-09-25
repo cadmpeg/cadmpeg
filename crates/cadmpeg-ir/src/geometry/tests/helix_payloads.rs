@@ -186,6 +186,25 @@ fn helix_reversal_refuses_a_zero_radius_at_the_new_start_atomically() {
 }
 
 #[test]
+fn helix_reversal_accepts_an_overflowing_finite_angle_span() {
+    let mut value = HelixCurveConstruction::try_new(
+        [-f64::MAX, f64::MAX],
+        HelixFrame {
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        0.0,
+        None,
+    )
+    .unwrap();
+    value.try_reverse_parameterization().unwrap();
+    assert_eq!(value.angle_range().get(), [-f64::MAX, f64::MAX]);
+}
+
+#[test]
 fn helix_surface_and_curve_keep_distinct_radius_tolerances() {
     const RADIUS_DIFFERENCE: f64 = 5.0e-7;
     let center = Point3::new(0.0, 0.0, 0.0);

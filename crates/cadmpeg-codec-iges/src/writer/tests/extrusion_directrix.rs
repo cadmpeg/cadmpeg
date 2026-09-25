@@ -63,9 +63,8 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
 fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_ends() {
     // With major radius 1 and minor radius MAX, the directrix point at
     // t = 1e-7 is (cosh t, MAX sinh t, 0), which is finite; only MAX cosh t,
-    // which the point does not read, overflows. The Type 122 ends therefore
-    // evaluate, and the refusal comes from the Type 104 conic endpoint, which
-    // reads the minor pair whole.
+    // which the point does not read, overflows. The Type 122 and Type 104
+    // ends both use the finite sinh lane.
     let directrix = CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
     let construction =
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
@@ -98,15 +97,21 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
         ),
         None,
     ));
-    assert_eq!(
-        extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
-            .err()
-            .map(|error| error.to_string()),
-        Some(
-            cadmpeg_core::CodecError::NotImplemented(
-                "IGES hyperbola endpoint is non-finite".into()
-            )
-            .to_string()
-        )
+    let entities = extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
+        .expect("the finite hyperbola end is written");
+    assert_eq!(entities[0].type_code, 104);
+    assert_eq!(entities[1].type_code, 122);
+    let written_end = format!(
+        ",{},{};",
+        super::super::number(
+            cadmpeg_ir::scalar::FiniteReal::new(1.0e-7_f64.cosh()).expect("finite major endpoint"),
+        ),
+        super::super::number(
+            cadmpeg_ir::scalar::FiniteReal::new(f64::MAX * 1.0e-7_f64.sinh())
+                .expect("finite minor endpoint"),
+        ),
     );
+    assert!(entities[0]
+        .parameter_text()
+        .ends_with(written_end.as_bytes()));
 }

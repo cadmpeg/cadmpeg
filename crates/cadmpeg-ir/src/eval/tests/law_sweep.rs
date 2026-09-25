@@ -4,7 +4,11 @@ use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::scalar_sweep_law_differential;
+use crate::eval::sweep_profile_differential;
+use crate::eval::sweep_profile_reversed;
 use crate::eval::tests::bilinear_surface;
+use crate::features::FinitePoint3;
+use crate::features::FiniteVector3;
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::Curve;
 use crate::geometry::CurveGeometry;
@@ -27,6 +31,59 @@ use crate::ids::SurfaceId;
 use crate::math::Point3;
 use crate::math::Vector3;
 use crate::CadIr;
+
+#[test]
+fn sweep_profile_frame_with_overflowing_norm_keeps_its_direction() {
+    let frame = (
+        FinitePoint3::ZERO,
+        FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0)).unwrap(),
+    );
+    assert_eq!(
+        sweep_profile_reversed(Some(frame), Vector3::new(-1.0, 0.0, 0.0)),
+        Ok(true)
+    );
+}
+
+#[test]
+fn sweep_spine_tangent_with_overflowing_norm_keeps_its_direction() {
+    let frame = (
+        FinitePoint3::ZERO,
+        FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    );
+    assert_eq!(
+        sweep_profile_reversed(Some(frame), Vector3::new(-f64::MAX, 0.0, 0.0)),
+        Ok(true)
+    );
+}
+
+#[test]
+fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
+    let profile = CurveId::mint("test:model:curve#wide-sweep-profile").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: profile.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let range = [finite(-f64::MAX), finite(f64::MAX)];
+    let parameter = finite(-f64::MAX * 0.5);
+    let forward = sweep_profile_differential(&index, &profile, range, false, parameter)
+        .expect("forward interior profile point");
+    let reversed = sweep_profile_differential(&index, &profile, range, true, parameter)
+        .expect("reversed interior profile point");
+    assert_eq!(forward.point.get(), Point3::new(1.25, 0.0, 0.0));
+    assert_eq!(reversed.point.get(), Point3::new(1.75, 0.0, 0.0));
+}
 
 #[test]
 fn cacheless_law_differential_applies_algebraic_product_rule() {

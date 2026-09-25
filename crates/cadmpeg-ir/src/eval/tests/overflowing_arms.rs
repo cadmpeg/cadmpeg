@@ -996,3 +996,47 @@ fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
         );
     }
 }
+
+#[test]
+fn offset_surface_uses_normal_of_finite_partials_with_overflowing_cross() {
+    let support = solved(SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, f64::MAX, 0.0)],
+                    vec![
+                        Point3::new(f64::MAX, 0.0, 0.0),
+                        Point3::new(f64::MAX, f64::MAX, 0.0),
+                    ],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("wide partials NURBS"),
+    ));
+    let (ir, offset) = procedural_surface_model(support, |support| {
+        ProceduralSurfaceDefinition::Offset(
+            crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support,
+                1.0,
+                None,
+                None,
+                false,
+                crate::geometry::OffsetExtension::Legacy {
+                    flags: crate::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .expect("offset construction fixture"),
+        )
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &offset, 0.0, 0.0)
+            .map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(0.0, 0.0, 1.0))
+    );
+}

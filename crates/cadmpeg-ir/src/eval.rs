@@ -28,12 +28,12 @@ use crate::geometry::{
     SweepSurfaceLayout,
 };
 use crate::math::solve::least_squares_step;
-use crate::math::sum::{scaled_ratio_products, ExactSignedSum};
+use crate::math::sum::{scaled_ratio_products, ExactSignedSum, ScaledValue};
 use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{
     ExtendedReal, FiniteReal, Length, NonNegativeLength, NonNegativeReal, NonZeroLength,
-    NonZeroReal, PositiveReal, SegmentPosition,
+    NonZeroReal, PositiveReal, SegmentPosition, UnitCosine,
 };
 use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
@@ -450,12 +450,10 @@ fn rational_patch_parameter_segment(
 ) -> Option<Vec<[f64; 4]>> {
     let normalize = |value: FiniteReal, domain: IncreasingParameterInterval| {
         let [lower, upper] = domain.finite_endpoints();
-        Some(
-            difference_quotient(value, lower, upper, lower)
-                .ok()?
-                .get()
-                .clamp(0.0, 1.0),
-        )
+        match value.segment_position(lower, upper) {
+            SegmentPosition::Within(fraction) => Some(fraction.get()),
+            SegmentPosition::Outside | SegmentPosition::Degenerate => None,
+        }
     };
     let [start_u, start_v] = start.coordinates();
     let [end_u, end_v] = end.coordinates();
@@ -3804,9 +3802,12 @@ fn model_curve_differential_by_id_inner(
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
                 let source = definition_payload.source();
-                let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
-                let source_parameter = subset_source_parameter(start, end, *sense, parameter)?;
+                let source_parameter = subset_source_parameter(
+                    *definition_payload.parameter_range(),
+                    *sense,
+                    parameter,
+                )?;
                 let differential = model_curve_differential_by_id_inner(
                     index,
                     source,
@@ -3874,30 +3875,25 @@ fn model_curve_differential_by_id_inner(
     }
 }
 
-/// The source parameter of a subset curve at `parameter`, measured from the
-/// start of its ordered range with sense `sense`, or from its end against
-/// it. A parameter outside the range's span, and an empty range, have no
-/// value; a span that overflows reaches no coordinate.
-///
-/// A parameter within a finite span moves from one endpoint toward the
-/// other by at most the span, so the source parameter lies between the
-/// finite endpoints and needs no check.
+/// Map a nonnegative local subset parameter into its ordered source range.
 fn subset_source_parameter(
-    start: f64,
-    end: f64,
+    interval: ParameterInterval,
     sense: bool,
     parameter: f64,
 ) -> Result<f64, EvaluationFailure<Point3>> {
-    let span = (end - start).abs();
-    if !parameter.is_finite() || span == 0.0 || parameter < 0.0 {
+    let interval =
+        IncreasingParameterInterval::new(interval.endpoints()).ok_or(EvaluationFailure::NoValue)?;
+    if !parameter.is_finite() || parameter < 0.0 {
         return Err(EvaluationFailure::NoValue);
     }
-    if !span.is_finite() {
-        return Err(EvaluationFailure::NonFinite(UNREACHED_POINT));
-    }
-    if parameter > span {
+    if interval
+        .scaled_span()
+        .finite()
+        .is_ok_and(|span| parameter > span.get())
+    {
         return Err(EvaluationFailure::NoValue);
     }
+    let [start, end] = interval.endpoints();
     Ok(if sense {
         start + parameter
     } else {
@@ -3911,11 +3907,6 @@ fn subset_source_parameter(
 fn unit_length_axis(direction: UnitVector3) -> Vector3 {
     let direction = *direction.as_raw();
     scale_vector(direction, 1.0 / direction.norm())
-}
-
-fn unit_axis(direction: Vector3) -> Option<Vector3> {
-    let length = direction.norm();
-    (length.is_finite() && length > f64::EPSILON).then(|| scale_vector(direction, 1.0 / length))
 }
 
 fn rotate_vector_about_axis(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
@@ -4296,7 +4287,7 @@ fn native_revolution_angle(
         Some(parameter_interval) => {
             let angular_interval = construction.angular_interval();
             let angle = angular_interval
-                .map_from(parameter_interval, angular_parameter)
+                .map_from(parameter_interval, angular_parameter, false)
                 .map_err(|_| unreached)?
                 .get();
             let angular_derivative = angular_interval
@@ -4470,9 +4461,11 @@ fn model_curve_point_by_id_inner(
         ),
         ProceduralCurveDefinition::Subset(definition_payload) => {
             let source = definition_payload.source();
-            let [start, end] = definition_payload.parameter_range().endpoints();
-            let source_parameter =
-                subset_source_parameter(start, end, *definition_payload.sense(), parameter)?;
+            let source_parameter = subset_source_parameter(
+                *definition_payload.parameter_range(),
+                *definition_payload.sense(),
+                parameter,
+            )?;
             model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
         }
         ProceduralCurveDefinition::Helix(_) => {
@@ -4633,13 +4626,9 @@ fn model_curve_parameter_near_point_with_tolerance(
                 let [start, end] = definition_payload.parameter_range().endpoints();
                 let sense = definition_payload.sense();
                 {
-                    let span = (end - start).abs();
-                    if !seed.is_finite()
-                        || !span.is_finite()
-                        || span == 0.0
-                        || seed < 0.0
-                        || seed > span
-                    {
+                    let interval = IncreasingParameterInterval::new([start, end])?;
+                    let span = interval.scaled_span().finite();
+                    if !seed.is_finite() || seed < 0.0 || span.is_ok_and(|span| seed > span.get()) {
                         return None;
                     }
                     let source_seed = if *sense { start + seed } else { end - seed };
@@ -4658,7 +4647,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                         end - source_parameter
                     })?;
                     return (parameter.get() >= 0.0
-                        && parameter.get() <= span
+                        && span.map_or(true, |span| parameter <= span)
                         && model_curve_point_by_id(index, curve_id, parameter.get())
                             .is_ok_and(|evaluated| evaluated.distance(point) <= tolerance.get()))
                     .then_some(parameter);
@@ -5426,11 +5415,18 @@ pub fn rolling_ball_jet_point(
         .windows(2)
         .position(|pair| t >= pair[0].knot.get() && t <= pair[1].knot.get())
         .ok_or(no_value)?;
-    let span_width = stations[span + 1].knot.get() - stations[span].knot.get();
-    if !span_width.is_finite() {
-        return Err(unreached);
-    }
-    let fraction = ((t - stations[span].knot.get()) / span_width).clamp(0.0, 1.0);
+    let interval =
+        IncreasingParameterInterval::between(stations[span].knot, stations[span + 1].knot)
+            .ok_or(no_value)?;
+    let (span_factor, doubled) = interval.span_factors();
+    let span_factors = [span_factor, if doubled { 2.0 } else { 1.0 }];
+    let fraction = match FiniteReal::new(t)
+        .ok_or(no_value)?
+        .segment_position(stations[span].knot, stations[span + 1].knot)
+    {
+        SegmentPosition::Within(fraction) => fraction.get(),
+        SegmentPosition::Outside | SegmentPosition::Degenerate => return Err(no_value),
+    };
     let first = &stations[span].site;
     let second = &stations[span + 1].site;
     let first_limit = rolling_ball_jet_interpolate_point(
@@ -5444,7 +5440,7 @@ pub fn rolling_ball_jet_point(
             second.second_derivative.first_limit.get(),
         ],
         fraction,
-        span_width,
+        span_factors,
     );
     let second_limit = rolling_ball_jet_interpolate_point(
         [first.second_limit.get(), second.second_limit.get()],
@@ -5457,7 +5453,7 @@ pub fn rolling_ball_jet_point(
             second.second_derivative.second_limit.get(),
         ],
         fraction,
-        span_width,
+        span_factors,
     );
     let center = rolling_ball_jet_interpolate_point(
         [first.center.get(), second.center.get()],
@@ -5470,7 +5466,7 @@ pub fn rolling_ball_jet_point(
             second.second_derivative.center.get(),
         ],
         fraction,
-        span_width,
+        span_factors,
     );
     let angle = rolling_ball_jet_interpolate_scalar(
         [first.angle.get(), second.angle.get()],
@@ -5483,7 +5479,7 @@ pub fn rolling_ball_jet_point(
             second.second_derivative.angle.get(),
         ],
         fraction,
-        span_width,
+        span_factors,
     );
     // An interpolated channel reads NaN only where its value overflowed.
     if !angle.is_finite() {
@@ -5516,7 +5512,7 @@ fn rolling_ball_jet_interpolate_point(
     first_derivatives: [Vector3; 2],
     second_derivatives: [Vector3; 2],
     fraction: f64,
-    span_width: f64,
+    span_factors: [f64; 2],
 ) -> Point3 {
     Point3::new(
         rolling_ball_jet_interpolate_scalar(
@@ -5524,21 +5520,21 @@ fn rolling_ball_jet_interpolate_point(
             [first_derivatives[0].x, first_derivatives[1].x],
             [second_derivatives[0].x, second_derivatives[1].x],
             fraction,
-            span_width,
+            span_factors,
         ),
         rolling_ball_jet_interpolate_scalar(
             [values[0].y, values[1].y],
             [first_derivatives[0].y, first_derivatives[1].y],
             [second_derivatives[0].y, second_derivatives[1].y],
             fraction,
-            span_width,
+            span_factors,
         ),
         rolling_ball_jet_interpolate_scalar(
             [values[0].z, values[1].z],
             [first_derivatives[0].z, first_derivatives[1].z],
             [second_derivatives[0].z, second_derivatives[1].z],
             fraction,
-            span_width,
+            span_factors,
         ),
     )
 }
@@ -5548,7 +5544,7 @@ fn rolling_ball_jet_interpolate_scalar(
     first_derivatives: [f64; 2],
     second_derivatives: [f64; 2],
     fraction: f64,
-    span_width: f64,
+    [span_factor, multiplier]: [f64; 2],
 ) -> f64 {
     let s2 = fraction * fraction;
     let s3 = s2 * fraction;
@@ -5563,11 +5559,21 @@ fn rolling_ball_jet_interpolate_scalar(
     match crate::math::sum::product_sum(
         [
             Some([values[0], h00, 1.0, 1.0]),
-            Some([first_derivatives[0], span_width, h10, 1.0]),
-            Some([second_derivatives[0], span_width, span_width, h20]),
+            Some([first_derivatives[0], span_factor, h10, multiplier]),
+            Some([
+                second_derivatives[0],
+                span_factor,
+                span_factor,
+                h20 * multiplier * multiplier,
+            ]),
             Some([values[1], h01, 1.0, 1.0]),
-            Some([first_derivatives[1], span_width, h11, 1.0]),
-            Some([second_derivatives[1], span_width, span_width, h21]),
+            Some([first_derivatives[1], span_factor, h11, multiplier]),
+            Some([
+                second_derivatives[1],
+                span_factor,
+                span_factor,
+                h21 * multiplier * multiplier,
+            ]),
         ]
         .into_iter(),
     ) {
@@ -6229,14 +6235,6 @@ fn sweep_quotient(
         .map_err(|_| EvaluationFailure::NonFinite(()))
 }
 
-/// A law denominator formed from an exact sum: an exact zero states no
-/// value.
-fn sweep_denominator(
-    denominator: Option<crate::math::sum::ScaledValue>,
-) -> Result<crate::math::sum::ScaledValue, EvaluationFailure<()>> {
-    denominator.ok_or(EvaluationFailure::NoValue)
-}
-
 /// The derivative `factor * derivative` of a unary law whose operand has
 /// derivative `derivative`, or the first failure among the two.
 fn chain_derivative(
@@ -6350,57 +6348,55 @@ fn scalar_unary_sweep_law_differential(
             );
         }
         "ARCTAN" | "ARCOT" | "ARCSEC" | "ARCCSC" | "ARCCSCH" => {
-            let mut denominator = ExactSignedSum::default();
-            let (value, sign, derivative_domain) = match operator {
+            let (value, sign, denominator) = match operator {
                 "ARCTAN" | "ARCOT" => {
-                    denominator.add_product(x, x);
-                    denominator.add_product(1.0, 1.0);
+                    let hypotenuse = operand.value.hypot_one_nonzero();
+                    let denominator =
+                        Some(ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]));
                     if operator == "ARCTAN" {
-                        (x.atan(), 1.0, true)
+                        (x.atan(), 1.0, denominator)
                     } else {
-                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0, true)
+                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0, denominator)
                     }
                 }
                 "ARCSEC" | "ARCCSC" => {
                     if x.abs() < 1.0 {
                         return Err(no_value);
                     }
-                    let factor = (((x.abs() - 1.0) / x.abs()) * (1.0 + 1.0 / x.abs())).sqrt();
-                    denominator.add_factors([x.abs(), x.abs(), factor]);
+                    let denominator = operand.value.beyond_unit().map(|beyond| {
+                        let magnitude = beyond.magnitude();
+                        let factor = beyond.arcsec_factor();
+                        ScaledValue::product_of_nonzero([magnitude, magnitude, factor])
+                    });
                     if operator == "ARCSEC" {
-                        ((1.0 / x).acos(), 1.0, x.abs() > 1.0)
+                        ((1.0 / x).acos(), 1.0, denominator)
                     } else {
-                        ((1.0 / x).asin(), -1.0, x.abs() > 1.0)
+                        ((1.0 / x).asin(), -1.0, denominator)
                     }
                 }
                 _ => {
-                    if x == 0.0 {
-                        return Err(no_value);
-                    }
-                    denominator.add_product(x.abs(), x.hypot(1.0));
+                    let magnitude = NonZeroReal::new(x).ok_or(no_value)?.magnitude();
+                    let hypotenuse = operand.value.hypot_one_nonzero();
+                    let denominator =
+                        Some(ScaledValue::product_of_nonzero([magnitude, hypotenuse]));
                     let inverse = 1.0 / x;
                     let value = if inverse.is_finite() {
                         inverse.asinh()
                     } else {
                         (std::f64::consts::LN_2 - x.abs().ln()).copysign(x)
                     };
-                    (value, -1.0, true)
+                    (value, -1.0, denominator)
                 }
             };
             return law(
                 value,
                 operand.derivative.and_then(|derivative| {
-                    if !derivative_domain {
-                        return Err(no_value);
-                    }
+                    let denominator = denominator.ok_or(no_value)?;
                     // The operand derivative is finite, so it has a scaled
                     // form exactly when it is not zero.
                     match crate::math::sum::scaled_finite(derivative.get()) {
                         Some(numerator) => {
-                            let quotient = sweep_quotient(
-                                numerator,
-                                sweep_denominator(denominator.finish())?,
-                            )?;
+                            let quotient = sweep_quotient(numerator, denominator)?;
                             Ok(if sign < 0.0 {
                                 quotient.negated()
                             } else {
@@ -6413,31 +6409,35 @@ fn scalar_unary_sweep_law_differential(
             );
         }
         "COTH" | "SECH" | "CSCH" => {
-            if x == 0.0 && operator != "SECH" {
-                return Err(no_value);
-            }
-            let tail = (-x.abs()).exp();
-            let sinh_denominator = -(-2.0 * x.abs()).exp_m1();
-            let mut denominator = ExactSignedSum::default();
-            let (value, numerator_factors) = match operator {
+            let (tail, unit_sum) = operand.value.hyperbolic_tail_unit_sum();
+            let (value, numerator_factors, denominator) = match operator {
                 "COTH" => {
-                    denominator.add_product(sinh_denominator, sinh_denominator);
-                    (1.0 / x.tanh(), [-4.0, tail, tail])
+                    let sinh = NonZeroReal::new(x)
+                        .ok_or(no_value)?
+                        .hyperbolic_sinh_denominator();
+                    (
+                        1.0 / x.tanh(),
+                        [-4.0, tail, tail],
+                        ScaledValue::product_of_nonzero([sinh, sinh]),
+                    )
                 }
                 "SECH" => {
                     let half_tail = (-0.5 * x.abs()).exp();
-                    denominator.add_product(1.0 + tail * tail, 1.0);
                     (
                         2.0 * tail / (1.0 + tail * tail),
                         [-2.0 * x.tanh(), half_tail, half_tail],
+                        ScaledValue::of_nonzero(unit_sum),
                     )
                 }
                 _ => {
                     let half_tail = (-0.5 * x.abs()).exp();
-                    denominator.add_product(sinh_denominator, sinh_denominator);
+                    let sinh = NonZeroReal::new(x)
+                        .ok_or(no_value)?
+                        .hyperbolic_sinh_denominator();
                     (
-                        (2.0 * tail / sinh_denominator).copysign(x),
+                        (2.0 * tail / sinh.get()).copysign(x),
                         [-2.0 * (1.0 + tail * tail), half_tail, half_tail],
+                        ScaledValue::product_of_nonzero([sinh, sinh]),
                     )
                 }
             };
@@ -6448,9 +6448,7 @@ fn scalar_unary_sweep_law_differential(
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_factors([first, second, third, derivative.get()]);
                     match numerator.finish() {
-                        Some(value) => {
-                            sweep_quotient(value, sweep_denominator(denominator.finish())?)
-                        }
+                        Some(value) => sweep_quotient(value, denominator),
                         None => Ok(FiniteReal::ZERO),
                     }
                 }),
@@ -6788,8 +6786,7 @@ fn unit_vector_with_derivative(
 
 /// Whether the profile frame runs against the spine tangent. A frame
 /// vector or spine tangent that is zero or not aligned states no direction;
-/// one whose length overflows leaves the evaluation outside the finite
-/// range.
+/// one whose length overflows still has a direction.
 fn sweep_profile_reversed(
     profile_frame: Option<(FinitePoint3, FiniteVector3)>,
     spine_tangent: Vector3,
@@ -6798,10 +6795,11 @@ fn sweep_profile_reversed(
         return Ok(false);
     };
     let unit = |vector: Vector3| {
-        if !vector.norm().is_finite() {
-            return Err(EvaluationFailure::NonFinite(()));
+        let finite = FiniteVector3::new(vector).ok_or(EvaluationFailure::NonFinite(()))?;
+        if vector.norm() <= f64::EPSILON {
+            return Err(EvaluationFailure::NoValue);
         }
-        unit_axis(vector).ok_or(EvaluationFailure::NoValue)
+        finite.unit_nonzero().ok_or(EvaluationFailure::NoValue)
     };
     let frame_vector = unit(frame_vector.get())?;
     let spine_tangent = unit(spine_tangent)?;
@@ -6811,11 +6809,9 @@ fn sweep_profile_reversed(
         .ok_or(EvaluationFailure::NoValue)
 }
 
-/// The profile curve's differential at a sweep profile parameter. A
-/// parameter outside the profile range, an empty range, and a reversed
-/// profile on a carrier without a native domain have no value. A range span
-/// or native parameter that overflows reaches no coordinate. Each derivative
-/// scaled into the profile parameter states its own outcome.
+/// Evaluate a sweep profile in its native domain and scale its derivatives.
+/// Out-of-range parameters and reverse mappings without a native domain have
+/// no value; a mapped parameter outside finite range reaches no coordinate.
 fn sweep_profile_differential(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
@@ -6828,32 +6824,23 @@ fn sweep_profile_differential(
     if !sweep_tail_interval_contains([Some(profile_range[0]), Some(profile_range[1])], parameter) {
         return Err(no_value);
     }
-    let parameter = parameter.get();
-    let [profile_start, profile_end] = FiniteReal::raw_array(profile_range);
-    let profile_span = profile_end - profile_start;
-    if profile_span <= 0.0 {
-        return Err(no_value);
-    }
-    if !profile_span.is_finite() {
-        return Err(unreached);
-    }
+    let profile_interval =
+        IncreasingParameterInterval::new(FiniteReal::raw_array(profile_range)).ok_or(no_value)?;
     let curve = index.curves(profile.as_str()).ok_or(no_value)?;
     let (native_parameter, parameter_scale) = match &curve.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)
-                .ok_or(no_value)?
-                .endpoints();
-            let native_span = native_end - native_start;
-            let fraction = (parameter - profile_start) / profile_span;
-            let fraction = if reversed { 1.0 - fraction } else { fraction };
-            let native_parameter = native_start + fraction * native_span;
-            if !native_parameter.is_finite() {
-                return Err(unreached);
-            }
-            let parameter_scale = native_span / profile_span * if reversed { -1.0 } else { 1.0 };
-            (native_parameter, parameter_scale)
+            let native_interval = nurbs_curve_parameter_domain(nurbs).ok_or(no_value)?;
+            let native_parameter = native_interval
+                .map_from(profile_interval, parameter, reversed)
+                .map_err(|_| unreached)?
+                .get();
+            let scale = native_interval
+                .scaled_span()
+                .quotient(profile_interval.scaled_span())
+                .map_or_else(|overflow| overflow, FiniteReal::get);
+            (native_parameter, if reversed { -scale } else { scale })
         }
-        _ if !reversed => (parameter, 1.0),
+        _ if !reversed => (parameter.get(), 1.0),
         _ => return Err(no_value),
     };
     let differential = model_curve_differential_by_id(index, profile, native_parameter)?;
@@ -7054,6 +7041,17 @@ fn unit_direction(vector: Vector3) -> Result<Vector3, EvaluationFailure<()>> {
     vector.unit().ok_or(EvaluationFailure::NoValue)
 }
 
+/// The unit cross direction of finite partials. Normalizing each partial
+/// before crossing retains the direction when their raw cross overflows.
+fn unit_cross_direction(
+    first: FiniteVector3,
+    second: FiniteVector3,
+) -> Result<Vector3, EvaluationFailure<()>> {
+    let first = first.unit_nonzero().ok_or(EvaluationFailure::NoValue)?;
+    let second = second.unit_nonzero().ok_or(EvaluationFailure::NoValue)?;
+    first.cross(second).unit().ok_or(EvaluationFailure::NoValue)
+}
+
 /// The contact track of a blend side at a parameter: the support's point
 /// with its first partials, the side pcurve's tangent, and the derivative of
 /// the support's unit normal along the track, each derivative with its own
@@ -7071,11 +7069,15 @@ impl ContactTrack {
         self.support.point.get()
     }
 
-    /// The support's unit normal: a degenerate normal has no direction, and
-    /// one outside the finite range left it.
+    /// The support's unit normal: a degenerate normal has no direction.
     fn normal(&self) -> Result<Vector3, EvaluationFailure<()>> {
         let [du, dv] = self.support.first?;
-        unit_direction(du.get().cross(dv.get()))
+        let cross = du.get().cross(dv.get());
+        if cross.is_finite() {
+            unit_direction(cross)
+        } else {
+            unit_cross_direction(du, dv)
+        }
     }
 
     /// The track tangent: the pcurve tangent carried by the support's first
@@ -7539,28 +7541,34 @@ fn cacheless_circular_variable_blend_section(
         let first_center = offset(first_point, &[(first_sign * radius, normals[0])]);
         let second_center = offset(second_point, &[(second_sign * radius, normals[1])]);
         let residual = point_displacement(second_center, first_center).norm();
-        (
-            Point3::new(
-                (first_center.x + second_center.x) * 0.5,
-                (first_center.y + second_center.y) * 0.5,
-                (first_center.z + second_center.z) * 0.5,
-            ),
-            [first_sign, second_sign],
-            residual,
-        )
+        residual.is_finite().then(|| {
+            (
+                Point3::new(
+                    first_center.x.midpoint(second_center.x),
+                    first_center.y.midpoint(second_center.y),
+                    first_center.z.midpoint(second_center.z),
+                ),
+                [first_sign, second_sign],
+                residual,
+            )
+        })
     };
-    let mut best = candidate(-1.0, -1.0);
+    let mut best: Option<(Point3, [f64; 2], f64)> = None;
     let mut second_best_residual = f64::INFINITY;
-    for (first_sign, second_sign) in [(-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
-        let next = candidate(first_sign, second_sign);
-        if next.2 < best.2 {
-            second_best_residual = best.2;
-            best = next;
-        } else if next.2 < second_best_residual {
-            second_best_residual = next.2;
+    for (first_sign, second_sign) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+        let Some(next) = candidate(first_sign, second_sign) else {
+            continue;
+        };
+        match best {
+            Some(current) if next.2 < current.2 => {
+                second_best_residual = current.2;
+                best = Some(next);
+            }
+            Some(_) => second_best_residual = second_best_residual.min(next.2),
+            None => best = Some(next),
         }
     }
-    let (center, signs, residual) = best;
+    let (center, signs, residual) = best.ok_or(no_value)?;
     if residual > tolerance || second_best_residual <= tolerance {
         return Err(no_value);
     }
@@ -7820,12 +7828,12 @@ fn circular_arc_first_order(
     };
     let (first_radius, first_radius_v) = radius_direction(first).map_err(unreached)?;
     let (second_radius, second_radius_v) = radius_direction(second).map_err(unreached)?;
-    let cosine = first_radius.dot(second_radius).clamp(-1.0, 1.0);
-    let cross = first_radius.cross(second_radius);
-    let sine = cross.norm();
-    let axis = FiniteVector3::new(cross)
-        .and_then(FiniteVector3::unit_nonzero)
-        .ok_or(EvaluationFailure::NoValue)?;
+    let first_unit = UnitVector3::new(first_radius).ok_or(EvaluationFailure::NoValue)?;
+    let second_unit = UnitVector3::new(second_radius).ok_or(EvaluationFailure::NoValue)?;
+    let cosine = UnitCosine::between(first_unit, second_unit).get();
+    let cross = first_unit.finite_cross(second_unit);
+    let sine = cross.get().norm();
+    let axis = cross.unit_nonzero().ok_or(EvaluationFailure::NoValue)?;
     let angle = sine.atan2(cosine);
     let transverse = axis.cross(first_radius);
     let (section_sine, section_cosine) = (u * angle).sin_cos();
@@ -8128,32 +8136,29 @@ fn model_surface_point_by_id_inner(
     }
 
     /// The oriented unit normal of first partials: their cross product,
-    /// reversed where `reversed` is set, over its length. A normal whose
-    /// length is zero has no direction; one whose length overflows left the
-    /// finite range.
+    /// reversed where `reversed` is set. A normal whose direction is zero
+    /// has no value.
     fn oriented_normal(
         first: Result<[FiniteVector3; 2], EvaluationFailure<()>>,
         reversed: bool,
     ) -> Result<Vector3, EvaluationFailure<()>> {
         let [du, dv] = first?;
-        let normal = du.get().cross(dv.get());
-        let normal = if reversed {
+        let cross = du.get().cross(dv.get());
+        let magnitude = cross.norm();
+        let normal = if magnitude.is_finite() && magnitude > 0.0 {
+            Vector3::new(
+                cross.x / magnitude,
+                cross.y / magnitude,
+                cross.z / magnitude,
+            )
+        } else {
+            unit_cross_direction(du, dv)?
+        };
+        Ok(if reversed {
             scale_vector(normal, -1.0)
         } else {
             normal
-        };
-        let magnitude = normal.norm();
-        if !magnitude.is_finite() {
-            return Err(EvaluationFailure::NonFinite(()));
-        }
-        if magnitude <= 0.0 {
-            return Err(EvaluationFailure::NoValue);
-        }
-        Ok(Vector3::new(
-            normal.x / magnitude,
-            normal.y / magnitude,
-            normal.z / magnitude,
-        ))
+        })
     }
 
     /// A stored cache's point and unit normal. The point is evaluated alone;
@@ -8251,9 +8256,21 @@ fn model_surface_point_by_id_inner(
             *nurbs.v_knots().get(v_degree)?,
             *nurbs.v_knots().get(v_count)?,
         ];
-        let boundary_u = u.clamp(u_domain[0], u_domain[1]);
-        let boundary_v = v.clamp(v_domain[0], v_domain[1]);
-        if boundary_u == u && boundary_v == v {
+        let boundary = |value: f64, [lower, upper]: [f64; 2]| {
+            if !value.is_finite() || !lower.is_finite() || !upper.is_finite() || lower > upper {
+                return None;
+            }
+            Some(if value < lower {
+                (lower, true)
+            } else if value > upper {
+                (upper, true)
+            } else {
+                (value, false)
+            })
+        };
+        let (boundary_u, u_extended) = boundary(u, u_domain)?;
+        let (boundary_v, v_extended) = boundary(v, v_domain)?;
+        if !u_extended && !v_extended {
             return None;
         }
         let partials = surface_first_order(&support.geometry, boundary_u, boundary_v, budget)
@@ -9383,46 +9400,40 @@ fn pcurve_uv_differential(
         PcurveGeometry::Hyperbola(hyperbola) => {
             let x = hyperbola.x_axis();
             let y = hyperbola.y_axis();
-            let major = scaled_sinh_cosh(hyperbola.major_radius().into(), parameter);
-            let minor = scaled_sinh_cosh(hyperbola.minor_radius().into(), parameter);
             let reached = |pair: Result<(FiniteReal, FiniteReal), (f64, f64)>| {
                 pair.map_or_else(|plain| plain, |(sinh, cosh)| (sinh.get(), cosh.get()))
             };
-            let (major_sinh, major_cosh) = reached(major);
-            let (minor_sinh, minor_cosh) = reached(minor);
+            let (major_sinh, major_cosh) =
+                reached(scaled_sinh_cosh(hyperbola.major_radius().into(), parameter));
+            let (minor_sinh, minor_cosh) =
+                reached(scaled_sinh_cosh(hyperbola.minor_radius().into(), parameter));
             let zero = Point2::new(0.0, 0.0);
             let point = offset2(
                 hyperbola.center().get(),
                 &[(major_cosh, x.get()), (minor_sinh, y.get())],
             );
             let tangent = offset2(zero, &[(major_sinh, x.get()), (minor_cosh, y.get())]);
-            if major.is_err() || minor.is_err() {
-                return Some(PcurveEvaluation::left_finite_range(point, tangent));
-            }
-            (
+            let acceleration = offset2(zero, &[(major_cosh, x.get()), (minor_sinh, y.get())]);
+            return Some(PcurveEvaluation::evaluated(
                 point,
-                tangent,
-                offset2(zero, &[(major_cosh, x.get()), (minor_sinh, y.get())]),
-            )
+                FinitePoint2::new(tangent).ok_or(EvaluationFailure::NonFinite(tangent)),
+                FinitePoint2::new(acceleration),
+            ));
         }
         PcurveGeometry::Hyperbolic(hyperbolic) => {
             let [cosine_u, cosine_v] = hyperbolic.cosine().coordinates();
             let [sine_u, sine_v] = hyperbolic.sine().coordinates();
             let [center_u, center_v] = hyperbolic.center().coordinates();
-            // Each coordinate and its two derivatives, from the four scaled
-            // hyperbolic products; `false` states that a product left the
-            // finite range.
+            // Each coordinate and its two derivatives read their own lanes.
             let coordinate = |center: FiniteReal, cosine: FiniteReal, sine: FiniteReal| {
                 let cosine = scaled_sinh_cosh(cosine, parameter);
                 let sine = scaled_sinh_cosh(sine, parameter);
-                let finite = cosine.is_ok() && sine.is_ok();
                 let reached = |pair: Result<(FiniteReal, FiniteReal), (f64, f64)>| {
                     pair.map_or_else(|plain| plain, |(sinh, cosh)| (sinh.get(), cosh.get()))
                 };
                 let (cosine_sinh, cosine_cosh) = reached(cosine);
                 let (sine_sinh, sine_cosh) = reached(sine);
                 (
-                    finite,
                     crate::math::sum::finite_dot([1.0; 3], [center.get(), cosine_cosh, sine_sinh]),
                     crate::math::sum::finite_dot([1.0; 2], [cosine_sinh, sine_cosh]),
                     crate::math::sum::finite_dot([1.0; 2], [cosine_cosh, sine_sinh]),
@@ -9433,19 +9444,19 @@ fn pcurve_uv_differential(
             let reached =
                 |value: Result<FiniteReal, f64>| value.map_or_else(|plain| plain, FiniteReal::get);
             let lane = |value: Result<FiniteReal, f64>| value.map_err(EvaluationFailure::NonFinite);
-            let (Ok(point_u), Ok(point_v), true, true) = (u.1, v.1, u.0, v.0) else {
+            let (Ok(point_u), Ok(point_v)) = (u.0, v.0) else {
                 return Some(PcurveEvaluation::left_finite_range(
+                    Point2::new(reached(u.0), reached(v.0)),
                     Point2::new(reached(u.1), reached(v.1)),
-                    Point2::new(reached(u.2), reached(v.2)),
                 ));
             };
             return Some(PcurveEvaluation {
                 point: Ok(FinitePoint2::from_coordinates(point_u, point_v)),
-                tangent: planar_value(lane(u.2), lane(v.2)),
+                tangent: planar_value(lane(u.1), lane(v.1)),
                 acceleration: u
-                    .3
+                    .2
                     .ok()
-                    .zip(v.3.ok())
+                    .zip(v.2.ok())
                     .map(|(u, v)| FinitePoint2::from_coordinates(u, v)),
             });
         }
