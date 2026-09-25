@@ -30,7 +30,7 @@ use crate::records::{
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
@@ -3105,62 +3105,46 @@ fn decode_sketch_curve_geometry(
     class: SketchCurveClass,
     record_at: usize,
 ) -> Result<Option<DecodedSketchCurveGeometry>, CodecError> {
-    if class == SketchCurveClass::Circular {
-        let Some(geometry_payload) = payload.get(geometry_shift..) else {
-            return Ok(None);
-        };
-        let decoded = if let Some(geometry) = decode_circular_arc(geometry_payload, record_at)? {
-            Some((geometry, 133))
-        } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-            decode_circular_arc(referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
-        } else {
-            None
-        };
-        return Ok(
-            decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
-                geometry,
-                geometry_offset: geometry_shift + offset,
-            }),
-        );
-    }
-    Ok(decode_sketch_curve_geometry_non_circular(
-        payload,
-        geometry_shift,
-        record_index,
-        class,
-    ))
-}
-
-fn decode_sketch_curve_geometry_non_circular(
-    payload: &[u8],
-    geometry_shift: usize,
-    record_index: u32,
-    class: SketchCurveClass,
-) -> Option<DecodedSketchCurveGeometry> {
-    let geometry_payload = payload.get(geometry_shift..)?;
+    let Some(geometry_payload) = payload.get(geometry_shift..) else {
+        return Ok(None);
+    };
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, _)) = decode_line_family(geometry_payload) {
+            if let Some((geometry, _)) = decode_line_family(geometry_payload, record_at)? {
                 Some((geometry, 133))
+            } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
+                decode_line_family(referenced, record_at)?.map(|(geometry, _)| (geometry, 11 + 133))
             } else {
-                let referenced = referenced_analytic_payload(geometry_payload)?;
-                let (geometry, _) = decode_line_family(referenced)?;
-                Some((geometry, 11 + 133))
+                None
             }
         }
-        SketchCurveClass::Circular => return None,
+        SketchCurveClass::Circular => {
+            if let Some(geometry) = decode_circular_arc(geometry_payload, record_at)? {
+                Some((geometry, 133))
+            } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
+                decode_circular_arc(referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
+            } else {
+                None
+            }
+        }
         SketchCurveClass::Nurbs => decode_legacy_sketch_nurbs(geometry_payload)
             .or_else(|| decode_sketch_nurbs(geometry_payload))
             .map(|(geometry, _)| (geometry, 133)),
         SketchCurveClass::TextFrameLine => {
-            let (geometry, end) = decode_text_frame_line(payload, geometry_shift, record_index)?;
-            Some((geometry, end.checked_sub(geometry_shift + 12 * 8)?))
+            decode_text_frame_line(payload, geometry_shift, record_index, record_at)?.and_then(
+                |(geometry, end)| {
+                    end.checked_sub(geometry_shift + 12 * 8)
+                        .map(|offset| (geometry, offset))
+                },
+            )
         }
-    }?;
-    Some(DecodedSketchCurveGeometry {
-        geometry: decoded.0,
-        geometry_offset: geometry_shift + decoded.1,
-    })
+    };
+    Ok(
+        decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
+            geometry,
+            geometry_offset: geometry_shift + offset,
+        }),
+    )
 }
 
 fn decode_circular_arc(
@@ -3185,14 +3169,9 @@ fn decode_circular_arc(
     else {
         return Ok(None);
     };
-    let center_cm = center_cm.get();
-    let center = FinitePoint3::new(Point3::new(
-        center_cm.x * 10.0,
-        center_cm.y * 10.0,
-        center_cm.z * 10.0,
-    ));
+    let center = scale_sketch_point(center_cm, record_at, "arc")?;
     let radius = PositiveLength::new(radius_cm.get() * 10.0);
-    let (Some(center), Some(radius)) = (center, radius) else {
+    let Some(radius) = radius else {
         return Err(CodecError::malformed(format_args!(
             "F3D sketch arc at byte {record_at} overflows millimetres"
         )));
@@ -3206,6 +3185,21 @@ fn decode_circular_arc(
         end_angle,
     )
     .ok())
+}
+
+fn scale_sketch_point(
+    point_centimetres: FinitePoint3,
+    record_at: usize,
+    kind: &str,
+) -> Result<FinitePoint3, CodecError> {
+    let point = point_centimetres.get();
+    FinitePoint3::new(Point3::new(point.x * 10.0, point.y * 10.0, point.z * 10.0)).ok_or_else(
+        || {
+            CodecError::malformed(format_args!(
+                "F3D sketch {kind} at byte {record_at} overflows millimetres"
+            ))
+        },
+    )
 }
 
 fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {
@@ -3224,33 +3218,39 @@ fn decode_text_frame_line(
     payload: &[u8],
     geometry_shift: usize,
     record_index: u32,
-) -> Option<(SketchCurveGeometry, usize)> {
-    let mut cursor = geometry_shift.checked_add(133)?;
-    for zero_count in [7, 6] {
-        let (_, end) = marked_u32(payload, cursor)?;
-        if !payload
-            .get(end..end + zero_count)?
-            .iter()
-            .all(|byte| *byte == 0)
+    record_at: usize,
+) -> Result<Option<(SketchCurveGeometry, usize)>, CodecError> {
+    let values_at = (|| {
+        let mut cursor = geometry_shift.checked_add(133)?;
+        for zero_count in [7, 6] {
+            let (_, end) = marked_u32(payload, cursor)?;
+            if !payload
+                .get(end..end + zero_count)?
+                .iter()
+                .all(|byte| *byte == 0)
+            {
+                return None;
+            }
+            cursor = end + zero_count;
+        }
+        let (class_tag, after_tag) =
+            lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
+        if class_tag.len() != 3
+            || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            || View::u32_le_at(payload, after_tag) != Some(record_index)
+            || payload.get(after_tag + 4..after_tag + 12) != Some(&[0; 8])
         {
             return None;
         }
-        cursor = end + zero_count;
-    }
-    let (class_tag, after_tag) =
-        lp_ascii_filtered(payload, cursor, 0..=2000, u8::is_ascii_graphic)?;
-    if class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || View::u32_le_at(payload, after_tag) != Some(record_index)
-        || payload.get(after_tag + 4..after_tag + 12) != Some(&[0; 8])
-    {
-        return None;
-    }
-    let values_at = after_tag.checked_add(12)?;
-    Some((
-        decode_line_values(payload, values_at)?,
-        values_at.checked_add(12 * 8)?,
-    ))
+        after_tag.checked_add(12)
+    })();
+    let Some(values_at) = values_at else {
+        return Ok(None);
+    };
+    let Some(end) = values_at.checked_add(12 * 8) else {
+        return Ok(None);
+    };
+    Ok(decode_line_values(payload, values_at, record_at)?.map(|geometry| (geometry, end)))
 }
 
 fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
@@ -3427,79 +3427,116 @@ fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, us
     ))
 }
 
-fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
-    decode_line_values(payload, 133)
+fn decode_line(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<SketchCurveGeometry>, CodecError> {
+    decode_line_values(payload, 133, record_at)
 }
 
-fn decode_compact_planar_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
+fn decode_compact_planar_line(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<SketchCurveGeometry>, CodecError> {
     let values_at = 133;
-    let values = (0..9)
+    let Some(values) = (0..9)
         .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
-        .collect::<Option<Vec<_>>>()?;
-    if values.iter().any(|value| !value.is_finite())
-        || values[2] != 0.0
-        || values[5] != 0.0
-        || values[8] != 0.0
-    {
-        return None;
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
+        return Ok(None);
     }
-    let (_, reference_end) = marked_u32(payload, values_at + 9 * 8)?;
+    let Some((_, reference_end)) = marked_u32(payload, values_at + 9 * 8) else {
+        return Ok(None);
+    };
     if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
-        return None;
+        return Ok(None);
     }
-    decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0))
+    decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
-fn decode_line_family(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
-    decode_line(payload)
-        .map(|geometry| (geometry, 12))
-        .or_else(|| decode_compact_planar_line(payload).map(|geometry| (geometry, 9)))
+fn decode_line_family(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<(SketchCurveGeometry, usize)>, CodecError> {
+    if let Some(geometry) = decode_line(payload, record_at)? {
+        return Ok(Some((geometry, 12)));
+    }
+    Ok(decode_compact_planar_line(payload, record_at)?.map(|geometry| (geometry, 9)))
 }
 
-fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
-    let values = (0..12)
+fn decode_line_values(
+    payload: &[u8],
+    values_at: usize,
+    record_at: usize,
+) -> Result<Option<SketchCurveGeometry>, CodecError> {
+    let Some(values) = (0..12)
         .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
-        .collect::<Option<Vec<_>>>()?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
     let stored_normal = Vector3::new(values[9], values[10], values[11]);
-    decode_line_components(&values, stored_normal)
+    decode_line_components(&values, stored_normal, record_at)
 }
 
-fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
+fn decode_line_components(
+    values: &[f64],
+    stored_normal: Vector3,
+    record_at: usize,
+) -> Result<Option<SketchCurveGeometry>, CodecError> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
-    UnitVector3::normalized(displacement)?;
-    UnitVector3::new(Vector3::new(values[6], values[7], values[8]))?;
-    UnitVector3::new(stored_normal)?;
+    let (Some(_source_direction), Some(_stored_direction), Some(stored_normal)) = (
+        UnitVector3::normalized(displacement),
+        UnitVector3::new(Vector3::new(values[6], values[7], values[8])),
+        UnitVector3::new(stored_normal),
+    ) else {
+        return Ok(None);
+    };
     // Start plus displacement carries the bounded line and is corroborated by
     // the persistent endpoint records. Imported sketches can retain a stale
     // auxiliary unit direction, so derive the neutral tangent from the
     // admitted endpoints just as the normal is orthogonalized below.
-    let start = FinitePoint3::new(Point3::new(
-        values[0] * 10.0,
-        values[1] * 10.0,
-        values[2] * 10.0,
-    ))?;
-    let end = FinitePoint3::new(start.get().translated(displacement, 10.0))?;
+    let Some(start_cm) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
+        return Ok(None);
+    };
+    let start = scale_sketch_point(start_cm, record_at, "line")?;
+    let end = FinitePoint3::new(start.get().translated(displacement, 10.0)).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "F3D sketch line at byte {record_at} overflows millimetres"
+        ))
+    })?;
     let start_raw = start.get();
     let end_raw = end.get();
-    let direction = UnitVector3::normalized(Vector3::new(
+    let displacement_mm = FiniteVector3::new(Vector3::new(
         end_raw.x - start_raw.x,
         end_raw.y - start_raw.y,
         end_raw.z - start_raw.z,
-    ))?;
+    ))
+    .ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "F3D sketch line at byte {record_at} has an overflowing displacement"
+        ))
+    })?;
+    let Some(direction) = UnitVector3::normalized(displacement_mm.get()) else {
+        return Ok(None);
+    };
     // The stored line normal is an auxiliary orientation vector. Imported
     // legacy sketches can retain a small component along the line direction;
     // remove that component so the typed carrier maintains its orthonormal
     // invariant without changing the line's endpoints or orientation side.
-    let dot = direction.as_raw().dot(stored_normal);
-    let projected_normal = stored_normal - direction.as_raw().scale(dot);
+    let dot = direction.as_raw().dot(*stored_normal.as_raw());
+    let projected_normal = *stored_normal.as_raw() - direction.as_raw().scale(dot);
     let projected_length = projected_normal.norm();
     let normal = if projected_length.is_finite()
         && projected_length > EPS_SKETCH_DECODE_LINE_COMPONENTS_E12
     {
-        UnitVector3::normalized(projected_normal)?
+        let Some(normal) = UnitVector3::normalized(projected_normal) else {
+            return Ok(None);
+        };
+        normal
     } else {
         // Spatial line carriers can store a unit auxiliary vector parallel to
         // the line. The neutral spatial-line geometry has no plane normal;
@@ -3518,10 +3555,16 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
                 .dot(*left)
                 .abs()
                 .total_cmp(&direction.as_raw().dot(*right).abs())
-        })?;
-        UnitVector3::normalized(direction.as_raw().cross(basis))?
+        });
+        let Some(basis) = basis else {
+            return Ok(None);
+        };
+        let Some(normal) = UnitVector3::normalized(direction.as_raw().cross(basis)) else {
+            return Ok(None);
+        };
+        normal
     };
-    SketchCurveGeometry::line_from_parts(start, end, direction, normal).ok()
+    Ok(SketchCurveGeometry::line_from_parts(start, end, direction, normal).ok())
 }
 
 struct ParsedSketchRelationMember {

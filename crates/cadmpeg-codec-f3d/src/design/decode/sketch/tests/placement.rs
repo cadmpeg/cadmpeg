@@ -446,7 +446,9 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     }
     let SketchCurveGeometry::Line {
         direction, normal, ..
-    } = crate::design::decode::sketch::decode_line(&bytes).expect("legacy line")
+    } = crate::design::decode::sketch::decode_line(&bytes, 0)
+        .expect("line parse")
+        .expect("legacy line")
     else {
         panic!("expected line");
     };
@@ -457,7 +459,9 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
 
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&1.0f64.to_le_bytes());
     let SketchCurveGeometry::Line { direction, .. } =
-        crate::design::decode::sketch::decode_line(&bytes).expect("reverse-parameterized line")
+        crate::design::decode::sketch::decode_line(&bytes, 0)
+            .expect("line parse")
+            .expect("reverse-parameterized line")
     else {
         panic!("expected line");
     };
@@ -466,7 +470,8 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     bytes[133 + 6 * 8..133 + 7 * 8].copy_from_slice(&0.6f64.to_le_bytes());
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&0.8f64.to_le_bytes());
     let SketchCurveGeometry::Line { direction, .. } =
-        crate::design::decode::sketch::decode_line(&bytes)
+        crate::design::decode::sketch::decode_line(&bytes, 0)
+            .expect("line parse")
             .expect("line with stale auxiliary direction")
     else {
         panic!("expected line");
@@ -488,7 +493,9 @@ fn spatial_line_with_parallel_auxiliary_normal_retains_its_endpoints() {
         end,
         direction,
         normal,
-    } = crate::design::decode::sketch::decode_line(&bytes).expect("spatial line")
+    } = crate::design::decode::sketch::decode_line(&bytes, 0)
+        .expect("line parse")
+        .expect("spatial line")
     else {
         panic!("expected line");
     };
@@ -514,7 +521,8 @@ fn compact_planar_line_uses_its_implicit_normal() {
         end,
         direction,
         normal,
-    } = crate::design::decode::sketch::decode_compact_planar_line(&bytes)
+    } = crate::design::decode::sketch::decode_compact_planar_line(&bytes, 0)
+        .expect("line parse")
         .expect("compact planar line")
     else {
         panic!("expected line");
@@ -582,8 +590,10 @@ fn text_frame_line_decodes_after_point_references() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
 
-    let (geometry, end) = crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403)
-        .expect("text-frame boundary line");
+    let (geometry, end) =
+        crate::design::decode::sketch::decode_text_frame_line(&bytes, 52, 2403, 0)
+            .expect("line parse")
+            .expect("text-frame boundary line");
     assert_eq!(end, bytes.len());
     assert!(matches!(
         geometry,

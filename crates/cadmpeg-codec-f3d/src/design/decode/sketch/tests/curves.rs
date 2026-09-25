@@ -15,18 +15,24 @@ fn line_components_refuse_unrepresentable_scaled_endpoints() {
     values[6] = 1.0;
     values[11] = 1.0;
     values[0] = 1.0e308;
-    assert!(crate::design::decode::sketch::decode_line_components(
+    let error = crate::design::decode::sketch::decode_line_components(
         &values,
         Vector3::new(0.0, 0.0, 1.0),
+        17,
     )
-    .is_none());
+    .expect_err("scaled start must fit");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(error.to_string().contains("byte 17"));
     values[0] = 0.0;
     values[3] = 1.0e308;
-    assert!(crate::design::decode::sketch::decode_line_components(
+    let error = crate::design::decode::sketch::decode_line_components(
         &values,
         Vector3::new(0.0, 0.0, 1.0),
+        17,
     )
-    .is_none());
+    .expect_err("scaled end must fit");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(error.to_string().contains("byte 17"));
 }
 
 fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
@@ -35,6 +41,30 @@ fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     payload
+}
+
+#[test]
+fn typed_line_source_reports_scaled_start_overflow_at_record() {
+    let payload = analytic_payload([
+        f64::MAX,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ]);
+    match decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 17) {
+        Err(cadmpeg_core::CodecError::Malformed(message)) => {
+            assert!(message.contains("byte 17"));
+        }
+        _ => panic!("scaled line start must be malformed at its source record"),
+    }
 }
 
 #[test]
@@ -74,7 +104,7 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         0.0,
         std::f64::consts::FRAC_1_SQRT_2,
     ]);
-    assert!(decode_line(&payload).is_some());
+    assert!(decode_line(&payload, 0).expect("line parse").is_some());
     assert!(decode_circular_arc(&payload, 0)
         .expect("arc parse")
         .is_some());
