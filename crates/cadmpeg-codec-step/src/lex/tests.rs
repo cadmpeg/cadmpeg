@@ -7,11 +7,18 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
-fn lex_under_policy(input: &[u8], policy: DecodePolicy) -> Result<super::TokenKind, CodecError> {
+fn lex_under_policy(
+    input: &[u8],
+    policy: DecodePolicy,
+    transient: bool,
+) -> Result<super::TokenKind, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(input, &arena, &policy)?;
     let mut lexer = super::Lexer::new(input);
     lexer.set_context(Some(&ctx));
+    if transient {
+        lexer.set_transient_literals();
+    }
     let token = lexer
         .next_token()
         .map_err(super::LexError::into_codec_error)?;
@@ -22,11 +29,11 @@ fn lex_under_policy(input: &[u8], policy: DecodePolicy) -> Result<super::TokenKi
 fn binary_lexeme_reserves_temporary_digits_before_allocation() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service).is_ok());
+    assert!(lex_under_policy(input, service, false).is_ok());
     let mut limited = service;
     limited.limits.max_materialized_bytes = 4;
-    let error =
-        lex_under_policy(input, limited).expect_err("five digits exceed four temporary bytes");
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("five digits exceed four temporary bytes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_binary_lexeme_temp")
     );
@@ -36,11 +43,11 @@ fn binary_lexeme_reserves_temporary_digits_before_allocation() {
 fn binary_lexeme_charges_packed_bytes_before_retention() {
     let input = b"\"0A1F2\"";
     let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service).is_ok());
+    assert!(lex_under_policy(input, service, false).is_ok());
     let mut limited = service;
     limited.limits.max_retained_bytes = 1;
-    let error =
-        lex_under_policy(input, limited).expect_err("two packed bytes exceed one retained byte");
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("two packed bytes exceed one retained byte");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_binary_lexeme_retained")
     );
@@ -50,11 +57,11 @@ fn binary_lexeme_charges_packed_bytes_before_retention() {
 fn uri_lexeme_reserves_temporary_bytes_before_allocation() {
     let input = b"<part/path>";
     let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service).is_ok());
+    assert!(lex_under_policy(input, service, false).is_ok());
     let mut limited = service;
     limited.limits.max_materialized_bytes = 8;
-    let error =
-        lex_under_policy(input, limited).expect_err("nine URI bytes exceed eight temporary bytes");
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("nine URI bytes exceed eight temporary bytes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_temp")
     );
@@ -64,13 +71,43 @@ fn uri_lexeme_reserves_temporary_bytes_before_allocation() {
 fn uri_lexeme_charges_bytes_before_retention() {
     let input = b"<part/path>";
     let service = DecodePolicy::service();
-    assert!(lex_under_policy(input, service).is_ok());
+    assert!(lex_under_policy(input, service, false).is_ok());
     let mut limited = service;
     limited.limits.max_retained_bytes = 8;
-    let error =
-        lex_under_policy(input, limited).expect_err("nine URI bytes exceed eight retained bytes");
+    let error = lex_under_policy(input, limited, false)
+        .expect_err("nine URI bytes exceed eight retained bytes");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_uri_lexeme_retained")
+    );
+}
+
+#[test]
+fn transient_binary_lexeme_reserves_packed_bytes_without_retention() {
+    let input = b"\"0A1F2\"";
+    let mut service = DecodePolicy::service();
+    service.limits.max_retained_bytes = 0;
+    assert!(lex_under_policy(input, service, true).is_ok());
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = 6;
+    let error = lex_under_policy(input, limited, true)
+        .expect_err("five digits plus two packed bytes exceed six temporary bytes");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_binary_packed_temp")
+    );
+}
+
+#[test]
+fn transient_uri_lexeme_uses_only_temporary_bytes() {
+    let input = b"<part/path>";
+    let mut service = DecodePolicy::service();
+    service.limits.max_retained_bytes = 0;
+    assert!(lex_under_policy(input, service, true).is_ok());
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = 8;
+    let error = lex_under_policy(input, limited, true)
+        .expect_err("nine URI bytes exceed eight temporary bytes");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_uri_lexeme_temp")
     );
 }
 
