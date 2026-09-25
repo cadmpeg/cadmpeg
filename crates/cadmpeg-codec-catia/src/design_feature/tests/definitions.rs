@@ -88,11 +88,14 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(matches!(
@@ -234,11 +237,14 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(matches!(
@@ -386,11 +392,14 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(matches!(

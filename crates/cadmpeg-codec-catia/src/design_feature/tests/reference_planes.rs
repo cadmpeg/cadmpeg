@@ -54,11 +54,14 @@ fn transfers_exact_reference_plane_owners_as_unresolved_datum_planes() {
         };
         let mut ir = CadIr::empty();
 
-        let transfer = transfer_design_features(
-            &mut ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unscoped,
-        )
+        let transfer = crate::test_support::with_service_context(|ctx| {
+            transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
         .unwrap();
 
         assert_eq!(ir.model.features.len(), 1);

@@ -11,17 +11,64 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use super::modeling_graph_scope;
 use crate::native::{CatiaObjectGraph, CatiaOuterContainerBinding};
+use crate::test_support::test_a5a8::a8_catpart;
 use crate::test_support::test_container::standard_catpart;
+use crate::test_support::test_container::zero_entity_cylinder_catpart;
+use crate::test_support::test_e5::e5_catpart;
 use crate::test_support::test_formula::standard_catpart_with_two_selector_value;
 use crate::test_support::test_object_graph::outer_container_object_graph_catpart;
+use crate::variant::Variant;
 use crate::CatiaCodec;
+
+fn assert_family_route_entity_limit(bytes: Vec<u8>, variant: Variant) {
+    assert_eq!(crate::container::scan_bytes(bytes.clone()).variant, variant);
+    let mut options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes.clone()), &options)
+        .expect("service profile admits the family model");
+    assert!(decoded.ir().model.entity_count() > 0);
+    options.policy.limits.max_entities = 1;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("one raw payload plus a family entity exceeds one entity");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA family entities"));
+}
+
+#[test]
+fn standard_route_propagates_family_entity_limit() {
+    assert_family_route_entity_limit(standard_catpart(), Variant::StandardNested);
+}
+
+#[test]
+fn zero_entity_route_propagates_family_entity_limit() {
+    assert_family_route_entity_limit(zero_entity_cylinder_catpart(), Variant::ZeroEntity);
+}
+
+#[test]
+fn e5_route_propagates_family_entity_limit() {
+    assert_family_route_entity_limit(e5_catpart(), Variant::E5Stream);
+}
+
+#[test]
+fn freeform_route_propagates_family_entity_limit() {
+    assert_family_route_entity_limit(a8_catpart(), Variant::FloatPackedInnerNoFbb);
+}
 
 #[test]
 fn standard_alias_route_propagates_entity_candidate_limit() {
     let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
-    let mut options = DecodeOptions::default();
-    options.policy = cadmpeg_core::decode::DecodePolicy::service();
-    options.policy.limits.max_collection_items = 0;
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
     let error = CatiaCodec
         .decode(&mut Cursor::new(bytes), &options)
         .expect_err("7C05 identity candidate exceeds zero collection items");
@@ -291,11 +338,11 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
 #[test]
 fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     fn refusing_route(
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         _scan: &crate::container::ContainerScan,
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
-        Ok((|| {
+        (|| {
             crate::nurbs::note_refusal(
                 cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
@@ -310,15 +357,19 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 refusal,
                 "e5 NURBS pcurve record at byte 96",
             )?;
-            Some(crate::families::FamilyOutput {
-                ir: cadmpeg_ir::CadIr::empty(),
-                report: cadmpeg_ir::codec::DecodeBody::new(
-                    cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
-                ),
-                annotations: cadmpeg_ir::Annotations::default(),
-                unknowns: Vec::new(),
-            })
-        })())
+            Some(
+                crate::families::FamilyOutput {
+                    ir: cadmpeg_ir::CadIr::empty(),
+                    report: cadmpeg_ir::codec::DecodeBody::new(
+                        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+                    ),
+                    annotations: cadmpeg_ir::Annotations::default(),
+                    unknowns: Vec::new(),
+                }
+                .admit_entities(ctx),
+            )
+        })()
+        .transpose()
     }
 
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {

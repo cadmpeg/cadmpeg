@@ -303,8 +303,10 @@ fn assert_entity_resource_limit(error: &cadmpeg_ir::DecodeFailure) {
 
 #[test]
 fn container_only_raw_payload_refuses_entity_before_copy() {
-    let mut options = DecodeOptions::default();
-    options.container_only = true;
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
     options.policy.limits.max_entities = 0;
     let error = CatiaCodec
         .decode(&mut Cursor::new(standard_catpart()), &options)
@@ -322,8 +324,10 @@ fn container_only_raw_payload_refuses_retained_bytes_before_copy() {
         .brep
         .expect("standard B-rep")
         .len();
-    let mut options = DecodeOptions::default();
-    options.container_only = true;
+    let mut options = DecodeOptions {
+        container_only: true,
+        ..DecodeOptions::default()
+    };
     options.policy.limits.max_retained_bytes =
         u64::try_from(retained_len - 1).expect("small fixture");
     let error = CatiaCodec

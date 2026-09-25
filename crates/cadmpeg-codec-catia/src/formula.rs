@@ -13,6 +13,7 @@ use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use crate::native::CatiaNative;
 
 pub(crate) fn transfer_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut Annotations,
@@ -511,6 +512,12 @@ pub(crate) fn transfer_parameters(
     }
     *annotations = annotation_builder.build();
     let transferred = parameters.len();
+    ctx.charge_entities(
+        u64::try_from(transferred).map_err(|_| {
+            ctx.refuse_codec_limit("count CATIA formula parameters", u64::MAX, u64::MAX)
+        })?,
+        "admit CATIA formula parameters",
+    )?;
     ir.model
         .parameters
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));

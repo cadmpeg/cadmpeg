@@ -207,14 +207,6 @@ fn finish_decode(
             .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
     }
     report.losses.extend(refusal.take_notes());
-    // Charge route-built entities before native decode and transfer work so
-    // max_entities refuses that work rather than only reporting afterward.
-    let mut admitted_entities = 0_u64;
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit CATIA route entities",
-    )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
     let native = CatiaNative::decode_with_record_sources(
         ctx,
@@ -235,42 +227,52 @@ fn finish_decode(
         .flat_map(|graph| graph.records.iter().map(|record| record.id.clone()))
         .collect::<HashSet<_>>();
     let design_feature_transfer =
-        design_feature::transfer_design_features(&mut ir, &native, &modeling_graph_scope)?;
+        design_feature::transfer_design_features(ctx, &mut ir, &native, &modeling_graph_scope)?;
     let transferred_native_sketch_entity_records = sketch::transfer_native_sketch_entities(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    );
+    )?;
     let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
-    );
+    )?;
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
+        ctx,
         &mut ir,
         &native,
         &design_feature_transfer,
         &modeling_graph_scope,
     )?;
     let transferred_pmi_dimension_count = pmi::transfer_dimensions(
+        ctx,
         &mut ir,
         &native,
         &modeling_graph_scope,
         &transferred_constraint_range_records,
-    );
-    let formula_transfer =
-        formula::transfer_parameters(&mut ir, &native, &mut annotations, &modeling_graph_scope)?;
+    )?;
+    let formula_transfer = formula::transfer_parameters(
+        ctx,
+        &mut ir,
+        &native,
+        &mut annotations,
+        &modeling_graph_scope,
+    )?;
     design_feature_transfer.assign_parameter_owners(&mut ir, &native);
     let appearance_transfer = crate::appearance::transfer(
+        ctx,
         &mut ir,
         &native,
         &modeling_graph_scope,
         standard_face_population
             .then_some(scan.main_data_stream.as_deref().or(scan.brep.as_deref()))
             .flatten(),
-    );
+    )?;
     let object_record_count: usize = native
         .object_graphs
         .iter()
@@ -3566,11 +3568,6 @@ fn finish_decode(
         )));
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit CATIA entities",
-    )?;
     decode_result(scan, matched, ir, report, annotations, unknowns)
 }
 

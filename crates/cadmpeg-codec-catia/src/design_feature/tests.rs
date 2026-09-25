@@ -210,11 +210,14 @@ fn compact_self_owned_operation_root_remains_an_identity_anchor() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(ir.model.features.is_empty());
@@ -270,11 +273,14 @@ fn malformed_compact_root_does_not_promote_an_operation() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(ir.model.features.is_empty());
@@ -466,11 +472,14 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert_eq!(ir.model.features.len(), 2);
@@ -505,6 +514,134 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
         transfer.consumed_records(),
         transfer.native_operation_records
     );
+}
+
+#[test]
+fn design_feature_entity_limit_refuses_before_feature_push() {
+    let native = CatiaNative {
+        design_objects: vec![native_operation_object(
+            "synthetic:test:object#operation-object",
+            None,
+            1,
+            "operation-record",
+            "EdgeFillet",
+            "operation-entry",
+        )],
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "operation-record",
+                None,
+                Some(1),
+                None,
+                Some("EdgeFillet"),
+                Some("operation-entry"),
+            )],
+        }],
+        ..CatiaNative::default()
+    };
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(0, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("one design feature exceeds zero entities");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design feature")
+    );
+    assert!(ir.model.features.is_empty());
+}
+
+fn sketch_owner_native() -> CatiaNative {
+    CatiaNative {
+        design_objects: vec![native_operation_object(
+            "synthetic:test:object#sketch-object",
+            None,
+            1,
+            "sketch-record",
+            "Sketch",
+            "sketch-entry",
+        )],
+        object_graphs: vec![CatiaObjectGraph {
+            id: "graph".to_string(),
+            byte_offset: 0,
+            byte_len: 0,
+            finjpl_segment: None,
+            outer_container: None,
+            catalog_byte_offset: None,
+            catalog: None,
+            records: vec![object_record(
+                "sketch-record",
+                None,
+                Some(1),
+                None,
+                Some("Sketch"),
+                Some("sketch-entry"),
+            )],
+        }],
+        ..CatiaNative::default()
+    }
+}
+
+#[test]
+fn design_sketch_entity_limit_refuses_before_sketch_push() {
+    let native = sketch_owner_native();
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(0, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("one sketch exceeds zero entities");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design sketch")
+    );
+    assert!(ir.model.sketches.is_empty());
+}
+
+#[test]
+fn design_sketch_feature_limit_refuses_before_feature_push() {
+    let native = sketch_owner_native();
+    let mut ir = CadIr::empty();
+    let error = crate::test_support::with_entity_limit(1, |ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    });
+    let Err(error) = error else {
+        panic!("sketch and feature exceed one entity");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.operation == "admit CATIA design feature")
+    );
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert!(ir.model.features.is_empty());
 }
 
 #[test]
@@ -598,11 +735,14 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
     };
     let mut ir = CadIr::empty();
 
-    transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert_eq!(ir.model.features.len(), cases.len());
@@ -750,11 +890,14 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
     document_parameter.ordinal = 2;
     ir.model.parameters.push(document_parameter);
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
     transfer.assign_parameter_owners(&mut ir, &native);
 
@@ -877,11 +1020,14 @@ fn assigns_a_nested_parameter_to_the_nearest_operation() {
         .parameters
         .push(parameter("parameter", "parameter-entity"));
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
     transfer.assign_parameter_owners(&mut ir, &native);
 
@@ -1082,11 +1228,14 @@ fn does_not_promote_an_unadmitted_helper_owner_class() {
     };
     let mut ir = CadIr::empty();
 
-    let transfer = transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(ir.model.features.is_empty());
@@ -1117,11 +1266,14 @@ fn pattern_schema_definition_does_not_create_a_feature_instance() {
     }
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
     assert!(ir.model.features.is_empty());
     assert!(transfer.consumed_records().is_empty());
@@ -1148,11 +1300,14 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
     );
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(ir.model.features.is_empty());
@@ -1206,11 +1361,14 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     });
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     let parameter_entity = native
@@ -1314,11 +1472,14 @@ fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
     );
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
 
     assert!(ir.model.features.is_empty());
@@ -1410,11 +1571,14 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     native.design_objects.push(child_object);
 
     let mut ir = CadIr::empty();
-    let transfer = crate::design_feature::transfer_design_features(
-        &mut ir,
-        &native,
-        &crate::decode::ModelingGraphScope::Unscoped,
-    )
+    let transfer = crate::test_support::with_service_context(|ctx| {
+        crate::design_feature::transfer_design_features(
+            ctx,
+            &mut ir,
+            &native,
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
+    })
     .unwrap();
     ir.model
         .parameters
@@ -1474,11 +1638,14 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         let native = crate::native::CatiaNative::decode(&bytes);
         let mut ir = CadIr::empty();
 
-        let transfer = crate::design_feature::transfer_design_features(
-            &mut ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unscoped,
-        )
+        let transfer = crate::test_support::with_service_context(|ctx| {
+            crate::design_feature::transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
         .unwrap();
 
         assert!(ir.model.sketches.is_empty());
@@ -1498,11 +1665,14 @@ fn complete_standalone_principal_plane_declarations_transfer_one_history_node() 
         );
 
         let mut excluded_ir = CadIr::empty();
-        let excluded = crate::design_feature::transfer_design_features(
-            &mut excluded_ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unresolved,
-        )
+        let excluded = crate::test_support::with_service_context(|ctx| {
+            crate::design_feature::transfer_design_features(
+                ctx,
+                &mut excluded_ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unresolved,
+            )
+        })
         .unwrap();
         assert!(excluded_ir.model.features.is_empty());
         assert!(excluded.consumed_records().is_empty());
@@ -1536,11 +1706,14 @@ fn principal_plane_history_identity_admission_precedes_transfer() {
             }
         }
         let mut ir = CadIr::empty();
-        let result = transfer_design_features(
-            &mut ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unscoped,
-        );
+        let result = crate::test_support::with_service_context(|ctx| {
+            transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        });
         if id == "short" {
             assert!(matches!(
                 result,
@@ -1595,11 +1768,14 @@ fn mixed_or_payload_bearing_principal_plane_fields_do_not_transfer() {
         let native = crate::native::CatiaNative::decode(&bytes);
         let mut ir = CadIr::empty();
 
-        let transfer = crate::design_feature::transfer_design_features(
-            &mut ir,
-            &native,
-            &crate::decode::ModelingGraphScope::Unscoped,
-        )
+        let transfer = crate::test_support::with_service_context(|ctx| {
+            crate::design_feature::transfer_design_features(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
+        })
         .unwrap();
 
         assert!(ir.model.features.is_empty());

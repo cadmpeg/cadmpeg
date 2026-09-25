@@ -629,7 +629,6 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// The returned map contains only alias cores outside complete object graphs,
 /// value blocks, and catalogs. A `None` value means that the raw tag exists but
 /// its canonical target is not unique.
-#[must_use]
 pub(crate) fn surface_alias_tag_map(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],

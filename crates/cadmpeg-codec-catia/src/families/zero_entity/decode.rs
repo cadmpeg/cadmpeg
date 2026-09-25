@@ -1011,7 +1011,7 @@ pub(in crate::families) fn try_decode_zero_entity(
     } else {
         CatiaLossCode::TopologyZeroEntityFaceUnresolved
     };
-    Some(Ok(FamilyOutput {
+    Some(FamilyOutput {
         ir,
         report: DecodeBody {
             transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -1022,7 +1022,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         },
         annotations: annotations.build(),
         unknowns,
-    }))
+    }.admit_entities(ctx))
     })()
     .transpose()
 }
