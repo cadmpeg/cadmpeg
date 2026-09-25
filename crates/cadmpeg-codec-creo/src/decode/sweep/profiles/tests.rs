@@ -36,6 +36,14 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 }
 
 #[test]
+fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
+    let sweep = super::forward_arc_sweep(-f64::MAX, f64::MAX);
+    assert!(sweep.is_finite());
+    assert!((0.0..std::f64::consts::TAU).contains(&sweep));
+    assert!((sweep - 1.161_306_304_240_227_4).abs() <= f64::EPSILON);
+}
+
+#[test]
 fn profile_joins_reject_duplicate_sketch_ids() {
     let sketch_id = SketchId::mint("creo:model:sketch#7".to_string()).expect("valid test fixture");
     let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#7:1".to_string())
