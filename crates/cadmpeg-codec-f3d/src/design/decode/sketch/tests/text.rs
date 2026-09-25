@@ -49,7 +49,11 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         assert_eq!(text.font_family, "Arial");
         assert_eq!(text.font_weight, 400);
         assert_eq!(text.height.get(), 6.0);
-        assert_eq!(text.width_factor().map(|factor| factor.get()), Some(1.0));
+        assert_eq!(
+            text.width_factor()
+                .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+            Some(1.0)
+        );
         assert_eq!(
             text.alignment().map(|alignment| alignment.horizontal),
             Some(3)
@@ -404,7 +408,11 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
     assert_eq!(text.height.get(), 10.0);
-    assert_eq!(text.width_factor().map(|factor| factor.get()), Some(0.8));
+    assert_eq!(
+        text.width_factor()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(0.8)
+    );
     assert_eq!(
         text.alignment().map(|alignment| alignment.horizontal),
         Some(3)
@@ -488,7 +496,11 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
         None
     );
     assert_eq!(text.height.get(), 10.0);
-    assert_eq!(text.width_factor().map(|factor| factor.get()), Some(0.8));
+    assert_eq!(
+        text.width_factor()
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(0.8)
+    );
 }
 
 #[test]

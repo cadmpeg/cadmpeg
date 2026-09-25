@@ -45,26 +45,26 @@ impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
                     .map_err(|error| format!("geometry_payload: {error:?}"))?,
             ])
         };
-        let [x, y, z] = vector()?;
-        let u = vector()?;
-        let v = vector()?;
+        let [origin_x, origin_y, origin_z] = vector()?;
+        let u_components = vector()?;
+        let v_components = vector()?;
         let invalid_frame = || {
             "geometry_payload must contain a finite origin and an admitted orthonormal frame"
                 .to_owned()
         };
         let origin_centimetres = [
-            FiniteReal::new(x).ok_or_else(invalid_frame)?,
-            FiniteReal::new(y).ok_or_else(invalid_frame)?,
-            FiniteReal::new(z).ok_or_else(invalid_frame)?,
+            FiniteReal::new(origin_x).ok_or_else(invalid_frame)?,
+            FiniteReal::new(origin_y).ok_or_else(invalid_frame)?,
+            FiniteReal::new(origin_z).ok_or_else(invalid_frame)?,
         ];
         let origin = FinitePoint3::new(Point3::new(
-            x * DESIGN_CANVAS_LENGTH_TO_MM,
-            y * DESIGN_CANVAS_LENGTH_TO_MM,
-            z * DESIGN_CANVAS_LENGTH_TO_MM,
+            origin_x * DESIGN_CANVAS_LENGTH_TO_MM,
+            origin_y * DESIGN_CANVAS_LENGTH_TO_MM,
+            origin_z * DESIGN_CANVAS_LENGTH_TO_MM,
         ))
         .ok_or_else(invalid_frame)?;
-        let u_axis = UnitVector3::new(Vector3::new(u[0], u[1], u[2])).ok_or_else(invalid_frame)?;
-        let v_axis = UnitVector3::new(Vector3::new(v[0], v[1], v[2])).ok_or_else(invalid_frame)?;
+        let u_axis = UnitVector3::new(Vector3::from(u_components)).ok_or_else(invalid_frame)?;
+        let v_axis = UnitVector3::new(Vector3::from(v_components)).ok_or_else(invalid_frame)?;
         let frame =
             FeatureUnitPlaneFrame::from_parts(origin, u_axis, v_axis).ok_or_else(invalid_frame)?;
         Ok(Self {
