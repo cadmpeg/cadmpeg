@@ -6207,14 +6207,13 @@ fn resolve_sketch_axis_selection(
             + placement.transform()[2][1] * direction.y
             + placement.transform()[2][2] * direction.z,
     );
-    let length = direction.norm();
-    (origin.is_finite() && length.is_finite() && length > 0.0).then_some(
-        cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(direction.scale(1.0 / length))?,
-            reference: None,
-        },
-    )
+    Some(cadmpeg_ir::features::RevolutionAxis {
+        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+        direction: cadmpeg_ir::features::FeatureDirection3::from(
+            cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(direction)?,
+        ),
+        reference: None,
+    })
 }
 
 pub(super) fn project_fixed_loft(
@@ -6723,8 +6722,7 @@ fn project_rectangular_pattern_scalars(
             last[1][3] - first[1][3],
             last[2][3] - first[2][3],
         );
-        let norm = delta.norm();
-        (norm > 0.0).then_some(delta.scale(1.0 / norm))
+        cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta)
     });
     let component_seed = construction
         .instances
@@ -6775,10 +6773,7 @@ fn project_rectangular_pattern_scalars(
         })
     });
     let seeds = component_seed.or(group_seed).into_iter().collect();
-    let direction = match direction {
-        Some(direction) => Some(cadmpeg_ir::features::FeatureDirection3::new(direction)?),
-        None => None,
-    };
+    let direction = direction.map(cadmpeg_ir::features::FeatureDirection3::from);
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
         pattern: PatternKind::new(PatternTransform::Linear {
