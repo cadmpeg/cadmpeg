@@ -1082,8 +1082,19 @@ fn byte_accounting(
         )?;
     }
     let mut lexer = crate::lex::Lexer::new(input);
+    lexer.set_context(Some(ctx));
     let mut cursor = 0;
-    while let Ok(Some(token)) = lexer.next_token() {
+    loop {
+        let token = match lexer.next_token() {
+            Ok(Some(token)) => token,
+            Ok(None) => break,
+            Err(error) => {
+                if let Some(resource) = error.into_resource_error() {
+                    return Err(resource);
+                }
+                break;
+            }
+        };
         claim_range(
             &mut classes,
             &token.span,

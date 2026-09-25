@@ -499,7 +499,8 @@ fn parse_inner(
     input: &[u8],
     budget: Option<&DecodeContext<'_>>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let lexer = Lexer::new(input);
+    let mut lexer = Lexer::new(input);
+    lexer.set_context(budget);
     let mut parser = Parser {
         current: None,
         lexer,
@@ -517,13 +518,14 @@ impl ParseError {
     fn into_codec_error(self) -> CodecError {
         match self {
             Self::Resource(error) => error,
+            Self::Lex(error) => error.into_codec_error(),
             error => CodecError::Malformed(error.to_string()),
         }
     }
 }
 
 struct Parser<'input, 'ctx, 'arena> {
-    lexer: Lexer<'input>,
+    lexer: Lexer<'input, 'ctx, 'arena>,
     current: Option<Token>,
     last_end: usize,
     depth: usize,
@@ -1240,7 +1242,13 @@ impl Parser<'_, '_, '_> {
                 _ => return self.err("expected parameter value"),
             }
         };
-        self.charge_retained(value_node_storage_bytes(&value), "step_parse_value_storage")?;
+        let value_bytes =
+            if self.budget.is_some() && matches!(&value, Value::Binary(_) | Value::Resource(_)) {
+                u64_from_index(size_of::<Value>())
+            } else {
+                value_node_storage_bytes(&value)
+            };
+        self.charge_retained(value_bytes, "step_parse_value_storage")?;
         Ok(value)
     }
 
