@@ -5,7 +5,7 @@ use super::extrude::DesignExtrudeOperation;
 use super::scope::DesignScopePayload;
 use crate::records::identity::Located;
 use crate::records::sketch_placement::SketchPlacementMatrix;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_transform, SketchPlacementMatrix, "transform");
@@ -28,19 +28,19 @@ pub(crate) enum DesignSolidPrimitive {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignBoxPrimitive {
     /// Length along the source x-axis in source centimetres.
-    pub(crate) length: FiniteReal,
+    pub(crate) length: PositiveReal,
     /// Referenced length owner.
     pub(crate) length_record_index: u32,
     /// Byte offset of the evaluated length.
     pub(crate) length_offset: u64,
     /// Width along the source y-axis in source centimetres.
-    pub(crate) width: FiniteReal,
+    pub(crate) width: PositiveReal,
     /// Referenced width owner.
     pub(crate) width_record_index: u32,
     /// Byte offset of the evaluated width.
     pub(crate) width_offset: u64,
     /// Height along the source z-axis in source centimetres.
-    pub(crate) height: FiniteReal,
+    pub(crate) height: PositiveReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
@@ -71,13 +71,13 @@ pub(crate) struct DesignBoxPrimitive {
 )]
 pub(crate) struct DesignCylinderPrimitive {
     /// Axial height in source centimetres.
-    pub(crate) height: FiniteReal,
+    pub(crate) height: PositiveReal,
     /// Referenced height owner.
     pub(crate) height_record_index: u32,
     /// Byte offset of the evaluated height.
     pub(crate) height_offset: u64,
     /// Circular diameter in source centimetres.
-    pub(crate) diameter: FiniteReal,
+    pub(crate) diameter: PositiveReal,
     /// Referenced diameter owner.
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
@@ -94,13 +94,13 @@ pub(crate) struct DesignCylinderPrimitive {
 #[derive(Serialize, Deserialize)]
 struct DesignCylinderPrimitiveWire {
     /// Axial height in source centimetres.
-    height: FiniteReal,
+    height: PositiveReal,
     /// Referenced height owner.
     height_record_index: u32,
     /// Byte offset of the evaluated height.
     height_offset: u64,
     /// Circular diameter in source centimetres.
-    diameter: FiniteReal,
+    diameter: PositiveReal,
     /// Referenced diameter owner.
     diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
@@ -167,7 +167,7 @@ pub(crate) struct DesignSpherePrimitive {
     /// Byte offset of the placement matrix.
     pub(crate) transform_offset: u64,
     /// Sphere diameter in source centimetres.
-    pub(crate) diameter: FiniteReal,
+    pub(crate) diameter: PositiveReal,
     /// Referenced diameter record.
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the diameter scalar.
@@ -186,13 +186,13 @@ pub(crate) struct DesignTorusPrimitive {
     /// Byte offset of the placement matrix.
     pub(crate) transform_offset: u64,
     /// Major diameter in source centimetres.
-    pub(crate) major_diameter: FiniteReal,
+    pub(crate) major_diameter: PositiveReal,
     /// Referenced major-diameter record.
     pub(crate) major_diameter_record_index: u32,
     /// Byte offset of the major-diameter scalar.
     pub(crate) major_diameter_offset: u64,
     /// Tube diameter in source centimetres.
-    pub(crate) minor_diameter: FiniteReal,
+    pub(crate) minor_diameter: PositiveReal,
     /// Referenced minor-diameter record.
     pub(crate) minor_diameter_record_index: u32,
     /// Byte offset of the minor-diameter scalar.
@@ -211,5 +211,66 @@ impl From<DesignSolidPrimitive> for DesignScopePayload {
             DesignSolidPrimitive::Sphere(value) => Self::SpherePrimitive(Some(value)),
             DesignSolidPrimitive::Torus(value) => Self::TorusPrimitive(Some(value)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DesignBoxPrimitive, DesignCylinderPrimitive, DesignSpherePrimitive, DesignTorusPrimitive,
+    };
+
+    #[test]
+    fn native_box_refuses_nonpositive_dimension() {
+        let mut wire = serde_json::json!({
+            "length": 1.0, "length_record_index": 1, "length_offset": 2,
+            "width": 2.0, "width_record_index": 3, "width_offset": 4,
+            "height": 3.0, "height_record_index": 5, "height_offset": 6,
+            "offset_x": 0.0, "offset_x_record_index": 7, "offset_x_offset": 8,
+            "offset_y": 0.0, "offset_y_record_index": 9, "offset_y_offset": 10,
+            "operation": "join", "operation_offset": 11
+        });
+        assert!(serde_json::from_value::<DesignBoxPrimitive>(wire.clone()).is_ok());
+        wire["length"] = serde_json::json!(0.0);
+        assert!(serde_json::from_value::<DesignBoxPrimitive>(wire).is_err());
+    }
+
+    #[test]
+    fn native_cylinder_refuses_nonpositive_dimension() {
+        let mut wire = serde_json::json!({
+            "height": 1.0, "height_record_index": 1, "height_offset": 2,
+            "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
+            "operation": "join", "operation_offset": 5
+        });
+        assert!(serde_json::from_value::<DesignCylinderPrimitive>(wire.clone()).is_ok());
+        wire["diameter"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<DesignCylinderPrimitive>(wire).is_err());
+    }
+
+    #[test]
+    fn native_sphere_refuses_nonpositive_diameter() {
+        let mut wire = serde_json::json!({
+            "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+            "transform_offset": 1,
+            "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
+            "operation": "join", "operation_offset": 5
+        });
+        assert!(serde_json::from_value::<DesignSpherePrimitive>(wire.clone()).is_ok());
+        wire["diameter"] = serde_json::json!(0.0);
+        assert!(serde_json::from_value::<DesignSpherePrimitive>(wire).is_err());
+    }
+
+    #[test]
+    fn native_torus_refuses_nonpositive_diameter() {
+        let mut wire = serde_json::json!({
+            "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+            "transform_offset": 1,
+            "major_diameter": 2.0, "major_diameter_record_index": 3, "major_diameter_offset": 4,
+            "minor_diameter": 1.0, "minor_diameter_record_index": 5, "minor_diameter_offset": 6,
+            "operation": "join", "operation_offset": 7
+        });
+        assert!(serde_json::from_value::<DesignTorusPrimitive>(wire.clone()).is_ok());
+        wire["minor_diameter"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<DesignTorusPrimitive>(wire).is_err());
     }
 }
