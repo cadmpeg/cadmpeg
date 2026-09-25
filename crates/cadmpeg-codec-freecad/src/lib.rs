@@ -994,6 +994,7 @@ impl CodecBackend for FcstdCodec {
                 &mut topology_losses,
             )?;
             cycle_affected_design_objects = design::transfer(
+                ctx,
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
