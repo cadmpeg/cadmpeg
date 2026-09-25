@@ -908,15 +908,32 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
-                        .map(crate::topology::IncreasingParameterInterval::endpoints)
-                        .is_some_and(|[lower, upper]| {
+                        .is_some_and(|domain| {
+                            let [lower, upper] = domain.endpoints();
                             if nurbs.periodic() {
                                 let period = upper - lower;
                                 let tolerance = 1.0e-9_f64.max(
                                     period.abs()
                                         * EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
                                 );
-                                end - start <= period + tolerance
+                                let edge_span = end - start;
+                                let allowed = period + tolerance;
+                                if edge_span.is_finite() && allowed.is_finite() {
+                                    edge_span <= allowed
+                                } else if start >= end {
+                                    true
+                                } else {
+                                    crate::topology::IncreasingParameterInterval::new([start, end])
+                                        .is_some_and(|edge| {
+                                            edge.scaled_span()
+                                                .quotient(domain.scaled_span())
+                                                .is_ok_and(|ratio| {
+                                                    ratio.get()
+                                                        <= 1.0
+                                                            + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+                                                })
+                                        })
+                                }
                             } else {
                                 parameter_in_domain(start, [lower, upper])
                                     && parameter_in_domain(end, [lower, upper])

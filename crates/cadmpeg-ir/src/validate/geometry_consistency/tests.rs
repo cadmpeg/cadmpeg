@@ -24,6 +24,77 @@ use crate::report::{check::Check, Severity};
 use crate::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense, Vertex};
 use crate::validate::validate_neutral;
 
+#[test]
+fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
+    let pcurve = Pcurve {
+        id: "test:model:pcurve#wide-domain".try_into().unwrap(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: crate::geometry::pcurve::PcurveNurbs::new(
+                1,
+                vec![-f64::MAX, -f64::MAX, f64::MAX * 0.5, f64::MAX * 0.5],
+                crate::geometry::pcurve::PcurveNurbsPoles::Polynomial {
+                    points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                },
+                false,
+            )
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::default(),
+    };
+    assert!(super::pcurve_parameter_seeds(&pcurve).contains(&(-f64::MAX * 0.25)));
+}
+
+#[test]
+fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![f64::MAX * 0.75, f64::MAX * 0.75, f64::MAX, f64::MAX],
+                false,
+            ),
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            crate::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .unwrap(),
+    ));
+    let surface_id = SurfaceId::mint("test:model:surface#large-domain").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface.clone(),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let pcurve = Pcurve {
+        id: "test:model:pcurve#large-surface-domain".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    let context = SurfacePcurveContext {
+        index: &index,
+        surface_id: &surface_id,
+        geometry: &surface,
+    };
+    let midpoint = (f64::MAX * 0.75).midpoint(f64::MAX);
+    assert!(pcurve_parameter_seeds_on_surface(&context, &pcurve)
+        .iter()
+        .any(|seed| seed.get() == midpoint));
+}
+
 macro_rules! procedural_surface {
     (
             id: $id:expr,

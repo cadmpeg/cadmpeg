@@ -172,6 +172,33 @@ fn periodic_curve_parameter_domain_is_checked() {
         .any(|finding| finding.check == Check::ParameterDomain));
 }
 
+#[test]
+fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, f64::MAX, f64::MAX],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            true,
+        )
+        .unwrap(),
+    ));
+    ir.model.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(Some(curve_id), Some([-f64::MAX, f64::MAX])).unwrap();
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
+}
+
 fn nurbs_pcurve_leaf() -> PcurveGeometry {
     PcurveGeometry::Nurbs {
         nurbs: crate::geometry::pcurve::PcurveNurbs::from_lanes(

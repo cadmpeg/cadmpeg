@@ -933,7 +933,7 @@ fn pcurve_parameter_seeds(pcurve: &crate::geometry::pcurve::Pcurve) -> Vec<f64> 
     }
     if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
         let [start, end] = domain.endpoints();
-        seeds.extend([start, start + (end - start) * 0.5, end]);
+        seeds.extend([start, start.midpoint(end), end]);
     }
     seeds
 }
@@ -949,12 +949,12 @@ fn pcurve_parameter_seeds_on_surface(
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(context) else {
         return unique_finite(seeds);
     };
-    for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
+    for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
         if direction.u != 0.0 {
             seeds.push((boundary - origin.u) / direction.u);
         }
     }
-    for boundary in [v_lower, (v_lower + v_upper) * 0.5, v_upper] {
+    for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
         if direction.v != 0.0 {
             seeds.push((boundary - origin.v) / direction.v);
         }

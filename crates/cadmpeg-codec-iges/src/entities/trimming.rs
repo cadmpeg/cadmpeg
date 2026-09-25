@@ -1305,13 +1305,18 @@ fn pcurve_within_declared_intervals(
             continue;
         }
         covered = true;
-        let width = span.domain[1] - span.domain[0];
-        if !width.is_finite() || width <= 0.0 {
+        let Some(local_start) =
+            cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
+        else {
             return false;
-        }
-        let local_start = (start - span.domain[0]) / width;
-        let local_end = (end - span.domain[0]) / width;
-        let Some(restricted) = restrict_homogeneous_pcurve(&span.controls, local_start, local_end)
+        };
+        let Some(local_end) =
+            cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
+        else {
+            return false;
+        };
+        let Some(restricted) =
+            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get())
         else {
             return false;
         };

@@ -50,6 +50,26 @@ const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
+fn pcurve_bounds_keep_a_wide_finite_knot_span() {
+    let geometry = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    assert!(pcurve_within_declared_bounds(
+        &geometry,
+        [-f64::MAX, f64::MAX],
+        Some([Some(0.0), Some(1.0), Some(0.0), Some(1.0)]),
+        [false, false],
+    ));
+}
+
+#[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
     let geometry = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
