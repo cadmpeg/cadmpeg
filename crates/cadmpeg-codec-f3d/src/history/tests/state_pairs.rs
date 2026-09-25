@@ -523,6 +523,11 @@ fn historical_edge_axis_uses_a_unique_incident_surface_axis() {
 
 #[test]
 fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
+    let raw_axes = |axes: Vec<crate::records::feature::patterns::DesignAxis>| {
+        axes.into_iter()
+            .map(|axis| (axis.origin.get(), *axis.direction.as_raw()))
+            .collect::<Vec<_>>()
+    };
     let origin = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
     let topology = AsmHistoricalTopology {
         faces: vec![11],
@@ -562,10 +567,10 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
     };
     assert_eq!(
-        historical_pattern_identity_axes_for_selection(
+        raw_axes(historical_pattern_identity_axes_for_selection(
             Some((AsmHistoricalEntityKind::Face, 11, &[1])),
             &history,
-        ),
+        )),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -580,10 +585,10 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
     }];
     assert_eq!(
-        historical_pattern_identity_axes_for_selection(
+        raw_axes(historical_pattern_identity_axes_for_selection(
             Some((AsmHistoricalEntityKind::Face, 11, &[1])),
             &planar_history,
-        ),
+        )),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -622,7 +627,12 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
     .is_empty());
     let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&missing_carrier), [11]);
     assert_eq!(
-        historical_pattern_identity_axes(11, &identities, &missing_carrier, Some(1)),
+        raw_axes(historical_pattern_identity_axes(
+            11,
+            &identities,
+            &missing_carrier,
+            Some(1)
+        )),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
     assert!(historical_pattern_identity_axes(11, &identities, &missing_carrier, None).is_empty());
