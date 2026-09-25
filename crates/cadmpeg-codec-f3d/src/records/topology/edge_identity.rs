@@ -829,7 +829,7 @@ fn serialize_edge_resolved_axis<S: serde::Serializer>(
 ) -> Result<S::Ok, S::Error> {
     EdgeResolvedAxisWire {
         resolved_axis_origin: axis.map(|axis| axis.origin),
-        resolved_axis_direction: axis.map(|axis| axis.direction),
+        resolved_axis_direction: axis.map(|axis| FiniteVector3::from(axis.direction)),
     }
     .serialize(serializer)
 }
@@ -840,7 +840,10 @@ fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(
     let wire = EdgeResolvedAxisWire::deserialize(deserializer)?;
     match (wire.resolved_axis_origin, wire.resolved_axis_direction) {
         (None, None) => Ok(None),
-        (Some(origin), Some(direction)) => Ok(Some(DesignAxis { origin, direction })),
+        (Some(origin), Some(direction)) => Ok(Some(
+            DesignAxis::from_parts(origin, direction)
+                .ok_or_else(|| serde::de::Error::custom("resolved axis direction is zero"))?,
+        )),
         _ => Err(serde::de::Error::custom(
             "resolved_axis_origin and resolved_axis_direction must occur together",
         )),
