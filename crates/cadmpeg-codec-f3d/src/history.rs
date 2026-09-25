@@ -7461,15 +7461,19 @@ pub(crate) fn bind_circular_pattern_axes(
             input_state_id,
         )
         .into_iter();
-        let Some((origin, direction)) = axes.next() else {
+        let Some(axis) = axes.next() else {
             continue;
         };
-        if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
+        let axis_line = (axis.origin.get(), *axis.direction.as_raw());
+        if axes.any(|candidate| {
+            !same_axis_line(
+                axis_line,
+                (candidate.origin.get(), *candidate.direction.as_raw()),
+            )
+        }) {
             continue;
         }
-        if let Some(axis) = design_axis(origin, direction) {
-            *resolved = Some(axis);
-        }
+        *resolved = Some(axis);
     }
 }
 
@@ -7478,7 +7482,7 @@ fn historical_pattern_identity_axes(
     identities: &HistoricalIdentityIndex,
     history: &AsmHistory,
     input_state_id: Option<i64>,
-) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+) -> Vec<crate::records::feature::patterns::DesignAxis> {
     if let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(identity) {
         let state_ids = if let Some(input_state_id) = input_state_id {
             if !state_ids.contains(&input_state_id) {
@@ -7535,7 +7539,7 @@ fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Optio
 fn historical_pattern_identity_axes_for_selection(
     selected: Option<(AsmHistoricalEntityKind, i64, &[i64])>,
     history: &AsmHistory,
-) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+) -> Vec<crate::records::feature::patterns::DesignAxis> {
     let Some((kind, entity_ref, state_ids)) = selected else {
         return Vec::new();
     };
@@ -7556,10 +7560,7 @@ fn historical_pattern_identity_axes_for_selection(
         let state_axes =
             historical_pattern_identity_axis_candidates(Some((kind, entity_ref)), topology)
                 .into_iter()
-                .filter_map(|(origin, direction)| {
-                    let direction = direction.unit()?;
-                    origin.is_finite().then_some((origin, direction))
-                })
+                .filter_map(|(origin, direction)| design_axis(origin, direction))
                 .collect::<Vec<_>>();
         if state_axes.is_empty() {
             return Vec::new();
