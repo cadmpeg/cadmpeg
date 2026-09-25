@@ -1632,6 +1632,39 @@ pub(super) fn exact_boundary_pcurve(
     )
 }
 
+fn affine_pcurve_coordinate(range: [f64; 2], values: [f64; 2]) -> Option<(f64, f64)> {
+    let direction = (values[1] - values[0]) / (range[1] - range[0]);
+    let origin = values[0] - direction * range[0];
+    if direction.is_finite() && origin.is_finite() && (direction != 0.0 || values[0] == values[1]) {
+        return Some((origin, direction));
+    }
+    if values[0] == values[1] {
+        return Some((values[0], 0.0));
+    }
+    let source = cadmpeg_ir::topology::IncreasingParameterInterval::new(range)?;
+    let reversed = values[0] > values[1];
+    let target = cadmpeg_ir::topology::IncreasingParameterInterval::new([
+        values[0].min(values[1]),
+        values[0].max(values[1]),
+    ])?;
+    let (scale, _) = source.affine_coefficients_to(target)?;
+    let origin = target
+        .map_from(source, cadmpeg_ir::scalar::FiniteReal::ZERO, reversed)
+        .ok()?
+        .get();
+    Some((origin, if reversed { -scale.get() } else { scale.get() }))
+}
+
+fn finite_parameter_sample(range: [f64; 2], ordinal: usize, count: usize) -> f64 {
+    let parameter = range[0] + (range[1] - range[0]) * ordinal as f64 / count as f64;
+    if parameter.is_finite() {
+        parameter
+    } else {
+        let fraction = ordinal as f64 / count as f64;
+        range[0].mul_add(1.0 - fraction, range[1] * fraction)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn exact_boundary_pcurve_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -1682,22 +1715,26 @@ fn exact_boundary_pcurve_with_index(
                 return None;
             }
         }
-        let parameter_span = range[1] - range[0];
-        let direction = Point2::new(
-            (second.u - first.u) / parameter_span,
-            (second.v - first.v) / parameter_span,
-        );
+        let (origin_u, direction_u) = affine_pcurve_coordinate(range, [first.u, second.u])?;
+        let (origin_v, direction_v) = affine_pcurve_coordinate(range, [first.v, second.v])?;
+        let direction = Point2::new(direction_u, direction_v);
         (direction.is_finite() && (direction.u != 0.0 || direction.v != 0.0)).then_some(())?;
-        let candidate = PcurveGeometry::Line(
-            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(
-                    first.u - direction.u * range[0],
-                    first.v - direction.v * range[0],
-                ),
-                direction,
-            )
-            .ok()?,
-        );
+        let candidate = match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(origin_u, origin_v),
+            direction,
+        ) {
+            Ok(line) => PcurveGeometry::Line(line),
+            Err(_) => PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    1,
+                    vec![range[0], range[0], range[1], range[1]],
+                    vec![first, second],
+                    None,
+                    false,
+                )
+                .ok()?,
+            },
+        };
         return exact_boundary_pcurve_matches_carrier_with_index(
             index,
             curve,
@@ -1722,12 +1759,11 @@ fn exact_boundary_pcurve_with_index(
         let [first, second] =
             endpoints.map(|endpoint| analytic_surface_parameters(&carrier.geometry, endpoint));
         let [first, second] = [first?, second?].map(Point2::from);
-        let parameter_span = range[1] - range[0];
-        let varying_scale = (second.v - first.v) / parameter_span;
+        let (varying_origin, varying_scale) = affine_pcurve_coordinate(range, [first.v, second.v])?;
         (varying_scale.is_finite() && varying_scale != 0.0).then_some(())?;
         let candidate = PcurveGeometry::Line(
             cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
-                Point2::new(first.u, first.v - varying_scale * range[0]),
+                Point2::new(first.u, varying_origin),
                 Point2::new(0.0, varying_scale),
             )
             .ok()?,
@@ -1822,19 +1858,19 @@ fn exact_boundary_pcurve_with_index(
                 } else {
                     [parameters[0].u, parameters[1].u]
                 };
-                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
+                let (varying_origin, delta) = affine_pcurve_coordinate(range, varying)?;
                 {
                     if !(delta.is_finite() && delta != 0.0) {
                         return None;
                     }
                     let (origin, direction) = if constant_axis == 0 {
                         (
-                            Point2::new(boundary, varying[0] - delta * range[0]),
+                            Point2::new(boundary, varying_origin),
                             Point2::new(0.0, delta),
                         )
                     } else {
                         (
-                            Point2::new(varying[0] - delta * range[0], boundary),
+                            Point2::new(varying_origin, boundary),
                             Point2::new(delta, 0.0),
                         )
                     };
@@ -1995,7 +2031,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     let periods = surface_parameter_periods_with_index(index, surface);
     let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
     for index in 0..=SAMPLE_INTERVALS {
-        let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
+        let parameter = finite_parameter_sample(range, index, SAMPLE_INTERVALS);
         let point =
             curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
         let mut uv = Point2::from(analytic_surface_parameters(
@@ -2180,14 +2216,20 @@ fn coincident_pcurve_pair_with_index(
         if !geometry_budget.charge() {
             return false;
         }
-        let middle = start + (end - start) * 0.5;
+        let middle = finite_parameter_sample([start, end], 1, 2);
         let Some(middle_separation) = separation(middle) else {
             return false;
         };
         if middle_separation > tolerance {
             return false;
         }
-        let maximum_separation = middle_separation + speed_bound * (end - start) * 0.5;
+        let span = end - start;
+        let half_span = if span.is_finite() {
+            span * 0.5
+        } else {
+            end * 0.5 - start * 0.5
+        };
+        let maximum_separation = middle_separation + speed_bound * half_span;
         if maximum_separation <= tolerance {
             continue;
         }
@@ -2207,13 +2249,18 @@ fn boundary_curve_affine_breaks_with_index(
     range: [f64; 2],
 ) -> Option<Vec<f64>> {
     let carrier = index.surfaces(surface.as_str())?;
+    if matches!(
+        carrier.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Plane(_))
+    ) {
+        return Some(range.to_vec());
+    }
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
     let origin = line_pcurve.origin().as_raw();
     let direction = line_pcurve.direction().as_raw();
     match carrier.geometry.solved() {
-        Some(SolvedSurfaceGeometry::Plane(_)) => Some(range.to_vec()),
         Some(SolvedSurfaceGeometry::Cylinder(_))
             if { direction.u == 0.0 && direction.v != 0.0 } =>
         {
@@ -2588,9 +2635,7 @@ fn transfer_intersection_pcurve_with_budget(
     let mut coarse = Vec::with_capacity(continuation_steps + 1);
     coarse.push(first);
     for sample_index in 1..=continuation_steps {
-        let parameter = parameter_range[0]
-            + (parameter_range[1] - parameter_range[0]) * sample_index as f64
-                / continuation_steps as f64;
+        let parameter = finite_parameter_sample(parameter_range, sample_index, continuation_steps);
         let Some(sample) = transferred_pcurve_sample_with_budget(
             index,
             curve,
@@ -3703,7 +3748,7 @@ pub(super) fn pcurve_matches_edge_endpoint_contract(
 
 #[cfg(test)]
 mod tests {
-    use super::opposite_chart_geometry_work_limit;
+    use super::{finite_parameter_sample, opposite_chart_geometry_work_limit};
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::{
@@ -3717,6 +3762,16 @@ mod tests {
     };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Sense};
+
+    #[test]
+    fn wide_pcurve_sample_grid_keeps_finite_quarter_points() {
+        let range = [-f64::MAX, f64::MAX];
+        assert_eq!(finite_parameter_sample(range, 0, 4), -f64::MAX);
+        assert!((finite_parameter_sample(range, 1, 4) / f64::MAX + 0.5).abs() <= f64::EPSILON);
+        assert_eq!(finite_parameter_sample(range, 2, 4), 0.0);
+        assert!((finite_parameter_sample(range, 3, 4) / f64::MAX - 0.5).abs() <= f64::EPSILON);
+        assert_eq!(finite_parameter_sample(range, 4, 4), f64::MAX);
+    }
 
     #[test]
     fn opposite_chart_geometry_work_limit_reallocates_unused_remainder() {
