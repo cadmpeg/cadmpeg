@@ -3912,14 +3912,13 @@ fn pcurve_parameter_break_fractions(
     parameters: [f64; 2],
     fractions: &mut Vec<f64>,
 ) {
-    let parameter_span = parameters[1] - parameters[0];
-    if !parameter_span.is_finite() || parameter_span == 0.0 {
-        return;
-    }
     let mut add = |parameter: f64| {
-        let fraction = (parameter - parameters[0]) / parameter_span;
-        if fraction.is_finite() && fraction > 0.0 && fraction < 1.0 {
-            fractions.push(fraction);
+        if let Some(fraction) =
+            cadmpeg_ir::math::parameter_fraction(parameter, parameters[0], parameters[1])
+        {
+            if fraction.get() > 0.0 && fraction.get() < 1.0 {
+                fractions.push(fraction.get());
+            }
         }
     };
     match geometry {
@@ -3961,10 +3960,21 @@ fn pcurve_selection_seeds(
 ) -> Vec<f64> {
     let mut seeds = vec![0.0];
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
-        seeds.extend([start, start + (end - start) * 0.5, end]);
+        let at_fraction = |fraction: f64| {
+            let ordinary = start + (end - start) * fraction;
+            if ordinary.is_finite() {
+                Some(ordinary)
+            } else {
+                cadmpeg_ir::math::interpolate(start, end, fraction)
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            }
+        };
+        seeds.push(start);
+        seeds.extend(at_fraction(0.5));
+        seeds.push(end);
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
             let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
-            seeds.push(start + (end - start) * fraction);
+            seeds.extend(at_fraction(fraction));
         }
         let mut fractions = vec![0.0, 1.0];
         pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions);
@@ -3973,12 +3983,12 @@ fn pcurve_selection_seeds(
         seeds.extend(
             fractions
                 .iter()
-                .map(|fraction| start + (end - start) * fraction),
+                .filter_map(|fraction| at_fraction(*fraction)),
         );
-        seeds.extend(fractions.windows(2).map(|window| {
+        seeds.extend(fractions.windows(2).filter_map(|window| {
             let lower = window[0];
             let upper = window[1];
-            start + (end - start) * (lower + (upper - lower) * 0.5)
+            at_fraction(lower + (upper - lower) * 0.5)
         }));
     }
     if pcurve_has_angular_parameterization(geometry) {
