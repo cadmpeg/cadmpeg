@@ -111,6 +111,14 @@ loss_codes! {
     PassthroughRecordOmitted => "writer.passthrough-omitted",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
+    /// A body name cannot fit in one Directory label.
+    WriterBodyNameNotRepresented => "writer.body-name-not-represented",
+    /// A body RGB color has no emitted Directory color.
+    WriterBodyColorNotRepresented => "writer.body-color-not-represented",
+    /// IGES Directory color cannot carry a body opacity value.
+    WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",
+    /// A free-geometry body has no single Directory Entry for visibility.
+    WriterBodyVisibilityNotRepresented => "writer.body-visibility-not-represented",
 }
 
 impl IgesLossCode {
@@ -151,7 +159,11 @@ impl IgesLossCode {
             | Self::SourceDialectUnverified
             | Self::SourceDialectDisplaced
             | Self::PassthroughRecordOmitted
-            | Self::WriterMinimumResolutionAdjusted => Severity::Warning,
+            | Self::WriterMinimumResolutionAdjusted
+            | Self::WriterBodyNameNotRepresented
+            | Self::WriterBodyColorNotRepresented
+            | Self::WriterBodyOpacityNotRepresented
+            | Self::WriterBodyVisibilityNotRepresented => Severity::Warning,
         }
     }
 
@@ -191,7 +203,13 @@ impl IgesLossCode {
             Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::PassthroughRecordOmitted => LossTaxonomy::PassthroughRecordOmitted,
-            Self::WriterMinimumResolutionAdjusted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterMinimumResolutionAdjusted | Self::WriterBodyNameNotRepresented => {
+                LossTaxonomy::MetadataNotTransferred
+            }
+            Self::WriterBodyColorNotRepresented | Self::WriterBodyOpacityNotRepresented => {
+                LossTaxonomy::MaterialNotTransferred
+            }
+            Self::WriterBodyVisibilityNotRepresented => LossTaxonomy::MetadataNotTransferred,
         }
     }
 
@@ -266,6 +284,10 @@ mod tests {
                 "geometry.procedural-reduced",
                 "writer.passthrough-omitted",
                 "writer.minimum-resolution-adjusted",
+                "writer.body-name-not-represented",
+                "writer.body-color-not-represented",
+                "writer.body-opacity-not-represented",
+                "writer.body-visibility-not-represented",
             ]
         );
     }

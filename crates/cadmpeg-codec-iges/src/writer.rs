@@ -177,16 +177,112 @@ struct Synthesis {
     losses: Vec<LossNote>,
 }
 
+struct BodyPresentation {
+    label: Option<String>,
+    color: i64,
+    visible: Option<bool>,
+}
+
+fn body_presentation(
+    body: &cadmpeg_ir::topology::Body,
+    losses: &mut Vec<LossNote>,
+) -> BodyPresentation {
+    let label = body.name.as_deref().and_then(|name| {
+        if !name.is_empty()
+            && name.len() <= 8
+            && name.trim() == name
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+        {
+            Some(name.to_owned())
+        } else {
+            losses.push(IgesLossCode::WriterBodyNameNotRepresented.note(format!(
+                "IGES body {} name {:?} does not fit an eight-column Directory label",
+                body.id, name
+            )));
+            None
+        }
+    });
+    let color = body.color.map_or(0, |color| {
+        let rgb = (color.r(), color.g(), color.b());
+        let number = match rgb {
+            (0.0, 0.0, 0.0) => 1,
+            (1.0, 0.0, 0.0) => 2,
+            (0.0, 1.0, 0.0) => 3,
+            (0.0, 0.0, 1.0) => 4,
+            (1.0, 1.0, 0.0) => 5,
+            (1.0, 0.0, 1.0) => 6,
+            (0.0, 1.0, 1.0) => 7,
+            (1.0, 1.0, 1.0) => 8,
+            _ => {
+                losses.push(IgesLossCode::WriterBodyColorNotRepresented.note(format!(
+                    "IGES body {} color RGB ({}, {}, {}) has no emitted Directory color",
+                    body.id,
+                    color.r(),
+                    color.g(),
+                    color.b()
+                )));
+                0
+            }
+        };
+        if color.a() != 1.0 {
+            losses.push(IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
+                "IGES body {} opacity {} has no Directory representation",
+                body.id,
+                color.a()
+            )));
+        }
+        number
+    });
+    BodyPresentation {
+        label,
+        color,
+        visible: body.visible,
+    }
+}
+
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
     reject_unsupported_model(ir)?;
+    reject_owned_wire_topology(ir)?;
     validate_analytic_surface_context(ir)?;
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(reject_unsupported_native(ir)?);
+    for body in ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| is_decoder_free_geometry_body(body))
+    {
+        if body.color.is_some() {
+            losses.push(IgesLossCode::WriterBodyColorNotRepresented.note(format!(
+                "IGES free-geometry body {} has no owning Directory Entry for color",
+                body.id
+            )));
+        }
+        if body.visible.is_some() {
+            losses.push(
+                IgesLossCode::WriterBodyVisibilityNotRepresented.note(format!(
+                    "IGES free-geometry body {} has no owning Directory Entry for visibility",
+                    body.id
+                )),
+            );
+        }
+    }
+    let mut body_presentations = BTreeMap::new();
 
     let mut entities = if has_brep_topology(ir) {
-        brep_entities(validate_brep_topology(ir, version)?)?
+        brep_entities(
+            validate_brep_topology(ir, version)?,
+            &mut body_presentations,
+            &mut losses,
+        )?
     } else if has_trimmed_sheet_topology(ir) {
-        topology_entities(validate_trimmed_sheet_topology(ir, version)?)?
+        topology_entities(
+            validate_trimmed_sheet_topology(ir, version)?,
+            &mut body_presentations,
+            &mut losses,
+        )?
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
@@ -313,10 +409,175 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     }
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities, version, minimum_resolution)?,
+        bytes: encode_file(&entities, &body_presentations, version, minimum_resolution)?,
         counts,
         losses,
     })
+}
+
+fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
+    if !ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Wire)
+    {
+        return Ok(());
+    }
+    let mut unsupported_wire = None;
+    for body in ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.kind == BodyKind::Wire)
+    {
+        if body.regions.is_empty() {
+            return Err(CodecError::malformed(format_args!(
+                "IGES wire body {} has no region",
+                body.id
+            )));
+        }
+        let free_geometry = is_decoder_free_geometry_body(body);
+        let mut edge_ids = BTreeSet::new();
+        let mut vertex_owners = BTreeMap::new();
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "IGES wire body {} references missing region {}",
+                        body.id, region_id
+                    ))
+                })?;
+            if region.body != body.id {
+                return Err(CodecError::malformed(format_args!(
+                    "IGES wire region {} is not owned by body {}",
+                    region.id, body.id
+                )));
+            }
+            if region.shells.is_empty() {
+                return Err(CodecError::malformed(format_args!(
+                    "IGES wire region {} has no shell",
+                    region.id
+                )));
+            }
+            for shell_id in &region.shells {
+                let shell = ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "IGES wire region {} references missing shell {}",
+                            region.id, shell_id
+                        ))
+                    })?;
+                if shell.region != region.id {
+                    return Err(CodecError::malformed(format_args!(
+                        "IGES wire shell {} is not owned by region {}",
+                        shell.id, region.id
+                    )));
+                }
+                for edge_id in shell.wire_edges() {
+                    if !edge_ids.insert(edge_id) {
+                        return Err(CodecError::malformed(format_args!(
+                            "IGES wire body {} repeats edge {}",
+                            body.id, edge_id
+                        )));
+                    }
+                    let edge = ir
+                        .model
+                        .edges
+                        .iter()
+                        .find(|edge| edge.id == *edge_id)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "IGES wire shell {} references missing edge {}",
+                                shell.id, edge_id
+                            ))
+                        })?;
+                    for vertex_id in [&edge.start, &edge.end] {
+                        if !ir
+                            .model
+                            .vertices
+                            .iter()
+                            .any(|vertex| vertex.id == *vertex_id)
+                        {
+                            return Err(CodecError::malformed(format_args!(
+                                "IGES wire edge {} references missing vertex {}",
+                                edge.id, vertex_id
+                            )));
+                        }
+                        if let Some(owner) = vertex_owners.insert(vertex_id, edge_id) {
+                            if owner != edge_id && free_geometry && unsupported_wire.is_none() {
+                                unsupported_wire = Some(format!(
+                                    "IGES semantic writer does not encode shared wire vertex {} in body {}",
+                                    vertex_id, body.id
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !free_geometry && unsupported_wire.is_none() {
+            unsupported_wire = Some(format!(
+                "IGES semantic writer does not encode owned wire body {}",
+                body.id
+            ));
+        }
+    }
+    let edge_vertices = ir
+        .model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .collect::<BTreeSet<_>>();
+    let loop_vertices = ir
+        .model
+        .loops
+        .iter()
+        .flat_map(Loop::vertices)
+        .collect::<BTreeSet<_>>();
+    let mut free_vertices = BTreeSet::new();
+    for shell in &ir.model.shells {
+        for vertex_id in shell.free_vertices() {
+            if !ir
+                .model
+                .vertices
+                .iter()
+                .any(|vertex| vertex.id == *vertex_id)
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "IGES shell {} references missing free vertex {}",
+                    shell.id, vertex_id
+                )));
+            }
+            if edge_vertices.contains(vertex_id) || !free_vertices.insert(vertex_id) {
+                return Err(CodecError::malformed(format_args!(
+                    "IGES free vertex {vertex_id} has inconsistent ownership"
+                )));
+            }
+        }
+    }
+    if let Some(vertex) = ir.model.vertices.iter().find(|vertex| {
+        !edge_vertices.contains(&vertex.id)
+            && !loop_vertices.contains(&vertex.id)
+            && !free_vertices.contains(&vertex.id)
+    }) {
+        return Err(CodecError::malformed(format_args!(
+            "IGES vertex {} has no wire or face owner",
+            vertex.id
+        )));
+    }
+    if let Some(message) = unsupported_wire {
+        return Err(CodecError::NotImplemented(message));
+    }
+    Ok(())
 }
 
 fn validate_analytic_surface_context(ir: &CadIr) -> Result<(), CodecError> {
@@ -1173,7 +1434,11 @@ fn validate_brep_topology(
     })
 }
 
-fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecError> {
+fn brep_entities(
+    topology: ValidatedTopology<'_>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir);
@@ -1753,6 +2018,9 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
+            if body.kind == BodyKind::Sheet {
+                body_presentations.insert(index, body_presentation(body, losses));
+            }
             shell_indices.insert(shell.id.as_str(), index);
         }
         if body.kind == BodyKind::Solid {
@@ -1771,6 +2039,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 .map_err(CodecError::malformed)?;
             }
             parameters.push(';');
+            let index = entities.len();
             entities.push(Entity {
                 type_code: 186,
                 form: 0,
@@ -1779,6 +2048,7 @@ fn brep_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecEr
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
+            body_presentations.insert(index, body_presentation(body, losses));
         }
     }
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
@@ -2004,7 +2274,11 @@ fn same_float(left: f64, right: f64) -> bool {
     (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITE_DEGENERATE
 }
 
-fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, CodecError> {
+fn topology_entities(
+    topology: ValidatedTopology<'_>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
     let version = topology.version;
     let ignored_carriers = ignored_carrier_geometry(ir);
@@ -2221,6 +2495,25 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
             }
         }
         parameters.push(';');
+        let body = ir
+            .model
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)
+            .and_then(|shell| {
+                ir.model
+                    .regions
+                    .iter()
+                    .find(|region| region.id == shell.region)
+            })
+            .and_then(|region| ir.model.bodies.iter().find(|body| body.id == region.body))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES sheet face {} has no owning body",
+                    face.id
+                ))
+            })?;
+        let index = entities.len();
         entities.push(Entity {
             type_code: if bounded { 143 } else { 144 },
             form: 0,
@@ -2229,6 +2522,7 @@ fn topology_entities(topology: ValidatedTopology<'_>) -> Result<Vec<Entity>, Cod
             parameter_body: parameters.into_bytes(),
             transform: None,
         });
+        body_presentations.insert(index, body_presentation(body, losses));
     }
 
     let mut points = ir.model.points.iter().collect::<Vec<_>>();
@@ -6494,6 +6788,7 @@ impl Entity {
 
 fn encode_file(
     entities: &[Entity],
+    body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
 ) -> Result<Vec<u8>, CodecError> {
@@ -6508,7 +6803,7 @@ fn encode_file(
     let global_cards = crate::global::layout_global_cards(&global)?;
     let global_count = global_cards.len();
     let mut expanded = Vec::with_capacity(entities.len() * 2);
-    for entity in entities {
+    for (index, entity) in entities.iter().enumerate() {
         if let Some(placement) = entity.transform {
             let transform_parameters = placement
                 .rows
@@ -6527,6 +6822,7 @@ fn encode_file(
                     transform: None,
                 },
                 0_u32,
+                None,
             ));
             let transform_sequence = u32::try_from(expanded.len())
                 .ok()
@@ -6536,9 +6832,9 @@ fn encode_file(
                 })?;
             let mut entity = entity.clone();
             entity.transform = None;
-            expanded.push((entity, transform_sequence));
+            expanded.push((entity, transform_sequence, body_presentations.get(&index)));
         } else {
-            expanded.push((entity.clone(), 0));
+            expanded.push((entity.clone(), 0, body_presentations.get(&index)));
         }
     }
     let mut parameter_sequence = 1_u32;
@@ -6550,7 +6846,7 @@ fn encode_file(
         .map_err(|_| CodecError::NotImplemented("IGES directory count overflows".into()))?;
     let mut directory = Vec::with_capacity(directory_capacity);
     let mut parameters = Vec::new();
-    for (index, (entity, transform_sequence)) in expanded.iter().enumerate() {
+    for (index, (entity, transform_sequence, presentation)) in expanded.iter().enumerate() {
         let directory_sequence = u32::try_from(index)
             .ok()
             .and_then(|value| value.checked_mul(2))
@@ -6572,7 +6868,10 @@ fn encode_file(
                 "0".into(),
                 transform_sequence.to_string(),
                 "0".into(),
-                entity.status.as_field().into(),
+                match presentation.and_then(|presentation| presentation.visible) {
+                    Some(false) => format!("01{}", &entity.status.as_field()[2..]),
+                    _ => entity.status.as_field().into(),
+                },
             ],
             directory_sequence,
         )?);
@@ -6580,12 +6879,17 @@ fn encode_file(
             [
                 entity.type_code.to_string(),
                 "0".into(),
-                "0".into(),
+                presentation
+                    .map_or(0, |presentation| presentation.color)
+                    .to_string(),
                 parameter_count.to_string(),
                 entity.form.to_string(),
                 String::new(),
                 String::new(),
-                entity.label.to_owned(),
+                presentation
+                    .and_then(|presentation| presentation.label.as_deref())
+                    .unwrap_or(entity.label)
+                    .to_owned(),
                 "0".into(),
             ],
             directory_sequence + 1,
