@@ -403,6 +403,39 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
 }
 
 #[test]
+fn f3z_nested_member_reference_obeys_session_depth_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
+    let component = f3d_without_brep("component-design", "component.f3d", &[]);
+    let middle = f3d_without_brep(
+        "assembly-design",
+        "middle.f3d",
+        &[("component.f3d", CHILD_ROLE)],
+    );
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    );
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_recursion_depth = 1;
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &options)
+        .expect_err("second member reference exceeds the selected depth");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RecursionDepth
+                && limit.operation == "f3z member reference"
+    ));
+}
+
+#[test]
 fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let inner = [
