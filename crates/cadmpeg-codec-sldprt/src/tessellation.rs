@@ -7,7 +7,7 @@ use cadmpeg_ir::units::FinitePoint2;
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -340,24 +340,16 @@ pub(crate) fn auxiliary_channels_are_consistent(
     {
         return false;
     }
-    let Some(list_c) = strips
-        .iter()
-        .map(|length| length.checked_mul(2)?.checked_sub(2))
-        .collect::<Option<Vec<_>>>()
-    else {
+    let Some(endpoint_count) = strips.iter().try_fold(0usize, |total, length| {
+        total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
+    }) else {
         return false;
     };
-    let Some(endpoint_count) = list_c
-        .iter()
-        .try_fold(0usize, |total, count| total.checked_add(*count))
-    else {
-        return false;
-    };
-    let stored_list_c = c
-        .data()
-        .chunks_exact(4)
-        .map(|bytes| usize::try_from(View::u32_le_at(bytes, 0)?).ok())
-        .collect::<Option<Vec<_>>>();
+    let stored_list_c_matches = c.data().chunks_exact(4).len() == strips.len()
+        && c.data().chunks_exact(4).zip(strips).all(|(bytes, length)| {
+            length.checked_mul(2).and_then(|count| count.checked_sub(2))
+                == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
+        });
     let counts = (
         usize::try_from(b.count()).ok(),
         usize::try_from(d.count()).ok(),
@@ -371,7 +363,7 @@ pub(crate) fn auxiliary_channels_are_consistent(
     payload_lengths
         && (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
         && usize::try_from(c.count()).ok() == Some(strips.len())
-        && stored_list_c.as_deref() == Some(list_c.as_slice())
+        && stored_list_c_matches
         && b.data()
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
@@ -389,36 +381,60 @@ struct ProbedTable {
 ///
 /// `None` is a probe miss: the descriptors at this byte position do not state
 /// the display-list grammar.
-fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
+fn probe_table(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    mut at: usize,
+) -> Result<Option<(ProbedTable, usize)>, cadmpeg_core::CodecError> {
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
     let mut channels = Vec::new();
     for index in 0..6 {
-        let item_size = View::u32_le_at(bytes, at)? as usize;
-        let kind = View::u32_le_at(bytes, at + 4)?;
-        let flags = View::u32_le_at(bytes, at + 8)?;
-        let count = View::u32_le_at(bytes, at + 12)? as usize;
+        let Some(item_size) = View::u32_le_at(bytes, at).map(|value| value as usize) else {
+            return Ok(None);
+        };
+        let Some(kind) = View::u32_le_at(bytes, at + 4) else {
+            return Ok(None);
+        };
+        let Some(flags) = View::u32_le_at(bytes, at + 8) else {
+            return Ok(None);
+        };
+        let Some(count) = View::u32_le_at(bytes, at + 12).map(|value| value as usize) else {
+            return Ok(None);
+        };
         let data = at + 16;
-        let end = data.checked_add(item_size.checked_mul(count)?)?;
+        let Some(end) = item_size
+            .checked_mul(count)
+            .and_then(|size| data.checked_add(size))
+        else {
+            return Ok(None);
+        };
         if end > bytes.len() {
-            return None;
+            return Ok(None);
         }
-        channels.push(
-            TessellationChannel::new(
-                cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                item_size as u32,
-                kind,
-                flags,
-                bytes[data..end].to_vec(),
-            )
-            .ok()?,
-        );
+        ctx.charge_collection_items(1, "decode display-list channels")?;
+        let Ok(channel) = TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+            item_size as u32,
+            kind,
+            flags,
+            ctx.copy_retained(&bytes[data..end], "copy display-list channel bytes")?,
+        ) else {
+            return Ok(None);
+        };
+        channels.push(channel);
         if index == 0 && item_size == 4 && kind == 8 {
-            strips = (0..count)
+            ctx.charge_collection_items(count as u64, "decode display-list strips")?;
+            let Some(parsed) = (0..count)
                 .map(|i| View::u32_le_at(bytes, data + i * 4).map(|v| v as usize))
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Ok(None);
+            };
+            strips = parsed;
         } else if index == 1 && item_size == 12 && kind == 100 {
+            ctx.charge_collection_items(count as u64, "decode display-list vertices")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -426,13 +442,13 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
                         .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
-                vertices.push(Point3::new(
-                    read(p)? * 1000.0,
-                    read(p + 4)? * 1000.0,
-                    read(p + 8)? * 1000.0,
-                ));
+                let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
+                    return Ok(None);
+                };
+                vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
         } else if index == 2 && item_size == 12 && kind == 100 {
+            ctx.charge_collection_items(count as u64, "decode display-list normals")?;
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -440,7 +456,10 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
                         .map(f64::from)
                         .filter(|value| value.is_finite())
                 };
-                normals.push(Vector3::new(read(p)?, read(p + 4)?, read(p + 8)?));
+                let (Some(x), Some(y), Some(z)) = (read(p), read(p + 4), read(p + 8)) else {
+                    return Ok(None);
+                };
+                normals.push(Vector3::new(x, y, z));
             }
         }
         at = end;
@@ -450,15 +469,15 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
             && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
             && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
     {
-        return None;
+        return Ok(None);
     }
     if strips.is_empty()
         || vertices.is_empty()
         || !auxiliary_channels_are_consistent(&strips, &channels[3..])
     {
-        return None;
+        return Ok(None);
     }
-    Some((
+    Ok(Some((
         ProbedTable {
             strips,
             vertices,
@@ -466,7 +485,7 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
             channels,
         },
         at,
-    ))
+    )))
 }
 
 /// Pair one display-list table's lanes into mesh rows.
@@ -479,7 +498,11 @@ fn probe_table(bytes: &[u8], mut at: usize) -> Option<(ProbedTable, usize)> {
 /// that do not cut the vertex lane, alike. The display-list grammar states a
 /// normal descriptor for every table, so the lane is always present and `None`
 /// is never the reading of an empty one.
-fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
+fn parse_table(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    at: usize,
+) -> Result<Option<(Mesh, usize)>, cadmpeg_core::CodecError> {
     let Some((
         ProbedTable {
             strips,
@@ -488,11 +511,20 @@ fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg
             channels,
         },
         end,
-    )) = probe_table(bytes, at)
+    )) = probe_table(ctx, bytes, at)?
     else {
         return Ok(None);
     };
+    ctx.charge_collection_items(strips.len() as u64, "pair display-list strip spans")?;
     let spans: Vec<u32> = strips.into_iter().map(|length| length as u32).collect();
+    if normals.len() == vertices.len() {
+        ctx.charge_collection_items(vertices.len() as u64, "pair display-list shaded vertices")?;
+        ctx.charge_collection_items(
+            vertices.len() as u64,
+            "partition display-list strip vertices",
+        )?;
+        ctx.charge_collection_items(spans.len() as u64, "partition display-list strips")?;
+    }
     match TessellationMesh::from_strip_lanes(vertices, Some(normals), &spans) {
         Ok(mesh) => Ok(Some((Mesh { mesh, channels }, end))),
         Err(error) => Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -502,18 +534,19 @@ fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg
 }
 
 pub(crate) fn section_display_faces(
+    ctx: &DecodeContext<'_>,
     section: Section<'_>,
 ) -> Result<Vec<DisplayFace>, cadmpeg_core::CodecError> {
     #[cfg(test)]
     DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
-    let markers = payload
+    let mut markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
         .enumerate()
         .filter_map(|(offset, bytes)| (bytes == FACE_TESSELLATION_CLASS).then_some(offset))
-        .collect::<Vec<_>>();
+        .peekable();
     let mut faces = Vec::new();
-    for (marker_index, marker) in markers.iter().copied().enumerate() {
+    while let Some(marker) = markers.next() {
         let header = marker + FACE_TESSELLATION_CLASS.len();
         let (Some(triangle_count), Some(strip_count)) = (
             View::u32_le_at(payload, header + compact_face::TRIANGLE_COUNT),
@@ -525,12 +558,9 @@ pub(crate) fn section_display_faces(
         // face descriptor tables continue after them without repeating the
         // `uoTempFaceTessData_c` declaration. Only another face declaration
         // starts a new sequence.
-        let limit = markers
-            .get(marker_index + 1)
-            .copied()
-            .unwrap_or(payload.len());
+        let limit = markers.peek().copied().unwrap_or(payload.len());
         let start = header + descriptor_table_offset(payload, header);
-        let Some(tables) = parse_table_sequence(payload, start, limit)? else {
+        let Some(tables) = parse_table_sequence(ctx, payload, start, limit)? else {
             continue;
         };
         // The face header states the mesh of its first table when it states a
@@ -570,6 +600,7 @@ pub(crate) fn section_display_faces(
             else {
                 continue;
             };
+            ctx.charge_collection_items(1, "collect display-list faces")?;
             faces.push(DisplayFace {
                 mesh,
                 table,
@@ -585,7 +616,7 @@ pub(crate) fn section_display_faces(
             .map_or(faces[index].metadata.end(), |next| next.table.start());
         faces[index].metadata = faces[index].metadata.truncated(metadata_end);
         faces[index].surface_references =
-            persistent_surface_references(payload, faces[index].metadata);
+            persistent_surface_references(ctx, payload, faces[index].metadata)?;
     }
     Ok(faces)
 }
@@ -614,12 +645,13 @@ fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
 type TableSpan = (usize, usize, Mesh);
 
 fn parse_table_sequence(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     at: usize,
     limit: usize,
 ) -> Result<Option<Vec<TableSpan>>, cadmpeg_core::CodecError> {
     let first_start = at;
-    let Some((mesh, mut at)) = parse_table(payload, at)? else {
+    let Some((mesh, mut at)) = parse_table(ctx, payload, at)? else {
         return Ok(None);
     };
     if at > limit {
@@ -628,6 +660,7 @@ fn parse_table_sequence(
     if mesh.vertex_count() == 0 {
         return Ok(None);
     }
+    ctx.charge_collection_items(1, "collect display-list tables")?;
     let mut meshes = vec![(first_start, at, mesh)];
     while at + 16 <= limit {
         let Some(relative) = payload[at..limit]
@@ -638,8 +671,9 @@ fn parse_table_sequence(
         };
         at += relative;
         let start = at;
-        if let Some((next, end)) = parse_table(payload, at)? {
+        if let Some((next, end)) = parse_table(ctx, payload, at)? {
             if end <= limit && next.vertex_count() > 0 {
+                ctx.charge_collection_items(1, "collect display-list tables")?;
                 meshes.push((start, end, next));
                 at = end;
             } else {
@@ -653,9 +687,10 @@ fn parse_table_sequence(
 }
 
 fn persistent_surface_references(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     range: ByteRange,
-) -> Vec<PersistentSurfaceReference> {
+) -> Result<Vec<PersistentSurfaceReference>, cadmpeg_core::CodecError> {
     const MARKER: &[u8] = &[0xff, 0xfe, 0xff];
     let mut references = Vec::new();
     let mut at = range.start();
@@ -678,6 +713,7 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
+        ctx.charge_collection_items(count as u64, "decode display-list reference units")?;
         let Some(units) = raw
             .chunks_exact(2)
             .enumerate()
@@ -687,6 +723,8 @@ fn persistent_surface_references(
             at = end;
             continue;
         };
+        let _text_reservation =
+            ctx.reserve_scoped((count * 3) as u64, "decode display-list reference text")?;
         let Ok(text) = String::from_utf16(&units) else {
             at = end;
             continue;
@@ -712,23 +750,30 @@ fn persistent_surface_references(
             at = end;
             continue;
         };
-        let mut trailing_fields = fields.collect::<Vec<_>>();
+        let mut trailing_fields = Vec::new();
+        for field in fields {
+            ctx.charge_collection_items(1, "scan display-list reference fields")?;
+            trailing_fields.push(field);
+        }
         if trailing_fields
             .last()
             .is_some_and(|field| field.trim().is_empty())
         {
             trailing_fields.pop();
         }
-        let trailing_fields = trailing_fields
-            .into_iter()
-            .map(|field| {
-                field
-                    .parse::<i32>()
-                    .ok()
-                    .map(|value| u32::from_ne_bytes(value.to_ne_bytes()))
-            })
-            .collect::<Option<Vec<_>>>();
-        references.push(match trailing_fields {
+        let mut numeric_fields = Some(Vec::new());
+        for field in trailing_fields {
+            let Ok(value) = field.parse::<i32>() else {
+                numeric_fields = None;
+                break;
+            };
+            ctx.charge_collection_items(1, "decode display-list reference fields")?;
+            if let Some(values) = &mut numeric_fields {
+                values.push(u32::from_ne_bytes(value.to_ne_bytes()));
+            }
+        }
+        ctx.charge_collection_items(1, "collect display-list references")?;
+        references.push(match numeric_fields {
             Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
                 feature_source_id,
                 local_id: local_surface_id,
@@ -741,7 +786,7 @@ fn persistent_surface_references(
         });
         at = end;
     }
-    references
+    Ok(references)
 }
 
 pub(crate) fn summary_for_faces(faces: &[DisplayFace]) -> Summary {

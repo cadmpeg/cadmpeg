@@ -2221,7 +2221,7 @@ fn build_geometry_ir(
     let mut display_summary = crate::tessellation::Summary::default();
     for section in scan.sections() {
         ctx.charge_collection_items(1, "collect SLDPRT display sections")?;
-        let faces = crate::tessellation::section_display_faces(section)?;
+        let faces = crate::tessellation::section_display_faces(ctx, section)?;
         let summary = crate::tessellation::summary_for_faces(&faces);
         display_summary.vertices += summary.vertices;
         display_summary.triangles += summary.triangles;

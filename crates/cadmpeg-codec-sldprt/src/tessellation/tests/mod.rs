@@ -67,6 +67,17 @@ use cadmpeg_ir::topology::{
 
 mod display_tables;
 
+fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurfaceReference> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    persistent_surface_references(&ctx, payload, range).expect("service profile admits references")
+}
+
 fn table() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
     let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
@@ -598,6 +609,68 @@ fn framed_surface_reference(text: &str) -> Vec<u8> {
     payload
 }
 
+fn reference_limit_error(
+    payload: &[u8],
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, policy)
+        .expect("root");
+    persistent_surface_references(
+        &ctx,
+        payload,
+        ByteRange::new(0, payload.len()).expect("ordered range"),
+    )
+    .expect_err("reference allocation exceeds the limit")
+}
+
+#[test]
+fn display_reference_units_refuse_collection_limit_before_allocation() {
+    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::from(payload[3]) - 1;
+    assert!(matches!(reference_limit_error(&payload, &policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "decode display-list reference units"));
+}
+
+#[test]
+fn display_reference_text_refuses_materialized_limit_before_allocation() {
+    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::from(payload[3]) * 3 - 1;
+    assert!(matches!(reference_limit_error(&payload, &policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "decode display-list reference text"));
+}
+
+fn reference_collection_refusal(extra: u64, operation: &'static str) {
+    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = u64::from(payload[3]) + extra;
+    assert!(matches!(reference_limit_error(&payload, &policy),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == operation));
+}
+
+#[test]
+fn display_reference_fields_refuse_collection_limit_before_scanning() {
+    reference_collection_refusal(0, "scan display-list reference fields");
+}
+
+#[test]
+fn display_reference_numeric_fields_refuse_collection_limit_before_allocation() {
+    reference_collection_refusal(3, "decode display-list reference fields");
+}
+
+#[test]
+fn display_references_refuse_collection_limit_before_insertion() {
+    reference_collection_refusal(5, "collect display-list references");
+}
+
 #[test]
 fn overlapping_display_face_tables_narrow_to_an_empty_metadata_range() {
     // Display-face metadata is narrowed to where the following table starts. Two
@@ -610,19 +683,19 @@ fn overlapping_display_face_tables_narrow_to_an_empty_metadata_range() {
     let mut payload = vec![0; 192];
     let reference = framed_surface_reference("moPlaneSurfIdRep_c,7,3,");
     payload[64..64 + reference.len()].copy_from_slice(&reference);
-    assert!(persistent_surface_references(&payload, overlapped).is_empty());
+    assert!(decoded_references(&payload, overlapped).is_empty());
     let narrowed = metadata.truncated(120);
     assert_eq!((narrowed.start(), narrowed.end()), (64, 120));
     assert_eq!(
-        persistent_surface_references(&payload, narrowed).len(),
-        persistent_surface_references(&payload, metadata).len()
+        decoded_references(&payload, narrowed).len(),
+        decoded_references(&payload, metadata).len()
     );
 }
 
 #[test]
 fn persistent_surface_reference_decodes_signed_tail() {
     let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
-    let references = persistent_surface_references(
+    let references = decoded_references(
         &payload,
         ByteRange::new(0, payload.len()).expect("ordered range"),
     );
@@ -639,7 +712,7 @@ fn persistent_surface_reference_decodes_signed_tail() {
 #[test]
 fn opaque_surface_suffix_remains_source_only() {
     let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
-    let references = persistent_surface_references(
+    let references = decoded_references(
         &payload,
         ByteRange::new(0, payload.len()).expect("ordered range"),
     );
@@ -1944,7 +2017,7 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
 fn persistent_surface_source_sentinels_are_absent() {
     for source in [0, u32::MAX] {
         let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
-        let references = persistent_surface_references(
+        let references = decoded_references(
             &payload,
             ByteRange::new(0, payload.len()).expect("ordered range"),
         );
@@ -1968,7 +2041,14 @@ fn a_short_normal_lane_refuses_the_display_table() {
     payload.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
     payload.extend(descriptor(1, 8, 4, &[0; 4]));
 
-    let error = parse_table(&payload, 0)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    let error = parse_table(&ctx, &payload, 0)
         .expect_err("a short normal lane is refused")
         .to_string();
     assert!(error.contains("vertex normal(s)"), "{error}");
