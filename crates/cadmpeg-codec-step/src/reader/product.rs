@@ -631,6 +631,7 @@ fn apply_body_placements(
         if bodies.is_empty() {
             continue;
         }
+        let (body_ids, _body_bytes) = bodies.into_parts();
         let transform = match mapped_item_transform(origin, target, geometry) {
             Ok(Some(transform)) => transform,
             Ok(None) | Err(TransformError::Singular) => {
@@ -642,7 +643,7 @@ fn apply_body_placements(
             }
             Err(error) => return Err(placement_error(error)),
         };
-        for body in bodies {
+        for body in body_ids {
             placements_by_body
                 .entry(body)
                 .or_default()
@@ -784,21 +785,22 @@ fn shape_bindings(
             &mut representation_cache,
             ctx,
         )? {
-            result.entry(definition).or_default().extend(bodies);
+            let (body_ids, _body_bytes) = bodies.into_parts();
+            result.entry(definition).or_default().extend(body_ids);
         }
     }
     Ok(result)
 }
 
-fn shape_binding(
+fn shape_binding<'a>(
     record: &RawRecord,
     exchange: &Exchange,
     pds: &BTreeMap<u64, u64>,
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
-    representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Option<(u64, Vec<BodyId>)>, CodecError> {
+    representation_cache: &mut BTreeMap<u64, super::topology::AdmittedRepresentationBodies<'a>>,
+    ctx: Option<&'a DecodeContext<'_>>,
+) -> Result<Option<(u64, super::topology::AdmittedRepresentationBodies<'a>)>, CodecError> {
     let Some(shape) =
         named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0).and_then(ValueExt::reference)
     else {

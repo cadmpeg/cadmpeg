@@ -2,6 +2,8 @@
 //! Standard model-space datum planes stored in `ActDatums`.
 
 use cadmpeg_core::bytes::find_from as find;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use crate::scalar;
 use crate::surface::cylinder_frame_readers::positional_cylinder_frames_agree;
@@ -139,10 +141,14 @@ pub(crate) fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
 /// the namespace and one complete, valid positional or active-envelope frame
 /// is proved. This keeps unrelated scalar-shaped bytes and ambiguous duplicate
 /// rows out of the native surface join.
-pub(crate) fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
+pub(crate) fn cylinders(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<DatumCylinder>, CodecError> {
     let rows = crate::surface::rows(payload);
-    let parameters = crate::surface::parameter_records(payload);
-    rows.iter()
+    let parameters = crate::surface::parameter_records(ctx, payload)?;
+    Ok(rows
+        .iter()
         .filter(|row| row.id != 0 && row.kind == SurfaceKind::Cylinder)
         .filter_map(|row| {
             let parameter = crate::surface::unique_surface_parameter(&parameters, row.id)?;
@@ -157,7 +163,7 @@ pub(crate) fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
                 offset_in_payload: row.offset,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Decode the bounded active-datum cylinder envelope used by type-24 rows.

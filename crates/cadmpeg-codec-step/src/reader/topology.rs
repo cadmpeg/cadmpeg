@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use super::geometry::curve_carrier_record;
 use super::{source_numeric_id, RecordExt, ValueExt};
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
@@ -68,50 +68,157 @@ fn topology_commit_error(context: &str, error: &DraftError) -> String {
     }
 }
 
+/// Body identifiers held with their temporary decode reservation.
+#[derive(Debug)]
+pub(super) struct AdmittedRepresentationBodies<'a> {
+    values: Vec<BodyId>,
+    reservation: Option<ScopedReservation<'a>>,
+}
+
+impl<'a> AdmittedRepresentationBodies<'a> {
+    pub(super) fn into_parts(self) -> (Vec<BodyId>, Option<ScopedReservation<'a>>) {
+        (self.values, self.reservation)
+    }
+}
+
+impl std::ops::Deref for AdmittedRepresentationBodies<'_> {
+    type Target = [BodyId];
+
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+fn admitted_body_clone<'a>(
+    bodies: &[BodyId],
+    ctx: Option<&'a DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<AdmittedRepresentationBodies<'a>, cadmpeg_core::CodecError> {
+    let bytes = if let Some(ctx) = ctx {
+        ctx.charge_collection_items(u64_from_index(bodies.len()), operation)?;
+        let bytes = bodies.iter().try_fold(
+            u64_from_index(bodies.len())
+                .checked_mul(u64_from_index(std::mem::size_of::<BodyId>()))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            |total, body| {
+                total
+                    .checked_add(u64_from_index(body.as_str().len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+            },
+        )?;
+        Some(ctx.reserve_scoped(bytes, operation)?)
+    } else {
+        None
+    };
+    Ok(AdmittedRepresentationBodies {
+        values: bodies.to_vec(),
+        reservation: bytes,
+    })
+}
+
+fn cache_representation_bodies<'a>(
+    cache: &mut BTreeMap<u64, AdmittedRepresentationBodies<'a>>,
+    representation: u64,
+    bodies: &[BodyId],
+    ctx: Option<&'a DecodeContext<'_>>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut admitted = admitted_body_clone(bodies, ctx, "step_representation_body_cache_values")?;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "step_representation_body_cache_entries")?;
+        if let Some(bytes) = admitted.reservation.as_mut() {
+            bytes.grow(u64_from_index(std::mem::size_of::<(
+                u64,
+                AdmittedRepresentationBodies<'_>,
+            )>()))?;
+        }
+    }
+    cache.insert(representation, admitted);
+    Ok(())
+}
+
+fn insert_body_id(
+    bodies: &mut BTreeSet<BodyId>,
+    body: &BodyId,
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: &mut Option<ScopedReservation<'_>>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if bodies.contains(body) {
+        return Ok(());
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "step_representation_body_set")?;
+        if let Some(bytes) = bytes.as_mut() {
+            let amount = u64_from_index(std::mem::size_of::<BodyId>())
+                .checked_add(u64_from_index(body.as_str().len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("step_representation_body_set", u64::MAX - 1, u64::MAX)
+                })?;
+            bytes.grow(amount)?;
+        }
+    }
+    bodies.insert(body.clone());
+    Ok(())
+}
+
 /// Resolve the bodies represented by a representation item graph.
 ///
 /// A representation can contain a body root directly or contain mapped items
-/// whose representation map points at another representation.  Keep this
+/// whose representation map points at another representation. Keep this
 /// traversal shared by topology classification and product placement so both
 /// consumers apply the same graph and cycle rules.
-pub(super) fn representation_bodies(
+pub(super) fn representation_bodies<'a>(
     representation: u64,
     exchange: &Exchange,
     topology: &TopologyData,
-    cache: &mut BTreeMap<u64, Vec<BodyId>>,
+    cache: &mut BTreeMap<u64, AdmittedRepresentationBodies<'a>>,
     active: &mut BTreeSet<u64>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<Vec<BodyId>, cadmpeg_core::CodecError> {
+    ctx: Option<&'a DecodeContext<'_>>,
+) -> Result<AdmittedRepresentationBodies<'a>, cadmpeg_core::CodecError> {
     if let Some(bodies) = cache.get(&representation) {
-        return Ok(bodies.clone());
+        return admitted_body_clone(bodies, ctx, "step_representation_body_cache_copy");
     }
     if ctx.is_none() && depth >= super::record_graph_limit(None) {
-        return Ok(Vec::new());
+        return admitted_body_clone(&[], ctx, "step_representation_body_empty");
     }
     let _depth_guard = ctx
         .map(|ctx| ctx.enter_nested("step_representation_body_walk"))
         .transpose()?;
     if let Some(bodies) = topology.body_by_root.get(&representation) {
-        let bodies = bodies.clone();
-        cache.insert(representation, bodies.clone());
+        let bodies = admitted_body_clone(bodies, ctx, "step_representation_body_root_copy")?;
+        cache_representation_bodies(cache, representation, &bodies, ctx)?;
         return Ok(bodies);
     }
-    if !active.insert(representation) {
-        return Ok(Vec::new());
+    if active.contains(&representation) {
+        return admitted_body_clone(&[], ctx, "step_representation_body_empty");
     }
+    let active_bytes = if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "step_representation_body_active")?;
+        Some(ctx.reserve_scoped(
+            u64_from_index(std::mem::size_of::<u64>()),
+            "step_representation_body_active",
+        )?)
+    } else {
+        None
+    };
+    active.insert(representation);
     let mut body_ids = BTreeSet::new();
+    let mut body_ids_bytes = ctx
+        .map(|ctx| ctx.reserve_scoped(0, "step_representation_body_set"))
+        .transpose()?;
     if let Some(items) = exchange
         .records()
         .get(&representation)
-        .and_then(representation_items)
+        .and_then(representation_item_values)
     {
-        for item in items {
+        for item in items.iter().filter_map(ValueExt::reference) {
             let Some(record) = exchange.records().get(&item) else {
                 continue;
             };
             if let Some(bodies) = topology.body_by_root.get(&item) {
-                body_ids.extend(bodies.iter().cloned());
+                for body in bodies {
+                    insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+                }
                 continue;
             }
             if record.partial("MAPPED_ITEM").is_none() {
@@ -120,7 +227,7 @@ pub(super) fn representation_bodies(
             let Some(mapped_representation) = mapped_representation(record, exchange) else {
                 continue;
             };
-            body_ids.extend(representation_bodies(
+            let nested = representation_bodies(
                 mapped_representation,
                 exchange,
                 topology,
@@ -128,7 +235,10 @@ pub(super) fn representation_bodies(
                 active,
                 depth + 1,
                 ctx,
-            )?);
+            )?;
+            for body in nested.iter() {
+                insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+            }
         }
     }
     for related in topology
@@ -138,20 +248,39 @@ pub(super) fn representation_bodies(
         .flatten()
         .copied()
     {
-        body_ids.extend(representation_bodies(
-            related,
-            exchange,
-            topology,
-            cache,
-            active,
-            depth + 1,
-            ctx,
-        )?);
+        let nested =
+            representation_bodies(related, exchange, topology, cache, active, depth + 1, ctx)?;
+        for body in nested.iter() {
+            insert_body_id(&mut body_ids, body, ctx, &mut body_ids_bytes)?;
+        }
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            u64_from_index(body_ids.len()),
+            "step_representation_body_output",
+        )?;
+        if let Some(bytes) = body_ids_bytes.as_mut() {
+            bytes.grow(
+                u64_from_index(body_ids.len())
+                    .checked_mul(u64_from_index(std::mem::size_of::<BodyId>()))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "step_representation_body_output",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?,
+            )?;
+        }
     }
     let bodies = body_ids.into_iter().collect::<Vec<_>>();
     active.remove(&representation);
-    cache.insert(representation, bodies.clone());
-    Ok(bodies)
+    drop(active_bytes);
+    cache_representation_bodies(cache, representation, &bodies, ctx)?;
+    Ok(AdmittedRepresentationBodies {
+        values: bodies,
+        reservation: body_ids_bytes,
+    })
 }
 
 /// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
@@ -200,6 +329,30 @@ fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
             .simple_name()
             .and_then(|name| named_refs(record, name, 1))
     })
+}
+
+fn representation_item_values(record: &RawRecord) -> Option<&[Value]> {
+    if record.partials.len() == 1 {
+        return entity_parameter(record, "REPRESENTATION", 1)
+            .and_then(reference_values)
+            .or_else(|| {
+                record
+                    .simple_name()
+                    .and_then(|name| entity_parameter(record, name, 1))
+                    .and_then(reference_values)
+            });
+    }
+    record
+        .partial("REPRESENTATION")?
+        .parameters
+        .iter()
+        .find_map(reference_values)
+}
+
+fn reference_values(value: &Value) -> Option<&[Value]> {
+    value
+        .list()
+        .filter(|items| items.iter().all(|item| item.reference().is_some()))
 }
 
 fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {

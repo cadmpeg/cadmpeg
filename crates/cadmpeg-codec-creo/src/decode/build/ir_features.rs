@@ -74,6 +74,7 @@ fn ordered_row_feature_ids(rows: &[crate::feature::rows::FeatureRow]) -> Vec<u32
 }
 
 pub(super) fn emit_model_features(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -102,6 +103,7 @@ pub(super) fn emit_model_features(
             "datum_plane_feature",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model features")?;
         ir.model.features.push(Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -141,6 +143,7 @@ pub(super) fn emit_model_features(
             "geometry_generator_feature",
             Exactness::ByteExact,
         );
+        ctx.charge_entities(1, "admit Creo model features")?;
         ir.model.features.push(Feature {
             id,
             ordinal: ir.model.features.len() as u64,
@@ -179,6 +182,9 @@ pub(super) fn emit_model_features(
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.features.operations.iter().enumerate() {
         let id = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, operation.feature_id);
+        if !ir.model.features.iter().any(|feature| feature.id == id) {
+            ctx.charge_entities(1, "admit Creo model features")?;
+        }
         let current_operation =
             current_feature_operation(&scan.features.operations, operation.feature_id);
         let outputs = feature_output_bodies(scan, ir, operation.feature_id);
@@ -383,6 +389,7 @@ pub(super) fn emit_model_features(
         else {
             continue;
         };
+        ctx.charge_entities(1, "admit Creo model features")?;
         let reference_name = feature_reference_name(scan, feature_id);
         let reference_name = reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
@@ -480,6 +487,7 @@ pub(super) fn emit_model_features(
 }
 
 pub(super) fn finish_feature_transfers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -488,7 +496,7 @@ pub(super) fn finish_feature_transfers(
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir);
     reconcile_feature_links(scan, ir, &prototype_feature_dependencies)?;
-    let feature_result_topology_count = emit_feature_result_topologies(scan, ir);
+    let feature_result_topology_count = emit_feature_result_topologies(ctx, scan, ir)?;
     let feature_result_edge_count = ir
         .model
         .feature_result_topologies
@@ -496,9 +504,9 @@ pub(super) fn finish_feature_transfers(
         .map(|state| state.edges().len())
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
-        transfer_feature_dimensions(scan, ir, annotations)?;
+        transfer_feature_dimensions(ctx, scan, ir, annotations)?;
     let transferred_curve_expression_parameter_count =
-        transfer_curve_expression_features(scan, ir, annotations, &dimension_parameters)?;
+        transfer_curve_expression_features(ctx, scan, ir, annotations, &dimension_parameters)?;
     {
         let active_expressions = scan
             .curves

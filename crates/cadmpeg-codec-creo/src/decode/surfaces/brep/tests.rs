@@ -773,15 +773,17 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         ir.model.curves.extend([curve.clone(), curve]);
     }
 
-    let counts = transfer_native_brep(
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &mut Vec::new(),
-    )
+    let counts = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_native_brep(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &mut Vec::new(),
+        )
+    })
     .expect("valid source object identity");
 
     assert_eq!(counts.topological_point_count, 3);
@@ -861,15 +863,17 @@ fn native_brep_rejects_ambiguous_model_carriers() {
         source_object: None,
     });
 
-    let counts = transfer_native_brep(
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-        &mut Vec::new(),
-    )
+    let counts = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_native_brep(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &mut Vec::new(),
+        )
+    })
     .expect("valid source object identity");
 
     assert_eq!(counts.topological_point_count, 3);

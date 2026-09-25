@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// Scalar slots and their source tokens, with a checked count or shape.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Scalars<Shape> {
@@ -14,7 +17,27 @@ pub(crate) type DimensionedScalars = Scalars<[u32; 2]>;
 pub(crate) type CountedScalars = Scalars<u32>;
 
 impl DimensionedScalars {
+    /// Admit the declared grid before allocating its value slots.
+    pub(crate) fn admit_empty(
+        ctx: &DecodeContext<'_>,
+        dimensions: u32,
+        count: u32,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(len) = usize::try_from(dimensions)
+            .ok()
+            .and_then(|dimensions| usize::try_from(count).ok()?.checked_mul(dimensions))
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            shape: [dimensions, count],
+            values: ctx.alloc_filled(len, None, "admit Creo spline scalar grid")?,
+            tokens: None,
+        }))
+    }
+
     /// Allocates the declared shape with undecoded slots.
+    #[cfg(test)]
     pub(crate) fn empty(dimensions: u32, count: u32) -> Option<Self> {
         let len = usize::try_from(dimensions)
             .ok()?
@@ -91,6 +114,33 @@ impl<Shape> Scalars<Shape> {
 #[cfg(test)]
 mod tests {
     use super::{CountedScalars, DimensionedScalars};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn dimensioned_scalar_grid_refuses_before_allocating_value_slots() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &policy)
+            .expect("small root is admitted");
+        let error = DimensionedScalars::admit_empty(&ctx, 2, 2)
+            .expect_err("four slots exceed the three-item limit");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Creo spline scalar grid"
+        ));
+
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0; 4], &arena, &service)
+            .expect("small root is admitted");
+        let grid = DimensionedScalars::admit_empty(&ctx, 2, 2)
+            .expect("service profile admits four slots")
+            .expect("valid shape");
+        assert_eq!(grid.values(), &[None; 4]);
+    }
 
     #[test]
     fn dimensioned_fills_reject_mismatched_extents_without_mutation() {

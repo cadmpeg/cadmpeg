@@ -6,3 +6,4 @@ pub(crate) mod shells;
 mod wires;
 
 mod numerical_range;
+mod representation_bodies;
