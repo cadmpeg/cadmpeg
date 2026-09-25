@@ -125,10 +125,16 @@ pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     Ok(tokens)
 }
 
+#[derive(Clone, Copy)]
+enum LiteralStorage {
+    Retained,
+    Transient,
+}
+
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
     budget: Option<&'ctx DecodeContext<'arena>>,
-    transient_literals: bool,
+    literal_storage: LiteralStorage,
     at: usize,
     allow_print_controls: bool,
     previous_was_signature: bool,
@@ -147,7 +153,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         Self {
             input,
             budget: None,
-            transient_literals: false,
+            literal_storage: LiteralStorage::Retained,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
@@ -160,7 +166,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     }
 
     pub(crate) fn set_transient_literals(&mut self) {
-        self.transient_literals = true;
+        self.literal_storage = LiteralStorage::Transient;
     }
 
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
@@ -717,7 +723,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             return Err(Self::error(start, "unused binary bits are not zero"));
         }
         let packed_len = digits.len().div_ceil(2);
-        let _packed_temporary = if self.transient_literals {
+        let _packed_temporary = if matches!(self.literal_storage, LiteralStorage::Transient) {
             self.budget
                 .map(|ctx| {
                     ctx.reserve_scoped(u64_from_index(packed_len), "step_binary_packed_temp")
@@ -778,7 +784,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .map(|ctx| ctx.reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp"))
             .transpose()
             .map_err(|error| Self::resource_error(start, error))?;
-        if !self.transient_literals {
+        if matches!(self.literal_storage, LiteralStorage::Retained) {
             if let Some(ctx) = self.budget {
                 ctx.charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
                     .map_err(|error| Self::resource_error(start, error))?;
