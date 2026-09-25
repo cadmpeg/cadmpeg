@@ -24,6 +24,29 @@ pub(crate) struct FamilyOutput {
     pub(crate) report: DecodeBody,
     pub(crate) annotations: Annotations,
     pub(crate) unknowns: Vec<UnknownRecord>,
+    pub(crate) admitted_model_entities: u64,
+}
+
+pub(crate) struct FamilyEntityAdmission<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    admitted: u64,
+}
+
+impl<'a, 'b> FamilyEntityAdmission<'a, 'b> {
+    pub(crate) fn new(ctx: &'a DecodeContext<'b>) -> Self {
+        Self { ctx, admitted: 0 }
+    }
+
+    pub(crate) fn charge(&mut self) -> Result<(), CodecError> {
+        self.ctx
+            .charge_entities(1, "admit CATIA family model entity")?;
+        self.admitted += 1;
+        Ok(())
+    }
+
+    pub(crate) fn admitted(&self) -> u64 {
+        self.admitted
+    }
 }
 
 /// One entry in the ordered decode route table.

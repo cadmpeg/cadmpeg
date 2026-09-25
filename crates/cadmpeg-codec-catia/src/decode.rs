@@ -99,6 +99,7 @@ fn decode_over_routes(
                 out.report,
                 out.annotations,
                 out.unknowns,
+                out.admitted_model_entities,
                 route.standard_face_population,
                 &fell_through,
                 refusal,
@@ -127,6 +128,7 @@ fn decode_over_routes(
         report,
         annotations,
         unknowns,
+        0,
         false,
         &fell_through,
         refusal,
@@ -191,6 +193,7 @@ fn finish_decode(
     mut report: DecodeBody,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    mut admitted_model_entities: u64,
     standard_face_population: bool,
     fell_through: &[String],
     refusal: &mut crate::nurbs::LaneRefusals,
@@ -207,10 +210,11 @@ fn finish_decode(
             .push(CatiaLossCode::SourceRouteFellThrough.note(statement.clone()));
     }
     report.losses.extend(refusal.take_notes());
-    ctx.charge_entities(
+    ctx.admit_entities(
         u64::try_from(ir.model.entity_count()).map_err(|_| {
             ctx.refuse_codec_limit("count CATIA route entities", u64::MAX, u64::MAX)
         })?,
+        &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);

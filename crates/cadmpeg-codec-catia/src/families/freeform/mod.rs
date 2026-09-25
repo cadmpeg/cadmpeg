@@ -910,6 +910,7 @@ pub(super) fn try_decode_freeform_surfaces(
             },
             annotations,
             unknowns,
+            admitted_model_entities: 0,
         }))
     })()
     .transpose()

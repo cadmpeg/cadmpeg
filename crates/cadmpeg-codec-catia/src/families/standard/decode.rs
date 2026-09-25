@@ -2708,6 +2708,7 @@ fn try_decode_standard_population(
         report,
         annotations,
         unknowns,
+        admitted_model_entities: 0,
     }))
     })()
     .transpose()
