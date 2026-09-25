@@ -68,7 +68,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, ir, annotations, transfer_losses)?;
     let positional_spline_replay_count =
-        transfer_positional_spline_replays(scan, ir, annotations, transfer_losses)?;
+        transfer_positional_spline_replays(ctx, scan, ir, annotations, transfer_losses)?;
     let legacy_ascii_surface_carrier_count =
         transfer_legacy_ascii_surface_carriers(scan, ir, annotations, transfer_losses)?;
     let legacy_torus_sphere_carrier_count = scan

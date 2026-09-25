@@ -1311,12 +1311,13 @@ fn surface_prototype_count(sections: &[ScannedSection<'_>]) -> usize {
 }
 
 fn surface_prototype_records(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
     refusals: &mut crate::lane_refusal::LaneRefusals,
-) -> Vec<SurfacePrototypeRecord> {
-    collect_section_records(
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        |bytes| surface::named_prototype_records(bytes, refusals),
+        |bytes| surface::named_prototype_records(ctx, bytes, refusals),
         |record, base| {
             record.offset += base;
             for parameter in &mut record.parameters {
@@ -1328,10 +1329,13 @@ fn surface_prototype_records(
     )
 }
 
-fn surface_parameters(sections: &[ScannedSection<'_>]) -> Vec<SurfaceParameterRecord> {
-    collect_section_records(
+fn surface_parameters(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        surface::parameter_records,
+        |bytes| surface::parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.body_offset += base;
@@ -1341,11 +1345,12 @@ fn surface_parameters(sections: &[ScannedSection<'_>]) -> Vec<SurfaceParameterRe
 }
 
 fn cross_section_surface_parameters(
+    ctx: &DecodeContext<'_>,
     sections: &[ScannedSection<'_>],
-) -> Vec<SurfaceParameterRecord> {
-    collect_section_records(
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
+    collect_section_records_result(
         cross_sections(sections),
-        surface::cross_section_parameter_records,
+        |bytes| surface::cross_section_parameter_records(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.body_offset += base;
@@ -1354,10 +1359,13 @@ fn cross_section_surface_parameters(
     )
 }
 
-fn surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord> {
-    collect_section_records(
+fn surface_contours(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        surface::contour_records,
+        |bytes| surface::contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.envelope_offset += base;
@@ -1367,10 +1375,13 @@ fn surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord
     )
 }
 
-fn cross_section_surface_contours(sections: &[ScannedSection<'_>]) -> Vec<SurfaceContourRecord> {
-    collect_section_records(
+fn cross_section_surface_contours(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
+    collect_section_records_result(
         cross_sections(sections),
-        surface::cross_section_contour_records,
+        |bytes| surface::cross_section_contour_records(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.envelope_offset += base;
@@ -1418,10 +1429,13 @@ fn tabulated_cylinder_curve_replays(
     )
 }
 
-fn plane_local_systems(sections: &[ScannedSection<'_>]) -> Vec<PlaneLocalSystem> {
-    collect_section_records(
+fn plane_local_systems(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    collect_section_records_result(
         sections.iter(),
-        surface::plane_local_systems,
+        |bytes| surface::plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1430,10 +1444,13 @@ fn plane_local_systems(sections: &[ScannedSection<'_>]) -> Vec<PlaneLocalSystem>
     )
 }
 
-fn cross_section_plane_local_systems(sections: &[ScannedSection<'_>]) -> Vec<PlaneLocalSystem> {
-    collect_section_records(
+fn cross_section_plane_local_systems(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    collect_section_records_result(
         cross_sections(sections),
-        surface::cross_section_plane_local_systems,
+        |bytes| surface::cross_section_plane_local_systems(ctx, bytes),
         |record, base| {
             record.offset += base;
             record.row_offset += base;
@@ -1600,12 +1617,15 @@ fn datum_planes(sections: &[ScannedSection<'_>]) -> Vec<DatumPlaneRecord> {
     )
 }
 
-fn datum_cylinders(sections: &[ScannedSection<'_>]) -> Vec<DatumCylinder> {
-    collect_section_records(
+fn datum_cylinders(
+    ctx: &DecodeContext<'_>,
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<DatumCylinder>, CodecError> {
+    collect_section_records_result(
         sections
             .iter()
             .filter(|section| section.section.name() == "ActDatums"),
-        datum::cylinders,
+        |bytes| datum::cylinders(ctx, bytes),
         |cylinder, base| cylinder.offset_in_payload += base,
         |cylinder| cylinder.offset_in_payload,
     )
@@ -2303,16 +2323,16 @@ pub(crate) fn scan_bytes<'a>(
     surface_rows.extend(legacy_geometry.rows);
     surface_rows.sort_by_key(|row| row.offset);
     let cross_section_surface_rows = cross_section_surface_rows(&sections);
-    let nonvisible_surface_parameters = surface_parameters(&nonvisible_geometry_sections);
-    let surface_parameters = surface_parameters(&model_geometry_sections);
-    let cross_section_surface_parameters = cross_section_surface_parameters(&sections);
-    let nonvisible_surface_contours = surface_contours(&nonvisible_geometry_sections);
-    let surface_contours = surface_contours(&model_geometry_sections);
-    let cross_section_surface_contours = cross_section_surface_contours(&sections);
+    let nonvisible_surface_parameters = surface_parameters(ctx, &nonvisible_geometry_sections)?;
+    let surface_parameters = surface_parameters(ctx, &model_geometry_sections)?;
+    let cross_section_surface_parameters = cross_section_surface_parameters(ctx, &sections)?;
+    let nonvisible_surface_contours = surface_contours(ctx, &nonvisible_geometry_sections)?;
+    let surface_contours = surface_contours(ctx, &model_geometry_sections)?;
+    let cross_section_surface_contours = cross_section_surface_contours(ctx, &sections)?;
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&model_geometry_sections);
-    let plane_local_systems = plane_local_systems(&model_geometry_sections);
-    let cross_section_plane_local_systems = cross_section_plane_local_systems(&sections);
+    let plane_local_systems = plane_local_systems(ctx, &model_geometry_sections)?;
+    let cross_section_plane_local_systems = cross_section_plane_local_systems(ctx, &sections)?;
     let plane_envelopes = plane_envelopes(&model_geometry_sections);
     let cross_section_plane_envelopes = cross_section_plane_envelopes(&sections);
     let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
@@ -2336,12 +2356,13 @@ pub(crate) fn scan_bytes<'a>(
     let surface_prototype_count = surface_prototype_count(&model_geometry_sections);
     let mut nonvisible_prototype_refusals = crate::lane_refusal::LaneRefusals::new();
     let nonvisible_surface_prototype_records = surface_prototype_records(
+        ctx,
         &nonvisible_geometry_sections,
         &mut nonvisible_prototype_refusals,
-    );
+    )?;
     let mut prototype_refusals = crate::lane_refusal::LaneRefusals::new();
     let surface_prototype_records =
-        surface_prototype_records(&model_geometry_sections, &mut prototype_refusals);
+        surface_prototype_records(ctx, &model_geometry_sections, &mut prototype_refusals)?;
     let nonvisible_curve_prototypes = curve_prototypes(&nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&sections);
@@ -2394,7 +2415,7 @@ pub(crate) fn scan_bytes<'a>(
     let vertex_orbits = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&sections);
-    let datum_cylinders = datum_cylinders(&sections);
+    let datum_cylinders = datum_cylinders(ctx, &sections)?;
     let feature_operation_states = feature_operation_states(&sections);
     let feature_operations = feature_operations(&sections);
     let feature_reference_names = feature_reference_names(&sections);
@@ -2667,6 +2688,23 @@ fn collect_section_records<'a, 'data: 'a, T>(
     }
     records.sort_by_key(offset);
     records
+}
+
+fn collect_section_records_result<'a, 'data: 'a, T>(
+    sections: impl Iterator<Item = &'a ScannedSection<'data>>,
+    mut decode: impl FnMut(&[u8]) -> Result<Vec<T>, CodecError>,
+    relocate: impl Fn(&mut T, usize),
+    offset: impl Fn(&T) -> usize,
+) -> Result<Vec<T>, CodecError> {
+    let mut records = Vec::new();
+    for section in sections {
+        records.extend(decode(section.region)?.into_iter().map(|mut record| {
+            relocate(&mut record, section.section.offset());
+            record
+        }));
+    }
+    records.sort_by_key(offset);
+    Ok(records)
 }
 
 /// The container scan of an in-tree fixture that states its own extents.
