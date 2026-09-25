@@ -41,7 +41,9 @@ use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
+mod depth;
 mod rational;
+use depth::ModelEvaluationDepthGuard;
 use rational::{finite_lanes, Homogeneous};
 
 const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
@@ -3643,7 +3645,7 @@ pub fn model_curve_point_by_id(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    model_curve_point_by_id_inner(index, curve_id, parameter, 0, None)
+    model_curve_point_by_id_inner(index, curve_id, parameter, None)
 }
 
 /// Evaluate a model curve carrier within a caller-owned work slice. Carrier
@@ -3656,7 +3658,8 @@ pub fn model_curve_point_by_id_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
-    model_curve_point_by_id_inner(index, curve_id, parameter, 0, Some(budget))
+    let point = model_curve_point_by_id_inner(index, curve_id, parameter, Some(budget));
+    ModelEvaluationDepthGuard::finish_budgeted(budget, point)
 }
 
 /// A model curve's finite point with its tangent and acceleration, each
@@ -3748,7 +3751,7 @@ fn model_curve_differential_by_id(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    model_curve_differential_by_id_inner(index, curve_id, parameter, 0, None)
+    model_curve_differential_by_id_inner(index, curve_id, parameter, None)
 }
 
 /// The point, tangent and acceleration of a model curve at `parameter`, or
@@ -3759,10 +3762,10 @@ fn model_curve_differential_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     parameter: f64,
-    depth: usize,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    if depth > 256 || !parameter.is_finite() {
+    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
+    if !parameter.is_finite() {
         return Err(EvaluationFailure::NoValue);
     }
     let curve = index
@@ -3777,20 +3780,15 @@ fn model_curve_differential_by_id_inner(
     {
         match procedural.definition() {
             ProceduralCurveDefinition::Replica { source, transform } => {
-                let differential = model_curve_differential_by_id_inner(
-                    index,
-                    source,
-                    parameter,
-                    depth + 1,
-                    budget,
-                )
-                .map_err(|failure| {
-                    failure.map(|point| {
-                        transform
-                            .apply_point_reaching(point)
-                            .map_or_else(|point| point, FinitePoint3::get)
-                    })
-                })?;
+                let differential =
+                    model_curve_differential_by_id_inner(index, source, parameter, budget)
+                        .map_err(|failure| {
+                            failure.map(|point| {
+                                transform
+                                    .apply_point_reaching(point)
+                                    .map_or_else(|point| point, FinitePoint3::get)
+                            })
+                        })?;
                 let point = transform
                     .apply_point_reaching(differential.point.get())
                     .map_err(EvaluationFailure::NonFinite)?;
@@ -3808,13 +3806,8 @@ fn model_curve_differential_by_id_inner(
                     *sense,
                     parameter,
                 )?;
-                let differential = model_curve_differential_by_id_inner(
-                    index,
-                    source,
-                    source_parameter,
-                    depth + 1,
-                    budget,
-                )?;
+                let differential =
+                    model_curve_differential_by_id_inner(index, source, source_parameter, budget)?;
                 return Ok(ModelCurveDifferential {
                     point: differential.point,
                     tangent: differential.tangent.map(|tangent| {
@@ -3972,7 +3965,7 @@ fn model_axis_revolution_jet(
         return Err(EvaluationFailure::NoValue);
     }
     let axis = unit_length_axis(axis_direction);
-    let differential = model_curve_differential_by_id_inner(index, directrix, parameter, 0, budget)
+    let differential = model_curve_differential_by_id_inner(index, directrix, parameter, budget)
         .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     let rotated = rotate_vector_about_axis(
         point_displacement(differential.point.get(), axis_origin),
@@ -4190,7 +4183,7 @@ fn model_native_extrusion_point(
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     let point =
-        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), 0, budget)
+        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), budget)
             .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
             .point;
     admit_point(offset(point.get(), &[(v, direction)]))
@@ -4226,7 +4219,7 @@ fn model_native_extrusion_jet(
     // A directrix point that leaves the finite range leaves the surface
     // there, at the point its extrusion reaches.
     let differential =
-        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), 0, budget)
+        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), budget)
             .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
     let point = admit_point(offset(differential.point.get(), &[(v, direction)]))?;
     let derivative = carrier.derivative;
@@ -4361,7 +4354,6 @@ fn model_native_revolution_point(
         index,
         construction.directrix(),
         carrier.parameter.get(),
-        0,
         budget,
     )
     .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
@@ -4433,12 +4425,9 @@ fn model_curve_point_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     parameter: f64,
-    depth: usize,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    if depth > 256 {
-        return Err(EvaluationFailure::NoValue);
-    }
+    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     let curve = index
         .curves(curve_id.as_str())
         .ok_or(EvaluationFailure::NoValue)?;
@@ -4457,7 +4446,7 @@ fn model_curve_point_by_id_inner(
     match procedural.definition() {
         ProceduralCurveDefinition::Replica { source, transform } => placed_point(
             *transform,
-            model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget),
+            model_curve_point_by_id_inner(index, source, parameter, budget),
         ),
         ProceduralCurveDefinition::Subset(definition_payload) => {
             let source = definition_payload.source();
@@ -4466,7 +4455,7 @@ fn model_curve_point_by_id_inner(
                 *definition_payload.sense(),
                 parameter,
             )?;
-            model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
+            model_curve_point_by_id_inner(index, source, source_parameter, budget)
         }
         ProceduralCurveDefinition::Helix(_) => {
             helix_differential(procedural.definition(), parameter)
@@ -4563,7 +4552,6 @@ pub fn model_curve_parameter_near_point_in_index(
         point,
         seed,
         NonNegativeLength::from(index.ir().tolerances.linear),
-        0,
     )
 }
 
@@ -4585,7 +4573,6 @@ pub fn model_curve_parameter_near_point_in_index_with_tolerance(
         point,
         seed,
         NonNegativeLength::new(tolerance)?,
-        0,
     )
 }
 
@@ -4596,11 +4583,8 @@ fn model_curve_parameter_near_point_with_tolerance(
     point: Point3,
     seed: f64,
     tolerance: NonNegativeLength,
-    depth: usize,
 ) -> Option<FiniteReal> {
-    if depth > 256 {
-        return None;
-    }
+    let _depth = ModelEvaluationDepthGuard::enter(None)?;
     let curve = index.curves(curve_id.as_str())?;
     if let Some(procedural) = index
         .procedural_curves_for_curve(curve_id.as_str())
@@ -4618,7 +4602,6 @@ fn model_curve_parameter_near_point_with_tolerance(
                     basis_point,
                     seed,
                     basis_tolerance,
-                    depth + 1,
                 );
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
@@ -4638,7 +4621,6 @@ fn model_curve_parameter_near_point_with_tolerance(
                         point,
                         source_seed,
                         tolerance,
-                        depth + 1,
                     )?
                     .get();
                     let parameter = FiniteReal::new(if *sense {
@@ -5943,6 +5925,17 @@ pub fn model_surface_point(
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    model_surface_point_inner(ir, geometry, u, v, None)
+}
+
+fn model_surface_point_inner(
+    ir: &CadIr,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     if let Some(cache) = geometry.solved_cache() {
         return surface_point_solved(cache, u, v);
     }
@@ -5959,13 +5952,20 @@ pub fn model_surface_point(
     let index = crate::index::ModelIndex::new(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            model_native_extrusion_point(&index, definition_payload, carrier_interval, u, v, None)
+            model_native_extrusion_point(&index, definition_payload, carrier_interval, u, v, budget)
         }
         ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
-            model_linear_sweep_point(&index, definition_payload, u, v, None)
+            model_linear_sweep_point(&index, definition_payload, u, v, budget)
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            model_native_revolution_point(&index, definition_payload, carrier_interval, u, v, None)
+            model_native_revolution_point(
+                &index,
+                definition_payload,
+                carrier_interval,
+                u,
+                v,
+                budget,
+            )
         }
         ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
             model_axis_revolution_point(
@@ -5975,7 +5975,7 @@ pub fn model_surface_point(
                 definition_payload.axis_direction(),
                 u,
                 v,
-                None,
+                budget,
             )
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
@@ -6065,7 +6065,7 @@ fn model_linear_sweep_jet(
     }
     let directrix = construction.directrix();
     let direction = *construction.direction();
-    let differential = model_curve_differential_by_id_inner(index, directrix, u, 0, budget)
+    let differential = model_curve_differential_by_id_inner(index, directrix, u, budget)
         .map_err(|failure| failure.map(|point| offset(point, &[(v, direction.get())])))?;
     Ok(SurfaceJet {
         point: admit_point(offset(differential.point.get(), &[(v, direction.get())]))?,
@@ -8072,7 +8072,8 @@ pub fn model_surface_point_by_id_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
-    model_surface_point_by_id_inner(index, surface, u, v, Some(budget))
+    let point = model_surface_point_by_id_inner(index, surface, u, v, Some(budget));
+    ModelEvaluationDepthGuard::finish_budgeted(budget, point)
 }
 
 fn model_surface_point_by_id_inner(
@@ -8304,6 +8305,7 @@ fn model_surface_point_by_id_inner(
         budget: Option<&WorkBudget<'_>>,
         normal: bool,
     ) -> Option<SurfaceEvaluation> {
+        let _depth = ModelEvaluationDepthGuard::enter(budget)?;
         if let Some(budget) = budget {
             budget.charge().then_some(())?;
         }
@@ -8612,6 +8614,7 @@ fn model_surface_first_order_by_id(
     v: f64,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     let cacheless = match index
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
@@ -8692,7 +8695,9 @@ pub fn model_surface_partials_by_id_with_budget(
     budget: &WorkBudget<'_>,
 ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
     let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
-    model_surface_first_order_by_id(index, surface, u, v, Some(budget))?.partials()
+    let partials = model_surface_first_order_by_id(index, surface, u, v, Some(budget))
+        .and_then(SurfaceFirstOrder::partials);
+    ModelEvaluationDepthGuard::finish_budgeted(budget, partials)
 }
 
 fn model_surface_second_partials_by_id(
@@ -8766,6 +8771,7 @@ fn model_surface_mapping(
     visiting: &mut Vec<crate::ids::SurfaceId>,
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<SurfaceMapping, EvaluationFailure<Point3>> {
+    let _depth = ModelEvaluationDepthGuard::enter(budget).ok_or(EvaluationFailure::NoValue)?;
     let no_value = EvaluationFailure::NoValue;
     if budget.is_some_and(|budget| !budget.charge()) {
         return Err(no_value);
@@ -9984,7 +9990,7 @@ fn model_surface_point_with_budget(
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match geometry.solved() {
         Some(solved) => model_surface_point_with_budget_solved(solved, u, v, budget),
-        None => model_surface_point(ir, geometry, u, v),
+        None => model_surface_point_inner(ir, geometry, u, v, budget),
     }
 }
 
