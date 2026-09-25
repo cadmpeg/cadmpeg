@@ -394,6 +394,34 @@ fn decode_propagates_spline_grid_collection_limit() {
 }
 
 #[test]
+fn decode_propagates_counted_scalar_array_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let payload =
+        b"srf_array\0\xf8\0srf_prim_ptr(splsrf)\0\xe0\x02u_params\0\xf8\x04\x0f\x0f\x0f\x0f\xe3";
+    let data = build_prt("c", &[("VisibGeom", payload.to_vec())]);
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_collection_items = 3;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("four scalar slots exceed the three-item limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo counted scalar array"
+    ));
+
+    options.policy.limits.max_collection_items = 4;
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact counted scalar item limit admits the fixture");
+}
+
+#[test]
 fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

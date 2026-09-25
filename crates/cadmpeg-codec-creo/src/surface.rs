@@ -3137,7 +3137,10 @@ fn named_surface_value(
             grid = arrays::DimensionedScalars::admit_empty(ctx, dimensions, count)?;
         }
     }
-    if let Some(value) = parsed_named_surface_value(family, name, body, cache, &mut refusal, grid) {
+    if let Some(value) =
+        parsed_named_surface_value(ctx, family, name, body, cache, &mut refusal, grid)
+            .transpose()?
+    {
         return Ok(value);
     }
     if let Some(reason) = refusal.reason() {
@@ -3147,15 +3150,16 @@ fn named_surface_value(
 }
 
 fn parsed_named_surface_value(
+    ctx: &DecodeContext<'_>,
     family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
     grid: Option<arrays::DimensionedScalars>,
-) -> Option<SurfaceNamedValue> {
+) -> Option<Result<SurfaceNamedValue, CodecError>> {
     if body.is_empty() {
-        return Some(SurfaceNamedValue::Empty);
+        return Some(Ok(SurfaceNamedValue::Empty));
     }
     let radius_field = matches!(name, "radius" | "radius1" | "radius2");
     let parameter_bound_field = matches!(name, "par_v_0" | "par_v_1");
@@ -3172,13 +3176,13 @@ fn parsed_named_surface_value(
             | "data_type"
     );
     if scalar_field && body == [0x18] {
-        return Some(SurfaceNamedValue::ScalarSequence(vec![0.0]));
+        return Some(Ok(SurfaceNamedValue::ScalarSequence(vec![0.0])));
     }
     if name == "flip" {
         if body.first() == Some(&0xf1) {
             let (value, end) = compact_int(body, 1);
             if end > 1 && end == body.len() {
-                return Some(SurfaceNamedValue::CompactInt(value));
+                return Some(Ok(SurfaceNamedValue::CompactInt(value)));
             }
         }
         return None;
@@ -3193,7 +3197,7 @@ fn parsed_named_surface_value(
             {
                 let (reference, end) = psb::reference_id(body, reference_start).ok()?;
                 if reference != 0 && end == body.len() {
-                    return Some(SurfaceNamedValue::CompactInt(value));
+                    return Some(Ok(SurfaceNamedValue::CompactInt(value)));
                 }
             }
         }
@@ -3207,9 +3211,9 @@ fn parsed_named_surface_value(
                 if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
                     if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
                         if let Some(end_id) = start_id.checked_add(count) {
-                            return Some(SurfaceNamedValue::ContiguousEntityReferences(
+                            return Some(Ok(SurfaceNamedValue::ContiguousEntityReferences(
                                 (start_id..end_id).collect(),
-                            ));
+                            )));
                         }
                     }
                 }
@@ -3217,19 +3221,23 @@ fn parsed_named_surface_value(
             if matches!(name, "u_params" | "v_params") {
                 // Each declared slot is at least a one-byte scalar token in the
                 // value bytes, so the count cannot exceed the remaining bytes.
-                let mut array =
-                    bounded_len(u64::from(count), 1, body.len().saturating_sub(values_start))
-                        .and_then(|_| arrays::CountedScalars::empty(count))?;
+                let remaining = body.get(values_start..)?;
+                bounded_len(u64::from(count), 1, remaining.len())?;
+                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
+                    Ok(Some(array)) => array,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 let slots = named_spline_scalar_slots(
                     family,
                     name,
-                    &body[values_start..],
+                    remaining,
                     array.values().len(),
                     cache,
                     refusal,
                 )?;
                 array.fill_tokens(slots)?;
-                return Some(SurfaceNamedValue::CountedScalarArray(array));
+                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
             let mut values = Vec::new();
             for _ in 0..count {
@@ -3241,17 +3249,21 @@ fn parsed_named_surface_value(
                 cursor = next;
             }
             if Some(values.len()) == usize::try_from(count).ok() && cursor == body.len() {
-                return Some(SurfaceNamedValue::CompactIntArray(values));
+                return Some(Ok(SurfaceNamedValue::CompactIntArray(values)));
             }
             if name == "parent_feats" && parent_feature_array_trailer(&body[cursor..]) {
-                return Some(SurfaceNamedValue::CompactIntArray(values));
+                return Some(Ok(SurfaceNamedValue::CompactIntArray(values)));
             }
             if name == "params" {
                 let remaining = admitted_counted_parameter_body(body, values_start, count)?;
-                let mut array = arrays::CountedScalars::empty(count)?;
+                let mut array = match arrays::CountedScalars::admit_empty(ctx, count) {
+                    Ok(Some(array)) => array,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
                 let slots = counted_parameter_scalar_slots(remaining, array.values().len(), cache)?;
                 array.fill_tokens(slots)?;
-                return Some(SurfaceNamedValue::CountedScalarArray(array));
+                return Some(Ok(SurfaceNamedValue::CountedScalarArray(array)));
             }
         }
     }
@@ -3289,12 +3301,12 @@ fn parsed_named_surface_value(
         } else {
             array.fill_values(scalar_slots(remaining, slot_count, cache, refusal)?)?;
         }
-        return Some(SurfaceNamedValue::ScalarArray(array));
+        return Some(Ok(SurfaceNamedValue::ScalarArray(array)));
     }
     if compact_integer_field {
         let (value, end) = compact_int(body, 0);
         if end == body.len() && end != 0 {
-            return Some(SurfaceNamedValue::CompactInt(value));
+            return Some(Ok(SurfaceNamedValue::CompactInt(value)));
         }
         return None;
     }
@@ -3326,11 +3338,11 @@ fn parsed_named_surface_value(
         cursor = next;
     }
     if !values.is_empty() {
-        return Some(SurfaceNamedValue::ScalarSequence(values));
+        return Some(Ok(SurfaceNamedValue::ScalarSequence(values)));
     }
     let (value, end) = compact_int(body, 0);
     if !scalar_field && end == body.len() && end != 0 {
-        Some(SurfaceNamedValue::CompactInt(value))
+        Some(Ok(SurfaceNamedValue::CompactInt(value)))
     } else {
         None
     }
