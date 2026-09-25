@@ -4,6 +4,7 @@
 use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_ir::assets::AssetId;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
@@ -371,13 +372,16 @@ pub(crate) struct DesignMeshSceneBounds {
 
 impl DesignMeshSceneBounds {
     pub(crate) fn new(maximum: [f64; 3], minimum: [f64; 3]) -> Result<Self, String> {
-        if !maximum
-            .iter()
-            .chain(&minimum)
-            .all(|value| value.is_finite())
-        {
-            return Err("scene bounds maximum and minimum must be finite".into());
-        }
+        let maximum = FinitePoint3::new(maximum.into())
+            .ok_or("scene bounds maximum and minimum must be finite")?;
+        let minimum = FinitePoint3::new(minimum.into())
+            .ok_or("scene bounds maximum and minimum must be finite")?;
+        Self::from_parts(maximum, minimum)
+    }
+
+    pub(crate) fn from_parts(maximum: FinitePoint3, minimum: FinitePoint3) -> Result<Self, String> {
+        let maximum = [maximum.x, maximum.y, maximum.z];
+        let minimum = [minimum.x, minimum.y, minimum.z];
         if minimum
             .iter()
             .zip(maximum)

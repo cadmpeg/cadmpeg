@@ -2,6 +2,7 @@
 //! Design body members, bounds, bindings and visibility.
 
 use super::mesh::DesignMeshSceneBounds;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use serde::{Deserialize, Serialize};
@@ -41,7 +42,7 @@ pub(crate) struct DesignBodyBounds {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct DesignBodyBoundsWire {
+pub(crate) struct DesignBodyBoundsWire<P = Point3> {
     /// Globally unique deterministic identifier for this native record set.
     pub(crate) id: String,
     /// Numeric suffix of the owning Design body entity.
@@ -58,14 +59,35 @@ pub(crate) struct DesignBodyBoundsWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) body_binding_ids: Vec<String>,
     /// Maximum model-space corner in millimetres.
-    pub(crate) maximum: Point3,
+    pub(crate) maximum: P,
     /// Minimum model-space corner in millimetres.
-    pub(crate) minimum: Point3,
+    pub(crate) minimum: P,
 }
 
 impl TryFrom<DesignBodyBoundsWire> for DesignBodyBounds {
     type Error = String;
     fn try_from(wire: DesignBodyBoundsWire) -> Result<Self, Self::Error> {
+        Self::validate_layout(&wire)?;
+        let maximum = FinitePoint3::new(wire.maximum)
+            .ok_or("scene bounds maximum and minimum must be finite")?;
+        let minimum = FinitePoint3::new(wire.minimum)
+            .ok_or("scene bounds maximum and minimum must be finite")?;
+        Self::from_parts(DesignBodyBoundsWire {
+            id: wire.id,
+            entity_suffix: wire.entity_suffix,
+            entity_byte_offset: wire.entity_byte_offset,
+            record_indices: wire.record_indices,
+            record_byte_offsets: wire.record_byte_offsets,
+            value_byte_offsets: wire.value_byte_offsets,
+            body_binding_ids: wire.body_binding_ids,
+            maximum,
+            minimum,
+        })
+    }
+}
+
+impl DesignBodyBounds {
+    fn validate_layout<P>(wire: &DesignBodyBoundsWire<P>) -> Result<u32, String> {
         let entity_suffix = u32::try_from(wire.entity_suffix)
             .map_err(|_| "entity_suffix exceeds indexed record range")?;
         let last = entity_suffix
@@ -89,10 +111,13 @@ impl TryFrom<DesignBodyBoundsWire> for DesignBodyBounds {
         {
             return Err("value_byte_offsets must follow record_byte_offsets".into());
         }
-        let maximum = [wire.maximum.x, wire.maximum.y, wire.maximum.z];
-        let minimum = [wire.minimum.x, wire.minimum.y, wire.minimum.z];
-        let corners = DesignMeshSceneBounds::new(maximum, minimum)?;
-        if maximum == minimum {
+        Ok(entity_suffix)
+    }
+
+    pub(crate) fn from_parts(wire: DesignBodyBoundsWire<FinitePoint3>) -> Result<Self, String> {
+        let entity_suffix = Self::validate_layout(&wire)?;
+        let corners = DesignMeshSceneBounds::from_parts(wire.maximum, wire.minimum)?;
+        if wire.maximum == wire.minimum {
             return Err("maximum and minimum must not define a degenerate box".into());
         }
         Ok(Self {

@@ -18,7 +18,9 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
 
 /// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
@@ -177,8 +179,18 @@ pub(crate) fn decode_body_bounds(
         let [(values, value_offsets)] = repeated.as_slice() else {
             continue;
         };
+        let corner = |start: usize| {
+            FinitePoint3::new(Point3::new(
+                values[start].get() * 10.0,
+                values[start + 1].get() * 10.0,
+                values[start + 2].get() * 10.0,
+            ))
+            .ok_or_else(|| {
+                CodecError::Malformed("scene bounds maximum and minimum must be finite".into())
+            })
+        };
         out.push(
-            DesignBodyBounds::try_from(crate::records::bodies::DesignBodyBoundsWire {
+            DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
                 id: ids::native_design_body_bounds_id(&entry.name, entity.byte_offset),
                 entity_suffix: entity.entity_id.suffix(),
                 entity_byte_offset: entity.byte_offset,
@@ -186,8 +198,8 @@ pub(crate) fn decode_body_bounds(
                 record_byte_offsets: [*first as u64, *second as u64, *third as u64],
                 value_byte_offsets: value_offsets.map(|offset| offset as u64),
                 body_binding_ids: Vec::new(),
-                maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
-                minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
+                maximum: corner(0)?,
+                minimum: corner(3)?,
             })
             .map_err(CodecError::Malformed)?,
         );
@@ -225,21 +237,20 @@ fn body_bound_candidates(
     bytes: &[u8],
     start: usize,
     end: usize,
-) -> impl Iterator<Item = (usize, [f64; 6])> + '_ {
+) -> impl Iterator<Item = (usize, [FiniteReal; 6])> + '_ {
     (start..end.saturating_sub(48)).filter_map(move |offset| {
         if bytes.get(offset) != Some(&1) {
             return None;
         }
         let values = [
-            View::f64_le_at(bytes, offset + 1)?,
-            View::f64_le_at(bytes, offset + 9)?,
-            View::f64_le_at(bytes, offset + 17)?,
-            View::f64_le_at(bytes, offset + 25)?,
-            View::f64_le_at(bytes, offset + 33)?,
-            View::f64_le_at(bytes, offset + 41)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 1)?)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 9)?)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 17)?)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 25)?)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 33)?)?,
+            FiniteReal::new(View::f64_le_at(bytes, offset + 41)?)?,
         ];
-        (values.iter().all(|value| value.is_finite())
-            && (0..3).all(|axis| values[axis] >= values[axis + 3])
+        ((0..3).all(|axis| values[axis] >= values[axis + 3])
             && (0..3).any(|axis| values[axis] > values[axis + 3]))
         .then_some((offset, values))
     })
@@ -1739,7 +1750,13 @@ mod tests {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         let candidates = body_bound_candidates(&bytes, 0, bytes.len()).collect::<Vec<_>>();
-        assert_eq!(candidates, [(0, values)]);
+        assert_eq!(
+            candidates
+                .into_iter()
+                .map(|(offset, values)| (offset, values.map(cadmpeg_ir::scalar::FiniteReal::get)))
+                .collect::<Vec<_>>(),
+            [(0, values)]
+        );
 
         bytes[0] = 0;
         assert!(body_bound_candidates(&bytes, 0, bytes.len())
