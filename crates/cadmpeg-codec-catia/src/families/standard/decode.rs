@@ -1427,15 +1427,33 @@ pub(in crate::families) fn try_decode_standard(
     scan: &ContainerScan,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
+    let surface_alias_tags = if matches!(scan.variant, Variant::StandardNested) {
+        crate::object_graph::surface_alias_tag_map(ctx, &scan.data)?
+    } else {
+        HashMap::new()
+    };
     let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(ctx, &scan.data)?;
     match standard_population_selections(scan) {
-        None => try_decode_standard_population(ctx, scan, None, refusal, &e5_jets),
-        Some((first, rest)) if rest.is_empty() => {
-            try_decode_standard_population(ctx, scan, Some(&first), refusal, &e5_jets)
+        None => {
+            try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)
         }
-        Some((first, rest)) => {
-            try_decode_standard_populations(ctx, scan, &first, &rest, refusal, &e5_jets)
-        }
+        Some((first, rest)) if rest.is_empty() => try_decode_standard_population(
+            ctx,
+            scan,
+            Some(&first),
+            refusal,
+            &e5_jets,
+            &surface_alias_tags,
+        ),
+        Some((first, rest)) => try_decode_standard_populations(
+            ctx,
+            scan,
+            &first,
+            &rest,
+            refusal,
+            &e5_jets,
+            &surface_alias_tags,
+        ),
     }
 }
 
@@ -1543,16 +1561,29 @@ fn try_decode_standard_populations(
     rest: &[StandardPopulationSelection],
     refusal: &mut crate::nurbs::LaneRefusals,
     e5_jets: &[crate::families::e5::records::E5RollingBallJet],
+    surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
-    let Some(mut merged) =
-        try_decode_standard_population(ctx, scan, Some(first), refusal, e5_jets)?
+    let Some(mut merged) = try_decode_standard_population(
+        ctx,
+        scan,
+        Some(first),
+        refusal,
+        e5_jets,
+        surface_alias_tags,
+    )?
     else {
         return Ok(None);
     };
     let mut outputs = Vec::new();
     for selection in rest {
-        let Some(output) =
-            try_decode_standard_population(ctx, scan, Some(selection), refusal, e5_jets)?
+        let Some(output) = try_decode_standard_population(
+            ctx,
+            scan,
+            Some(selection),
+            refusal,
+            e5_jets,
+            surface_alias_tags,
+        )?
         else {
             return Ok(None);
         };
@@ -1706,6 +1737,7 @@ fn try_decode_standard_population(
     selection: Option<&StandardPopulationSelection>,
     refusal: &mut crate::nurbs::LaneRefusals,
     e5_jets: &[crate::families::e5::records::E5RollingBallJet],
+    surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
@@ -2403,7 +2435,7 @@ fn try_decode_standard_population(
         &mut annotations,
         &scan.data,
         &consolidated_records,
-        &scan.surface_alias_tags,
+        surface_alias_tags,
         refusal,
     )
     .ok()?;

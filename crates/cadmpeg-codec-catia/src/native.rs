@@ -8686,35 +8686,44 @@ fn validate_owner_chart_support_aliases(
 impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
-    #[must_use]
     #[cfg(test)]
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("test record source fits the service profile");
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
         Self::decode_with_records(
+            &ctx,
             bytes,
             &consolidated_records,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .expect("test native records fit the service profile")
     }
 
     /// Decode CATIA-native records from descriptor-scoped logical sources.
-    #[must_use]
     pub(crate) fn decode_with_record_sources(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         bytes: &[u8],
         sources: &[Vec<crate::wire::records::SourceExtent>],
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Self {
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
-        Self::decode_with_records(bytes, &consolidated_records, refusal)
+        Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)
     }
 
     fn decode_with_records(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         bytes: &[u8],
         consolidated_records: &[ConsolidatedRecord],
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Self {
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let outer_directory = container::parse_outer_stream_directory(bytes);
         let outer_container_declarations =
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
@@ -8734,7 +8743,7 @@ impl CatiaNative {
             })
             .collect::<Vec<_>>();
         let mut parsed_catalogs = catalog::parse(bytes);
-        let entity_runs = entity_table::parse_runs(bytes);
+        let entity_runs = entity_table::parse_runs(ctx, bytes)?;
         let paired_object_graph_roots = entity_runs
             .iter()
             .filter_map(|run| {
@@ -9053,7 +9062,7 @@ impl CatiaNative {
         );
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
-        Self {
+        Ok(Self {
             alias_rows,
             catalogs,
             consolidated_circles,
@@ -9094,7 +9103,7 @@ impl CatiaNative {
             zero_entity_support_runs,
             zero_entity_endpoint_locus_candidates,
             zero_entity_vertex_incidences,
-        }
+        })
     }
 
     /// Store this namespace while moving child arenas out of their typed owners.

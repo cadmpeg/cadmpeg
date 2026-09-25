@@ -3,7 +3,8 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use crate::value_block;
@@ -836,8 +837,67 @@ impl EntityRecord {
 }
 
 /// Parse every maximal contiguous run of length-closed `7C05` records.
-#[must_use]
-pub(crate) fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
+pub(crate) fn parse_runs(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<Vec<EntityRecord>>, CodecError> {
+    let candidate_runs = parse_candidate_runs(ctx, data)?;
+    let mut runs = Vec::new();
+    for candidates in candidate_runs {
+        let Some(identities) = unique_monotone_run(ctx, &candidates)? else {
+            continue;
+        };
+        let mut records = Vec::new();
+        let mut complete = true;
+        for (candidate, identity) in candidates.iter().zip(identities) {
+            ctx.charge_entities(1, "admit CATIA 7C05 native entity")?;
+            ctx.charge_collection_items(1, "collect CATIA 7C05 materialized records")?;
+            let Some(record) = materialize_record(ctx, data, candidate, identity)? else {
+                complete = false;
+                break;
+            };
+            records.push(record);
+        }
+        if complete {
+            ctx.charge_collection_items(1, "collect CATIA 7C05 materialized runs")?;
+            runs.push(records);
+        }
+    }
+    Ok(runs)
+}
+
+/// Identify 7C05 runs paired to object graphs without retaining record bodies.
+pub(crate) fn paired_object_graph_roots(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<std::collections::HashMap<usize, usize>, CodecError> {
+    let mut roots = std::collections::HashMap::new();
+    for candidates in parse_candidate_runs(ctx, data)? {
+        if unique_monotone_run(ctx, &candidates)?.is_none() {
+            continue;
+        }
+        let Some(end) = candidates
+            .last()
+            .and_then(|last| last.pos.checked_add(last.total_len))
+        else {
+            continue;
+        };
+        if data.get(end) == Some(&0xde) {
+            ctx.charge_collection_items(1, "collect CATIA paired object roots")?;
+            roots.insert(end + 1, candidates.len());
+        }
+    }
+    Ok(roots)
+}
+
+fn parse_candidate_runs(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<Vec<EntityRecordCandidates>>, CodecError> {
+    ctx.charge_work(
+        collection_count(ctx, data.len())?,
+        "scan CATIA 7C05 markers",
+    )?;
     let mut roots = Vec::new();
     let mut enclosing_end = 0usize;
     for pos in data
@@ -856,38 +916,26 @@ pub(crate) fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
         if end <= enclosing_end {
             continue;
         }
-        if let Some(candidate) = parse_candidate_variants(data, pos) {
+        if let Some(candidate) = parse_candidate_variants(ctx, data, pos)? {
             enclosing_end = enclosing_end.max(end);
+            ctx.charge_collection_items(1, "collect CATIA 7C05 candidate roots")?;
             roots.push(candidate);
         }
     }
-
-    roots
-        .into_iter()
-        .fold(
-            Vec::<Vec<EntityRecordCandidates>>::new(),
-            |mut runs, variants| {
-                if let Some(run) = runs.last_mut().filter(|run| {
-                    run.last().is_some_and(|last| {
-                        last.pos.checked_add(last.total_len) == Some(variants.pos)
-                    })
-                }) {
-                    run.push(variants);
-                } else {
-                    runs.push(vec![variants]);
-                }
-                runs
-            },
-        )
-        .into_iter()
-        .filter_map(|run| {
-            let identities = unique_monotone_run(&run)?;
-            run.iter()
-                .zip(identities)
-                .map(|(record, identity)| materialize_record(data, record, identity))
-                .collect()
-        })
-        .collect()
+    let mut candidate_runs = Vec::<Vec<EntityRecordCandidates>>::new();
+    for candidate in roots {
+        ctx.charge_collection_items(1, "collect CATIA 7C05 run candidates")?;
+        if let Some(run) = candidate_runs.last_mut().filter(|run| {
+            run.last()
+                .is_some_and(|last| last.pos.checked_add(last.total_len) == Some(candidate.pos))
+        }) {
+            run.push(candidate);
+        } else {
+            ctx.charge_collection_items(1, "collect CATIA 7C05 runs")?;
+            candidate_runs.push(vec![candidate]);
+        }
+    }
+    Ok(candidate_runs)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -941,8 +989,20 @@ struct MonotonePathState {
     predecessor: Option<usize>,
 }
 
-fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityIdentityCandidate>> {
-    let first = &records.first()?.identities;
+fn unique_monotone_run(
+    ctx: &DecodeContext<'_>,
+    records: &[EntityRecordCandidates],
+) -> Result<Option<Vec<EntityIdentityCandidate>>, CodecError> {
+    let Some(first) = records.first().map(|record| &record.identities) else {
+        return Ok(None);
+    };
+    if first.is_empty() {
+        return Ok(None);
+    }
+    ctx.charge_collection_items(
+        collection_count(ctx, first.len())?,
+        "collect CATIA 7C05 path states",
+    )?;
     let mut previous = first
         .iter()
         .copied()
@@ -954,8 +1014,20 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         .collect::<Vec<_>>();
     let mut layers = Vec::new();
     for record in &records[1..] {
+        let previous_count = collection_count(ctx, previous.len())?;
+        ctx.charge_collection_items(previous_count, "collect CATIA 7C05 ordered predecessors")?;
         let mut ordered_predecessors = previous.iter().enumerate().collect::<Vec<_>>();
+        let sort_units = previous_count
+            .checked_mul(u64::from(previous_count.ilog2()) + 1)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("sort CATIA 7C05 predecessor states", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(sort_units, "sort CATIA 7C05 predecessor states")?;
         ordered_predecessors.sort_by_key(|(_, state)| state.identity.entity_id);
+        ctx.charge_collection_items(
+            collection_count(ctx, ordered_predecessors.len())?,
+            "collect CATIA 7C05 cumulative paths",
+        )?;
         let mut cumulative = Vec::with_capacity(ordered_predecessors.len());
         let mut cumulative_count = PathCount::None;
         for (index, state) in &ordered_predecessors {
@@ -965,25 +1037,32 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
                 (cumulative_count == PathCount::One).then_some(*index),
             ));
         }
-        let layer = record
-            .identities
-            .iter()
-            .filter_map(|identity| {
-                let predecessor_count = ordered_predecessors
-                    .partition_point(|(_, state)| state.identity.entity_id < identity.entity_id);
-                let (path_count, predecessor) = predecessor_count
-                    .checked_sub(1)
-                    .map_or((PathCount::None, None), |index| cumulative[index]);
-                (path_count != PathCount::None).then_some(MonotonePathState {
+        let search_units = collection_count(ctx, record.identities.len())?
+            .checked_mul(u64::from(previous_count.ilog2()) + 1)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("resolve CATIA 7C05 identity paths", u64::MAX, u64::MAX)
+            })?;
+        ctx.charge_work(search_units, "resolve CATIA 7C05 identity paths")?;
+        let mut layer = Vec::new();
+        for identity in &record.identities {
+            let predecessor_count = ordered_predecessors
+                .partition_point(|(_, state)| state.identity.entity_id < identity.entity_id);
+            let (path_count, predecessor) = predecessor_count
+                .checked_sub(1)
+                .map_or((PathCount::None, None), |index| cumulative[index]);
+            if path_count != PathCount::None {
+                ctx.charge_collection_items(1, "collect CATIA 7C05 path states")?;
+                layer.push(MonotonePathState {
                     identity: *identity,
                     path_count,
                     predecessor,
-                })
-            })
-            .collect::<Vec<_>>();
-        if layer.is_empty() {
-            return None;
+                });
+            }
         }
+        if layer.is_empty() {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "collect CATIA 7C05 path layers")?;
         layers.push(std::mem::replace(&mut previous, layer));
     }
     let final_layer = &previous;
@@ -992,11 +1071,18 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         .fold(PathCount::None, |count, state| count.join(state.path_count))
         != PathCount::One
     {
-        return None;
+        return Ok(None);
     }
-    let mut state_index = final_layer
+    let Some(mut state_index) = final_layer
         .iter()
-        .position(|state| state.path_count == PathCount::One)?;
+        .position(|state| state.path_count == PathCount::One)
+    else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(
+        collection_count(ctx, records.len())?,
+        "collect CATIA 7C05 resolved identities",
+    )?;
     let mut result = Vec::with_capacity(records.len());
     for layer in std::iter::once(final_layer).chain(layers.iter().rev()) {
         let state = &layer[state_index];
@@ -1006,69 +1092,107 @@ fn unique_monotone_run(records: &[EntityRecordCandidates]) -> Option<Vec<EntityI
         }
     }
     result.reverse();
-    Some(result)
+    Ok(Some(result))
 }
 
-fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandidates> {
-    let total_len = usize::try_from(View::u32_le_at(data, pos.checked_add(2)?)?).ok()?;
-    let end = pos.checked_add(total_len)?;
-    if total_len < 12 || end > data.len() {
-        return None;
-    }
-
-    let lead = *data.get(pos + 6)?;
-    if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
-        let identities = identity_candidates(data, pos + 7, end, true);
-        return (!identities.is_empty()).then_some(EntityRecordCandidates {
-            pos,
-            total_len,
-            lead,
-            layout: EntityRecordLayout::Inline,
-            identities,
-        });
-    }
-    if total_len < 19
-        || lead > 0x02
-        || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
-    {
-        return None;
-    }
-    let definition_len = View::u32_le_at(data, pos + 9)?;
-    let definition_len_usize = usize::try_from(definition_len).ok()?;
-    let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
-    if definition_len_usize < 11 || definition_end > end {
-        return None;
-    }
-    let definition_start = pos + 13;
-    let value_len = View::u32_le_at(data, definition_end + 2)?;
-    let value_len_usize = usize::try_from(value_len).ok()?;
-    let value_end = definition_end.checked_add(value_len_usize)?;
-    if value_len_usize < 6 || value_end > end {
-        return None;
-    }
-    let identities = identity_candidates(data, definition_start, definition_end, true);
-    if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
-        return None;
-    }
-    (!identities.is_empty()).then_some(EntityRecordCandidates {
-        pos,
-        total_len,
-        lead,
-        layout: EntityRecordLayout::Nested {
-            definition_end,
-            value_end,
-        },
-        identities,
+fn collection_count(ctx: &DecodeContext<'_>, count: usize) -> Result<u64, CodecError> {
+    u64::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit("count CATIA 7C05 collection items", u64::MAX, u64::MAX)
     })
 }
 
+fn parse_candidate_variants(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    pos: usize,
+) -> Result<Option<EntityRecordCandidates>, CodecError> {
+    (|| -> Option<Result<EntityRecordCandidates, CodecError>> {
+        let total_len = usize::try_from(View::u32_le_at(data, pos.checked_add(2)?)?).ok()?;
+        let end = pos.checked_add(total_len)?;
+        if total_len < 12 || end > data.len() {
+            return None;
+        }
+
+        let lead = *data.get(pos + 6)?;
+        if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
+            let identities = match identity_candidates(ctx, data, pos + 7, end, true) {
+                Ok(identities) => identities,
+                Err(error) => return Some(Err(error)),
+            };
+            if !identities.is_empty() {
+                if let Err(error) = ctx.charge_collection_items(1, "admit CATIA 7C05 candidate") {
+                    return Some(Err(error));
+                }
+            }
+            return (!identities.is_empty()).then_some(Ok(EntityRecordCandidates {
+                pos,
+                total_len,
+                lead,
+                layout: EntityRecordLayout::Inline,
+                identities,
+            }));
+        }
+        if total_len < 19
+            || lead > 0x02
+            || data.get(pos.checked_add(7)?..pos.checked_add(9)?)? != [0x7c, 0x06]
+        {
+            return None;
+        }
+        let definition_len = View::u32_le_at(data, pos + 9)?;
+        let definition_len_usize = usize::try_from(definition_len).ok()?;
+        let definition_end = pos.checked_add(7)?.checked_add(definition_len_usize)?;
+        if definition_len_usize < 11 || definition_end > end {
+            return None;
+        }
+        let definition_start = pos + 13;
+        let value_len = View::u32_le_at(data, definition_end + 2)?;
+        let value_len_usize = usize::try_from(value_len).ok()?;
+        let value_end = definition_end.checked_add(value_len_usize)?;
+        if value_len_usize < 6 || value_end > end {
+            return None;
+        }
+        let identities =
+            match identity_candidates(ctx, data, definition_start, definition_end, true) {
+                Ok(identities) => identities,
+                Err(error) => return Some(Err(error)),
+            };
+        if data.get(definition_end..definition_end.checked_add(2)?)? != [0x7c, 0x07] {
+            return None;
+        }
+        if !identities.is_empty() {
+            if let Err(error) = ctx.charge_collection_items(1, "admit CATIA 7C05 candidate") {
+                return Some(Err(error));
+            }
+        }
+        (!identities.is_empty()).then_some(Ok(EntityRecordCandidates {
+            pos,
+            total_len,
+            lead,
+            layout: EntityRecordLayout::Nested {
+                definition_end,
+                value_end,
+            },
+            identities,
+        }))
+    })()
+    .transpose()
+}
+
 fn identity_candidates(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     start: usize,
     end: usize,
     skip_fixed_fields: bool,
-) -> Vec<EntityIdentityCandidate> {
+) -> Result<Vec<EntityIdentityCandidate>, CodecError> {
     let mut identities = Vec::new();
+    if end < start {
+        return Ok(identities);
+    }
+    ctx.charge_work(
+        collection_count(ctx, end - start)?,
+        "scan CATIA 7C05 identities",
+    )?;
     let mut at = start;
     while at < end {
         match data[at] {
@@ -1081,6 +1205,7 @@ fn identity_candidates(
                         break;
                     };
                     if entity_id != 0 {
+                        ctx.charge_collection_items(1, "admit CATIA 7C05 identity candidate")?;
                         identities.push(EntityIdentityCandidate {
                             delimiter: at,
                             entity_id,
@@ -1104,41 +1229,64 @@ fn identity_candidates(
             _ => at += 1,
         }
     }
-    identities
+    Ok(identities)
 }
 
 fn materialize_record(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     candidate: &EntityRecordCandidates,
     identity: EntityIdentityCandidate,
-) -> Option<EntityRecord> {
-    let record_end = candidate.pos.checked_add(candidate.total_len)?;
-    let body = match candidate.layout {
-        EntityRecordLayout::Inline => {
-            EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec())
-        }
-        EntityRecordLayout::Nested {
-            definition_end,
-            value_end,
-        } => {
-            let definition_start = candidate.pos.checked_add(13)?;
-            let identity_end = identity.delimiter.checked_add(5)?;
-            let value_payload = data.get(definition_end + 6..value_end)?;
-            let prefix = data.get(definition_start..identity.delimiter)?;
-            EntityBody::Nested {
-                prefix: prefix.to_vec(),
-                suffix: data.get(identity_end..definition_end)?.to_vec(),
-                value_payload: value_payload.to_vec(),
-                record_suffix: data.get(value_end..record_end)?.to_vec(),
+) -> Result<Option<EntityRecord>, CodecError> {
+    (|| -> Option<Result<EntityRecord, CodecError>> {
+        let record_end = candidate.pos.checked_add(candidate.total_len)?;
+        let body = match candidate.layout {
+            EntityRecordLayout::Inline => {
+                let bytes = data.get(candidate.pos + 6..record_end)?;
+                EntityBody::Inline(
+                    match ctx.copy_retained(bytes, "retain CATIA 7C05 inline body") {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Some(Err(error)),
+                    },
+                )
             }
-        }
-    };
-    Some(EntityRecord {
-        pos: candidate.pos,
-        lead: candidate.lead,
-        entity_id: identity.entity_id,
-        body,
-    })
+            EntityRecordLayout::Nested {
+                definition_end,
+                value_end,
+            } => {
+                let definition_start = candidate.pos.checked_add(13)?;
+                let identity_end = identity.delimiter.checked_add(5)?;
+                let value_payload = data.get(definition_end + 6..value_end)?;
+                let prefix = data.get(definition_start..identity.delimiter)?;
+                let copy = |bytes| ctx.copy_retained(bytes, "retain CATIA 7C05 nested body");
+                EntityBody::Nested {
+                    prefix: match copy(prefix) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Some(Err(error)),
+                    },
+                    suffix: match copy(data.get(identity_end..definition_end)?) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Some(Err(error)),
+                    },
+                    value_payload: match copy(value_payload) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Some(Err(error)),
+                    },
+                    record_suffix: match copy(data.get(value_end..record_end)?) {
+                        Ok(bytes) => bytes,
+                        Err(error) => return Some(Err(error)),
+                    },
+                }
+            }
+        };
+        Some(Ok(EntityRecord {
+            pos: candidate.pos,
+            lead: candidate.lead,
+            entity_id: identity.entity_id,
+            body,
+        }))
+    })()
+    .transpose()
 }
 
 pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<DefinitionSchemaSelector> {
@@ -1386,14 +1534,166 @@ pub(crate) fn parse_range_interval(
 mod tests {
     use super::{
         parse_definition_schema_selectors, parse_numeric_pair, parse_range_interval,
-        parse_reference_signature, parse_runs, unique_monotone_run, value_packets,
-        DefinitionSchemaSelector, EntityBody, EntityIdentityCandidate, EntityRecord,
-        EntityRecordCandidates, EntityRecordLayout, EntityValuePacket, NumericPacketItem,
-        NumericPair, NumericPairSlot, PathCount, RangeInterval, RangeIntervalPrefix,
-        RangeIntervalSlot, ReferenceSignature, ReferenceSignatureInstruction,
-        ReferenceSignaturePrefix, ReferenceSignatureSymbol, ReferenceSignatureWire,
+        parse_reference_signature, value_packets, DefinitionSchemaSelector, EntityBody,
+        EntityIdentityCandidate, EntityRecord, EntityRecordCandidates, EntityRecordLayout,
+        EntityValuePacket, NumericPacketItem, NumericPair, NumericPairSlot, PathCount,
+        RangeInterval, RangeIntervalPrefix, RangeIntervalSlot, ReferenceSignature,
+        ReferenceSignatureInstruction, ReferenceSignaturePrefix, ReferenceSignatureSymbol,
+        ReferenceSignatureWire,
     };
     use crate::value_block;
+
+    fn parse_runs(data: &[u8]) -> Vec<Vec<EntityRecord>> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            data,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("entity-table fixture fits the service profile");
+        super::parse_runs(&ctx, data).expect("entity-table fixture fits resource limits")
+    }
+
+    fn unique_monotone_run(
+        records: &[EntityRecordCandidates],
+    ) -> Option<Vec<EntityIdentityCandidate>> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[0],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("small synthetic root fits the service profile");
+        super::unique_monotone_run(&ctx, records)
+            .expect("synthetic path states fit the service limits")
+    }
+
+    #[test]
+    fn entity_table_identity_candidate_limit_refuses_before_candidate_allocation() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("small entity record fits input limit");
+        let error =
+            super::parse_runs(&ctx, &bytes).expect_err("one identity candidate exceeds zero items");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "admit CATIA 7C05 identity candidate")
+        );
+    }
+
+    #[test]
+    fn entity_table_materialized_record_limit_refuses_before_record_allocation() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 7;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("small entity record fits input limit");
+        let error = super::parse_runs(&ctx, &bytes)
+            .expect_err("materialized record exceeds seven admitted items");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "collect CATIA 7C05 materialized records")
+        );
+    }
+
+    #[test]
+    fn entity_table_native_entity_limit_refuses_before_record_allocation() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("small entity record fits input limit");
+        let error =
+            super::parse_runs(&ctx, &bytes).expect_err("one native entity exceeds zero entities");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.operation == "admit CATIA 7C05 native entity")
+        );
+    }
+
+    #[test]
+    fn entity_table_retained_body_limit_refuses_before_body_copy() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("small entity record fits input limit");
+        let error =
+            super::parse_runs(&ctx, &bytes).expect_err("one body byte exceeds zero retained bytes");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain CATIA 7C05 nested body")
+        );
+    }
+
+    #[test]
+    fn entity_table_path_work_limit_refuses_before_sort() {
+        let mut bytes = record(&[0x11], 37);
+        bytes.extend(record(&[0x12], 38));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len() + 14).expect("small fixture");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("two records fit the service input limit");
+        let error =
+            super::parse_runs(&ctx, &bytes).expect_err("sorting one predecessor needs work");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "sort CATIA 7C05 predecessor states")
+        );
+    }
+
+    #[test]
+    fn entity_table_marker_scan_work_limit_refuses_before_scan() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len() - 1).expect("small fixture");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("one record fits the input limit");
+        let error =
+            super::parse_runs(&ctx, &bytes).expect_err("marker scan needs one work unit per byte");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan CATIA 7C05 markers")
+        );
+    }
+
+    #[test]
+    fn entity_table_identity_scan_work_limit_refuses_before_scan() {
+        let bytes = record(&[0x11], 37);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(bytes.len()).expect("small fixture");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("one record fits the input limit");
+        let error = super::parse_runs(&ctx, &bytes)
+            .expect_err("identity scan needs work beyond marker scan");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "scan CATIA 7C05 identities")
+        );
+    }
 
     // The tuple carries one coupled result; a separate alias would add no invariant.
     #[allow(clippy::type_complexity)]
