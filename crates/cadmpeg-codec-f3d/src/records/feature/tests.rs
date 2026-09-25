@@ -1624,50 +1624,6 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
 }
 
 #[test]
-fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
-    use crate::records::feature::work_geometry::DesignWorkPointRule;
-
-    let input = serde_json::json!({"record_index": 2, "reference_offset": 10});
-    for (kind, code, arity) in [
-        ("circle_center", 5, 1),
-        ("two_edge_intersection", 7, 2),
-        ("three_plane_intersection", 8, 3),
-        ("vertex", 10, 1),
-        ("edge_plane_intersection", 14, 2),
-        ("distance_on_edge", 20, 1),
-    ] {
-        let inputs = (0..arity).map(|_| input.clone()).collect::<Vec<_>>();
-        let mut wire = serde_json::json!({"kind": kind});
-        if arity == 1 {
-            wire["input"] = input.clone();
-        } else {
-            wire["inputs"] = serde_json::json!(inputs);
-        }
-        let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("supported rule");
-        assert_eq!(rule.reference_type(), code);
-        assert_eq!(serde_json::to_value(rule).expect("serialize rule"), wire);
-        let alias = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
-        let error = serde_json::from_value::<DesignWorkPointRule>(alias)
-            .expect_err("native alias rejected");
-        assert!(error.to_string().contains("reference_type"));
-    }
-    for (code, inputs) in [
-        (0, vec![]),
-        (u32::MAX, vec![input.clone()]),
-        (5, vec![input.clone(), input]),
-    ] {
-        let wire = serde_json::json!({"kind": "native", "reference_type": code, "inputs": inputs});
-        let rule: DesignWorkPointRule =
-            serde_json::from_value(wire.clone()).expect("unassigned native form");
-        assert_eq!(
-            serde_json::to_value(rule).expect("serialize native form"),
-            wire
-        );
-    }
-}
-
-#[test]
 fn feature_kind_classifies_nonempty_native_names_at_construction() {
     for name in [
         "Fillet",
@@ -1989,52 +1945,6 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
     assert!(serde_json::from_value::<DesignVertexRecipe>(invalid).is_err());
 }
 
-#[test]
-fn work_point_plane_carrier_is_bound_to_its_input_frame() {
-    use crate::records::feature::work_geometry::DesignWorkPointInput;
-    let wire = serde_json::json!({
-        "record_index": 7, "reference_offset": 0,
-        "carrier": { "kind": "work_plane", "selection": {
-            "class_tag": "300",
-            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
-            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 108,
-            "identity_record_index": 10, "identity_record_offset": 150,
-            "primary_identity": 19, "primary_identity_offset": 171,
-            "work_plane_scope_record_index": 20, "next_record_index": 11, "next_byte_offset": 179
-        }}
-    });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
-    for field in ["identity_record_index", "next_record_index"] {
-        let mut invalid = wire.clone();
-        invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
-    }
-}
-
-#[test]
-fn work_point_sketch_point_carrier_is_bound_to_its_input_frame() {
-    use crate::records::feature::work_geometry::DesignWorkPointInput;
-    let wire = serde_json::json!({
-        "record_index": 7, "reference_offset": 0,
-        "carrier": { "kind": "sketch_point", "selection": {
-            "class_tag": "300",
-            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 32,
-            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 108,
-            "identity_record_index": 10, "identity_record_offset": 150,
-            "sketch_record_index": 19, "sketch_record_index_offset": 175,
-            "point_persistent_id": 23, "point_persistent_id_offset": 183,
-            "point_native_id": "f3d:native/BulkStream.dat:sketch-point#19",
-            "next_record_index": 11, "next_byte_offset": 191
-        }}
-    });
-    let admitted: DesignWorkPointInput = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
-    for field in ["identity_record_index", "next_record_index"] {
-        let mut invalid = wire.clone();
-        invalid["carrier"]["selection"][field] = 12.into();
-        assert!(serde_json::from_value::<DesignWorkPointInput>(invalid).is_err());
-    }
-}
-
 mod three_point_planes;
+
+mod work_points;
