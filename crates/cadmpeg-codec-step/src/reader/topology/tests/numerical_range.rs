@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::*;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Point2;
 fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -68,6 +69,57 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
         .iter()
         .any(|seed| (seed / f64::MAX + 0.5).abs() < f64::EPSILON));
     assert!(seeds.iter().all(|seed| seed.is_finite()));
+}
+
+#[test]
+fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
+    let (mut ir, surface_id) = plane();
+    let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: curve_id,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite line"),
+        )),
+        source_object: None,
+    });
+    let index = ModelIndex::new_model_only(&ir);
+    let (exchange, _) =
+        crate::parse::parse(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
+            .expect("STEP fixture parses");
+    let edge = EdgeDef::Curve {
+        start: 1,
+        end: 2,
+        curve: 54,
+        same: true,
+    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("finite pcurve"),
+    );
+    let lower = -9.0e307;
+    let upper = 9.0e307;
+    assert!(pcurve_locus_witness(
+        &index,
+        &exchange,
+        &edge,
+        &surface_id,
+        &pcurve,
+        PcurveEndpointFit {
+            start_parameter: lower,
+            end_parameter: upper,
+            max_residual: 0.0,
+        },
+        Point3::new(lower, 0.0, 0.0),
+        Point3::new(upper, 0.0, 0.0),
+        COINCIDENCE_TOLERANCE,
+    ));
 }
 
 #[test]
