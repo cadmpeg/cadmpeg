@@ -43,7 +43,7 @@ use crate::families::freeform::{
     append_consolidated_revolutions, append_freeform_surface_pools, ConsolidatedRevolutionBinding,
 };
 use crate::families::standard::{fbb, topology};
-use crate::families::FamilyOutput;
+use crate::families::{FamilyEntityAdmission, FamilyOutput};
 use crate::loss::CatiaLossCode;
 use crate::math::unit_vector;
 use crate::nurbs::reverse_nurbs_curve;
@@ -1637,6 +1637,16 @@ fn try_decode_standard_populations(
     let all_topologies_attached = attached_topology_count == population_count;
 
     for (index, output) in outputs.into_iter().enumerate() {
+        merged.admitted_model_entities = merged
+            .admitted_model_entities
+            .checked_add(output.admitted_model_entities)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "count CATIA standard population entities",
+                    u64::MAX,
+                    u64::MAX,
+                )
+            })?;
         let scope = format!("population-{}", index + 1);
         let mut model = output.ir.model;
         retain_standard_population_model(&mut model);
@@ -1740,6 +1750,7 @@ fn try_decode_standard_population(
     surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> Result<Option<FamilyOutput>, cadmpeg_core::CodecError> {
     (|| -> Option<Result<FamilyOutput, cadmpeg_core::CodecError>> {
+    let mut admission = FamilyEntityAdmission::new(ctx);
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
@@ -2328,11 +2339,15 @@ fn try_decode_standard_population(
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
     // The bindings this call returns are read below, through
     // `bind_consolidated_revolution_faces_and_seams`.
-    let consolidated_revolutions = append_consolidated_revolutions(
+    let consolidated_revolutions = match append_consolidated_revolutions(
         &mut ir,
         &mut annotations,
         &resolved_consolidated_revolutions,
-    );
+        &mut admission,
+    ) {
+        Ok(bindings) => bindings,
+        Err(error) => return Some(Err(error)),
+    };
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId::compose(
@@ -2430,15 +2445,19 @@ fn try_decode_standard_population(
             &consolidated_revolutions,
         )
         .ok()?;
-    let mut consolidated_curve_bindings = append_freeform_surface_pools(
+    let mut consolidated_curve_bindings = match append_freeform_surface_pools(
         &mut ir,
         &mut annotations,
         &scan.data,
         &consolidated_records,
         surface_alias_tags,
         refusal,
-    )
-    .ok()?;
+        &mut admission,
+    ) {
+        Ok(bindings) => bindings,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
@@ -2708,7 +2727,7 @@ fn try_decode_standard_population(
         report,
         annotations,
         unknowns,
-        admitted_model_entities: 0,
+        admitted_model_entities: admission.admitted(),
     }))
     })()
     .transpose()

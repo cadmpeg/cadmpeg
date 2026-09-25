@@ -59,7 +59,8 @@ pub(super) fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     resolved: &[crate::families::b2::records::B2ResolvedRevolution],
-) -> Vec<ConsolidatedRevolutionBinding> {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<Vec<ConsolidatedRevolutionBinding>, cadmpeg_core::CodecError> {
     let mut bindings = Vec::new();
     for carrier in resolved {
         let index = carrier.revolution_index;
@@ -106,6 +107,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("circle:{}", profile.record_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.curves.push(Curve {
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
@@ -171,6 +173,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("profile-allocation:{}", revolution.profile_allocation_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: torus_geometry.clone().unwrap_or(SurfaceGeometry::Solved(
@@ -181,6 +184,7 @@ pub(super) fn append_consolidated_revolutions(
                 u32::from(revolution.profile_allocation_id),
             )),
         });
+        admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
@@ -210,7 +214,7 @@ pub(super) fn append_consolidated_revolutions(
             });
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 fn typed_face_counts(
@@ -565,6 +569,9 @@ pub(super) fn try_decode_freeform_surfaces(
                     &surface.source_tag,
                     Exactness::ByteExact,
                 );
+                if let Err(error) = admission.charge() {
+                    return Some(Err(error));
+                }
                 ir.model.surfaces.push(Surface {
                     id,
                     geometry: surface.geometry.clone(),
@@ -574,18 +581,32 @@ pub(super) fn try_decode_freeform_surfaces(
         }
         // The bindings this call returns are read by the standard-family route
         // alone; here the call is made for the curves and surfaces it appends.
-        append_consolidated_revolutions(
+        if let Err(error) = append_consolidated_revolutions(
             &mut ir,
             &mut annotations,
             &resolved_consolidated_revolutions,
-        );
-        append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
+            &mut admission,
+        ) {
+            return Some(Err(error));
+        }
+        if let Err(error) =
+            append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data, &mut admission)
+        {
+            return Some(Err(error));
+        }
         let line_profiles = consolidated_line_profiles(&scan.data, &consolidated_records);
         let mut standalone_wires = line_profiles
             .iter()
             .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
             .collect::<Vec<_>>();
-        append_consolidated_line_profiles(&mut ir, &mut annotations, line_profiles);
+        if let Err(error) = append_consolidated_line_profiles(
+            &mut ir,
+            &mut annotations,
+            line_profiles,
+            &mut admission,
+        ) {
+            return Some(Err(error));
+        }
         for curve in b2_nurbs_curves {
             let id = CurveId::compose(
                 &cadmpeg_ir::identity_namespace!("catia", "b2", "nurbs-curve"),
@@ -600,6 +621,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
@@ -624,6 +648,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.geometry)),
@@ -656,6 +683,9 @@ pub(super) fn try_decode_freeform_surfaces(
                 ),
                 Exactness::ByteExact,
             );
+            if let Err(error) = admission.charge() {
+                return Some(Err(error));
+            }
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -672,11 +702,23 @@ pub(super) fn try_decode_freeform_surfaces(
             });
             standalone_wires.push((id, parameter_range, circle.pos));
         }
-        let wire_topology_transferred = !topology_transferred
+        let wire_topology_transferred = if !topology_transferred
             && ir.model.surfaces.is_empty()
             && standalone_wires.len() == ir.model.curves.len()
             && !standalone_wires.is_empty()
-            && attach_standalone_wires(&mut ir, &mut annotations, &standalone_wires);
+        {
+            match attach_standalone_wires(
+                &mut ir,
+                &mut annotations,
+                &standalone_wires,
+                &mut admission,
+            ) {
+                Ok(transferred) => transferred,
+                Err(error) => return Some(Err(error)),
+            }
+        } else {
+            false
+        };
         let mut losses = if wire_topology_transferred {
             Vec::new()
         } else if topology_transferred && b5_complete {
@@ -928,7 +970,8 @@ fn attach_standalone_wires(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     wires: &[(CurveId, [f64; 2], usize)],
-) -> bool {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let plans = wires
         .iter()
         .enumerate()
@@ -948,7 +991,7 @@ fn attach_standalone_wires(
         })
         .collect::<Option<Vec<_>>>();
     let Some(plans) = plans else {
-        return false;
+        return Ok(false);
     };
     let body_id = BodyId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-body"),
@@ -978,7 +1021,7 @@ fn attach_standalone_wires(
         edge_ids,
         Vec::new(),
     ) else {
-        return false;
+        return Ok(false);
     };
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
@@ -1031,10 +1074,14 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
+        admission.charge()?;
+        admission.charge()?;
         ir.model.points.extend([
             Point::new(point_ids[1].clone(), end, None),
             Point::new(point_ids[0].clone(), start, None),
         ]);
+        admission.charge()?;
+        admission.charge()?;
         ir.model.vertices.extend([
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -1047,6 +1094,7 @@ fn attach_standalone_wires(
                 tolerance: None,
             },
         ]);
+        admission.charge()?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -1055,6 +1103,7 @@ fn attach_standalone_wires(
             tolerance: None,
         });
     }
+    admission.charge()?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
@@ -1064,13 +1113,15 @@ fn attach_standalone_wires(
         color: None,
         visible: None,
     });
+    admission.charge()?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
     });
+    admission.charge()?;
     ir.model.shells.push(shell);
-    true
+    Ok(true)
 }
 
 fn freeform_surface_carriers(
@@ -1260,7 +1311,8 @@ fn append_consolidated_line_profiles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     profiles: Vec<ConsolidatedLineProfile>,
-) {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for profile in profiles {
         annotate(
             annotations,
@@ -1270,8 +1322,10 @@ fn append_consolidated_line_profiles(
             "line_profile_carrier",
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.curves.push(profile.curve);
     }
+    Ok(())
 }
 
 /// Append standalone freeform carriers and return the number of consolidated
@@ -1283,6 +1337,7 @@ pub(super) fn append_freeform_surface_pools(
     records: &[crate::wire::records::ConsolidatedRecord],
     surface_alias_tags: &HashMap<u32, Option<u32>>,
     refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
@@ -1305,6 +1360,7 @@ pub(super) fn append_freeform_surface_pools(
             source_tag,
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1334,6 +1390,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -1352,6 +1409,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1372,7 +1430,12 @@ pub(super) fn append_freeform_surface_pools(
         );
     }
 
-    append_consolidated_line_profiles(ir, annotations, consolidated_line_profiles(data, records));
+    append_consolidated_line_profiles(
+        ir,
+        annotations,
+        consolidated_line_profiles(data, records),
+        admission,
+    )?;
 
     for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
@@ -1427,6 +1490,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", guide.header_token),
             Exactness::Derived,
         );
+        admission.charge()?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
@@ -1456,6 +1520,7 @@ pub(super) fn append_freeform_surface_pools(
                 format!("limit_{}", side + 1),
                 Exactness::Derived,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1492,6 +1557,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -1509,6 +1575,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
@@ -1522,7 +1589,7 @@ pub(super) fn append_freeform_surface_pools(
         ));
     }
 
-    append_a8_rolling_ball_pools(ir, annotations, data);
+    append_a8_rolling_ball_pools(ir, annotations, data, admission)?;
     let counts = append_resolved_consolidated_surface_curves(
         ir,
         annotations,
@@ -1534,6 +1601,7 @@ pub(super) fn append_freeform_surface_pools(
             surface_alias_tags,
         },
         refusal,
+        admission,
     )?;
     Ok(counts)
 }
@@ -1673,6 +1741,7 @@ fn append_resolved_consolidated_surface_curves(
     records: &[crate::wire::records::ConsolidatedRecord],
     pool: FreeformSurfacePool<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let FreeformSurfacePool {
         surfaces: freeform_surfaces,
@@ -1930,6 +1999,7 @@ fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Unknown,
                         );
+                        admission.charge()?;
                         ir.model.surfaces.push(Surface {
                             id: id.clone(),
                             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -1953,6 +2023,7 @@ fn append_resolved_consolidated_surface_curves(
                             "resolved_pcurve_support",
                             Exactness::Derived,
                         );
+                        admission.charge()?;
                         let _attached = ir.model.add_procedural_surface(
                             id.clone(),
                             ProceduralSurface::new(
@@ -2096,6 +2167,7 @@ fn append_resolved_consolidated_surface_curves(
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
                 );
+                admission.charge()?;
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: carrier,
@@ -2516,6 +2588,7 @@ fn append_resolved_consolidated_surface_curves(
                         "resolved_face_side_pcurve",
                         Exactness::Derived,
                     );
+                    admission.charge()?;
                     ir.model.pcurves.push(Pcurve {
                         id: pcurve_id.clone(),
                         geometry,
@@ -2570,6 +2643,7 @@ fn append_resolved_consolidated_surface_curves(
                 "procedural_curve_cache",
                 Exactness::Unknown,
             );
+            admission.charge()?;
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -2592,6 +2666,7 @@ fn append_resolved_consolidated_surface_curves(
                 .map_err(cadmpeg_core::CodecError::malformed)?
                 .derived(&procedural_id, "definition")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            admission.charge()?;
             let _attached = ir
                 .model
                 .add_procedural_curve(curve_id, ProceduralCurve::new(procedural_id, definition));
@@ -2967,7 +3042,12 @@ fn rechart_equivalent_surface_pcurve(
     }
 }
 
-fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
+fn append_a8_rolling_ball_pools(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for jet in crate::families::a5a8::records::a8_freeform_curves(data) {
         let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(&jet)
         else {
@@ -2989,6 +3069,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             format!("object_id:{:08x}", jet.object_id),
             Exactness::Unknown,
         );
+        admission.charge()?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -3010,10 +3091,12 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             ),
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3041,6 +3124,105 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
+
+    fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
+        crate::test_support::with_service_context(|ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            run(&mut admission)
+        })
+    }
+
+    #[test]
+    fn freeform_surface_pool_entity_limit_refuses_before_curve_append() {
+        let bytes = crate::test_support::test_a5a8::a5_freeform_curve_stream();
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut ir = CadIr::empty();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let Err(error) = append_freeform_surface_pools(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                &mut admission,
+            ) else {
+                panic!("an A5 limiting curve exceeds the zero-entity allowance");
+            };
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert_eq!(ir.model.entity_count(), 0);
+        });
+    }
+
+    #[test]
+    fn freeform_wire_entity_limit_refuses_before_endpoint_append() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#wire").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid linear wire curve"),
+            )),
+            source_object: None,
+        });
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let error = attach_standalone_wires(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &[(curve_id, [0.0, 1.0], 0)],
+                &mut admission,
+            )
+            .expect_err("the first endpoint exceeds the zero-entity allowance");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert!(ir.model.points.is_empty());
+        });
+    }
+
+    #[test]
+    fn consolidated_revolution_entity_limit_refuses_before_directrix_append() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let resolved =
+            crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
+        assert_eq!(resolved.len(), 1);
+        crate::test_support::with_entity_limit(0, |ctx| {
+            let mut ir = CadIr::empty();
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            let Err(error) = super::append_consolidated_revolutions(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &resolved,
+                &mut admission,
+            ) else {
+                panic!("the directrix exceeds the zero-entity allowance");
+            };
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                        && limit.operation == "admit CATIA family model entity"
+            ));
+            assert_eq!(ir.model.entity_count(), 0);
+        });
+    }
 
     #[test]
     fn typed_face_counts_partition_the_parsed_record_identities() {
@@ -3156,11 +3338,13 @@ mod tests {
             )),
             source_object: None,
         });
-        assert!(attach_standalone_wires(
+        assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[(curve_id, [0.0, 1.0], 17)],
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(
             ir.model.bodies[0].kind,
             cadmpeg_ir::topology::BodyKind::Wire
@@ -3201,11 +3385,13 @@ mod tests {
             source_object: None,
         });
         let before = ir.model.clone();
-        assert!(!attach_standalone_wires(
+        assert!(!with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &[(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)],
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(ir.model, before);
     }
 
@@ -3219,13 +3405,23 @@ mod tests {
             .iter()
             .map(|profile| (profile.curve.id.clone(), profile.range, profile.pos))
             .collect::<Vec<_>>();
-        append_consolidated_line_profiles(&mut ir, &mut AnnotationBuilder::new(), profiles);
+        with_admission(|admission| {
+            append_consolidated_line_profiles(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                profiles,
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
         assert_eq!(wires.len(), 1);
-        assert!(attach_standalone_wires(
+        assert!(with_admission(|admission| attach_standalone_wires(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &wires,
-        ));
+            admission
+        ))
+        .expect("service limits admit freeform model records"));
         assert_eq!(
             ir.model.edges[0]
                 .param_range()
@@ -3253,21 +3449,28 @@ mod tests {
         let records = crate::wire::records::consolidated_records(&bytes);
 
         let mut standalone = CadIr::empty();
-        append_consolidated_line_profiles(
-            &mut standalone,
-            &mut AnnotationBuilder::new(),
-            consolidated_line_profiles(&bytes, &records),
-        );
+        with_admission(|admission| {
+            append_consolidated_line_profiles(
+                &mut standalone,
+                &mut AnnotationBuilder::new(),
+                consolidated_line_profiles(&bytes, &records),
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
 
         let mut pooled = CadIr::empty();
-        append_freeform_surface_pools(
-            &mut pooled,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &records,
-            &HashMap::new(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        with_admission(|admission| {
+            append_freeform_surface_pools(
+                &mut pooled,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &records,
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(standalone.model.curves.len(), 1);
@@ -3292,14 +3495,17 @@ mod tests {
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
         let mut ir = CadIr::empty();
         let bytes = crate::test_support::test_a5a8::a5_freeform_curve_stream();
-        append_freeform_surface_pools(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            &HashMap::new(),
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        with_admission(|admission| {
+            append_freeform_surface_pools(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &HashMap::new(),
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert!(matches!(
@@ -3679,18 +3885,21 @@ mod tests {
             ),
         );
 
-        let attached = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let attached = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
@@ -3752,18 +3961,21 @@ mod tests {
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
-        let counts = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3812,18 +4024,21 @@ mod tests {
             source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
         });
 
-        let counts = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let counts = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::from([(0x5678, Some(0x1234))]),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
 
         assert_eq!(counts.standard_edges, 0);
@@ -3976,18 +4191,21 @@ mod tests {
             ),
         );
 
-        let attached = append_resolved_consolidated_surface_curves(
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bytes,
-            &crate::wire::records::consolidated_records(&bytes),
-            FreeformSurfacePool {
-                surfaces: &[],
-                surface_ids: &[],
-                surface_alias_tags: &HashMap::new(),
-            },
-            &mut crate::nurbs::LaneRefusals::new(),
-        )
+        let attached = with_admission(|admission| {
+            append_resolved_consolidated_surface_curves(
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                FreeformSurfacePool {
+                    surfaces: &[],
+                    surface_ids: &[],
+                    surface_alias_tags: &HashMap::new(),
+                },
+                &mut crate::nurbs::LaneRefusals::new(),
+                admission,
+            )
+        })
         .expect("valid source object identity");
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(
@@ -4294,11 +4512,15 @@ mod tests {
             crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &records);
         assert_eq!(resolved.len(), 1);
 
-        let bindings = super::append_consolidated_revolutions(
-            &mut CadIr::empty(),
-            &mut AnnotationBuilder::default(),
-            &resolved,
-        );
+        let bindings = with_admission(|admission| {
+            super::append_consolidated_revolutions(
+                &mut CadIr::empty(),
+                &mut AnnotationBuilder::default(),
+                &resolved,
+                admission,
+            )
+        })
+        .expect("service limits admit freeform model records");
         let [binding] = bindings.as_slice() else {
             panic!("the admitted revolution converts to one torus");
         };
@@ -4340,11 +4562,15 @@ mod tests {
                 &bytes, &records,
             );
             assert_eq!(resolved.len(), 1);
-            super::append_consolidated_revolutions(
-                &mut CadIr::empty(),
-                &mut AnnotationBuilder::default(),
-                &resolved,
-            )
+            with_admission(|admission| {
+                super::append_consolidated_revolutions(
+                    &mut CadIr::empty(),
+                    &mut AnnotationBuilder::default(),
+                    &resolved,
+                    admission,
+                )
+            })
+            .expect("service limits admit freeform model records")
         };
         assert!(convert(1.0 + deviation).is_empty());
         let bindings = convert(1.0);
