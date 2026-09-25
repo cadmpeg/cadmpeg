@@ -43,6 +43,34 @@ fn numerical_0922b_pcurve_knot_units() {
 }
 
 #[test]
+fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
+    let (ir, id) = plane();
+    let index = ModelIndex::new_model_only(&ir);
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![-f64::MAX, -f64::MAX, 0.0, f64::MAX, f64::MAX],
+            vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(2.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    let mut fractions = Vec::new();
+    pcurve_parameter_break_fractions(&pcurve, [-f64::MAX, f64::MAX], &mut fractions);
+    assert_eq!(fractions, vec![0.5]);
+    let seeds = pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry);
+    assert!(seeds
+        .iter()
+        .any(|seed| (seed / f64::MAX + 0.5).abs() < f64::EPSILON));
+    assert!(seeds.iter().all(|seed| seed.is_finite()));
+}
+
+#[test]
 fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
     let (ir, id) = plane();
     let index = ModelIndex::new_model_only(&ir);
