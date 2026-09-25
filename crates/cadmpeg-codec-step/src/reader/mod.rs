@@ -262,7 +262,7 @@ pub(crate) fn decode(
     decode_exchange(input, exchange, &diagnostics, ctx, packaging)
 }
 
-fn decode_exchange(
+pub(crate) fn decode_exchange(
     input: &[u8],
     mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],

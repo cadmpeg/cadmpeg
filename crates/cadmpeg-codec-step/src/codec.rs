@@ -123,11 +123,20 @@ fn inspect_exchange(
         return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
     }
     let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
+    inspect_parsed_exchange(bytes, ctx, &mut exchange, &diagnostics)
+}
+
+fn inspect_parsed_exchange(
+    bytes: &[u8],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    exchange: &mut parse::Exchange,
+    diagnostics: &[parse::ParseDiagnostic],
+) -> Result<InspectedExchange, CodecError> {
     let reader::AnalyzedExchange {
         decoded,
         matched,
         opaque_offsets,
-    } = reader::analyze_exchange(bytes, &mut exchange, &diagnostics, ctx)?;
+    } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
     let mut entries = vec![ContainerEntry {
         name: "HEADER".into(),
         role: ContainerRole::Metadata,
@@ -234,7 +243,11 @@ fn inspect_exchange(
     };
     let dialect = matched.dialect();
     let mut notes = vec![format!("schema {schema}; dialect {dialect}")];
-    notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
+    notes.extend(
+        diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.message.clone()),
+    );
     Ok(InspectedExchange {
         matched,
         entries,
@@ -294,8 +307,15 @@ fn inspect_zip(
         view: root_view,
         data_start: root_data_offset,
     } = archive::open_root(ctx, root)?;
-    let mut inspected = inspect_exchange(&StepCodec::default(), ctx, root_view)?;
-    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let root_bytes = root_view.window();
+    refuse_alternate_encoding(root_bytes)?;
+    if StepCodec::default().detect_impl(root_bytes) == Confidence::No {
+        return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+    }
+    let (mut exchange, diagnostics) = parse::parse_with_context(root_bytes, ctx)?;
+    let resource_notes = archive::root_reference_notes(&archive, &exchange);
+    let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
+    let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
     let logical_entries = inspected
         .entries
@@ -340,10 +360,13 @@ fn decode_zip(
         view: root_view,
         data_start: root_data_offset,
     } = archive::open_root(ctx, root)?;
-    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let (exchange, diagnostics) = parse::parse_with_context(root_view.window(), ctx)?;
+    let resource_notes = archive::root_reference_notes(&archive, &exchange)?;
     let entry_count = archive.entries().len();
-    let mut decoded = reader::decode(
+    let mut decoded = reader::decode_exchange(
         root_view.window(),
+        exchange,
+        &diagnostics,
         ctx,
         reader::Packaging::Zip {
             entry_count,
