@@ -2873,7 +2873,14 @@ impl FormulaExpressionParser<'_, '_> {
             } else {
                 fraction.value()
             };
-            let value = start.value() + (end.value() - start.value()) * fraction_value;
+            let interpolate = |start: f64, end: f64, fraction: f64| {
+                if (0.0..=1.0).contains(&fraction) {
+                    cadmpeg_ir::math::interpolate(start, end, fraction).map(|value| value.get())
+                } else {
+                    Some(start + (end - start) * fraction)
+                }
+            };
+            let value = interpolate(start.value(), end.value(), fraction_value)?;
             let known_value = if self.evaluate {
                 Some(value)
             } else {
@@ -2881,12 +2888,12 @@ impl FormulaExpressionParser<'_, '_> {
                     .known_value()
                     .zip(end.known_value())
                     .zip(fraction.known_value())
-                    .map(|((start, end), fraction)| {
+                    .and_then(|((start, end), fraction)| {
                         if function == "CubicInterpolation" {
                             let fraction = fraction * fraction * (3.0 - 2.0 * fraction);
-                            start + (end - start) * fraction
+                            interpolate(start, end, fraction)
                         } else {
-                            start + (end - start) * fraction
+                            interpolate(start, end, fraction)
                         }
                     })
                     .filter(|value| value.is_finite())
@@ -3579,7 +3586,6 @@ mod parser_tests {
             "1 / 0",
             "1e308 + 1e308",
             "1e308 * 1e308",
-            "LinearInterpolation(1e308, -1e308, 0.5)",
             "exp(10000)",
             "sinh(10000)",
             "cosh(10000)",
@@ -3782,6 +3788,23 @@ mod parser_tests {
                 evaluate_formula_expression(expression, &bindings).is_none(),
                 "{expression}"
             );
+        }
+    }
+
+    #[test]
+    fn formula_interpolation_keeps_finite_values_across_an_overflowing_width() {
+        let bindings = BTreeMap::new();
+        for expression in [
+            "LinearInterpolation(1e308,-1e308,0.5)",
+            "CubicInterpolation(1e308,-1e308,0.5)",
+        ] {
+            for evaluate in [true, false] {
+                let value = evaluate_formula_expression_with_mode(expression, &bindings, evaluate)
+                    .and_then(EvaluatedFormulaValue::scalar)
+                    .expect("finite interpolated value");
+                assert_eq!(value.value(), 0.0);
+                assert_eq!(value.known_value(), Some(0.0));
+            }
         }
     }
 

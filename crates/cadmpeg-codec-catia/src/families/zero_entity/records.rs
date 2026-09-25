@@ -841,7 +841,7 @@ pub(crate) fn zero_entity_support_runs_in_range(
                     if start >= end {
                         return None;
                     }
-                    let uv = pcurve_uv(pcurve, start + (end - start) * 0.5).ok()?;
+                    let uv = pcurve_uv(pcurve, start.midpoint(end)).ok()?;
                     zero_entity_surface_point(&carrier_geometry, [uv.u, uv.v])
                 });
                 support.model_endpoints = support.uv_endpoints.and_then(|endpoints| {
@@ -2480,6 +2480,21 @@ mod tests {
                 .model_endpoints
                 .map(|pair| pair.map(FinitePoint3::get)),
             Some([Point3::new(-1.0, 6.0, 3.0), Point3::new(7.0, 10.0, 3.0)])
+        );
+    }
+
+    #[test]
+    fn support_run_lifts_midpoint_across_a_wide_finite_pcurve_domain() {
+        let mut stream = zero_entity_support_stream();
+        let support_start = 0x6a + 12;
+        stream[support_start + 67..support_start + 75].copy_from_slice(&(-f64::MAX).to_le_bytes());
+        stream[support_start + 75..support_start + 83].copy_from_slice(&f64::MAX.to_le_bytes());
+        let runs = zero_entity_support_runs(&stream);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].supports.len(), 1);
+        assert_eq!(
+            runs[0].supports[0].model_midpoint.map(FinitePoint3::get),
+            Some(Point3::new(3.0, 8.0, 3.0))
         );
     }
 

@@ -1555,6 +1555,43 @@ fn analytic_point_lifts_bound_tiny_parameter_domains_by_span() {
 }
 
 #[test]
+fn analytic_point_lifts_admit_finite_parameters_across_wide_domains() {
+    let wide = cadmpeg_ir::topology::IncreasingParameterInterval::new([-f64::MAX, f64::MAX])
+        .expect("finite wide range");
+    let mut cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream()).remove(0);
+    cylinder.u_range = wide;
+    cylinder.v_range = wide;
+    assert!(
+        crate::families::b2::records::b2_cylinder_point(&cylinder, [0.0, 0.0])
+            .is_some_and(|point| point.is_finite())
+    );
+
+    let mut cone = crate::families::b2::records::b2_cones(&b2_cone_stream()).remove(0);
+    cone.slant_range = wide;
+    assert!(
+        crate::families::b2::records::b2_cone_point(&cone, [0.0, 0.0])
+            .is_some_and(|point| point.is_finite())
+    );
+}
+
+#[test]
+fn b2_circle_turn_checks_preserve_finite_wide_radius_ranges() {
+    let radius = 4.0e307;
+    let half_turn_range = [-std::f64::consts::PI * radius, 0.0];
+    assert!(
+        crate::families::b2::records::circle_range_is_within_full_turn(radius, half_turn_range,)
+    );
+    let full_turn_range = [
+        -std::f64::consts::PI * radius,
+        std::f64::consts::PI * radius,
+    ];
+    assert!(crate::families::b2::records::circle_range_is_full_turn(
+        radius,
+        full_turn_range,
+    ));
+}
+
+#[test]
 fn consolidated_cylinder_parser_reads_width2_frame() {
     let cylinders = crate::families::b2::records::b2_cylinders(&b3_cylinder_stream());
     assert_eq!(cylinders.len(), 1);

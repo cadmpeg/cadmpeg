@@ -690,6 +690,11 @@ pub(crate) fn unwrap_angle(value: f64, reference: f64) -> f64 {
     if (-std::f64::consts::PI..std::f64::consts::PI).contains(&delta) {
         value
     } else {
+        let delta = if delta.is_finite() {
+            delta
+        } else {
+            value.rem_euclid(std::f64::consts::TAU) - reference.rem_euclid(std::f64::consts::TAU)
+        };
         reference + (delta + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
             - std::f64::consts::PI
     }
@@ -966,6 +971,15 @@ mod route_tests {
             crate::assemble::unwrap_angle(std::f64::consts::PI, 0.0),
             -std::f64::consts::PI
         );
+    }
+
+    #[test]
+    fn angle_unwrap_keeps_finite_branches_when_endpoint_difference_overflows() {
+        assert_eq!(
+            crate::assemble::unwrap_angle(f64::MAX, -f64::MAX),
+            -f64::MAX
+        );
+        assert_eq!(crate::assemble::unwrap_angle(-f64::MAX, f64::MAX), f64::MAX);
     }
 
     #[test]
