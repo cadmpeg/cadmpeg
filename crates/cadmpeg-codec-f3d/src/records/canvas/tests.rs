@@ -83,13 +83,16 @@ fn canvas_geometry_payload_preserves_source_float_bits() {
     let payload = crate::records::canvas::DesignCanvasGeometryPayload::try_from(bytes.as_slice())
         .expect("Canvas payload");
     assert_eq!(payload.bytes(), bytes);
-    let (opacity, origin, u_axis, v_axis) = payload.decoded();
+    let (opacity, frame) = payload.decoded();
+    let origin = frame.origin().get();
+    let u_axis = frame.u_axis();
+    let v_axis = frame.v_axis();
     assert_eq!(opacity.to_bits(), (-0.0_f32).to_bits());
     assert_eq!(origin.x.to_bits(), (-0.0_f64).to_bits());
     assert_eq!(origin.y, 25.0);
     assert_eq!(origin.z, -35.0);
-    assert_eq!(u_axis.y.to_bits(), (-0.0_f64).to_bits());
-    assert_eq!(v_axis.x.to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(u_axis.as_raw().y.to_bits(), (-0.0_f64).to_bits());
+    assert_eq!(v_axis.as_raw().x.to_bits(), (-0.0_f64).to_bits());
     assert!(crate::records::canvas::DesignCanvasGeometryPayload::try_from(&bytes[..76]).is_err());
 }
 
@@ -283,7 +286,15 @@ fn canvas_geometry_payload_decodes_opacity_and_plane_frame() {
     assert_eq!(
         DesignCanvasGeometryPayload::try_from(payload.as_slice())
             .ok()
-            .map(|payload| payload.decoded()),
+            .map(|payload| {
+                let (opacity, frame) = payload.decoded();
+                (
+                    opacity,
+                    frame.origin().get(),
+                    *frame.u_axis().as_raw(),
+                    *frame.v_axis().as_raw(),
+                )
+            }),
         Some((
             0.75,
             Point3::new(10.0, 20.0, 30.0),

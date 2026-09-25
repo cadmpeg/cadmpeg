@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::references::DesignClassTag;
+use cadmpeg_ir::features::{FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::UnitVector3;
 use serde::{Deserialize, Serialize};
 
-const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1.0e-9;
 const DESIGN_CANVAS_LENGTH_TO_MM: f64 = 10.0;
 
 /// Canvas opacity and source-space frame; the fixed payload is emitted from these values.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignCanvasGeometryPayload {
     opacity: f32,
-    origin_centimetres: [f64; 3],
-    u_axis: Vector3,
-    v_axis: Vector3,
+    origin_centimetres: [FiniteReal; 3],
+    frame: FeatureUnitPlaneFrame,
 }
 impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
     type Error = String;
@@ -44,55 +45,51 @@ impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
                     .map_err(|error| format!("geometry_payload: {error:?}"))?,
             ])
         };
-        let origin_centimetres = vector()?;
+        let [x, y, z] = vector()?;
         let u = vector()?;
         let v = vector()?;
-        let u_axis = Vector3::new(u[0], u[1], u[2]);
-        let v_axis = Vector3::new(v[0], v[1], v[2]);
-        if !origin_centimetres
-            .into_iter()
-            .all(|value| value.is_finite() && (value * DESIGN_CANVAS_LENGTH_TO_MM).is_finite())
-            || !u_axis.is_finite()
-            || !v_axis.is_finite()
-            || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-            || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-            || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-        {
-            return Err(
-                "geometry_payload must contain a finite origin and an admitted orthonormal frame"
-                    .into(),
-            );
-        }
+        let invalid_frame = || {
+            "geometry_payload must contain a finite origin and an admitted orthonormal frame"
+                .to_owned()
+        };
+        let origin_centimetres = [
+            FiniteReal::new(x).ok_or_else(invalid_frame)?,
+            FiniteReal::new(y).ok_or_else(invalid_frame)?,
+            FiniteReal::new(z).ok_or_else(invalid_frame)?,
+        ];
+        let origin = FinitePoint3::new(Point3::new(
+            x * DESIGN_CANVAS_LENGTH_TO_MM,
+            y * DESIGN_CANVAS_LENGTH_TO_MM,
+            z * DESIGN_CANVAS_LENGTH_TO_MM,
+        ))
+        .ok_or_else(invalid_frame)?;
+        let u_axis = UnitVector3::new(Vector3::new(u[0], u[1], u[2])).ok_or_else(invalid_frame)?;
+        let v_axis = UnitVector3::new(Vector3::new(v[0], v[1], v[2])).ok_or_else(invalid_frame)?;
+        let frame =
+            FeatureUnitPlaneFrame::from_parts(origin, u_axis, v_axis).ok_or_else(invalid_frame)?;
         Ok(Self {
             opacity,
             origin_centimetres,
-            u_axis,
-            v_axis,
+            frame,
         })
     }
 }
 impl DesignCanvasGeometryPayload {
-    pub(crate) fn decoded(&self) -> (f32, Point3, Vector3, Vector3) {
-        (
-            self.opacity,
-            Point3::new(
-                self.origin_centimetres[0] * DESIGN_CANVAS_LENGTH_TO_MM,
-                self.origin_centimetres[1] * DESIGN_CANVAS_LENGTH_TO_MM,
-                self.origin_centimetres[2] * DESIGN_CANVAS_LENGTH_TO_MM,
-            ),
-            self.u_axis,
-            self.v_axis,
-        )
+    pub(crate) fn decoded(&self) -> (f32, FeatureUnitPlaneFrame) {
+        (self.opacity, self.frame)
     }
     fn bytes(&self) -> [u8; 77] {
         let mut bytes = [0; 77];
         bytes[..4].copy_from_slice(&self.opacity.to_le_bytes());
         let mut at = 5;
+        let u_axis = self.frame.u_axis();
+        let v_axis = self.frame.v_axis();
         for value in self
             .origin_centimetres
             .into_iter()
-            .chain([self.u_axis.x, self.u_axis.y, self.u_axis.z])
-            .chain([self.v_axis.x, self.v_axis.y, self.v_axis.z])
+            .map(FiniteReal::get)
+            .chain([u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z])
+            .chain([v_axis.as_raw().x, v_axis.as_raw().y, v_axis.as_raw().z])
         {
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             at += 8;
@@ -498,7 +495,10 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
         }
         let geometry_payload =
             DesignCanvasGeometryPayload::try_from(wire.geometry_payload.as_slice())?;
-        let (opacity, origin, u_axis, v_axis) = geometry_payload.decoded();
+        let (opacity, frame) = geometry_payload.decoded();
+        let origin = frame.origin().get();
+        let u_axis = frame.u_axis();
+        let v_axis = frame.v_axis();
         if wire.opacity.to_bits() != opacity.to_bits() {
             return Err("opacity must match geometry_payload".into());
         }
@@ -511,12 +511,12 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
             (
                 "u_axis",
                 [wire.u_axis.x, wire.u_axis.y, wire.u_axis.z],
-                [u_axis.x, u_axis.y, u_axis.z],
+                [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z],
             ),
             (
                 "v_axis",
                 [wire.v_axis.x, wire.v_axis.y, wire.v_axis.z],
-                [v_axis.x, v_axis.y, v_axis.z],
+                [v_axis.as_raw().x, v_axis.as_raw().y, v_axis.as_raw().z],
             ),
         ] {
             if declared
@@ -626,7 +626,7 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
 
 impl From<DesignCanvasImage> for DesignCanvasImageWire {
     fn from(value: DesignCanvasImage) -> Self {
-        let (opacity, origin, u_axis, v_axis) = value.geometry.payload.decoded();
+        let (opacity, frame) = value.geometry.payload.decoded();
         let scope_reference_offset = value.geometry.scope_reference_offset();
         let geometry_record_index = value.geometry.record_index;
         let geometry_reference_offset = value.geometry_reference_offset();
@@ -680,9 +680,9 @@ impl From<DesignCanvasImage> for DesignCanvasImageWire {
             label: value.geometry.label,
             label_offset,
             opacity,
-            origin,
-            u_axis,
-            v_axis,
+            origin: frame.origin().get(),
+            u_axis: *frame.u_axis().as_raw(),
+            v_axis: *frame.v_axis().as_raw(),
             geometry_payload,
         }
     }

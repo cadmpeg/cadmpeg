@@ -70,7 +70,7 @@ pub(crate) fn project_canvas_images(
         {
             assets.push(asset);
         }
-        let (opacity, origin, u_axis, v_axis) = image.geometry().payload.decoded();
+        let (opacity, frame) = image.geometry().payload.decoded();
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
@@ -79,12 +79,7 @@ pub(crate) fn project_canvas_images(
                     visible: image.geometry().prologue.visible(),
                     mirror_u,
                     mirror_v,
-                    frame: cadmpeg_ir::features::FeatureUnitPlaneFrame::new(origin, u_axis, v_axis)
-                        .ok_or_else(|| {
-                            CodecError::malformed(
-                        "Canvas frame must have finite origin and perpendicular unit directions",
-                    )
-                        })?,
+                    frame,
                     bounds: cadmpeg_ir::features::FeatureImageBounds::new([
                         Point2::new(
                             minimum.u * DESIGN_LENGTH_TO_MM,
