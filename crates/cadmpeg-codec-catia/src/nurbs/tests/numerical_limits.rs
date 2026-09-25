@@ -73,6 +73,75 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
 }
 
 #[test]
+fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
+    let range = [-f64::MAX, f64::MAX];
+    let knots = vec![range[0], range[0], range[1], range[1]];
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            knots.clone(),
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("wide finite curve"),
+    ));
+    let pcurve = PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            knots,
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("wide finite pcurve"),
+    };
+    let mut refusal = LaneRefusals::new();
+    assert_eq!(
+        crate::nurbs::canonical_model_curve_range(&curve, range, &mut refusal, "wide curve"),
+        Some(range)
+    );
+    let (reversed, reversed_range) =
+        reverse_curve_geometry(&curve, range, &mut refusal, "wide curve")
+            .expect("wide model curve reversal");
+    assert_eq!(reversed_range, range);
+    let reversed_pcurve = reverse_pcurve_geometry(&pcurve, range, &mut refusal, "wide pcurve")
+        .expect("wide pcurve reversal");
+    for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
+        assert_eq!(
+            cadmpeg_ir::eval::curve_point(&reversed, parameter).map(|point| point.get().x),
+            Ok(expected)
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::pcurve_uv(&reversed_pcurve, parameter).map(|point| point.get().u),
+            Ok(expected)
+        );
+    }
+    assert!(refusal.take_notes().is_empty());
+}
+
+#[test]
+fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
+    let range = [-f64::MAX, f64::MAX];
+    let line = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(0.25, 0.0),
+        )
+        .expect("finite line pcurve"),
+    );
+    let mut refusal = LaneRefusals::new();
+    let reversed = reverse_pcurve_geometry(&line, range, &mut refusal, "wide line")
+        .expect("finite wide line reversal");
+    let PcurveGeometry::Line(reversed) = reversed else {
+        panic!("line carrier");
+    };
+    assert_eq!(reversed.origin().as_raw().u, 0.0);
+    assert_eq!(reversed.direction().as_raw().u, -0.25);
+    assert!(refusal.take_notes().is_empty());
+}
+
+#[test]
 fn reflected_knots_include_exterior_knots_and_canonical_zero() {
     assert_eq!(
         reverse_knots(

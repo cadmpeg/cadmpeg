@@ -116,16 +116,16 @@ impl LaneRefusals {
 /// Whether a source-stated parameter range is readable, and a named refusal in
 /// the sink when it is not.
 ///
-/// The range is a value the record states, so a non-finite bound, a bound pair
-/// that does not increase, or a width that overflows is a refused record, not a
-/// record of another kind. `strict` states whether the two bounds must differ.
+/// The range is a value the record states, so a non-finite bound or a bound pair
+/// that does not increase is a refused record. `strict` states whether the two
+/// bounds must differ.
 fn readable_range(range: [f64; 2], strict: bool, refusal: &mut LaneRefusals, record: &str) -> bool {
     let ordered = if strict {
         range[0] < range[1]
     } else {
         range[0] <= range[1]
     };
-    if range.into_iter().all(f64::is_finite) && ordered && (range[1] - range[0]).is_finite() {
+    if range.into_iter().all(f64::is_finite) && ordered {
         return true;
     }
     refusal.push_range(record, range);
@@ -209,6 +209,14 @@ pub(crate) fn reverse_curve_geometry(
     record: &str,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     if !readable_range(range, false, refusal, record) {
+        return None;
+    }
+    if matches!(
+        geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_))
+    ) && !(range[1] - range[0]).is_finite()
+    {
+        refusal.push_range(record, range);
         return None;
     }
     match geometry {
@@ -347,9 +355,21 @@ pub(crate) fn canonical_model_curve_range(
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints();
-            let tolerance = EPS_NURBS_GEOMETRY.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
+            let domain_span = upper - lower;
+            let tolerance = EPS_NURBS_GEOMETRY.max(if domain_span.is_finite() {
+                domain_span.abs() * EPS_NURBS_GEOMETRY
+            } else {
+                (upper * EPS_NURBS_GEOMETRY - lower * EPS_NURBS_GEOMETRY).abs()
+            });
             if nurbs.periodic() {
-                (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
+                let range_span = range[1] - range[0];
+                if range_span.is_finite() && domain_span.is_finite() {
+                    (range_span <= domain_span + tolerance).then_some(range)
+                } else {
+                    let range_half = range[1] * 0.5 - range[0] * 0.5;
+                    let domain_half = upper * 0.5 - lower * 0.5;
+                    (range_half <= domain_half + tolerance * 0.5).then_some(range)
+                }
             } else {
                 // Correct only endpoints outside the domain; retain interior trims.
                 let [start, end] = range;
@@ -380,6 +400,10 @@ pub(crate) fn reverse_helix_definition(
         return None;
     };
     if !readable_range(range, true, refusal, record) {
+        return None;
+    }
+    if !(range[1] - range[0]).is_finite() {
+        refusal.push_range(record, range);
         return None;
     }
     let angle_range = helix_payload.angle_range();
@@ -482,6 +506,11 @@ pub(crate) fn circular_helix_cache(
     };
     let angle_range = helix_payload.angle_range();
     if !readable_range(angle_range.get(), true, refusal, record) {
+        return None;
+    }
+    let [angle_start, angle_end] = angle_range.get();
+    if !(angle_end - angle_start).is_finite() {
+        refusal.push_range(record, angle_range.get());
         return None;
     }
     let major = helix_payload.major();
