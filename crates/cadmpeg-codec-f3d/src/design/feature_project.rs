@@ -5868,9 +5868,9 @@ pub(super) fn project_fixed_revolve_with_entities(
     let axis = if let [axis_operand] = matches.as_slice() {
         Some(RevolutionAxis {
             origin: axis_operand.resolved_axis?.origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(
-                axis_operand.resolved_axis?.direction.get(),
-            )?,
+            direction: cadmpeg_ir::features::FeatureDirection3::from(
+                axis_operand.resolved_axis?.direction,
+            ),
             reference: None,
         })
     } else if matches.is_empty() {
@@ -6648,12 +6648,12 @@ fn circular_pattern_axis(
                 origin[1].get() * 10.0,
                 origin[2].get() * 10.0,
             ),
-            Vector3::new(direction[0].get(), direction[1].get(), direction[2].get()),
+            *direction.as_raw(),
         )),
         DesignCircularPatternAxis::HistoricalEdge {
             resolved: Some(axis),
             ..
-        } => Some((axis.origin.get(), axis.direction.get())),
+        } => Some((axis.origin.get(), *axis.direction.as_raw())),
         DesignCircularPatternAxis::HistoricalEdge { .. } => None,
     }
 }

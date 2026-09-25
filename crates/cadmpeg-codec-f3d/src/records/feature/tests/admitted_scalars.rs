@@ -151,7 +151,10 @@ fn circular_pattern_construction_refuses_a_nonpositive_angle() {
             axis: DesignCircularPatternAxis::Inline {
                 origin: crate::test_support::reals([1.0, 2.0, 3.0]),
                 origin_offset: 100,
-                direction: crate::test_support::reals([-1.0, 0.0, 0.0]),
+                direction: cadmpeg_ir::units::UnitVector3::normalized(
+                    cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+                )
+                .expect("unit axis"),
                 direction_offset: 124,
             },
             axis_record_index: 13,

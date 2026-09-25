@@ -6038,16 +6038,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
     }
 }
 
-/// A resolved axis as the design record holds it, or `None` when a
-/// coordinate is not finite.
+/// A resolved axis with finite origin and unit direction.
 fn design_axis(
     origin: cadmpeg_ir::math::Point3,
     direction: cadmpeg_ir::math::Vector3,
 ) -> Option<crate::records::feature::patterns::DesignAxis> {
-    Some(crate::records::feature::patterns::DesignAxis {
-        origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-        direction: cadmpeg_ir::features::FiniteVector3::new(direction)?,
-    })
+    crate::records::feature::patterns::DesignAxis::from_parts(
+        cadmpeg_ir::features::FinitePoint3::new(origin)?,
+        cadmpeg_ir::features::FiniteVector3::new(direction)?,
+    )
 }
 
 fn historical_edge_axis(

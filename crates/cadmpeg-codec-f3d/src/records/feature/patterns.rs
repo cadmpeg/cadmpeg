@@ -5,7 +5,9 @@ use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::UnitVector3;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -46,7 +48,16 @@ pub(crate) struct DesignCircularPatternConstruction {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DesignAxis {
     pub(crate) origin: FinitePoint3,
-    pub(crate) direction: FiniteVector3,
+    pub(crate) direction: UnitVector3,
+}
+
+impl DesignAxis {
+    pub(crate) fn from_parts(origin: FinitePoint3, direction: FiniteVector3) -> Option<Self> {
+        Some(Self {
+            origin,
+            direction: UnitVector3::normalized(direction.get())?,
+        })
+    }
 }
 
 /// Proven origin and unit normal.
@@ -71,7 +82,7 @@ pub(crate) enum DesignCircularPatternAxis {
         origin_offset: u64,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
-        direction: [FiniteReal; 3],
+        direction: UnitVector3,
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
     },
@@ -105,7 +116,7 @@ enum DesignCircularPatternAxisWire {
         origin_offset: u64,
         /// Axis direction; the decoder stores the serialized displacement at unit
         /// length.
-        direction: [FiniteReal; 3],
+        direction: [f64; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,
     },
@@ -125,6 +136,34 @@ enum DesignCircularPatternAxisWire {
     },
 }
 
+const EPS_CIRCULAR_PATTERN_AXIS_UNIT: f64 = 1.0e-12;
+
+impl DesignCircularPatternAxis {
+    pub(crate) fn inline(
+        origin: [FiniteReal; 3],
+        origin_offset: u64,
+        displacement: [f64; 3],
+        direction_offset: u64,
+    ) -> Option<Self> {
+        let raw = Vector3::from(displacement);
+        let length = raw.x.hypot(raw.y).hypot(raw.z);
+        if !length.is_finite() || length <= f64::EPSILON {
+            return None;
+        }
+        let direction = if (length - 1.0).abs() <= EPS_CIRCULAR_PATTERN_AXIS_UNIT {
+            UnitVector3::new(raw)?
+        } else {
+            UnitVector3::normalized(raw)?
+        };
+        Some(Self::Inline {
+            origin,
+            origin_offset,
+            direction,
+            direction_offset,
+        })
+    }
+}
+
 impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
     type Error = String;
 
@@ -135,12 +174,8 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                 origin_offset,
                 direction,
                 direction_offset,
-            } => Ok(Self::Inline {
-                origin,
-                origin_offset,
-                direction,
-                direction_offset,
-            }),
+            } => Self::inline(origin, origin_offset, direction, direction_offset)
+                .ok_or_else(|| "inline axis direction must be nonzero and finite".into()),
             DesignCircularPatternAxisWire::HistoricalEdge {
                 wrapper_record_indices,
                 persistent_identities,
@@ -159,7 +194,10 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                 };
                 let resolved = match (resolved_origin, resolved_direction) {
                     (None, None) => None,
-                    (Some(origin), Some(direction)) => Some(DesignAxis { origin, direction }),
+                    (Some(origin), Some(direction)) => Some(
+                        DesignAxis::from_parts(origin, direction)
+                            .ok_or("resolved axis direction must be nonzero")?,
+                    ),
                     _ => {
                         return Err(
                             "resolved_origin and resolved_direction must occur together".into()
@@ -194,7 +232,11 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
             } => Self::Inline {
                 origin,
                 origin_offset,
-                direction,
+                direction: [
+                    direction.as_raw().x,
+                    direction.as_raw().y,
+                    direction.as_raw().z,
+                ],
                 direction_offset,
             },
             DesignCircularPatternAxis::HistoricalEdge {
@@ -212,7 +254,7 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
                     .map(|wrapper| wrapper.identity_offset)
                     .collect(),
                 resolved_origin: resolved.map(|axis| axis.origin),
-                resolved_direction: resolved.map(|axis| axis.direction),
+                resolved_direction: resolved.map(|axis| FiniteVector3::from(axis.direction)),
             },
         }
     }

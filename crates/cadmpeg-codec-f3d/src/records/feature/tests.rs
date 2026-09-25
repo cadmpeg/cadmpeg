@@ -1156,6 +1156,57 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
 }
 
 #[test]
+fn circular_pattern_inline_axis_native_wire_refuses_zero_direction() {
+    let wire = serde_json::json!({
+        "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
+        "direction": [0.0, 0.0, 0.0], "direction_offset": 36
+    });
+    assert!(
+        serde_json::from_value::<crate::records::feature::patterns::DesignCircularPatternAxis>(
+            wire
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn circular_pattern_inline_axis_native_wire_normalizes_displacement() {
+    let wire = serde_json::json!({
+        "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
+        "direction": [0.0, 0.0, 2.0], "direction_offset": 36
+    });
+    let axis: crate::records::feature::patterns::DesignCircularPatternAxis =
+        serde_json::from_value(wire).expect("nonzero displacement");
+    let crate::records::feature::patterns::DesignCircularPatternAxis::Inline { direction, .. } =
+        axis
+    else {
+        panic!("inline axis");
+    };
+    assert_eq!(
+        *direction.as_raw(),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    );
+}
+
+#[test]
+fn circular_pattern_resolved_axis_native_wire_refuses_zero_direction() {
+    let wire = serde_json::json!({
+        "kind": "historical_edge",
+        "wrapper_record_indices": [10],
+        "persistent_identities": [17],
+        "identity_offsets": [100],
+        "resolved_origin": {"x": 1.0, "y": 2.0, "z": 3.0},
+        "resolved_direction": {"x": 0.0, "y": 0.0, "z": 0.0}
+    });
+    assert!(
+        serde_json::from_value::<crate::records::feature::patterns::DesignCircularPatternAxis>(
+            wire
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn mirror_plane_wire_rejects_partial_placement() {
     let prefix = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_record_index":12,"stitch_tolerance_offset":0,"seed_group_record_index":20,"plane_group_record_index":30"#;
     let origin = serde_json::to_string(&cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)).unwrap();

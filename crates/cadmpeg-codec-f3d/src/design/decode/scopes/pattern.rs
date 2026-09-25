@@ -24,8 +24,6 @@ const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
 const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
 
-const EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12: f64 = 1.0e-12;
-
 pub(super) fn exact_rectangular_pattern_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -300,7 +298,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         .zip(scope.reference_members().values().skip(1))
     {
         for (start, paired_at) in records.frames(*record_index) {
-            if let Some((origin, direction)) = exact_circular_pattern_axis(
+            if let Some(axis) = exact_circular_pattern_axis(
                 bytes,
                 start,
                 paired_at,
@@ -309,12 +307,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 scope.record_index,
             ) {
                 axis_candidates.push(CircularPatternAxisCandidate {
-                    axis: patterns::DesignCircularPatternAxis::Inline {
-                        origin,
-                        origin_offset: (start + 25) as u64,
-                        direction,
-                        direction_offset: (start + 49) as u64,
-                    },
+                    axis,
                     axis_record_index: *record_index,
                     selection_record_index: *selection_record_index,
                 });
@@ -641,7 +634,7 @@ fn exact_circular_pattern_axis(
     record_index: u32,
     selection_record_index: u32,
     scope_record_index: u32,
-) -> Option<([FiniteReal; 3], [FiniteReal; 3])> {
+) -> Option<patterns::DesignCircularPatternAxis> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -687,22 +680,13 @@ fn exact_circular_pattern_axis(
         return None;
     }
     let origin = finite_reals_at(bytes, start + 25)?;
-    let displacement: [FiniteReal; 3] = finite_reals_at(bytes, start + 49)?;
-    let displacement_length = displacement[0]
-        .get()
-        .hypot(displacement[1].get())
-        .hypot(displacement[2].get());
-    if !displacement_length.is_finite() || displacement_length <= f64::EPSILON {
-        return None;
-    }
-    if (displacement_length - 1.0).abs() <= EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12 {
-        return Some((origin, displacement));
-    }
-    let mut direction = [FiniteReal::ZERO; 3];
-    for (slot, component) in direction.iter_mut().zip(displacement) {
-        *slot = FiniteReal::new(component.get() / displacement_length)?;
-    }
-    Some((origin, direction))
+    let displacement = finite_reals_at(bytes, start + 49)?.map(FiniteReal::get);
+    patterns::DesignCircularPatternAxis::inline(
+        origin,
+        u64::try_from(start.checked_add(25)?).ok()?,
+        displacement,
+        u64::try_from(start.checked_add(49)?).ok()?,
+    )
 }
 
 fn exact_fixed_pattern_count(
