@@ -28,6 +28,60 @@ use std::collections::{HashMap, HashSet};
 
 const FORMAT: IdFormat = crate::asm_format!("f3d");
 
+#[test]
+fn subtype_definition_index_refuses_collection_limit_before_construction() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let records = [Record {
+        index: 0,
+        name: "mystery".into(),
+        tokens: vec![
+            Token::SubtypeOpen,
+            Token::Ident("node".into()),
+            Token::SubtypeClose,
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let bytes = [0_u8];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = super::decode_with_header(
+        &ctx,
+        &records,
+        &bytes,
+        None,
+        "stream",
+        FORMAT,
+        DecodePurpose::Model,
+    )
+    .err()
+    .expect("subtype definition exceeds one collection slot");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal, got {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.operation, "index ASM subtype definitions");
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    super::decode_with_header(
+        &ctx,
+        &records,
+        &bytes,
+        None,
+        "stream",
+        FORMAT,
+        DecodePurpose::Model,
+    )
+    .expect("service profile admits subtype definition");
+}
+
 fn exact_circle_directrix() -> cadmpeg_ir::geometry::nurbs::NurbsCurve {
     let center = Point3::new(2.0, 3.0, 4.0);
     let point = |x, y| Point3::new(center.x + x, center.y + y, center.z);
