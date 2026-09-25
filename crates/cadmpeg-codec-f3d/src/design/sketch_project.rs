@@ -2,9 +2,7 @@
 //! Project planar and spatial sketch geometry.
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
-use crate::design::face_resolve::{
-    placement_origin_scale, sketch_curve_is_spatial, sketch_point_depth,
-};
+use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
 use crate::design::feature_project::closed_spatial_sketch_profiles;
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::{
@@ -39,7 +37,7 @@ fn spatial_geometry_owners(
         .filter(|curve| sketch_curve_is_spatial(curve))
         .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
         .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > EPS_SPATIAL_OWNER_DEPTH)
+            (point.depth().abs() > EPS_SPATIAL_OWNER_DEPTH)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
         }))
         .collect()
@@ -667,7 +665,7 @@ pub(crate) fn project_spatial_sketch_design(
         }
         let placement = placements_by_suffix.get(&(scope, owner))?;
         let sketch = neutral_spatial_sketch_id(placement);
-        let depth = sketch_point_depth(point)?;
+        let depth = point.depth();
         Some(
             SpatialSketchEntity::new(
                 point.persistent_id().map_or_else(
