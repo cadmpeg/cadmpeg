@@ -3074,10 +3074,13 @@ fn build_profiles(
     // Internal entities arrive in GeometryList order; appended external and built-in reference
     // entities are construction entries. Indices therefore preserve the persisted ordinal for
     // every eligible profile entity.
+    ctx.charge_work(entities.len() as u64, "FCStd profile entity scan")?;
     let eligible_count = entities
         .iter()
         .filter(|entity| !entity.construction)
         .count();
+    let ordinal_work = eligible_count as u64 * (u64::from(eligible_count.max(2).ilog2()) + 1);
+    ctx.charge_work(ordinal_work, "FCStd profile ordinal index")?;
     ctx.charge_collection_items(eligible_count as u64, "FCStd profile ordinals")?;
     let profile_entities = entities
         .iter()
@@ -3085,17 +3088,19 @@ fn build_profiles(
         .filter(|(_, entity)| !entity.construction)
         .map(|(index, _)| index)
         .collect::<BTreeSet<_>>();
+    ctx.charge_work(eligible_count as u64, "FCStd remaining profile ordinals")?;
     ctx.charge_collection_items(eligible_count as u64, "FCStd remaining profile ordinals")?;
     let mut unused = profile_entities.clone();
     let explicit_relations =
         explicit_endpoint_relations(ctx, &profile_entities, entities, constraints)?;
     let index = EndpointIndex::new(ctx, &profile_entities, entities)?;
     let mut ambiguous = BTreeSet::new();
+    ctx.charge_work(eligible_count as u64 * 2, "FCStd profile ambiguity scan")?;
     for &entity in &unused {
         for start in [true, false] {
             let matches = endpoint_candidates(
                 ctx,
-                (entity, start),
+                EndpointLocus { entity, start },
                 &unused,
                 &explicit_relations,
                 entities,
@@ -3106,10 +3111,10 @@ fn build_profiles(
                     ctx.charge_collection_items(1, "FCStd ambiguous profile ordinals")?;
                     ambiguous.insert(entity);
                 }
-                for (candidate, _) in matches {
-                    if !ambiguous.contains(&candidate) {
+                for candidate in matches {
+                    if !ambiguous.contains(&candidate.entity) {
                         ctx.charge_collection_items(1, "FCStd ambiguous profile ordinals")?;
-                        ambiguous.insert(candidate);
+                        ambiguous.insert(candidate.entity);
                     }
                 }
             }
@@ -3118,6 +3123,7 @@ fn build_profiles(
     let mut profiles = Vec::new();
     // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
     while let Some(first) = unused.pop_first() {
+        ctx.charge_work(1, "FCStd profile chain construction")?;
         ctx.charge_collection_items(1, "FCStd profile uses")?;
         let mut chain = VecDeque::from([SketchEntityUse {
             entity: entities[first].id().clone(),
@@ -3133,25 +3139,42 @@ fn build_profiles(
             profiles.push(chain.into());
             continue;
         }
-        let mut head = (first, true);
-        let mut tail = (first, false);
+        let mut head = EndpointLocus {
+            entity: first,
+            start: true,
+        };
+        let mut tail = EndpointLocus {
+            entity: first,
+            start: false,
+        };
         loop {
             let mut candidates =
                 endpoint_candidates(ctx, tail, &unused, &explicit_relations, entities, &index)?;
-            candidates.retain(|(index, _)| !ambiguous.contains(index));
-            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
-            else {
+            candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
+            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
             };
-            let (reversed, next_tail) = if candidate_start {
-                (false, (index, false))
+            let (reversed, next_tail) = if candidate.start {
+                (
+                    false,
+                    EndpointLocus {
+                        entity: candidate.entity,
+                        start: false,
+                    },
+                )
             } else {
-                (true, (index, true))
+                (
+                    true,
+                    EndpointLocus {
+                        entity: candidate.entity,
+                        start: true,
+                    },
+                )
             };
-            unused.remove(&index);
+            unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
             chain.push_back(SketchEntityUse {
-                entity: entities[index].id().clone(),
+                entity: entities[candidate.entity].id().clone(),
                 reversed,
             });
             tail = next_tail;
@@ -3159,20 +3182,31 @@ fn build_profiles(
         loop {
             let mut candidates =
                 endpoint_candidates(ctx, head, &unused, &explicit_relations, entities, &index)?;
-            candidates.retain(|(index, _)| !ambiguous.contains(index));
-            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
-            else {
+            candidates.retain(|candidate| !ambiguous.contains(&candidate.entity));
+            let Some(candidate) = (candidates.len() == 1).then(|| candidates[0]) else {
                 break;
             };
-            let (reversed, next_head) = if candidate_start {
-                (true, (index, false))
+            let (reversed, next_head) = if candidate.start {
+                (
+                    true,
+                    EndpointLocus {
+                        entity: candidate.entity,
+                        start: false,
+                    },
+                )
             } else {
-                (false, (index, true))
+                (
+                    false,
+                    EndpointLocus {
+                        entity: candidate.entity,
+                        start: true,
+                    },
+                )
             };
-            unused.remove(&index);
+            unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
             chain.push_front(SketchEntityUse {
-                entity: entities[index].id().clone(),
+                entity: entities[candidate.entity].id().clone(),
                 reversed,
             });
             head = next_head;
@@ -3183,8 +3217,19 @@ fn build_profiles(
     Ok(profiles)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct EndpointLocus {
+    entity: usize,
+    start: bool,
+}
+
+struct IndexedEndpoint {
+    locus: EndpointLocus,
+    point: Point2,
+}
+
 struct EndpointIndex {
-    by_scale: BTreeMap<u64, Vec<((usize, bool), Point2)>>,
+    by_scale: BTreeMap<u64, Vec<IndexedEndpoint>>,
 }
 
 impl EndpointIndex {
@@ -3193,22 +3238,29 @@ impl EndpointIndex {
         profile_entities: &BTreeSet<usize>,
         entities: &[SketchEntity],
     ) -> Result<Self, CodecError> {
-        let mut by_scale = BTreeMap::<u64, Vec<((usize, bool), Point2)>>::new();
+        let mut by_scale = BTreeMap::<u64, Vec<IndexedEndpoint>>::new();
         for &index in profile_entities {
+            ctx.charge_work(1, "FCStd profile endpoint extraction")?;
             if let Some((start, end)) = endpoints(&entities[index]) {
                 ctx.charge_collection_items(2, "FCStd profile endpoint index")?;
                 for (at_start, point) in [(true, start), (false, end)] {
                     by_scale
                         .entry(endpoint_scale_bucket(point))
                         .or_default()
-                        .push(((index, at_start), point));
+                        .push(IndexedEndpoint {
+                            locus: EndpointLocus {
+                                entity: index,
+                                start: at_start,
+                            },
+                            point,
+                        });
                 }
             }
         }
         for bucket in by_scale.values_mut() {
             let sorting_work = bucket.len() as u64 * (u64::from(bucket.len().max(2).ilog2()) + 1);
             ctx.charge_work(sorting_work, "FCStd profile index sort")?;
-            bucket.sort_by(|left, right| left.1.u.total_cmp(&right.1.u));
+            bucket.sort_by(|left, right| left.point.u.total_cmp(&right.point.u));
         }
         Ok(Self { by_scale })
     }
@@ -3220,25 +3272,25 @@ fn endpoint_scale_bucket(point: Point2) -> u64 {
 
 fn endpoint_candidates(
     ctx: &DecodeContext<'_>,
-    endpoint: (usize, bool),
+    endpoint: EndpointLocus,
     available: &BTreeSet<usize>,
-    explicit_relations: &BTreeMap<(usize, bool), BTreeSet<(usize, bool)>>,
+    explicit_relations: &BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>,
     entities: &[SketchEntity],
     index: &EndpointIndex,
-) -> Result<Vec<(usize, bool)>, CodecError> {
+) -> Result<Vec<EndpointLocus>, CodecError> {
     // Active explicit coincident loci override coordinates. Coordinate matching below is the
     // decoder-owned CADIR boundary, not a producer tolerance.
     if let Some(explicit) = explicit_relations.get(&endpoint) {
         ctx.charge_work(explicit.len() as u64, "FCStd explicit profile candidates")?;
         let match_count = explicit
             .iter()
-            .filter(|(candidate, _)| available.contains(candidate))
+            .filter(|candidate| available.contains(&candidate.entity))
             .count();
         ctx.charge_collection_items(match_count as u64, "FCStd profile candidates")?;
         let matches = explicit
             .iter()
             .copied()
-            .filter(|(candidate, _)| available.contains(candidate))
+            .filter(|candidate| available.contains(&candidate.entity))
             .collect::<Vec<_>>();
         return Ok(matches);
     }
@@ -3257,19 +3309,19 @@ fn endpoint_candidates(
             bucket.len().max(2).ilog2() as u64 + 1,
             "FCStd profile index search",
         )?;
-        let first = bucket.partition_point(|(_, candidate)| candidate.u < point.u - tolerance);
-        for &((candidate, candidate_start), candidate_point) in bucket[first..]
+        let first = bucket.partition_point(|candidate| candidate.point.u < point.u - tolerance);
+        for candidate in bucket[first..]
             .iter()
-            .take_while(|(_, candidate)| candidate.u <= point.u + tolerance)
+            .take_while(|candidate| candidate.point.u <= point.u + tolerance)
         {
             ctx.charge_work(1, "FCStd profile candidate comparison")?;
-            if candidate != endpoint.0
-                && available.contains(&candidate)
-                && !explicit_relations.contains_key(&(candidate, candidate_start))
-                && endpoints_match_by_roundoff(point, candidate_point)
+            if candidate.locus.entity != endpoint.entity
+                && available.contains(&candidate.locus.entity)
+                && !explicit_relations.contains_key(&candidate.locus)
+                && endpoints_match_by_roundoff(point, candidate.point)
             {
                 ctx.charge_collection_items(1, "FCStd profile candidates")?;
-                matches.push((candidate, candidate_start));
+                matches.push(candidate.locus);
             }
         }
     }
@@ -3286,7 +3338,8 @@ fn explicit_endpoint_relations(
     profile_entities: &BTreeSet<usize>,
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
-) -> Result<BTreeMap<(usize, bool), BTreeSet<(usize, bool)>>, CodecError> {
+) -> Result<BTreeMap<EndpointLocus, BTreeSet<EndpointLocus>>, CodecError> {
+    ctx.charge_work(entities.len() as u64, "FCStd profile entity lookup")?;
     ctx.charge_collection_items(entities.len() as u64, "FCStd profile entity lookup")?;
     let entity_indices = entities
         .iter()
@@ -3294,6 +3347,7 @@ fn explicit_endpoint_relations(
         .map(|(index, entity)| (entity.id().as_str(), index))
         .collect::<HashMap<_, _>>();
     let mut relations = BTreeMap::new();
+    ctx.charge_work(constraints.len() as u64, "FCStd profile constraint scan")?;
     for constraint in constraints {
         if constraint.active == Some(false) {
             continue;
@@ -3311,15 +3365,17 @@ fn explicit_endpoint_relations(
         let endpoints = loci
             .iter()
             .filter_map(|locus| match locus {
-                SketchLocus::Start(entity) => {
-                    Some((entity_indices.get(entity.as_str()).copied()?, true))
-                }
-                SketchLocus::End(entity) => {
-                    Some((entity_indices.get(entity.as_str()).copied()?, false))
-                }
+                SketchLocus::Start(entity) => Some(EndpointLocus {
+                    entity: entity_indices.get(entity.as_str()).copied()?,
+                    start: true,
+                }),
+                SketchLocus::End(entity) => Some(EndpointLocus {
+                    entity: entity_indices.get(entity.as_str()).copied()?,
+                    start: false,
+                }),
                 _ => None,
             })
-            .filter(|(entity, _)| profile_entities.contains(entity))
+            .filter(|locus| profile_entities.contains(&locus.entity))
             .collect::<BTreeSet<_>>();
         for first in endpoints.iter().copied() {
             for candidate in endpoints
@@ -3339,8 +3395,9 @@ fn explicit_endpoint_relations(
     Ok(relations)
 }
 
-fn endpoint_point(endpoint: (usize, bool), entities: &[SketchEntity]) -> Option<Point2> {
-    endpoints(&entities[endpoint.0]).map(|points| if endpoint.1 { points.0 } else { points.1 })
+fn endpoint_point(endpoint: EndpointLocus, entities: &[SketchEntity]) -> Option<Point2> {
+    endpoints(&entities[endpoint.entity])
+        .map(|points| if endpoint.start { points.0 } else { points.1 })
 }
 
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
@@ -6703,7 +6760,7 @@ mod profile_tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("profile test context");
         let error = super::build_profiles(&ctx, &entities, &[])
-            .expect_err("profile index work must be admitted before sorting");
+            .expect_err("profile construction work must be admitted before scanning");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
