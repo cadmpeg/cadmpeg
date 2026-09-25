@@ -132,10 +132,12 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
 }
 fn derive_sphere(out: &mut Brep) {
     derive_spherical_pcurves(
+        None,
         out,
         &mut AnnotationBuilder::new(),
         &StreamHandle::new(cadmpeg_ir::StreamName::try_from("audit".to_owned()).unwrap()),
-    );
+    )
+    .expect("spherical pcurve derivation");
 }
 fn error_at(out: &Brep, t: f64) -> f64 {
     let uv = pcurve_uv(&out.pcurves[0].geometry, t).unwrap();

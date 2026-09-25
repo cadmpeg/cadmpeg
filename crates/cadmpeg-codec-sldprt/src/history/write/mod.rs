@@ -302,7 +302,7 @@ fn project_feature_model_with_native_inputs(
         &native.feature_input_lanes,
         None,
     );
-    project_compact_and_generated(features, &histories, &native.feature_input_lanes)?;
+    project_compact_and_generated(None, features, &histories, &native.feature_input_lanes)?;
     crate::resolved_features::operations::bind_revolution_operations(
         features,
         &histories,

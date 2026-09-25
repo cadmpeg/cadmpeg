@@ -46,6 +46,7 @@ use crate::records::ObjectId;
 /// object. Promotion requires one mesh stream and a circular-helix fit whose
 /// residual is small relative to its radius.
 pub(crate) fn project_helix_axes(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -91,7 +92,7 @@ pub(crate) fn project_helix_axes(
                 continue;
             };
             meshes.extend(
-                crate::parasolid::extract_streams_with_offsets(object)
+                crate::parasolid::extract_streams_with_offsets(object, ctx)?
                     .into_iter()
                     .filter_map(|stream| {
                         crate::parasolid::mesh_polyline_from_header(&stream.payload, &stream.header)
