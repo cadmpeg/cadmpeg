@@ -513,8 +513,58 @@ pub fn decode_with_header(
     let mut out = AsmBrep::default();
 
     // Index records by RecordTable index (== position for a framed slice).
+    let record_slots = u64::try_from(records.len())
+        .map_err(|_| ctx.refuse_codec_limit("ASM record index", u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(record_slots, "index ASM records")?;
+    let record_slot_bytes = u64::try_from(std::mem::size_of::<(i64, &Record)>())
+        .map_err(|_| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
+    let record_index_bytes = record_slots
+        .checked_mul(record_slot_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("ASM record index bytes", u64::MAX, u64::MAX))?;
+    let _record_index_reservation = ctx.reserve_scoped(record_index_bytes, "index ASM records")?;
     let by_index: HashMap<i64, &Record> = records.iter().map(|r| (r.index as i64, r)).collect();
     // Subtype-definition positions, built once for every carrier resolution.
+    let token_count = records.iter().try_fold(0_u64, |count, record| {
+        let record_tokens = u64::try_from(record.tokens.len())
+            .map_err(|_| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))?;
+        count
+            .checked_add(record_tokens)
+            .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype scan work", u64::MAX, u64::MAX))
+    })?;
+    ctx.charge_work(token_count, "scan ASM subtype definitions")?;
+    let definition_count = records
+        .iter()
+        .flat_map(|record| {
+            record
+                .tokens
+                .iter()
+                .enumerate()
+                .filter_map(move |(position, token)| {
+                    if !matches!(token, crate::sab::Token::SubtypeOpen) {
+                        return None;
+                    }
+                    match record.tokens.get(position + 1) {
+                        Some(
+                            crate::sab::Token::Ident(name) | crate::sab::Token::SubIdent(name),
+                        ) if name != "ref" => Some(()),
+                        _ => None,
+                    }
+                })
+        })
+        .count();
+    let definition_slots = u64::try_from(definition_count)
+        .map_err(|_| ctx.refuse_codec_limit("ASM subtype index", u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(definition_slots, "index ASM subtype definitions")?;
+    let definition_slot_bytes = u64::try_from(std::mem::size_of::<(
+        std::sync::Arc<[crate::sab::Token]>,
+        usize,
+    )>())
+    .map_err(|_| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
+    let definition_bytes = definition_slots
+        .checked_mul(definition_slot_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("ASM subtype index bytes", u64::MAX, u64::MAX))?;
+    let _subtype_index_reservation =
+        ctx.reserve_scoped(definition_bytes, "index ASM subtype definitions")?;
     let token_table = nurbs::toks::SubtypeTable::from_records(records).with_save_format_version(
         header
             .as_ref()

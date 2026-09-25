@@ -675,6 +675,10 @@ pub(crate) fn admit_subtype_references(
                 continue;
             }
             ctx.charge_collection_items(1, "visit ASM subtype reference")?;
+            let visited_slot_bytes = u64::try_from(std::mem::size_of::<usize>()).map_err(|_| {
+                ctx.refuse_codec_limit("ASM subtype visited bytes", u64::MAX, u64::MAX)
+            })?;
+            scratch.grow(visited_slot_bytes)?;
             visited.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("ASM subtype visited allocation", u64::MAX, u64::MAX)
             })?;
@@ -799,6 +803,43 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
         super::admit_subtype_references(&ctx, &records, &table)
             .expect("service profile admits finite chain");
+    }
+
+    #[test]
+    fn subtype_reference_walk_refuses_work_before_following_reference() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let tokens: std::sync::Arc<[Token]> = vec![
+            Token::SubtypeOpen,
+            Token::Ident("node".into()),
+            Token::SubtypeOpen,
+            Token::Ident("ref".into()),
+            Token::Long(0),
+            Token::SubtypeClose,
+            Token::SubtypeClose,
+        ]
+        .into();
+        let record = crate::sab::Record {
+            index: 0,
+            name: "node".into(),
+            tokens,
+            offset: 0,
+            len: 0,
+        };
+        let records = [record];
+        let table = super::SubtypeTable::from_records(&records);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = records[0].tokens.len() as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        let error = super::admit_subtype_references(&ctx, &records, &table)
+            .expect_err("following the reference exceeds scan work");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "follow ASM subtype reference");
     }
 
     fn ident(name: &str) -> Token {
