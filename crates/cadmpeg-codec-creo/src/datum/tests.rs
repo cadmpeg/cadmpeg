@@ -479,7 +479,11 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
             }
         }
         data.extend(prefix);
-        let decoded = cylinders(&data);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("datum fixture is admitted");
+        let decoded = cylinders(&ctx, &data).expect("datum fixture stays within resource limits");
         let [cylinder] = decoded.as_slice() else {
             panic!("one complete active-datum cylinder expected");
         };

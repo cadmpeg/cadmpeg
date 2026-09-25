@@ -188,12 +188,15 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
     ir.model
         .curves
         .extend((0..curve_count).map(|_| saved_spline_curve()));
-    let transferred = transfer_resolved_revolution_surfaces(
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &mut Vec::new(),
-    )
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_resolved_revolution_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut Vec::new(),
+        )
+    })
     .expect("valid source object identity");
     (transferred, ir)
 }

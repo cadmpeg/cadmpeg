@@ -241,6 +241,7 @@ fn unique_feature_surface_row(
 }
 
 pub(in super::super) fn transfer_saved_spline_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -312,6 +313,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 "placed_saved_interpolation_spline",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id: curve_id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
@@ -509,6 +511,7 @@ pub(in super::super) fn extruded_section_line(
 }
 
 pub(in super::super) fn transfer_feature_extrusion_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -582,6 +585,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "protextrude_section_carrier",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry,
@@ -645,6 +649,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "protextrude_saved_section_carrier",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry,
@@ -755,6 +760,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     "protextrude_spline_directrix",
                     Exactness::Derived,
                 );
+                ctx.charge_entities(1, "admit Creo model curves")?;
                 ir.model.curves.push(Curve {
                     id: curve_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix.clone())),
@@ -804,6 +810,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 "protextrude_spline_surface_construction",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),

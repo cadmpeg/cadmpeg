@@ -1022,11 +1022,11 @@ mod tests;
 /// without a pcurve use, which the model carries, so the refusal is a loss
 /// note naming the curve row and the face.
 pub(in super::super) fn transfer_native_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-    analytic_pcurve_carriers: &BTreeSet<CurveId>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<NativeBrepTransferSummary, cadmpeg_core::CodecError> {
@@ -1504,6 +1504,7 @@ pub(in super::super) fn transfer_native_brep(
             "topological_vertex_orbit",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex,
             point: point_id,
@@ -1522,8 +1523,7 @@ pub(in super::super) fn transfer_native_brep(
                     .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
             });
         let model_curve_count = model_curve_counts[curve_id];
-        let derived_line = (derived_intersection_curves.contains(&curve)
-            || analytic_pcurve_carriers.contains(&curve))
+        let derived_line = derived_intersection_curves.contains(&curve)
             && exactly_one(
                 ir.model
                     .curves
@@ -1598,6 +1598,7 @@ pub(in super::super) fn transfer_native_brep(
             "curve_topology_edge",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model edges")?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve.clone()), param_range)
@@ -1616,6 +1617,7 @@ pub(in super::super) fn transfer_native_brep(
                 "opaque_native_curve_carrier",
                 Exactness::Unknown,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id: curve,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1709,58 +1711,54 @@ pub(in super::super) fn transfer_native_brep(
         );
 
         let mut face_shell_ids = BTreeMap::<u32, ShellId>::new();
-        let shell_ids = shell_specs
-            .iter()
-            .enumerate()
-            .filter_map(|(shell_index, shell)| {
-                let shell_id = {
-                    let key = if shell_index == 0 {
-                        cadmpeg_ir::ids::IdentityKey::from(component_index + 1)
-                    } else {
-                        cadmpeg_ir::ids::IdentityKey::from(component_index + 1)
-                            .colon(shell_index + 1)
-                    };
-                    ShellId::compose(&crate::identity::VISIBGEOM_SHELL, key)
+        let mut shell_ids = Vec::new();
+        for (shell_index, shell) in shell_specs.iter().enumerate() {
+            let shell_id = {
+                let key = if shell_index == 0 {
+                    cadmpeg_ir::ids::IdentityKey::from(component_index + 1)
+                } else {
+                    cadmpeg_ir::ids::IdentityKey::from(component_index + 1).colon(shell_index + 1)
                 };
-                annotate(
-                    annotations,
-                    shell_id.to_string(),
-                    "VisibGeom",
-                    0,
-                    "native_component_shell",
-                    Exactness::Derived,
-                );
-                for face_id in &shell.faces {
-                    face_shell_ids.insert(*face_id, shell_id.clone());
-                }
-                ir.model.shells.push(
-                    match Shell::new(
-                        shell_id.clone(),
-                        region_id.clone(),
-                        shell
-                            .faces
-                            .iter()
-                            .map(|face| FaceId::compose(&crate::identity::VISIBGEOM_FACE, *face))
-                            .collect(),
-                        shell
-                            .wire_curves
-                            .iter()
-                            .map(|curve_id| {
-                                EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, *curve_id)
-                            })
-                            .collect(),
-                        Vec::new(),
-                    ) {
-                        Ok(shell) => shell,
-                        Err(_) => {
-                            diagnostics.empty_component_count += 1;
-                            return None;
-                        }
-                    },
-                );
-                Some(shell_id)
-            })
-            .collect::<Vec<_>>();
+                ShellId::compose(&crate::identity::VISIBGEOM_SHELL, key)
+            };
+            annotate(
+                annotations,
+                shell_id.to_string(),
+                "VisibGeom",
+                0,
+                "native_component_shell",
+                Exactness::Derived,
+            );
+            for face_id in &shell.faces {
+                face_shell_ids.insert(*face_id, shell_id.clone());
+            }
+            if shell.faces.is_empty() && shell.wire_curves.is_empty() {
+                diagnostics.empty_component_count += 1;
+                continue;
+            }
+            ctx.charge_entities(1, "admit Creo model shells")?;
+            let Ok(shell_entity) = Shell::new(
+                shell_id.clone(),
+                region_id.clone(),
+                shell
+                    .faces
+                    .iter()
+                    .map(|face| FaceId::compose(&crate::identity::VISIBGEOM_FACE, *face))
+                    .collect(),
+                shell
+                    .wire_curves
+                    .iter()
+                    .map(|curve_id| EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, *curve_id))
+                    .collect(),
+                Vec::new(),
+            ) else {
+                diagnostics.empty_component_count += 1;
+                continue;
+            };
+            ir.model.shells.push(shell_entity);
+            shell_ids.push(shell_id);
+        }
+        ctx.charge_entities(1, "admit Creo model bodies")?;
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind: if !wire_curves.is_empty() {
@@ -1776,6 +1774,7 @@ pub(in super::super) fn transfer_native_brep(
             color: None,
             visible: None,
         });
+        ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id,
@@ -1822,6 +1821,7 @@ pub(in super::super) fn transfer_native_brep(
                     "opaque_native_surface_carrier",
                     Exactness::Unknown,
                 );
+                ctx.charge_entities(1, "admit Creo model surfaces")?;
                 ir.model.surfaces.push(Surface {
                     id: surface.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -1868,6 +1868,7 @@ pub(in super::super) fn transfer_native_brep(
                     Exactness::Derived,
                 );
             }
+            ctx.charge_entities(1, "admit Creo model faces")?;
             ir.model.faces.push(Face {
                 id: face.clone(),
                 shell: shell_id.clone(),
@@ -1896,6 +1897,7 @@ pub(in super::super) fn transfer_native_brep(
                         )
                     })
                     .collect::<Vec<_>>();
+                ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
@@ -2035,9 +2037,14 @@ pub(in super::super) fn transfer_native_brep(
                         }
                     }
                     let pcurves = pcurve_geometry
-                        .and_then(|(geometry, parameter_range, offset, tag)| {
+                        .map(|(geometry, parameter_range, offset, tag)| -> Result<_, cadmpeg_core::CodecError> {
                             let parameter_range = match parameter_range {
-                                Some(range) => Some(cadmpeg_ir::units::FiniteVector::new(range)?),
+                                Some(range) => {
+                                    let Some(range) = cadmpeg_ir::units::FiniteVector::new(range) else {
+                                        return Ok(None);
+                                    };
+                                    Some(range)
+                                }
                                 None => None,
                             };
                             let metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -2059,20 +2066,24 @@ pub(in super::super) fn transfer_native_brep(
                                     tag,
                                     Exactness::Derived,
                                 );
+                                ctx.charge_entities(1, "admit Creo model pcurves")?;
                                 ir.model.pcurves.push(Pcurve {
                                     id: pcurve.clone(),
                                     geometry,
                                     metadata,
                                 });
                             }
-                            Some(PcurveUse {
+                            Ok(Some(PcurveUse {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: None,
-                            })
+                            }))
                         })
+                        .transpose()?
+                        .flatten()
                         .into_iter()
                         .collect();
+                    ctx.charge_entities(1, "admit Creo model coedges")?;
                     ir.model.coedges.push(Coedge {
                         id,
                         owner_loop: loop_id.clone(),
@@ -2097,6 +2108,7 @@ pub(in super::super) fn transfer_native_brep(
 }
 
 pub(in super::super) fn transfer_cap_pair_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -2125,6 +2137,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             "fc05_cap_pair_cylinder",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -2190,6 +2203,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 "fc05_cap_circle",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),

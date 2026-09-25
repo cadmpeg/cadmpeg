@@ -3,13 +3,14 @@
 
 use cadmpeg_ir::scalar::PositiveLength;
 
+use super::parameter_records;
 use crate::scalar;
 use crate::surface::cylinder_frame_readers::{
     decode_directrix_lane_axis_aligned_cylinder_frame, decode_local_system_suffix_cylinder_frame,
     decode_positional_cylinder_frame, unique_positional_cylinder_frame,
     unique_terminal_positive_scalar,
 };
-use crate::surface::{parameter_records, PositionalCylinderFrame};
+use crate::surface::PositionalCylinderFrame;
 
 const EPS_FRAME_COMPONENT: f64 = 1.0e-12;
 

@@ -30,6 +30,7 @@ use super::prototypes::{
 };
 
 pub(in super::super) fn transfer_paired_envelope_spheres(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -118,6 +119,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 "paired_type26_sphere_envelope",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)),
@@ -148,6 +150,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
 mod tests;
 
 pub(in super::super) fn transfer_positional_tori(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -235,6 +238,7 @@ pub(in super::super) fn transfer_positional_tori(
             "positional_torus_frame",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry,
@@ -261,6 +265,7 @@ pub(in super::super) fn transfer_positional_tori(
 }
 
 pub(in super::super) fn transfer_positional_line_extrusion_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -350,6 +355,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             "positional_line_extrusion_construction",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)),
@@ -369,6 +375,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
                 instance_path: Vec::new(),
             }),
         });
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -455,6 +462,7 @@ fn unique_tabulated_cylinder_prototype<'a>(
 /// carrier, which the model carries, so it is a loss note naming the
 /// `VisibGeom` surface row and the replay offset.
 pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -564,6 +572,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             "tabulated_cylinder_extrusion",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
@@ -583,6 +592,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 instance_path: Vec::new(),
             }),
         });
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),

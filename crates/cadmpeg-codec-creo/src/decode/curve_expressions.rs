@@ -248,6 +248,7 @@ fn curve_expression_parameter_names(
 }
 
 pub(super) fn transfer_curve_expression_features(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -471,6 +472,7 @@ pub(super) fn transfer_curve_expression_features(
                 "curve_expression_assignment",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model parameters")?;
             ir.model.parameters.push(DesignParameter {
                 id: parameter_id.clone(),
                 owner: Some(feature_id.clone()),
@@ -540,6 +542,7 @@ pub(super) fn transfer_curve_expression_features(
                 "curve_expression_helix",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
@@ -581,6 +584,7 @@ pub(super) fn transfer_curve_expression_features(
                     ]),
                 })
             });
+        ctx.charge_entities(1, "admit Creo model features")?;
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,

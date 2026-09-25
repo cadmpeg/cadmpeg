@@ -101,8 +101,14 @@ fn malformed_saved_spline_reports_transfer_loss() {
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     assert_eq!(
-        transfer_saved_spline_curves(&scan, &mut ir, &mut AnnotationBuilder::new(), &mut losses)
-            .expect("transfer"),
+        crate::decode::with_test_decode_ctx(|ctx| transfer_saved_spline_curves(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses
+        ))
+        .expect("transfer"),
         0
     );
     assert!(ir.model.curves.is_empty());
