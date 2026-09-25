@@ -429,6 +429,41 @@ impl<'a> DecodeContext<'a> {
         Ok(View::over_space(bytes, space))
     }
 
+    /// Concatenates owned chunks into one retained buffer without an arena copy.
+    pub fn concat_retained(
+        &self,
+        inputs: &[Vec<u8>],
+        operation: &'static str,
+    ) -> Result<Vec<u8>, CodecError> {
+        if let Some(limit) = self.budget.fused() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        if inputs.is_empty() {
+            return Err(CodecError::Malformed(
+                "cannot concatenate an empty buffer list".into(),
+            ));
+        }
+        let total = inputs.iter().try_fold(0_usize, |total, input| {
+            total.checked_add(input.len()).ok_or_else(|| {
+                CodecError::NotImplemented("retained concatenation exceeds usize".into())
+            })
+        })?;
+        let total_bytes = u64::try_from(total)
+            .map_err(|_| CodecError::NotImplemented("retained concatenation exceeds u64".into()))?;
+        let reservation = self.reserve_scoped(total_bytes, operation)?;
+        self.charge_retained(total_bytes, operation)?;
+        let mut buffer = Vec::new();
+        buffer.try_reserve_exact(total).map_err(|_| {
+            self.budget
+                .retained_allocation_failed(total_bytes, operation)
+        })?;
+        for input in inputs {
+            buffer.extend_from_slice(input);
+        }
+        drop(reservation);
+        Ok(buffer)
+    }
+
     /// Registers a stored (uncompressed) child range as a space that borrows
     /// the parent bytes without copying.
     ///
@@ -542,6 +577,20 @@ impl<'a> ExpandWriter<'_, 'a> {
 
     /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
+        self.check_exact()?;
+        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
+        let space = self.ctx.allocate_space()?;
+        Ok(View::over_space(bytes, space))
+    }
+
+    /// Finalizes an expansion directly into a caller-owned buffer.
+    /// The expansion budget already admits its bytes, so no retained copy occurs.
+    pub fn finalize_owned(self) -> Result<Vec<u8>, CodecError> {
+        self.check_exact()?;
+        Ok(self.buffer)
+    }
+
+    fn check_exact(&self) -> Result<(), CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
             if self.written() != size {
                 return Err(CodecError::malformed(format_args!(
@@ -550,9 +599,7 @@ impl<'a> ExpandWriter<'_, 'a> {
                 )));
             }
         }
-        let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let space = self.ctx.allocate_space()?;
-        Ok(View::over_space(bytes, space))
+        Ok(())
     }
 
     /// Returns how many bytes have been written so far.

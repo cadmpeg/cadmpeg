@@ -5,7 +5,7 @@ mod schema;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -22,8 +22,8 @@ use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
 use crate::native::element_map::{ElementMapGroup, ElementMapRecord};
 use crate::native::{
-    parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
-    ObjectRecord, PropertyRecord, ValueRecord,
+    copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
+    GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
 
 use schema::Admission as GuiSchemaAdmission;
@@ -174,6 +174,7 @@ pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn transfer(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     bytes: &[u8],
     entries: &BTreeMap<String, View<'_>>,
@@ -185,6 +186,10 @@ pub(crate) fn transfer(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
+    ctx.charge_work(bytes.len() as u64, "FCStd GUI XML lexical admission")?;
+    if let Some((nodes, _)) = crate::container::xml_envelope_counts(bytes) {
+        ctx.charge_collection_items(nodes, "FCStd GUI XML node tree")?;
+    }
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
     let schema_declaration = crate::container::canonical_attribute(
@@ -195,6 +200,7 @@ pub(crate) fn transfer(
     let admission = schema::classify(schema_declaration.as_deref());
     let neutral_schema_version = admission.neutral_schema_version();
     let transferred = transfer_schema_one(
+        ctx,
         ir,
         text,
         &xml,
@@ -239,6 +245,7 @@ pub(crate) fn transfer(
 
 #[allow(clippy::too_many_arguments)]
 fn transfer_schema_one(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     text: &str,
     xml: &roxmltree::Document<'_>,
@@ -267,20 +274,38 @@ fn transfer_schema_one(
     if let Some(message) = camera_error {
         return Err(CodecError::Malformed(message));
     }
+    let state_count = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .filter(|node| !node.has_tag_name("ViewProviderData"))
+        .count();
+    ctx.charge_collection_items(state_count as u64, "FCStd GUI state records")?;
     let states = root
         .children()
         .filter(roxmltree::Node::is_element)
         .filter(|node| !node.has_tag_name("ViewProviderData"))
         .enumerate()
-        .map(|(order, node)| gui_state(text, order, node))
+        .map(|(order, node)| gui_state(ctx, text, order, node))
         .collect::<Result<Vec<_>, _>>()?;
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
-        schema_version: schema_declaration.map(str::to_owned),
+        schema_version: schema_declaration
+            .map(|value| copy_xml_text(Some(ctx), value, "FCStd GUI schema declaration"))
+            .transpose()?,
         attributes: root
             .attributes()
-            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-            .collect(),
+            .map(|attribute| {
+                ctx.charge_collection_items(1, "FCStd GUI document attributes")?;
+                Ok((
+                    copy_xml_text(
+                        Some(ctx),
+                        attribute.name(),
+                        "FCStd GUI document attribute name",
+                    )?,
+                    copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI document attribute")?,
+                ))
+            })
+            .collect::<Result<_, CodecError>>()?,
         states,
     };
     let objects_by_name = objects
@@ -312,6 +337,11 @@ fn transfer_schema_one(
             "GuiDocument.xml has multiple ViewProviderData containers".into(),
         ));
     }
+    let provider_count = xml
+        .descendants()
+        .filter(|node| node.has_tag_name("ViewProvider"))
+        .count();
+    ctx.charge_collection_items(provider_count as u64, "FCStd GUI provider nodes")?;
     let providers = xml
         .descendants()
         .filter(|node| node.has_tag_name("ViewProvider"))
@@ -341,22 +371,22 @@ fn transfer_schema_one(
         let provider_key = provider_identity_key(name);
         let Some(object_id) = objects_by_name.get(name).copied() else {
             append_native_provider(
+                ctx,
                 text,
                 provider,
                 provider_order,
                 None,
-                &provider_key,
                 &mut native_providers,
                 &mut native_properties,
             )?;
             continue;
         };
         append_native_provider(
+            ctx,
             text,
             provider,
             provider_order,
             Some(object_id),
-            &provider_key,
             &mut native_providers,
             &mut native_properties,
         )?;
@@ -1010,52 +1040,79 @@ fn transfer_primitive_appearance(
 }
 
 fn gui_state(
+    ctx: &DecodeContext<'_>,
     text: &str,
     order: usize,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<GuiStateRecord, CodecError> {
+    let value_count = node
+        .descendants()
+        .filter(|value| value.is_element() && *value != node)
+        .count();
+    ctx.charge_collection_items(value_count as u64, "FCStd GUI state values")?;
     let values = node
         .descendants()
         .filter(|value| value.is_element() && *value != node)
         .enumerate()
-        .map(|(value_order, value)| ValueRecord {
-            tag: value.tag_name().name().to_owned(),
-            order: value_order,
-            attributes: value
-                .attributes()
-                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                .collect(),
-            text: value.text().map(str::to_owned),
-            raw_xml: text[value.range()].to_owned(),
+        .map(|(value_order, value)| -> Result<ValueRecord, CodecError> {
+            Ok(ValueRecord {
+                tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
+                order: value_order,
+                attributes: value
+                    .attributes()
+                    .map(|attribute| {
+                        ctx.charge_collection_items(1, "FCStd GUI value attributes")?;
+                        Ok((
+                            copy_xml_text(Some(ctx), attribute.name(), "FCStd GUI attribute name")?,
+                            copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI attribute")?,
+                        ))
+                    })
+                    .collect::<Result<_, CodecError>>()?,
+                text: value
+                    .text()
+                    .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
+                    .transpose()?,
+                raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let side_entries = node
         .descendants()
         .filter(roxmltree::Node::is_element)
-        .flat_map(|element| {
-            element
-                .attributes()
-                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                .collect::<Vec<_>>()
-        })
-        .filter(|(name, _)| matches!(name.as_str(), "file" | "File"))
-        .map(|(_, value)| value)
+        .flat_map(|element| element.attributes())
+        .filter(|attribute| matches!(attribute.name(), "file" | "File"))
+        .map(|attribute| attribute.value())
         .filter(|value| !value.is_empty())
-        .collect();
+        .map(|value| {
+            ctx.charge_collection_items(1, "FCStd GUI side entry references")?;
+            copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(GuiStateRecord {
         id: crate::native::native_id("gui-state", format!("{}:{order}", node.tag_name().name())),
-        kind: node.tag_name().name().to_owned(),
+        kind: copy_xml_text(Some(ctx), node.tag_name().name(), "FCStd GUI state kind")?,
         attributes: node
             .attributes()
-            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-            .collect(),
+            .map(|attribute| {
+                ctx.charge_collection_items(1, "FCStd GUI state attributes")?;
+                Ok((
+                    copy_xml_text(
+                        Some(ctx),
+                        attribute.name(),
+                        "FCStd GUI state attribute name",
+                    )?,
+                    copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI state attribute")?,
+                ))
+            })
+            .collect::<Result<_, CodecError>>()?,
         values,
         side_entries,
-        xml: crate::native::RetainedXml::from_text(
-            text[node.range()].to_owned(),
+        xml: crate::native::RetainedXml::from_source(
+            Some(ctx),
+            &text[node.range()],
             node.range().start as u64,
-        )
-        .map_err(CodecError::Malformed)?,
+            "FCStd GUI state XML",
+        )?,
     })
 }
 
@@ -1078,18 +1135,19 @@ fn unique_child<'a, 'input>(
 }
 
 fn append_native_provider(
+    ctx: &DecodeContext<'_>,
     text: &str,
     provider: roxmltree::Node<'_, '_>,
     order: usize,
     object: Option<&str>,
-    provider_key: &IdentityKey,
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
         .ok_or_else(|| CodecError::Malformed("ViewProvider has no name".into()))?;
-    let id = provider_native_id(provider_key);
+    let id = provider_native_id(&provider_identity_key(name));
+    ctx.charge_collection_items(1, "FCStd GUI provider records")?;
     providers.push(GuiViewProviderRecord {
         id: id.clone(),
         object: object
@@ -1099,16 +1157,21 @@ fn append_native_provider(
                 })
             })
             .transpose()?,
-        name: name.to_owned(),
+        name: copy_xml_text(Some(ctx), name, "FCStd GUI provider name")?,
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: text[provider.range()].to_owned(),
+        raw_xml: copy_xml_text(Some(ctx), &text[provider.range()], "FCStd GUI provider XML")?,
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(CodecError::malformed(format_args!(
             "ViewProvider {name} has no Properties"
         )));
     };
+    let property_nodes = container
+        .children()
+        .filter(|node| node.has_tag_name("Property"))
+        .count();
+    ctx.charge_collection_items(property_nodes as u64, "FCStd GUI provider property nodes")?;
     let property_nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
@@ -1143,21 +1206,41 @@ fn append_native_provider(
             ))
         })?;
         validate_gui_property(property, property_name, type_name)?;
+        let value_count = property
+            .descendants()
+            .filter(|value| value.is_element() && *value != property)
+            .count();
+        ctx.charge_collection_items(value_count as u64, "FCStd GUI property values")?;
         let values = property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
             .enumerate()
-            .map(|(value_order, value)| ValueRecord {
-                tag: value.tag_name().name().to_owned(),
-                order: value_order,
-                attributes: value
-                    .attributes()
-                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                    .collect(),
-                text: value.text().map(str::to_owned),
-                raw_xml: text[value.range()].to_owned(),
+            .map(|(value_order, value)| -> Result<ValueRecord, CodecError> {
+                Ok(ValueRecord {
+                    tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
+                    order: value_order,
+                    attributes: value
+                        .attributes()
+                        .map(|attribute| {
+                            ctx.charge_collection_items(1, "FCStd GUI value attributes")?;
+                            Ok((
+                                copy_xml_text(
+                                    Some(ctx),
+                                    attribute.name(),
+                                    "FCStd GUI attribute name",
+                                )?,
+                                copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI attribute")?,
+                            ))
+                        })
+                        .collect::<Result<_, CodecError>>()?,
+                    text: value
+                        .text()
+                        .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
+                        .transpose()?,
+                    raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, CodecError>>()?;
         let side_entries = values
             .iter()
             .flat_map(|value| value.attributes.iter())
@@ -1165,25 +1248,31 @@ fn append_native_provider(
                 matches!(attribute.as_str(), "file" | "File")
                     && !crate::persistence::is_xlink_type(type_name)
             })
-            .map(|(_, value)| value.clone())
+            .map(|(_, value)| value.as_str())
             .filter(|value| !value.is_empty())
-            .collect();
+            .map(|value| {
+                ctx.charge_collection_items(1, "FCStd GUI side entry references")?;
+                copy_xml_text(Some(ctx), value, "FCStd GUI side entry name")
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        ctx.charge_collection_items(1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
             id: crate::native::native_child_id("gui-property", &id, property_name),
             owner: id.clone(),
-            name: property_name.to_owned(),
-            type_name: type_name.to_owned(),
+            name: copy_xml_text(Some(ctx), property_name, "FCStd GUI property name")?,
+            type_name: copy_xml_text(Some(ctx), type_name, "FCStd GUI property type")?,
             status: property
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),
             order: property_order,
             values,
             side_entries,
-            xml: crate::native::RetainedXml::from_text(
-                text[property.range()].to_owned(),
+            xml: crate::native::RetainedXml::from_source(
+                Some(ctx),
+                &text[property.range()],
                 property.range().start as u64,
-            )
-            .map_err(CodecError::Malformed)?,
+                "FCStd GUI property XML",
+            )?,
         });
     }
     Ok(())

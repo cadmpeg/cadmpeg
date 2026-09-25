@@ -148,6 +148,7 @@ fn sync_configuration_design_state(
     };
     let mut current_projection = ir.clone();
     project_configuration_design_states(
+        None,
         &mut current_projection,
         &native.feature_histories,
         &native.feature_input_lanes,
@@ -225,6 +226,7 @@ fn sync_configuration_design_state(
 
     let mut projected = ir.clone();
     project_configuration_design_states(
+        None,
         &mut projected,
         &native.feature_histories,
         &native.feature_input_lanes,

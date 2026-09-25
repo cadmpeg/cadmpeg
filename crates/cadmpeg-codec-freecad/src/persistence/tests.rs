@@ -9,6 +9,207 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn parse_with_retained_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
+    let service_arena = cadmpeg_core::decode::DecodeArena::new();
+    let service_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &service_arena,
+        &service_policy,
+    )
+    .expect("service persistence context");
+    super::parse_with_context(document.as_bytes(), "4", Some(&service_ctx))
+        .expect("service profile admits the persistence fixture");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = limit;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("persistence test context");
+    super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+        .err()
+        .expect("retained copy must be refused")
+}
+
+fn assert_retained_operation(error: &cadmpeg_core::CodecError, operation: &str) {
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == operation
+    ));
+}
+
+fn parse_with_item_limit(document: &str, limit: u64) -> cadmpeg_core::CodecError {
+    let service_arena = cadmpeg_core::decode::DecodeArena::new();
+    let service_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (service_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        document.as_bytes(),
+        &service_arena,
+        &service_policy,
+    )
+    .expect("service persistence context");
+    super::parse_with_context(document.as_bytes(), "4", Some(&service_ctx))
+        .expect("service profile admits the persistence fixture");
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(document.as_bytes(), &arena, &policy)
+            .expect("persistence item context");
+    super::parse_with_context(document.as_bytes(), "4", Some(&ctx))
+        .err()
+        .expect("collection must be refused")
+}
+
+fn assert_item_operation(error: &cadmpeg_core::CodecError, operation: &str) {
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == operation
+    ));
+}
+
+#[test]
+fn x62_persistence_object_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count")
+        .0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes),
+        "FCStd object declarations",
+    );
+}
+
+#[test]
+fn x62_persistence_extension_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count")
+        .0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes + 1 + 1 + 1 + 2),
+        "FCStd extension nodes",
+    );
+}
+
+#[test]
+fn x62_persistence_property_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="P" type="T"/></Properties></Object></ObjectData></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count")
+        .0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes + 1 + 1 + 1 + 1),
+        "FCStd property nodes",
+    );
+}
+
+#[test]
+fn x62_persistence_value_collection_is_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let nodes = crate::container::xml_envelope_counts(document.as_bytes())
+        .expect("XML node count")
+        .0;
+    assert_item_operation(
+        &parse_with_item_limit(document, nodes + 1 + 1),
+        "FCStd property value records",
+    );
+}
+
+#[test]
+fn x63_object_xml_copy_is_charged_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    assert_retained_operation(
+        &parse_with_retained_limit(document, 1 + "Part::Feature".len() as u64),
+        "FCStd object XML",
+    );
+}
+
+#[test]
+fn x63_decode_counts_object_copies_in_retained_budget() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let bytes = archive(document);
+    FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("service profile admits the object");
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = document.len() as u64;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("object text copies consume the retained budget before entry retention");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                    && limit.operation == "retain FCStd entry"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn x63_extension_xml_copy_is_charged_after_its_object_copy() {
+    let object_data = r#"<Object name="A"><Extensions Count="1"><Extension name="E" type="T"/></Extensions><Properties Count="0"/></Object>"#;
+    let document = format!(
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="A" type="Part::Feature"/></Objects><ObjectData Count="1">{object_data}</ObjectData></Document>"#
+    );
+    assert_retained_operation(
+        &parse_with_retained_limit(
+            &document,
+            1 + "Part::Feature".len() as u64 + object_data.len() as u64 + 1 + 1,
+        ),
+        "FCStd extension XML",
+    );
+}
+
+#[test]
+fn x63_transient_and_persisted_property_xml_copies_are_charged() {
+    let transient = r#"<Document SchemaVersion="4"><Properties Count="0" TransientCount="1"><_Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_retained_operation(
+        &parse_with_retained_limit(transient, 2),
+        "FCStd transient property XML",
+    );
+    let persisted = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="T"/></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_retained_operation(
+        &parse_with_retained_limit(persisted, 2),
+        "FCStd persisted property XML",
+    );
+}
+
+#[test]
+fn x63_nested_value_xml_charges_the_actual_copied_bytes() {
+    let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    assert_retained_operation(
+        &parse_with_retained_limit(document, 1 + "App::PropertyString".len() as u64 + 6 + 5 + 1),
+        "FCStd value XML",
+    );
+}
+
+#[test]
+fn x63_link_target_attribute_copy_is_charged() {
+    let value = r#"<Link value="A"/>"#;
+    let document = format!(
+        r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyLink">{value}</Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#
+    );
+    let prior_copies = "P".len()
+        + "App::PropertyLink".len()
+        + "Link".len()
+        + "value".len()
+        + "A".len()
+        + value.len();
+    assert_retained_operation(
+        &parse_with_retained_limit(&document, prior_copies as u64),
+        "FCStd link object",
+    );
+}
+
 fn parse_document_graph(document: &str) -> Result<super::Graph, cadmpeg_core::CodecError> {
     let (_facts, schema_version) =
         crate::container::parse_document(document.as_bytes()).map_err(|error| match error {
@@ -627,7 +828,7 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
 fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
     let link = |markup: &str| {
         let parsed = roxmltree::Document::parse(markup).expect("parse XLink markup");
-        super::xlink(parsed.root_element()).expect("decode XLink")
+        super::xlink(parsed.root_element(), None).expect("decode XLink")
     };
     let empty = link(r#"<XLink file="" name="Body"/>"#);
     let absent = link(r#"<XLink name="Body"/>"#);
@@ -644,7 +845,7 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
             r#"<Property name="References" type="{type_name}"><XLinkSubList count="2"><XLink name="Local"/><XLink file="parts.FCStd" name="Remote" sub="Face1"/></XLinkSubList></Property>"#
         );
         let xml = roxmltree::Document::parse(&markup).unwrap();
-        let links = super::parse_link_targets(xml.root_element(), type_name).unwrap();
+        let links = super::parse_link_targets(xml.root_element(), type_name, None).unwrap();
         assert_eq!(links.len(), 2);
         let first = links[0].as_ref().expect("first link");
         let second = links[1].as_ref().expect("second link");
@@ -655,6 +856,6 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         assert_eq!(second.subelements(), ["Face1"]);
         let invalid = markup.replace("XLinkSubList", "XLinkList");
         let xml = roxmltree::Document::parse(&invalid).unwrap();
-        assert!(super::parse_link_targets(xml.root_element(), type_name).is_err());
+        assert!(super::parse_link_targets(xml.root_element(), type_name, None).is_err());
     }
 }

@@ -97,6 +97,33 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn x64_profile_construction_refuses_exhausted_work_on_decode() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+<Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let bytes = archive(document);
+    FcstdCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("service profile admits the sketch");
+
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_work_units = 2 * document.len() as u64;
+    let error = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("profile construction must charge work");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation.starts_with("FCStd profile ")
+    ));
+}
+
+#[test]
 fn rejects_external_geo_without_its_reserved_axis_prefix() {
     for external_geo in [
         r#"<GeometryList count="1"><Geometry type="Part::GeomCircle" ref="Source.Edge1"><Circle CenterX="0" CenterY="0" Radius="1"/></Geometry></GeometryList>"#,

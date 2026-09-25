@@ -57,6 +57,24 @@ fn assert_valid(result: &EditableDecodeResult) {
 }
 
 #[test]
+fn display_geometry_and_summary_share_one_parse_per_section() {
+    let source = sldprt_with_body_and_display_list(&triangle_body());
+    let section_count = crate::container::scan_bytes(&source).sections().count();
+    crate::tessellation::reset_display_parse_calls();
+    let options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let result = EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &options)
+            .expect("service profile admits display geometry"),
+    );
+    assert!(!result.ir().model.tessellations.is_empty());
+    assert_eq!(crate::tessellation::display_parse_calls(), section_count);
+}
+
+#[test]
 fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_metadata() {
     let bytes = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&bytes), Confidence::High);

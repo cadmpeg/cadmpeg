@@ -129,6 +129,7 @@ pub(crate) fn enrich_history_semantic(
 /// sweep/revolution/extrusion operations, spatial sketches, tree-node restore)
 /// stay in each caller, around this block.
 pub(crate) fn project_compact_and_generated(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     projection: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -147,7 +148,7 @@ pub(crate) fn project_compact_and_generated(
     crate::resolved_features::terminations::project_surface_sweep_profiles(
         features, projection, lanes,
     );
-    crate::resolved_features::holes::project_helix_axes(features, projection, lanes)?;
+    crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
     crate::resolved_features::component_paths::project_adjacent_extrusion_profiles(
         features, projection, lanes,
     );
@@ -157,6 +158,7 @@ pub(crate) fn project_compact_and_generated(
 
 /// Reproject configuration-local evaluated parameters and feature operations from native lanes.
 pub(crate) fn project_configuration_design_states(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -235,7 +237,7 @@ pub(crate) fn project_configuration_design_states(
             &projection,
             scoped_lanes,
         )?;
-        project_compact_and_generated(&mut features, &projection, scoped_lanes)?;
+        project_compact_and_generated(ctx, &mut features, &projection, scoped_lanes)?;
         crate::resolved_features::operations::bind_extrusion_operations(
             &mut features,
             histories,
