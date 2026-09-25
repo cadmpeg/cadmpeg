@@ -3,6 +3,9 @@
 
 use std::ops::Range;
 
+use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+
 /// The entity or value occurrence class.
 #[derive(Debug, Clone, Copy)]
 enum OccurrencePrefix {
@@ -89,13 +92,27 @@ impl BinaryValue {
 }
 
 /// Lexical failure with a stable byte position.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 #[error("{message} at byte {offset}")]
 pub(crate) struct LexError {
     /// Byte offset at which tokenization failed.
     offset: usize,
     /// Violated lexical invariant.
     pub(crate) message: String,
+    resource: Option<CodecError>,
+}
+
+impl LexError {
+    pub(crate) fn into_codec_error(self) -> CodecError {
+        match self.resource {
+            Some(error) => error,
+            None => CodecError::Malformed(format!("{} at byte {}", self.message, self.offset)),
+        }
+    }
+
+    pub(crate) fn into_resource_error(self) -> Option<CodecError> {
+        self.resource
+    }
 }
 
 /// Tokenize one complete clear-text exchange structure.
@@ -108,8 +125,9 @@ pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     Ok(tokens)
 }
 
-pub(crate) struct Lexer<'a> {
+pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
+    budget: Option<&'ctx DecodeContext<'arena>>,
     at: usize,
     allow_print_controls: bool,
     previous_was_signature: bool,
@@ -123,15 +141,20 @@ pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
         .or_else(|| match_exact_ignoring_controls(input, at, b"\\F\\"))
 }
 
-impl<'a> Lexer<'a> {
+impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
     pub(crate) fn new(input: &'a [u8]) -> Self {
         Self {
             input,
+            budget: None,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
             tag_name_expected: false,
         }
+    }
+
+    pub(crate) fn set_context(&mut self, budget: Option<&'ctx DecodeContext<'arena>>) {
+        self.budget = budget;
     }
 
     pub(crate) fn set_allow_print_controls(&mut self, allow: bool) {
@@ -612,10 +635,11 @@ impl<'a> Lexer<'a> {
     fn binary(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let mut raw: Vec<HexDigit> = Vec::new();
+        let content = self.at;
+        let mut digit_count = 0usize;
         while let Some(byte) = self.input.get(self.at).copied() {
-            if let Some(digit) = HexDigit::new(byte) {
-                raw.push(digit);
+            if HexDigit::new(byte).is_some() {
+                digit_count += 1;
                 self.at += 1;
             } else if byte.is_ascii_control() {
                 self.at += 1;
@@ -636,6 +660,32 @@ impl<'a> Lexer<'a> {
         }
         if self.input.get(self.at) != Some(&b'"') {
             return Err(Self::error(start, "invalid binary literal"));
+        }
+        let _temporary = self
+            .budget
+            .map(|ctx| ctx.reserve_scoped(u64_from_index(digit_count), "step_binary_lexeme_temp"))
+            .transpose()
+            .map_err(|error| Self::resource_error(start, error))?;
+        let mut raw = alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
+            .map_err(|error| Self::resource_error(start, error))?;
+        let mut cursor = content;
+        let mut written = 0usize;
+        while cursor < self.at {
+            let byte = self.input[cursor];
+            if let Some(digit) = HexDigit::new(byte) {
+                raw[written] = digit;
+                written += 1;
+                cursor += 1;
+            } else if byte.is_ascii_control() {
+                cursor += 1;
+            } else if byte == b'\\' {
+                let Some(end) = self.print_control_end(cursor) else {
+                    return Err(Self::error(cursor, "invalid binary literal"));
+                };
+                cursor = end;
+            } else {
+                return Err(Self::error(cursor, "invalid binary literal"));
+            }
         }
         let Some((&indicator, digits)) = raw.split_first() else {
             return Err(Self::error(
@@ -660,13 +710,21 @@ impl<'a> Lexer<'a> {
         {
             return Err(Self::error(start, "unused binary bits are not zero"));
         }
-        let mut data = Vec::with_capacity(digits.len().div_ceil(2));
+        let packed_len = digits.len().div_ceil(2);
+        if let Some(ctx) = self.budget {
+            ctx.charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
+                .map_err(|error| Self::resource_error(start, error))?;
+        }
+        let mut data = alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
+            .map_err(|error| Self::resource_error(start, error))?;
+        let mut output = 0usize;
         let mut pairs = digits.chunks_exact(2);
         for pair in &mut pairs {
-            data.push((pair[0].nibble() << 4) | pair[1].nibble());
+            data[output] = (pair[0].nibble() << 4) | pair[1].nibble();
+            output += 1;
         }
         if let [last] = pairs.remainder() {
-            data.push(last.nibble() << 4);
+            data[output] = last.nibble() << 4;
         }
         let unused_bits = unused_bits + if digits.len() % 2 == 1 { 4 } else { 0 };
         self.at += 1;
@@ -680,7 +738,7 @@ impl<'a> Lexer<'a> {
         let start = self.at;
         self.at += 1;
         let content = self.at;
-        let mut value = Vec::new();
+        let mut value_len = 0usize;
         while let Some(byte) = self.input.get(self.at).copied() {
             if byte == b'>' {
                 break;
@@ -692,12 +750,30 @@ impl<'a> Lexer<'a> {
                 ));
             }
             if !byte.is_ascii_control() {
-                value.push(byte);
+                value_len += 1;
             }
             self.at += 1;
         }
         if self.input.get(self.at) != Some(&b'>') {
             return Err(Self::error(start, "unterminated resource token"));
+        }
+        let _temporary = self
+            .budget
+            .map(|ctx| ctx.reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp"))
+            .transpose()
+            .map_err(|error| Self::resource_error(start, error))?;
+        if let Some(ctx) = self.budget {
+            ctx.charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
+                .map_err(|error| Self::resource_error(start, error))?;
+        }
+        let mut value = alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
+            .map_err(|error| Self::resource_error(start, error))?;
+        let mut written = 0usize;
+        for &byte in &self.input[content..self.at] {
+            if !byte.is_ascii_control() {
+                value[written] = byte;
+                written += 1;
+            }
         }
         let value = String::from_utf8(value)
             .map_err(|_| Self::error(content, "resource token is not UTF-8"))?;
@@ -755,6 +831,15 @@ impl<'a> Lexer<'a> {
         LexError {
             offset,
             message: message.into(),
+            resource: None,
+        }
+    }
+
+    fn resource_error(offset: usize, error: CodecError) -> LexError {
+        LexError {
+            offset,
+            message: error.to_string(),
+            resource: Some(error),
         }
     }
 }
