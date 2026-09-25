@@ -2,9 +2,9 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    decode, periodic_knots, read_knots, read_nurbs_curve, read_nurbs_curve_2d, read_nurbs_surface,
-    read_plane_surface_with_parameterization, read_poles, reconstruct_knots, revolution_nurbs,
-    sum_nurbs, DecodedSurface, TypedSurface, CLIPPING_PLANE_SURFACE,
+    decode, map_parameter, periodic_knots, read_knots, read_nurbs_curve, read_nurbs_curve_2d,
+    read_nurbs_surface, read_plane_surface_with_parameterization, read_poles, reconstruct_knots,
+    revolution_nurbs, sum_nurbs, DecodedSurface, TypedSurface, CLIPPING_PLANE_SURFACE,
 };
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::curves::GeometryError;
@@ -659,6 +659,12 @@ fn plane_parameterization_maps_domain_to_physical_extents() {
         parameterization.map_point(Point2::new(0.25, 2.5)),
         Point2::new(4.25, 6.5)
     );
+}
+
+#[test]
+fn plane_parameterization_maps_exterior_values_across_a_tiny_domain() {
+    let smallest = f64::from_bits(1);
+    assert_eq!(map_parameter(1.0, [0.0, smallest], [0.0, smallest]), 1.0);
 }
 
 #[test]
