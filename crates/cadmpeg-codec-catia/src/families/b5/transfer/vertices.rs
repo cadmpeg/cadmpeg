@@ -78,6 +78,7 @@ pub(super) fn emit_vertices(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
     let vertex_tolerances = &plan.vertex_tolerances;
@@ -96,6 +97,7 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         );
+        admission.charge()?;
         ir.model
             .points
             .push(Point::new(point_id.clone(), *coordinates, None));
@@ -113,6 +115,7 @@ pub(super) fn emit_vertices(
         annotations
             .derived(&vertex_id, "point")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        admission.charge()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -135,6 +138,7 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::Derived,
         );
+        admission.charge()?;
         ir.model.points.push(Point::new(
             point_id.clone(),
             vertex.point,
@@ -154,6 +158,7 @@ pub(super) fn emit_vertices(
         annotations
             .derived(&vertex_id, "point")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        admission.charge()?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,

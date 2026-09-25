@@ -1122,13 +1122,18 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     assert!(plan.exact_support_edges.contains(&5));
 
     let mut ir = CadIr::empty();
-    assert!(transfer(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        graph,
-        &payload,
-        &mut crate::nurbs::LaneRefusals::new(),
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &payload,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+        .expect("service limits admit B5 topology"));
+    });
     assert_eq!(ir.model.pcurves.len(), 1);
     assert!(matches!(
         ir.model.pcurves[0].geometry,
@@ -1308,13 +1313,18 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     ]);
 
     let mut ir = CadIr::empty();
-    assert!(transfer(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        graph,
-        &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId::mint("catia:payload:unknown#test".to_string()).expect("identity grammar"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+        .expect("service limits admit B5 topology"));
+    });
 
     // Native traversal order, which the arena-order check reads as unsorted.
     assert_eq!(

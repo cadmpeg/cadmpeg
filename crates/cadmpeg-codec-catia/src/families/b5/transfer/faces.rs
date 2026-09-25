@@ -331,7 +331,8 @@ pub(super) fn emit_faces(
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &PcurveUses,
     edge_id_map: &HashMap<u32, EdgeId>,
-) -> bool {
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let ownership = &plan.ownership;
     let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;
@@ -364,8 +365,9 @@ pub(super) fn emit_faces(
         .and_then(|builder| builder.derived(&body_id, "regions"))
         .is_err()
     {
-        return false;
+        return Ok(false);
     }
+    admission.charge()?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
@@ -393,8 +395,9 @@ pub(super) fn emit_faces(
             .and_then(|builder| builder.derived(&region_id, "shells"))
             .is_err()
         {
-            return false;
+            return Ok(false);
         }
+        admission.charge()?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -412,8 +415,9 @@ pub(super) fn emit_faces(
             .and_then(|builder| builder.derived(&shell_id, "faces"))
             .is_err()
         {
-            return false;
+            return Ok(false);
         }
+        admission.charge()?;
         ir.model.shells.push(
             match Shell::new(
                 shell_id,
@@ -432,7 +436,7 @@ pub(super) fn emit_faces(
             ) {
                 Ok(shell) => shell,
                 Err(_) => {
-                    return false;
+                    return Ok(false);
                 }
             },
         );
@@ -462,8 +466,9 @@ pub(super) fn emit_faces(
             .and_then(|builder| builder.derived(&face_id, "loops"))
             .is_err()
         {
-            return false;
+            return Ok(false);
         }
+        admission.charge()?;
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -523,17 +528,18 @@ pub(super) fn emit_faces(
                 .and_then(|builder| builder.derived(&loop_id, "vertex_uses"))
                 .is_err()
             {
-                return false;
+                return Ok(false);
             }
             if face_loops.role(&loop_id) != LoopBoundaryRole::Unspecified
                 && annotations.derived(&loop_id, "boundary_role").is_err()
             {
-                return false;
+                return Ok(false);
             }
             let Ok(ring) = cadmpeg_ir::topology::LoopRing::new(coedge_ids.clone(), vertex_uses)
             else {
-                return false;
+                return Ok(false);
             };
+            admission.charge()?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
@@ -552,11 +558,12 @@ pub(super) fn emit_faces(
                 );
                 for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
                     if annotations.derived(&id, field).is_err() {
-                        return false;
+                        return Ok(false);
                     }
                 }
                 let arena_index = ir.model.coedges.len();
                 coedges_by_edge.entry(edge).or_default().push(arena_index);
+                admission.charge()?;
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
@@ -584,7 +591,7 @@ pub(super) fn emit_faces(
                         .transpose()
                     {
                         Ok(pcurve) => pcurve.into_iter().collect(),
-                        Err(_) => return false,
+                        Err(_) => return Ok(false),
                     },
                     use_curve: None,
                 });
@@ -597,7 +604,7 @@ pub(super) fn emit_faces(
             ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
         }
     }
-    true
+    Ok(true)
 }
 
 #[cfg(test)]
