@@ -619,7 +619,7 @@ fn decode_extracts_pmi_semantic_dimension() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -810,7 +810,7 @@ fn duplicate_pmi_records_share_one_parameter_and_round_trip_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -902,7 +902,7 @@ fn ordinate_pmi_dimensions_round_trip_typed_values() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

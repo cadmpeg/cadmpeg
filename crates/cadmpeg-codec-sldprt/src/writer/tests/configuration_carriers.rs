@@ -41,6 +41,90 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
 #[test]
+fn geometry_edit_replaces_each_generated_configuration_partition() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    use std::collections::BTreeMap;
+
+    let mut ir = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.bodies.iter_mut().for_each(|body| body.name = None);
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:probe:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 1,
+            source_index: Some(index),
+            name: Some(format!("Config {index}")),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Some(vec![body.clone()].try_into().unwrap()),
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        })
+        .collect();
+    let mut source = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut source))
+        .unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    let point = decoded.ir().model.points[0].position().get();
+    decoded.ir_mut().model.points[0].set_position(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            point.x,
+            point.y,
+            point.z + 1.0,
+        ))
+        .unwrap(),
+    );
+    let mut output = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+        .unwrap();
+    let scan = container::scan_bytes(&output);
+    for index in 0..2 {
+        let section = format!("Contents/Config-{index}-Partition");
+        assert_eq!(
+            scan.blocks
+                .iter()
+                .filter(|block| block.section.name() == Some(section.as_str()))
+                .count(),
+            1,
+            "{section} must have one partition"
+        );
+    }
+    let selected = container::select_active_parasolid_site(&scan).expect("unique active solid");
+    assert_eq!(selected.name(), "Contents/Config-1-Partition");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
     let xml =
         r#"<swSolidWorks swVersion="34000"><swModel swConfigurationName="Old"/></swSolidWorks>"#;
@@ -1727,7 +1811,7 @@ fn semantic_writer_applies_neutral_parameter_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1777,7 +1861,7 @@ fn semantic_writer_preserves_dimension_attributes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1823,7 +1907,7 @@ fn semantic_writer_preserves_evaluated_equation_values() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

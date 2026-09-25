@@ -178,7 +178,7 @@ fn decode_resolves_feature_topology_selections() {
             }
         });
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -318,7 +318,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         );
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

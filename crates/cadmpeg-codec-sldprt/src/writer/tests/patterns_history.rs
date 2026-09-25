@@ -170,7 +170,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -250,7 +250,7 @@ fn semantic_writer_round_trips_sparse_curve_driven_pattern() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -347,7 +347,7 @@ fn semantic_writer_round_trips_sparse_localized_linear_pattern() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -459,7 +459,7 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
     decoded.ir_mut().model.parameters[parameter_index].value = Some(ParameterValue::Integer(12));
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -576,7 +576,7 @@ fn semantic_writer_round_trips_generic_pattern_type() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -682,7 +682,7 @@ fn semantic_writer_round_trips_typed_sweep() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -747,7 +747,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -901,7 +901,7 @@ fn semantic_writer_round_trips_typed_loft() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1033,7 +1033,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1170,7 +1170,7 @@ fn semantic_writer_round_trips_typed_rib() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1213,7 +1213,7 @@ fn semantic_writer_preserves_parametric_history() {
     });
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1276,7 +1276,7 @@ fn semantic_writer_applies_neutral_feature_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1395,7 +1395,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1740,7 +1740,7 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1806,7 +1806,7 @@ fn semantic_writer_updates_resolved_scalar_from_feature_edit() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1867,7 +1867,7 @@ fn semantic_writer_types_resolved_relation_scalar() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

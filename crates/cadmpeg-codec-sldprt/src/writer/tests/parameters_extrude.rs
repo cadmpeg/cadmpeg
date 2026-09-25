@@ -248,7 +248,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -292,7 +292,7 @@ fn semantic_writer_rewrites_qualified_bare_equation_ids() {
             "D3@Sketch1".into(),
         );
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -415,7 +415,7 @@ fn semantic_writer_preserves_empty_dimensions() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -451,7 +451,7 @@ fn semantic_writer_preserves_keywords_attributes() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -494,7 +494,7 @@ fn semantic_writer_preserves_keywords_child_order() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -537,7 +537,7 @@ fn semantic_writer_applies_history_root_ordinals() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -823,7 +823,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -892,7 +892,7 @@ fn semantic_writer_round_trips_sparse_positional_extrusions() {
     regenerated.ir_mut().model.parameters[0].value =
         Some(ParameterValue::Length(Length::new(225.0).unwrap()));
     let mut parameter_encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut parameter_encoded,
@@ -959,7 +959,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .set_outputs(vec![output]);
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1133,7 +1133,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1206,7 +1206,7 @@ fn semantic_writer_round_trips_extrusion_to_face() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1361,7 +1361,7 @@ fn semantic_writer_round_trips_typed_fillet_radius() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1476,7 +1476,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1576,7 +1576,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -1609,7 +1609,7 @@ fn semantic_writer_round_trips_variable_radius_fillet() {
         });
     }
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         regenerated.ir(),
         regenerated.source_fidelity(),
         &mut encoded,
@@ -1718,7 +1718,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

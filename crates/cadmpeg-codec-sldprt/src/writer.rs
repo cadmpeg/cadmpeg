@@ -142,10 +142,10 @@ pub(crate) fn write_semantic_with_records(
             parasolid_stream(&body, schema),
         )]
     };
-    let active_partition_section = partition_sections
-        .first()
+    let generated_partition_sections = partition_sections
+        .iter()
         .map(|(section, _)| section.clone())
-        .unwrap_or_default();
+        .collect::<HashSet<_>>();
     let mut sections = partition_sections;
     let materials = materials_payload(ir)?;
     let (objects, units) = metadata_payloads(ir, length_scale)?;
@@ -238,7 +238,7 @@ pub(crate) fn write_semantic_with_records(
         ir,
         retained_records,
         annotations,
-        &active_partition_section,
+        &generated_partition_sections,
         retain_native_brep,
     )?;
     let document_envelope = crate::container::first_solidworks_envelope(
@@ -932,7 +932,7 @@ fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    active_partition: &str,
+    generated_partitions: &HashSet<String>,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut seen = HashSet::new();
@@ -943,11 +943,12 @@ fn opaque_blocks(
             let provenance = annotations.provenance.get(record.id.as_str())?;
             let section = provenance.stream();
             let lower = section.to_ascii_lowercase();
-            if section == active_partition {
+            if generated_partitions.contains(section) {
                 return None;
             }
             if lower.ends_with("-partition")
-                && remapped_partition_section(ir, section).as_deref() == Some(active_partition)
+                && remapped_partition_section(ir, section)
+                    .is_some_and(|remapped| generated_partitions.contains(&remapped))
             {
                 return None;
             }

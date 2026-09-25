@@ -126,7 +126,7 @@ fn semantic_writer_round_trips_planar_and_spatial_sketch_space() {
         ));
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -715,7 +715,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     });
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

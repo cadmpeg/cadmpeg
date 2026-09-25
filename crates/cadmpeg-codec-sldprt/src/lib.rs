@@ -243,6 +243,17 @@ impl SldprtCodec {
         writer: &mut dyn Write,
     ) -> Result<Written, CodecError> {
         let dialect = writer::write_semantic_with_records(ir, annotations, records, writer)?;
+        let native = ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+            .transpose()?;
+        let source_scan = records
+            .iter()
+            .find(|record| record.id.as_str() == SOURCE_IMAGE_ID)
+            .and_then(|record| record.data)
+            .map(container::scan_bytes);
+        history::write::brep_agreement::validate(ir, native.as_ref(), source_scan.as_ref())?;
         Ok(Written::Semantic {
             path: if records.is_empty() {
                 SemanticPath::Synthesized

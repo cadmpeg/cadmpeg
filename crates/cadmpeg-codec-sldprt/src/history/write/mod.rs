@@ -16,6 +16,7 @@ use crate::history::hash::{feature_hash, history_hash, native_parameter_hash};
 use crate::history::parameters::expression_identifier_tokens;
 use crate::history::project::{project_feature_model, project_features, FeatureProjection};
 
+pub(crate) mod brep_agreement;
 pub(crate) mod configurations;
 pub(crate) mod features;
 pub(crate) mod parameters;

@@ -583,7 +583,7 @@ fn equations_container_projects_a_typed_tree_node_owning_global_parameters() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(
+    crate::test_support::serialize_history_after_refusal(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -726,7 +726,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 }
 
 #[test]
-fn decode_preserves_configuration_local_parameter_values() {
+fn configuration_local_modeling_edits_without_brep_are_refused() {
     use cadmpeg_ir::{
         features::{
             edge_treatments::RadiusSpec, FeatureDefinition, FeatureOperation, ParameterValue,
@@ -887,8 +887,12 @@ fn decode_preserves_configuration_local_parameter_values() {
         .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut encoded)
-        .unwrap();
+    crate::test_support::serialize_history_after_refusal(
+        &edited,
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
