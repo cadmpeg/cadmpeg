@@ -1799,11 +1799,24 @@ fn certified_nurbs_tubes(
         if span[0] == span[1] {
             continue;
         }
-        let subdivisions = subdivision_count(speed * (span[1] - span[0]), target_error)?;
-        let error = speed * (span[1] - span[0]) / subdivisions as f64;
+        let width = span[1] - span[0];
+        let travel_bound = if width.is_finite() {
+            speed * width
+        } else if speed <= 1.0 {
+            speed * span[1] - speed * span[0]
+        } else {
+            return None;
+        };
+        let subdivisions = subdivision_count(travel_bound, target_error)?;
+        let error = travel_bound / subdivisions as f64;
         for index in 0..subdivisions {
             let parameter = |ordinal: usize| {
-                span[0] + (span[1] - span[0]) * ordinal as f64 / subdivisions as f64
+                let fraction = ordinal as f64 / subdivisions as f64;
+                if width.is_finite() {
+                    span[0] + width * ordinal as f64 / subdivisions as f64
+                } else {
+                    span[0].mul_add(1.0 - fraction, span[1] * fraction)
+                }
             };
             tubes.push(CertifiedCurveTube {
                 start: *cadmpeg_ir::eval::nurbs_pcurve_uv(
