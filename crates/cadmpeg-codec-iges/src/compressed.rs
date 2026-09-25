@@ -179,13 +179,13 @@ fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec
         if card.len() != CARD_WIDTH {
             return Err(malformed("Start and Global records must be 80 columns"));
         }
-        length
-            .checked_add(CARD_DATA_WIDTH)
-            .ok_or_else(|| malformed("Global stream length overflows"))
+        length.checked_add(CARD_DATA_WIDTH).ok_or_else(|| {
+            CodecError::NotImplemented("IGES Compressed ASCII Global stream exceeds usize".into())
+        })
     })?;
-    let temporary_bytes = length
-        .checked_mul(2)
-        .ok_or_else(|| malformed("Global stream workspace overflows"))?;
+    let temporary_bytes = length.checked_mul(2).ok_or_else(|| {
+        CodecError::NotImplemented("IGES Compressed ASCII Global workspace exceeds usize".into())
+    })?;
     let _storage = ctx.reserve_scoped(
         u64_from_index(temporary_bytes),
         "iges_compressed_global_stream",
@@ -425,14 +425,18 @@ fn parse_directory_record(
                     "Directory field record has data after its record delimiter",
                 ));
             }
-            length = length
-                .checked_add(delimiter)
-                .ok_or_else(|| malformed("Directory field record length overflows"))?;
+            length = length.checked_add(delimiter).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Directory record exceeds usize".into(),
+                )
+            })?;
             break delimiter;
         }
-        length = length
-            .checked_add(line.len())
-            .ok_or_else(|| malformed("Directory field record length overflows"))?;
+        length = length.checked_add(line.len()).ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES Compressed ASCII Directory record exceeds usize".into(),
+            )
+        })?;
         line_index += 1;
         let continuation = lines
             .get(line_index)
@@ -765,7 +769,11 @@ fn parse_data_entity(
             .ok_or_else(|| malformed("Parameter Data lines end before the declared count"))?;
         let headers = line_count
             .checked_mul(std::mem::size_of::<Vec<u8>>())
-            .ok_or_else(|| malformed("Parameter Data line storage overflows"))?;
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Parameter Data line storage exceeds usize".into(),
+                )
+            })?;
         ctx.charge_retained(
             u64_from_index(headers),
             "iges_compressed_parameter_line_headers",
@@ -945,14 +953,18 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         data_cursor = next;
     }
 
-    let parameter_count = entities
-        .iter()
-        .map(|entity| entity.parameter_lines.len())
-        .sum::<usize>();
-    let directory_count = entities
-        .len()
-        .checked_mul(2)
-        .ok_or_else(|| malformed("Directory section count overflows"))?;
+    let parameter_count = entities.iter().try_fold(0_usize, |count, entity| {
+        count
+            .checked_add(entity.parameter_lines.len())
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "IGES Compressed ASCII Parameter Data section exceeds usize".into(),
+                )
+            })
+    })?;
+    let directory_count = entities.len().checked_mul(2).ok_or_else(|| {
+        CodecError::NotImplemented("IGES Compressed ASCII Directory section exceeds usize".into())
+    })?;
     let output_estimate = start_begin
         .checked_add(global_cards.len())
         .and_then(|count| count.checked_add(directory_count))
@@ -960,7 +972,11 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .and_then(|count| count.checked_add(1))
         .and_then(|count| count.checked_mul(CARD_WIDTH + 1))
         .and_then(|size| size.checked_add(source.len()))
-        .ok_or_else(|| malformed("normalized source size overflows"))?;
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES Compressed ASCII normalized output exceeds usize".into(),
+            )
+        })?;
     charge_normalization(ctx, output_estimate)?;
     ctx.charge_retained(
         u64_from_index(output_estimate),
@@ -989,7 +1005,11 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
     let parameter_starts_bytes = entities
         .len()
         .checked_mul(std::mem::size_of::<u32>())
-        .ok_or_else(|| malformed("Parameter Data start storage overflows"))?;
+        .ok_or_else(|| {
+            CodecError::NotImplemented(
+                "IGES Compressed ASCII Parameter Data start storage exceeds usize".into(),
+            )
+        })?;
     ctx.charge_retained(
         u64_from_index(parameter_starts_bytes),
         "iges_compressed_parameter_starts",
