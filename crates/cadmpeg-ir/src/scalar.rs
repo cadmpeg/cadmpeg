@@ -730,6 +730,39 @@ impl FiniteReal {
 }
 
 impl crate::topology::IncreasingParameterInterval {
+    /// The positive interval width in a scaled form. A finite subtraction is
+    /// nonzero because the endpoints are ordered. When it overflows, halving
+    /// both large operands is exact before their finite subtraction.
+    pub(crate) fn scaled_span(self) -> crate::math::sum::ScaledValue {
+        use crate::math::sum::ScaledValue;
+        let [lower, upper] = self.endpoints();
+        let span = upper - lower;
+        if span.is_finite() {
+            ScaledValue::of_nonzero(NonZeroReal(span))
+        } else {
+            ScaledValue::of_nonzero(NonZeroReal(upper * 0.5 - lower * 0.5)).doubled()
+        }
+    }
+
+    /// Map a finite parameter from `source` into this interval. The exact
+    /// product sum forms the affine numerator before division by the scaled
+    /// source width, so neither width needs to fit in binary64.
+    pub(crate) fn map_from(self, source: Self, parameter: FiniteReal) -> Result<FiniteReal, f64> {
+        use crate::math::sum::ExactSignedSum;
+        let [source_start, source_end] = source.endpoints();
+        let [target_start, target_end] = self.endpoints();
+        let parameter = parameter.get();
+        let mut numerator = ExactSignedSum::default();
+        numerator.add_product(parameter, target_end);
+        numerator.add_product(source_start, -target_end);
+        numerator.add_product(source_end, target_start);
+        numerator.add_product(parameter, -target_start);
+        match numerator.finish() {
+            Some(numerator) => numerator.quotient(source.scaled_span()),
+            None => Ok(FiniteReal::ZERO),
+        }
+    }
+
     /// Return the endpoints as finite reals. The interval admits only finite
     /// endpoints, so nothing is checked. The route lives beside
     /// [`FiniteReal`] because only this module constructs one.

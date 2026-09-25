@@ -1500,6 +1500,58 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
 }
 
 #[test]
+fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
+    let directrix_id =
+        CurveId::mint("test:model:entity#wide-angle-profile").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#wide-angle-revolution").expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(2.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.add_procedural_surface(
+        surface_id.clone(),
+        procedural_surface! {
+            id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
+            definition: ProceduralSurfaceDefinition::Revolution(
+                crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
+                    directrix_id,
+                    (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS),
+                    [0.0, std::f64::consts::PI],
+                    Some([-f64::MAX, f64::MAX]),
+                    None,
+                    false,
+                    crate::geometry::CacheContract::from_form(None),
+                ).unwrap()
+            ),
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        },
+    ).unwrap();
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &surface_id, 0.0, 0.0)
+        .expect("wide mapped revolution point")
+        .get();
+    assert!(point.x.abs() < 1.0e-12);
+    assert!((point.y - 2.0).abs() < 1.0e-12);
+    assert_eq!(point.z, 0.0);
+}
+
+#[test]
 fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     let directrix_id =
         CurveId::mint("test:model:entity#normalized-profile").expect("valid identity");

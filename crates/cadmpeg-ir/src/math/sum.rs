@@ -133,6 +133,15 @@ pub(crate) struct ScaledValue {
 }
 
 impl ScaledValue {
+    /// Twice a positive interval width whose half-width is finite. The
+    /// exponent is at most one above a finite binary64 exponent.
+    pub(crate) fn doubled(self) -> Self {
+        Self {
+            exponent: ScaledExponent(self.exponent.0 + 1),
+            ..self
+        }
+    }
+
     pub(crate) fn exponent(self) -> i32 {
         self.exponent.0
     }
