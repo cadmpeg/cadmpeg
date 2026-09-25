@@ -357,9 +357,9 @@ fn visit_blind_extrude_lengths(
     count
 }
 
-/// An edited extrusion depth survives the semantic write path.
+/// A blind-depth edit without a regenerated B-rep is refused.
 #[test]
-fn an_edited_depth_survives_the_semantic_write_path() {
+fn edited_blind_depth_without_regenerated_brep_is_refused() {
     let mut edited_count = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         let ran = mutation_roundtrip(
@@ -405,9 +405,11 @@ fn an_edited_depth_survives_the_semantic_write_path() {
                         "fixture `{name}`: the re-authored B-rep is not the same size as the one that was \
                          written; entities were lost or invented"
                     );
+                    panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
                 }
-                MutationOutcome::Refused { error } => panic!(
-                    "fixture `{name}`: the writer declined to move an extrusion depth: {error}"
+                MutationOutcome::Refused { error } => assert!(
+                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+                    "fixture `{name}`: {error}"
                 ),
             },
         );
