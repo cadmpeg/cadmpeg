@@ -4,6 +4,21 @@ mod constraint_state;
 
 use crate::records::sketch_relations::SketchRelation;
 
+#[test]
+fn native_rectangular_pattern_refuses_nonunit_direction() {
+    let value = serde_json::json!({
+        "evaluated_count": 2,
+        "count_parameter": 3,
+        "direction": [2.0, 0.0, 0.0],
+        "evaluated_distance": 1.0,
+        "distance_parameter": 4
+    });
+    assert!(
+        serde_json::from_value::<crate::records::sketch_relations::SketchPatternDirection>(value)
+            .is_err()
+    );
+}
+
 const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[1,2],"resolved_members":[],"member_offsets":[25,40],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[],"return_member_offsets":[60,75],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
 
 #[test]

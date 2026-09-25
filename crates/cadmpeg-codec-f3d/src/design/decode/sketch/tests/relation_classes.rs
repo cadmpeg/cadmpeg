@@ -282,7 +282,7 @@ fn circular_pattern_relation_reads_its_parameters_and_tables() {
         Some(SketchPatternDefinition::Circular {
             angle_parameter: 336,
             count_parameter: 333,
-            evaluated_angle: std::f64::consts::TAU,
+            evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::TAU).unwrap(),
             evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(3)
                 .unwrap(),
         })
@@ -364,16 +364,16 @@ fn rectangular_pattern_relation_reads_a_nonempty_reference_run_before_its_clause
                     evaluated_count:
                         crate::records::sketch_relations::SketchPatternCount::try_from(3).unwrap(),
                     count_parameter: 464,
-                    direction: [1.0, 0.0, 0.0],
-                    evaluated_distance: 3.0,
+                    direction: [1.0, 0.0, 0.0].try_into().unwrap(),
+                    evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
                     distance_parameter: 470,
                 },
                 SketchPatternDirection {
                     evaluated_count:
                         crate::records::sketch_relations::SketchPatternCount::try_from(1).unwrap(),
                     count_parameter: 467,
-                    direction: [0.0, 1.0, 0.0],
-                    evaluated_distance: 0.5,
+                    direction: [0.0, 1.0, 0.0].try_into().unwrap(),
+                    evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
                     distance_parameter: 473,
                 },
             ],
