@@ -285,7 +285,8 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert!(matches!(
         f3d_native(result.ir()).sketch_curve_identities[0].geometry,
-        Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc { radius: 30.0, .. })
+        Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc { radius, .. })
+            if radius.get() == 30.0
     ));
     assert!(matches!(
         &f3d_native(result.ir()).sketch_curve_identities[1].geometry,

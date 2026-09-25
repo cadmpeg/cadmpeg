@@ -276,24 +276,25 @@ pub(crate) fn project_sketch_design(
                 radius,
                 start_angle,
                 end_angle,
-            } if planar_point(center)
-                && reference_direction.z.abs() <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
-                && *radius > 0.0 =>
+            } if planar_point(center.as_raw())
+                && reference_direction.as_raw().z.abs()
+                    <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9 =>
             {
-                let Some(orientation) = sketch_normal_sign(normal) else {
+                let Some(orientation) = sketch_normal_sign(normal.as_raw()) else {
                     continue;
                 };
-                let phase = reference_direction.y.atan2(reference_direction.x);
-                let start_angle = phase + orientation * start_angle;
-                let end_angle = phase + orientation * end_angle;
-                let Some(radius) = Length::new(*radius) else {
-                    continue;
-                };
+                let phase = reference_direction
+                    .as_raw()
+                    .y
+                    .atan2(reference_direction.as_raw().x);
+                let start_angle = phase + orientation * start_angle.get();
+                let end_angle = phase + orientation * end_angle.get();
+                let radius = Length::from(*radius);
                 let definition = if (end_angle - start_angle).abs()
                     >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
                 {
                     SketchGeometryDefinition::Circle {
-                        center: Point2::new(center.x, center.y),
+                        center: Point2::new(center.get().x, center.get().y),
                         radius,
                     }
                 } else {
@@ -303,7 +304,7 @@ pub(crate) fn project_sketch_design(
                         continue;
                     };
                     SketchGeometryDefinition::Arc {
-                        center: Point2::new(center.x, center.y),
+                        center: Point2::new(center.get().x, center.get().y),
                         radius,
                         start_angle,
                         end_angle,
@@ -415,7 +416,7 @@ pub(crate) fn project_spatial_sketch_design(
     ),
     cadmpeg_core::CodecError,
 > {
-    use cadmpeg_ir::scalar::{Angle, Length};
+    use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
         SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
@@ -587,14 +588,13 @@ pub(crate) fn project_spatial_sketch_design(
                         radius,
                         start_angle,
                         end_angle,
-                    } if *radius > 0.0 => {
-                        let center = transform_point(placement, center);
-                        let normal = transform_vector(placement, normal);
-                        let reference_direction = transform_vector(placement, reference_direction);
-                        let Some(radius) = Length::new(*radius) else {
-                            continue;
-                        };
-                        let definition = if (end_angle - start_angle).abs()
+                    } => {
+                        let center = transform_point(placement, center.as_raw());
+                        let normal = transform_vector(placement, normal.as_raw());
+                        let reference_direction =
+                            transform_vector(placement, reference_direction.as_raw());
+                        let radius = Length::from(*radius);
+                        let definition = if (end_angle.get() - start_angle.get()).abs()
                             >= std::f64::consts::TAU
                                 - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
                         {
@@ -605,18 +605,13 @@ pub(crate) fn project_spatial_sketch_design(
                                 radius,
                             }
                         } else {
-                            let (Some(start_angle), Some(end_angle)) =
-                                (Angle::new(*start_angle), Angle::new(*end_angle))
-                            else {
-                                continue;
-                            };
                             SpatialSketchGeometryDefinition::Arc {
                                 center,
                                 normal,
                                 reference_direction,
                                 radius,
-                                start_angle,
-                                end_angle,
+                                start_angle: *start_angle,
+                                end_angle: *end_angle,
                             }
                         };
                         let Ok(geometry) = SpatialSketchGeometry::try_from(definition) else {
@@ -654,7 +649,6 @@ pub(crate) fn project_spatial_sketch_design(
                         };
                         geometry
                     }
-                    SketchCurveGeometry::Arc { .. } => continue,
                 }
             };
         let sketch = neutral_spatial_sketch_id(placement);

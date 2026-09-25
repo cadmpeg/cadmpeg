@@ -683,14 +683,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(702).unwrap(),
             secondary_id: 703,
-            geometry: Some(SketchCurveGeometry::Arc {
-                center: Point3::new(5.0, 6.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-                reference_direction: Vector3::new(1.0, 0.0, 0.0),
-                radius: 30.0,
-                start_angle: 0.25,
-                end_angle: 2.5,
-            }),
+            geometry: Some(
+                SketchCurveGeometry::arc(
+                    Point3::new(5.0, 6.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    30.0,
+                    0.25,
+                    2.5,
+                )
+                .unwrap(),
+            ),
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#2".into(),

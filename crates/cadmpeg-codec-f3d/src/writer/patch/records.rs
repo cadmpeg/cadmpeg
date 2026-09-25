@@ -646,23 +646,28 @@ pub(crate) fn patch_sketch_curves(
                 radius,
                 start_angle,
                 end_angle,
-            } => (
-                [
-                    center.x / LEN_TO_MM,
-                    center.y / LEN_TO_MM,
-                    center.z / LEN_TO_MM,
-                    normal.x,
-                    normal.y,
-                    normal.z,
-                    reference_direction.x,
-                    reference_direction.y,
-                    reference_direction.z,
-                    radius / LEN_TO_MM,
-                    *start_angle,
-                    *end_angle,
-                ],
-                12,
-            ),
+            } => {
+                let center = center.as_raw();
+                let normal = normal.as_raw();
+                let reference_direction = reference_direction.as_raw();
+                (
+                    [
+                        center.x / LEN_TO_MM,
+                        center.y / LEN_TO_MM,
+                        center.z / LEN_TO_MM,
+                        normal.x,
+                        normal.y,
+                        normal.z,
+                        reference_direction.x,
+                        reference_direction.y,
+                        reference_direction.z,
+                        radius.get() / LEN_TO_MM,
+                        start_angle.get(),
+                        end_angle.get(),
+                    ],
+                    12,
+                )
+            }
             SketchCurveGeometry::Nurbs {
                 fit_tolerance,
                 knots,

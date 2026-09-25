@@ -59,18 +59,25 @@ fn generated_f3d_rewrites_native_sketch_arc_geometry() {
         let curve = &mut native.sketch_curve_identities[0];
         let Some(crate::records::sketch_geometry::SketchCurveGeometry::Arc {
             center,
-            radius,
-            start_angle,
-            end_angle,
+            normal,
+            reference_direction,
             ..
-        }) = &mut curve.geometry
+        }) = &curve.geometry
         else {
             panic!("generated sketch curve must be an arc")
         };
-        center.x += 20.0;
-        *radius = 35.0;
-        *start_angle = 0.25;
-        *end_angle = 2.75;
+        let center = center.get();
+        curve.geometry = Some(
+            crate::records::sketch_geometry::SketchCurveGeometry::arc(
+                cadmpeg_ir::math::Point3::new(center.x + 20.0, center.y, center.z),
+                *normal.as_raw(),
+                *reference_direction.as_raw(),
+                35.0,
+                0.25,
+                2.75,
+            )
+            .expect("edited arc"),
+        );
         curve.geometry.clone()
     });
 

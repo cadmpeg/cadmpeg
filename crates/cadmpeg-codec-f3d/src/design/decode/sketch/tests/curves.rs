@@ -38,6 +38,27 @@ fn analytic_payload(values: [f64; 12]) -> Vec<u8> {
 }
 
 #[test]
+fn circular_arc_refuses_unrepresentable_scaled_center_at_source_record() {
+    let payload = analytic_payload([
+        f64::MAX,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+    ]);
+    let error = decode_circular_arc(&payload, 17).expect_err("scaled center must fit");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(error.to_string().contains("byte 17"));
+}
+
+#[test]
 fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc() {
     let payload = analytic_payload([
         0.0,
@@ -54,9 +75,12 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         std::f64::consts::FRAC_1_SQRT_2,
     ]);
     assert!(decode_line(&payload).is_some());
-    assert!(decode_circular_arc(&payload).is_some());
+    assert!(decode_circular_arc(&payload, 0)
+        .expect("arc parse")
+        .is_some());
 
-    let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
+    let line = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
+        .expect("line admission")
         .expect("typed line payload");
     assert_eq!(line.geometry_offset, 133);
     assert_eq!(
@@ -70,7 +94,8 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
         .unwrap()
     );
 
-    let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular)
+    let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular, 0)
+        .expect("arc admission")
         .expect("typed circular payload");
     assert!(matches!(circular.geometry, SketchCurveGeometry::Arc { .. }));
 }
@@ -88,7 +113,8 @@ fn typed_line_accepts_the_referenced_compact_planar_form() {
     payload.extend_from_slice(&37u32.to_le_bytes());
     payload.extend_from_slice(&[0; 6]);
 
-    let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line)
+    let parsed = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Line, 0)
+        .expect("line admission")
         .expect("typed referenced compact line");
     assert_eq!(parsed.geometry_offset, 144);
     assert!(matches!(parsed.geometry, SketchCurveGeometry::Line { .. }));
