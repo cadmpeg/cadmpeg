@@ -2349,7 +2349,7 @@ a validated body-shape SHELL is the authoritative current topology image.
 BODY through REGION records in its paired deltas stream do not replace or
 delete that topology image.
 
-`RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table starts at the first little-endian `count:u32` after the `UGS::Solid::Topol` registry marker whose following `count` ordered `object_id:u32` words end immediately before the self-framed product record `04|05 01 text_length:u8 "NX " product_text 00`. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
+`RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
 An object-id word whose decoded value occurs exactly once in this table has an order-independent value witness scoped by the table identity. Duplicate values retain their serialized members and ordinal identities but have no value witness. The value witness does not replace the ordinal identity used by table-indexed target fields.
 

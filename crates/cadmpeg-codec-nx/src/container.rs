@@ -563,8 +563,8 @@ impl<'a> Container<'a> {
         let bytes = self.data.get(offset..offset.checked_add(size)?)?;
         let registry_offset = find(bytes, REGISTRY_MARKER)?;
         let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
-        // A suffix of the table can form a smaller span ending at the same
-        // product record. The first complete span is the table boundary.
+        // Search candidates in byte order and use the first span whose suffix
+        // parses as a modern product record.
         let (count_offset, count, ids_start) = (search_start..bytes.len().saturating_sub(3))
             .find_map(|count_offset| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
@@ -980,6 +980,11 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container
         .get(splmsstr::VERSION_TAG)
         .copied()
         .ok_or_else(|| CodecError::Malformed("SPLMSSTR header has no version byte".to_string()))?;
+    if version != 0x06 {
+        return Err(CodecError::malformed(format_args!(
+            "SPLMSSTR version byte must be 0x06, found 0x{version:02x}"
+        )));
+    }
     let file_tag = u24_le(&data, splmsstr::FILE_TAG);
     let footer_offset = u48_le(&data, splmsstr::FOOTER_OFFSET);
     let fo = usize::try_from(footer_offset)

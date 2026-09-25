@@ -988,9 +988,9 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the table as a little-endian count word followed by exactly that many ordered identity words, and states that FACE, EDGE, and VERTEX identities share the space. It does not give the position of the table.
 
-**Need.** We must know the position field. The decoder walks forward from the class marker and takes the first offset whose count word and following identity words fall inside fixed numeric ranges. The count must reach fifty, so a part with fewer active identities never matches its own table, and the active-body selection silently does not run. A count above the upper range is rejected the same way. This location rule supplies the input to the membership decision in OM-33.
+**Need.** Identify the table position field and the rule that distinguishes the membership table from an earlier plausible candidate span. The current decoder accepts any unsigned 32-bit count whose complete sequence of four-byte identities ends at a parsed modern product record. It has no fixed numeric count range. This location rule supplies the input to the membership decision in OM-33.
 
-**Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule is not yet verified by a corpus field or invalidation witness, so this item is reopened.
+**Note.** `crates/cadmpeg-codec-nx/src/container.rs` takes the first complete count-and-identity span after the `UGS::Solid::Topol` marker whose suffix parses as a modern product record. An earlier plausible span can win before the membership table. The first-candidate rule has no independent location witness.
 
 
 ## 3. Assembly and material data
