@@ -38,10 +38,10 @@ use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
-struct DecodedBrep<'a> {
+struct DecodedBrep {
     /// Representative stream whose header is common to every merged site.
     /// This can be present for an unresolved merge without selecting a site.
-    metadata_header: Option<&'a StreamHeader>,
+    metadata_header: Option<StreamHeader>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
 }
@@ -79,13 +79,12 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let scan = container::scan(ctx, root)?;
+    let mut scan = container::scan(ctx, root)?;
     let classification = crate::dialect::classify_layers(&scan);
     let form_padding = classification.host().form_code_padding();
-    // Charge container cardinality before BREP/IR construction so max_entities
-    // can refuse the expensive path rather than only the finalizer.
-    let container_entities =
-        (scan.blocks.len() + scan.compound_streams.len() + scan.directory.len()) as u64;
+    // Marker identities are admitted during scanning. Compound stream identities
+    // are admitted here before B-rep and IR construction.
+    let container_entities = scan.compound_streams.len() as u64;
     ctx.charge_entities(container_entities, "admit SLDPRT container entities")?;
     let mut admitted_entities = 0_u64;
 
@@ -105,13 +104,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         ctx.charge_entities(streams.len() as u64, "admit SLDPRT body streams")?;
-        if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams, &classification)? {
-            let source_header = decoded.metadata_header;
+        if let Some((decoded, mut report)) = try_decode_brep(ctx, &scan, &streams, &classification)?
+        {
             let (ir, annotations, unknowns, mut pmi_losses) = build_geometry_ir(
                 ctx,
-                &scan,
+                &mut scan,
                 &classification,
-                source_header,
                 decoded,
                 form_padding,
                 &mut admitted_entities,
@@ -1964,11 +1962,12 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
 /// empty partition/deltas model, so the caller falls back to metadata. A
 /// framed stream that fails semantic decoding returns its error to the caller;
 /// it must not be mistaken for a metadata-only document.
-fn try_decode_brep<'a>(
+fn try_decode_brep(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    streams: &[ActiveParasolidSite<'a>],
+    streams: &[ActiveParasolidSite<'_>],
     classification: &crate::dialect::LayerClassification,
-) -> Result<Option<(DecodedBrep<'a>, DecodeBody)>, CodecError> {
+) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
         sites.entry(stream.site_key()).or_default().push(index);
@@ -1980,7 +1979,7 @@ fn try_decode_brep<'a>(
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect();
-        let decoded = decode_bodies(&bodies, streams[first].source_stream())?;
+        let decoded = decode_bodies(Some(ctx), &bodies, streams[first].source_stream())?;
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
@@ -2054,7 +2053,8 @@ fn try_decode_brep<'a>(
                         && header.description == first_header.description
                 })
                 .then_some(first_header)
-        });
+        })
+        .cloned();
     let (selected_site_key, selected, mut decoded) = decoded_sites.swap_remove(selected_site);
     if active_stream.is_none() {
         decoded.qualify_ids(&selected_site_key)?;
@@ -2197,10 +2197,9 @@ fn ensure_display_appearance(
 
 fn build_geometry_ir(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
+    scan: &mut ContainerScan<'_>,
     classification: &crate::dialect::LayerClassification,
-    header: Option<&StreamHeader>,
-    decoded: DecodedBrep<'_>,
+    decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
 ) -> Result<
@@ -2213,12 +2212,27 @@ fn build_geometry_ir(
     CodecError,
 > {
     let DecodedBrep {
-        metadata_header: _,
+        metadata_header,
         mut brep,
         configuration_bodies,
     } = decoded;
     let appearance_definitions = crate::appearance::definitions(scan);
-    let mut ir = CadIr::decoded(source_meta(scan, classification, header)?);
+    let mut display_sections = Vec::new();
+    let mut display_summary = crate::tessellation::Summary::default();
+    for section in scan.sections() {
+        ctx.charge_collection_items(1, "collect SLDPRT display sections")?;
+        let faces = crate::tessellation::section_display_faces(section)?;
+        let summary = crate::tessellation::summary_for_faces(&faces);
+        display_summary.vertices += summary.vertices;
+        display_summary.triangles += summary.triangles;
+        display_sections.push((section, faces));
+    }
+    let mut ir = CadIr::decoded(source_meta(
+        scan,
+        classification,
+        metadata_header.as_ref(),
+        display_summary,
+    )?);
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(scan, &mut annotations, &mut pmi_losses);
@@ -2233,10 +2247,13 @@ fn build_geometry_ir(
     );
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut annotations, &mut pmi_losses);
     project_design_history(
+        ctx,
         &mut ir,
-        &histories,
-        &lanes,
-        &pmi_dimensions,
+        DesignHistoryInput {
+            histories: &histories,
+            lanes: &lanes,
+            pmi_dimensions: &pmi_dimensions,
+        },
         scan,
         form_padding,
         &mut pmi_losses,
@@ -2275,7 +2292,7 @@ fn build_geometry_ir(
         mut sketches,
         entities: mut sketch_entities,
         constraints: mut sketch_constraints,
-    } = crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
+    } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         &mut sketches,
@@ -2431,6 +2448,7 @@ fn build_geometry_ir(
     ir.model.sketch_constraints = sketch_constraints;
     stamp_sketch_baseline(&mut ir, &native)?;
 
+    let brep_entities = brep.neutral_entity_count()?;
     ir.model.bodies = brep.bodies;
     ir.model.regions = brep.regions;
     ir.model.shells = brep.shells;
@@ -2444,6 +2462,7 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
+    *admitted_entities = brep_entities;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
     let edge_use_sequences = std::mem::take(&mut brep.edge_use_sequences);
     let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
@@ -2774,8 +2793,7 @@ fn build_geometry_ir(
     let mut matched_feature_sources = BTreeSet::new();
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
-    for display in scan.sections() {
-        let display_faces = crate::tessellation::section_display_faces(display)?;
+    for (display, display_faces) in display_sections {
         if display_faces.is_empty() {
             continue;
         }
@@ -2872,7 +2890,7 @@ fn build_geometry_ir(
         unknowns.push(UnknownRecord::retained(
             display_id,
             0,
-            display.payload().to_vec(),
+            ctx.copy_retained(display.payload(), "retain SLDPRT display section")?,
             display_links,
         ));
     }
@@ -2920,7 +2938,7 @@ fn build_geometry_ir(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut annotations = annotation_builder.build();
-    for source_block in &scan.blocks {
+    for source_block in &mut scan.blocks {
         let id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
             source_block.offset,
@@ -2939,11 +2957,11 @@ fn build_geometry_ir(
         unknowns.push(UnknownRecord::retained(
             id,
             0,
-            source_block.payload.clone(),
+            std::mem::take(&mut source_block.payload),
             Vec::new(),
         ));
     }
-    for source_stream in &scan.compound_streams {
+    for source_stream in &mut scan.compound_streams {
         let id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "file", "compound-stream"),
             source_stream.directory_id,
@@ -2959,7 +2977,7 @@ fn build_geometry_ir(
         unknowns.push(UnknownRecord::retained(
             id,
             0,
-            source_stream.payload.clone(),
+            std::mem::take(&mut source_stream.payload),
             Vec::new(),
         ));
     }
@@ -2997,7 +3015,7 @@ fn build_geometry_ir(
         };
         source.links_mut().extend(links);
     }
-    preserve_source_image(scan, &mut annotations, &mut unknowns);
+    preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
@@ -3025,13 +3043,13 @@ fn source_meta(
     scan: &ContainerScan,
     classification: &crate::dialect::LayerClassification,
     header: Option<&StreamHeader>,
+    display: crate::tessellation::Summary,
 ) -> Result<SourceMeta, CodecError> {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         cadmpeg_core::nonblank_literal!("outer_version"),
         format!("0x{:08x}", scan.version),
     );
-    let display = crate::tessellation::summary(scan)?;
     if display.vertices > 0 {
         attributes.insert(
             cadmpeg_core::nonblank_literal!("displaylist_vertices"),
@@ -3318,7 +3336,7 @@ fn build_metadata_ir(
         sketches,
         entities: sketch_entities,
         constraints: sketch_constraints,
-    } = crate::resolved_features::sketch_projection::sketches(scan, &mut annotations)?;
+    } = crate::resolved_features::sketch_projection::sketches(ctx, scan, &mut annotations)?;
     let mut model_attributes = crate::metadata::attributes(scan, &mut annotations);
     model_attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
@@ -3364,7 +3382,7 @@ fn build_metadata_ir(
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            site.payload.to_vec(),
+            ctx.copy_retained(site.payload, "retain SLDPRT active site")?,
             Vec::new(),
         ));
     }
@@ -3374,10 +3392,13 @@ fn build_metadata_ir(
         attributes,
     ));
     project_design_history(
+        ctx,
         &mut ir,
-        &histories,
-        &lanes,
-        &pmi_dimensions,
+        DesignHistoryInput {
+            histories: &histories,
+            lanes: &lanes,
+            pmi_dimensions: &pmi_dimensions,
+        },
         scan,
         form_padding,
         &mut pmi_losses,
@@ -3665,7 +3686,7 @@ fn build_metadata_ir(
     mark_active_configuration(&mut ir);
     stamp_configuration_baseline(&mut ir)?;
     snapshot_active_configuration(&mut ir);
-    preserve_source_image(scan, &mut annotations, &mut unknowns);
+    preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
@@ -3673,15 +3694,26 @@ fn build_metadata_ir(
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
+#[derive(Clone, Copy)]
+struct DesignHistoryInput<'a> {
+    histories: &'a [crate::records::FeatureHistory],
+    lanes: &'a [crate::records::FeatureInputLane],
+    pmi_dimensions: &'a [crate::records::PmiDimension],
+}
+
 fn project_design_history(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[crate::records::FeatureInputLane],
-    pmi_dimensions: &[crate::records::PmiDimension],
+    input: DesignHistoryInput<'_>,
     scan: &ContainerScan,
     form_padding: Option<usize>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let DesignHistoryInput {
+        histories,
+        lanes,
+        pmi_dimensions,
+    } = input;
     let mut semantic_projection = histories.to_vec();
     crate::history::enrich_scene_classes(
         &mut semantic_projection,
@@ -3703,6 +3735,7 @@ fn project_design_history(
         lanes,
     )?;
     crate::history::configuration::project_compact_and_generated(
+        Some(ctx),
         &mut ir.model.features,
         &semantic_projection,
         lanes,
@@ -3725,6 +3758,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::parameters::project_parameters(&parameter_projection);
     crate::history::configuration::project_configuration_design_states(
+        Some(ctx),
         ir,
         histories,
         lanes,
@@ -4609,10 +4643,11 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 }
 
 fn preserve_source_image(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     unknowns: &mut Vec<UnknownRecord>,
-) {
+) -> Result<(), CodecError> {
     crate::annotations::note(
         annotations,
         "sldprt:file:source-image#0",
@@ -4627,9 +4662,10 @@ fn preserve_source_image(
             cadmpeg_ir::identity_key!("0"),
         ),
         0,
-        scan.source_image.to_vec(),
+        ctx.copy_retained(scan.source_image, "retain SLDPRT source image")?,
         Vec::new(),
     ));
+    Ok(())
 }
 
 /// Builds the metadata-only report from the same classification the report

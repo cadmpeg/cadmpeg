@@ -537,6 +537,7 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         });
         let native = sldprt_native(&ir_edit);
         crate::resolved_features::holes::project_helix_axes(
+            None,
             &mut ir_edit.model.features,
             &native.feature_histories,
             &native.feature_input_lanes,
