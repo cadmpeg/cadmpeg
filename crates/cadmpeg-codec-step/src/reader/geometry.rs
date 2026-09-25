@@ -204,7 +204,7 @@ fn edge_parameter_range(
             (upper - start) + (end - lower)
         };
         return (sweep > 0.0)
-            .then(|| start + sweep)
+            .then_some(start + sweep)
             .filter(|end| end.is_finite())
             .map(|end| [start, end]);
     }

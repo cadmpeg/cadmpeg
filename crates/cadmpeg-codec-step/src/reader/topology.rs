@@ -4050,7 +4050,8 @@ fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f
     if period.is_finite() {
         Some(period * fraction)
     } else {
-        cadmpeg_ir::math::interpolate(lower, upper, fraction).map(|value| value.get())
+        cadmpeg_ir::math::interpolate(lower, upper, fraction)
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
     }
 }
 
