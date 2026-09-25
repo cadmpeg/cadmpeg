@@ -139,8 +139,11 @@ fn forward_arc_sweep(start: f64, end: f64) -> f64 {
             <= EPS_PARAMETER_SCALE * raw_span.abs().max(std::f64::consts::TAU)
     {
         std::f64::consts::TAU
-    } else {
+    } else if raw_span.is_finite() {
         raw_span.rem_euclid(std::f64::consts::TAU)
+    } else {
+        (end.rem_euclid(std::f64::consts::TAU) - start.rem_euclid(std::f64::consts::TAU))
+            .rem_euclid(std::f64::consts::TAU)
     }
 }
 
