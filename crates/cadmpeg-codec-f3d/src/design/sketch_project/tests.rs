@@ -179,10 +179,10 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         text: "A".into(),
         font_family: "Arial".into(),
         font_weight: 400,
-        height: 10.0,
+        height: cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap(),
         color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color"),
         layout: crate::records::sketch_geometry::SketchTextLayout::TextexTag {
-            width_factor: 1.0,
+            width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(1.0).unwrap(),
             alignment: Some(crate::records::sketch_geometry::SketchTextAlignment {
                 horizontal: 1,
                 vertical: 1,

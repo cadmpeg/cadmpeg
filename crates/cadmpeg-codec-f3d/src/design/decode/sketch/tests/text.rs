@@ -6,6 +6,37 @@ use cadmpeg_ir::math::Point2;
 const EPS_TEXT_ROTATION: f64 = 1.0e-12;
 
 #[test]
+fn native_sketch_text_refuses_zero_height() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    let mut zero_height = serde_json::to_value(&text).expect("serialize sketch text");
+    zero_height["height"] = serde_json::json!(0.0);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchText>(zero_height).is_err()
+    );
+}
+
+#[test]
+fn native_sketch_text_refuses_negative_width_factor() {
+    let text = decode_sketch_text(&sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        None,
+    ))
+    .expect("sketch text record");
+    let mut negative_width = serde_json::to_value(&text).expect("serialize sketch text");
+    negative_width["width_factor"] = serde_json::json!(-1.0);
+    assert!(
+        serde_json::from_value::<crate::records::sketch_geometry::SketchText>(negative_width)
+            .is_err()
+    );
+}
+
+#[test]
 fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
     for text_type in [0, 1] {
         let bytes = indexed_sketch_text_record(text_type);
@@ -17,8 +48,8 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
         assert_eq!(text.text, "B6 Probe 47");
         assert_eq!(text.font_family, "Arial");
         assert_eq!(text.font_weight, 400);
-        assert_eq!(text.height, 6.0);
-        assert_eq!(text.width_factor(), Some(1.0));
+        assert_eq!(text.height.get(), 6.0);
+        assert_eq!(text.width_factor().map(|factor| factor.get()), Some(1.0));
         assert_eq!(
             text.alignment().map(|alignment| alignment.horizontal),
             Some(3)
@@ -372,8 +403,8 @@ fn sketch_text_record_decodes_typed_content_and_metrics() {
     assert_eq!(text.font_weight, 400);
     // The height is the field after the font family, in centimetres; the width
     // factor is the field before it.
-    assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor(), Some(0.8));
+    assert_eq!(text.height.get(), 10.0);
+    assert_eq!(text.width_factor().map(|factor| factor.get()), Some(0.8));
     assert_eq!(
         text.alignment().map(|alignment| alignment.horizontal),
         Some(3)
@@ -456,8 +487,8 @@ fn sketch_text_record_decodes_without_the_optional_property_keys() {
         }),
         None
     );
-    assert_eq!(text.height, 10.0);
-    assert_eq!(text.width_factor(), Some(0.8));
+    assert_eq!(text.height.get(), 10.0);
+    assert_eq!(text.width_factor().map(|factor| factor.get()), Some(0.8));
 }
 
 #[test]
@@ -567,7 +598,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
         text.placement().map(|placement| placement.rotation.get()),
         Some(0.0)
     );
-    assert_eq!(text.height, 5.0);
+    assert_eq!(text.height.get(), 5.0);
     // The form stores no width factor, and the anchor is the field pair the
     // other form omits.
     assert_eq!(text.width_factor(), None);

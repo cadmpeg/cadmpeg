@@ -4,7 +4,7 @@
 use super::references::DesignClassTag;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::{Angle, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -61,7 +61,7 @@ pub(crate) struct SketchText {
     /// Numeric font weight stored by the sketch-text class.
     pub(crate) font_weight: i32,
     /// Nominal text height in millimetres.
-    pub(crate) height: f64,
+    pub(crate) height: PositiveLength,
     /// Display colour of the glyphs. Both identity forms store it, so it is
     /// never absent. `SketchGeometry` carries no display attribute on any
     /// variant, so the colour stays on the native record.
@@ -88,7 +88,7 @@ pub(crate) enum SketchTextLayout {
         placement: TextPlacement,
     },
     TextexTag {
-        width_factor: f64,
+        width_factor: NonNegativeReal,
         alignment: Option<SketchTextAlignment>,
         first_reference: Option<u32>,
         second_reference: Option<u32>,
@@ -97,7 +97,7 @@ pub(crate) enum SketchTextLayout {
 }
 
 impl SketchText {
-    pub(crate) fn width_factor(&self) -> Option<f64> {
+    pub(crate) fn width_factor(&self) -> Option<NonNegativeReal> {
         match self.layout {
             SketchTextLayout::TxtTag { .. } => None,
             SketchTextLayout::TextexTag { width_factor, .. } => Some(width_factor),
@@ -230,7 +230,8 @@ impl TryFrom<SketchTextSerde> for SketchText {
             (None, None, None, None, Some(placement)) => SketchTextLayout::TxtTag { placement },
             (Some(width_factor), alignment, first_reference, second_reference, placement) => {
                 SketchTextLayout::TextexTag {
-                    width_factor,
+                    width_factor: NonNegativeReal::new(width_factor)
+                        .ok_or("sketch text width_factor must be finite and nonnegative")?,
                     alignment,
                     first_reference,
                     second_reference,
@@ -257,7 +258,8 @@ impl TryFrom<SketchTextSerde> for SketchText {
             text: wire.text,
             font_family: wire.font_family,
             font_weight: wire.font_weight,
-            height: wire.height,
+            height: PositiveLength::new(wire.height)
+                .ok_or("sketch text height must be positive and finite")?,
             color: wire.color,
             layout,
             raw_bytes: wire.raw_bytes,
@@ -277,7 +279,7 @@ impl From<SketchText> for SketchTextSerde {
                     second_reference,
                     placement,
                 } => (
-                    Some(width_factor),
+                    Some(width_factor.get()),
                     alignment,
                     first_reference,
                     second_reference,
@@ -297,7 +299,7 @@ impl From<SketchText> for SketchTextSerde {
             text: text.text,
             font_family: text.font_family,
             font_weight: text.font_weight,
-            height: text.height,
+            height: text.height.get(),
             width_factor,
             color: text.color,
             anchor: placement.map(|value| value.anchor),

@@ -33,7 +33,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, FiniteReal};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -1637,10 +1637,10 @@ const TXT_TAG_FONT_WEIGHT_AT: usize = 3;
 enum SketchTextIdentity {
     /// `textex_tag`: a `1` byte, the width factor, a zero byte between the font
     /// family and the height, and the anchor inside a placement transform.
-    TextexTag { width_factor: f64 },
+    TextexTag { width_factor: NonNegativeReal },
     /// `txt_tag`: a `0` byte, no width factor, the height directly after the
     /// font family, and the anchor stored on its own.
-    TxtTag { rotation: f64 },
+    TxtTag { rotation: Angle },
 }
 
 /// Read one parameter-reference slot in the given form, advancing `cursor` by
@@ -1725,7 +1725,7 @@ struct SketchTextHead {
     persistent_id: Option<u64>,
     base_id: Option<u64>,
     font_family: String,
-    height: f64,
+    height: PositiveLength,
     color: Color,
     cursor: usize,
 }
@@ -1797,8 +1797,7 @@ fn decode_sketch_text_head(
         (None, None) => return None,
     };
     let (identity, color, persistent_id) = if is_txt_tag {
-        let rotation = View::f64_le_at(payload, cursor)?;
-        rotation.is_finite().then_some(())?;
+        let rotation = Angle::new(View::f64_le_at(payload, cursor)?)?;
         cursor = cursor.checked_add(8)?;
         (payload.get(cursor)? == &0).then_some(())?;
         cursor = cursor.checked_add(TXT_TAG_POST_ROTATION_RUN)?;
@@ -1811,10 +1810,9 @@ fn decode_sketch_text_head(
     } else {
         (payload.get(cursor)? == &1).then_some(())?;
         cursor += 1;
-        let width_factor = View::f64_le_at(payload, cursor)?;
+        let width_factor = NonNegativeReal::new(View::f64_le_at(payload, cursor)?)?;
         cursor = cursor.checked_add(8)?;
         let color = read_sketch_text_color(payload, &mut cursor)?;
-        (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
         (
             SketchTextIdentity::TextexTag { width_factor },
             color,
@@ -1831,9 +1829,8 @@ fn decode_sketch_text_head(
         (payload.get(cursor)? == &0).then_some(())?;
         cursor += 1;
     }
-    let height = View::f64_le_at(payload, cursor)? * 10.0;
+    let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
     cursor = cursor.checked_add(8)?;
-    (height.is_finite() && height > 0.0).then_some(())?;
     Some((
         SketchTextHead {
             entity_genesis: property("EntityGenesis"),
@@ -1853,7 +1850,7 @@ fn decode_sketch_text_head(
 /// nine-byte zero entity lane and the ordinary property block. Its one-byte
 /// width prefix is zero, unlike the legacy class form's one-byte prefix of
 /// one; the f64 width factor and the remaining metrics have the same roles.
-fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, f64)> {
+fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, NonNegativeReal)> {
     let (_, after_tag) = lp_ascii_filtered(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
         || View::u32_le_at(payload, after_tag).is_none()
@@ -1872,9 +1869,8 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, f6
     let persistent_id = property("textex_tag")?;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let width_factor = View::f64_le_at(payload, cursor)?;
+    let width_factor = NonNegativeReal::new(View::f64_le_at(payload, cursor)?)?;
     cursor = cursor.checked_add(8)?;
-    (width_factor.is_finite() && width_factor >= 0.0).then_some(())?;
     let color = read_sketch_text_color(payload, &mut cursor)?;
     let font_count = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if font_count == 0 || font_count > 1_024 {
@@ -1884,9 +1880,8 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, f6
     cursor = after_font;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
-    let height = View::f64_le_at(payload, cursor)? * 10.0;
+    let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
     cursor = cursor.checked_add(8)?;
-    (height.is_finite() && height > 0.0).then_some(())?;
     Some((
         SketchTextHead {
             entity_genesis: property("EntityGenesis"),
@@ -1909,7 +1904,7 @@ fn decode_sketch_text_tail(
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
-    width_factor: f64,
+    width_factor: NonNegativeReal,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
@@ -1971,7 +1966,7 @@ fn decode_txt_tag_sketch_text_tail(
     payload: &[u8],
     mut cursor: usize,
     class_version: u32,
-    rotation: f64,
+    rotation: Angle,
 ) -> Option<SketchTextTail> {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
@@ -2006,10 +2001,7 @@ fn decode_txt_tag_sketch_text_tail(
     (cursor == payload.len()).then_some(())?;
     Some(SketchTextTail {
         layout: SketchTextLayout::TxtTag {
-            placement: TextPlacement {
-                anchor,
-                rotation: Angle::new(rotation)?,
-            },
+            placement: TextPlacement { anchor, rotation },
         },
         text,
         font_weight,
@@ -2029,7 +2021,7 @@ fn decode_indexed_sketch_text_tail(
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
-    width_factor: f64,
+    width_factor: NonNegativeReal,
 ) -> Option<SketchTextTail> {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     let horizontal_alignment = View::u32_le_at(payload, cursor)?;
@@ -2092,7 +2084,7 @@ fn decode_indexed_sketch_text_tail(
 fn decode_indexed_sketch_text_record_tail(
     payload: &[u8],
     cursor: usize,
-    width_factor: f64,
+    width_factor: NonNegativeReal,
 ) -> Option<SketchTextTail> {
     let mut closed = None;
     for first_slot in TEXT_REFERENCE_SLOTS {
