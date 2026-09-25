@@ -959,7 +959,7 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
-                    value: crate::test_support::real(-2.0),
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(-2.0).unwrap(),
                     record_index: 75,
                     value_offset: (bytes.len() - 2 * 115 + 40) as u64,
                 },
@@ -992,7 +992,7 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
                 DesignFixedExtrudeScalar {
-                    value: crate::test_support::real(-2.0),
+                    value: cadmpeg_ir::scalar::NonZeroReal::new(-2.0).unwrap(),
                     record_index: 75,
                     value_offset: (bytes.len() - 2 * 115 + 40) as u64,
                 },
@@ -1360,7 +1360,7 @@ pub(super) fn fixed_kind_tail_operations(
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
                 DesignFixedExtrudeScalar {
-                    value: crate::test_support::real(0.25),
+                    value: cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap(),
                     record_index: embedded_distance_record_index,
                     value_offset: (embedded_distance_at + 51) as u64,
                 },

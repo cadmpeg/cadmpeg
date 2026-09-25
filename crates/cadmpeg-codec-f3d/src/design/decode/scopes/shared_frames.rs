@@ -39,10 +39,10 @@ pub(in crate::design::decode) fn rigid_transform_at(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct FixedScalarFrame {
+pub(super) struct FixedScalarFrame<T = FiniteReal> {
     pub(super) owner_record_index: Option<u32>,
     pub(super) ordinal: u8,
-    pub(super) value: FiniteReal,
+    pub(super) value: T,
     pub(super) value_offset: u64,
 }
 

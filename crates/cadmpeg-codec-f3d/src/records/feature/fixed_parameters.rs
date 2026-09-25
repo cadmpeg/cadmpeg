@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fixed extrude, fillet and chamfer parameter payloads.
 
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(
@@ -21,9 +21,9 @@ cadmpeg_core::named_optional_field!(
 );
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignFixedExtrudeScalar {
+pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
     /// Scalar value in source centimetres for a distance or radians for an angle.
-    pub(crate) value: FiniteReal,
+    pub(crate) value: T,
     /// Referenced record carrying the scalar.
     pub(crate) record_index: u32,
     /// Byte offset of the scalar.
@@ -35,9 +35,38 @@ pub(crate) struct DesignFixedExtrudeScalar {
 #[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
 pub(crate) enum DesignFixedExtrudeDistance {
     /// Signed distance in an owner-local scalar lane.
-    FixedScalar(DesignFixedExtrudeScalar),
+    FixedScalar(DesignFixedExtrudeScalar<NonZeroReal>),
     /// Positive magnitude in an owned distance-construction frame.
-    DistanceConstruction(DesignFixedExtrudeScalar),
+    DistanceConstruction(DesignFixedExtrudeScalar<PositiveReal>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DesignFixedExtrudeDistance;
+
+    #[test]
+    fn fixed_extrude_distance_construction_json_refuses_nonpositive_value() {
+        let mut wire = serde_json::json!({
+            "carrier": "distance_construction",
+            "scalar": { "value": 1.0, "record_index": 1, "value_offset": 2 }
+        });
+        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        wire["scalar"]["value"] = serde_json::json!(0.0);
+        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_err());
+        wire["scalar"]["value"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
+    }
+
+    #[test]
+    fn fixed_extrude_scalar_json_refuses_zero_distance() {
+        let mut wire = serde_json::json!({
+            "carrier": "fixed_scalar",
+            "scalar": { "value": -1.0, "record_index": 1, "value_offset": 2 }
+        });
+        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
+        wire["scalar"]["value"] = serde_json::json!(0.0);
+        assert!(serde_json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
+    }
 }
 
 /// Exact fixed scalar lanes carried by an Extrude scope.
