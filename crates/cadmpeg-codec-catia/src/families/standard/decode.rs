@@ -281,7 +281,7 @@ fn bind_consolidated_revolution_faces_and_seams(
             else {
                 continue;
             };
-            let parameter = start + (end - start) * 0.5;
+            let parameter = start.midpoint(end);
             if let Ok(point) = cadmpeg_ir::eval::curve_point(curve, parameter) {
                 witnesses.push(point.get());
             }
@@ -438,6 +438,138 @@ mod consolidated_revolution_binding_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
+
+    #[test]
+    fn torus_binding_uses_a_finite_midpoint_across_a_wide_curve_range() {
+        use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+
+        let mut ir = CadIr::empty();
+        let surface_id =
+            SurfaceId::mint("catia:test:surface#wide-torus").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let torus = |minor_radius| {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    if minor_radius == 2.0 { 5.0 } else { 6.0 },
+                    minor_radius,
+                )
+                .expect("finite torus"),
+            ))
+        };
+        let expected = torus(2.0);
+        let curve_id =
+            CurveId::mint("catia:test:curve#wide-torus-witness").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    2,
+                    vec![
+                        -f64::MAX,
+                        -f64::MAX,
+                        -f64::MAX,
+                        f64::MAX,
+                        f64::MAX,
+                        f64::MAX,
+                    ],
+                    vec![
+                        Point3::new(7.0, 0.0, 0.0),
+                        Point3::new(3.0, 0.0, 4.0),
+                        Point3::new(7.0, 0.0, 0.0),
+                    ],
+                    None,
+                    false,
+                )
+                .expect("finite wide curve"),
+            )),
+            source_object: None,
+        });
+        let vertices = [0, 1].map(|ordinal| {
+            let point_id = PointId::mint(format!("catia:test:point#wide-torus-{ordinal}"))
+                .expect("identity grammar");
+            let vertex_id = VertexId::mint(format!("catia:test:vertex#wide-torus-{ordinal}"))
+                .expect("identity grammar");
+            ir.model.points.push(Point::new(
+                point_id.clone(),
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 0.0, 0.0))
+                    .expect("finite endpoint"),
+                None,
+            ));
+            ir.model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            vertex_id
+        });
+        let edge_id = EdgeId::mint("catia:test:edge#wide-torus-witness").expect("identity grammar");
+        ir.model.edges.push(Edge {
+            id: edge_id.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id),
+                Some([-f64::MAX, f64::MAX]),
+            )
+            .expect("finite edge range"),
+            start: vertices[0].clone(),
+            end: vertices[1].clone(),
+            tolerance: None,
+        });
+        let face_id = FaceId::mint("catia:test:face#wide-torus").expect("identity grammar");
+        let loop_id = LoopId::mint("catia:test:loop#wide-torus").expect("identity grammar");
+        let coedge_id = CoedgeId::mint("catia:test:coedge#wide-torus").expect("identity grammar");
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: ShellId::mint("catia:test:shell#wide-torus").expect("identity grammar"),
+            surface: surface_id,
+            sense: Sense::Forward,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_id.clone()]),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir.model.loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id,
+            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
+                cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
+                    .expect("one-edge loop"),
+            ),
+        });
+        ir.model.coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id,
+            edge: edge_id,
+            radial_next: coedge_id,
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+
+        let result = bind_consolidated_revolution_faces_and_seams(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[
+                ConsolidatedRevolutionBinding {
+                    geometry: expected.clone(),
+                    profile_sweep: 0.5,
+                },
+                ConsolidatedRevolutionBinding {
+                    geometry: torus(1.0),
+                    profile_sweep: 0.5,
+                },
+            ],
+        )
+        .expect("finite torus witnesses");
+        assert_eq!(result, (1, 0));
+        assert_eq!(ir.model.surfaces[0].geometry, expected);
+    }
 
     #[test]
     fn one_revolution_torus_closes_face_aliases_and_meridian_seam() {

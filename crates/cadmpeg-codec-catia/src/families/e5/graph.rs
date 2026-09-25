@@ -1099,11 +1099,7 @@ fn plane_digon_orientation_hint(
             .ok()?;
         let bound_span = end.get() - start.get();
         let native_span = native_range[1] - native_range[0];
-        if !bound_span.is_finite()
-            || !native_span.is_finite()
-            || bound_span.abs() <= EPS_PLANE_DIGON
-            || native_span.abs() <= EPS_PLANE_DIGON
-        {
+        if bound_span.abs() <= EPS_PLANE_DIGON || native_span.abs() <= EPS_PLANE_DIGON {
             return None;
         }
         Some(if bound_span * native_span > 0.0 {
@@ -1974,6 +1970,36 @@ mod tests {
             &bounds,
         );
         assert_eq!(hint, Some(Sign::Negative));
+
+        let mut wide_pcurves = pcurves.clone();
+        for pcurve in wide_pcurves.values_mut() {
+            if let E5Pcurve::Jet { range, .. } = pcurve {
+                *range = finite_pair([-f64::MAX, f64::MAX]);
+            }
+        }
+        let mut wide_bounds = bounds.clone();
+        for (id, bound) in &mut wide_bounds {
+            bound.entries[0].parameter = finite(if matches!(*id, 30 | 32) {
+                -f64::MAX
+            } else {
+                f64::MAX
+            });
+        }
+        assert_eq!(
+            plane_digon_orientation_hint(
+                Sign::Positive,
+                Some(0xc8),
+                &[10, 11],
+                &[1, 2],
+                &[false, false],
+                Some(true),
+                &edges,
+                &wide_pcurves,
+                &supports,
+                &wide_bounds,
+            ),
+            hint
+        );
 
         let mut faces = vec![E5Face {
             record_id: 1,

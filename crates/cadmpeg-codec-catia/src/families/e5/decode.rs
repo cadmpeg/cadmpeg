@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve,
@@ -2123,10 +2124,16 @@ fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<b
 }
 
 fn parameter_ranges_reversed(parameters: [f64; 2], native_range: [f64; 2]) -> Option<bool> {
-    let bound_span = parameters[1] - parameters[0];
-    let native_span = native_range[1] - native_range[0];
-    (bound_span.is_finite() && bound_span != 0.0 && native_span.is_finite() && native_span != 0.0)
-        .then_some(bound_span.is_sign_negative() != native_span.is_sign_negative())
+    if !parameters
+        .into_iter()
+        .chain(native_range)
+        .all(f64::is_finite)
+        || parameters[0] == parameters[1]
+        || native_range[0] == native_range[1]
+    {
+        return None;
+    }
+    Some((parameters[1] < parameters[0]) != (native_range[1] < native_range[0]))
 }
 
 fn e5_pcurve_on_surface(
@@ -2438,21 +2445,9 @@ fn e5_boundary_curve(
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
     };
-    let origin = line_pcurve.origin().as_raw();
     let direction = line_pcurve.direction().as_raw();
-    let span = range[1] - range[0];
-    // The direction components are finite. A non-finite span times a finite
-    // value is NaN or infinite, so the admission of `span_direction` refuses
-    // every non-finite span.
-    let (Some(start_uv), Some(span_direction)) = (
-        FinitePoint2::new(Point2::new(
-            origin.u + range[0] * direction.u,
-            origin.v + range[0] * direction.v,
-        )),
-        FinitePoint2::new(Point2::new(span * direction.u, span * direction.v)),
-    ) else {
-        return None;
-    };
+    let start_uv = pcurve_uv(pcurve, range[0]).ok()?;
+    let end_uv = pcurve_uv(pcurve, range[1]).ok()?;
 
     let circle = match e5_isoparametric_direction(*direction) {
         Some(E5IsoparametricDirection::ConstantV) => {
@@ -2467,6 +2462,10 @@ fn e5_boundary_curve(
         if !center.is_finite() || !axis.is_finite() || !radius.is_finite() || radius <= 0.0 {
             return None;
         }
+        let span_direction = FinitePoint2::new(Point2::new(
+            end_uv.as_raw().u - start_uv.as_raw().u,
+            end_uv.as_raw().v - start_uv.as_raw().v,
+        ))?;
         let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
             .filter_map(|axis| {
@@ -3303,6 +3302,18 @@ mod route_tests {
     }
 
     #[test]
+    fn affine_bound_parameters_keep_direction_across_finite_wide_ranges() {
+        assert_eq!(
+            parameter_ranges_reversed([-f64::MAX, f64::MAX], [-f64::MAX, f64::MAX]),
+            Some(false)
+        );
+        assert_eq!(
+            parameter_ranges_reversed([f64::MAX, -f64::MAX], [-f64::MAX, f64::MAX]),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn degenerate_bound_parameters_do_not_select_pcurve_direction() {
         let topology = E5Topology {
             bodies: Vec::new(),
@@ -4093,6 +4104,84 @@ mod route_tests {
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .is_none());
+    }
+
+    #[test]
+    fn e5_boundary_line_rejects_overflowing_uv_end() {
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite plane"),
+        ));
+        let native = E5Pcurve::Line {
+            surface: 0,
+            origin: finite_pair([f64::MAX, 0.0]),
+            direction: finite_pair([f64::MAX * 0.5, 0.0]),
+            range: finite_pair([0.0, 1.0]),
+        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(f64::MAX, 0.0),
+                Point2::new(f64::MAX * 0.5, 0.0),
+            )
+            .expect("finite line pcurve"),
+        );
+        assert!(e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            finite_pair([1.0, 1.0]),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn e5_plane_boundary_line_keeps_finite_wide_parameter_endpoints() {
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("finite plane"),
+        ));
+        let direction = 1.0e-7;
+        let range = [-f64::MAX, f64::MAX];
+        let native = E5Pcurve::Line {
+            surface: 0,
+            origin: finite_pair([0.0, 0.0]),
+            direction: finite_pair([direction, 0.0]),
+            range: finite_pair(range),
+        };
+        let pcurve = PcurveGeometry::Line(
+            cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(direction, 0.0),
+            )
+            .expect("finite line pcurve"),
+        );
+        let bound = f64::MAX * direction;
+        let (curve, curve_range) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            range,
+            [Point3::new(-bound, 0.0, 0.0), Point3::new(bound, 0.0, 0.0)],
+            finite_pair([1.0, 1.0]),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("finite line carrier across a wide parameter range");
+        assert!(matches!(
+            curve,
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        ));
+        assert_eq!(curve_range, [0.0, 2.0 * bound]);
     }
 
     #[test]

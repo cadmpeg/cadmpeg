@@ -1823,12 +1823,8 @@ pub(crate) struct B2Class25Descriptor {
 }
 
 fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
-    let span = range[1] - range[0];
-    if !span.is_finite() || span <= 0.0 {
-        return false;
-    }
-    let tolerance = EPS_B2_RECORD_COARSE_GEOMETRY * span;
-    range[0] - tolerance <= value && value <= range[1] + tolerance
+    range[0] < range[1]
+        && cadmpeg_ir::math::parameter_in_domain(value, range, EPS_B2_RECORD_COARSE_GEOMETRY)
 }
 
 pub(in crate::families) fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
@@ -3088,13 +3084,22 @@ pub(crate) fn b2_circles_from_records(
 }
 
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
-    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    let relative_span = circle_range_relative_span(radius, range);
     relative_span.is_finite() && (relative_span - 1.0).abs() < EPS_B2_RECORD_GEOMETRY
 }
 
 pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
-    let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
+    let relative_span = circle_range_relative_span(radius, range);
     relative_span.is_finite() && relative_span <= 1.0 + EPS_B2_RECORD_GEOMETRY
+}
+
+fn circle_range_relative_span(radius: f64, range: [f64; 2]) -> f64 {
+    let width = range[1] - range[0];
+    if width.is_finite() {
+        (width / radius) / std::f64::consts::TAU
+    } else {
+        ((range[1] * 0.5 - range[0] * 0.5) / radius) * (2.0 / std::f64::consts::TAU)
+    }
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.
