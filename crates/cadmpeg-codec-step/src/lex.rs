@@ -106,7 +106,7 @@ impl LexError {
     pub(crate) fn into_codec_error(self) -> CodecError {
         match self.resource {
             Some(error) => error,
-            None => CodecError::Malformed(format!("{} at byte {}", self.message, self.offset)),
+            None => CodecError::malformed(format_args!("{} at byte {}", self.message, self.offset)),
         }
     }
 

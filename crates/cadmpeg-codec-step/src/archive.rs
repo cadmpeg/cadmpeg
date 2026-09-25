@@ -152,7 +152,7 @@ pub(crate) fn root_reference_notes(
     let mut notes = Vec::new();
     for reference in exchange.references() {
         let name = reference.name;
-        let uri = forwarded_reference_uri(&exchange, &reference.uri);
+        let uri = forwarded_reference_uri(exchange, &reference.uri);
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal {
                 member,
