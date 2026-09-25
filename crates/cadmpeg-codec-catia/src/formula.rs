@@ -2875,7 +2875,8 @@ impl FormulaExpressionParser<'_, '_> {
             };
             let interpolate = |start: f64, end: f64, fraction: f64| {
                 if (0.0..=1.0).contains(&fraction) {
-                    cadmpeg_ir::math::interpolate(start, end, fraction).map(|value| value.get())
+                    cadmpeg_ir::math::interpolate(start, end, fraction)
+                        .map(cadmpeg_ir::scalar::FiniteReal::get)
                 } else {
                     Some(start + (end - start) * fraction)
                 }
