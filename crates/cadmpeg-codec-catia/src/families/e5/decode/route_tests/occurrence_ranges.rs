@@ -20,6 +20,49 @@ fn support_range_agreement_requires_matching_endpoints() {
 }
 
 #[test]
+fn wide_occurrence_ranges_keep_matching_support_and_curve_cache() {
+    let range = [-f64::MAX, f64::MAX];
+    assert!(parameter_range_agreement_tolerance(range, range).is_some());
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("finite line"),
+    ));
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("finite pcurve"),
+    );
+    let sides = [
+        E5OccurrenceIntersectionSide {
+            surface: SurfaceId::mint("catia:test:surface#wide-left".to_string())
+                .expect("identity grammar"),
+            pcurve: pcurve.clone(),
+            pcurve_range: range,
+            curve: Some((line.clone(), range)),
+        },
+        E5OccurrenceIntersectionSide {
+            surface: SurfaceId::mint("catia:test:surface#wide-right".to_string())
+                .expect("identity grammar"),
+            pcurve,
+            pcurve_range: range,
+            curve: Some((line.clone(), range)),
+        },
+    ];
+    let context = e5_support_occurrence_intersection_context(range, range, &sides)
+        .expect("wide support context");
+    assert_eq!(context.parameter_range().endpoints(), range);
+    let (cached, cached_range) =
+        e5_occurrence_intersection_cache(&sides).expect("wide exact carrier cache");
+    assert_eq!(cached, line);
+    assert_eq!(cached_range, range);
+}
+
+#[test]
 fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
     let sides = vec![
         E5OccurrenceIntersectionSide {

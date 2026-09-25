@@ -2635,43 +2635,53 @@ fn is_e5_nurbs_curve(curve: &CurveGeometry) -> bool {
 }
 
 fn e5_parameter_range_is_valid(range: [f64; 2]) -> bool {
-    range.into_iter().all(f64::is_finite)
-        && range[0] != range[1]
-        && (range[1] - range[0]).is_finite()
+    range.into_iter().all(f64::is_finite) && range[0] != range[1]
+}
+
+fn parameter_span_magnitudes(left: [f64; 2], right: [f64; 2]) -> (f64, f64, f64) {
+    let left_span = (left[1] - left[0]).abs();
+    let right_span = (right[1] - right[0]).abs();
+    if left_span.is_finite() && right_span.is_finite() {
+        (left_span, right_span, 1.0)
+    } else {
+        (
+            (left[1] * 0.5 - left[0] * 0.5).abs(),
+            (right[1] * 0.5 - right[0] * 0.5).abs(),
+            2.0,
+        )
+    }
 }
 
 fn parameter_span_agreement(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
     if !e5_parameter_range_is_valid(left) || !e5_parameter_range_is_valid(right) {
         return None;
     }
-    let left_span = (left[1] - left[0]).abs();
-    let right_span = (right[1] - right[0]).abs();
+    let (left_span, right_span, scale_factor) = parameter_span_magnitudes(left, right);
     let parameter_scale = left_span.max(right_span);
-    if !parameter_scale.is_finite()
-        || parameter_scale == 0.0
+    if parameter_scale == 0.0
         || (left_span - right_span).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
     {
         return None;
     }
-    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale)
+    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale * scale_factor)
 }
 
 fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Option<f64> {
     if !left.into_iter().chain(right).all(f64::is_finite) {
         return None;
     }
-    let left_span = (left[1] - left[0]).abs();
-    let right_span = (right[1] - right[0]).abs();
+    let (left_span, right_span, scale_factor) = parameter_span_magnitudes(left, right);
     let parameter_scale = left_span.max(right_span);
-    if !parameter_scale.is_finite()
-        || parameter_scale == 0.0
+    if parameter_scale == 0.0
         || (left_span - right_span).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
-        || (left[0] - right[0]).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
-        || (left[1] - right[1]).abs() > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale
+        || (left[0] - right[0]).abs()
+            > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale * scale_factor
+        || (left[1] - right[1]).abs()
+            > E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale * scale_factor
     {
         return None;
     }
-    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale)
+    Some(E5_PARAMETER_RELATIVE_TOLERANCE * parameter_scale * scale_factor)
 }
 
 fn e5_circle_carriers_have_same_ordered_sweep(
