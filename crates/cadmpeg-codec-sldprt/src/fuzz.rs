@@ -16,7 +16,7 @@ pub fn container(data: &[u8]) {
 
 /// Exercise embedded Parasolid stream extraction.
 pub fn parasolid(data: &[u8]) {
-    crate::parasolid::extract_streams_with_offsets(data);
+    drop(crate::parasolid::extract_streams_with_offsets(data, None));
 }
 
 /// Exercise spline-curve carrier scanning.

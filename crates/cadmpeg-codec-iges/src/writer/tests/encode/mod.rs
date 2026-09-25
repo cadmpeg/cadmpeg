@@ -106,7 +106,8 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let (global, _) =
+        crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.01);
 
@@ -352,7 +353,7 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty());
     let scan = crate::card::scan(&written).unwrap();
-    crate::global::parse(&scan).unwrap();
+    crate::test_support::parse_global(&scan).unwrap();
     let global_text = scan
         .section(crate::card::Section::Global)
         .map(|(_, line)| line)
@@ -1660,7 +1661,8 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    let (global, _) = crate::global::parse(&crate::card::scan(&written).unwrap()).unwrap();
+    let (global, _) =
+        crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
     assert_eq!(context.minimum_resolution_mm(), 0.25);
 

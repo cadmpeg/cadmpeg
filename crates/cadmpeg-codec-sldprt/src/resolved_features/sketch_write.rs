@@ -947,7 +947,7 @@ fn edit_stream(
     stream_ordinal: usize,
     edit: impl FnOnce(&mut [u8]) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let stream = crate::parasolid::extract_streams_with_offsets(payload)
+    let stream = crate::parasolid::extract_streams_with_offsets(payload, None)?
         .get(stream_ordinal)
         .cloned()
         .ok_or_else(|| {

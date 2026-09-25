@@ -139,7 +139,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
         charge_work(ctx, bytes.len() as u64, card_scan)?;
         let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage)?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
-        let (global, mut global_losses) = global::parse(&scan)?;
+        let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) = directory::parse(&scan, global.global_table());
         charge_entities(
             ctx,

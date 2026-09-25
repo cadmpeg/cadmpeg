@@ -7,9 +7,10 @@
 //! streams or zlib-compressed streams inside a transmit wrapper. Stream
 //! descriptions identify partition, deltas, and feature-profile payloads.
 
-use cadmpeg_container::compression::inflate_zlib_probe;
+use cadmpeg_container::compression::{inflate_zlib_member, inflate_zlib_probe};
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use flate2::{Decompress, FlushDecompress, Status};
 
@@ -40,54 +41,68 @@ pub(crate) struct ExtractedStream {
 }
 
 /// Extract every stream with its direct or wrapper offset in the outer payload.
-pub(crate) fn extract_streams_with_offsets(payload: &[u8]) -> Vec<ExtractedStream> {
+pub(crate) fn extract_streams_with_offsets(
+    payload: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<ExtractedStream>, CodecError> {
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
     let starts = if wrapped_prefix {
         Vec::new()
     } else {
-        direct_stream_headers(payload)
+        direct_stream_headers(payload, ctx)?
     };
     for (index, (start, header)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
             .map_or(payload.len(), |(offset, _)| *offset);
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "collect direct Parasolid streams")?;
+        }
+        let payload = match ctx {
+            Some(ctx) => {
+                ctx.copy_retained(&payload[*start..end], "retain direct Parasolid stream")?
+            }
+            None => payload[*start..end].to_vec(),
+        };
         out.push(ExtractedStream {
             offset: *start,
-            payload: payload[*start..end].to_vec(),
+            payload,
             header: header.clone(),
         });
     }
     if !out.is_empty() {
-        return out;
+        return Ok(out);
     }
     if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
-        return out;
+        return Ok(out);
     }
 
     let magic_starts = payload
         .windows(WRAPPED_MAGIC_PREFIX.len())
         .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == WRAPPED_MAGIC_PREFIX).then_some(offset))
-        .collect::<Vec<_>>();
-    for magic_at in magic_starts.iter().copied() {
+        .filter_map(|(offset, bytes)| (bytes == WRAPPED_MAGIC_PREFIX).then_some(offset));
+    for magic_at in magic_starts {
         let stream = if magic_at == 0 {
-            single_wrapped_stream(payload, magic_at)
+            single_wrapped_stream(payload, magic_at, ctx)?
         } else {
-            chained_wrapped_stream(payload, magic_at)
+            chained_wrapped_stream(payload, magic_at, ctx)?
         };
         if let Some(stream) = stream {
             if !out
                 .iter()
                 .any(|existing| existing.payload == stream.payload)
             {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "collect wrapped Parasolid streams")?;
+                }
                 out.push(stream);
             }
         }
     }
     if !out.is_empty() {
         out.sort_by_key(|stream| stream.offset);
-        return out;
+        return Ok(out);
     }
 
     // A payload with the section prefix is a malformed chained wrapper, not a
@@ -95,21 +110,66 @@ pub(crate) fn extract_streams_with_offsets(payload: &[u8]) -> Vec<ExtractedStrea
     // bad continuation from silently recreating the historical one-megabyte
     // truncation.
     if wrapped_prefix {
-        return out;
+        return Ok(out);
     }
 
     // Preserve older nested wrappers that do not carry the chained-section
     // prefix. Try each zlib member; the first that inflates to a `PS\0\0`-leading
     // stream is the embedded body. zlib headers are `78 01` / `78 9c` / `78 da`.
+    let local_limit = u64::try_from(payload.len())
+        .ok()
+        .and_then(|len| len.checked_mul(16))
+        .unwrap_or(u64::MAX);
+    let work = ctx.map(|ctx| ctx.work_budget(local_limit));
+    let mut work_used = 0_u64;
     let mut i = 0usize;
     while i + 2 <= payload.len() {
         if payload[i] == 0x78 && matches!(payload[i + 1], 0x01 | 0x9c | 0xda) {
-            if let Some(inner) = inflate_zlib_candidate(&payload[i..]) {
+            if let (Some(active), Some(work)) = (ctx, &work) {
+                let effort = u64::try_from(payload.len() - i).map_err(|_| {
+                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
+                })?;
+                if !work.charge_by(payload.len() - i) {
+                    active.charge_work(0, "probe Parasolid zlib candidates")?;
+                    return Err(active.refuse_codec_limit(
+                        "probe Parasolid zlib candidates",
+                        local_limit,
+                        work_used.checked_add(effort).ok_or_else(|| {
+                            CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
+                        })?,
+                    ));
+                }
+                work_used = work_used.checked_add(effort).ok_or_else(|| {
+                    CodecError::NotImplemented("Parasolid probe work exceeds u64".into())
+                })?;
+            }
+            let inner = match ctx {
+                Some(ctx) => match inflate_zlib_member(
+                    ctx,
+                    View::over_retained(&payload[i..]),
+                    ExpandSpec::Unknown,
+                ) {
+                    Ok((view, _))
+                        if view.window().starts_with(b"PS\0\0")
+                            && stream_header(view.window()).is_some() =>
+                    {
+                        Some(ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?)
+                    }
+                    Ok(_) => None,
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Err(_) => None,
+                },
+                None => inflate_zlib_candidate(&payload[i..]),
+            };
+            if let Some(inner) = inner {
                 if let Some(stream) = extracted_stream(i, inner) {
                     if !out
                         .iter()
                         .any(|existing| existing.payload == stream.payload)
                     {
+                        if let Some(ctx) = ctx {
+                            ctx.charge_collection_items(1, "collect nested Parasolid streams")?;
+                        }
                         out.push(stream);
                     }
                 }
@@ -117,7 +177,7 @@ pub(crate) fn extract_streams_with_offsets(payload: &[u8]) -> Vec<ExtractedStrea
         }
         i += 1;
     }
-    out
+    Ok(out)
 }
 
 fn has_wrapped_prefix(payload: &[u8]) -> bool {
@@ -127,46 +187,13 @@ fn has_wrapped_prefix(payload: &[u8]) -> bool {
             == Some(&WRAPPED_MAGIC_PREFIX)
 }
 
-fn single_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<ExtractedStream> {
-    let frame_at = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len())?;
-    let uncompressed_size = View::u32_le_at(
-        payload,
-        frame_at.checked_add(chain_frame_hdr::UNCOMPRESSED_SIZE)?,
-    )
-    .and_then(as_usize)?;
-    let member_size = View::u32_le_at(
-        payload,
-        frame_at.checked_add(chain_frame_hdr::ZLIB_MEMBER_SIZE)?,
-    )
-    .and_then(as_usize)?;
-    let member_start = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN)?;
-    let member_end = member_start.checked_add(member_size)?;
-    let member = payload.get(member_start..member_end)?;
-    extracted_stream(magic_at, inflate_zlib_frame(member, uncompressed_size)?)
-}
-
-fn chained_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<ExtractedStream> {
-    let chain_len_at = magic_at.checked_sub(chain_section_hdr::MAGIC)?;
-    let chain_len = View::u32_le_at(payload, chain_len_at).and_then(as_usize)?;
-    if chain_len < WRAPPED_MAGIC_PREFIX.len() + WRAPPED_FRAME_HEADER_LEN {
-        return None;
-    }
-    let section_end = magic_at.checked_add(chain_len)?;
-    if section_end > payload.len() {
-        return None;
-    }
-
-    let mut frame_at = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len())?;
-    let mut frames = 0usize;
-    let mut stream = Vec::new();
-    while frame_at < section_end {
-        let remaining = payload.get(frame_at..section_end)?;
-        if remaining.iter().all(|byte| *byte == 0) {
-            break;
-        }
-        if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
-            return None;
-        }
+fn single_wrapped_stream(
+    payload: &[u8],
+    magic_at: usize,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ExtractedStream>, CodecError> {
+    let frame = (|| {
+        let frame_at = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len())?;
         let uncompressed_size = View::u32_le_at(
             payload,
             frame_at.checked_add(chain_frame_hdr::UNCOMPRESSED_SIZE)?,
@@ -177,25 +204,122 @@ fn chained_wrapped_stream(payload: &[u8], magic_at: usize) -> Option<ExtractedSt
             frame_at.checked_add(chain_frame_hdr::ZLIB_MEMBER_SIZE)?,
         )
         .and_then(as_usize)?;
-        if uncompressed_size == 0 || member_size == 0 {
-            return None;
-        }
         let member_start = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN)?;
         let member_end = member_start.checked_add(member_size)?;
-        if member_end > section_end {
-            return None;
+        Some((payload.get(member_start..member_end)?, uncompressed_size))
+    })();
+    let Some((member, uncompressed_size)) = frame else {
+        return Ok(None);
+    };
+    let inflated = match ctx {
+        Some(ctx) => inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)?,
+        None => inflate_zlib_frame(member, uncompressed_size),
+    };
+    Ok(inflated.and_then(|bytes| extracted_stream(magic_at, bytes)))
+}
+
+fn chained_wrapped_stream(
+    payload: &[u8],
+    magic_at: usize,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<ExtractedStream>, CodecError> {
+    let Some(chain_len_at) = magic_at.checked_sub(chain_section_hdr::MAGIC) else {
+        return Ok(None);
+    };
+    let Some(chain_len) = View::u32_le_at(payload, chain_len_at).and_then(as_usize) else {
+        return Ok(None);
+    };
+    if chain_len < WRAPPED_MAGIC_PREFIX.len() + WRAPPED_FRAME_HEADER_LEN {
+        return Ok(None);
+    }
+    let Some(section_end) = magic_at.checked_add(chain_len) else {
+        return Ok(None);
+    };
+    if section_end > payload.len() {
+        return Ok(None);
+    }
+
+    let Some(mut frame_at) = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len()) else {
+        return Ok(None);
+    };
+    let mut frames = 0usize;
+    let mut stream = Vec::new();
+    let mut frame_outputs = Vec::new();
+    while frame_at < section_end {
+        let Some(remaining) = payload.get(frame_at..section_end) else {
+            return Ok(None);
+        };
+        if remaining.iter().all(|byte| *byte == 0) {
+            break;
         }
-        let member = payload.get(member_start..member_end)?;
-        let frame = inflate_zlib_frame(member, uncompressed_size)?;
-        stream.try_reserve(frame.len()).ok()?;
-        stream.extend_from_slice(&frame);
-        frames = frames.checked_add(1)?;
+        if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
+            return Ok(None);
+        }
+        let Some(uncompressed_size) = frame_at
+            .checked_add(chain_frame_hdr::UNCOMPRESSED_SIZE)
+            .and_then(|at| View::u32_le_at(payload, at))
+            .and_then(as_usize)
+        else {
+            return Ok(None);
+        };
+        let Some(member_size) = frame_at
+            .checked_add(chain_frame_hdr::ZLIB_MEMBER_SIZE)
+            .and_then(|at| View::u32_le_at(payload, at))
+            .and_then(as_usize)
+        else {
+            return Ok(None);
+        };
+        if uncompressed_size == 0 || member_size == 0 {
+            return Ok(None);
+        }
+        let Some(member_start) = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN) else {
+            return Ok(None);
+        };
+        let Some(member_end) = member_start.checked_add(member_size) else {
+            return Ok(None);
+        };
+        if member_end > section_end {
+            return Ok(None);
+        }
+        let Some(member) = payload.get(member_start..member_end) else {
+            return Ok(None);
+        };
+        match ctx {
+            Some(ctx) => {
+                let Some(frame) = inflate_zlib_frame_budgeted(ctx, member, uncompressed_size)?
+                else {
+                    return Ok(None);
+                };
+                ctx.charge_collection_items(1, "collect Parasolid frames")?;
+                frame_outputs.push(frame);
+            }
+            None => {
+                let Some(frame) = inflate_zlib_frame(member, uncompressed_size) else {
+                    return Ok(None);
+                };
+                if stream.try_reserve(frame.len()).is_err() {
+                    return Ok(None);
+                }
+                stream.extend_from_slice(&frame);
+            }
+        }
+        let Some(next_frames) = frames.checked_add(1) else {
+            return Ok(None);
+        };
+        frames = next_frames;
         frame_at = member_end;
     }
     if frames == 0 {
-        return None;
+        return Ok(None);
     }
-    extracted_stream(chain_len_at, stream)
+    if let Some(ctx) = ctx {
+        stream = if frame_outputs.len() == 1 {
+            frame_outputs.remove(0)
+        } else {
+            ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
+        };
+    }
+    Ok(extracted_stream(chain_len_at, stream))
 }
 
 fn extracted_stream(offset: usize, payload: Vec<u8>) -> Option<ExtractedStream> {
@@ -248,6 +372,72 @@ fn inflate_zlib_frame(member: &[u8], expected: usize) -> Option<Vec<u8>> {
     }
 }
 
+fn inflate_zlib_frame_budgeted(
+    ctx: &DecodeContext<'_>,
+    member: &[u8],
+    expected: usize,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    if expected == 0 {
+        return Ok(None);
+    }
+    let declared = u64::try_from(expected)
+        .map_err(|_| CodecError::NotImplemented("Parasolid frame length exceeds u64".into()))?;
+    let mut output = ctx.begin_expand(ExpandSpec::Exact(declared))?;
+    if expected > MAX_WRAPPED_FRAME_UNCOMPRESSED {
+        return Err(ctx.refuse_codec_limit(
+            "inflate Parasolid frame",
+            MAX_WRAPPED_FRAME_UNCOMPRESSED as u64,
+            declared,
+        ));
+    }
+    let reservation = ctx.reserve_scoped(declared, "inflate Parasolid frame")?;
+    let mut decoder = Decompress::new(true);
+    let mut input_at = 0usize;
+    let mut chunk = [0_u8; 8192];
+    loop {
+        let before_input = decoder.total_in();
+        let before_output = decoder.total_out();
+        let Some(input) = member.get(input_at..) else {
+            return Ok(None);
+        };
+        let Ok(status) = decoder.decompress(input, &mut chunk, FlushDecompress::None) else {
+            return Ok(None);
+        };
+        let Some(consumed) = usize::try_from(decoder.total_in() - before_input).ok() else {
+            return Ok(None);
+        };
+        let Some(produced) = usize::try_from(decoder.total_out() - before_output).ok() else {
+            return Ok(None);
+        };
+        let Some(next_input_at) = input_at.checked_add(consumed) else {
+            return Ok(None);
+        };
+        input_at = next_input_at;
+        let Some(remaining) = u64::try_from(expected)
+            .ok()
+            .and_then(|expected| expected.checked_sub(output.written()))
+        else {
+            return Ok(None);
+        };
+        let produced_u64 = u64::try_from(produced)
+            .map_err(|_| CodecError::NotImplemented("Parasolid frame output exceeds u64".into()))?;
+        if input_at > member.len() || produced_u64 > remaining {
+            return Ok(None);
+        }
+        output.write(&chunk[..produced])?;
+        if status == Status::StreamEnd {
+            if input_at != member.len() || output.written() != expected as u64 {
+                return Ok(None);
+            }
+            reservation.commit()?;
+            return output.finalize_owned().map(Some);
+        }
+        if consumed == 0 && produced == 0 {
+            return Ok(None);
+        }
+    }
+}
+
 fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
     let cap = (16 * 1024 * 1024_usize)
         .saturating_add(bytes.len().saturating_mul(256))
@@ -255,13 +445,23 @@ fn inflate_zlib_candidate(bytes: &[u8]) -> Option<Vec<u8>> {
     inflate_zlib_probe(bytes, cap)
 }
 
-fn direct_stream_headers(payload: &[u8]) -> Vec<(usize, StreamHeader)> {
-    payload
-        .windows(4)
-        .enumerate()
-        .filter_map(|(at, bytes)| (bytes == b"PS\0\0").then_some(at))
-        .filter_map(|start| stream_header(&payload[start..]).map(|header| (start, header)))
-        .collect()
+fn direct_stream_headers(
+    payload: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
+    let mut headers = Vec::new();
+    for (start, bytes) in payload.windows(4).enumerate() {
+        if bytes != b"PS\0\0" {
+            continue;
+        }
+        if let Some(header) = stream_header(&payload[start..]) {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "collect Parasolid headers")?;
+            }
+            headers.push((start, header));
+        }
+    }
+    Ok(headers)
 }
 
 /// Parsed framing fields for one Parasolid stream.
