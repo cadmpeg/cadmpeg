@@ -33,6 +33,14 @@ fn normalize_with_policy(source: &[u8], policy: &DecodePolicy) -> Result<Vec<u8>
 }
 
 #[test]
+fn compressed_ascii_normalizes_under_service_policy() {
+    let source = compressed_points_file();
+    let expected = normalize_for_test(&source).unwrap();
+    let normalized = normalize_with_policy(&source, &DecodePolicy::service()).unwrap();
+    assert_eq!(normalized, expected);
+}
+
+#[test]
 fn compressed_sparse_directory_shares_unchanged_field_values() {
     let source = compressed_points_file();
     let owned_lines = source_lines(&source);
