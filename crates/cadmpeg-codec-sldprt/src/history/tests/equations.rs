@@ -886,6 +886,16 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
         .to_string()
         .contains("conflicting neutral and native SLDPRT configuration design-state edits"));
 
+    let mut unavailable_fidelity = decoded.source_fidelity().clone();
+    crate::test_support::make_source_image_unavailable(&mut unavailable_fidelity);
+    let error =
+        crate::test_support::plan_inherited_write(&edited, &unavailable_fidelity, &mut Vec::new())
+            .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(error
+        .to_string()
+        .contains("configuration design-state edit"));
+
     let mut encoded = Vec::new();
     crate::test_support::serialize_history_after_refusal(
         &edited,

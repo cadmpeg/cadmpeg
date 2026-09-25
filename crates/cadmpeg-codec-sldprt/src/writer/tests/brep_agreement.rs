@@ -211,6 +211,32 @@ fn native_extrusion_depth_edit_is_refused() {
 }
 
 #[test]
+fn native_extrusion_edit_without_source_image_is_refused() {
+    let source = sldprt_with_body_and_history(&triangle_body());
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    let native_id = sldprt_native(decoded.ir()).feature_histories[0].features[0]
+        .id
+        .clone();
+    update_sldprt_native(&mut decoded.ir_mut(), |native| {
+        native.feature_histories[0].features[0]
+            .parameters
+            .insert(cadmpeg_core::nonblank_literal!("Depth"), "50mm".into());
+    });
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let error = crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(error.to_string().contains(&native_id), "{error}");
+}
+
+#[test]
 fn parameter_name_edit_keeps_retained_brep() {
     let source = sldprt_with_body_and_history(&triangle_body());
     let source_partition = container::select_active_parasolid_site(&container::scan_bytes(&source))

@@ -52,7 +52,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
         .transpose()?;
     let mut normalized = ir.clone();
-    drop_synthesized_configuration_snapshot(&mut normalized);
+    normalized.model.configurations = configurations_without_synthesized_snapshot(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
     // writer refusal depends on non-core Checks (e.g. Counts for duplicate
@@ -349,21 +349,25 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
 /// configuration when the native records carry none.
 ///
 /// Nothing in the file encodes that snapshot, so it cannot be written back.
-fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
+pub(crate) fn configurations_without_synthesized_snapshot(
+    ir: &CadIr,
+) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
+    let mut configurations = ir.model.configurations.clone();
     let Some(id) = ir.source.as_ref().and_then(|source| {
         source
             .attributes
             .get("sldprt_configuration_snapshot_synthesized")
             .cloned()
     }) else {
-        return;
+        return configurations;
     };
-    for configuration in &mut ir.model.configurations {
+    for configuration in &mut configurations {
         if configuration.id.as_str() == id {
             configuration.feature_states.clear();
             configuration.parameter_values.clear();
         }
     }
+    configurations
 }
 
 fn sort_arenas(ir: &mut CadIr) {
