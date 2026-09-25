@@ -794,11 +794,6 @@ impl CodecBackend for FcstdCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let scan = container::scan(ctx, root)?;
-        // Charge document object cardinality before persistence/geometry work.
-        ctx.charge_entities(
-            scan.document.object_count as u64,
-            "admit FCStd document objects",
-        )?;
         let mut admitted_entities = 0_u64;
         let mut attributes = BTreeMap::new();
         attributes.insert(
@@ -1027,6 +1022,7 @@ impl CodecBackend for FcstdCodec {
             element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let gui_graph = if let Some(gui_view) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
+                    ctx,
                     &mut ir,
                     gui_view.window(),
                     &scan.data,
