@@ -4,7 +4,241 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
+
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+use super::super::{
+    AnchorEntry, AnchorResolver, ReferenceEntry, ReferenceName, ReferenceResolver, ResolveError,
+    Value,
+};
+
+#[test]
+fn anchor_list_slots_are_admitted_before_vector_allocation() {
+    let value = Value::List((0..8).map(Value::Integer).collect());
+    let anchors = BTreeMap::new();
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        AnchorResolver::new(&anchors, Some(&ctx))
+            .resolve_root(&value)
+            .expect("service admits list"),
+        value
+    );
+    let mut limited = service;
+    limited.limits.max_collection_items = 8;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("one list node plus eight slots exceed eight items");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_anchor_list_items")
+    );
+}
+
+#[test]
+fn anchor_memo_entry_is_admitted_before_the_clone() {
+    let anchors = BTreeMap::from([(
+        "a".to_string(),
+        Value::List(vec![Value::Integer(1), Value::Integer(2)]),
+    )]);
+    let value = Value::Resource("a".into());
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        AnchorResolver::new(&anchors, Some(&ctx))
+            .resolve_root(&value)
+            .expect("service admits memo"),
+        anchors["a"]
+    );
+    let mut limited = service;
+    limited.limits.max_collection_items = 9;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("memo entry exceeds nine prior admitted items");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_anchor_memo_entry")
+    );
+}
+
+#[test]
+fn anchor_typed_wrapper_is_charged_before_its_clone() {
+    let value = Value::Typed("LENGTH_MEASURE".into(), Box::new(Value::Integer(7)));
+    let anchors = BTreeMap::new();
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        AnchorResolver::new(&anchors, Some(&ctx))
+            .resolve_root(&value)
+            .expect("service admits typed value"),
+        value
+    );
+    let mut limited = service;
+    limited.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
+    let (ctx, _) = DecodeContext::from_root_bytes(b"anchor", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = AnchorResolver::new(&anchors, Some(&ctx))
+        .resolve_root(&value)
+        .expect_err("typed wrapper exceeds the leaf's retained bytes");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_anchor_materialization_storage")
+    );
+}
+
+#[test]
+fn reference_bindings_are_admitted_before_map_allocation() {
+    let anchors = BTreeMap::new();
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
+        .expect("root fits service profile");
+    ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        .expect("service admits the binding map");
+    let mut limited = service;
+    limited.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        .err()
+        .expect("binding must be admitted before collection");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_binding_items")
+    );
+}
+
+#[test]
+fn reference_stack_item_is_admitted_before_push() {
+    let anchors = BTreeMap::from([("a".into(), Value::Integer(7))]);
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
+    let value = Value::ValueReference(2);
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        ReferenceResolver::new(&references, &anchors, Some(&ctx))
+            .expect("create resolver")
+            .resolve_value(&value, 0)
+            .expect("service admits reference"),
+        Value::Integer(7)
+    );
+    let mut limited = service;
+    limited.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&references, &anchors, Some(&ctx))
+        .expect("binding fits selected profile")
+        .resolve_value(&value, 0)
+        .expect_err("stack item exceeds the remaining collection allowance");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_stack")
+    );
+}
+
+#[test]
+fn reference_list_slots_are_admitted_before_vector_allocation() {
+    let anchors = BTreeMap::new();
+    let value = Value::List(vec![
+        Value::Integer(1),
+        Value::Integer(2),
+        Value::Integer(3),
+    ]);
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        ReferenceResolver::new(&[], &anchors, Some(&ctx))
+            .expect("create resolver")
+            .resolve_value(&value, 0)
+            .expect("service admits list"),
+        value
+    );
+    let mut limited = service;
+    limited.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&[], &anchors, Some(&ctx))
+        .expect("create resolver")
+        .resolve_value(&value, 0)
+        .expect_err("three list slots exceed two admitted items");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_list_items")
+    );
+}
+
+#[test]
+fn reference_typed_wrapper_is_charged_before_its_clone() {
+    let anchors = BTreeMap::new();
+    let value = Value::Typed("LENGTH_MEASURE".into(), Box::new(Value::Integer(7)));
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &service)
+        .expect("root fits service profile");
+    assert_eq!(
+        ReferenceResolver::new(&[], &anchors, Some(&ctx))
+            .expect("create resolver")
+            .resolve_value(&value, 0)
+            .expect("service admits typed value"),
+        value
+    );
+    let mut limited = service;
+    limited.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Value>());
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
+        .expect("root fits selected profile");
+    let error = ReferenceResolver::new(&[], &anchors, Some(&ctx))
+        .expect("create resolver")
+        .resolve_value(&value, 0)
+        .expect_err("typed wrapper exceeds the leaf's retained bytes");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_reference_materialization_storage")
+    );
+}
+
+#[test]
+fn reference_anchor_copy_is_charged_before_building_bindings() {
+    let mut anchors = [AnchorEntry {
+        name: "a".into(),
+        value: Value::Integer(7),
+        tags: Vec::new(),
+    }];
+    let mut records = BTreeMap::new();
+    let references = [ReferenceEntry {
+        name: ReferenceName::Value(2),
+        uri: "#a".into(),
+    }];
+    let arena = DecodeArena::new();
+    let mut limited = DecodePolicy::service();
+    limited.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"reference", &arena, &limited)
+        .expect("root fits selected profile");
+    let error =
+        super::super::resolve_local_references(&mut anchors, &mut records, &references, Some(&ctx))
+            .expect_err("anchor copy must be admitted before cloning");
+    assert!(
+        matches!(error, ResolveError::Resource(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_reference_anchor_copies")
+    );
+}
 
 #[test]
 fn parser_propagates_binary_lexeme_resource_refusal() {

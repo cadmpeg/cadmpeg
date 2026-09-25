@@ -2152,12 +2152,13 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 
     fn charge_storage(&self, value: &Value) -> Result<(), ResolveError> {
+        self.charge_storage_bytes(value_storage_bytes(value))
+    }
+
+    fn charge_storage_bytes(&self, bytes: u64) -> Result<(), ResolveError> {
         if let Some(budget) = self.budget {
             budget
-                .charge_retained(
-                    value_storage_bytes(value),
-                    "step_anchor_materialization_storage",
-                )
+                .charge_retained(bytes, "step_anchor_materialization_storage")
                 .map_err(ResolveError::Resource)?;
         }
         Ok(())
@@ -2192,10 +2193,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 if stack.contains(&name) {
                     return Err(format!("cyclic anchor binding <{name}>").into());
                 }
-                let source_nodes = value_node_count(source, Self::MAX_EXPANDED_NODES)?;
+                value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
                 if let Some(context) = self.budget {
                     context
-                        .charge_work(source_nodes as u64, "step_anchor_materialization")
+                        .charge_collection_items(1, "step_anchor_reference_stack")
                         .map_err(ResolveError::Resource)?;
                 }
                 stack.push(name);
@@ -2207,14 +2208,37 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.charge_storage(&value)?;
+                if let Some(context) = self.budget {
+                    context
+                        .charge_collection_items(1, "step_anchor_memo_entry")
+                        .map_err(ResolveError::Resource)?;
+                    context
+                        .charge_retained(
+                            btree_node_storage::<&str, (Value, usize)>(),
+                            "step_anchor_memo_storage",
+                        )
+                        .map_err(ResolveError::Resource)?;
+                }
                 self.memo.insert(name, (value.clone(), nodes));
-                self.charge_storage(&value)?;
                 return Ok((value, nodes, nodes));
             }
         }
         match value {
             Value::List(values) => {
                 self.charge_nodes(1)?;
+                if let Some(context) = self.budget {
+                    context
+                        .charge_collection_items(
+                            u64_from_index(values.len()),
+                            "step_anchor_list_items",
+                        )
+                        .map_err(ResolveError::Resource)?;
+                }
+                self.charge_storage_bytes(
+                    u64_from_index(size_of::<Value>())
+                        .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
+                        .ok_or("anchor list storage exceeds u64")?,
+                )?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
                 let mut resolved = Vec::with_capacity(values.len());
@@ -2232,16 +2256,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
                     resolved.push(value);
                 }
-                let resolved = Value::List(resolved);
-                self.charge_storage(&resolved)?;
-                Ok((resolved, nodes, expanded_nodes))
+                Ok((Value::List(resolved), nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
                 self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
+                self.charge_storage_bytes(
+                    allocation_bytes(2, size_of::<Value>())
+                        .checked_add(u64_from_index(name.len()))
+                        .ok_or("anchor typed storage exceeds u64")?,
+                )?;
                 let value = Value::Typed(name.clone(), Box::new(value));
-                self.charge_storage(&value)?;
                 Ok((value, nodes + 1, expanded_nodes))
             }
             value => {
@@ -2269,8 +2295,22 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
         budget: Option<&'ctx DecodeContext<'arena>>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ResolveError> {
+        if let Some(context) = budget {
+            context
+                .charge_collection_items(
+                    u64_from_index(references.len()),
+                    "step_reference_binding_items",
+                )
+                .map_err(ResolveError::Resource)?;
+            let bytes = btree_node_storage::<ReferenceName, &str>()
+                .checked_mul(u64_from_index(references.len()))
+                .ok_or("reference binding storage exceeds u64")?;
+            context
+                .charge_retained(bytes, "step_reference_binding_storage")
+                .map_err(ResolveError::Resource)?;
+        }
+        Ok(Self {
             bindings: references
                 .iter()
                 .map(|reference| (reference.name, reference.uri.as_str()))
@@ -2279,7 +2319,27 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             stack: Vec::new(),
             remaining_nodes: collection_cap(budget, Self::MAX_MATERIALIZED_NODES),
             budget,
+        })
+    }
+
+    fn admit_copy(&self, nodes: u64, bytes: u64) -> Result<(), ResolveError> {
+        if let Some(context) = self.budget {
+            context
+                .charge_collection_items(nodes, "step_reference_materialization")
+                .map_err(ResolveError::Resource)?;
+            context
+                .charge_work(nodes, "step_reference_materialization")
+                .map_err(ResolveError::Resource)?;
+            context
+                .charge_retained(bytes, "step_reference_materialization_storage")
+                .map_err(ResolveError::Resource)?;
         }
+        Ok(())
+    }
+
+    fn clone_leaf(&self, value: &Value) -> Result<Value, ResolveError> {
+        self.admit_copy(1, value_node_storage_bytes(value))?;
+        Ok(value.clone())
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
@@ -2298,16 +2358,34 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             Value::ValueReference(id) => {
                 self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
             }
-            Value::List(values) => values
-                .iter()
-                .map(|value| self.resolve_value(value, depth + 1))
-                .collect::<Result<Vec<_>, _>>()
-                .map(Value::List),
-            Value::Typed(name, value) => Ok(Value::Typed(
-                name.clone(),
-                Box::new(self.resolve_value(value, depth + 1)?),
-            )),
-            _ => Ok(value.clone()),
+            Value::List(values) => {
+                if let Some(context) = self.budget {
+                    context
+                        .charge_collection_items(
+                            u64_from_index(values.len()),
+                            "step_reference_list_items",
+                        )
+                        .map_err(ResolveError::Resource)?;
+                }
+                let bytes = u64_from_index(size_of::<Value>())
+                    .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
+                    .ok_or("reference list storage exceeds u64")?;
+                self.admit_copy(1, bytes)?;
+                values
+                    .iter()
+                    .map(|value| self.resolve_value(value, depth + 1))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Value::List)
+            }
+            Value::Typed(name, value) => {
+                let resolved = self.resolve_value(value, depth + 1)?;
+                let bytes = allocation_bytes(2, size_of::<Value>())
+                    .checked_add(u64_from_index(name.len()))
+                    .ok_or("reference typed storage exceeds u64")?;
+                self.admit_copy(1, bytes)?;
+                Ok(Value::Typed(name.clone(), Box::new(resolved)))
+            }
+            _ => self.clone_leaf(value),
         }
     }
 
@@ -2318,31 +2396,36 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         depth: usize,
     ) -> Result<Value, ResolveError> {
         let Some(uri) = self.bindings.get(&key).copied() else {
-            return Ok(original.clone());
+            return self.clone_leaf(original);
         };
         let Some((path, fragment)) = uri.split_once('#') else {
             return Ok(Value::Omitted);
         };
         if !path.is_empty() {
-            return Ok(original.clone());
+            return self.clone_leaf(original);
         }
         if self.stack.contains(&key) {
             return Ok(Value::Omitted);
         }
         let Some(anchor) = self.anchors.get(fragment) else {
             return if is_uuid_fragment(fragment) {
-                Ok(original.clone())
+                self.clone_leaf(original)
             } else {
                 Ok(Value::Omitted)
             };
         };
+        if let Some(context) = self.budget {
+            context
+                .charge_collection_items(1, "step_reference_stack")
+                .map_err(ResolveError::Resource)?;
+        }
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();
         let resolved = resolved?;
         if let Value::Resource(uri) = &resolved {
             return if uri.contains('#') {
-                Ok(original.clone())
+                self.clone_leaf(original)
             } else {
                 Ok(Value::Omitted)
             };
@@ -2350,30 +2433,15 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
         if !reference_target_matches(key, &resolved) {
             return Ok(Value::Omitted);
         }
-        self.charge_materialized_nodes(&resolved)?;
+        self.count_materialized_nodes(&resolved)?;
         Ok(resolved)
     }
 
-    fn charge_materialized_nodes(&mut self, value: &Value) -> Result<(), ResolveError> {
-        let nodes = value_node_count(value, self.remaining_nodes)?;
+    fn count_materialized_nodes(&mut self, value: &Value) -> Result<(), ResolveError> {
+        let nodes = value_node_count(value, self.remaining_nodes, self.budget)?;
         self.remaining_nodes = self.remaining_nodes.checked_sub(nodes).ok_or_else(|| {
             ResolveError::Syntax("REFERENCE expansion exceeds 1000000 nodes".into())
         })?;
-        if let Some(budget) = self.budget {
-            let nodes = u64_from_index(nodes);
-            budget
-                .charge_collection_items(nodes, "step_reference_materialization")
-                .map_err(ResolveError::Resource)?;
-            budget
-                .charge_work(nodes, "step_reference_materialization")
-                .map_err(ResolveError::Resource)?;
-            budget
-                .charge_retained(
-                    value_storage_bytes(value),
-                    "step_reference_materialization_storage",
-                )
-                .map_err(ResolveError::Resource)?;
-        }
         Ok(())
     }
 }
@@ -2387,11 +2455,29 @@ fn resolve_local_references(
     if references.is_empty() {
         return Ok(());
     }
+    if let Some(context) = budget {
+        context
+            .charge_collection_items(
+                u64_from_index(anchors.len()),
+                "step_reference_anchor_copies",
+            )
+            .map_err(ResolveError::Resource)?;
+        let bytes = anchors.iter().try_fold(0u64, |total, anchor| {
+            total
+                .checked_add(u64_from_index(anchor.name.len()))
+                .and_then(|total| total.checked_add(value_storage_bytes(&anchor.value)))
+                .and_then(|total| total.checked_add(btree_node_storage::<String, Value>()))
+                .ok_or("reference anchor copy storage exceeds u64")
+        })?;
+        context
+            .charge_retained(bytes, "step_reference_anchor_copy_storage")
+            .map_err(ResolveError::Resource)?;
+    }
     let anchor_bindings = anchors
         .iter()
         .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget);
+    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     for anchor in anchors {
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
         for tag in &mut anchor.tags {
@@ -2427,23 +2513,47 @@ fn is_uuid_fragment(fragment: &str) -> bool {
         })
 }
 
-fn value_node_count(value: &Value, limit: usize) -> Result<usize, String> {
-    let mut pending = vec![value];
-    let mut count = 0usize;
-    while let Some(value) = pending.pop() {
-        count = count
-            .checked_add(1)
-            .ok_or_else(|| "REFERENCE expansion exceeds 1000000 nodes".to_string())?;
-        if count > limit {
+fn value_node_count(
+    value: &Value,
+    limit: usize,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<usize, ResolveError> {
+    fn visit(
+        value: &Value,
+        remaining: &mut usize,
+        budget: Option<&DecodeContext<'_>>,
+        depth: usize,
+    ) -> Result<(), ResolveError> {
+        let _depth_guard = budget
+            .map(|ctx| ctx.enter_nested("step_value_node_count"))
+            .transpose()
+            .map_err(ResolveError::Resource)?;
+        if depth >= 256 {
             return Err("REFERENCE expansion exceeds 1000000 nodes".into());
         }
+        *remaining = remaining
+            .checked_sub(1)
+            .ok_or("REFERENCE expansion exceeds 1000000 nodes")?;
+        if let Some(context) = budget {
+            context
+                .charge_work(1, "step_value_node_count")
+                .map_err(ResolveError::Resource)?;
+        }
         match value {
-            Value::List(values) => pending.extend(values.iter()),
-            Value::Typed(_, value) => pending.push(value),
+            Value::List(values) => {
+                for child in values {
+                    visit(child, remaining, budget, depth + 1)?;
+                }
+            }
+            Value::Typed(_, child) => visit(child, remaining, budget, depth + 1)?,
             _ => {}
         }
+        Ok(())
     }
-    Ok(count)
+
+    let mut remaining = limit;
+    visit(value, &mut remaining, budget, 0)?;
+    Ok(limit - remaining)
 }
 
 fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>) {
