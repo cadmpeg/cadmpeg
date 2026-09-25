@@ -346,6 +346,14 @@ impl SubdRadialSymmetry {
     ) -> Result<Self, SubdError> {
         let sweep = crate::scalar::FiniteReal::new(sweep)
             .ok_or_else(|| SubdError::Admission("kind.radial.sweep must be finite".into()))?;
+        Self::from_parts(segments, sweep, radial_maps)
+    }
+
+    fn from_parts(
+        segments: std::num::NonZeroU32,
+        sweep: crate::scalar::FiniteReal,
+        radial_maps: Vec<SubdRadialSymmetryMap>,
+    ) -> Result<Self, SubdError> {
         let mut selectors = std::collections::BTreeSet::new();
         for map in &radial_maps {
             if !selectors.insert(map.selector) {
@@ -376,6 +384,15 @@ impl SubdSymmetryKind {
         radial_maps: Vec<SubdRadialSymmetryMap>,
     ) -> Result<Self, SubdError> {
         SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
+    }
+
+    /// Admit radial maps with a sweep that the reader already checked.
+    pub fn radial_from_parts(
+        segments: std::num::NonZeroU32,
+        sweep: crate::scalar::FiniteReal,
+        radial_maps: Vec<SubdRadialSymmetryMap>,
+    ) -> Result<Self, SubdError> {
+        SubdRadialSymmetry::from_parts(segments, sweep, radial_maps).map(Self::Radial)
     }
 }
 
@@ -726,6 +743,20 @@ impl SubdSecondaryGrip {
             weight,
         })
     }
+
+    /// Construct a grip with a weight that the reader already checked.
+    pub fn from_parts(
+        source_index: u32,
+        point: Point3,
+        weight: PositiveReal,
+    ) -> Result<Self, SubdError> {
+        let point = require_finite_point("point", point)?;
+        Ok(Self {
+            source_index,
+            point,
+            weight,
+        })
+    }
 }
 
 /// A control-cage vertex tag.
@@ -839,6 +870,41 @@ impl SubdEdge {
             tag,
             knot_interval,
             sector_coefficients,
+        })
+    }
+
+    /// Construct an edge with a knot interval that the reader already checked.
+    pub fn from_parts(
+        vertices: [u32; 2],
+        sharpness: [f64; 2],
+        tag: SubdEdgeTag,
+        knot_interval: Option<PositiveReal>,
+        sector_coefficients: [f64; 2],
+    ) -> Result<Self, SubdError> {
+        if vertices[0] == vertices[1] {
+            return Err(SubdError::Admission(
+                "vertices must name distinct endpoints".into(),
+            ));
+        }
+        let [start_sharpness, end_sharpness] = sharpness.map(NonNegativeReal::new);
+        let (Some(start_sharpness), Some(end_sharpness)) = (start_sharpness, end_sharpness) else {
+            return Err(SubdError::Admission(
+                "sharpness must be finite and non-negative".into(),
+            ));
+        };
+        let [start_coefficient, end_coefficient] = sector_coefficients.map(FiniteReal::new);
+        let (Some(start_coefficient), Some(end_coefficient)) = (start_coefficient, end_coefficient)
+        else {
+            return Err(SubdError::Admission(
+                "sector_coefficients must be finite".into(),
+            ));
+        };
+        Ok(Self {
+            vertices,
+            sharpness: [start_sharpness, end_sharpness],
+            tag,
+            knot_interval,
+            sector_coefficients: [start_coefficient, end_coefficient],
         })
     }
 }

@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
     SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
@@ -105,7 +106,7 @@ fn compact_half_edges(
 #[derive(Clone, Copy)]
 struct GripPoint {
     point: Point3,
-    weight: f64,
+    weight: PositiveReal,
 }
 
 #[derive(Clone, Copy)]
@@ -176,10 +177,10 @@ fn parse_int<T: std::str::FromStr>(
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
 }
 
-fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<f64, CodecError> {
+fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<FiniteReal, CodecError> {
     value
         .and_then(|value| value.parse().ok())
-        .filter(|value: &f64| value.is_finite())
+        .and_then(FiniteReal::new)
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
 }
 
@@ -248,9 +249,9 @@ enum SymmetryMode {
 #[derive(Debug)]
 struct PartialSymmetryBlock {
     mode: SymmetryMode,
-    plane: Option<[f64; 12]>,
+    plane: Option<[FiniteReal; 12]>,
     radial_segments: Option<std::num::NonZeroU32>,
-    radial_sweep: Option<f64>,
+    radial_sweep: Option<FiniteReal>,
     radial_maps: Vec<SubdRadialSymmetryMap>,
     record_kinds: BTreeSet<String>,
     face_forward: BTreeMap<usize, usize>,
@@ -282,7 +283,7 @@ impl PartialSymmetryBlock {
 
 #[derive(Debug)]
 struct SymmetryBlock {
-    plane: [f64; 12],
+    plane: [FiniteReal; 12],
     kind: SymmetryKind,
 }
 
@@ -295,7 +296,7 @@ enum SymmetryKind {
     },
     Radial {
         segments: std::num::NonZeroU32,
-        sweep: f64,
+        sweep: FiniteReal,
         maps: Vec<SubdRadialSymmetryMap>,
     },
 }
@@ -380,17 +381,17 @@ fn validate_symmetry_map(
     Ok(())
 }
 
-fn symmetry_plane(name: &str, values: [f64; 12]) -> Result<SubdPlaneFrame, CodecError> {
+fn symmetry_plane(name: &str, values: [FiniteReal; 12]) -> Result<SubdPlaneFrame, CodecError> {
     let origin = Point3::new(
-        values[0] * CAGE_COORDINATE_SCALE,
-        values[1] * CAGE_COORDINATE_SCALE,
-        values[2] * CAGE_COORDINATE_SCALE,
+        values[0].get() * CAGE_COORDINATE_SCALE,
+        values[1].get() * CAGE_COORDINATE_SCALE,
+        values[2].get() * CAGE_COORDINATE_SCALE,
     );
-    let first_axis = Vector3::new(values[4], values[5], values[6]);
-    let second_axis = Vector3::new(values[8], values[9], values[10]);
-    if (values[3] - 1.0).abs() > SYMMETRY_FRAME_EPS
-        || values[7].abs() > SYMMETRY_FRAME_EPS
-        || values[11].abs() > SYMMETRY_FRAME_EPS
+    let first_axis = Vector3::new(values[4].get(), values[5].get(), values[6].get());
+    let second_axis = Vector3::new(values[8].get(), values[9].get(), values[10].get());
+    if (values[3].get() - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || values[7].get().abs() > SYMMETRY_FRAME_EPS
+        || values[11].get().abs() > SYMMETRY_FRAME_EPS
     {
         return Err(malformed(
             name,
@@ -547,7 +548,7 @@ fn grip_block(
                     let point = grip_points.get(index).copied().flatten().ok_or_else(|| {
                         malformed(name, "derived-grip entry names a deleted grip")
                     })?;
-                    SubdSecondaryGrip::new(
+                    SubdSecondaryGrip::from_parts(
                         u32::try_from(index)
                             .map_err(|_| malformed(name, "secondary grip index overflows IR"))?,
                         point.point,
@@ -741,7 +742,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     // through validation and compacted only when the IR cage is built.
     let mut face_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
-    let mut edge_knot_intervals: Vec<Option<f64>> = Vec::new();
+    let mut edge_knot_intervals: Vec<Option<PositiveReal>> = Vec::new();
     let mut edge_knot_records = Vec::new();
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
@@ -834,9 +835,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 root => {
                     edge_roots.push(Some(parse_int::<usize>(name, root, "edge root")?));
                     let knot_interval = parse_f64(name, fields.next(), "edge knot interval")?;
-                    if knot_interval <= 0.0 {
-                        return Err(malformed(name, "edge knot interval is not positive"));
-                    }
+                    let knot_interval = PositiveReal::new(knot_interval.get())
+                        .ok_or_else(|| malformed(name, "edge knot interval is not positive"))?;
                     edge_knot_intervals.push(Some(knot_interval));
                     require_end(name, fields, "edge")?;
                 }
@@ -960,14 +960,14 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 None => grip_points.push(None),
                 x => {
                     let point = Point3::new(
-                        parse_f64(name, x, "grip x")? * CAGE_COORDINATE_SCALE,
-                        parse_f64(name, fields.next(), "grip y")? * CAGE_COORDINATE_SCALE,
-                        parse_f64(name, fields.next(), "grip z")? * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, x, "grip x")?.get() * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip y")?.get() * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip z")?.get() * CAGE_COORDINATE_SCALE,
                     );
                     let weight = parse_f64(name, fields.next(), "grip weight")?;
-                    if weight <= 0.0 || fields.next().is_some() {
-                        return Err(malformed(name, "grip weight is not positive"));
-                    }
+                    let weight = PositiveReal::new(weight.get())
+                        .filter(|_| fields.next().is_none())
+                        .ok_or_else(|| malformed(name, "grip weight is not positive"))?;
                     grip_points.push(Some(GripPoint { point, weight }));
                 }
             },
@@ -989,7 +989,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 let values = fields
                     .map(|value| parse_f64(name, Some(value), "symmetry plane coefficient"))
                     .collect::<Result<Vec<_>, _>>()?;
-                let plane: [f64; 12] = values
+                let plane: [FiniteReal; 12] = values
                     .try_into()
                     .map_err(|_| malformed(name, "symmetry plane must have 12 coefficients"))?;
                 if block.plane.replace(plane).is_some() {
@@ -1086,7 +1086,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             }
             Some(declaration @ ("tol" | "geom-tol")) => {
                 let tolerance = parse_f64(name, fields.next(), declaration)?;
-                if tolerance <= 0.0 {
+                if tolerance.get() <= 0.0 {
                     return Err(malformed(name, format!("{declaration} is not positive")));
                 }
                 require_end(name, fields, declaration)?;
@@ -1119,12 +1119,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .zip(&edge_knot_intervals)
             .all(|(record, interval)| match interval {
                 Some(interval) => {
-                    *record > 0.0
-                        && (*record - interval).abs()
+                    record.get() > 0.0
+                        && (record.get() - interval.get()).abs()
                             <= EDGE_KNOT_MIRROR_RELATIVE_EPS
-                                * record.abs().max(interval.abs()).max(1.0)
+                                * record.get().abs().max(interval.get().abs()).max(1.0)
                 }
-                None => *record == -1.0,
+                None => record.get() == -1.0,
             });
     if !edge_knot_records.is_empty() && !edge_knot_mirror {
         *unknown_record_kinds.entry("106ek".to_owned()).or_default() += edge_knot_records.len();
@@ -1338,7 +1338,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     sweep,
                     maps,
                 } => (
-                    SubdSymmetryKind::radial(*segments, *sweep, maps.clone())
+                    SubdSymmetryKind::radial_from_parts(*segments, *sweep, maps.clone())
                         .map_err(|error| malformed(name, error))?,
                     Vec::new(),
                     Vec::new(),
@@ -1490,7 +1490,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .map(|(index, vertices)| {
             let crease = creased_edges.contains(&(index as u32));
             let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
-            SubdEdge::new(
+            SubdEdge::from_parts(
                 vertices,
                 [sharpness; 2],
                 if crease {
