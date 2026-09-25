@@ -6071,10 +6071,10 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> bool {
-    let Some(start) = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[0]) else {
+    let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[0]) else {
         return false;
     };
-    let Some(end) = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[1]) else {
+    let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, domain[1]) else {
         return false;
     };
     let scale = nurbs

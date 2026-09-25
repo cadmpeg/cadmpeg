@@ -1538,7 +1538,7 @@ pub(super) fn project(
             );
             continue;
         }
-        let Some(start) =
+        let Ok(start) =
             cadmpeg_ir::eval::nurbs_curve_point_at(&placed_directrix, cached_interval[0])
         else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));

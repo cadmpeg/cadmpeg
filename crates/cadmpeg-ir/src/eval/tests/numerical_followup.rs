@@ -127,10 +127,13 @@ fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
         true,
     )
     .unwrap();
-    let mapped = map_nurbs_curve_parameter(&curve, 1e308).unwrap().get();
+    let mapped = map_nurbs_curve_parameter(&curve, crate::scalar::FiniteReal::new(1e308).unwrap())
+        .unwrap()
+        .get();
     assert!((-1e308..-9e307).contains(&mapped));
     assert_eq!(
-        map_nurbs_curve_parameter(&curve, -9e307).map(crate::scalar::FiniteReal::get),
+        map_nurbs_curve_parameter(&curve, crate::scalar::FiniteReal::new(-9e307).unwrap())
+            .map(crate::scalar::FiniteReal::get),
         Some(-1e308)
     );
 }

@@ -138,14 +138,9 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     );
     assert_eq!(nurbs.control_points().len(), 7);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(
-            nurbs.degree(),
-            nurbs.knots(),
-            &nurbs.pole_rows().raw_points(),
-            None,
-            1.5,
-        )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 1.5)
+            .ok()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
     assert_eq!(
@@ -175,14 +170,8 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
     else {
         panic!("expected a cubic NURBS carrier");
     };
-    let point = cadmpeg_ir::eval::nurbs_curve_point(
-        nurbs.degree(),
-        nurbs.knots(),
-        &nurbs.pole_rows().raw_points(),
-        None,
-        3.25,
-    )
-    .expect("converted curve evaluates");
+    let point =
+        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 3.25).expect("converted curve evaluates");
     let expected = Point3::new(16.0, -1.546_875, 0.164_062_5);
     assert!(point.distance(expected) < 1.0e-12, "{point:?}");
     assert!(result

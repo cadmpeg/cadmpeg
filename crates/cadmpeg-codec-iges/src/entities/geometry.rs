@@ -2079,11 +2079,11 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]) else {
+        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]) else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
-        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]) else {
+        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]) else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };

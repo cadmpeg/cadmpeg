@@ -378,7 +378,7 @@ pub(super) fn spun_nurbs(
 mod tests {
     use std::f64::consts::{FRAC_PI_2, SQRT_2};
 
-    use cadmpeg_ir::eval::nurbs_curve_point;
+    use cadmpeg_ir::eval::nurbs_curve_point_at;
 
     use super::{profile_nurbs, scan_sweep_carriers, spun_nurbs, swept_nurbs, SweepKind};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -469,17 +469,9 @@ mod tests {
     }
 
     fn eval_curve(curve: &NurbsCurve, parameter: f64) -> Point3 {
-        let control_points = curve.pole_rows().raw_points();
-        let weights = curve.pole_rows().weights();
-        nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &control_points,
-            weights.as_deref(),
-            parameter,
-        )
-        .expect("evaluable curve")
-        .get()
+        nurbs_curve_point_at(curve, parameter)
+            .expect("evaluable curve")
+            .get()
     }
 
     #[test]

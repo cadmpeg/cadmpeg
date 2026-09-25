@@ -301,27 +301,11 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         .expect("relative-parameter rational ruled carrier");
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
     assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-    let first_points = first.pole_rows().raw_points();
-    let first_weights = first.pole_rows().weights();
-    let second_points = second.pole_rows().raw_points();
-    let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
-        let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree(),
-            first.knots(),
-            &first_points,
-            first_weights.as_deref(),
-            u,
-        )
-        .expect("first rail point");
-        let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree(),
-            second.knots(),
-            &second_points,
-            second_weights.as_deref(),
-            2.0 * u,
-        )
-        .expect("second rail point");
+        let first_point =
+            cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
+        let second_point =
+            cadmpeg_ir::eval::nurbs_curve_point_at(&second, 2.0 * u).expect("second rail point");
         let expected = Point3::new(
             (1.0 - v) * first_point.x + v * second_point.x,
             (1.0 - v) * first_point.y + v * second_point.y,
@@ -364,27 +348,11 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         surface.u_knots().as_slice(),
         [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
     );
-    let first_points = first.pole_rows().raw_points();
-    let first_weights = first.pole_rows().weights();
-    let second_points = second.pole_rows().raw_points();
-    let second_weights = second.pole_rows().weights();
     for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
-        let first_point = cadmpeg_ir::eval::nurbs_curve_point(
-            first.degree(),
-            first.knots(),
-            &first_points,
-            first_weights.as_deref(),
-            u,
-        )
-        .expect("first rail point");
-        let second_point = cadmpeg_ir::eval::nurbs_curve_point(
-            second.degree(),
-            second.knots(),
-            &second_points,
-            second_weights.as_deref(),
-            u,
-        )
-        .expect("second rail point");
+        let first_point =
+            cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
+        let second_point =
+            cadmpeg_ir::eval::nurbs_curve_point_at(&second, u).expect("second rail point");
         let expected = Point3::new(
             (1.0 - v) * first_point.x + v * second_point.x,
             (1.0 - v) * first_point.y + v * second_point.y,

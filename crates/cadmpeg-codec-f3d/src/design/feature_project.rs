@@ -8678,8 +8678,12 @@ fn spatial_sketch_entity_endpoints(
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.pole_count()];
             Some([
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start)?.get(),
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end)?.get(),
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start)
+                    .ok()?
+                    .get(),
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end)
+                    .ok()?
+                    .get(),
             ])
         }
         _ => None,

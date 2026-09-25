@@ -1410,18 +1410,21 @@ fn validate_nurbs_trim(
                 ))
             })?;
             let curve_parameter = if sense == Sense::Forward {
-                parameter
+                sample
             } else {
                 cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
-                    .map(FiniteReal::get)
                     .ok_or_else(|| CodecError::malformed("reversed edge parameter is non-finite"))?
             };
-            let edge_point = edge.curve.point(curve_parameter).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "edge curve {} cannot be evaluated over its edge domain",
-                    edge.curve_id
-                ))
-            })?;
+            // A non-finite edge curve point is measured as a finite one is.
+            let edge_point = match edge.curve.point(curve_parameter) {
+                Ok(point) => point.get(),
+                Err(failure) => failure.non_finite().ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "edge curve {} cannot be evaluated over its edge domain",
+                        edge.curve_id
+                    ))
+                })?,
+            };
             let distance = mapped.distance(edge_point);
             if !distance.is_finite() || distance > tolerance {
                 return Err(CodecError::malformed(format_args!(

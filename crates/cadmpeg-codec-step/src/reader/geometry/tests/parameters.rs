@@ -8,7 +8,7 @@ use crate::reader::geometry::{
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
-use cadmpeg_ir::eval::nurbs_curve_point;
+use cadmpeg_ir::eval::nurbs_curve_point_at;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     pcurve::PcurveGeometry,
@@ -112,11 +112,8 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     )
     .unwrap();
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let control_points = nurbs.pole_rows().raw_points();
-    let start_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 0.0)
-        .expect("start point");
-    let end_point = nurbs_curve_point(nurbs.degree(), nurbs.knots(), &control_points, None, 1.0)
-        .expect("end point");
+    let start_point = nurbs_curve_point_at(&nurbs, 0.0).expect("start point");
+    let end_point = nurbs_curve_point_at(&nurbs, 1.0).expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
         .expect("start witness")

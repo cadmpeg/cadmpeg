@@ -70,8 +70,8 @@ fn spatial_oriented_endpoints(
             let start = curve.knots()[curve.degree() as usize];
             let end = curve.knots()[curve.pole_count()];
             (
-                crate::eval::nurbs_curve_point_at(curve, start)?.get(),
-                crate::eval::nurbs_curve_point_at(curve, end)?.get(),
+                crate::eval::nurbs_curve_point_at(curve, start).ok()?.get(),
+                crate::eval::nurbs_curve_point_at(curve, end).ok()?.get(),
             )
         }
         _ => return None,

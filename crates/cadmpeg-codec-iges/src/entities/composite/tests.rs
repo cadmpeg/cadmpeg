@@ -1024,23 +1024,11 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
         Some(vec![1.0, 3.0]),
     );
-    let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &curve.pole_rows().raw_points(),
-        curve.pole_rows().weights().as_deref(),
-        0.25,
-    )
-    .expect("valid rational linear NURBS evaluates before degree elevation");
+    let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
+        .expect("valid rational linear NURBS evaluates before degree elevation");
     elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None).expect("elevation lanes pair");
-    let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &curve.pole_rows().raw_points(),
-        curve.pole_rows().weights().as_deref(),
-        0.25,
-    )
-    .expect("valid rational quadratic NURBS evaluates after degree elevation");
+    let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.25)
+        .expect("valid rational quadratic NURBS evaluates after degree elevation");
     assert!(before.distance(after.get()) <= 1.0e-12);
     assert_eq!(curve.control_points()[1], Point3::new(1.5, 0.0, 0.0));
     assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0, 3.0]));
@@ -1071,27 +1059,11 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
         trimmed.weights().map(|weights| weights.len()),
         Some(trimmed.pole_count())
     );
-    let curve_points = curve.pole_rows().raw_points();
-    let curve_weights = curve.pole_rows().weights();
-    let trimmed_points = trimmed.pole_rows().raw_points();
-    let trimmed_weights = trimmed.pole_rows().weights();
     for parameter in [0.25, 0.5, 1.0, 1.5] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve_points,
-            curve_weights.as_deref(),
-            parameter,
-        )
-        .expect("source NURBS evaluates");
-        let after = cadmpeg_ir::eval::nurbs_curve_point(
-            trimmed.degree(),
-            trimmed.knots(),
-            &trimmed_points,
-            trimmed_weights.as_deref(),
-            parameter,
-        )
-        .expect("trimmed NURBS evaluates");
+        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+            .expect("source NURBS evaluates");
+        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
+            .expect("trimmed NURBS evaluates");
         assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
 }
@@ -1123,27 +1095,11 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
     .expect("carrier lanes pair")
     .expect("evaluated active endpoints join exactly");
 
-    let curve_points = curve.pole_rows().raw_points();
-    let curve_weights = curve.pole_rows().weights();
-    let concatenated_points = concatenated.nurbs.pole_rows().raw_points();
-    let concatenated_weights = concatenated.nurbs.pole_rows().weights();
     for parameter in [0.25, 0.75, 1.25, 1.75] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &curve_points,
-            curve_weights.as_deref(),
-            parameter,
-        )
-        .expect("source NURBS evaluates");
-        let after = cadmpeg_ir::eval::nurbs_curve_point(
-            concatenated.nurbs.degree(),
-            concatenated.nurbs.knots(),
-            &concatenated_points,
-            concatenated_weights.as_deref(),
-            parameter,
-        )
-        .expect("concatenated NURBS evaluates");
+        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+            .expect("source NURBS evaluates");
+        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+            .expect("concatenated NURBS evaluates");
         assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
     }
 }
@@ -1176,27 +1132,11 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
         let trimmed = trim_nurbs_to_interval(&curve, interval)
             .expect("carrier lanes pair")
             .expect("a valid active interval has an exact NURBS subrange");
-        let curve_points = curve.pole_rows().raw_points();
-        let curve_weights = curve.pole_rows().weights();
-        let trimmed_points = trimmed.pole_rows().raw_points();
-        let trimmed_weights = trimmed.pole_rows().weights();
         for parameter in parameters {
-            let before = cadmpeg_ir::eval::nurbs_curve_point(
-                curve.degree(),
-                curve.knots(),
-                &curve_points,
-                curve_weights.as_deref(),
-                parameter,
-            )
-            .expect("source NURBS evaluates");
-            let after = cadmpeg_ir::eval::nurbs_curve_point(
-                trimmed.degree(),
-                trimmed.knots(),
-                &trimmed_points,
-                trimmed_weights.as_deref(),
-                parameter,
-            )
-            .expect("trimmed NURBS evaluates");
+            let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, parameter)
+                .expect("source NURBS evaluates");
+            let after = cadmpeg_ir::eval::nurbs_curve_point_at(&trimmed, parameter)
+                .expect("trimmed NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
     }
@@ -1224,18 +1164,11 @@ fn concatenation_preserves_degree_zero_spans() {
         concatenated.nurbs.control_points(),
         vec![point, point, point]
     );
-    let concatenated_points = concatenated.nurbs.pole_rows().raw_points();
-    let concatenated_weights = concatenated.nurbs.pole_rows().weights();
     for parameter in [0.5, 1.5, 2.5] {
         assert_eq!(
-            cadmpeg_ir::eval::nurbs_curve_point(
-                concatenated.nurbs.degree(),
-                concatenated.nurbs.knots(),
-                &concatenated_points,
-                concatenated_weights.as_deref(),
-                parameter,
-            )
-            .map(cadmpeg_ir::features::FinitePoint3::get),
+            cadmpeg_ir::eval::nurbs_curve_point_at(&concatenated.nurbs, parameter)
+                .ok()
+                .map(cadmpeg_ir::features::FinitePoint3::get),
             Some(point)
         );
     }
@@ -1253,23 +1186,11 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
         ],
         None,
     );
-    let before = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &curve.pole_rows().raw_points(),
-        curve.pole_rows().weights().as_deref(),
-        2.0,
-    )
-    .expect("valid multi-span linear NURBS evaluates before degree elevation");
+    let before = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+        .expect("valid multi-span linear NURBS evaluates before degree elevation");
     elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None).expect("elevation lanes pair");
-    let after = cadmpeg_ir::eval::nurbs_curve_point(
-        curve.degree(),
-        curve.knots(),
-        &curve.pole_rows().raw_points(),
-        curve.pole_rows().weights().as_deref(),
-        2.0,
-    )
-    .expect("valid multi-span linear NURBS evaluates after degree elevation");
+    let after = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 2.0)
+        .expect("valid multi-span linear NURBS evaluates after degree elevation");
     assert_eq!(curve.degree(), 3);
     assert!(before.distance(after.get()) <= 1.0e-12);
 }
@@ -1281,27 +1202,9 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
     let mut elevated = source.clone();
     elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None).expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 2);
-    let source_points = source.pole_rows().raw_points();
-    let source_weights = source.pole_rows().weights();
-    let elevated_points = elevated.pole_rows().raw_points();
-    let elevated_weights = elevated.pole_rows().weights();
     for parameter in [0.25, 0.75, 1.25, 1.75] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree(),
-            source.knots(),
-            &source_points,
-            source_weights.as_deref(),
-            parameter,
-        )
-        .unwrap();
-        let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree(),
-            elevated.knots(),
-            &elevated_points,
-            elevated_weights.as_deref(),
-            parameter,
-        )
-        .unwrap();
+        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
+        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
         assert_eq!(before, after);
     }
 }
@@ -1324,27 +1227,9 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
     elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None).expect("elevation lanes pair");
     assert_eq!(elevated.degree(), 3);
     assert_eq!(elevated.weights().map(|weights| weights.len()), Some(7));
-    let source_points = source.pole_rows().raw_points();
-    let source_weights = source.pole_rows().weights();
-    let elevated_points = elevated.pole_rows().raw_points();
-    let elevated_weights = elevated.pole_rows().weights();
     for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
-        let before = cadmpeg_ir::eval::nurbs_curve_point(
-            source.degree(),
-            source.knots(),
-            &source_points,
-            source_weights.as_deref(),
-            parameter,
-        )
-        .unwrap();
-        let after = cadmpeg_ir::eval::nurbs_curve_point(
-            elevated.degree(),
-            elevated.knots(),
-            &elevated_points,
-            elevated_weights.as_deref(),
-            parameter,
-        )
-        .unwrap();
+        let before = cadmpeg_ir::eval::nurbs_curve_point_at(&source, parameter).unwrap();
+        let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
         assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
     }
 }
@@ -1507,25 +1392,15 @@ fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
         reverse_nurbs(curve, [2.0, 5.0]).expect("a bounded subrange reverses exactly");
     assert_eq!(range, [5.0, 8.0]);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree(),
-            reversed.knots(),
-            &reversed.pole_rows().raw_points(),
-            reversed.pole_rows().weights().as_deref(),
-            range[0],
-        )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::nurbs_curve_point_at(&reversed, range[0])
+            .ok()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(5.0, 0.0, 0.0))
     );
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(
-            reversed.degree(),
-            reversed.knots(),
-            &reversed.pole_rows().raw_points(),
-            reversed.pole_rows().weights().as_deref(),
-            range[1],
-        )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::nurbs_curve_point_at(&reversed, range[1])
+            .ok()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(Point3::new(2.0, 0.0, 0.0))
     );
 }
@@ -1570,14 +1445,9 @@ fn decode_concatenates_ordered_composite_curve_children() {
     assert_eq!(nurbs.knots().as_slice(), [0.0, 0.0, 1.0, 2.0, 2.0]);
     assert_eq!(nurbs.control_points().len(), 3);
     assert_eq!(
-        cadmpeg_ir::eval::nurbs_curve_point(
-            1,
-            nurbs.knots(),
-            &nurbs.pole_rows().raw_points(),
-            None,
-            1.5
-        )
-        .map(cadmpeg_ir::features::FinitePoint3::get),
+        cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, 1.5)
+            .ok()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.5, 0.0))
     );
     assert!(result.report().losses.is_empty());

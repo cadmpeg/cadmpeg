@@ -4671,16 +4671,8 @@ mod native_interval_curve_tests {
             [0.0, std::f64::consts::PI],
         )
         .expect("generated circle interval");
-        let control_points = curve.pole_rows().raw_points();
-        let weights = curve.pole_rows().weights();
-        let midpoint = cadmpeg_ir::eval::nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &control_points,
-            weights.as_deref(),
-            std::f64::consts::FRAC_PI_2,
-        )
-        .expect("evaluate generated circle interval");
+        let midpoint = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, std::f64::consts::FRAC_PI_2)
+            .expect("evaluate generated circle interval");
         assert!((midpoint.x - 2.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.y - 8.0).abs() < EPS_GENERATED_CURVE);
         assert!((midpoint.z - 4.0).abs() < EPS_GENERATED_CURVE);

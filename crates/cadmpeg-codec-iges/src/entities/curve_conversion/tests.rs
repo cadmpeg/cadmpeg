@@ -3,7 +3,7 @@ use super::{
     angularly_equal, elliptical_arc_nurbs, parabolic_arc_nurbs, quarter_turn_spans,
     ANGULAR_TOLERANCE,
 };
-use cadmpeg_ir::eval::nurbs_curve_point;
+use cadmpeg_ir::eval::nurbs_curve_point_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
@@ -69,8 +69,6 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
     .expect("valid ellipse arc");
     assert_eq!(curve.degree(), 2);
     assert_eq!(curve.control_points().len(), 3);
-    let control_points = curve.pole_rows().raw_points();
-    let weights = curve.pole_rows().weights();
     for (parameter, expected) in [
         (0.0, Point3::new(5.0, 2.0, 3.0)),
         (
@@ -79,14 +77,7 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         ),
         (std::f64::consts::FRAC_PI_2, Point3::new(1.0, 4.0, 3.0)),
     ] {
-        let actual = nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &control_points,
-            weights.as_deref(),
-            parameter,
-        )
-        .expect("ellipse NURBS evaluates");
+        let actual = nurbs_curve_point_at(&curve, parameter).expect("ellipse NURBS evaluates");
         assert!(
             actual.distance(expected) <= 1.0e-12,
             "{actual:?} != {expected:?}"
@@ -105,20 +96,12 @@ fn a_parabola_arc_has_exact_quadratic_points() {
     )
     .expect("arc lanes pair")
     .expect("valid parabola arc");
-    let control_points = curve.pole_rows().raw_points();
     for (parameter, expected) in [
         (-1.0, Point3::new(3.0, -2.0, 3.0)),
         (1.0, Point3::new(3.0, 6.0, 3.0)),
         (3.0, Point3::new(19.0, 14.0, 3.0)),
     ] {
-        let actual = nurbs_curve_point(
-            curve.degree(),
-            curve.knots(),
-            &control_points,
-            None,
-            parameter,
-        )
-        .expect("parabola NURBS evaluates");
+        let actual = nurbs_curve_point_at(&curve, parameter).expect("parabola NURBS evaluates");
         assert!(
             actual.distance(expected) <= 1.0e-12,
             "{actual:?} != {expected:?}"

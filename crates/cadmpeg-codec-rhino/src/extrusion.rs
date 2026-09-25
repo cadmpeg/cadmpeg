@@ -474,7 +474,7 @@ fn evaluate_profile_point(
 ) -> Result<Point3, GeometryError> {
     nurbs_curve_point_at(curve, parameter)
         .map(cadmpeg_ir::features::FinitePoint3::get)
-        .ok_or_else(|| error(offset, "extrusion profile cannot be evaluated"))
+        .map_err(|_| error(offset, "extrusion profile cannot be evaluated"))
 }
 
 fn points_coincident(first: Point3, second: Point3) -> bool {
