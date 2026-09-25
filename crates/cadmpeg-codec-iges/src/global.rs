@@ -660,7 +660,7 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
     let card_count = scan.section(Section::Global).count();
     let length = card_count
         .checked_mul(72)
-        .ok_or_else(|| malformed("Global section length overflows"))?;
+        .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
     ctx.charge_retained(u64_from_index(length), "iges_global_stream")?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(length).map_err(|_| {
