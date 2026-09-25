@@ -449,12 +449,15 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Line {
-            start: Point3::new(0.0, 0.0, 0.0),
-            end: Point3::new(angle.cos(), angle.sin(), 0.0),
-            direction: Vector3::new(angle.cos(), angle.sin(), 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        }),
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(angle.cos(), angle.sin(), 0.0),
+                Vector3::new(angle.cos(), angle.sin(), 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
     };
     let curves = vec![
         curve(10, 10, 0.0),

@@ -61,12 +61,13 @@ fn stable_type_guid_selects_line_when_the_scalar_payload_also_accepts_as_an_arc(
     assert_eq!(line.geometry_offset, 133);
     assert_eq!(
         line.geometry,
-        SketchCurveGeometry::Line {
-            start: Point3::new(0.0, 0.0, 0.0),
-            end: Point3::new(0.0, 0.0, 10.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
-            normal: Vector3::new(1.0, 0.0, 0.0),
-        }
+        SketchCurveGeometry::line(
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 10.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap()
     );
 
     let circular = decode_sketch_curve_geometry(&payload, 0, 41, SketchCurveClass::Circular)

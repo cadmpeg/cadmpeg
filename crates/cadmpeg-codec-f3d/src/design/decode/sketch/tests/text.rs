@@ -313,7 +313,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     assert_eq!(curves[0].byte_offset, live_curve_at as u64);
     assert!(matches!(
         curves[0].geometry,
-        Some(SketchCurveGeometry::Line { start, .. }) if start == Point3::new(50.0, 0.0, 0.0)
+        Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
     ));
 
     let texts = crate::design::decode::sketch::decode_sketch_texts_from_stream(

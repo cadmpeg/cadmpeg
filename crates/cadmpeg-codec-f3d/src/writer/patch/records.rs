@@ -611,6 +611,10 @@ pub(crate) fn patch_sketch_curves(
                 direction,
                 normal,
             } => {
+                let line_start = line_start.get();
+                let end = end.get();
+                let direction = direction.as_raw();
+                let normal = normal.as_raw();
                 let scalar_count = line_scalar_count(bytes, start)?;
                 if scalar_count == 9 && (normal.x != 0.0 || normal.y != 0.0 || normal.z != 1.0) {
                     return Err(CodecError::NotImplemented(

@@ -2210,7 +2210,7 @@ pub(super) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
 pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
     match curve.geometry.as_ref() {
         Some(SketchCurveGeometry::Line { start, end, .. }) => {
-            !(planar_point(start) && planar_point(end))
+            !(planar_point(start.as_raw()) && planar_point(end.as_raw()))
         }
         Some(SketchCurveGeometry::Arc {
             center,

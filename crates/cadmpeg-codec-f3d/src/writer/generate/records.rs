@@ -613,6 +613,10 @@ fn encode_sketch_curve_identity(
             direction,
             normal,
         }) => {
+            let start = start.get();
+            let end = end.get();
+            let direction = direction.as_raw();
+            let normal = normal.as_raw();
             let values = [
                 start.x / LEN_TO_MM,
                 start.y / LEN_TO_MM,

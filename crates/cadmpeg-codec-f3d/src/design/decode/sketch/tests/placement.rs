@@ -450,12 +450,10 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     else {
         panic!("expected line");
     };
-    assert!((direction.norm() - 1.0).abs() <= 1.0e-12);
-    assert!((normal.norm() - 1.0).abs() <= 1.0e-12);
-    assert!(
-        (direction.x * normal.x + direction.y * normal.y + direction.z * normal.z).abs() <= 1.0e-12
-    );
-    assert!(normal.z > 0.0);
+    assert!((direction.as_raw().norm() - 1.0).abs() <= 1.0e-12);
+    assert!((normal.as_raw().norm() - 1.0).abs() <= 1.0e-12);
+    assert!(direction.as_raw().dot(*normal.as_raw()).abs() <= 1.0e-12);
+    assert!(normal.as_raw().z > 0.0);
 
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&1.0f64.to_le_bytes());
     let SketchCurveGeometry::Line { direction, .. } =
@@ -463,7 +461,7 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     else {
         panic!("expected line");
     };
-    assert!((direction.y + 1.0).abs() <= 1.0e-12);
+    assert!((direction.as_raw().y + 1.0).abs() <= 1.0e-12);
 
     bytes[133 + 6 * 8..133 + 7 * 8].copy_from_slice(&0.6f64.to_le_bytes());
     bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&0.8f64.to_le_bytes());
@@ -473,8 +471,8 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
     else {
         panic!("expected line");
     };
-    assert!((direction.x).abs() <= 1.0e-12);
-    assert!((direction.y + 1.0).abs() <= 1.0e-12);
+    assert!((direction.as_raw().x).abs() <= 1.0e-12);
+    assert!((direction.as_raw().y + 1.0).abs() <= 1.0e-12);
 }
 
 #[test]
@@ -494,10 +492,10 @@ fn spatial_line_with_parallel_auxiliary_normal_retains_its_endpoints() {
     else {
         panic!("expected line");
     };
-    assert_eq!(start, Point3::new(0.0, 30.0, 0.0));
-    assert_eq!(end, Point3::new(0.0, 30.0, 15.0));
-    assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(normal, Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(start.get(), Point3::new(0.0, 30.0, 0.0));
+    assert_eq!(end.get(), Point3::new(0.0, 30.0, 15.0));
+    assert_eq!(*direction.as_raw(), Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*normal.as_raw(), Vector3::new(0.0, 1.0, 0.0));
 }
 
 #[test]
@@ -521,10 +519,10 @@ fn compact_planar_line_uses_its_implicit_normal() {
     else {
         panic!("expected line");
     };
-    assert_eq!(start, Point3::new(5.0, 8.75, 0.0));
-    assert_eq!(end, Point3::new(5.0, -8.75, 0.0));
-    assert_eq!(direction, Vector3::new(0.0, -1.0, 0.0));
-    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(start.get(), Point3::new(5.0, 8.75, 0.0));
+    assert_eq!(end.get(), Point3::new(5.0, -8.75, 0.0));
+    assert_eq!(*direction.as_raw(), Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(*normal.as_raw(), Vector3::new(0.0, 0.0, 1.0));
 }
 
 #[test]
@@ -538,16 +536,17 @@ fn retained_compact_planar_line_edit_preserves_its_reference_tail() {
     bytes.extend_from_slice(&37u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     let tail = bytes[72..].to_vec();
-    let geometry = SketchCurveGeometry::Line {
-        start: Point3::new(10.0, 20.0, 0.0),
-        end: Point3::new(30.0, 40.0, 0.0),
-        direction: Vector3::new(
+    let geometry = SketchCurveGeometry::line(
+        Point3::new(10.0, 20.0, 0.0),
+        Point3::new(30.0, 40.0, 0.0),
+        Vector3::new(
             std::f64::consts::FRAC_1_SQRT_2,
             std::f64::consts::FRAC_1_SQRT_2,
             0.0,
         ),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-    };
+        Vector3::new(0.0, 0.0, 1.0),
+    )
+    .unwrap();
     crate::writer::patch::records::patch_sketch_curves(
         &mut bytes,
         &[crate::writer::patch::edits::SketchCurveEdit {
@@ -589,8 +588,8 @@ fn text_frame_line_decodes_after_point_references() {
     assert!(matches!(
         geometry,
         SketchCurveGeometry::Line { start, end, .. }
-            if start == Point3::new(-57.5, 10.0, 0.0)
-                && end == Point3::new(-5.0, 10.0, 0.0)
+            if start.get() == Point3::new(-57.5, 10.0, 0.0)
+                && end.get() == Point3::new(-5.0, 10.0, 0.0)
     ));
 }
 

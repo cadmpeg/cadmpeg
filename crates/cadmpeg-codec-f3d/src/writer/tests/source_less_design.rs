@@ -662,12 +662,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             entity_genesis: Some(901),
             primary_id: std::num::NonZeroU64::new(700).unwrap(),
             secondary_id: 701,
-            geometry: Some(SketchCurveGeometry::Line {
-                start: Point3::new(10.0, 20.0, 0.0),
-                end: Point3::new(40.0, 20.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-            }),
+            geometry: Some(
+                SketchCurveGeometry::line(
+                    Point3::new(10.0, 20.0, 0.0),
+                    Point3::new(40.0, 20.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
         },
         SketchCurveIdentity {
             id: "f3d:generated:sketch-curve#1".into(),

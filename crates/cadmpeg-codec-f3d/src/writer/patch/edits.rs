@@ -2545,12 +2545,7 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
 
 fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     match geometry {
-        SketchCurveGeometry::Line {
-            start,
-            end,
-            direction,
-            normal,
-        } => start.is_finite() && end.is_finite() && orthonormal_pair(*direction, *normal),
+        SketchCurveGeometry::Line { .. } => true,
         SketchCurveGeometry::Arc {
             center,
             normal,
