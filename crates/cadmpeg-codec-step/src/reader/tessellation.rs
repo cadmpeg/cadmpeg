@@ -56,10 +56,7 @@ pub(super) fn decode(
             );
             continue;
         };
-        let item_ids = items
-            .iter()
-            .filter_map(ValueExt::reference)
-            .collect::<Vec<_>>();
+        let item_ids = container_item_ids(items, kind, id)?;
         declared_items.extend(item_ids.iter().copied());
         let candidates = linked_bodies(record, kind, topology);
         if candidates.is_empty() {
@@ -240,7 +237,9 @@ pub(super) fn decode(
                 complex_triangles(
                     entity_parameter(record, kind, 1, offset),
                     entity_parameter(record, kind, 2, offset),
-                )
+                    kind,
+                    id,
+                )?
             }
         };
         let Some(triangles) = triangles.filter(|triangles| !triangles.is_empty()) else {
@@ -606,12 +605,8 @@ impl TessellationItemAssociator<'_> {
             }
             let item_ids = entity_parameter(record, kind, 0, 1)
                 .and_then(ValueExt::list)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(ValueExt::reference)
-                        .collect::<Vec<_>>()
-                })
+                .map(|items| container_item_ids(items, kind, id))
+                .transpose()?
                 .unwrap_or_default();
             for item in item_ids {
                 self.visit(item, depth + 1, placement)?;
@@ -767,6 +762,21 @@ fn index_list(value: Option<&Value>) -> Option<Vec<u32>> {
         .collect()
 }
 
+fn container_item_ids(items: &[Value], kind: &str, id: u64) -> Result<Vec<u64>, CodecError> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            item.reference().ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{kind} #{id} item {} is not a reference",
+                    index + 1
+                ))
+            })
+        })
+        .collect()
+}
+
 fn has_entity(record: &RawRecord, name: &str) -> bool {
     entity_kind(record, &[name]).is_some()
 }
@@ -879,12 +889,17 @@ fn triangle_rows(value: &Value) -> Option<Vec<[u32; 3]>> {
         .collect::<Option<Vec<_>>>()
 }
 
-fn complex_triangles(strips: Option<&Value>, fans: Option<&Value>) -> Option<Vec<[u32; 3]>> {
-    let strips = index_rows(strips).unwrap_or_default();
-    let fans = index_rows(fans).unwrap_or_default();
+fn complex_triangles(
+    strips: Option<&Value>,
+    fans: Option<&Value>,
+    kind: &str,
+    id: u64,
+) -> Result<Option<Vec<[u32; 3]>>, CodecError> {
+    let strips = index_rows(strips, kind, id, "strip")?;
+    let fans = index_rows(fans, kind, id, "fan")?;
     let mut triangles = Vec::new();
     for strip in strips {
-        for index in 0..strip.len().saturating_sub(2) {
+        for index in 0..strip.len() - 2 {
             triangles.push(if index % 2 == 0 {
                 [strip[index], strip[index + 1], strip[index + 2]]
             } else {
@@ -893,28 +908,42 @@ fn complex_triangles(strips: Option<&Value>, fans: Option<&Value>) -> Option<Vec
         }
     }
     for fan in fans {
-        for index in 1..fan.len().saturating_sub(1) {
+        for index in 1..fan.len() - 1 {
             triangles.push([fan[0], fan[index], fan[index + 1]]);
         }
     }
-    (!triangles.is_empty()).then_some(triangles)
+    Ok((!triangles.is_empty()).then_some(triangles))
 }
 
-fn index_rows(value: Option<&Value>) -> Option<Vec<Vec<u32>>> {
-    Some(
-        value?
-            .list()?
-            .iter()
-            .filter_map(|row| {
-                let indices = row
-                    .list()?
-                    .iter()
-                    .map(|value| u32::try_from(value.integer()?).ok())
-                    .collect::<Option<Vec<_>>>()?;
-                (indices.len() >= 3).then_some(indices)
+fn index_rows(
+    value: Option<&Value>,
+    kind: &str,
+    id: u64,
+    lane: &str,
+) -> Result<Vec<Vec<u32>>, CodecError> {
+    let Some(rows) = value.and_then(ValueExt::list) else {
+        return Ok(Vec::new());
+    };
+    rows.iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            let indices = row
+                .list()
+                .and_then(|values| {
+                    values
+                        .iter()
+                        .map(|value| u32::try_from(value.integer()?).ok())
+                        .collect::<Option<Vec<_>>>()
+                })
+                .filter(|indices| indices.len() >= 3);
+            indices.ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{kind} #{id} {lane} row {} is invalid",
+                    row_index + 1
+                ))
             })
-            .collect(),
-    )
+        })
+        .collect()
 }
 
 fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
