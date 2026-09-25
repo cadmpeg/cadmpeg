@@ -68,6 +68,35 @@ fn text_scale_selects_the_length_unit() {
 }
 
 #[test]
+fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
+    let bytes = text_sphere_stream(1.0);
+    let result = decode_bytes(&bytes);
+    let surface_id = result.ir().model.surfaces[0].id.to_string();
+    let (_, _, fidelity) = result.into_parts();
+    let provenance = fidelity
+        .annotations
+        .provenance
+        .get(surface_id.as_str())
+        .expect("sphere source record");
+    let expected_offset = bytes
+        .windows(b"sphere-surface".len())
+        .position(|window| window == b"sphere-surface")
+        .expect("sphere record in source");
+    assert_eq!(provenance.stream(), "sat:stream");
+    assert_eq!(provenance.offset, expected_offset as u64);
+    assert_eq!(provenance.tag.as_deref(), Some("sphere-surface"));
+    let fields = fidelity.annotations.exactness()[surface_id.as_str()].fields();
+    assert_eq!(
+        fields.get("geometry.axis"),
+        Some(&cadmpeg_ir::Exactness::Derived)
+    );
+    assert_eq!(
+        fields.get("geometry.ref_direction"),
+        Some(&cadmpeg_ir::Exactness::Derived)
+    );
+}
+
+#[test]
 fn ids_use_the_sat_format_scheme() {
     let result = decode_bytes(&text_sphere_stream(1.0));
     let body_id = &result.ir().model.bodies[0].id;
