@@ -59,7 +59,13 @@ pub fn short_form_float(data: &[u8]) {
 
 /// Exercise Creo container scanning.
 pub fn container_scan(data: &[u8]) {
-    match crate::container::scan_bytes(data.to_vec()) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    match crate::container::scan_bytes(&ctx, data) {
         Ok(scan) => {
             let _probe = scan.framing.sections.len();
         }

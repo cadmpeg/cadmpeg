@@ -67,6 +67,7 @@ fn resolve_carrier_intersection_curve(
 }
 
 pub(in super::super) fn transfer_carrier_intersection_curves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -132,6 +133,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             tag,
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -336,6 +338,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             },
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id: id.clone(),
             geometry,
@@ -528,12 +531,15 @@ mod tests {
             },
         ]);
 
-        let transferred = transfer_carrier_intersection_curves(
-            &scan,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &BTreeSet::new(),
-        )
+        let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+            transfer_carrier_intersection_curves(
+                ctx,
+                &scan,
+                &mut ir,
+                &mut AnnotationBuilder::new(),
+                &BTreeSet::new(),
+            )
+        })
         .expect("valid source object identity");
         assert_eq!(
             transferred,

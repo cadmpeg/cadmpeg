@@ -161,12 +161,15 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
         native_ref: None,
     });
     let mut losses = Vec::new();
-    let count = transfer_resolved_revolution_breps(
-        &scan,
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &mut losses,
-    )
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_resolved_revolution_breps(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &mut losses,
+        )
+    })
     .expect("transfer");
     assert_eq!(count, 0);
     assert!(ir.model.faces.is_empty());

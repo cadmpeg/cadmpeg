@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::named_prototype_records;
+use super::parameter_records;
 use super::EPS_FRAME_COMPONENT;
-use crate::surface::named_prototype_records;
-use crate::surface::parameter_records;
 use crate::surface::prototype_count;
 use crate::surface::split_cylinder_outline_bounds;
 use crate::surface::tabulated_cylinder_curve_replays;

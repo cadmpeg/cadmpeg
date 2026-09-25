@@ -40,6 +40,7 @@ fn nurbs_sense_sample(lower: f64, upper: f64) -> (f64, f64) {
 }
 
 pub(super) fn add_extrusion_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     id: PcurveId,
@@ -67,6 +68,7 @@ pub(super) fn add_extrusion_pcurve(
         "extrusion_trim_pcurve",
         Exactness::Derived,
     );
+    ctx.charge_entities(1, "admit Creo model pcurves")?;
     ir.model.pcurves.push(Pcurve {
         id: id.clone(),
         geometry,

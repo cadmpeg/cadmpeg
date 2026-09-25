@@ -465,7 +465,7 @@ impl StepLossCode {
 
     /// The stable string identifier. This is the gating contract.
     #[must_use]
-    const fn code(self) -> &'static str {
+    pub(crate) const fn code(self) -> &'static str {
         match self {
             Self::ParseNoncanonicalSyntax => "parse.noncanonical-syntax",
             Self::DecodeWarning => "decode.warning",
