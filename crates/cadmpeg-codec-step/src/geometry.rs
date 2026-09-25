@@ -345,6 +345,16 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
     })
 }
 
+/// Emit a pcurve in the reversed parameter chart of a negative-angle cone.
+/// The half-turn maps each `(u, v)` to `(-u, -v)` without changing the curve's
+/// own parameter or sense.
+pub(crate) fn pcurve_on_reversed_cone(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
+    let basis = pcurve(e, geometry)?;
+    let reversal = Transform2::affine([[-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])?;
+    let operator = transformation_operator_2d(e, reversal)?;
+    Some(e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}")))
+}
+
 /// Emit or reuse a unit-length `DIRECTION`.
 ///
 /// A zero-length vector becomes `(0,0,1)`. A vector of finite components
@@ -463,26 +473,24 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
                 &format!("'',{pl},{}", e.real(radius)),
             )
         }
-        // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`. The
-        // half angle goes out as it stands, which is the only branch that keeps
-        // both the surface and its chart. `abs()`, which normalizes the signed
-        // sphere and torus radii below, moves the cone: the cross-section radius
-        // at axial distance `v` is `radius + v * tan(half_angle)`, so a sphere of
-        // radius `-r` and a torus of minor radius `-m` hold their point sets
-        // while a cone of half angle `-a` does not. `(half_angle, axis)` and
-        // `(-half_angle, -axis)` do hold the same locus, under the parameter
-        // change `(u, v) -> (-u, -v)`, but `emit_pcurve` writes each IR pcurve
-        // against the surface this arm emits, in that chart.
+        // ISO 10303-42 `conical_surface` holds `semi_angle` in `(0, pi/2)`.
+        // Reversing the axis and angle maps a negative-angle cone exactly under
+        // the parameter change `(u, v) -> (-u, -v)`.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
             let axis = cone_surface.frame().axis().as_raw();
             let ref_direction = cone_surface.frame().reference().as_raw();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
-            let pl = placement(e, origin, *axis, *ref_direction);
+            let written_axis = if half_angle < 0.0 {
+                Vector3::new(-axis.x, -axis.y, -axis.z)
+            } else {
+                *axis
+            };
+            let pl = placement(e, origin, written_axis, *ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
-                &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle)),
+                &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle.abs())),
             )
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {

@@ -1633,18 +1633,23 @@ fn zero_cone_semi_angle_is_refused_at_planning() {
 }
 
 #[test]
-fn negative_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-0.715_584_993_317_674_8)
-        .expect_err("negative cone angle is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("semi-angle -0.7155849933176748"))
-    );
+fn negative_cone_semi_angle_inside_wr2_is_planned() {
+    assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
 }
 
 #[test]
 fn right_angle_cone_semi_angle_is_refused_at_planning() {
     let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
         .expect_err("right angle cone is outside WR2");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
+    );
+}
+
+#[test]
+fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
+    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
+        .expect_err("negative right angle cone is outside WR2");
     assert!(
         matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
     );
