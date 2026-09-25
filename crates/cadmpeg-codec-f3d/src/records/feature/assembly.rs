@@ -9,6 +9,7 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
 /// Domain of the two scalar limits carried by a legacy As-built scope.
@@ -325,9 +326,9 @@ pub(crate) struct DesignAssemblyLegacySelection {
 #[serde(try_from = "DesignAssemblyAlignmentSerde")]
 pub(crate) struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
-    angle: f64,
+    angle: FiniteReal,
     /// Signed local-frame translation in source centimetres.
-    offset: [f64; 3],
+    offset: [FiniteReal; 3],
     /// Parameter-owner records and their evaluated-value locations.
     pub(crate) owners: Vec<Located<u32>>,
     /// Datum, legacy solved-carrier, or qualified-operand form.
@@ -394,12 +395,12 @@ impl DesignAssemblyAlignment {
         owners: Vec<Located<u32>>,
         form: Option<DesignAssemblyAlignmentForm>,
     ) -> Result<Self, String> {
-        if !angle.is_finite() {
-            return Err("assembly alignment angle must be finite".into());
-        }
-        if !offset.iter().all(|value| value.is_finite()) {
+        let angle = FiniteReal::new(angle)
+            .ok_or_else(|| "assembly alignment angle must be finite".to_owned())?;
+        let [Some(first), Some(second), Some(third)] = offset.map(FiniteReal::new) else {
             return Err("assembly alignment offset must be finite".into());
-        }
+        };
+        let offset = [first, second, third];
         Ok(Self {
             angle,
             offset,
@@ -408,10 +409,10 @@ impl DesignAssemblyAlignment {
         })
     }
     pub(crate) fn angle(&self) -> f64 {
-        self.angle
+        self.angle.get()
     }
     pub(crate) fn offset(&self) -> [f64; 3] {
-        self.offset
+        self.offset.map(FiniteReal::get)
     }
 
     pub(crate) fn operand_frames(&self) -> Option<[DesignAssemblyOperandFrame; 2]> {
@@ -663,8 +664,8 @@ impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
             .map(|owner| (owner.value, owner.offset))
             .unzip();
         Ok(Self {
-            angle: alignment.angle,
-            offset: alignment.offset,
+            angle: alignment.angle.get(),
+            offset: alignment.offset.map(FiniteReal::get),
             owner_record_indices,
             value_offsets,
             operand_frames,
