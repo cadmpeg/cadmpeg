@@ -190,7 +190,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             first_reference: None,
             second_reference: None,
             placement: Some(cadmpeg_ir::sketches::TextPlacement {
-                anchor: Point2::new(0.0, 0.0),
+                anchor: cadmpeg_ir::units::FinitePoint2::new(Point2::new(0.0, 0.0)).unwrap(),
                 rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
             }),
         },

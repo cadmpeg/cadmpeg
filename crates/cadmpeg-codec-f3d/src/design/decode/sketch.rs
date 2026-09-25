@@ -35,7 +35,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 use std::collections::HashMap;
 
 use super::meta::{
@@ -1680,7 +1680,7 @@ fn read_sketch_text_color(payload: &[u8], cursor: &mut usize) -> Option<Color> {
 /// last column, and its 2×2 basis is a rotation of unit determinant carrying no
 /// scale or shear. A run failing any of that is not a placement, so the record
 /// is misframed.
-fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement> {
+fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlacement<FinitePoint2>> {
     let elements = f64s_at(payload, *cursor, 16)?;
     *cursor = cursor.checked_add(128)?;
     let at = |row: usize, column: usize| elements[row * 4 + column];
@@ -1702,7 +1702,7 @@ fn read_text_placement(payload: &[u8], cursor: &mut usize) -> Option<TextPlaceme
     let determinant = at(0, 0) * at(1, 1) - at(0, 1) * at(1, 0);
     (planar && constant(determinant, 1.0)).then_some(())?;
     let anchor = Point2::new(at(0, 3) * 10.0, at(1, 3) * 10.0);
-    anchor.is_finite().then_some(())?;
+    let anchor = FinitePoint2::new(anchor)?;
     Some(TextPlacement {
         anchor,
         rotation: Angle::new(at(1, 0).atan2(at(0, 0)))?,
@@ -1970,7 +1970,7 @@ fn decode_txt_tag_sketch_text_tail(
         View::f64_le_at(payload, cursor)? * 10.0,
         View::f64_le_at(payload, cursor.checked_add(8)?)? * 10.0,
     );
-    anchor.is_finite().then_some(())?;
+    let anchor = FinitePoint2::new(anchor)?;
     let anchor_run = if class_version < TXT_TAG_ANCHOR_MEMBER_VERSION {
         TXT_TAG_ANCHOR_RUN - 1
     } else {

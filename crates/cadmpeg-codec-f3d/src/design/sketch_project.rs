@@ -360,17 +360,17 @@ pub(crate) fn project_sketch_design(
                     |persistent_id| neutral_sketch_text_id(&sketch, persistent_id),
                 ),
                 sketch,
-                SketchGeometry::try_from(SketchGeometryDefinition::Text {
+                SketchGeometry::from_parts(SketchGeometryDefinition::Text {
                     text: cadmpeg_core::text::NonBlankString::new(text.text.clone())?,
                     font_family: cadmpeg_core::text::NonBlankString::new(text.font_family.clone())?,
                     font_weight: text.font_weight.try_into().ok()?,
-                    height: Length::from(text.height),
+                    height: text.height,
                     // The record's `0` does not scale glyph advance to zero, so it
                     // is not a neutral horizontal scale of zero; only a positive
                     // factor carries one.
                     width_factor: text
                         .width_factor()
-                        .and_then(|factor| (factor.get() > 0.0).then_some(factor.get())),
+                        .and_then(|factor| cadmpeg_ir::scalar::PositiveReal::try_from(factor).ok()),
                     placement: text.placement(),
                     horizontal_alignment: sketch_text_horizontal_alignment(
                         text.alignment().map(|alignment| alignment.horizontal),

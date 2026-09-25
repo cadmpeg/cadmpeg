@@ -66,7 +66,10 @@ fn indexed_textex_tag_sketch_text_record_decodes_frame_and_path_types() {
             text.color,
             cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 1.0).expect("valid color")
         );
-        assert_eq!(text.placement().map(|placement| placement.anchor), None);
+        assert_eq!(
+            text.placement().map(|placement| placement.anchor.get()),
+            None
+        );
         assert_eq!(
             text.placement().map(|placement| placement.rotation.get()),
             None
@@ -517,7 +520,7 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
     // The anchor is the transform's last column in centimetres and the
     // rotation is the angle of its first basis column.
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
     );
     assert!(
@@ -550,7 +553,10 @@ fn path_sketch_text_record_stores_neither_anchor_nor_rotation() {
         None,
     ))
     .expect("sketch text record");
-    assert_eq!(text.placement().map(|placement| placement.anchor), None);
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        None
+    );
     assert_eq!(
         text.placement().map(|placement| placement.rotation.get()),
         None
@@ -617,7 +623,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     assert_eq!(text.alignment().map(|alignment| alignment.horizontal), None);
     assert_eq!(text.alignment().map(|alignment| alignment.vertical), None);
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
     );
     // The colour closes the twenty-nine-byte run in the same component order
@@ -665,7 +671,7 @@ fn txt_tag_sketch_text_record_decodes_stored_rotation() {
         Some(stored_rotation)
     );
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(Point2::new(8.114_737_226_243_502, -14.340_080_595_768_365,))
     );
 }
@@ -681,7 +687,7 @@ fn txt_tag_sketch_text_record_decodes_an_empty_reference_run() {
     .expect("sketch text record");
     assert_eq!(text.base_id, Some(305));
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(0.0, 0.0))
     );
 }
@@ -722,7 +728,7 @@ fn a_txt_tag_sketch_text_record_below_the_identity_key_version_stores_no_identit
     assert_eq!(text.base_id, Some(300));
     assert_eq!(text.text, "sketch text");
     assert_eq!(
-        text.placement().map(|placement| placement.anchor),
+        text.placement().map(|placement| placement.anchor.get()),
         Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
     );
 }
