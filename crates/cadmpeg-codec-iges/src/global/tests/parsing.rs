@@ -3,6 +3,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
@@ -54,6 +55,87 @@ fn fixed_ascii_with_global_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 }
 
 #[test]
+fn global_field_source_locations_follow_72_byte_card_boundaries() {
+    let first = [b'A'; CARD_DATA_COLUMNS];
+    let second = [b'B'; CARD_DATA_COLUMNS];
+    let bytes = fixed_ascii_with_global_cards(&[&first, &second]);
+    assert_eq!(
+        crate::card::scan(&bytes)
+            .unwrap()
+            .section(crate::card::Section::Global)
+            .count(),
+        2
+    );
+    assert!(!crate::global::source_span_crosses_card(
+        0,
+        CARD_DATA_COLUMNS,
+    ));
+    assert!(crate::global::source_span_crosses_card(
+        CARD_DATA_COLUMNS - 1,
+        CARD_DATA_COLUMNS + 1,
+    ));
+    assert!(!crate::global::source_span_crosses_card(
+        CARD_DATA_COLUMNS,
+        2 * CARD_DATA_COLUMNS,
+    ));
+}
+
+#[test]
+fn global_stream_refuses_retained_limit_before_copy() {
+    let global = format!("{};", valid_global_fields().join(","));
+    let bytes = fixed_ascii_with_global(global.as_bytes());
+    let scan = crate::card::scan(&bytes).unwrap();
+    let card_bytes = scan.section(crate::card::Section::Global).count() * CARD_DATA_COLUMNS;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(card_bytes - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+
+    let error = crate::global::parse(&scan, &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+    );
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &service).unwrap();
+    assert!(crate::global::parse(&scan, &ctx).is_ok());
+}
+
+#[test]
+fn global_fields_refuse_collection_limit_before_values() {
+    let global = format!("{};", valid_global_fields().join(","));
+    let bytes = fixed_ascii_with_global(global.as_bytes());
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 25;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+
+    let error = crate::global::parse(&scan, &ctx).unwrap_err();
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn global_excess_fields_are_counted_without_retaining_values() {
+    let mut fields = valid_global_fields();
+    fields.extend(std::iter::repeat_n(String::new(), 1_000));
+    let global = format!("{};", fields.join(","));
+    let bytes = fixed_ascii_with_global(global.as_bytes());
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 26;
+    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+
+    let (_, losses) = crate::global::parse(&scan, &ctx).unwrap();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("1026 fields")));
+}
+
+#[test]
 fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     let product = "p".repeat(70);
     let global = format!(
@@ -82,7 +164,8 @@ fn global_hollerith_header_split_across_cards_is_a_field_defect() {
         "0H{product},8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
     );
     let bytes = fixed_ascii_with_global_chunks(&[b"1H,,1H;,7", tail.as_bytes()]);
-    let (parsed, losses) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+    let (parsed, losses) =
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product(), None);
     assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
@@ -102,9 +185,10 @@ fn global_numeric_field_and_delimiter_must_share_a_card() {
     global.extend(std::iter::repeat_n(b' ', padding));
     global.extend_from_slice(b"1,;");
     let cards = global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>();
-    let (parsed, losses) =
-        crate::global::parse(&crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap())
-            .unwrap();
+    let (parsed, losses) = crate::test_support::parse_global(
+        &crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap(),
+    )
+    .unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("p"));
     assert_eq!(
@@ -124,7 +208,8 @@ fn global_card_padding_is_ignored_outside_hollerith_values() {
         b"1H,,1H;,7Hproduct,8Hpart.igs,",
         b"7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
-    let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+    let (parsed, _) =
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("product"));
     assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
@@ -136,7 +221,8 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
         b"1H,,1H;,3Hab ",
         b",8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
     ]);
-    let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
+    let (parsed, _) =
+        crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
 }
@@ -272,7 +358,7 @@ fn omitted_delimiter_fields_select_the_specification_defaults() {
         b",1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;".as_slice(),
     ] {
         let (parsed, losses) =
-            crate::global::parse(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
+            crate::test_support::parse_global(&crate::card::scan(&fixed_ascii_with_global(global)).unwrap())
                 .unwrap();
 
         assert_eq!(parsed.parameter_delimiter, b',');

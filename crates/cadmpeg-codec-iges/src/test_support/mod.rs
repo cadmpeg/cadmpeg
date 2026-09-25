@@ -11,6 +11,22 @@ pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
 
+/// Parses a scanned Global section with a test-owned decode session.
+pub(crate) fn parse_global(
+    scan: &crate::card::CardScan<'_>,
+) -> Result<
+    (
+        crate::global::ResolvedGlobal,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    crate::global::parse(scan, &ctx)
+}
+
 /// Plans a write at one Fixed ASCII target, the request the command line
 /// builds for an explicit `--to`.
 ///
