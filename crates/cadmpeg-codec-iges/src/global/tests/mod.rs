@@ -57,7 +57,7 @@ fn resolve_global_fields(fields: &[String]) -> ParsedGlobal {
     let mut global = fields.join(",");
     global.push(';');
     let bytes = fixed_ascii_with_global(global.as_bytes());
-    crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap()
+    crate::test_support::parse_global(&crate::card::scan(&bytes).unwrap()).unwrap()
 }
 
 fn code_count(losses: &[cadmpeg_ir::report::loss::LossNote], code: IgesLossCode) -> usize {

@@ -311,7 +311,8 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     plan.write_to(&mut written)
         .expect("generated IGES bytes are writable");
     let scan = crate::card::scan(&written).expect("generated IGES cards scan");
-    let (global, _) = crate::global::parse(&scan).expect("generated Global record parses");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("generated Global record parses");
     assert_eq!(
         global.sender_product().as_deref(),
         Some(WRITER_SENDER_PRODUCT)
@@ -361,7 +362,8 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
-        let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
+        let (global, losses) =
+            crate::test_support::parse_global(&scan).expect("versioned Global parses");
         assert_eq!(
             global
                 .declared_version()
@@ -413,7 +415,8 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
         .write_to(&mut written)
         .expect("neutral tolerance floor output is writable");
     let scan = crate::card::scan(&written).expect("neutral tolerance floor output scans");
-    let (global, _) = crate::global::parse(&scan).expect("neutral tolerance floor Global parses");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("neutral tolerance floor Global parses");
 
     assert_eq!(
         global
@@ -447,7 +450,8 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
         .write_to(&mut written)
         .expect("source resolution witness output is writable");
     let scan = crate::card::scan(&written).expect("source resolution output scans");
-    let (global, _) = crate::global::parse(&scan).expect("source resolution output Global parses");
+    let (global, _) =
+        crate::test_support::parse_global(&scan).expect("source resolution output Global parses");
 
     assert_eq!(
         global
