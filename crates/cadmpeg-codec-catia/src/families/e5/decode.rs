@@ -301,7 +301,7 @@ pub(in crate::families) fn try_decode_e5(
         insert_unresolved_carrier_loss(&ir, &mut losses);
         link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
         let annotations = annotations.build();
-        Some(FamilyOutput {
+        Some(Ok(FamilyOutput {
             ir,
             report: DecodeBody {
                 transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
@@ -312,7 +312,7 @@ pub(in crate::families) fn try_decode_e5(
             },
             annotations,
             unknowns,
-        }.admit_entities(ctx))
+        }))
     })()
     .transpose()
 }
