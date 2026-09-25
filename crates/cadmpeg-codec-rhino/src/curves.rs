@@ -1702,6 +1702,17 @@ fn arc_nurbs(
 ) -> Result<NurbsCurve, GeometryError> {
     let spans = (delta / FRAC_PI_2).ceil().max(1.0) as usize;
     let step = delta / spans as f64;
+    let domain_at = |index: usize| -> Result<f64, GeometryError> {
+        let fraction = index as f64 / spans as f64;
+        let ordinary = domain[0] + (domain[1] - domain[0]) * index as f64 / spans as f64;
+        if ordinary.is_finite() {
+            Ok(ordinary)
+        } else {
+            cadmpeg_ir::math::interpolate(domain[0], domain[1], fraction)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .ok_or_else(|| error(offset, "arc parameter domain is invalid"))
+        }
+    };
     let mut control_points = Vec::with_capacity(spans * 2 + 1);
     let mut weights = Vec::with_capacity(spans * 2 + 1);
     let mut knots = Vec::with_capacity(spans * 2 + 4);
@@ -1721,8 +1732,8 @@ fn arc_nurbs(
         weights.push(weight);
         control_points.push(p1);
         weights.push(1.0);
-        let t0 = domain[0] + (domain[1] - domain[0]) * span as f64 / spans as f64;
-        let t1 = domain[0] + (domain[1] - domain[0]) * (span + 1) as f64 / spans as f64;
+        let t0 = domain_at(span)?;
+        let t1 = domain_at(span + 1)?;
         if span == 0 {
             knots.extend([t0, t0, t0]);
         } else {
@@ -2047,6 +2058,16 @@ mod tests {
         let weight = arc.weights().expect("rational arc")[2].get();
         assert!((pole.x * weight - midpoint.x).abs() < EPS_EXACT_ARC);
         assert!((pole.y * weight - midpoint.y).abs() < EPS_EXACT_ARC);
+    }
+
+    #[test]
+    fn arc_nurbs_maps_a_wide_finite_parameter_domain() {
+        let arc = arc_nurbs(&unit_circle(), [0.0, PI], [-f64::MAX, f64::MAX], PI, 0)
+            .expect("wide arc domain has finite knots");
+        let knots = arc.knots().as_slice();
+        assert_eq!(knots.first(), Some(&-f64::MAX));
+        assert!(knots.contains(&0.0));
+        assert_eq!(knots.last(), Some(&f64::MAX));
     }
 
     #[test]

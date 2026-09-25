@@ -825,6 +825,38 @@ fn revolution_preserves_partial_angle_parameter_domain_and_product_weights() {
 }
 
 #[test]
+fn revolution_retains_knots_across_a_wide_finite_parameter_interval() {
+    let profile = test_curve(
+        vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+        None,
+        [0.0, 1.0],
+    );
+    let surface = revolution_nurbs(
+        &profile,
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        [0.0, std::f64::consts::PI],
+        [-f64::MAX, f64::MAX],
+        false,
+        0,
+    )
+    .expect("finite revolution parameter interval");
+    assert_eq!(
+        surface.u_knots().as_slice(),
+        vec![
+            -f64::MAX,
+            -f64::MAX,
+            -f64::MAX,
+            0.0,
+            0.0,
+            f64::MAX,
+            f64::MAX,
+            f64::MAX,
+        ]
+    );
+}
+
+#[test]
 fn revolution_moves_singular_control_rows_exactly_onto_axis() {
     let profile = test_curve(
         vec![

@@ -550,6 +550,14 @@ fn revolution_nurbs(
         .ok_or_else(|| error(offset, "revolution control count overflow"))?;
     let angle_step = (angle[1] - angle[0]) / span_count as f64;
     let parameter_step = (parameter[1] - parameter[0]) / span_count as f64;
+    let parameter_at = |span: usize| -> Result<f64, GeometryError> {
+        if parameter_step.is_finite() {
+            return Ok(parameter[0] + parameter_step * span as f64);
+        }
+        cadmpeg_ir::math::interpolate(parameter[0], parameter[1], span as f64 / span_count as f64)
+            .map(FiniteReal::get)
+            .ok_or_else(|| error(offset, "revolution parameter interval is invalid"))
+    };
     let mut angular = Vec::with_capacity(angular_count);
     let mut knots = Vec::with_capacity(angular_count + 3);
     for span in 0..span_count {
@@ -562,8 +570,8 @@ fn revolution_nurbs(
         }
         angular.push((middle, middle_weight));
         angular.push((a1, 1.0));
-        let t0 = parameter[0] + parameter_step * span as f64;
-        let t1 = parameter[0] + parameter_step * (span + 1) as f64;
+        let t0 = parameter_at(span)?;
+        let t1 = parameter_at(span + 1)?;
         if span == 0 {
             knots.extend([t0, t0, t0]);
         } else {
