@@ -3,8 +3,9 @@
 
 use super::references::DesignClassTag;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
+use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, NonNegativeReal, PositiveLength};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -1139,41 +1140,197 @@ pub(crate) struct SketchCurveIdentity {
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "SketchSurfaceWire", into = "SketchSurfaceWire")]
 pub(crate) struct SketchSurface {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Index of this surface record within the `BulkStream` tree.
     pub(crate) record_index: u32,
     /// Owning sketch entity derived from relations using this surface.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_owner_reference"
-    )]
     pub(crate) owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub(crate) byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.
+    pub(crate) entity_genesis: Option<u64>,
+    /// Persistent Fusion identifier for the sketch surface.
+    pub(crate) persistent_id: std::num::NonZeroU64,
+    /// Admitted tensor-product geometry.
+    pub(crate) geometry: SketchSurfaceGeometry,
+}
+
+/// Positive degrees, ordered knots, and a finite rectangular control grid.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SketchSurfaceGeometry {
+    pub(crate) u_degree: std::num::NonZeroU32,
+    pub(crate) v_degree: std::num::NonZeroU32,
+    pub(crate) u_knots: Vec<FiniteReal>,
+    pub(crate) v_knots: Vec<FiniteReal>,
+    pub(crate) control_points: Vec<Vec<FinitePoint3>>,
+}
+
+impl SketchSurfaceGeometry {
+    pub(crate) fn from_parts(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        control_points: Vec<Vec<Point3>>,
+    ) -> Result<Self, String> {
+        let control_points = control_points
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|point| {
+                        FinitePoint3::new(point).ok_or("surface point is not finite".into())
+                    })
+                    .collect::<Result<Vec<_>, String>>()
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Self::from_checked_parts(u_degree, v_degree, u_knots, v_knots, control_points)
+    }
+
+    pub(crate) fn from_checked_parts(
+        u_degree: u32,
+        v_degree: u32,
+        u_knots: Vec<f64>,
+        v_knots: Vec<f64>,
+        control_points: Vec<Vec<FinitePoint3>>,
+    ) -> Result<Self, String> {
+        let u_degree = std::num::NonZeroU32::new(u_degree).ok_or("surface u_degree is zero")?;
+        let v_degree = std::num::NonZeroU32::new(v_degree).ok_or("surface v_degree is zero")?;
+        let row_count = control_points.len();
+        let column_count = control_points.first().map_or(0, Vec::len);
+        let point_count = row_count
+            .checked_mul(column_count)
+            .ok_or("surface control grid exceeds address space")?;
+        if row_count == 0
+            || column_count == 0
+            || point_count > 100_000
+            || control_points.iter().any(|row| row.len() != column_count)
+        {
+            return Err("surface control grid must be nonempty and rectangular".into());
+        }
+        let expected_u_knots = row_count
+            .checked_add(
+                usize::try_from(u_degree.get())
+                    .map_err(|_| "surface u_degree exceeds address space")?,
+            )
+            .and_then(|count| count.checked_add(1))
+            .ok_or("surface u knot count overflows")?;
+        let expected_v_knots = column_count
+            .checked_add(
+                usize::try_from(v_degree.get())
+                    .map_err(|_| "surface v_degree exceeds address space")?,
+            )
+            .and_then(|count| count.checked_add(1))
+            .ok_or("surface v knot count overflows")?;
+        if u_knots.len() != expected_u_knots || v_knots.len() != expected_v_knots {
+            return Err("surface knot counts disagree with degrees and grid".into());
+        }
+        if !knots_nondecreasing(&u_knots) || !knots_nondecreasing(&v_knots) {
+            return Err("surface knots must be nondecreasing".into());
+        }
+        let u_knots = u_knots
+            .into_iter()
+            .map(|value| FiniteReal::new(value).ok_or("surface u knot is not finite".into()))
+            .collect::<Result<Vec<_>, String>>()?;
+        let v_knots = v_knots
+            .into_iter()
+            .map(|value| FiniteReal::new(value).ok_or("surface v knot is not finite".into()))
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            control_points,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct SketchSurfaceWire {
+    id: String,
+    record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_owner_reference"
+    )]
+    owner_reference: Option<u32>,
+    class_tag: DesignClassTag,
+    byte_offset: u64,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_entity_genesis"
     )]
-    pub(crate) entity_genesis: Option<u64>,
-    /// Persistent Fusion identifier for the sketch surface.
-    pub(crate) persistent_id: std::num::NonZeroU64,
-    /// Degree in the first surface parameter.
-    pub(crate) u_degree: u32,
-    /// Degree in the second surface parameter.
-    pub(crate) v_degree: u32,
-    /// Full knot vector in the first parameter.
-    pub(crate) u_knots: Vec<f64>,
-    /// Full knot vector in the second parameter.
-    pub(crate) v_knots: Vec<f64>,
-    /// Rectangular control grid in first-parameter-major order, in millimetres.
-    pub(crate) control_points: Vec<Vec<Point3>>,
+    entity_genesis: Option<u64>,
+    persistent_id: std::num::NonZeroU64,
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    control_points: Vec<Vec<Point3>>,
+}
+
+impl TryFrom<SketchSurfaceWire> for SketchSurface {
+    type Error = String;
+
+    fn try_from(wire: SketchSurfaceWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: wire.id,
+            record_index: wire.record_index,
+            owner_reference: wire.owner_reference,
+            class_tag: wire.class_tag,
+            byte_offset: wire.byte_offset,
+            entity_genesis: wire.entity_genesis,
+            persistent_id: wire.persistent_id,
+            geometry: SketchSurfaceGeometry::from_parts(
+                wire.u_degree,
+                wire.v_degree,
+                wire.u_knots,
+                wire.v_knots,
+                wire.control_points,
+            )?,
+        })
+    }
+}
+
+impl From<SketchSurface> for SketchSurfaceWire {
+    fn from(surface: SketchSurface) -> Self {
+        Self {
+            id: surface.id,
+            record_index: surface.record_index,
+            owner_reference: surface.owner_reference,
+            class_tag: surface.class_tag,
+            byte_offset: surface.byte_offset,
+            entity_genesis: surface.entity_genesis,
+            persistent_id: surface.persistent_id,
+            u_degree: surface.geometry.u_degree.get(),
+            v_degree: surface.geometry.v_degree.get(),
+            u_knots: surface
+                .geometry
+                .u_knots
+                .into_iter()
+                .map(FiniteReal::get)
+                .collect(),
+            v_knots: surface
+                .geometry
+                .v_knots
+                .into_iter()
+                .map(FiniteReal::get)
+                .collect(),
+            control_points: surface
+                .geometry
+                .control_points
+                .into_iter()
+                .map(|row| row.into_iter().map(FinitePoint3::get).collect())
+                .collect(),
+        }
+    }
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.
@@ -1532,8 +1689,53 @@ impl SketchNurbsPoles {
 
 #[cfg(test)]
 mod tests {
-    use super::SketchCurveGeometry;
+    use super::{SketchCurveGeometry, SketchSurface};
     use serde_json::json;
+
+    fn native_surface_wire() -> serde_json::Value {
+        json!({
+            "id": "surface", "record_index": 1, "class_tag": "306",
+            "byte_offset": 0, "persistent_id": 29,
+            "u_degree": 1, "v_degree": 1,
+            "u_knots": [0.0, 0.0, 1.0, 1.0],
+            "v_knots": [0.0, 0.0, 1.0, 1.0],
+            "control_points": [
+                [{"x":0.0,"y":0.0,"z":0.0},{"x":0.0,"y":1.0,"z":0.0}],
+                [{"x":1.0,"y":0.0,"z":0.0},{"x":1.0,"y":1.0,"z":0.0}]
+            ]
+        })
+    }
+
+    #[test]
+    fn native_surface_wire_round_trip_preserves_flat_shape() {
+        let wire = native_surface_wire();
+        let surface: SketchSurface = serde_json::from_value(wire.clone()).expect("valid surface");
+        assert_eq!(
+            serde_json::to_value(surface).expect("serialize surface"),
+            wire
+        );
+    }
+
+    #[test]
+    fn native_surface_refuses_zero_degree() {
+        let mut wire = native_surface_wire();
+        wire["u_degree"] = json!(0);
+        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+    }
+
+    #[test]
+    fn native_surface_refuses_decreasing_knots() {
+        let mut wire = native_surface_wire();
+        wire["u_knots"] = json!([0.0, 1.0, 0.0, 1.0]);
+        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+    }
+
+    #[test]
+    fn native_surface_refuses_ragged_control_grid() {
+        let mut wire = native_surface_wire();
+        wire["control_points"][1].as_array_mut().expect("row").pop();
+        assert!(serde_json::from_value::<SketchSurface>(wire).is_err());
+    }
 
     #[test]
     fn native_line_refuses_zero_endpoint_displacement() {
