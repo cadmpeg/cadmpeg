@@ -616,7 +616,7 @@ mod tests {
         assert_eq!(
             cadmpeg_ir::eval::curve_point(&geometry, 0.0)
                 .map(cadmpeg_ir::features::FinitePoint3::get),
-            Some(Point3::new(0.0, 0.0, -2.0))
+            Ok(Point3::new(0.0, 0.0, -2.0))
         );
     }
 }

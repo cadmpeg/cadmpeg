@@ -135,6 +135,7 @@ pub(super) fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Opt
     let range = nurbs_intrinsic_parameter_range(nurbs)?;
     let points = range.map(|parameter| {
         cadmpeg_ir::eval::curve_point(geometry, parameter.get())
+            .ok()
             .map(|point| [point.x, point.y, point.z])
     });
     let [Some(first), Some(second)] = points else {
@@ -181,7 +182,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
         .then_some(parameters);
     }
 
-    let mapped = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
+    let mapped = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter).ok());
     // An edge endpoint outside the finite range aligns with no carrier end.
     let ([Some(first), Some(second)], [Some(start), Some(end)]) =
         (mapped, points.map(finite_model_point))
@@ -248,8 +249,8 @@ pub(in crate::decode) fn orient_nonperiodic_nurbs_edge_carrier(
         ]);
     }
 
-    let mapped =
-        intrinsic_range.map(|parameter| cadmpeg_ir::eval::curve_point(&*geometry, parameter.get()));
+    let mapped = intrinsic_range
+        .map(|parameter| cadmpeg_ir::eval::curve_point(&*geometry, parameter.get()).ok());
     // An edge endpoint outside the finite range aligns with no carrier end.
     let ([Some(first), Some(second)], [Some(start), Some(end)]) =
         (mapped, points.map(finite_model_point))
@@ -306,7 +307,9 @@ pub(in crate::decode) fn full_periodic_nurbs_edge_parameter_range(
         .then_some(())?;
     let range = FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
     let mapped = range.map(|parameter| {
-        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+        cadmpeg_ir::eval::curve_point(geometry, parameter)
+            .ok()
+            .map(|point| [point.x, point.y, point.z])
     });
     let [Some(first), Some(second)] = mapped else {
         return None;
@@ -379,7 +382,7 @@ fn degree_one_nurbs_point_parameter(
         } else {
             cadmpeg_ir::math::interpolate(lower, upper, local)?.get()
         };
-        let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
+        let Ok(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
             continue;
         };
         let mismatch = [
@@ -663,7 +666,7 @@ pub(super) fn periodic_conic_edge_parameter_range(
     };
     let scale = radii.into_iter().fold(1.0, f64::max);
     let matches_interior = |range: [f64; 2]| {
-        cadmpeg_ir::eval::curve_point(geometry, f64::midpoint(range[0], range[1])).is_some_and(
+        cadmpeg_ir::eval::curve_point(geometry, f64::midpoint(range[0], range[1])).is_ok_and(
             |point| {
                 let point = [point.x, point.y, point.z];
                 dot(

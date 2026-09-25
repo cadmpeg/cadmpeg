@@ -1892,7 +1892,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
         else {
             return false;
         };
-        let Some(actual) =
+        let Ok(actual) =
             model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
         else {
             return false;
@@ -1993,7 +1993,8 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     let mut samples = Vec::with_capacity(SAMPLE_INTERVALS + 1);
     for index in 0..=SAMPLE_INTERVALS {
         let parameter = range[0] + (range[1] - range[0]) * index as f64 / SAMPLE_INTERVALS as f64;
-        let point = curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+        let point =
+            curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
         let mut uv = Point2::from(analytic_surface_parameters(
             &surface_carrier.geometry,
             point.get(),
@@ -2050,7 +2051,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     geometry_budget.charge().then_some(())?;
     let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
     let curve_position =
-        curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+        curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
     let curve_tangent =
         curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
     let curve_acceleration =
@@ -2687,6 +2688,7 @@ fn transferred_pcurve_sample_with_budget(
         })
         .or_else(|| {
             model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+                .ok()
                 .map(cadmpeg_ir::features::FinitePoint3::get)
         })?;
     let target = BoundaryInverseTarget {
@@ -2920,7 +2922,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     let Some((_, spine, radius, _)) = blend_surface_definition_with_index(index, blend) else {
         return false;
     };
-    let Some(center) =
+    let Ok(center) =
         model_curve_point_by_id_with_budget(index, &spine, parameters.u, geometry_budget)
     else {
         return false;
@@ -3034,6 +3036,7 @@ fn append_transferred_pcurve_segment_with_budget(
                 })
                 .or_else(|| {
                     model_curve_point_by_id_with_budget(index, curve, parameter, geometry_budget)
+                        .ok()
                         .map(cadmpeg_ir::features::FinitePoint3::get)
                 })
             else {

@@ -36,11 +36,10 @@ use crate::eval::IsolineDirection;
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
-    Curve, CurveGeometry, LawExpression, LawFormula, LegacyExtensionFlags, OffsetExtension,
-    ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm,
-    RevisionSurfaceForm, RevisionSurfaceParameterization, RollingBallJetDerivative,
-    RollingBallJetSite, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
-    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
+    Curve, CurveGeometry, LawExpression, LegacyExtensionFlags, OffsetExtension, ProceduralSurface,
+    ProceduralSurfaceDefinition, RecordBounds, RevisionCacheForm, RevisionSurfaceForm,
+    RevisionSurfaceParameterization, RollingBallJetDerivative, RollingBallJetSite,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
@@ -91,6 +90,7 @@ macro_rules! procedural_curve {
 mod helix;
 mod law_sweep;
 mod overflowing_arms;
+mod overflowing_curve_arms;
 mod pcurves;
 mod procedural_curves;
 mod ruled_sum;
@@ -226,8 +226,11 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
     assert!((start.x - 2.0).abs() <= TEST_TOLERANCE);
     assert!(start.y.abs() <= TEST_TOLERANCE);
     assert!(start.z.abs() <= TEST_TOLERANCE);
-    assert!(rolling_ball_jet_point(&definition, 5.0, 1.0).is_some());
-    assert!(rolling_ball_jet_point(&definition, 1.0, 0.5).is_none());
+    assert!(rolling_ball_jet_point(&definition, 5.0, 1.0).is_ok());
+    assert_eq!(
+        rolling_ball_jet_point(&definition, 1.0, 0.5),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
 }
 
 #[test]
@@ -1342,93 +1345,9 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
 
 #[test]
 fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
-    let profile_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
-    let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
-    let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
-    let mut ir = CadIr::empty();
-    ir.model.curves = vec![
-        Curve {
-            id: profile_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-        Curve {
-            id: spine_id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                crate::geometry::analytic::LineCurve::try_new(
-                    Point3::new(7.0, 11.0, 13.0),
-                    Vector3::new(0.0, 0.0, 1.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        },
-    ];
-    ir.model.surfaces.push(Surface {
-        id: surface_id.clone(),
-        geometry: SurfaceGeometry::Procedural {
-            construction: ProceduralSurfaceId::mint(
-                "test:model:entity#cacheless-sweep-construction",
-            )
-            .expect("valid identity"),
-            cache: None,
-        },
-        source_object: None,
+    let (ir, surface_id) = law_sweep::law_sweep_model(LawExpression::Text {
+        value: cadmpeg_core::nonblank_literal!("2.0*X"),
     });
-    ir.model.procedural_surfaces.push(procedural_surface! {
-        id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
-        definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
-                primary_kind: 0,
-                cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
-                    revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
-                    primary_flag: false,
-                    profile_endpoints: [Some(0.0), Some(1.0)],
-                    path_endpoints: [Some(0.0), Some(1.0)],
-                    cache: RevisionCacheForm::Parameterization(
-                        RevisionSurfaceParameterization::default(),
-                    ),
-                } },
-                layout: SweepSurfaceLayout::LawDriven {
-                    mode: 10,
-                    profile_range: [0.0, 1.0],
-                    profile_frame: None,
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    directions: [
-                        Vector3::new(1.0, 0.0, 0.0),
-                        Vector3::new(0.0, 1.0, 0.0),
-                        Vector3::new(0.0, 0.0, 1.0),
-                    ],
-                    first_law: Box::new(LawExpression::Text {
-                        value: cadmpeg_core::nonblank_literal!("2.0*X"),
-                    }),
-                    first_mode: 21,
-                    first_range: [0.0, 1.0],
-                    law_direction: Vector3::new(0.0, 0.0, 1.0),
-                    path_mode: 1,
-                    path_flag: false,
-                    path_range: [0.0, 1.0],
-                    path_parameter: 0.0,
-                    second_law_flag: false,
-                    second_law: Box::new(LawExpression::Text {
-                        value: cadmpeg_core::nonblank_literal!("VEC(1,1,1)"),
-                    }),
-                    formula_mode: 0,
-                    formula: LawFormula::Null {},
-                    trailing_flag: false,
-                },
-                discontinuities: std::array::from_fn(|_| Vec::new()),
-                discontinuity_flag: false,
-            }))).unwrap()),
-        cache_fit_tolerance: None,
-        record_bounds: None,
-    });
-
     let index = crate::index::ModelIndex::new(&ir);
     let expected = Point3::new(0.5, -0.5, 0.25);
     assert_eq!(

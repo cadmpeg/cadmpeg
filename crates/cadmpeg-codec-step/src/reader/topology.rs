@@ -3616,7 +3616,7 @@ fn pcurve_locus_witness(
         else {
             return false;
         };
-        let Some(curve_point) = model_curve_point_by_id(index, &curve_id, curve_parameter) else {
+        let Ok(curve_point) = model_curve_point_by_id(index, &curve_id, curve_parameter) else {
             return false;
         };
         if !curve_point.distance(mapped).is_finite()

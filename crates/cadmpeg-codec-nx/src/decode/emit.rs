@@ -1267,7 +1267,7 @@ impl CurvePointCache {
         if let Some(point) = self.entries.get(&key) {
             return *point;
         }
-        let point = curve_point_with_budget(geometry, parameter, geometry_budget);
+        let point = curve_point_with_budget(geometry, parameter, geometry_budget).ok();
         if self.entries.len() < MAX_CURVE_POINT_CACHE_ENTRIES {
             self.entries.insert(key, point);
         }

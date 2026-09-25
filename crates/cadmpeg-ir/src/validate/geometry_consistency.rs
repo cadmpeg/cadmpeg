@@ -8,7 +8,9 @@ use crate::document::CadIr;
 use crate::eval::{
     curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
     model_surface_point_by_id, nurbs_pcurve_parameter_domain, pcurve_tangent, pcurve_uv,
+    EvaluationFailure,
 };
+use crate::features::FinitePoint3;
 use crate::geometry::{
     pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -23,6 +25,26 @@ use crate::topology::{ParameterInterval, Sense};
 use crate::units::COINCIDENCE_TOLERANCE;
 
 use super::pcurve_parameter_domain;
+
+/// A curve point as the checks measure it: the finite point, or the point an
+/// evaluation outside the finite range reached, whose mismatch is then the
+/// finding's measure. An evaluation with no value has no point.
+fn measured_point(evaluation: Result<FinitePoint3, EvaluationFailure<Point3>>) -> Option<Point3> {
+    match evaluation {
+        Ok(point) => Some(point.get()),
+        Err(failure) => failure.non_finite(),
+    }
+}
+
+/// The worse of two endpoint mismatches. A mismatch that is NaN states no
+/// comparison, and is the measure: `f64::max` would drop it.
+fn worse_mismatch(first: f64, second: f64) -> f64 {
+    if first.is_nan() || second.is_nan() {
+        f64::NAN
+    } else {
+        first.max(second)
+    }
+}
 
 /// The coincidence allowance combines the document-wide uncertainty with any
 /// stored edge, vertex, face, or carrier tolerances.
@@ -69,7 +91,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let evaluated = parameterization
                 .parameter_range()
                 .endpoints()
-                .map(|parameter| model_curve_point_by_id(&index, owner, parameter));
+                .map(|parameter| measured_point(model_curve_point_by_id(&index, owner, parameter)));
             let [Some(start), Some(end)] = evaluated else {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -80,8 +102,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 });
                 continue;
             };
-            let mismatch = Point3::distance(start.get(), endpoints[0].get())
-                .max(Point3::distance(end.get(), endpoints[1].get()));
+            let mismatch = worse_mismatch(
+                Point3::distance(start, endpoints[0].get()),
+                Point3::distance(end, endpoints[1].get()),
+            );
             if !mismatch.is_finite() || mismatch > tolerance {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -108,7 +132,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let solved = context
                 .parameter_range()
                 .endpoints()
-                .map(|parameter| curve_point(solved, parameter));
+                .map(|parameter| measured_point(curve_point(solved, parameter)));
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
             };
@@ -122,14 +146,14 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 continue;
             };
             let base = base_endpoints.map(|parameter| {
-                parameter.and_then(|parameter| curve_point(base, parameter.get()))
+                parameter.and_then(|parameter| measured_point(curve_point(base, parameter.get())))
             });
             let [Some(base_start), Some(base_end)] = base else {
                 check_support_sides(
                     context,
                     None,
                     SupportEndpointContract::Offset {
-                        endpoints: [solved_start.get(), solved_end.get()],
+                        endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
                     },
                     &index,
@@ -139,10 +163,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 );
                 continue;
             };
-            let offset_mismatch = (Point3::distance(solved_start.get(), base_start.get())
-                - offset.abs())
-            .abs()
-            .max((Point3::distance(solved_end.get(), base_end.get()) - offset.abs()).abs());
+            let offset_mismatch = worse_mismatch(
+                (Point3::distance(solved_start, base_start) - offset.abs()).abs(),
+                (Point3::distance(solved_end, base_end) - offset.abs()).abs(),
+            );
             if !offset_mismatch.is_finite() || offset_mismatch > bound {
                 findings.push(Finding {
                     check: Check::GeometricConsistency,
@@ -157,7 +181,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             check_support_sides(
                 context,
                 None,
-                SupportEndpointContract::Coincident([base_start.get(), base_end.get()]),
+                SupportEndpointContract::Coincident([base_start, base_end]),
                 &index,
                 bound,
                 procedural.id.as_str(),
@@ -215,7 +239,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let solved = context
             .parameter_range()
             .endpoints()
-            .map(|parameter| curve_point(curve, parameter));
+            .map(|parameter| measured_point(curve_point(curve, parameter)));
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
         };
@@ -228,7 +252,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         check_support_sides(
             &context,
             third,
-            SupportEndpointContract::Coincident([solved_start.get(), solved_end.get()]),
+            SupportEndpointContract::Coincident([solved_start, solved_end]),
             &index,
             bound,
             procedural.id.as_str(),
@@ -286,8 +310,10 @@ fn check_support_sides(
             let distance = Point3::distance(constrained, support);
             expected_distance.map_or(distance, |expected| (distance - expected).abs())
         };
-        let mismatch = endpoint_mismatch(constrained[0], support_start)
-            .max(endpoint_mismatch(constrained[1], support_end));
+        let mismatch = worse_mismatch(
+            endpoint_mismatch(constrained[0], support_start),
+            endpoint_mismatch(constrained[1], support_end),
+        );
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -363,9 +389,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         ) else {
             continue;
         };
-        let (Some(at_start), Some(at_end)) =
-            (curve_point(geometry, start_t), curve_point(geometry, end_t))
-        else {
+        let (Some(at_start), Some(at_end)) = (
+            measured_point(curve_point(geometry, start_t)),
+            measured_point(curve_point(geometry, end_t)),
+        ) else {
             continue;
         };
         let bound = allowance(
@@ -381,8 +408,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .map(crate::geometry::FitTolerance::get),
             ],
         );
-        let mismatch =
-            Point3::distance(at_start.get(), *start).max(Point3::distance(at_end.get(), *end));
+        let mismatch = worse_mismatch(
+            Point3::distance(at_start, *start),
+            Point3::distance(at_end, *end),
+        );
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -422,9 +451,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         ) else {
             continue;
         };
-        let (Some(at_start), Some(at_end)) =
-            (curve_point(geometry, start_t), curve_point(geometry, end_t))
-        else {
+        let (Some(at_start), Some(at_end)) = (
+            measured_point(curve_point(geometry, start_t)),
+            measured_point(curve_point(geometry, end_t)),
+        ) else {
             continue;
         };
         let bound = allowance(
@@ -440,8 +470,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                     .map(crate::geometry::FitTolerance::get),
             ],
         );
-        let mismatch =
-            Point3::distance(at_start.get(), *start).max(Point3::distance(at_end.get(), *end));
+        let mismatch = worse_mismatch(
+            Point3::distance(at_start, *start),
+            Point3::distance(at_end, *end),
+        );
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
                 check: Check::GeometricConsistency,
@@ -658,8 +690,10 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     pcurve_point(&last.geometry, t1)?,
                 );
                 let (p0, p1) = (surface_point(uv0)?, surface_point(uv1)?);
-                let forward = Point3::distance(p0, *start).max(Point3::distance(p1, *end));
-                let reversed = Point3::distance(p0, *end).max(Point3::distance(p1, *start));
+                let forward =
+                    worse_mismatch(Point3::distance(p0, *start), Point3::distance(p1, *end));
+                let reversed =
+                    worse_mismatch(Point3::distance(p0, *end), Point3::distance(p1, *start));
                 Some(forward.min(reversed))
             })
             .reduce(f64::min)

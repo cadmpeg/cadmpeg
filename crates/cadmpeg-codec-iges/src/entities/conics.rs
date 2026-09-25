@@ -502,13 +502,12 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0])
+        let Ok(evaluated_start) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[0])
         else {
             losses.push(entity_loss(entry, "conic start point cannot be evaluated"));
             continue;
         };
-        let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1])
-        else {
+        let Ok(evaluated_end) = cadmpeg_ir::eval::curve_point(&geometry, parameter_range[1]) else {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point cannot be evaluated",

@@ -1345,7 +1345,7 @@ fn blend_surface_u_derivative_with_index_and_budget(
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let carrier = index.curves(spine.as_str())?;
-    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
     let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget)?;
     let acceleration = curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget)?;
     let speed = velocity.norm();
@@ -3510,6 +3510,7 @@ fn model_curve_point_with_index_and_budget(
 ) -> Option<Point3> {
     let carrier = index.curves(curve.as_str())?;
     curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
+        .ok()
         .map(cadmpeg_ir::features::FinitePoint3::get)
 }
 

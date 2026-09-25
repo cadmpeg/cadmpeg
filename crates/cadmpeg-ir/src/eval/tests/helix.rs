@@ -180,8 +180,14 @@ fn cacheless_helix_curve_rejects_parameters_outside_its_native_interval() {
     let (ir, curve_id) = helix_fixture();
     let index = crate::index::ModelIndex::new(&ir);
 
-    assert!(super::model_curve_point_by_id(&index, &curve_id, 0.24).is_none());
-    assert!(super::model_curve_differential_by_id(&index, &curve_id, 2.01).is_none());
+    assert_eq!(
+        super::model_curve_point_by_id(&index, &curve_id, 0.24),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+    assert!(matches!(
+        super::model_curve_differential_by_id(&index, &curve_id, 2.01),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    ));
 }
 
 #[test]

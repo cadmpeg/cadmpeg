@@ -344,7 +344,7 @@ fn select_composite_edge(
             ) else {
                 return false;
             };
-            let (Some(evaluated_start), Some(evaluated_end)) = (
+            let (Ok(evaluated_start), Ok(evaluated_end)) = (
                 cadmpeg_ir::eval::curve_point_solved(geometry, range[0]),
                 cadmpeg_ir::eval::curve_point_solved(geometry, range[1]),
             ) else {

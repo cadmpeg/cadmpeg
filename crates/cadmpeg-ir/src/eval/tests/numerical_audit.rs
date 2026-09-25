@@ -52,10 +52,11 @@ fn bilinear_surface(weights: Vec<Vec<f64>>, x: [f64; 2]) -> crate::geometry::nur
 #[test]
 fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() {
     use super::super::{
-        nurbs_curve_point, nurbs_curve_second_derivative, nurbs_curve_tangent,
-        nurbs_surface_isocurve, nurbs_surface_second_partials, SurfaceParameterAxis,
+        nurbs_curve_derivative, nurbs_curve_point, nurbs_surface_isocurve,
+        nurbs_surface_second_partials, CurveDerivative, SurfaceParameterAxis,
     };
     use crate::math::Vector3;
+    use crate::scalar::FiniteReal;
     for weight in [1.0, -1.0, 1.0e200, 1.0e308, 1.0e-200, f64::from_bits(1)] {
         let poles = [Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0)];
         let knots = [0.0, 0.0, 1.0, 1.0];
@@ -67,13 +68,29 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         );
         let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
         assert_eq!(
-            nurbs_curve_tangent(1, &knots, &admitted, Some(&weights), 0.5)
-                .map(crate::features::FiniteVector3::get),
+            nurbs_curve_derivative(
+                1,
+                &knots,
+                &admitted,
+                Some(&weights),
+                FiniteReal::new(0.5).unwrap(),
+                CurveDerivative::First
+            )
+            .ok()
+            .map(crate::features::FiniteVector3::get),
             Some(Vector3::new(2.0, 0.0, 0.0))
         );
         assert_eq!(
-            nurbs_curve_second_derivative(1, &knots, &admitted, Some(&weights), 0.5)
-                .map(crate::features::FiniteVector3::get),
+            nurbs_curve_derivative(
+                1,
+                &knots,
+                &admitted,
+                Some(&weights),
+                FiniteReal::new(0.5).unwrap(),
+                CurveDerivative::Second
+            )
+            .ok()
+            .map(crate::features::FiniteVector3::get),
             Some(Vector3::new(0.0, 0.0, 0.0))
         );
         let surface = bilinear_surface(vec![vec![weight; 2]; 2], [2.0, 4.0]);
@@ -162,7 +179,7 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
     ));
     assert_eq!(
         curve_point(&curve, 1.0).map(crate::features::FinitePoint3::get),
-        Some(Point3::new(3.0, 2.0, 3.0))
+        Ok(Point3::new(3.0, 2.0, 3.0))
     );
     assert_eq!(
         curve_tangent(&curve, 1.0).map(crate::features::FiniteVector3::get),
@@ -318,7 +335,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     ];
     assert_eq!(
         polyline_point(&far, &[FiniteReal::ZERO, FiniteReal::ONE], 0.5).map(FinitePoint3::get),
-        Some(Point3::new(0.0, 0.0, 0.0))
+        Ok(Point3::new(0.0, 0.0, 0.0))
     );
     let points = [
         FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -327,7 +344,7 @@ fn numerical_audit_polyline_interpolation_spans_the_finite_range() {
     let wide = FiniteReal::array([-1e308, 1e308]).unwrap();
     assert_eq!(
         polyline_point(&points, &wide, 0.0).map(FinitePoint3::get),
-        Some(Point3::new(0.5, 0.0, 0.0))
+        Ok(Point3::new(0.5, 0.0, 0.0))
     );
     let tangent = polyline_tangent(&points, &wide, 0.0).unwrap();
     assert!((tangent.x / 5e-309 - 1.0).abs() <= 8.0 * f64::EPSILON);
@@ -417,7 +434,7 @@ fn numerical_audit_rolling_ball_keeps_small_nonzero_frame() {
     assert_eq!(
         super::super::rolling_ball_jet_point(&jet, 0.5, 0.0)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(radius, 0.0, 0.0))
+        Ok(Point3::new(radius, 0.0, 0.0))
     );
     let point = super::super::rolling_ball_jet_point(&jet, 0.5, 1.0).unwrap();
     assert!(point.x.abs() <= radius * 8.0 * f64::EPSILON);
@@ -430,7 +447,24 @@ fn numerical_audit_rolling_ball_keeps_endpoint_when_unused_product_overflows() {
     assert_eq!(
         super::super::rolling_ball_jet_point(&jet, 0.0, 0.0)
             .map(crate::features::FinitePoint3::get),
-        Some(Point3::new(1.0, 0.0, 0.0))
+        Ok(Point3::new(1.0, 0.0, 0.0))
+    );
+}
+
+#[test]
+fn a_rolling_ball_jet_whose_interpolated_limit_overflows_reaches_no_coordinate() {
+    // At t = 0.5 the second-derivative rows of magnitude MAX move the first
+    // limit to about MAX / 32 in x. The squared length of its direction
+    // leaves the finite range, so the section reaches no coordinate.
+    let jet = audit_rolling_ball_jet(1.0, 1.0, f64::MAX);
+    assert!(matches!(
+        super::super::rolling_ball_jet_point(&jet, 0.5, 0.0),
+        Err(crate::eval::EvaluationFailure::NonFinite(point))
+            if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
+    ));
+    assert_eq!(
+        super::super::rolling_ball_jet_point(&jet, 2.0, 0.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
     );
 }
 

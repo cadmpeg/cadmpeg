@@ -949,7 +949,7 @@ fn edge_parameter_range(
         return Some((range, false));
     };
     let geometry = &carrier.geometry;
-    let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter));
+    let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(geometry, parameter).ok());
     let [Some(first), Some(second)] = evaluated else {
         return None;
     };
@@ -3649,7 +3649,7 @@ fn derive_spherical_pcurves(
             let Ok(lifted) = surface_point(&surface.geometry, uv.u, uv.v) else {
                 return false;
             };
-            let Some(curve_point) = cadmpeg_ir::eval::curve_point(
+            let Ok(curve_point) = cadmpeg_ir::eval::curve_point(
                 &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle_curve)),
                 parameter,
             ) else {

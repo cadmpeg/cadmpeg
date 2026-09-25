@@ -887,8 +887,8 @@ fn curve_orientation(
     endpoints: [Point3; 2],
 ) -> Option<bool> {
     let evaluated = [
-        curve_point(geometry, parameter_range[0])?,
-        curve_point(geometry, parameter_range[1])?,
+        curve_point(geometry, parameter_range[0]).ok()?,
+        curve_point(geometry, parameter_range[1]).ok()?,
     ];
     let direct = evaluated[0].distance(endpoints[0]) <= MODEL_POINT_TOLERANCE.get()
         && evaluated[1].distance(endpoints[1]) <= MODEL_POINT_TOLERANCE.get();

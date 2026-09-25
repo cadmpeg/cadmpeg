@@ -192,7 +192,7 @@ pub(super) fn oriented_circle_plan(
     };
     let parameter_range = crate::nurbs::canonical_periodic_range(oriented_angles)?;
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve));
-    let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
+    let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter).ok());
     let [Some(start), Some(end)] = evaluated else {
         return None;
     };
@@ -282,8 +282,8 @@ pub(super) fn oriented_nurbs_range(
         return None;
     }
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
-    let start = curve_point(&geometry, range[0])?;
-    let end = curve_point(&geometry, range[1])?;
+    let start = curve_point(&geometry, range[0]).ok()?;
+    let end = curve_point(&geometry, range[1]).ok()?;
     let residual = distance([start.x, start.y, start.z], edge_start)
         .max(distance([end.x, end.y, end.z], edge_end));
     if residual > POINT_TOLERANCE {

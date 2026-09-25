@@ -917,8 +917,8 @@ fn attach_standalone_wires(
                 .iter()
                 .find(|curve| curve.id == *curve_id)?
                 .geometry;
-            let start = cadmpeg_ir::eval::curve_point(geometry, range[0])?;
-            let end = cadmpeg_ir::eval::curve_point(geometry, range[1])?;
+            let start = cadmpeg_ir::eval::curve_point(geometry, range[0]).ok()?;
+            let end = cadmpeg_ir::eval::curve_point(geometry, range[1]).ok()?;
             let carrier =
                 cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(*range))
                     .ok()?;

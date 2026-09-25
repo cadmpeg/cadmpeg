@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::eval::model_surface_partials_by_id;
+use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::scalar_sweep_law_differential;
 use crate::eval::tests::bilinear_surface;
@@ -11,6 +12,7 @@ use crate::geometry::LawExpression;
 use crate::geometry::LawFormula;
 use crate::geometry::ProceduralSurface;
 use crate::geometry::ProceduralSurfaceDefinition;
+use crate::geometry::RevisionCacheForm;
 use crate::geometry::RevisionSurfaceParameterization;
 use crate::geometry::SolvedCurveGeometry;
 use crate::geometry::SolvedSurfaceGeometry;
@@ -90,7 +92,10 @@ fn cacheless_law_differential_rejects_undefined_domains() {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    assert!(scalar_sweep_law_differential(&absolute, 0.0).is_none());
+    assert!(matches!(
+        scalar_sweep_law_differential(&absolute, 0.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    ));
 
     let inverse = LawExpression::Algebraic {
         operator: "ARCSIN".into(),
@@ -98,7 +103,10 @@ fn cacheless_law_differential_rejects_undefined_domains() {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    assert!(scalar_sweep_law_differential(&inverse, 1.0).is_none());
+    assert!(matches!(
+        scalar_sweep_law_differential(&inverse, 1.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    ));
 }
 
 #[test]
@@ -356,4 +364,121 @@ fn numerical_seventh_normalized_derivative_keeps_finite_results() {
         unit_vector_with_derivative(Vector3::new(3.0, 0.0, 0.0), Vector3::new(7.0, 6.0, 0.0))
             .unwrap();
     assert_eq!(derivative, Vector3::new(0.0, 2.0, 0.0));
+}
+
+/// A cacheless law-driven sweep of the x-axis profile along the vertical
+/// spine through (7, 11, 13), displaced by `first_law` along the section
+/// normal.
+pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
+    let profile_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
+    let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.curves = vec![
+        Curve {
+            id: profile_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        },
+        Curve {
+            id: spine_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                crate::geometry::analytic::LineCurve::try_new(
+                    Point3::new(7.0, 11.0, 13.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        },
+    ];
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: ProceduralSurfaceId::mint(
+                "test:model:entity#cacheless-sweep-construction",
+            )
+            .expect("valid identity"),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(procedural_surface! {
+        id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
+        definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
+                primary_kind: 0,
+                cache: crate::geometry::CacheContract::Revision { form: SweepRevisionForm {
+                    revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
+                    primary_flag: false,
+                    profile_endpoints: [Some(0.0), Some(1.0)],
+                    path_endpoints: [Some(0.0), Some(1.0)],
+                    cache: RevisionCacheForm::Parameterization(
+                        RevisionSurfaceParameterization::default(),
+                    ),
+                } },
+                layout: SweepSurfaceLayout::LawDriven {
+                    mode: 10,
+                    profile_range: [0.0, 1.0],
+                    profile_frame: None,
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    directions: [
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    ],
+                    first_law: Box::new(first_law),
+                    first_mode: 21,
+                    first_range: [0.0, 1.0],
+                    law_direction: Vector3::new(0.0, 0.0, 1.0),
+                    path_mode: 1,
+                    path_flag: false,
+                    path_range: [0.0, 1.0],
+                    path_parameter: 0.0,
+                    second_law_flag: false,
+                    second_law: Box::new(LawExpression::Text {
+                        value: cadmpeg_core::nonblank_literal!("VEC(1,1,1)"),
+                    }),
+                    formula_mode: 0,
+                    formula: LawFormula::Null {},
+                    trailing_flag: false,
+                },
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                discontinuity_flag: false,
+            }))).unwrap()),
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    (ir, surface_id)
+}
+
+#[test]
+fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
+    // exp(1000 v) at v = 1 leaves the finite range, so the section offset
+    // reaches no coordinate.
+    let (ir, surface_id) = law_sweep_model(LawExpression::Algebraic {
+        operator: "EXP".into(),
+        operands: vec![LawExpression::Text {
+            value: cadmpeg_core::nonblank_literal!("1000.0*X"),
+        }],
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    for route in [
+        model_surface_point_by_id(&index, &surface_id, 0.5, 1.0),
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 1.0),
+    ] {
+        assert!(
+            matches!(
+                route,
+                Err(crate::eval::EvaluationFailure::NonFinite(point))
+                    if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
+            ),
+            "{route:?}"
+        );
+    }
 }
