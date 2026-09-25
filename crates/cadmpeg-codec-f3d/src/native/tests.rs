@@ -54,6 +54,30 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
+fn native_load_refuses_orphan_history_row_with_child_and_parent() {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::F3dNative::default()
+        .store(&mut namespace)
+        .unwrap();
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:missing-state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    namespace.arenas_mut().insert(
+        "asm_bulletin_boards".into(),
+        cadmpeg_ir::native::arena_from([Ok::<_, cadmpeg_ir::NativeConvertError>(board)]).unwrap(),
+    );
+    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("f3d:native:bulletin#1"));
+    assert!(message.contains("f3d:native:missing-state#1"));
+}
+
+#[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let catalogue_names = crate::native::F3D_FAMILIES
         .iter()

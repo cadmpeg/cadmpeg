@@ -81,17 +81,23 @@ fn group_by_owner<T>(
     records: Vec<T>,
     owners: &HashMap<String, usize>,
     owner_count: usize,
+    id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
-) -> Vec<Vec<T>> {
+) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
     let mut grouped = std::iter::repeat_with(Vec::new)
         .take(owner_count)
         .collect::<Vec<_>>();
     for record in records {
-        if let Some(&ordinal) = owners.get(owner(&record)) {
-            grouped[ordinal].push(record);
-        }
+        let parent = owner(&record);
+        let ordinal = owners.get(parent).ok_or_else(|| {
+            cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "orphaned or ambiguously parented records: child {} refers to missing parent {parent}",
+                id(&record)
+            ))
+        })?;
+        grouped[*ordinal].push(record);
     }
-    grouped
+    Ok(grouped)
 }
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
@@ -1399,9 +1405,13 @@ impl F3dNative {
         let records: Vec<crate::history_records::AsmHistoryRecord> =
             namespace.arena_as("asm_history_records")?;
         let board_indices = owner_indices(boards.iter().map(|board| board.id.as_str()));
-        let changes_by_board = group_by_owner(changes, &board_indices, boards.len(), |change| {
-            &change.parent
-        });
+        let changes_by_board = group_by_owner(
+            changes,
+            &board_indices,
+            boards.len(),
+            |change| &change.id,
+            |change| &change.parent,
+        )?;
         let boards = boards
             .into_iter()
             .zip(changes_by_board)
@@ -1411,11 +1421,20 @@ impl F3dNative {
             })
             .collect::<Vec<_>>();
         let state_indices = owner_indices(states.iter().map(|state| state.id.as_str()));
-        let boards_by_state =
-            group_by_owner(boards, &state_indices, states.len(), |board| &board.parent);
-        let records_by_state = group_by_owner(records, &state_indices, states.len(), |record| {
-            &record.parent
-        });
+        let boards_by_state = group_by_owner(
+            boards,
+            &state_indices,
+            states.len(),
+            |board| &board.id,
+            |board| &board.parent,
+        )?;
+        let records_by_state = group_by_owner(
+            records,
+            &state_indices,
+            states.len(),
+            |record| &record.id,
+            |record| &record.parent,
+        )?;
         let states = states
             .into_iter()
             .zip(boards_by_state)
@@ -1436,8 +1455,9 @@ impl F3dNative {
             states,
             &history_indices,
             native.asm_histories.len(),
+            |state| &state.id,
             |state| &state.parent,
-        );
+        )?;
         for (history, states) in native.asm_histories.iter_mut().zip(states_by_history) {
             history.states = states;
         }
