@@ -114,10 +114,10 @@ impl CodecBackend for CreoCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        let scan = container::scan_bytes(root.window())?;
+        let scan = container::scan_bytes(ctx, root.window())?;
         let classification = dialect::classify(&scan);
         Ok(container::summarize(&scan, &classification))
     }

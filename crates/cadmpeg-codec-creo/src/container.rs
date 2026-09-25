@@ -20,6 +20,7 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
@@ -904,30 +905,43 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<ScannedSection<
     sections
 }
 
-fn expanded_sections(data: &[u8], sections: &[ScannedSection<'_>]) -> Vec<ExpandedSection> {
+fn expanded_sections(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<ExpandedSection>, CodecError> {
     const MAX_EXPANDED_SECTION: usize = 256 * 1024 * 1024;
-    sections
-        .iter()
-        .filter_map(|section| {
-            let expected_length = section.section.expanded_length?;
-            if expected_length > MAX_EXPANDED_SECTION {
-                return None;
-            }
-            let header_length = section.section.raw_name.len().checked_add(2)?;
-            let source_offset = section.section.offset().checked_add(header_length)?;
-            let payload = data.get(source_offset..section.section.end())?;
-            if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
-                return None;
-            }
-            let expanded = crate::compress::decode(payload, expected_length)?;
-            Some(ExpandedSection {
-                name: section.section.name().to_string(),
-                source_offset,
-                compressed_length: payload.len(),
-                data: expanded,
-            })
-        })
-        .collect()
+    let mut expanded_sections = Vec::new();
+    for section in sections {
+        let Some(expected_length) = section.section.expanded_length else {
+            continue;
+        };
+        if expected_length > MAX_EXPANDED_SECTION {
+            continue;
+        }
+        let Some(header_length) = section.section.raw_name.len().checked_add(2) else {
+            continue;
+        };
+        let Some(source_offset) = section.section.offset().checked_add(header_length) else {
+            continue;
+        };
+        let Some(payload) = data.get(source_offset..section.section.end()) else {
+            continue;
+        };
+        if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
+            continue;
+        }
+        let Some(expanded) = crate::compress::decode(ctx, payload, expected_length)? else {
+            continue;
+        };
+        expanded_sections.push(ExpandedSection {
+            name: section.section.name().to_string(),
+            source_offset,
+            compressed_length: payload.len(),
+            data: expanded,
+        });
+    }
+    Ok(expanded_sections)
 }
 
 /// Find the expanded payload owned by one section.
@@ -2110,6 +2124,7 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
 
 /// Parse a whole `.prt` byte image.
 pub(crate) fn scan_bytes<'a>(
+    ctx: &DecodeContext<'_>,
     data: impl Into<Cow<'a, [u8]>>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = data.into();
@@ -2175,7 +2190,7 @@ pub(crate) fn scan_bytes<'a>(
             model_name = Some(ModelName { name, offset });
         }
     }
-    let expanded_sections = expanded_sections(&data, &sections);
+    let expanded_sections = expanded_sections(ctx, &data, &sections)?;
     let double_xar_tables = expanded_sections
         .iter()
         .flat_map(|section| {
@@ -2660,7 +2675,13 @@ fn collect_section_records<'a, 'data: 'a, T>(
 /// test rather than returning a shortened scan.
 #[cfg(test)]
 pub(crate) fn scan_bytes_ok<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
-    match scan_bytes(data) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let data = data.into();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(data.as_ref(), &arena, &policy)
+            .expect("the fixture fits the test decode context");
+    match scan_bytes(&ctx, data.clone()) {
         Ok(scan) => scan,
         Err(refusal) => panic!("the fixture states a section past its own end: {refusal}"),
     }
