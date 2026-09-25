@@ -17,7 +17,8 @@ use crate::test_support::test_curves_and_surfaces::{
     function_offset_line_file, linear_offset_line_file,
     offset_quarter_circle_with_absolute_native_parameters, placed_uniform_offset_circle_file,
     placed_uniform_offset_line_file, uniform_offset_circle_file,
-    uniform_offset_circle_file_with_parameters,
+    uniform_offset_circle_file_with_parameters, wide_control_linear_offset_line_file,
+    wide_distance_linear_offset_line_file,
 };
 use crate::IgesCodec;
 use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::ParameterRecord};
@@ -604,6 +605,57 @@ fn decode_solves_a_parameter_linear_line_offset() {
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
+}
+
+#[test]
+fn linear_offset_keeps_finite_distances_across_wide_controls() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wide_control_linear_offset_line_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("wide linear offset file decodes");
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .expect("offset curve");
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
+        panic!("expected an exact degree-one offset carrier");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![Point3::new(0.0, 2.0, 0.0), Point3::new(10.0, 2.0, 0.0)]
+    );
+}
+
+#[test]
+fn linear_offset_keeps_finite_endpoints_across_wide_distances() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(wide_distance_linear_offset_line_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("wide distance offset file decodes");
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
+        .expect("offset curve");
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = offset.geometry.solved() else {
+        panic!("expected an exact degree-one offset carrier");
+    };
+    assert_eq!(
+        nurbs.control_points(),
+        vec![
+            Point3::new(0.0, -9.0e307, 0.0),
+            Point3::new(10.0, 9.0e307, 0.0),
+        ]
+    );
 }
 
 #[test]
