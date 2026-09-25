@@ -3,7 +3,7 @@
 #![allow(clippy::default_trait_access)]
 use cadmpeg_test_support::EditableDecodeResult;
 
-use super::{has_root_marker, resolve_uri, ReferenceTarget, ROOT_NAME};
+use super::{has_root_marker, resolve_uri, root_reference_notes, ReferenceTarget, ROOT_NAME};
 
 #[test]
 fn resolves_archive_relative_uris_and_fragments() {
@@ -337,6 +337,26 @@ fn codec_checks_forwarded_root_references_without_decoding_the_subsidiary() {
         .notes
         .iter()
         .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+}
+
+#[test]
+fn root_reference_notes_use_the_contextually_parsed_exchange() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        (ROOT_NAME, root, CompressionMethod::Stored),
+        ("parts/child.p21", b"child", CompressionMethod::Stored),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("ZIP fits the service profile");
+    let opened = super::open_root(&ctx, view).expect("open ZIP root");
+    let (exchange, _) = crate::parse::parse_with_context(opened.view.window(), &ctx)
+        .expect("parse root under the active context");
+    assert_eq!(
+        root_reference_notes(&opened.archive, &exchange).expect("resolve parsed references"),
+        vec!["internal resource #10 -> parts/child.p21#target"]
+    );
 }
 
 #[test]

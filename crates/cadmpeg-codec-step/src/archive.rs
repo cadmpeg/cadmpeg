@@ -145,12 +145,10 @@ fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecErr
 /// Resolves all root-file resource bindings and checks internal members.
 pub(crate) fn root_reference_notes(
     archive: &ArchiveSnapshot<'_>,
-    root_bytes: &[u8],
+    exchange: &crate::parse::Exchange,
 ) -> Result<Vec<String>, CodecError> {
     // CE-02: Annex A.4 makes subsidiary access a root reference operation;
     // this pass records the binding and does not import a subsidiary graph.
-    let (exchange, _) = crate::parse::parse(root_bytes)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
     let mut notes = Vec::new();
     for reference in exchange.references() {
         let name = reference.name;
