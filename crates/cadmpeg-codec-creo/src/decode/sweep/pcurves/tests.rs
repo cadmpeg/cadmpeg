@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::revolution_boundary_pcurve;
+use super::{nurbs_sense_sample, revolution_boundary_pcurve};
 use cadmpeg_ir::features::RevolutionAxis;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+
+#[test]
+fn revolution_nurbs_sense_samples_a_wide_finite_parameter_range() {
+    let (parameter, epsilon) = nurbs_sense_sample(-f64::MAX, f64::MAX);
+    assert_eq!(parameter, 0.0);
+    assert!(epsilon.is_finite());
+    assert!((epsilon / f64::MAX - 2.0e-6).abs() <= 4.0 * f64::EPSILON);
+}
 
 #[test]
 fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {

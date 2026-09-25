@@ -27,6 +27,18 @@ const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_RESIDUAL_AGREEMENT: f64 = 1.0e-9;
 const EPS_SURFACE_DIFFERENCE_STEP: f64 = 1.0e-6;
 
+fn nurbs_sense_sample(lower: f64, upper: f64) -> (f64, f64) {
+    let span = upper - lower;
+    if span.is_finite() {
+        (lower + span * 0.5, span.abs() * EPS_SURFACE_DIFFERENCE_STEP)
+    } else {
+        (
+            lower.midpoint(upper),
+            (upper * EPS_SURFACE_DIFFERENCE_STEP - lower * EPS_SURFACE_DIFFERENCE_STEP).abs(),
+        )
+    }
+}
+
 pub(super) fn add_extrusion_pcurve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -314,16 +326,11 @@ pub(in super::super) fn revolution_face_sense(
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
         let [lower, upper] =
             cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
-        let parameter = lower + (upper - lower) * 0.5;
+        let (parameter, u_epsilon) = nurbs_sense_sample(lower, upper);
         let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let point = cadmpeg_ir::eval::curve_point(&carrier, parameter).ok()?;
         let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter).ok()?;
-        (
-            [point.x, point.y],
-            [tangent.x, tangent.y],
-            0.5,
-            (upper - lower).abs() * EPS_SURFACE_DIFFERENCE_STEP,
-        )
+        ([point.x, point.y], [tangent.x, tangent.y], 0.5, u_epsilon)
     } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
         let angle = start + 0.5 * delta;
         (
@@ -363,7 +370,7 @@ pub(in super::super) fn revolution_face_sense(
             oriented_sketch_nurbs_curve(&segment.geometry().to_sketch()?, segment.reversed())?;
         let [lower, upper] =
             cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
-        let parameter = lower + (upper - lower) * 0.5;
+        let (parameter, _) = nurbs_sense_sample(lower, upper);
         line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])?
     } else {
         revolution_boundary_pcurve(surface, model_point, axis, record, refusal)?

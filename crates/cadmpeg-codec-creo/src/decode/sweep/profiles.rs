@@ -881,8 +881,18 @@ fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) ->
         if start >= end {
             continue;
         }
-        let middle = 0.5 * (start + end);
-        let half_width = 0.5 * (end - start);
+        let sum = start + end;
+        let span = end - start;
+        let middle = if sum.is_finite() {
+            0.5 * sum
+        } else {
+            start.midpoint(end)
+        };
+        let half_width = if span.is_finite() {
+            0.5 * span
+        } else {
+            end * 0.5 - start * 0.5
+        };
         for (node, weight) in NURBS_AREA_GAUSS_NODES
             .into_iter()
             .zip(NURBS_AREA_GAUSS_WEIGHTS)

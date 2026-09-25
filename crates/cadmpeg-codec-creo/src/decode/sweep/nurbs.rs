@@ -523,6 +523,22 @@ pub(super) fn oriented_sketch_nurbs_curve(
         .rev()
         .map(|knot| lower + upper - knot)
         .collect::<Vec<_>>();
+    let knots = if knots.iter().all(|knot| knot.is_finite()) {
+        knots
+    } else {
+        let interval = cadmpeg_ir::topology::IncreasingParameterInterval::new([lower, upper])?;
+        reversed
+            .knots()
+            .iter()
+            .rev()
+            .map(|knot| {
+                interval
+                    .map_from(interval, cadmpeg_ir::scalar::FiniteReal::new(*knot)?, true)
+                    .ok()
+                    .map(cadmpeg_ir::scalar::FiniteReal::get)
+            })
+            .collect::<Option<Vec<_>>>()?
+    };
     reversed.reverse_parameterization();
     reversed
         .edit_knots(|target| target.copy_from_slice(&knots))
@@ -896,9 +912,34 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
 
 #[cfg(test)]
 mod tests {
-    use super::{extruded_nurbs_surface, signed_unit_chart, translated_nurbs_curve};
+    use super::{
+        extruded_nurbs_surface, oriented_sketch_nurbs_curve, signed_unit_chart,
+        translated_nurbs_curve,
+    };
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+    use cadmpeg_ir::math::{Point2, Point3};
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    #[test]
+    fn reversed_sketch_nurbs_keeps_finite_knots_when_endpoint_sum_overflows() {
+        let lower = 9.0e307;
+        let upper = f64::MAX;
+        let geometry = SketchGeometry::nurbs(
+            PcurveNurbs::from_lanes(
+                1,
+                vec![lower, lower, upper, upper],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                None,
+                false,
+            )
+            .expect("wide finite sketch NURBS"),
+        );
+        let reversed =
+            oriented_sketch_nurbs_curve(&geometry, true).expect("finite reversed sketch NURBS");
+        assert_eq!(reversed.knots().as_slice(), [lower, lower, upper, upper]);
+        assert_eq!(reversed.control_points()[0], Point3::new(1.0, 0.0, 0.0));
+    }
 
     #[test]
     fn signed_unit_chart_accepts_bounded_endpoint_rounding_only() {
