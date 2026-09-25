@@ -567,14 +567,19 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
     };
     let mut ir = CadIr::empty();
 
-    assert!(transfer(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        graph,
-        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
-            .expect("identity grammar"),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+                .expect("identity grammar"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+        .expect("service limits admit B5 topology"));
+    });
     assert_eq!(
         ir.model
             .faces
@@ -721,14 +726,19 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
     graph.loops.get_mut(&2).expect("required loop").members[1].controls[2] = -1;
     let mut ir = CadIr::empty();
 
-    assert!(transfer(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        graph,
-        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
-            .expect("identity grammar"),
-        &mut crate::nurbs::LaneRefusals::new(),
-    ));
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        assert!(transfer(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            graph,
+            &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
+                .expect("identity grammar"),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+        .expect("service limits admit B5 topology"));
+    });
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
     assert_eq!(

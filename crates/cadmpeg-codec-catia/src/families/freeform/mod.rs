@@ -33,7 +33,7 @@ use crate::container::{self, ContainerScan};
 use crate::families::b5::graph::controls::{
     B5EdgeTerminalControl, B5FramingControl, B5VertexIncidenceControl,
 };
-use crate::families::FamilyOutput;
+use crate::families::{FamilyEntityAdmission, FamilyOutput};
 use crate::loss::{identity_statement, CatiaLossCode};
 use crate::math::distance;
 
@@ -486,6 +486,7 @@ pub(super) fn try_decode_freeform_surfaces(
             return None;
         }
         let mut ir = CadIr::empty();
+        let mut admission = FamilyEntityAdmission::new(ctx);
         let mut annotations = AnnotationBuilder::new();
         let mut unknowns = Vec::new();
         let payload_id = UnknownId::compose(
@@ -526,15 +527,22 @@ pub(super) fn try_decode_freeform_surfaces(
             .collect::<Vec<_>>();
         let mut topology_ir = ir.clone();
         let mut topology_annotations = annotations.clone();
-        let topology_transferred = b5_graph.take().is_some_and(|graph| {
-            crate::families::b5::transfer::transfer(
+        let topology_transferred = if let Some(graph) = b5_graph.take() {
+            let transferred = match crate::families::b5::transfer::transfer(
                 &mut topology_ir,
                 &mut topology_annotations,
                 graph,
                 &payload_id,
                 refusal,
-            ) && neutral_model_is_admissible(&mut topology_ir, &unknowns)
-        });
+                &mut admission,
+            ) {
+                Ok(transferred) => transferred,
+                Err(error) => return Some(Err(error)),
+            };
+            transferred && neutral_model_is_admissible(&mut topology_ir, &unknowns)
+        } else {
+            false
+        };
         if topology_transferred {
             ir = topology_ir;
             annotations = topology_annotations;
@@ -910,7 +918,7 @@ pub(super) fn try_decode_freeform_surfaces(
             },
             annotations,
             unknowns,
-            admitted_model_entities: 0,
+            admitted_model_entities: admission.admitted(),
         }))
     })()
     .transpose()

@@ -10,6 +10,7 @@
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use crate::families::FamilyEntityAdmission;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -185,7 +186,8 @@ pub(in crate::families) fn transfer(
     mut graph: B5Graph,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> bool {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
     if !graph.complete {
         graph.loops.retain(|_, loop_| {
             loop_.members.iter().all(|member| {
@@ -226,11 +228,11 @@ pub(in crate::families) fn transfer(
             .loops
             .retain(|loop_id, _| referenced_loops.contains(loop_id));
         if graph.faces.is_empty() || graph.loops.is_empty() {
-            return false;
+            return Ok(false);
         }
         graph.complete = true;
     }
-    transfer_complete(ir, annotations, &graph, payload, refusal)
+    transfer_complete(ir, annotations, &graph, payload, refusal, admission)
 }
 
 /// Orchestrate the staged emit passes over a resolved [`TransferPlan`]. The pass
@@ -241,23 +243,33 @@ fn transfer_complete(
     graph: &B5Graph,
     payload: &UnknownId,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> bool {
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(mut plan) = build_plan(graph, payload, refusal) else {
-        return false;
+        return Ok(false);
     };
-    if vertices::emit_vertices(ir, annotations, graph, &plan).is_err() {
-        return false;
+    if let Err(error) = vertices::emit_vertices(ir, annotations, graph, &plan, admission) {
+        return semantic_fallthrough_or_resource(error);
     }
-    let Ok(surface_ids) = surfaces::emit_surfaces(ir, annotations, graph, &mut plan) else {
-        return false;
+    let surface_ids = match surfaces::emit_surfaces(ir, annotations, graph, &mut plan, admission) {
+        Ok(ids) => ids,
+        Err(error) => return semantic_fallthrough_or_resource(error),
     };
-    let Ok(pcurve_uses) = pcurves::emit_pcurves(ir, annotations, graph, &plan) else {
-        return false;
+    let pcurve_uses = match pcurves::emit_pcurves(ir, annotations, graph, &plan, admission) {
+        Ok(uses) => uses,
+        Err(error) => return semantic_fallthrough_or_resource(error),
     };
-    let Ok(edge_id_map) =
-        edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids)
-    else {
-        return false;
+    let edge_id_map = match edges::emit_edges(
+        ir,
+        annotations,
+        graph,
+        payload,
+        &mut plan,
+        &surface_ids,
+        admission,
+    ) {
+        Ok(ids) => ids,
+        Err(error) => return semantic_fallthrough_or_resource(error),
     };
     if !faces::emit_faces(
         ir,
@@ -267,10 +279,20 @@ fn transfer_complete(
         &surface_ids,
         &pcurve_uses,
         &edge_id_map,
-    ) {
-        return false;
+        admission,
+    )? {
+        return Ok(false);
     }
-    true
+    Ok(true)
+}
+
+fn semantic_fallthrough_or_resource(
+    error: cadmpeg_core::CodecError,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    match error {
+        cadmpeg_core::CodecError::ResourceLimit(_) => Err(error),
+        _ => Ok(false),
+    }
 }
 
 fn referenced_surface_ids(

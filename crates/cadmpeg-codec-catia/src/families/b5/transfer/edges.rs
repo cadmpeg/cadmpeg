@@ -286,6 +286,7 @@ pub(super) fn emit_edges(
     payload: &cadmpeg_ir::ids::UnknownId,
     plan: &mut TransferPlan,
     surface_ids: &HashMap<u32, SurfaceId>,
+    admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<HashMap<u32, EdgeId>, cadmpeg_core::CodecError> {
     let mut edge_id_map = HashMap::new();
     let edge_ids = std::mem::take(&mut plan.edge_ids);
@@ -340,6 +341,7 @@ pub(super) fn emit_edges(
                 .derived(&curve_id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
+        admission.charge()?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -395,6 +397,7 @@ pub(super) fn emit_edges(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
+            admission.charge()?;
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }
         annotate(
@@ -420,6 +423,7 @@ pub(super) fn emit_edges(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         edge_id_map.insert(edge_id, id.clone());
+        admission.charge()?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
