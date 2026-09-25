@@ -3918,7 +3918,6 @@ pub(crate) fn parameter_records(
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
-#[must_use]
 pub(crate) fn cross_section_parameter_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -5012,7 +5011,6 @@ pub(crate) fn contour_records(
 
 /// Decode complete positional surface contour chains from a DEPDB
 /// cross-section namespace.
-#[must_use]
 pub(crate) fn cross_section_contour_records(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -6629,7 +6627,6 @@ pub(crate) fn plane_local_systems(
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
-#[must_use]
 pub(crate) fn cross_section_plane_local_systems(
     ctx: &DecodeContext<'_>,
     payload: &[u8],

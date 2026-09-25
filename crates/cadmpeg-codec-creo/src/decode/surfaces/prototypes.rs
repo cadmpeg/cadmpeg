@@ -306,6 +306,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
 /// The model carries the surface row without it, so the refusal is a loss note
 /// naming the `VisibGeom` surface row and the prototype offset.
 pub(in super::super) fn transfer_first_instance_prototype_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -441,6 +442,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             "first_instance_surface_prototype",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry,
@@ -577,6 +579,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             "positional_spline_prototype_replay",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
@@ -608,6 +611,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
 /// model carries the surface row without it, so the refusal is a loss note
 /// naming the surface row and the carrier offset.
 pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -738,6 +742,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             "legacy_surface_prototype_carrier",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry,

@@ -529,9 +529,10 @@ pub(in super::super) fn generated_surface_face_refs(
 }
 
 pub(in super::super) fn emit_feature_result_topologies(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
-) -> usize {
+) -> Result<usize, cadmpeg_core::CodecError> {
     let mut emitted = 0;
     for feature in &ir.model.features {
         let Some(feature_id) = feature
@@ -550,10 +551,11 @@ pub(in super::super) fn emit_feature_result_topologies(
         ) else {
             continue;
         };
+        ctx.charge_entities(1, "admit Creo model feature_result_topologies")?;
         ir.model.feature_result_topologies.push(state);
         emitted += 1;
     }
-    emitted
+    Ok(emitted)
 }
 
 #[cfg(test)]

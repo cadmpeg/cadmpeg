@@ -41,6 +41,15 @@ use crate::decode::build::report::build_report;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+pub(crate) fn with_test_decode_ctx<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[0], &arena, &policy).expect("test root is admitted");
+    run(&ctx)
+}
+
 /// Decode a `.prt` stream into an IR document and decode body; the sealed
 /// wrapper stamps the report identity from `ir.source`.
 ///
@@ -50,11 +59,8 @@ mod tests;
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let scan = container::scan_bytes(ctx, root.window())?;
     let classification = crate::dialect::classify(&scan);
-    // Charge section cardinality before IR construction so max_entities can
-    // refuse the build rather than only the finalizer.
+    // Admit section identities before model construction.
     ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
-    let mut admitted_entities = 0_u64;
-
     let BuiltIr {
         mut ir,
         annotations,
@@ -67,11 +73,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     } else {
         build_ir(ctx, &scan, &classification)?
     };
-    ctx.admit_entities(
-        ir.model.entity_count() as u64,
-        &mut admitted_entities,
-        "admit Creo entities",
-    )?;
     let mut body = build_report(
         &scan,
         &classification,

@@ -221,12 +221,15 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         source_object: None,
     });
 
-    let transferred = transfer_topology_bound_planes(
-        &scan,
-        &mut ir,
-        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        &std::collections::BTreeSet::new(),
-    )
+    let transferred = crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_topology_bound_planes(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &std::collections::BTreeSet::new(),
+        )
+    })
     .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
@@ -253,12 +256,13 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         .push(scan.curves.topology_rows[0].clone());
     ir.model.surfaces.clear();
     assert_eq!(
-        transfer_topology_bound_planes(
+        crate::decode::with_test_decode_ctx(|ctx| transfer_topology_bound_planes(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        )
+        ))
         .expect("valid source object identity"),
         0
     );
@@ -324,12 +328,13 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     }
 
     assert_eq!(
-        transfer_topology_bound_planes(
+        crate::decode::with_test_decode_ctx(|ctx| transfer_topology_bound_planes(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
             &std::collections::BTreeSet::new(),
-        )
+        ))
         .expect("valid source object identity"),
         1
     );
