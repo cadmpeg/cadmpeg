@@ -15,6 +15,7 @@ use crate::test_support::extract_streams;
 use crate::test_support::test_prt::single_part_prt;
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::dialect::DialectMatch;
+use cadmpeg_core::CodecError;
 use std::sync::OnceLock;
 
 #[test]
@@ -193,21 +194,21 @@ fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
 }
 
 #[test]
-fn the_version_byte_is_evidence_and_never_moves_the_resolved_id() {
-    // The scanner requires the byte and classification compares it to nothing,
-    // so every value lands on the same row as every other. A consumer that
-    // parsed a version out of the id, or expected the id to agree with the
-    // declaration beside it, would be reading a field this codec does not
-    // branch on.
-    for version in [0_u8, 1, 6, 255] {
-        let container = container(false, version);
-        let matched = classify(&container);
-        assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
-        assert_eq!(
-            matched.declared()[DECLARED_SPLMSSTR_VERSION],
-            version.to_string()
-        );
-        assert_eq!(matched.admission(), &Admission::Admitted);
+fn splmsstr_version_byte_is_checked_before_container_construction() {
+    let valid = single_part_prt();
+    let container = crate::container::scan_bytes(valid.clone()).expect("version 0x06 scans");
+    let matched = classify(&container);
+    assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
+    assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
+    assert_eq!(matched.admission(), &Admission::Admitted);
+
+    for version in [0_u8, 1, 255] {
+        let mut invalid = valid.clone();
+        invalid[crate::layout::splmsstr_header::VERSION_TAG] = version;
+        assert!(matches!(
+            crate::container::scan_bytes(invalid),
+            Err(CodecError::Malformed(message)) if message.contains("version byte must be 0x06")
+        ));
     }
 }
 

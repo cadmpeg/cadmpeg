@@ -23,13 +23,13 @@
 //! admitted as residual and charges `source.kernel-dialect-unverified`; host
 //! admission does not launder the kernel layer.
 //!
-//! # The version byte is provenance, not a discriminant
+//! # The version byte is admitted by its container grammar
 //!
 //! `Container::version` is a `u8` — file offset 8 on the modern arm, byte 8 of
-//! the UGII payload prefix on the legacy arm. No branch in this codec reads it.
-//! Its consumers are report notes and [`DialectMatch::declared`]. It is
-//! rendered as one canonical decimal value under the key the arm that read it
-//! already used, and it never moves the resolved id.
+//! the UGII payload prefix on the legacy arm. The modern parser requires 0x06
+//! before it constructs a container. The admitted value is rendered as canonical
+//! decimal in report notes and [`DialectMatch::declared`] under the key for its
+//! container grammar. It never changes the resolved dialect id.
 //!
 //! A successful scan always reads the version byte, so the value used by decode
 //! and the declaration recorded here cannot diverge.
