@@ -117,7 +117,7 @@ pub(super) fn decode(
             definition_descriptions.entry(id).or_insert(description);
         }
     }
-    let shape_bindings = shape_bindings(exchange, &definitions, topology, ctx);
+    let shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
     let definition_counts =
         definitions
             .values()
@@ -627,7 +627,7 @@ fn apply_body_placements(
             &mut BTreeSet::new(),
             0,
             ctx,
-        );
+        )?;
         if bodies.is_empty() {
             continue;
         }
@@ -757,7 +757,7 @@ fn shape_bindings(
     definitions: &BTreeMap<u64, u64>,
     topology: &TopologyData,
     ctx: Option<&DecodeContext<'_>>,
-) -> BTreeMap<u64, Vec<BodyId>> {
+) -> Result<BTreeMap<u64, Vec<BodyId>>, CodecError> {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
@@ -783,11 +783,11 @@ fn shape_bindings(
             topology,
             &mut representation_cache,
             ctx,
-        ) {
+        )? {
             result.entry(definition).or_default().extend(bodies);
         }
     }
-    result
+    Ok(result)
 }
 
 fn shape_binding(
@@ -798,14 +798,23 @@ fn shape_binding(
     topology: &TopologyData,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
     ctx: Option<&DecodeContext<'_>>,
-) -> Option<(u64, Vec<BodyId>)> {
-    let definition = *pds.get(
-        &named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
-            .and_then(ValueExt::reference)?,
-    )?;
-    definitions.get(&definition)?;
-    let representation = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
-        .and_then(ValueExt::reference)?;
+) -> Result<Option<(u64, Vec<BodyId>)>, CodecError> {
+    let Some(shape) =
+        named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0).and_then(ValueExt::reference)
+    else {
+        return Ok(None);
+    };
+    let Some(&definition) = pds.get(&shape) else {
+        return Ok(None);
+    };
+    if !definitions.contains_key(&definition) {
+        return Ok(None);
+    }
+    let Some(representation) =
+        named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1).and_then(ValueExt::reference)
+    else {
+        return Ok(None);
+    };
     let bodies = super::topology::representation_bodies(
         representation,
         exchange,
@@ -814,8 +823,8 @@ fn shape_binding(
         &mut BTreeSet::new(),
         0,
         ctx,
-    );
-    Some((definition, bodies))
+    )?;
+    Ok(Some((definition, bodies)))
 }
 
 fn definition_representations(

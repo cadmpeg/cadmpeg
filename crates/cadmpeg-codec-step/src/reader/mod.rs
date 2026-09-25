@@ -318,7 +318,7 @@ fn decode_exchange_mode(
         "step_implicit_face_plane",
     )?;
     let mut topology =
-        topology::decode(exchange, &mut session.ir, &carrier_index, Some(session.ctx));
+        topology::decode(exchange, &mut session.ir, &carrier_index, Some(session.ctx))?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, Some(session.ctx))?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_stage("step_topology_association")?;
@@ -373,8 +373,13 @@ fn decode_exchange_mode(
         &mut session.admitted_ir_entities,
     )?;
     session.charge_stage("step_tessellation_decode")?;
-    let mut tessellation =
-        tessellation::decode(exchange, &geometry.value, &topology.value, &mut session.ir)?;
+    let mut tessellation = tessellation::decode(
+        exchange,
+        &geometry.value,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+    )?;
     session.charge_stage("step_pmi_decode")?;
     let mut pmi = pmi::decode(
         exchange,
