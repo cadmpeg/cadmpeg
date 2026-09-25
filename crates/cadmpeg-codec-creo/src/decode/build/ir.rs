@@ -46,6 +46,7 @@ pub(in super::super) struct BuiltIr {
 }
 
 pub(in super::super) fn build_container_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
@@ -53,7 +54,7 @@ pub(in super::super) fn build_container_ir(
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
@@ -582,7 +583,7 @@ pub(in super::super) fn build_ir(
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
     let mut transfer_losses = Vec::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
     transfer_reference_lines(scan, &mut ir, &mut annotations)?;
     transfer_reference_circles(scan, &mut ir, &mut annotations)?;

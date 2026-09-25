@@ -139,6 +139,67 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
 }
 
 #[test]
+fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let jpeg = jpeg_payload();
+    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg.clone())]);
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("thumbnail copy exceeds the retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Creo passthrough section"
+    ));
+
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact retained-byte limit admits the thumbnail");
+}
+
+#[test]
+fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let geometry = visibgeom_payload(0, 0);
+    let data = build_prt("c", &[("VisibGeom", geometry)]);
+    let section_len = container::scan_bytes_ok(data.clone()).framing.sections[0].length();
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(section_len - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("geometry copy exceeds the retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Creo passthrough section"
+    ));
+
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(section_len).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact retained-byte limit admits the geometry section");
+}
+
+#[test]
 fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     let jpeg = jpeg_payload();
     let compressed = unix_compress_literals(&jpeg);
