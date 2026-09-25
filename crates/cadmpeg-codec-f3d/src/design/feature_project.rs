@@ -6179,6 +6179,8 @@ fn resolve_sketch_axis_selection(
     else {
         return None;
     };
+    let start = start.as_raw();
+    let direction = direction.as_raw();
     let origin_scale = crate::design::face_resolve::placement_origin_scale(placement);
     let origin = Point3::new(
         placement.transform()[0][0] * start.x

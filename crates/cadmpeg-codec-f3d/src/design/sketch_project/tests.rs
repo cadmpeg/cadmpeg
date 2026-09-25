@@ -128,12 +128,17 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             entity_genesis: Some(0),
             primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),
             secondary_id: 0,
-            geometry: Some(SketchCurveGeometry::Line {
-                start: Point3::new(start.0, start.1, 0.0),
-                end: Point3::new(end.0, end.1, 0.0),
-                direction: Vector3::new(end.0 - start.0, end.1 - start.1, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-            }),
+            geometry: Some(
+                SketchCurveGeometry::line(
+                    Point3::new(start.0, start.1, 0.0),
+                    Point3::new(end.0, end.1, 0.0),
+                    Vector3::new(end.0 - start.0, end.1 - start.1, 0.0)
+                        .unit()
+                        .unwrap(),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
         };
     let curves = vec![
         curve(10, 10, (0.0, 0.0), (10.0, 0.0)),
@@ -339,12 +344,15 @@ fn point_closure_does_not_mark_construction_geometry() {
         entity_genesis: Some(0),
         primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Line {
-            start: Point3::new(0.0, 0.0, 0.0),
-            end: Point3::new(10.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        }),
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
     };
 
     let (sketches, entities) = project_sketch_design(
@@ -422,12 +430,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(20).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Line {
-            start: Point3::new(1.0, 2.0, 0.0),
-            end: Point3::new(4.0, 6.0, 0.0),
-            direction: Vector3::new(0.6, 0.8, 0.0),
-            normal: Vector3::new(0.0, 0.0, -1.0),
-        }),
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(4.0, 6.0, 0.0),
+                Vector3::new(0.6, 0.8, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            )
+            .unwrap(),
+        ),
     };
     let clockwise_arc = SketchCurveIdentity {
         id: "f3d:native:curve#220".into(),
@@ -859,12 +870,13 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         curve(
             101,
             1,
-            SketchCurveGeometry::Line {
-                start: Point3::new(1.0, 2.0, 3.0),
-                end: Point3::new(4.0, 5.0, 6.0),
-                direction: Vector3::new(1.0, 1.0, 1.0),
-                normal: Vector3::new(0.0, 1.0, 0.0),
-            },
+            SketchCurveGeometry::line(
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(4.0, 5.0, 6.0),
+                Vector3::new(1.0, 1.0, 1.0).unit().unwrap(),
+                Vector3::new(1.0, -1.0, 0.0).unit().unwrap(),
+            )
+            .unwrap(),
         ),
         curve(
             102,
@@ -881,12 +893,13 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         curve(
             108,
             7,
-            SketchCurveGeometry::Line {
-                start: Point3::new(1.0, 2.0, 0.0),
-                end: Point3::new(4.0, 2.0, 0.0),
-                direction: Vector3::new(1.0, 0.0, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-            },
+            SketchCurveGeometry::line(
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(4.0, 2.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
         ),
     ];
     curves.push(SketchCurveIdentity {

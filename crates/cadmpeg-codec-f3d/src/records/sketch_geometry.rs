@@ -2,10 +2,12 @@
 //! Sketch text, points, curves, surfaces and NURBS poles.
 
 use super::references::DesignClassTag;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::units::UnitVector3;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_anchor, Point2, "anchor");
@@ -1179,14 +1181,14 @@ pub(crate) enum SketchCurveGeometry {
     /// A straight line segment.
     Line {
         /// Start point in sketch space, millimetres.
-        start: Point3,
+        start: FinitePoint3,
         /// End point in sketch space, millimetres.
-        end: Point3,
+        end: FinitePoint3,
         /// Direction from `start` to `end`; the decoder stores it at unit length.
-        direction: Vector3,
+        direction: UnitVector3,
         /// Normal of the sketch plane the line lies in; the decoder stores it at
         /// unit length.
-        normal: Vector3,
+        normal: UnitVector3,
     },
     /// A circular arc.
     Arc {
@@ -1227,6 +1229,62 @@ pub(crate) enum SketchCurveGeometry {
         /// Polynomial control points or rational point/weight pairs.
         poles: SketchNurbsPoles,
     },
+}
+
+const EPS_SKETCH_LINE_FRAME: f64 = 1.0e-9;
+
+impl SketchCurveGeometry {
+    pub(crate) fn line_from_parts(
+        start: FinitePoint3,
+        end: FinitePoint3,
+        direction: UnitVector3,
+        normal: UnitVector3,
+    ) -> Result<Self, String> {
+        let start_raw = start.get();
+        let end_raw = end.get();
+        let displacement = FiniteVector3::new(Vector3::new(
+            end_raw.x - start_raw.x,
+            end_raw.y - start_raw.y,
+            end_raw.z - start_raw.z,
+        ))
+        .ok_or("line endpoint displacement overflows")?;
+        let displacement_raw = displacement.get();
+        let source_displacement = FiniteVector3::new(Vector3::new(
+            displacement_raw.x / 10.0,
+            displacement_raw.y / 10.0,
+            displacement_raw.z / 10.0,
+        ))
+        .ok_or("line source-unit displacement overflows")?;
+        let canonical = UnitVector3::normalized(source_displacement.get())
+            .ok_or("line endpoint displacement is zero in source units")?;
+        let difference = *direction.as_raw() - *canonical.as_raw();
+        if difference.norm() > EPS_SKETCH_LINE_FRAME {
+            return Err("line direction disagrees with endpoints".into());
+        }
+        if canonical.as_raw().dot(*normal.as_raw()).abs() > EPS_SKETCH_LINE_FRAME {
+            return Err("line normal is not perpendicular to its direction".into());
+        }
+        Ok(Self::Line {
+            start,
+            end,
+            direction: canonical,
+            normal,
+        })
+    }
+
+    pub(crate) fn line(
+        start: Point3,
+        end: Point3,
+        direction: Vector3,
+        normal: Vector3,
+    ) -> Result<Self, String> {
+        Self::line_from_parts(
+            FinitePoint3::new(start).ok_or("line start is not finite")?,
+            FinitePoint3::new(end).ok_or("line end is not finite")?,
+            UnitVector3::new(direction).ok_or("line direction is not unit")?,
+            UnitVector3::new(normal).ok_or("line normal is not unit")?,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1296,12 +1354,7 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
                 end,
                 direction,
                 normal,
-            } => Self::Line {
-                start,
-                end,
-                direction,
-                normal,
-            },
+            } => Self::line(start, end, direction, normal)?,
             SketchCurveGeometryWire::Arc {
                 center,
                 normal,
@@ -1351,10 +1404,10 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                 direction,
                 normal,
             } => Self::Line {
-                start,
-                end,
-                direction,
-                normal,
+                start: start.get(),
+                end: end.get(),
+                direction: *direction.as_raw(),
+                normal: *normal.as_raw(),
             },
             SketchCurveGeometry::Arc {
                 center,
@@ -1472,5 +1525,47 @@ impl SketchNurbsPoles {
         points
             .iter_mut()
             .chain(poles.iter_mut().map(|pole| &mut pole.point))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SketchCurveGeometry;
+    use serde_json::json;
+
+    #[test]
+    fn native_line_refuses_zero_endpoint_displacement() {
+        let geometry = json!({
+            "kind": "line",
+            "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "end": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
+        });
+        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
+    }
+
+    #[test]
+    fn native_line_refuses_overflowing_source_displacement() {
+        let geometry = json!({
+            "kind": "line",
+            "start": {"x": -f64::MAX, "y": 0.0, "z": 0.0},
+            "end": {"x": f64::MAX, "y": 0.0, "z": 0.0},
+            "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
+        });
+        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
+    }
+
+    #[test]
+    fn native_line_refuses_direction_that_disagrees_with_endpoints() {
+        let geometry = json!({
+            "kind": "line",
+            "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "end": {"x": 0.0, "y": 1.0, "z": 0.0},
+            "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
+        });
+        assert!(serde_json::from_value::<SketchCurveGeometry>(geometry).is_err());
     }
 }

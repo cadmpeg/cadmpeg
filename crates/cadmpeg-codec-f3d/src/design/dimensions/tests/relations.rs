@@ -1061,12 +1061,15 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(u64::from(record_index)).unwrap(),
             secondary_id: 0,
-            geometry: Some(SketchCurveGeometry::Line {
-                start: Point3::new(start.u, start.v, 0.0),
-                end: Point3::new(end.u, end.v, 0.0),
-                direction: Vector3::new(delta_u / length, delta_v / length, 0.0),
-                normal: Vector3::new(0.0, 0.0, 1.0),
-            }),
+            geometry: Some(
+                SketchCurveGeometry::line(
+                    Point3::new(start.u, start.v, 0.0),
+                    Point3::new(end.u, end.v, 0.0),
+                    Vector3::new(delta_u / length, delta_v / length, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            ),
         }
     };
     let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));

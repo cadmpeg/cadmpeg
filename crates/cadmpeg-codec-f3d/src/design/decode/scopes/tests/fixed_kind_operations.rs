@@ -989,12 +989,15 @@ fn fixed_kind_edge_and_revolve_operations(
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(104).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Line {
-            start: Point3::new(1.0, 2.0, 3.0),
-            end: Point3::new(1.0, -3.0, 3.0),
-            direction: Vector3::new(0.0, -1.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        }),
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, -3.0, 3.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .unwrap(),
+        ),
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
         &indexed_revolve_scope,

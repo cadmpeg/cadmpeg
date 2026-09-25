@@ -255,11 +255,12 @@ pub(crate) fn project_sketch_design(
         let geometry = match source {
             SketchCurveGeometry::Line {
                 start, end, normal, ..
-            } if planar_point(start)
-                && planar_point(end)
-                && normal.z.is_finite()
-                && normal.z != 0.0 =>
+            } if planar_point(start.as_raw())
+                && planar_point(end.as_raw())
+                && normal.as_raw().z != 0.0 =>
             {
+                let start = start.as_raw();
+                let end = end.as_raw();
                 let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                     start: Point2::new(start.x, start.y),
                     end: Point2::new(end.x, end.y),
@@ -481,7 +482,7 @@ pub(crate) fn project_spatial_sketch_design(
                 match member.geometry.as_ref() {
                     None => Some((*record, [*first, *second])),
                     Some(SketchCurveGeometry::Line { start, end, .. })
-                        if start == first && end == second =>
+                        if start.as_raw() == first && end.as_raw() == second =>
                     {
                         Some((*record, [*first, *second]))
                     }
@@ -569,8 +570,8 @@ pub(crate) fn project_spatial_sketch_design(
                     SketchCurveGeometry::Line { start, end, .. } => {
                         let Ok(geometry) = SpatialSketchGeometry::try_from(
                             SpatialSketchGeometryDefinition::Line {
-                                start: transform_point(placement, start),
-                                end: transform_point(placement, end),
+                                start: transform_point(placement, start.as_raw()),
+                                end: transform_point(placement, end.as_raw()),
                             },
                         ) else {
                             continue;

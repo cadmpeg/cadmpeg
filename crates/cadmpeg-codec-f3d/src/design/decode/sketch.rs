@@ -30,11 +30,13 @@ use crate::records::{
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::HashMap;
 
 use super::meta::{
@@ -44,7 +46,6 @@ use super::meta::{
 const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1.0e-6;
 const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1.0e-9;
 const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1.0e-12;
-const EPS_SKETCH_DECODE_LINE_COMPONENTS_E9: f64 = 1.0e-9;
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
@@ -3405,30 +3406,37 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
 
 fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<SketchCurveGeometry> {
     let displacement = Vector3::new(values[3], values[4], values[5]);
-    let direction = Vector3::new(values[6], values[7], values[8]);
-    let displacement_direction =
-        cadmpeg_ir::features::FiniteVector3::new(displacement)?.unit_nonzero()?;
-    if (direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
-        || (stored_normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
-    {
-        return None;
-    }
+    UnitVector3::normalized(displacement)?;
+    UnitVector3::new(Vector3::new(values[6], values[7], values[8]))?;
+    UnitVector3::new(stored_normal)?;
     // Start plus displacement carries the bounded line and is corroborated by
     // the persistent endpoint records. Imported sketches can retain a stale
-    // auxiliary unit direction, so derive the neutral tangent from the exact
-    // displacement just as the normal is orthogonalized below.
-    let direction = displacement_direction;
+    // auxiliary unit direction, so derive the neutral tangent from the
+    // admitted endpoints just as the normal is orthogonalized below.
+    let start = FinitePoint3::new(Point3::new(
+        values[0] * 10.0,
+        values[1] * 10.0,
+        values[2] * 10.0,
+    ))?;
+    let end = FinitePoint3::new(start.get().translated(displacement, 10.0))?;
+    let start_raw = start.get();
+    let end_raw = end.get();
+    let direction = UnitVector3::normalized(Vector3::new(
+        end_raw.x - start_raw.x,
+        end_raw.y - start_raw.y,
+        end_raw.z - start_raw.z,
+    ))?;
     // The stored line normal is an auxiliary orientation vector. Imported
     // legacy sketches can retain a small component along the line direction;
     // remove that component so the typed carrier maintains its orthonormal
     // invariant without changing the line's endpoints or orientation side.
-    let dot = direction.dot(stored_normal);
-    let projected_normal = stored_normal - direction.scale(dot);
+    let dot = direction.as_raw().dot(stored_normal);
+    let projected_normal = stored_normal - direction.as_raw().scale(dot);
     let projected_length = projected_normal.norm();
     let normal = if projected_length.is_finite()
         && projected_length > EPS_SKETCH_DECODE_LINE_COMPONENTS_E12
     {
-        projected_normal.scale(1.0 / projected_length)
+        UnitVector3::normalized(projected_normal)?
     } else {
         // Spatial line carriers can store a unit auxiliary vector parallel to
         // the line. The neutral spatial-line geometry has no plane normal;
@@ -3443,23 +3451,14 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
         .into_iter()
         .min_by(|left, right| {
             direction
+                .as_raw()
                 .dot(*left)
                 .abs()
-                .total_cmp(&direction.dot(*right).abs())
+                .total_cmp(&direction.as_raw().dot(*right).abs())
         })?;
-        direction.cross(basis).unit()?
+        UnitVector3::normalized(direction.as_raw().cross(basis))?
     };
-    let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
-    let end = start.translated(displacement, 10.0);
-    if !start.is_finite() || !end.is_finite() {
-        return None;
-    }
-    Some(SketchCurveGeometry::Line {
-        start,
-        end,
-        direction,
-        normal,
-    })
+    SketchCurveGeometry::line_from_parts(start, end, direction, normal).ok()
 }
 
 struct ParsedSketchRelationMember {
