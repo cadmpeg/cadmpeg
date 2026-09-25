@@ -53,6 +53,30 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
 }
 
 #[test]
+fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("wide finite NURBS pcurve");
+    let tubes = super::certified_nurbs_tubes(&curve, 0.5).expect("finite wide-domain tubes");
+    assert_eq!(
+        tubes.first().map(|tube| tube.start),
+        Some(Point2::new(0.0, 0.0))
+    );
+    assert_eq!(
+        tubes.last().map(|tube| tube.end),
+        Some(Point2::new(1.0, 0.0))
+    );
+    assert!(tubes
+        .iter()
+        .all(|tube| { tube.start.is_finite() && tube.end.is_finite() && tube.error.is_finite() }));
+}
+
+#[test]
 fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
     let sketch_id = SketchId::mint("synthetic:test:id#high-domain-profile").unwrap();
     let lower = f64::MAX * 0.5;
