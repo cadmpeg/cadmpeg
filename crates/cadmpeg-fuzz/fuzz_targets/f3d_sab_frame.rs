@@ -8,6 +8,7 @@
 
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::frame;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
@@ -17,5 +18,8 @@ fuzz_target!(|data: &[u8]| {
     let start = 0;
     let limit = data.len();
     let ref_width = RefWidth::Four;
-    let _ = frame(data, start, limit, ref_width);
+    let arena = DecodeArena::new();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &DecodePolicy::service()) {
+        drop(frame(&ctx, data, start, limit, ref_width));
+    }
 });

@@ -257,12 +257,8 @@ fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch
         ));
     }
     for name in text_names {
-        let parsed = scan
-            .entry_bytes(name)
-            .ok()
-            .and_then(|bytes| cadmpeg_asm::sat::parse(bytes).ok());
-        let matched = match parsed.as_ref() {
-            Some(stream) => {
+        let matched = match scan.text_breps.get(name) {
+            Some(crate::container::TextBrepFraming::Parsed(stream)) => {
                 let header = stream.header.as_kernel_header();
                 let reference = match stream.terminator {
                     cadmpeg_asm::sat::Terminator::Asm => {
@@ -274,7 +270,7 @@ fn kernel_layers(scan: &crate::container::ContainerScan<'_>) -> Vec<DialectMatch
                 };
                 cadmpeg_asm::dialect::classify_layer(reference, name, instance)
             }
-            None => cadmpeg_asm::dialect::classify_layer(
+            _ => cadmpeg_asm::dialect::classify_layer(
                 cadmpeg_asm::dialect::KernelHeaderRef::Unknown,
                 name,
                 instance,

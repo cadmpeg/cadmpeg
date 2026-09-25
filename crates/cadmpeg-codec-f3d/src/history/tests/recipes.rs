@@ -1242,14 +1242,24 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
 
 #[test]
 fn opaque_history_span_retains_the_precise_framing_error() {
+    let bytes = [0x33];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test input is within the service limit");
     let records = super::super::decode_history_records(
-        &[0x33],
+        &ctx,
+        &bytes,
         0,
         None,
         "stream",
         "state",
         cadmpeg_asm::kernel_header::RefWidth::Eight,
-    );
+    )
+    .expect("malformed history remains an opaque record");
     let [record] = records.as_slice() else {
         panic!("one opaque record");
     };

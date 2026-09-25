@@ -399,7 +399,18 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let mut scan = crate::container::scan(&ctx, root).unwrap();
-        let (facts, brep) = crate::decode::try_decode_text_model(&scan)
+        assert_eq!(scan.text_breps.len(), 1);
+        let expected_terminator = if terminator == "End-of-ASM-data" {
+            cadmpeg_asm::sat::Terminator::Asm
+        } else {
+            cadmpeg_asm::sat::Terminator::Acis
+        };
+        assert!(matches!(
+            scan.text_breps.get("FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"),
+            Some(crate::container::TextBrepFraming::Parsed(stream))
+                if stream.terminator == expected_terminator
+        ));
+        let (facts, brep) = crate::decode::try_decode_text_model(&ctx, &scan)
             .unwrap()
             .expect("text sphere supplies model geometry");
         assert_eq!(brep.asm.faces.len(), 1);
@@ -413,12 +424,31 @@ fn decoded_text_brep_facts_keep_text_dialects_and_exclude_binary_routes() {
         assert!(!matched
             .declared()
             .contains_key(cadmpeg_asm::dialect::DECLARED_REFERENCE_WIDTH));
-        assert!(crate::decode::try_decode_brep(&scan, &facts)
+        assert!(crate::decode::try_decode_brep(&ctx, &scan, &facts)
             .unwrap()
             .is_none());
         scan.breps.push(facts);
         assert_eq!(crate::container::history_breps(&scan).count(), 0);
     }
+}
+
+#[test]
+fn text_brep_framing_propagates_sat_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let entry = "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat";
+    let archive = f3d_with_text_brep(&[entry]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_collection_items = 0;
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &options)
+        .expect_err("text B-rep framing must admit primitives");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "frame SAT primitive"
+    ));
 }
 
 #[test]

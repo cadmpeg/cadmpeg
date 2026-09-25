@@ -484,6 +484,7 @@ pub enum DecodePurpose {
 /// [`DecodePurpose::History`] skips free-form carrier shapes because
 /// historical binding consumes stable record identities, not control data.
 pub fn decode_with_purpose(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
     stream: &str,
@@ -491,7 +492,7 @@ pub fn decode_with_purpose(
     purpose: DecodePurpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let header = asm_header::parse(bytes).map(|header| header.metadata);
-    decode_with_header(records, bytes, header, stream, format, purpose)
+    decode_with_header(ctx, records, bytes, header, stream, format, purpose)
 }
 
 /// Decode a framed slice whose header the caller supplies.
@@ -501,6 +502,7 @@ pub fn decode_with_purpose(
 /// passes the result here. `bytes` remains the source byte image: unknown
 /// records retain their byte extents from it.
 pub fn decode_with_header(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
     header: Option<crate::kernel_header::KernelHeader>,
@@ -518,6 +520,7 @@ pub fn decode_with_header(
             .as_ref()
             .and_then(|header| header.save_format_version),
     );
+    nurbs::toks::admit_subtype_references(ctx, records, &token_table)?;
     let save_format_major = header
         .as_ref()
         .and_then(crate::kernel_header::KernelHeader::save_format_major);
@@ -614,7 +617,7 @@ pub fn decode_with_header(
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
-        emit_passthrough_unknowns(&mut out, records, bytes, &reach, format)?;
+        emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes);
         emit_annotation_records(&mut out, records, &by_index, &carriers, stream, format)?;
 

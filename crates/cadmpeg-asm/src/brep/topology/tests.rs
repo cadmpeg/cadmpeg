@@ -89,7 +89,7 @@ fn revision_sum_solved_cache_remains_a_nurbs_face_carrier() {
             }
             bytes.push(0x11);
 
-            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             let by_index = records
                 .iter()
                 .map(|record| (record.index as i64, record))

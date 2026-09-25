@@ -96,7 +96,7 @@ pub(crate) fn header_attributes(
 }
 
 pub(crate) fn inspect(
-    _ctx: &DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     root: View<'_>,
 ) -> Result<ContainerSummary, CodecError> {
     let bytes = root.window();
@@ -147,7 +147,13 @@ pub(crate) fn inspect(
         StreamKind::Text => {
             // The kernel header is bound here so the evidence can borrow it
             // past the arm that built it.
-            let parsed = sat::parse(bytes).map(|stream| (stream.header.as_kernel_header(), stream));
+            let parsed = match sat::parse(ctx, bytes) {
+                Ok(stream) => Ok((stream.header.as_kernel_header(), stream)),
+                Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => {
+                    return Err(error);
+                }
+                Err(error) => Err(error),
+            };
             let text = match &parsed {
                 Ok((kernel, stream)) => {
                     header_attributes(kernel, stream.terminator.into(), &mut attributes);

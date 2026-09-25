@@ -1054,11 +1054,19 @@ fn materialized_record_table_normalizes_revision_references() {
         })
         .collect::<Vec<_>>();
 
+    let [framed]: [_; 1] = cadmpeg_asm::test_support::sab::frame(
+        &archived_bytes,
+        0,
+        archived_bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("archived record frames")
+    .try_into()
+    .expect("one archived record");
     let archive = historical_record_archive(
         std::slice::from_ref(&state),
         &active,
-        &archived_bytes,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        HashMap::from([(2, framed)]),
     )
     .expect("complete historical record archive");
     let table =
@@ -1148,11 +1156,19 @@ fn qualified_history_marker_remains_an_archived_record() {
         })
         .collect::<Vec<_>>();
 
+    let [framed]: [_; 1] = cadmpeg_asm::test_support::sab::frame(
+        &archived_bytes,
+        0,
+        archived_bytes.len(),
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .expect("archived record frames")
+    .try_into()
+    .expect("one archived record");
     let archive = historical_record_archive(
         std::slice::from_ref(&state),
         &active,
-        &archived_bytes,
-        cadmpeg_asm::kernel_header::RefWidth::Eight,
+        HashMap::from([(2, framed)]),
     )
     .expect("qualified history marker is an archived record");
     let record = archive.get(&2).expect("marker revision is retained");

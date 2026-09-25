@@ -744,7 +744,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .unwrap()
             .read_to_end(&mut stream)
             .unwrap();
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &stream,
             47,
             stream.len(),

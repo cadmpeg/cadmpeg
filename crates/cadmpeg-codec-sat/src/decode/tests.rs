@@ -68,6 +68,58 @@ fn text_scale_selects_the_length_unit() {
 }
 
 #[test]
+fn unrepresentable_text_length_is_not_implemented() {
+    let source = String::from_utf8(text_sphere_stream(1.0))
+        .expect("ASCII sphere stream")
+        .replacen(
+            "1 9.999999999999999547e-07 1.000000000000000036e-10",
+            "5e-324 0 0",
+            1,
+        )
+        .replacen("0 0 0 25 1 0 0", "0 0 0 1 1 0 0", 1);
+    let error = SatCodec
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &cadmpeg_ir::codec::DecodeOptions::default(),
+        )
+        .expect_err("nonzero radius cannot collapse to zero");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn text_decode_preflights_header_entities_and_counts_actual_records() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let bytes = text_sphere_stream(1.0);
+    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = SatCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect_err("header entity count exceeds one");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "preflight SAT header entities"
+    ));
+
+    options.policy.limits.max_entities = 5;
+    let error = SatCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect_err("six native records exceed five");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit SAT native records"
+    ));
+    assert_eq!(decode_bytes(&bytes).ir().model.bodies.len(), 1);
+}
+
+#[test]
 fn known_sphere_record_retains_source_offset_tag_and_derived_fields() {
     let bytes = text_sphere_stream(1.0);
     let result = decode_bytes(&bytes);

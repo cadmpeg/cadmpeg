@@ -178,7 +178,7 @@ pub(crate) fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail
         .windows(b"\x0d\x09asmheader".len())
         .position(|window| window == b"\x0d\x09asmheader")
         .expect("generated ASM record table");
-    let offsets = cadmpeg_asm::sab::frame(
+    let offsets = cadmpeg_asm::test_support::sab::frame(
         bytes,
         record_start,
         bytes.len(),
@@ -262,7 +262,7 @@ pub(crate) fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -300,7 +300,7 @@ pub(crate) fn synthetic_geometry_with_body_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -335,7 +335,7 @@ fn synthetic_geometry_with_body_attribute_chain_smbh(attribute_chain: Vec<u8>) -
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -400,7 +400,7 @@ pub(crate) fn synthetic_geometry_with_face_color_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -435,7 +435,7 @@ pub(crate) fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let limit = cadmpeg_asm::asm_header::solved_record_limit(&bytes).expect("history boundary");
     let start = cadmpeg_asm::asm_header::record_stream_start(&bytes).expect("record stream");
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -465,7 +465,7 @@ fn synthetic_geometry_with_attribute_at(owner_record_index: usize) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -541,7 +541,7 @@ pub(crate) fn synthetic_geometry_with_sketch_link_smbh(form: SketchLinkForm<'_>)
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -743,7 +743,7 @@ pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -762,7 +762,7 @@ pub(crate) fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
         let offset = offsets[reference_ordinal];
         bytes[offset + 1..offset + 9].copy_from_slice(&19i64.to_le_bytes());
     }
-    let updated = cadmpeg_asm::sab::frame(
+    let updated = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -847,7 +847,7 @@ pub(crate) fn synthetic_geometry_with_degenerate_curve_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,

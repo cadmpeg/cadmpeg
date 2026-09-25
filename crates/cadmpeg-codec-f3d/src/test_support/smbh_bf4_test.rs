@@ -25,7 +25,7 @@ pub(crate) fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_bf4_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,

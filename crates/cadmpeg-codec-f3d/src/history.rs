@@ -128,11 +128,12 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
 /// snapshot with no history tail) or a malformed history body. `width` is the
 /// stream's integer/ref width (4 for `BinaryFile4`, 8 for `BinaryFile8`).
 pub(crate) fn decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
-) -> Option<AsmHistory> {
+) -> Result<Option<AsmHistory>, cadmpeg_core::CodecError> {
     let preamble_offset = bytes
         .windows(PREAMBLE.len())
         .position(|window| window == PREAMBLE);
@@ -154,27 +155,47 @@ pub(crate) fn decode(
         let state_record_id =
             crate::ids::native_scoped_id(stream, "asm-delta-state", format_args!("{offset:010}"));
         let mut position = offset + DELTA.len();
-        let state_id = take_int(bytes, &mut position, 0x04, width)?;
-        let version_flag = take_int(bytes, &mut position, 0x04, width)?;
-        let state_flag = take_int(bytes, &mut position, 0x04, width)?;
-        let previous = take_int(bytes, &mut position, 0x0c, width)?;
-        let next = take_int(bytes, &mut position, 0x0c, width)?;
-        let node_index = take_int(bytes, &mut position, 0x0c, width)?;
-        let partner = take_int(bytes, &mut position, 0x0c, width)?;
-        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
+        let Some((
+            state_id,
+            version_flag,
+            state_flag,
+            previous,
+            next,
+            node_index,
+            partner,
+            owner_ref,
+        )) = (|| {
+            Some((
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+            ))
+        })()
+        else {
+            return Ok(None);
+        };
         if bytes.get(position) != Some(&0x0b) {
             continue;
         }
-        let (bulletin_boards, body_end) =
-            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)?;
+        let Some((bulletin_boards, body_end)) =
+            decode_bulletin_boards(bytes, position + 1, stream, offset, &state_record_id, width)
+        else {
+            return Ok(None);
+        };
         let records = decode_history_records(
+            ctx,
             bytes,
             body_end,
             delta_offsets.get(ordinal + 1).copied(),
             stream,
             &state_record_id,
             width,
-        );
+        )?;
         states.push(AsmDeltaState {
             id: state_record_id,
             parent: history_id.clone(),
@@ -197,9 +218,9 @@ pub(crate) fn decode(
     bind_snapshot_revision_ids(&mut states);
     bind_historical_entity_versions(&mut states);
     let record_table_binding_budget_exceeded =
-        bind_complete_record_tables(&mut states, bytes, width, limits);
+        bind_complete_record_tables(ctx, &mut states, bytes, width, limits)?;
     if states.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let preamble = preamble_offset
@@ -209,13 +230,13 @@ pub(crate) fn decode(
             history_entry_count,
         });
     let offset = history_offset;
-    Some(AsmHistory {
+    Ok(Some(AsmHistory {
         id: history_id,
         byte_offset: offset as u64,
         preamble,
         record_table_binding_budget_exceeded,
         states,
-    })
+    }))
 }
 
 fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
@@ -445,17 +466,20 @@ fn history_topology_work_budget_exceeded(
 }
 
 fn bind_complete_record_tables(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
     bytes: &[u8],
     width: RefWidth,
     limits: &cadmpeg_core::decode::ResourceLimits,
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
-        return false;
+        return Ok(false);
     };
     let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
-    let Ok(framed) = cadmpeg_asm::sab::frame(bytes, start, active_limit, width) else {
-        return false;
+    let framed = match cadmpeg_asm::sab::frame(ctx, bytes, start, active_limit, width) {
+        Ok(records) => records,
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+        Err(_) => return Ok(false),
     };
     if complete_table_binding_budget_exceeded(
         states.iter().map(|state| state.entity_versions.len()),
@@ -464,37 +488,81 @@ fn bind_complete_record_tables(
         states.iter().map(|state| state.entity_versions.len()),
         limits,
     ) {
-        return true;
+        return Ok(true);
     }
     let insert_only = insert_only_active_record_count(states);
     let archived_count = archived_active_record_count(states);
     let Some(active_count) = archived_count.or(insert_only) else {
-        return false;
+        return Ok(false);
     };
     if insert_only.is_some() && framed.len() != active_count {
-        return false;
+        return Ok(false);
     }
     let Some(active_records) = framed.get(..active_count) else {
-        return false;
+        return Ok(false);
     };
-    let Some(archive) = historical_record_archive(states, active_records, bytes, width) else {
-        return false;
+    let mut archived_frames = HashMap::new();
+    for record in states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.revision_id.is_some())
+    {
+        let Some(revision_id) = record.revision_id else {
+            return Ok(false);
+        };
+        let Some(offset) = usize::try_from(record.byte_offset).ok() else {
+            return Ok(false);
+        };
+        let Some(limit) = offset.checked_add(record.raw_bytes.len()) else {
+            return Ok(false);
+        };
+        if bytes.get(offset..limit) != Some(record.raw_bytes.as_slice()) {
+            return Ok(false);
+        }
+        let mut framed = match cadmpeg_asm::sab::frame(ctx, bytes, offset, limit, width) {
+            Ok(records) => records,
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+            Err(_) => return Ok(false),
+        };
+        if framed.len() != 1 {
+            return Ok(false);
+        }
+        let Some(framed) = framed.pop() else {
+            return Ok(false);
+        };
+        if framed.name != record.name() {
+            return Ok(false);
+        }
+        ctx.charge_collection_items(1, "retain F3D archived record frame")?;
+        if archived_frames.insert(revision_id, framed).is_some() {
+            return Ok(false);
+        }
+    }
+    let Some(archive) = historical_record_archive(states, active_records, archived_frames) else {
+        return Ok(false);
     };
-    let complete = states.iter_mut().all(|state| {
+    let mut complete = true;
+    for state in states.iter_mut() {
         let Some(records) = materialize_record_table(state, &archive) else {
-            return false;
+            complete = false;
+            break;
         };
-        let Ok(decoded) =
-            crate::brep::decode_history_topology(&records, bytes, crate::ids::ID_FORMAT)
-        else {
-            return false;
-        };
+        let decoded =
+            match crate::brep::decode_history_topology(ctx, &records, bytes, crate::ids::ID_FORMAT)
+            {
+                Ok(decoded) => decoded,
+                Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => {
+                    complete = false;
+                    break;
+                }
+            };
         let Some(topology) = historical_topology_with_tags(&decoded) else {
-            return false;
+            complete = false;
+            break;
         };
         state.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology);
-        true
-    });
+    }
     if complete {
         bind_historical_transitions(states);
         // Keep only record revisions that can be named by a late persistent
@@ -515,7 +583,7 @@ fn bind_complete_record_tables(
             state.topology_cache = crate::history_records::AsmTopologyCache::Absent;
         }
     }
-    false
+    Ok(false)
 }
 
 fn topology_entity_slots(topology: &AsmHistoricalTopology) -> HashSet<i64> {
@@ -544,8 +612,7 @@ type HistoricalRecordArchive = HashMap<i64, cadmpeg_asm::sab::Record>;
 fn historical_record_archive(
     states: &[AsmDeltaState],
     active_records: &[cadmpeg_asm::sab::Record],
-    bytes: &[u8],
-    width: RefWidth,
+    archived_frames: HashMap<i64, cadmpeg_asm::sab::Record>,
 ) -> Option<HistoricalRecordArchive> {
     if active_records
         .iter()
@@ -577,26 +644,8 @@ fn historical_record_archive(
         .enumerate()
         .map(|(revision, record)| Some((i64::try_from(revision).ok()?, record)))
         .collect::<Option<HashMap<_, _>>>()?;
-    for record in states
-        .iter()
-        .flat_map(|state| &state.records)
-        // `End-of-ASM-History-Section` can be the first archived entity
-        // record. The snapshot pairing, not its display name, identifies
-        // records that belong in the revision archive.
-        .filter(|record| record.revision_id.is_some())
-    {
-        let revision_id = record.revision_id?;
-        let offset = usize::try_from(record.byte_offset).ok()?;
-        let limit = offset.checked_add(record.raw_bytes.len())?;
-        if bytes.get(offset..limit)? != record.raw_bytes {
-            return None;
-        }
-        let mut framed = cadmpeg_asm::sab::frame(bytes, offset, limit, width).ok()?;
-        if framed.len() != 1 {
-            return None;
-        }
-        let framed = framed.pop()?;
-        if framed.name != record.name() || records.insert(revision_id, framed).is_some() {
+    for (revision_id, framed) in archived_frames {
+        if records.insert(revision_id, framed).is_some() {
             return None;
         }
     }
@@ -9253,13 +9302,14 @@ fn decode_bulletin_boards(
 }
 
 fn decode_history_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     state_end: usize,
     next_delta: Option<usize>,
     stream: &str,
     state_id: &str,
     width: RefWidth,
-) -> Vec<AsmHistoryRecord> {
+) -> Result<Vec<AsmHistoryRecord>, cadmpeg_core::CodecError> {
     let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
     if bytes.get(start) == Some(&0x04)
         && int_at(bytes, start + 1, width) == Some(0)
@@ -9269,12 +9319,21 @@ fn decode_history_records(
     }
     let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
     if start >= limit {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    match cadmpeg_asm::sab::frame_history(bytes, start, limit, width) {
-        Ok(records) => records
-            .into_iter()
-            .map(|record| {
+    match cadmpeg_asm::sab::frame_history(ctx, bytes, start, limit, width) {
+        Ok(records) => {
+            let mut decoded = Vec::new();
+            for record in records {
+                let reference_count = record
+                    .tokens
+                    .iter()
+                    .filter(|token| matches!(token, cadmpeg_asm::sab::Token::Ref(_)))
+                    .count();
+                ctx.charge_collection_items(
+                    reference_count as u64,
+                    "frame F3D history references",
+                )?;
                 let entity_references = record
                     .tokens
                     .iter()
@@ -9283,7 +9342,17 @@ fn decode_history_records(
                         _ => None,
                     })
                     .collect();
-                AsmHistoryRecord {
+                let end = record.offset.checked_add(record.len).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("F3D history record byte range overflows")
+                })?;
+                let source = bytes.get(record.offset..end).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "F3D history record byte range exceeds stream",
+                    )
+                })?;
+                let raw_bytes = ctx.copy_retained(source, "retain F3D history record")?;
+                ctx.charge_collection_items(1, "frame F3D history record")?;
+                decoded.push(AsmHistoryRecord {
                     id: crate::ids::native_scoped_id(
                         stream,
                         "asm-history-record",
@@ -9297,12 +9366,17 @@ fn decode_history_records(
                         name: record.name,
                         entity_references,
                     },
-                    raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
-                }
-            })
-            .collect(),
+                    raw_bytes,
+                });
+            }
+            Ok(decoded)
+        }
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => Err(error),
         Err(error) => {
-            vec![AsmHistoryRecord {
+            let raw_bytes =
+                ctx.copy_retained(&bytes[start..limit], "retain opaque F3D history record")?;
+            ctx.charge_collection_items(1, "frame opaque F3D history record")?;
+            Ok(vec![AsmHistoryRecord {
                 id: crate::ids::native_scoped_id(
                     stream,
                     "asm-history-record",
@@ -9314,8 +9388,8 @@ fn decode_history_records(
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque {
                     error: error.to_string(),
                 },
-                raw_bytes: bytes[start..limit].to_vec(),
-            }]
+                raw_bytes,
+            }])
         }
     }
 }

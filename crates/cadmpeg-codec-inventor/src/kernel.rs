@@ -105,21 +105,23 @@ pub(crate) fn decode_kernel_carrier(
     };
     let width = header.width;
     let records = match solved_limit {
-        Some(limit) => sab::frame(bytes, start, limit, width),
-        None => sab::frame_history(bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     }
-    .map_err(|error| {
-        CodecError::malformed(format_args!(
-            "Inventor {} SAB framing failed: {error}",
-            carrier.family.label()
-        ))
+    .map_err(|failure| {
+        failure.into_codec_error(|error| {
+            CodecError::malformed(format_args!(
+                "Inventor {} SAB framing failed: {error}",
+                carrier.family.label()
+            ))
+        })
     })?;
-    ctx.charge_collection_items(records.len() as u64, "frame Inventor kernel records")?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
     );
     let brep = decode_with_header(
+        ctx,
         &records,
         bytes,
         Some(header.metadata.clone()),

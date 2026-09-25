@@ -255,12 +255,14 @@ impl Brep {
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
 pub(crate) fn decode(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
     stream: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_purpose(
+        ctx,
         records,
         bytes,
         stream,
@@ -276,12 +278,14 @@ pub(crate) fn decode(
 /// The header comes from the stream's ASCII header lines rather than a binary
 /// header parse of `bytes`.
 pub(crate) fn decode_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     stream: &cadmpeg_asm::sat::TextStream,
     bytes: &[u8],
     entry: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_header(
+        ctx,
         &stream.records,
         bytes,
         Some(stream.header.as_kernel_header()),
@@ -295,11 +299,13 @@ pub(crate) fn decode_text(
 /// history. Free-form carrier shapes are not materialized because historical
 /// binding consumes their stable record identities, not their control data.
 pub(crate) fn decode_history_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     Ok(Brep::from_asm(decode_with_purpose(
+        ctx,
         records,
         bytes,
         "history",

@@ -55,12 +55,16 @@ fn decode_asm_binary(
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
     let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
-        Some(limit) => sab::frame(bytes, start, limit, width),
-        None => sab::frame_history(bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     };
-    let records = framed
-        .map_err(|error| CodecError::malformed(format_args!("SAB framing failed: {error}")))?;
+    let records = framed.map_err(|failure| {
+        failure.into_codec_error(|error| {
+            CodecError::malformed(format_args!("SAB framing failed: {error}"))
+        })
+    })?;
     let brep = decode_with_header(
+        ctx,
         &records,
         bytes,
         Some(header.metadata.clone()),
@@ -109,21 +113,27 @@ fn decode_acis_binary(
     let start = stream.offset();
     let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
         Some(limit) => sab::frame(
+            ctx,
             bytes,
             start,
             limit,
             cadmpeg_asm::kernel_header::RefWidth::Four,
         ),
         None => sab::frame_history(
+            ctx,
             bytes,
             start,
             bytes.len(),
             cadmpeg_asm::kernel_header::RefWidth::Four,
         ),
     };
-    let records = framed
-        .map_err(|error| CodecError::malformed(format_args!("ACIS SAB framing failed: {error}")))?;
+    let records = framed.map_err(|failure| {
+        failure.into_codec_error(|error| {
+            CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
+        })
+    })?;
     let brep = decode_with_header(
+        ctx,
         &records,
         bytes,
         Some(header.metadata.clone()),
@@ -154,11 +164,13 @@ fn decode_acis_binary(
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
-    let stream = sat::parse(bytes).map_err(|error| {
-        unsupported_unframed(
-            &StreamEvidence::Text(None),
-            format!("text stream does not frame: {error}"),
-        )
+    let stream = sat::parse(ctx, bytes).map_err(|failure| {
+        failure.into_codec_error(|error| {
+            unsupported_unframed(
+                &StreamEvidence::Text(None),
+                format!("text stream does not frame: {error}"),
+            )
+        })
     })?;
     let header = stream.header.as_kernel_header();
     let mut attributes = BTreeMap::new();
@@ -173,6 +185,7 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
     }));
     let (matched, kernel) = layers(&evidence);
     let brep = decode_with_header(
+        ctx,
         &stream.records,
         bytes,
         Some(header.clone()),

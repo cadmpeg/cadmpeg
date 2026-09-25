@@ -11,7 +11,7 @@ use crate::writer::patch::edits::encode_sketch_relation_state;
 use crate::writer::patch::geometry::{patch_framed_geometry, GeometryEdits};
 use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::edit::AsmEditSet;
-use cadmpeg_asm::sab;
+use cadmpeg_asm::test_support::sab;
 
 #[test]
 fn sketch_relation_state_encoding_requires_the_stored_width_discriminator() {

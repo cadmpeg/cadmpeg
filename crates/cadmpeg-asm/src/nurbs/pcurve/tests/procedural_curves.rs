@@ -161,7 +161,7 @@ fn decodes_current_cacheless_helix_record() {
         .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
         .collect::<Vec<_>>();
 
-    let [record]: [_; 1] = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Four)
+    let [record]: [_; 1] = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Four)
         .expect("valid complete helix record")
         .try_into()
         .expect("one helix record");

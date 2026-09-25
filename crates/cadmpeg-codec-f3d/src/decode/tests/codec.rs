@@ -329,7 +329,7 @@ fn history_preamble_record_is_the_modern_partition_boundary() {
 
     assert_eq!(asm_header::solved_record_limit(&bytes), Some(expected));
     let start = asm_header::record_stream_start(&bytes).unwrap();
-    let solved = cadmpeg_asm::sab::frame(
+    let solved = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         expected,
@@ -765,7 +765,7 @@ fn sab_framer_indexes_records_from_asmheader() {
     let bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).expect("record stream start");
     let limit = asm_header::solved_record_limit(&bytes).unwrap_or(bytes.len());
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
