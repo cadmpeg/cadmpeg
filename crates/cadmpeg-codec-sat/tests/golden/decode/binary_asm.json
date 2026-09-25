@@ -217,6 +217,43 @@
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {
+        "sat:brep:entity#5": {
+          "fields": {
+            "geometry.axis": "derived",
+            "geometry.ref_direction": "derived"
+          },
+          "scope": "fields"
+        }
+      },
+      "provenance": {
+        "sat:brep:entity#1": {
+          "offset": 171,
+          "stream": "sat:stream",
+          "tag": "body"
+        },
+        "sat:brep:entity#2": {
+          "offset": 232,
+          "stream": "sat:stream",
+          "tag": "lump"
+        },
+        "sat:brep:entity#3": {
+          "offset": 293,
+          "stream": "sat:stream",
+          "tag": "shell"
+        },
+        "sat:brep:entity#4": {
+          "offset": 373,
+          "stream": "sat:stream",
+          "tag": "face"
+        },
+        "sat:brep:entity#5": {
+          "offset": 454,
+          "stream": "sat:stream",
+          "tag": "sphere-surface"
+        }
+      }
+    }
   }
 }
