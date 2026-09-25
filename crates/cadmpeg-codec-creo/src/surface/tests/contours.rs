@@ -3,7 +3,7 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
-use crate::surface::contour_records;
+use super::contour_records;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};

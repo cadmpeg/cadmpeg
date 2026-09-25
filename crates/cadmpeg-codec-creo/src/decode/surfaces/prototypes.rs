@@ -473,6 +473,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
 /// carries the surface row without it, so that refusal is a loss note naming
 /// the `VisibGeom` surface row and the parameter body offset.
 pub(in super::super) fn transfer_positional_spline_replays(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -526,10 +527,12 @@ pub(in super::super) fn transfer_positional_spline_replays(
             })
             .collect::<Vec<_>>();
         let Some(prototype) = crate::surface::positional_spline_replay_prototype(
+            ctx,
             payload,
             &relative_rows,
             &relative_row,
-        ) else {
+        )?
+        else {
             continue;
         };
         let cache = crate::scalar::ScalarCache::from_section(payload);

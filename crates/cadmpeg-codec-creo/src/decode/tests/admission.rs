@@ -276,6 +276,35 @@ fn compressed_toc_section_propagates_expansion_limit() {
 }
 
 #[test]
+fn decode_propagates_spline_grid_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut payload =
+        b"srf_array\0\xf8\0srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
+    payload.extend([0x0f; 6]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_collection_items = 5;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("six scalar slots exceed the five-item limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo spline scalar grid"
+    ));
+
+    options.policy.limits.max_collection_items = 6;
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact grid item limit admits the fixture");
+}
+
+#[test]
 fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

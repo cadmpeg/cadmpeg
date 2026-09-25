@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::named_prototype_records;
+use super::named_surface_value;
+use super::parameter_records;
+use super::plane_local_systems;
 use crate::psb;
 use crate::scalar;
 use crate::surface::admitted_counted_parameter_body;
@@ -10,17 +14,13 @@ use crate::surface::counted_parameter_scalar_slots;
 use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
 use crate::surface::frame_bound_outline_planes;
-use crate::surface::named_prototype_records;
-use crate::surface::named_surface_value;
 use crate::surface::opaque_spans;
 use crate::surface::outline_planes;
-use crate::surface::parameter_records;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_envelopes;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
-use crate::surface::plane_local_systems;
 use crate::surface::plane_matrix_frame;
 use crate::surface::positional_frame_planes;
 use crate::surface::rows;
@@ -1387,6 +1387,50 @@ fn dimensioned_scalar_arrays_decode_compact_extents() {
     assert_eq!(count, 3);
     assert_eq!(values.len(), 408);
     assert!(values.iter().all(|value| *value == Some(0.0)));
+}
+
+#[test]
+fn spline_scalar_grid_parser_propagates_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut payload = b"srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
+    payload.extend([0x0f; 6]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("small prototype payload is admitted");
+    let error = crate::surface::named_prototype_records(
+        &ctx,
+        &payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("six scalar slots exceed the five-item limit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo spline scalar grid"
+    ));
+
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &service)
+        .expect("small prototype payload is admitted");
+    let records = crate::surface::named_prototype_records(
+        &ctx,
+        &payload,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service profile admits six scalar slots");
+    let SurfaceNamedValue::ScalarArray(array) = &records[0]
+        .field("i_points")
+        .expect("named scalar field")
+        .value
+    else {
+        panic!("named scalar field must decode as a grid");
+    };
+    assert_eq!(array.values(), &[Some(0.0); 6]);
 }
 
 #[test]

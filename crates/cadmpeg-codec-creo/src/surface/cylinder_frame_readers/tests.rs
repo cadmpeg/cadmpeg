@@ -4,7 +4,14 @@ use crate::scalar;
 use crate::surface::cylinder_frame_readers::{
     decode_selector_corner_interval_cylinder_frame, decode_type24_axial_interval_corner_candidates,
 };
-use crate::surface::parameter_records;
+fn parameter_records(payload: &[u8]) -> Vec<crate::surface::SurfaceParameterRecord> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("cylinder fixture is admitted");
+    crate::surface::parameter_records(&ctx, payload)
+        .expect("cylinder fixture stays within resource limits")
+}
 use crate::surface::PositionalCylinderFrame;
 use crate::surface::SurfaceBodyBoundary;
 use crate::surface::SurfaceParameterRecord;

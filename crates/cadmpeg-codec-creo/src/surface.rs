@@ -9,7 +9,8 @@ pub(crate) mod arrays;
 pub(crate) mod cylinder_frame_readers;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
-use cadmpeg_core::decode::{alloc_filled, bounded_len};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{NonNegativeLength, PositiveAngle, PositiveLength};
@@ -470,62 +471,71 @@ fn spline_replay_shape(prototype: &SurfacePrototypeRecord) -> Option<SplineRepla
 }
 
 fn associated_spline_replay_prototype(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
-) -> Option<SurfacePrototypeRecord> {
-    (row.kind == SurfaceKind::Spline).then_some(())?;
+) -> Result<Option<SurfacePrototypeRecord>, CodecError> {
+    if row.kind != SurfaceKind::Spline {
+        return Ok(None);
+    }
     let mut bounds = complete_surface_array_bounds(payload)
         .into_iter()
         .filter(|(start, end)| row.offset >= *start && row.offset < *end);
-    let (frame_start, frame_end) = bounds.next()?;
-    bounds.next().is_none().then_some(())?;
+    let Some((frame_start, frame_end)) = bounds.next() else {
+        return Ok(None);
+    };
+    if bounds.next().is_some() {
+        return Ok(None);
+    }
 
     // This route re-reads the same payload to locate a span. The prototype
     // reader in `container` owns the refusal report for these records, so the
     // sink here is a local buffer and states nothing twice.
-    let mut prototypes =
-        named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
-            .into_iter()
-            .filter(|prototype| {
-                matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
-                    && prototype.offset >= frame_start
-                    && prototype.offset < frame_end
-            });
-    let prototype = prototypes.next()?;
-    prototypes.next().is_none().then_some(())?;
-    (row.offset > prototype.offset).then_some(())?;
+    let records =
+        named_prototype_records(ctx, payload, &mut crate::lane_refusal::LaneRefusals::new())?;
+    Ok((|| {
+        let mut prototypes = records.into_iter().filter(|prototype| {
+            matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
+                && prototype.offset >= frame_start
+                && prototype.offset < frame_end
+        });
+        let prototype = prototypes.next()?;
+        prototypes.next().is_none().then_some(())?;
+        (row.offset > prototype.offset).then_some(())?;
 
-    let frame_rows = rows
-        .iter()
-        .filter(|candidate| candidate.offset >= frame_start && candidate.offset < frame_end)
-        .collect::<Vec<_>>();
-    let previous = frame_rows
-        .iter()
-        .copied()
-        .filter(|candidate| candidate.offset < prototype.offset)
-        .max_by_key(|candidate| candidate.offset);
-    let first = if previous.is_some_and(|candidate| candidate.kind == SurfaceKind::Spline) {
-        previous
-    } else {
-        frame_rows
+        let frame_rows = rows
+            .iter()
+            .filter(|candidate| candidate.offset >= frame_start && candidate.offset < frame_end)
+            .collect::<Vec<_>>();
+        let previous = frame_rows
             .iter()
             .copied()
-            .filter(|candidate| {
-                candidate.offset > prototype.offset && candidate.kind == SurfaceKind::Spline
-            })
-            .min_by_key(|candidate| candidate.offset)
-    }?;
-    (first.feature_id == row.feature_id && first.offset != row.offset).then_some(prototype)
+            .filter(|candidate| candidate.offset < prototype.offset)
+            .max_by_key(|candidate| candidate.offset);
+        let first = if previous.is_some_and(|candidate| candidate.kind == SurfaceKind::Spline) {
+            previous
+        } else {
+            frame_rows
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    candidate.offset > prototype.offset && candidate.kind == SurfaceKind::Spline
+                })
+                .min_by_key(|candidate| candidate.offset)
+        }?;
+        (first.feature_id == row.feature_id && first.offset != row.offset).then_some(prototype)
+    })())
 }
 
 /// Return the unique spline prototype that owns a later positional replay.
 pub(crate) fn positional_spline_replay_prototype(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
-) -> Option<SurfacePrototypeRecord> {
-    associated_spline_replay_prototype(payload, rows, row)
+) -> Result<Option<SurfacePrototypeRecord>, CodecError> {
+    associated_spline_replay_prototype(ctx, payload, rows, row)
 }
 
 fn take_spline_scalars(
@@ -626,19 +636,24 @@ fn parse_positional_spline_replay(
 
 /// Return the final structural close of a complete positional spline replay.
 fn positional_spline_replay_body_end(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     row: &SurfaceRow,
     body_start: usize,
     body_limit: usize,
     cache: &scalar::ScalarCache,
-) -> Option<usize> {
-    let prototype = associated_spline_replay_prototype(payload, rows, row)?;
-    let body = payload.get(body_start..body_limit)?;
-    let (_, consumed) = parse_positional_spline_replay(body, &prototype, cache)?;
-    (body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
-        .then(|| body_start.checked_add(consumed))
-        .flatten()
+) -> Result<Option<usize>, CodecError> {
+    let Some(prototype) = associated_spline_replay_prototype(ctx, payload, rows, row)? else {
+        return Ok(None);
+    };
+    Ok((|| {
+        let body = payload.get(body_start..body_limit)?;
+        let (_, consumed) = parse_positional_spline_replay(body, &prototype, cache)?;
+        (body.get(consumed) == Some(&psb::token::COMPOUND_CLOSE))
+            .then(|| body_start.checked_add(consumed))
+            .flatten()
+    })())
 }
 
 /// Decode a positional spline replay body after its final close was removed.
@@ -2992,20 +3007,11 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<
         },
     );
     result.retain(|row| id_counts.get(&row.id) == Some(&1));
-    // This route re-reads the same payload to locate a span. The prototype
-    // reader in `container` owns the refusal report for these records, so the
-    // sink here is a local buffer and states nothing twice.
-    let prototype_parameter_spans =
-        named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new())
-            .into_iter()
-            .flat_map(|record| record.parameters)
-            .map(|parameter| {
-                (
-                    parameter.value_offset,
-                    parameter.value_offset + parameter.body.len(),
-                )
-            })
-            .collect::<Vec<_>>();
+    let prototype_parameter_spans = named_prototype_frames(payload)
+        .into_iter()
+        .flat_map(|frame| frame.parameters)
+        .map(|parameter| (parameter.value_offset, parameter.value_end))
+        .collect::<Vec<_>>();
     result.retain(|row| {
         !prototype_parameter_spans
             .iter()
@@ -3106,21 +3112,38 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
 /// refusal stands at, and it reaches `refusals` so the refusal names its
 /// instance instead of leaving only an opaque body behind.
 fn named_surface_value(
+    ctx: &DecodeContext<'_>,
     family: &SurfacePrototypeFamily,
     name: &str,
     body: &[u8],
     cache: &scalar::ScalarCache,
     record: &dyn std::fmt::Display,
     refusals: &mut crate::lane_refusal::LaneRefusals,
-) -> SurfaceNamedValue {
+) -> Result<SurfaceNamedValue, CodecError> {
     let mut refusal = ScalarBodyRefusal::default();
-    if let Some(value) = parsed_named_surface_value(family, name, body, cache, &mut refusal) {
-        return value;
+    let mut grid = None;
+    if body.first() == Some(&psb::token::SCALAR_BODY) {
+        let (dimensions, dimensions_end) = compact_int(body, 1);
+        let (count, values_start) = compact_int(body, dimensions_end);
+        let slot_count = usize::try_from(dimensions).ok().and_then(|dimensions| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|count| dimensions.checked_mul(count))
+        });
+        if slot_count.is_some_and(|slot_count| {
+            crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
+                .is_some()
+        }) {
+            grid = arrays::DimensionedScalars::admit_empty(ctx, dimensions, count)?;
+        }
+    }
+    if let Some(value) = parsed_named_surface_value(family, name, body, cache, &mut refusal, grid) {
+        return Ok(value);
     }
     if let Some(reason) = refusal.reason() {
         refusals.note(record, &format_args!("named field `{name}` {reason}"));
     }
-    SurfaceNamedValue::Opaque(body.to_vec())
+    Ok(SurfaceNamedValue::Opaque(body.to_vec()))
 }
 
 fn parsed_named_surface_value(
@@ -3129,6 +3152,7 @@ fn parsed_named_surface_value(
     body: &[u8],
     cache: &scalar::ScalarCache,
     refusal: &mut ScalarBodyRefusal,
+    grid: Option<arrays::DimensionedScalars>,
 ) -> Option<SurfaceNamedValue> {
     if body.is_empty() {
         return Some(SurfaceNamedValue::Empty);
@@ -3242,7 +3266,7 @@ fn parsed_named_surface_value(
         let remaining = slot_count.and_then(|slot_count| {
             crate::scalar::admitted_scalar_body(body, dimensions_end, values_start, slot_count)
         })?;
-        let mut array = arrays::DimensionedScalars::empty(dimensions, count)?;
+        let mut array = grid?;
         let slot_count = array.values().len();
         let spline_field = matches!(
             name,
@@ -3312,25 +3336,30 @@ fn parsed_named_surface_value(
     }
 }
 
-/// Decode bounded named surface-prototype parameter records.
-/// Bounded named `srf_prim_ptr(<kind>)` prototype records in `payload`.
-///
-/// A named field whose bounded scalar body the decoder refuses is retained
-/// opaque and stated in `refusals`, against the prototype record and field
-/// that hold it.
-pub(crate) fn named_prototype_records(
-    payload: &[u8],
-    refusals: &mut crate::lane_refusal::LaneRefusals,
-) -> Vec<SurfacePrototypeRecord> {
+struct NamedPrototypeParameterRange {
+    name: String,
+    offset: usize,
+    value_offset: usize,
+    value_end: usize,
+}
+
+struct NamedPrototypeFrame {
+    family: SurfacePrototypeFamily,
+    family_name: String,
+    offset: usize,
+    parameters: Vec<NamedPrototypeParameterRange>,
+}
+
+fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame> {
     let cache = scalar::ScalarCache::from_section(payload);
-    let mut records = Vec::new();
+    let mut frames = Vec::new();
     let mut search = 0;
     while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
         let family_start = record_start + b"srf_prim_ptr(".len();
         let Some(close) = find(payload, b")\0", family_start) else {
             break;
         };
-        let family_name = String::from_utf8_lossy(&payload[family_start..close]);
+        let family_name = String::from_utf8_lossy(&payload[family_start..close]).into_owned();
         let family = SurfacePrototypeFamily::from_name(&family_name);
         let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
         if let Some(at) = find(payload, b"srf_prim_ptr\0", close + 2) {
@@ -3413,32 +3442,69 @@ pub(crate) fn named_prototype_records(
             {
                 value_end = value_offset + compound_close.offset;
             }
-            let body = payload[value_offset..value_end].to_vec();
-            let value = named_surface_value(
-                &family,
-                &name,
-                &body,
-                &cache,
-                &format_args!("creo surface prototype {family_name} at offset {record_start}"),
-                refusals,
-            );
-            parameters.push(SurfaceNamedParameter {
+            parameters.push(NamedPrototypeParameterRange {
                 name: name.into_owned(),
-                value,
-                body,
                 offset: token_offset,
                 value_offset,
+                value_end,
             });
         }
-        records.push(SurfacePrototypeRecord {
+        frames.push(NamedPrototypeFrame {
             family,
+            family_name,
             parameters,
             offset: record_start,
         });
         search = close + 2;
     }
-    records.sort_by_key(|record| record.offset);
-    records
+    frames.sort_by_key(|frame| frame.offset);
+    frames
+}
+
+/// Decode bounded named surface-prototype parameter records.
+/// Bounded named `srf_prim_ptr(<kind>)` prototype records in `payload`.
+///
+/// A named field whose bounded scalar body the decoder refuses is retained
+/// opaque and stated in `refusals`, against the prototype record and field
+/// that hold it.
+pub(crate) fn named_prototype_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let mut records = Vec::new();
+    for frame in named_prototype_frames(payload) {
+        let mut parameters = Vec::new();
+        for range in frame.parameters {
+            let body = payload[range.value_offset..range.value_end].to_vec();
+            let value = named_surface_value(
+                ctx,
+                &frame.family,
+                &range.name,
+                &body,
+                &cache,
+                &format_args!(
+                    "creo surface prototype {} at offset {}",
+                    frame.family_name, frame.offset
+                ),
+                refusals,
+            )?;
+            parameters.push(SurfaceNamedParameter {
+                name: range.name,
+                value,
+                body,
+                offset: range.offset,
+                value_offset: range.value_offset,
+            });
+        }
+        records.push(SurfacePrototypeRecord {
+            family: frame.family,
+            parameters,
+            offset: frame.offset,
+        });
+    }
+    Ok(records)
 }
 
 fn parent_feature_array_trailer(body: &[u8]) -> bool {
@@ -3843,15 +3909,21 @@ fn named_record_boundary(
 }
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
-pub(crate) fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, &rows(payload))
+pub(crate) fn parameter_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
+    parameter_records_for_rows(ctx, payload, &rows(payload))
 }
 
 /// Decode bounded positional parameter bodies from a DEPDB cross-section
 /// surface namespace.
 #[must_use]
-pub(crate) fn cross_section_parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
-    parameter_records_for_rows(payload, &cross_section_rows(payload))
+pub(crate) fn cross_section_parameter_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
+    parameter_records_for_rows(ctx, payload, &cross_section_rows(payload))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4798,7 +4870,11 @@ fn inline_close(first: f64, second: f64) -> bool {
     (first - second).abs() <= EPS_INLINE_WITNESS * inline_scale(first, second)
 }
 
-fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceParameterRecord> {
+fn parameter_records_for_rows(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[SurfaceRow],
+) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
@@ -4824,11 +4900,19 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        let positional_spline_close = (row.kind == SurfaceKind::Spline)
-            .then(|| {
-                positional_spline_replay_body_end(payload, rows, row, *body_start, body_end, &cache)
-            })
-            .flatten();
+        let positional_spline_close = if row.kind == SurfaceKind::Spline {
+            positional_spline_replay_body_end(
+                ctx,
+                payload,
+                rows,
+                row,
+                *body_start,
+                body_end,
+                &cache,
+            )?
+        } else {
+            None
+        };
         let inline = if positional_spline_close.is_none() {
             inline_surface_body(row.kind, &payload[*body_start..body_end], &cache)
         } else {
@@ -4914,23 +4998,33 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         }
         records.push(record);
     }
-    records
+    Ok(records)
 }
 
 /// Decode complete positional surface contour chains from the visible
 /// `srf_array` namespace.
-pub(crate) fn contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
-    contour_records_for_rows(payload, &rows(payload))
+pub(crate) fn contour_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
+    contour_records_for_rows(ctx, payload, &rows(payload))
 }
 
 /// Decode complete positional surface contour chains from a DEPDB
 /// cross-section namespace.
 #[must_use]
-pub(crate) fn cross_section_contour_records(payload: &[u8]) -> Vec<SurfaceContourRecord> {
-    contour_records_for_rows(payload, &cross_section_rows(payload))
+pub(crate) fn cross_section_contour_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
+    contour_records_for_rows(ctx, payload, &cross_section_rows(payload))
 }
 
-fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceContourRecord> {
+fn contour_records_for_rows(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[SurfaceRow],
+) -> Result<Vec<SurfaceContourRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section(payload);
     let frames = surface_array_frames(payload);
     let mut records = Vec::new();
@@ -4949,11 +5043,11 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
         if body_start >= row_end {
             continue;
         }
-        let positional_spline_close = (row.kind == SurfaceKind::Spline)
-            .then(|| {
-                positional_spline_replay_body_end(payload, rows, row, body_start, row_end, &cache)
-            })
-            .flatten();
+        let positional_spline_close = if row.kind == SurfaceKind::Spline {
+            positional_spline_replay_body_end(ctx, payload, rows, row, body_start, row_end, &cache)?
+        } else {
+            None
+        };
         let contour_start = if let Some(close) = positional_spline_close {
             close.checked_add(1)
         } else if let Some(layout) =
@@ -4996,7 +5090,7 @@ fn contour_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<SurfaceC
         records.extend(chain);
     }
     records.sort_by_key(|record| record.offset);
-    records
+    Ok(records)
 }
 
 fn parse_surface_contour_chain(
@@ -6527,19 +6621,29 @@ fn complete_plane_local_system(
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
-pub(crate) fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, &rows(payload))
+pub(crate) fn plane_local_systems(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    plane_local_systems_for_rows(ctx, payload, &rows(payload))
 }
 
 /// Decode plane local-system chunks from a DEPDB cross-section namespace.
 #[must_use]
-pub(crate) fn cross_section_plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
-    plane_local_systems_for_rows(payload, &cross_section_rows(payload))
+pub(crate) fn cross_section_plane_local_systems(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
+    plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload))
 }
 
-fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<PlaneLocalSystem> {
+fn plane_local_systems_for_rows(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    rows: &[SurfaceRow],
+) -> Result<Vec<PlaneLocalSystem>, CodecError> {
     let cache = scalar::ScalarCache::from_section(payload);
-    let parameters = parameter_records_for_rows(payload, rows);
+    let parameters = parameter_records_for_rows(ctx, payload, rows)?;
     let headers = rows
         .iter()
         .enumerate()
@@ -6627,7 +6731,7 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
             },
         ));
     }
-    systems
+    Ok(systems)
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.
@@ -6831,13 +6935,9 @@ fn complete_plane_compact_scalar_suffix(
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
 /// `geom_type` prototype records. Production readers use only this count.
 pub(crate) fn prototype_count(payload: &[u8]) -> usize {
-    // This route re-reads the same payload to locate a span. The prototype
-    // reader in `container` owns the refusal report for these records, so the
-    // sink here is a local buffer and states nothing twice.
-    let records = named_prototype_records(payload, &mut crate::lane_refusal::LaneRefusals::new());
-    let named = records
+    let named = named_prototype_frames(payload)
         .iter()
-        .filter(|record| !matches!(record.family, SurfacePrototypeFamily::Other(_)))
+        .filter(|frame| !matches!(frame.family, SurfacePrototypeFamily::Other(_)))
         .count();
     let mut unlabeled = 0;
     let mut start = 0;
