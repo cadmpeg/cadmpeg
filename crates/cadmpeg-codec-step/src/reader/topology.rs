@@ -37,7 +37,7 @@ use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use self::admissions::{pcurve_admission_note, PcurveAdmission};
-use super::geometry::surface_parameter_periods;
+use super::geometry::surface_periodic_domains;
 use super::index::CarrierIndex;
 use super::StageOutcome;
 
@@ -3563,7 +3563,7 @@ fn pcurve_locus_witness(
             [
                 domain[0],
                 domain[1],
-                (domain[0] + domain[1]) * 0.5,
+                domain[0].midpoint(domain[1]),
                 0.0,
                 1.0,
                 -1.0,
@@ -3994,36 +3994,40 @@ fn pcurve_selection_seeds(
         ]);
     }
     if let Some((origin, direction)) = geometry.line_parameters() {
-        if let Some(period) = surface
+        if let Some(domain) = surface
             .solved()
-            .and_then(|surface| surface_parameter_periods(surface)[0])
+            .and_then(|surface| surface_periodic_domains(surface)[0])
         {
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                    seeds.push((period * fraction - origin.u) / direction.u);
+                    if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
+                        seeds.push((coordinate - origin.u) / direction.u);
+                    }
                 }
             }
         }
-        if let Some(period) = surface
+        if let Some(domain) = surface
             .solved()
-            .and_then(|surface| surface_parameter_periods(surface)[1])
+            .and_then(|surface| surface_periodic_domains(surface)[1])
         {
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                    seeds.push((period * fraction - origin.v) / direction.v);
+                    if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
+                        seeds.push((coordinate - origin.v) / direction.v);
+                    }
                 }
             }
         }
         let [u_domain, v_domain] = surface_selection_parameter_domains(index, surface_id, surface);
         if let Some([u_lower, u_upper]) = u_domain {
-            for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
+            for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
                     seeds.push((boundary - origin.u) / direction.u);
                 }
             }
         }
         if let Some([v_lower, v_upper]) = v_domain {
-            for boundary in [v_lower, (v_lower + v_upper) * 0.5, v_upper] {
+            for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
                 if direction.v != 0.0 {
                     seeds.push((boundary - origin.v) / direction.v);
                 }
@@ -4039,6 +4043,15 @@ fn pcurve_selection_seeds(
             }
             unique
         })
+}
+
+fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f64> {
+    let period = upper - lower;
+    if period.is_finite() {
+        Some(period * fraction)
+    } else {
+        cadmpeg_ir::math::interpolate(lower, upper, fraction).map(|value| value.get())
+    }
 }
 
 fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {

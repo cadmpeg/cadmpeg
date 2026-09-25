@@ -192,15 +192,33 @@ fn edge_parameter_range(
         return (end > start).then_some([start, end]);
     };
     let period = upper - lower;
-    if !period.is_finite() || period <= 0.0 {
+    if period <= 0.0 {
         return None;
     }
-    let sweep = (end - start).rem_euclid(period);
+    if !period.is_finite() {
+        let start = cadmpeg_ir::math::wrap_parameter(start, lower, upper)?.get();
+        let end = cadmpeg_ir::math::wrap_parameter(end, lower, upper)?.get();
+        let sweep = if end >= start {
+            end - start
+        } else {
+            (upper - start) + (end - lower)
+        };
+        return (sweep > 0.0)
+            .then(|| start + sweep)
+            .filter(|end| end.is_finite())
+            .map(|end| [start, end]);
+    }
+    let raw_span = end - start;
+    let sweep = if raw_span.is_finite() {
+        raw_span.rem_euclid(period)
+    } else {
+        (end.rem_euclid(period) - start.rem_euclid(period)).rem_euclid(period)
+    };
     let tolerance = period * EPS_GEOMETRY_READ_GEOMETRY;
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
     }
-    let normalized_start = lower + (start - lower).rem_euclid(period);
+    let normalized_start = cadmpeg_ir::math::wrap_parameter(start, lower, upper)?.get();
     let normalized_start = if (normalized_start - upper).abs() <= tolerance {
         lower
     } else {
@@ -1560,16 +1578,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 range[0] *= parameter_scale;
                 range[1] *= parameter_scale;
             }
-            for ((range, sense), period) in parameter_ranges
+            for ((range, sense), domain) in parameter_ranges
                 .iter_mut()
                 .zip([u_sense, v_sense])
-                .zip(surface_parameter_periods(&geometry))
+                .zip(surface_periodic_domains(&geometry))
             {
-                if let Some(period) = period {
+                if let Some(domain) = domain {
                     if sense && range[1] < range[0] {
-                        range[1] += period;
+                        range[1] = shift_periodic_parameter(range[1], domain);
                     } else if !sense && range[0] < range[1] {
-                        range[0] += period;
+                        range[0] = shift_periodic_parameter(range[0], domain);
                     }
                 }
             }
@@ -3613,11 +3631,11 @@ fn trimmed_curve_parameter_range(
     // A closed STEP curve may cross its parameter seam. Move the endpoint
     // that follows the declared traversal onto the next parameter branch
     // before projecting the directed trim onto the IR's ordered interval.
-    if let Some(period) = curve_parameter_period(geometry) {
+    if let Some(domain) = curve_periodic_domain(geometry) {
         if sense && end < start {
-            end += period;
+            end = shift_periodic_parameter(end, domain);
         } else if !sense && start < end {
-            start += period;
+            start = shift_periodic_parameter(start, domain);
         }
     }
     let range = if sense { [start, end] } else { [end, start] };
@@ -3628,18 +3646,17 @@ fn trimmed_curve_parameter_range(
     }
 }
 
-fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
-    let period = match geometry {
+fn curve_periodic_domain(geometry: &CurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => {
-            std::f64::consts::TAU
+            Some([0.0, std::f64::consts::TAU])
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) if curve.periodic() => {
             let [lower, upper] = nurbs_curve_parameter_domain(curve)?.endpoints();
-            upper - lower
+            (upper > lower).then_some([lower, upper])
         }
-        _ => return None,
-    };
-    (period.is_finite() && period > 0.0).then_some(period)
+        _ => None,
+    }
 }
 
 fn is_parameter_trim_value(value: &Value) -> bool {
@@ -4607,11 +4624,11 @@ fn trimmed_pcurve_parameterization(
     // Closed STEP pcurves use cyclic parameter branches. Move the endpoint
     // that follows the declared traversal before projecting to an ordered
     // basis interval; non-closed malformed input still gets a valid interval.
-    if let Some(period) = pcurve_parameter_period(geometry) {
+    if let Some(domain) = pcurve_periodic_domain(geometry) {
         if sense && end < start {
-            end += period;
+            end = shift_periodic_parameter(end, domain);
         } else if !sense && start < end {
-            start += period;
+            start = shift_periodic_parameter(start, domain);
         }
     }
     let [from, to] = if sense { [start, end] } else { [end, start] };
@@ -4622,34 +4639,42 @@ fn trimmed_pcurve_parameterization(
     }
 }
 
-fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
-    let period = match geometry {
+fn pcurve_periodic_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
         PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) | PcurveGeometry::Harmonic(_) => {
-            std::f64::consts::TAU
+            Some([0.0, std::f64::consts::TAU])
         }
-        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_period(
+        PcurveGeometry::Nurbs { nurbs } if nurbs.periodic() => pcurve_nurbs_parameter_domain(
             nurbs.degree(),
             nurbs.knots(),
             nurbs.control_points().len(),
-        )?,
+        ),
         PcurveGeometry::PolarNurbs { nurbs } if nurbs.periodic() => {
-            pcurve_nurbs_parameter_period(nurbs.degree(), nurbs.knots(), nurbs.poles().len())?
+            pcurve_nurbs_parameter_domain(nurbs.degree(), nurbs.knots(), nurbs.poles().len())
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_parameter_period(basis)?
+            pcurve_periodic_domain(basis)
         }
-        PcurveGeometry::Transformed(placed) => pcurve_parameter_period(placed.basis())?,
-        _ => return None,
-    };
-    (period.is_finite() && period > 0.0).then_some(period)
+        PcurveGeometry::Transformed(placed) => pcurve_periodic_domain(placed.basis()),
+        _ => None,
+    }
 }
 
-fn pcurve_nurbs_parameter_period(degree: u32, knots: &[f64], count: usize) -> Option<f64> {
+fn pcurve_nurbs_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    (lower.is_finite() && upper.is_finite() && upper > lower).then_some(upper - lower)
+    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
+}
+
+fn shift_periodic_parameter(value: f64, [lower, upper]: [f64; 2]) -> f64 {
+    let period = upper - lower;
+    if period.is_finite() {
+        value + period
+    } else {
+        upper + (value - lower)
+    }
 }
 
 fn surface_parameter_scales_for_step(
@@ -4911,19 +4936,20 @@ fn directrix_geometry_parameter_scale(
     }
 }
 
-pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Option<f64>; 2] {
+pub(super) fn surface_periodic_domains(geometry: &SolvedSurfaceGeometry) -> [Option<[f64; 2]>; 2] {
     match geometry {
         SolvedSurfaceGeometry::Cylinder(_)
         | SolvedSurfaceGeometry::Cone(_)
-        | SolvedSurfaceGeometry::Sphere(_) => [Some(std::f64::consts::TAU), None],
-        SolvedSurfaceGeometry::Torus(_) => {
-            [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)]
-        }
+        | SolvedSurfaceGeometry::Sphere(_) => [Some([0.0, std::f64::consts::TAU]), None],
+        SolvedSurfaceGeometry::Torus(_) => [
+            Some([0.0, std::f64::consts::TAU]),
+            Some([0.0, std::f64::consts::TAU]),
+        ],
         SolvedSurfaceGeometry::Nurbs(surface) => [
             surface
                 .u_periodic()
                 .then(|| {
-                    nurbs_surface_parameter_period(
+                    nurbs_surface_parameter_domain(
                         surface.u_degree(),
                         surface.u_knots(),
                         surface.u_count(),
@@ -4933,7 +4959,7 @@ pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Op
             surface
                 .v_periodic()
                 .then(|| {
-                    nurbs_surface_parameter_period(
+                    nurbs_surface_parameter_domain(
                         surface.v_degree(),
                         surface.v_knots(),
                         surface.v_count(),
@@ -4941,19 +4967,18 @@ pub(super) fn surface_parameter_periods(geometry: &SolvedSurfaceGeometry) -> [Op
                 })
                 .flatten(),
         ],
-        SolvedSurfaceGeometry::Transformed(placed) => surface_parameter_periods(placed.basis()),
+        SolvedSurfaceGeometry::Transformed(placed) => surface_periodic_domains(placed.basis()),
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => [None, None],
     }
 }
 
-fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: usize) -> Option<f64> {
+fn nurbs_surface_parameter_domain(degree: u32, knots: &[f64], count: usize) -> Option<[f64; 2]> {
     let degree = usize::try_from(degree).ok()?;
     let lower = *knots.get(degree)?;
     let upper = *knots.get(count)?;
-    let period = upper - lower;
-    (period.is_finite() && period > 0.0).then_some(period)
+    (lower.is_finite() && upper.is_finite() && upper > lower).then_some([lower, upper])
 }
 
 fn polyline_pcurve(

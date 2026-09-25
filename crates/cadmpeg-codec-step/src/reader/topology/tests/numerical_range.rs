@@ -72,6 +72,46 @@ fn pcurve_selection_keeps_interior_knots_and_seeds_in_a_wide_finite_domain() {
 }
 
 #[test]
+fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
+    let max = f64::MAX;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id = SurfaceId::mint("test:audit:surface#wide-periodic").expect("surface id");
+    let surface = cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![-max, -max, max, max], true),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("wide periodic surface");
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: id.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
+        source_object: None,
+    });
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("line pcurve"),
+    );
+    let index = ModelIndex::new_model_only(&ir);
+    let seeds = pcurve_selection_seeds(&index, &id, &pcurve, &ir.model.surfaces[0].geometry);
+    assert!(seeds
+        .iter()
+        .any(|seed| (seed / max + 0.5).abs() <= 8.0 * f64::EPSILON));
+    assert!(seeds
+        .iter()
+        .any(|seed| (seed / max - 0.5).abs() <= 8.0 * f64::EPSILON));
+}
+
+#[test]
 fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
     let (mut ir, surface_id) = plane();
     let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
@@ -118,6 +158,76 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         },
         Point3::new(lower, 0.0, 0.0),
         Point3::new(upper, 0.0, 0.0),
+        COINCIDENCE_TOLERANCE,
+    ));
+}
+
+#[test]
+fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
+    let (mut ir, surface_id) = plane();
+    let curve_id = CurveId::from(ids::data(kind!("curve"), 54));
+    let lower = f64::MAX * 0.5;
+    let upper = f64::MAX;
+    let control_count = 2049;
+    let mut knots = vec![lower, lower];
+    knots.extend((1..control_count - 1).map(|index| {
+        cadmpeg_ir::math::interpolate(lower, upper, index as f64 / (control_count - 1) as f64)
+            .expect("finite interior knot")
+            .get()
+    }));
+    knots.extend([upper, upper]);
+    let controls = (0..control_count)
+        .map(|index| Point3::new(if index == control_count / 2 { 1.0 } else { 0.0 }, 0.0, 0.0))
+        .collect();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(1, knots, controls, None, false)
+                .expect("finite many-span curve"),
+        )),
+        source_object: None,
+    });
+    let index = ModelIndex::new_model_only(&ir);
+    let midpoint = lower.midpoint(upper);
+    for x in [0.5, 0.6] {
+        assert!(curve_parameter_near_point(
+            &index,
+            &curve_id,
+            Point3::new(x, 0.0, 0.0),
+            &[midpoint],
+            COINCIDENCE_TOLERANCE,
+        )
+        .is_some());
+    }
+    let (exchange, _) =
+        crate::parse::parse(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"))
+            .expect("STEP fixture parses");
+    let edge = EdgeDef::Curve {
+        start: 1,
+        end: 2,
+        curve: 54,
+        same: true,
+    };
+    let pcurve = PcurveGeometry::Line(
+        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+        )
+        .expect("finite pcurve"),
+    );
+    assert!(pcurve_locus_witness(
+        &index,
+        &exchange,
+        &edge,
+        &surface_id,
+        &pcurve,
+        PcurveEndpointFit {
+            start_parameter: 0.5,
+            end_parameter: 0.6,
+            max_residual: 0.0,
+        },
+        Point3::new(0.5, 0.0, 0.0),
+        Point3::new(0.6, 0.0, 0.0),
         COINCIDENCE_TOLERANCE,
     ));
 }
