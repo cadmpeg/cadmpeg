@@ -55,6 +55,21 @@ fn extended_loop_metadata(metadata_control: u8) -> Vec<u8> {
     bytes
 }
 
+#[test]
+fn terminal_directrix_accepts_matching_wide_finite_spans() {
+    let active = crate::test_support::test_b5::increasing([-9.0e307, 9.0e307]);
+    let mut pcurve = object_stream_pcurve(
+        17,
+        vec![-f64::MAX, -1.6e308, -1.4e308, -1.2e308, -9.0e307, 9.0e307],
+        None,
+    );
+    pcurve.class = 0x20;
+    let pcurves = std::collections::BTreeMap::from([(31, pcurve)]);
+    let directrix = super::terminal_span_directrix(31, active, [0x05, 0x15], &pcurves)
+        .expect("matching wide terminal span");
+    assert_eq!(directrix.parameter_range().endpoints(), active.endpoints());
+}
+
 mod analytic;
 mod loops;
 mod typed;

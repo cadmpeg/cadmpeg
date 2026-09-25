@@ -3562,15 +3562,14 @@ fn parse_extrusion_surface_with_context(
             return None;
         }
     } else if !directrix_contains_active {
-        let [source_lower, source_upper] = directrix.parameter_range().endpoints();
-        let source_span = source_upper - source_lower;
+        let source_range = directrix.parameter_range().endpoints();
         let active_span = active[1] - active[0];
         let suffix_span = directrix
             .supports()
             .first()
             .and_then(|support| object_stream_pcurves.get(&support.1))
             .and_then(|candidate| candidate.class_21_suffix_scalar);
-        if !parameter_spans_agree(source_span, active_span)
+        if !parameter_range_spans_agree(source_range, active)
             || !suffix_span.is_some_and(|span| parameter_spans_agree(span.get(), active_span))
         {
             return None;
@@ -3661,15 +3660,13 @@ fn terminal_span_directrix(
         ])
         .all(|(left, right)| left.get().to_bits() == right.get().to_bits())
         .then_some(())?;
-    parameter_spans_agree(
-        source_range[1].get() - source_range[0].get(),
-        active.upper() - active.lower(),
+    parameter_range_spans_agree(source_range.map(FiniteReal::get), active.endpoints()).then_some(
+        B5ExtrusionDirectrix::SurfaceCurve {
+            object_id: directrix_id,
+            support: (pcurve.surface, directrix_id, source_range),
+            parameter_range: active,
+        },
     )
-    .then_some(B5ExtrusionDirectrix::SurfaceCurve {
-        object_id: directrix_id,
-        support: (pcurve.surface, directrix_id, source_range),
-        parameter_range: active,
-    })
 }
 
 fn translated_directrix_span_count(
@@ -3712,6 +3709,19 @@ fn translated_directrix_span_count(
 fn parameter_spans_agree(left: f64, right: f64) -> bool {
     let scale = left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= 64.0 * f64::EPSILON * scale
+}
+
+fn parameter_range_spans_agree(left: [f64; 2], right: [f64; 2]) -> bool {
+    let left_span = left[1] - left[0];
+    let right_span = right[1] - right[0];
+    if left_span.is_finite() && right_span.is_finite() {
+        parameter_spans_agree(left_span, right_span)
+    } else {
+        parameter_spans_agree(
+            left[1] * 0.5 - left[0] * 0.5,
+            right[1] * 0.5 - right[0] * 0.5,
+        )
+    }
 }
 
 struct B5ExtrusionCarrier {

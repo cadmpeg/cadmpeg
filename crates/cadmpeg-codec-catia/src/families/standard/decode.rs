@@ -3683,11 +3683,23 @@ fn standard_limit_curve_point_parameter(
                 .sum::<f64>()
         })
         .sum::<f64>();
-    let parameter_tolerance = (4.0 * tolerance * parameter_span
-        / control_polygon_length.max(tolerance))
-    .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span);
-    let parameter_resolution =
-        0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span);
+    let (parameter_tolerance, parameter_resolution) = if parameter_span.is_finite() {
+        let parameter_tolerance = (4.0 * tolerance * parameter_span
+            / control_polygon_length.max(tolerance))
+        .max(EPS_PARAM_TOLERANCE_SPAN * parameter_span);
+        (
+            parameter_tolerance,
+            0.05 * parameter_tolerance.min(EPS_PARAM_RESOLUTION_SPAN * parameter_span),
+        )
+    } else {
+        let half_span = parameter_end * 0.5 - parameter_start * 0.5;
+        let tolerance_fraction =
+            (4.0 * tolerance / control_polygon_length.max(tolerance)).max(EPS_PARAM_TOLERANCE_SPAN);
+        (
+            2.0 * (half_span * tolerance_fraction),
+            2.0 * (half_span * (0.05 * tolerance_fraction.min(EPS_PARAM_RESOLUTION_SPAN))),
+        )
+    };
     let mut parameters = Vec::new();
     for (span, control_points) in curve.control_points().chunks_exact(6).enumerate() {
         let control: BezierSpan = std::array::from_fn(|index| control_points[index].get());

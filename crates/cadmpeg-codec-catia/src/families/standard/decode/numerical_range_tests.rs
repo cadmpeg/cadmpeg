@@ -35,6 +35,20 @@ fn numerical_0922_finite_bezier_midpoint() {
     }
 }
 
+#[test]
+fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
+    let poles = (0..6)
+        .map(|index| Point3::new(0.0, index as f64 / 5.0, 0.0))
+        .collect::<Vec<_>>();
+    let mut knots = vec![-f64::MAX; 6];
+    knots.extend(vec![f64::MAX; 6]);
+    let curve =
+        NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
+    let parameter = standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+        .expect("interior point parameter");
+    assert!((parameter / f64::MAX + 0.6).abs() <= 0.01);
+}
+
 use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 fn audit_plane(d: [f64; 2], s: f64) -> NurbsSurface {
     NurbsSurface::from_lanes(
