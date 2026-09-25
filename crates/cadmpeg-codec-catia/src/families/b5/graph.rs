@@ -4464,7 +4464,13 @@ fn rational_arc_pcurve(
         ]);
         weights.extend([middle_weight, 1.0]);
         if span + 1 < span_count {
-            distinct_knots.push(start + (end - start) * fraction1);
+            let ordinary = start + (end - start) * fraction1;
+            let knot = if ordinary.is_finite() {
+                ordinary
+            } else {
+                cadmpeg_ir::math::interpolate(start, end, fraction1)?.get()
+            };
+            distinct_knots.push(knot);
             multiplicities.push(2);
         }
     }
