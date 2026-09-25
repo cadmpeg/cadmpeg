@@ -113,6 +113,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn periodic_blend_lifts_a_finite_parameter_across_a_wide_domain() {
+        assert_eq!(
+            super::lift_periodic_parameters(
+                vec![-f64::MAX],
+                [-f64::MAX, f64::MAX],
+                true,
+                Some(f64::MAX),
+            ),
+            vec![f64::MAX]
+        );
+        assert_eq!(
+            super::lift_periodic_parameters(
+                vec![-f64::MAX],
+                [-f64::MAX, f64::MAX],
+                true,
+                Some(0.0),
+            ),
+            vec![-f64::MAX]
+        );
+    }
+
     use super::{
         BlendContactSeed, BlendContactSeedCache, BlendSectionDomain, BlendSurfaceFrameCache,
         BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES,
@@ -2732,13 +2754,40 @@ fn lift_periodic_parameters(
     };
     let period = domain[1] - domain[0];
     for parameter in &mut parameters {
-        *parameter = super::offset::lift_periodic_parameter(*parameter, seed, period);
+        *parameter = if period.is_finite() {
+            super::offset::lift_periodic_parameter(*parameter, seed, period)
+        } else {
+            let half_period = domain[1] * 0.5 - domain[0] * 0.5;
+            let shifted = [
+                *parameter,
+                (*parameter + half_period) + half_period,
+                (*parameter - half_period) - half_period,
+            ];
+            match shifted
+                .into_iter()
+                .filter(|candidate| candidate.is_finite())
+                .min_by(|left, right| {
+                    (left * 0.5 - seed * 0.5)
+                        .abs()
+                        .total_cmp(&(right * 0.5 - seed * 0.5).abs())
+                }) {
+                Some(best) => best,
+                None => *parameter,
+            }
+        };
     }
     parameters.sort_by(|first, second| {
-        (first - seed)
-            .abs()
-            .total_cmp(&(second - seed).abs())
-            .then_with(|| first.total_cmp(second))
+        if period.is_finite() {
+            (first - seed)
+                .abs()
+                .total_cmp(&(second - seed).abs())
+                .then_with(|| first.total_cmp(second))
+        } else {
+            (first * 0.5 - seed * 0.5)
+                .abs()
+                .total_cmp(&(second * 0.5 - seed * 0.5).abs())
+                .then_with(|| first.total_cmp(second))
+        }
     });
     parameters.dedup_by(|first, second| first.to_bits() == second.to_bits());
     parameters
