@@ -80,7 +80,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Creo entities"
+                    && limit.operation == "admit Creo model features"
         ),
         "{error:?}"
     );
@@ -89,6 +89,98 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
+}
+
+#[test]
+fn part_product_occurrence_refuses_before_model_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let data = include_bytes!("../../../tests/golden/fixtures/native_model_name.prt");
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect_err("a product definition and occurrence require two entity slots");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Creo model occurrences"
+    ));
+
+    options.policy.limits.max_entities = 2;
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact model entity limit admits the part product");
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+}
+
+fn sketch_admission_prt() -> Vec<u8> {
+    let mut definition =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    definition.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    definition.extend_from_slice(
+        b"dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
+          \xe0\x01type\0\x02\xe0\x01value\0\xe4\
+          \xe0\x01direct\0\x00\xe0\x01aux_value\0\x0f\
+          \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0",
+    );
+    build_prt("c", &[("FeatDefs", definition)])
+}
+
+#[test]
+fn sketch_entity_refuses_before_model_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let data = sketch_admission_prt();
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 1;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("one section exhausts the entity limit before sketch entities");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Creo model sketch_entities"
+    ));
+
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("service profile admits the sketch");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 2);
+}
+
+#[test]
+fn sketch_constraint_refuses_before_model_insertion() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let data = sketch_admission_prt();
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = 3;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("the section and two sketch entities exhaust the entity limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit Creo model sketch_constraints"
+    ));
+
+    let decoded = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("service profile admits the sketch constraints");
+    assert_eq!(decoded.ir().model.sketch_constraints.len(), 2);
+
+    let mut exact = DecodeOptions::default();
+    exact.policy.limits.max_entities =
+        u64::try_from(1 + decoded.ir().model.entity_count()).expect("fixture count fits u64");
+    CreoCodec
+        .decode(&mut Cursor::new(sketch_admission_prt()), &exact)
+        .expect("section and each model identity are charged once");
 }
 
 #[test]
@@ -139,6 +231,65 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
 }
 
 #[test]
+fn thumbnail_passthrough_copy_refuses_on_retained_byte_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let jpeg = jpeg_payload();
+    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg.clone())]);
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+    };
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("thumbnail copy exceeds the retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Creo passthrough section"
+    ));
+
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact retained-byte limit admits the thumbnail");
+}
+
+#[test]
+fn geometry_passthrough_copy_refuses_on_retained_byte_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let geometry = visibgeom_payload(0, 0);
+    let data = build_prt("c", &[("VisibGeom", geometry)]);
+    let section_len = container::scan_bytes_ok(data.clone()).framing.sections[0].length();
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+    };
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(section_len - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("geometry copy exceeds the retained-byte limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Creo passthrough section"
+    ));
+
+    options.policy.limits.max_retained_bytes =
+        u64::try_from(section_len).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact retained-byte limit admits the geometry section");
+}
+
+#[test]
 fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     let jpeg = jpeg_payload();
     let compressed = unix_compress_literals(&jpeg);
@@ -181,6 +332,65 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         "jpeg_thumbnail",
         Exactness::Derived,
     );
+}
+
+#[test]
+fn compressed_toc_section_propagates_expansion_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let jpeg = jpeg_payload();
+    let compressed = unix_compress_literals(&jpeg);
+    let data = build_toc_section_prt("THMB_IMG_MAIN", &compressed, jpeg.len());
+    let mut options = DecodeOptions {
+        container_only: true,
+        policy: DecodePolicy::service(),
+    };
+    options.policy.limits.max_decompressed_bytes_per_expand =
+        u64::try_from(jpeg.len() - 1).expect("fixture length fits the resource limit");
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("TOC section expansion must propagate the resource refusal");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::DecompressedBytes
+                && limit.operation == "begin_expand"
+    ));
+
+    options.policy.limits.max_decompressed_bytes_per_expand =
+        u64::try_from(jpeg.len()).expect("fixture length fits the resource limit");
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact per-expansion limit admits the section");
+}
+
+#[test]
+fn decode_propagates_spline_grid_collection_limit() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+
+    let mut payload =
+        b"srf_array\0\xf8\0srf_prim_ptr(spline)\0\xe0\x02i_points\0\xf9\x02\x03".to_vec();
+    payload.extend([0x0f; 6]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_collection_items = 5;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &options)
+        .expect_err("six scalar slots exceed the five-item limit");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "admit Creo spline scalar grid"
+    ));
+
+    options.policy.limits.max_collection_items = 6;
+    CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect("the exact grid item limit admits the fixture");
 }
 
 #[test]

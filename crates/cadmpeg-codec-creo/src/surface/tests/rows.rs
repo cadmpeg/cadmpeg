@@ -1,25 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::cross_section_parameter_records;
+use super::named_prototype_records;
+use super::parameter_records;
+use super::plane_local_systems_for_rows;
+use super::positional_spline_replay_body_end;
+use super::positional_spline_replay_prototype;
 use crate::scalar;
 use crate::surface::complete_surface_array_bounds;
 use crate::surface::counted_parameter_scalar_slots;
 use crate::surface::counted_row_bounds;
-use crate::surface::cross_section_parameter_records;
 use crate::surface::cross_section_plane_envelopes;
 use crate::surface::cross_section_rows;
 use crate::surface::cylinder_frame_readers::decode_compound_local_system_cylinder_frame;
 use crate::surface::decode_positional_spline_replay;
 use crate::surface::decode_tabulated_cylinder_frame;
-use crate::surface::named_prototype_records;
 use crate::surface::named_spline_scalar_slots;
 use crate::surface::outline_planes;
-use crate::surface::parameter_records;
 use crate::surface::plane_envelopes_for_rows;
-use crate::surface::plane_local_systems_for_rows;
 use crate::surface::positional_body_start;
-use crate::surface::positional_spline_replay_body_end;
-use crate::surface::positional_spline_replay_prototype;
 use crate::surface::prototype_count;
 use crate::surface::rows;
 use crate::surface::scalar_tokens;
@@ -939,7 +939,7 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
     let mut refusals = crate::lane_refusal::LaneRefusals::new();
     let undefined = [0xf9, 0x01, 0x03, 0xe4, 0x00, 0x0f];
     assert!(matches!(
-        super::super::named_surface_value(
+        super::named_surface_value(
             &family,
             "data_dbls",
             &undefined,
@@ -961,7 +961,7 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
     let mut refusals = crate::lane_refusal::LaneRefusals::new();
     let short = [0xf9, 0x01, 0x03, 0xe4, 0x0f];
     assert!(matches!(
-        super::super::named_surface_value(
+        super::named_surface_value(
             &family,
             "data_dbls",
             &short,
@@ -982,7 +982,7 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
     let mut refusals = crate::lane_refusal::LaneRefusals::new();
     let long = [0xf9, 0x01, 0x02, 0xe4, 0x0f, 0x0f];
     assert!(matches!(
-        super::super::named_surface_value(
+        super::named_surface_value(
             &family,
             "data_dbls",
             &long,
@@ -1003,7 +1003,7 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
     // A body every declared slot encodes states no refusal.
     let mut refusals = crate::lane_refusal::LaneRefusals::new();
     assert!(matches!(
-        super::super::named_surface_value(
+        super::named_surface_value(
             &family,
             "data_dbls",
             &[0xf9, 0x01, 0x03, 0xe4, 0x0f, 0x0f],

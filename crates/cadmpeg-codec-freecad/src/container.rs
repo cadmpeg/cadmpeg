@@ -4,7 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::{Component, Path};
+use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
@@ -84,7 +84,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = file.name.clone();
-        validate_name(&name)?;
+        crate::native::check_entry_name(&name).map_err(CodecError::Malformed)?;
         let view = archive.open(ctx, &file.name)?;
         data.insert(name, view);
     }
@@ -93,6 +93,14 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         .get("Document.xml")
         .map(|view| view.window())
         .ok_or_else(|| CodecError::WrongFormat("ZIP has no root Document.xml".into()))?;
+    ctx.charge_work(
+        document_bytes.len() as u64,
+        "FCStd Document.xml lexical admission",
+    )?;
+    if let Some((node_count, object_count)) = xml_envelope_counts(document_bytes) {
+        ctx.charge_entities(object_count, "admit FCStd document objects")?;
+        ctx.charge_collection_items(node_count, "FCStd Document.xml node tree")?;
+    }
     let (document, schema_version) = parse_document(document_bytes)?;
     let ledger = archive
         .physical_ledger()?
@@ -147,25 +155,6 @@ pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
     notes
 }
 
-fn validate_name(name: &str) -> Result<(), CodecError> {
-    let path = Path::new(name);
-    if name.is_empty()
-        || path.is_absolute()
-        || name.contains('\\')
-        || path.components().any(|part| {
-            matches!(
-                part,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(CodecError::malformed(format_args!(
-            "unsafe ZIP entry path {name:?}"
-        )));
-    }
-    Ok(())
-}
-
 fn classify(name: &str) -> ContainerRole {
     match name {
         "Document.xml" => ContainerRole::Document,
@@ -214,6 +203,111 @@ fn unique_section<'a, 'input>(
             "Document.xml has duplicate {tag} sections"
         ))),
     }
+}
+
+// This allocation-free lexical pass admits the XML tree and direct object
+// declarations before roxmltree constructs any nodes. Syntax errors remain
+// owned by the complete XML parser.
+pub(crate) fn xml_envelope_counts(bytes: &[u8]) -> Option<(u64, u64)> {
+    let mut offset = 0;
+    let mut depth = 0_usize;
+    // Include the document node. Count lexical text and markup nodes as an upper
+    // bound because roxmltree can merge adjacent text into one stored node.
+    let mut nodes = 1_u64;
+    let mut objects = 0_u64;
+    let mut envelope = None;
+    while offset < bytes.len() {
+        if bytes[offset] != b'<' {
+            let next = bytes[offset..]
+                .iter()
+                .position(|byte| *byte == b'<')
+                .map_or(bytes.len(), |delta| offset + delta);
+            nodes = nodes.checked_add(1)?;
+            offset = next;
+            continue;
+        }
+        let rest = &bytes[offset..];
+        if let Some((prefix, suffix)) = [
+            (b"<!--".as_slice(), b"-->".as_slice()),
+            (b"<![CDATA[".as_slice(), b"]]>".as_slice()),
+            (b"<?".as_slice(), b"?>".as_slice()),
+        ]
+        .into_iter()
+        .find(|(prefix, _)| rest.starts_with(prefix))
+        {
+            nodes = nodes.checked_add(1)?;
+            let tail = &rest[prefix.len()..];
+            let end = tail
+                .windows(suffix.len())
+                .position(|window| window == suffix)?;
+            offset += prefix.len() + end + suffix.len();
+            continue;
+        }
+        if rest.starts_with(b"<!") {
+            nodes = nodes.checked_add(1)?;
+            offset = scan_tag_end(bytes, offset + 2)? + 1;
+            continue;
+        }
+        let closing = rest.get(1) == Some(&b'/');
+        let name_start = offset + if closing { 2 } else { 1 };
+        let mut name_end = name_start;
+        while let Some(byte) = bytes.get(name_end) {
+            if byte.is_ascii_whitespace() || *byte == b'/' || *byte == b'>' {
+                break;
+            }
+            name_end += 1;
+        }
+        if name_end == name_start {
+            return None;
+        }
+        let end = scan_tag_end(bytes, name_end)?;
+        let name = bytes[name_start..name_end]
+            .rsplit(|byte| *byte == b':')
+            .next()
+            .unwrap_or(&bytes[name_start..name_end]);
+        if closing {
+            depth = depth.checked_sub(1)?;
+            if depth == 1 {
+                envelope = None;
+            }
+        } else {
+            nodes = nodes.checked_add(1)?;
+            if depth == 1 && (name == b"Objects" || name == b"Features") {
+                envelope = Some(if name == b"Objects" {
+                    b"Object".as_slice()
+                } else {
+                    b"Feature".as_slice()
+                });
+            } else if depth == 2 && envelope == Some(name) {
+                objects = objects.checked_add(1)?;
+            }
+            let self_closing = bytes[name_end..end]
+                .iter()
+                .rev()
+                .find(|byte| !byte.is_ascii_whitespace())
+                == Some(&b'/');
+            if !self_closing {
+                depth = depth.checked_add(1)?;
+            } else if depth == 1 {
+                envelope = None;
+            }
+        }
+        offset = end + 1;
+    }
+    (depth == 0).then_some((nodes, objects))
+}
+
+fn scan_tag_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut quote = None;
+    for (offset, &byte) in bytes.iter().enumerate().skip(start) {
+        match (quote, byte) {
+            (None, b'\'' | b'"') => quote = Some(byte),
+            (Some(open), close) if open == close => quote = None,
+            (None, b'>') => return Some(offset),
+            _ => {}
+        }
+    }
+    None
 }
 
 pub(crate) fn parse_document(bytes: &[u8]) -> Result<(DocumentFacts, String), CodecError> {

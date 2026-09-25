@@ -185,6 +185,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
 }
 
 pub(in super::super) fn transfer_feature_dimensions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -314,6 +315,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                     cadmpeg_ir::scalar::FiniteReal::new(value).map(ParameterValue::Real)
                 }
             });
+        ctx.charge_entities(1, "admit Creo model parameters")?;
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
             owner: Some(owner_id.clone()),

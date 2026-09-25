@@ -13,6 +13,85 @@ use std::io::Cursor;
 use zip::write::SimpleFileOptions;
 
 #[test]
+fn x62_object_envelope_is_admitted_before_the_xml_tree() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;
+    let bytes = archive(document);
+    let mut options = cadmpeg_core::decode::InspectOptions {
+        limits: cadmpeg_core::decode::ResourceLimits::service(),
+    };
+    FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect("service profile admits the XML envelope");
+
+    options.limits.max_entities = 0;
+    let error = FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect_err("object count must be charged before parsing the tree");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit FCStd document objects"
+    ));
+}
+
+#[test]
+fn x62_xml_tree_items_are_admitted_before_allocation() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="Part::Feature" name="A"/></Objects><ObjectData Count="0"/></Document>"#;
+    let bytes = archive(document);
+    let mut options = cadmpeg_core::decode::InspectOptions {
+        limits: cadmpeg_core::decode::ResourceLimits::service(),
+    };
+    FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect("service profile admits the XML tree");
+
+    options.limits.max_collection_items = 1;
+    let error = FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect_err("XML nodes must be charged before parsing the tree");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "FCStd Document.xml node tree"
+    ));
+}
+
+#[test]
+fn x62_prefixed_object_envelope_is_admitted_before_the_xml_tree() {
+    let document = r#"<fc:Document xmlns:fc="urn:freecad" SchemaVersion="4"><fc:Objects Count="1"><fc:Object type="Part::Feature" name="A"/></fc:Objects><fc:ObjectData Count="0"/></fc:Document>"#;
+    let bytes = archive(document);
+    let mut options = cadmpeg_core::decode::InspectOptions {
+        limits: cadmpeg_core::decode::ResourceLimits::service(),
+    };
+    FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect("service profile admits the prefixed XML envelope");
+
+    options.limits.max_entities = 0;
+    let error = FcstdCodec
+        .inspect(&mut Cursor::new(&bytes), &options)
+        .expect_err("prefixed object count must be charged before parsing the tree");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "admit FCStd document objects"
+    ));
+}
+
+#[test]
+fn xml_envelope_scan_skips_comments_cdata_and_quoted_brackets() {
+    let bytes = br#"<Document SchemaVersion="4"><!-- <Objects><Object/> --><Note attr=">"> <![CDATA[<Object/>]]> </Note><Objects><Object/><Object/></Objects></Document>"#;
+    let (bound, objects) = super::xml_envelope_counts(bytes).expect("lexical XML count");
+    assert_eq!(objects, 2);
+    let parsed = roxmltree::Document::parse(std::str::from_utf8(bytes).expect("UTF-8 XML"))
+        .expect("XML document");
+    assert!(bound >= parsed.descendants().count() as u64);
+}
+
+#[test]
 fn frames_zip64_streaming_descriptor_and_local_extra() {
     let bytes = streaming_archive_with_options(
         "<Document SchemaVersion=\"4\" FileVersion=\"1\"/>",

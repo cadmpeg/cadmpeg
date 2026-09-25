@@ -46,6 +46,7 @@ pub(in super::super) struct BuiltIr {
 }
 
 pub(in super::super) fn build_container_ir(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     classification: &crate::dialect::DialectClassification,
 ) -> Result<BuiltIr, CodecError> {
@@ -53,7 +54,7 @@ pub(in super::super) fn build_container_ir(
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
@@ -180,6 +181,7 @@ pub(super) fn angular_termination_has_unresolved_operands(
 }
 
 fn transfer_reference_lines(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -237,6 +239,7 @@ fn transfer_reference_lines(
             "reference_line",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -266,6 +269,7 @@ fn transfer_reference_lines(
 }
 
 fn transfer_reference_circles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -307,6 +311,7 @@ fn transfer_reference_circles(
             "reference_circle",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -338,6 +343,7 @@ fn transfer_reference_circles(
 }
 
 fn transfer_reference_ellipses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -377,6 +383,7 @@ fn transfer_reference_ellipses(
             "reference_ellipse",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
@@ -409,6 +416,7 @@ fn transfer_reference_ellipses(
 }
 
 fn transfer_display_tessellations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -423,6 +431,7 @@ fn transfer_display_tessellations(
             "display_triangle_strip",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model tessellations")?;
         ir.model.tessellations.push(
             Tessellation::new(
                 id,
@@ -457,6 +466,7 @@ fn transfer_display_tessellations(
 }
 
 fn transfer_datum_plane_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -472,6 +482,7 @@ fn transfer_datum_plane_surfaces(
             "datum_plane_outline",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -507,6 +518,7 @@ fn transfer_datum_plane_surfaces(
 }
 
 fn transfer_placed_plane_surfaces_into_ir(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -541,6 +553,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             tag,
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -582,14 +595,14 @@ pub(in super::super) fn build_ir(
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
     let mut transfer_losses = Vec::new();
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
-    let unknowns = preserve_passthrough_sections(scan, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
-    transfer_reference_lines(scan, &mut ir, &mut annotations)?;
-    transfer_reference_circles(scan, &mut ir, &mut annotations)?;
-    transfer_reference_ellipses(scan, &mut ir, &mut annotations)?;
-    transfer_display_tessellations(scan, &mut ir, &mut annotations)?;
-    transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations)?;
-    transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations)?;
+    transfer_reference_lines(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_circles(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_placed_plane_surfaces_into_ir(ctx, scan, &mut ir, &mut annotations)?;
     transfer_and_record_scanned_geometry(
         ctx,
         scan,
@@ -599,9 +612,10 @@ pub(in super::super) fn build_ir(
         &mut brep_diagnostics,
         &mut transfer_losses,
     )?;
-    let geometry_generator_feature_count = emit_model_features(scan, &mut ir, &mut annotations)?;
+    let geometry_generator_feature_count =
+        emit_model_features(ctx, scan, &mut ir, &mut annotations)?;
     let (feature_result_topology_count, feature_result_edge_count) =
-        finish_feature_transfers(scan, &mut ir, &mut annotations, &mut coverage)?;
+        finish_feature_transfers(ctx, scan, &mut ir, &mut annotations, &mut coverage)?;
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = scan

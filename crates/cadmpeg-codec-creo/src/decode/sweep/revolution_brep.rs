@@ -33,6 +33,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::AnnotationBuilder;
 
 pub(in super::super) fn transfer_resolved_revolution_breps(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -265,6 +266,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     .colon(index)
             );
             let position = section_point_in_model(transform, entity.start());
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id: curve_id.clone(),
                 geometry: curve_geometry,
@@ -273,14 +275,17 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(position))
                 .ok_or(Point::NON_FINITE_POSITION)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
+            ctx.charge_entities(1, "admit Creo model points")?;
             ir.model
                 .points
                 .push(Point::new(point_id.clone(), finite_position, None));
+            ctx.charge_entities(1, "admit Creo model vertices")?;
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
             });
+            ctx.charge_entities(1, "admit Creo model edges")?;
             ir.model.edges.push(Edge {
                 id: edge_id.clone(),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -305,6 +310,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             let surface_id =
                 revolution_id!(SurfaceId, cadmpeg_ir::identity_key!("surface").colon(index));
             let face_id = revolution_id!(FaceId, cadmpeg_ir::identity_key!("face").colon(index));
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: surface_geometry.clone(),
@@ -344,6 +350,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 };
                 let radial_boundary = boundary.opposite().key();
                 let pcurve = add_extrusion_pcurve(
+                    ctx,
                     ir,
                     annotations,
                     revolution_id!(
@@ -356,6 +363,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     transform.offset,
                     pcurve_geometry,
                 )?;
+                ctx.charge_entities(1, "admit Creo model loops")?;
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
@@ -364,6 +372,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
+                ctx.charge_entities(1, "admit Creo model coedges")?;
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
@@ -387,6 +396,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 });
                 loops.push(loop_id);
             }
+            ctx.charge_entities(1, "admit Creo model faces")?;
             ir.model.faces.push(Face {
                 id: face_id.clone(),
                 shell: shell_id.clone(),
@@ -399,6 +409,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             });
             faces.push(face_id);
         }
+        ctx.charge_entities(1, "admit Creo model shells")?;
         ir.model.shells.push(
             match Shell::new(
                 shell_id.clone(),
@@ -413,11 +424,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 }
             },
         );
+        ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id],
         });
+        ctx.charge_entities(1, "admit Creo model bodies")?;
         ir.model.bodies.push(Body {
             id: body_id,
             kind: BodyKind::Solid,

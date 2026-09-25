@@ -34,6 +34,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[allow(clippy::too_many_arguments)] // mechanical extract from transfer_sketches
 pub(super) fn transfer_section_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -77,6 +78,9 @@ pub(super) fn transfer_section_entities(
             let geometry = segment_geometry(segment)?;
             let suffix = section_segment_identity_suffix(unique_segment_ids, segment);
             let id = sketch_entity_id(sketch_id, &suffix)?;
+            if let Err(error) = ctx.charge_entities(1, "admit Creo model sketch_entities") {
+                return Some(Err(error));
+            }
             annotate(
                 annotations,
                 id.as_str(),
@@ -138,15 +142,13 @@ pub(super) fn transfer_section_entities(
             .map(|point| sketch_point_ref(sketch_id, point))
             .collect();
             let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
-            Some(
-                SketchEntity::new(id, sketch_id.clone(), geometry)
-                    .with_construction(construction)
-                    .with_native_ref(Some(sketch_native_ref(sketch_id)))
-                    .with_geometry_ref(geometry_ref)
-                    .with_endpoint_refs(endpoint_refs),
-            )
+            Some(Ok(SketchEntity::new(id, sketch_id.clone(), geometry)
+                .with_construction(construction)
+                .with_native_ref(Some(sketch_native_ref(sketch_id)))
+                .with_geometry_ref(geometry_ref)
+                .with_endpoint_refs(endpoint_refs)))
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     for segment in segments
         .iter()
         .filter(|segment| segment_geometry(segment).is_none())
@@ -179,6 +181,7 @@ pub(super) fn transfer_section_entities(
         .into_iter()
         .map(|point| sketch_point_ref(sketch_id, point))
         .collect();
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(
                 id,
@@ -256,6 +259,7 @@ pub(super) fn transfer_section_entities(
         );
         let construction = !unique_external_id || !profile_entities.contains(&id);
         let geometry_ref = placed_sketch_curve_ref(transform, sketch_id, suffix, &geometry);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
                 .with_construction(construction)
@@ -313,6 +317,7 @@ pub(super) fn transfer_section_entities(
             },
         );
         let construction = !unique_external_id || !profile_entities.contains(&id);
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
                 .with_construction(construction)
@@ -375,6 +380,7 @@ pub(super) fn transfer_section_entities(
             .into_iter()
             .map(|point| sketch_point_ref(sketch_id, point))
             .collect();
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
                 .with_construction(true)
@@ -443,6 +449,7 @@ pub(super) fn transfer_section_entities(
             .flatten()
             .map(|point| sketch_point_ref(sketch_id, point))
             .collect();
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
                 .with_construction(true)
@@ -484,6 +491,7 @@ pub(super) fn transfer_section_entities(
             .into_iter()
             .map(|point| sketch_point_ref(sketch_id, point))
             .collect();
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(
                 id,
@@ -527,6 +535,7 @@ pub(super) fn transfer_section_entities(
             "unresolved_section_conic",
             Exactness::ByteExact,
         );
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(
                 id,
@@ -599,6 +608,7 @@ pub(super) fn transfer_section_entities(
             },
             &geometry,
         );
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(id, sketch_id.clone(), geometry)
                 .with_construction(construction)
@@ -664,6 +674,7 @@ pub(super) fn transfer_section_entities(
         if let Some(external_id) = external_id.filter(|_| generated) {
             generated_saved_geometries.push((external_id, geometry.clone()));
         }
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
                 .with_construction(!generated)
@@ -757,6 +768,7 @@ pub(super) fn transfer_section_entities(
             "saved_interpolation_spline",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(
             SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
                 .with_construction(!generated)
@@ -791,6 +803,7 @@ pub(super) fn transfer_section_entities(
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
         );
+        ctx.charge_entities(1, "admit Creo model sketch_entities")?;
         entities.push(entity);
     }
     profiles.extend(saved_profile_chains(sketch_id, &generated_saved_geometries));
@@ -833,6 +846,7 @@ pub(super) fn transfer_section_entities(
                 "placed_section_curve",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry,
@@ -883,6 +897,7 @@ pub(super) fn transfer_section_entities(
                 "placed_section_circle",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry,
@@ -934,6 +949,7 @@ pub(super) fn transfer_section_entities(
                 "placed_section_line",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry,
@@ -969,6 +985,7 @@ pub(super) fn transfer_section_entities(
                 "placed_saved_section_curve",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry,

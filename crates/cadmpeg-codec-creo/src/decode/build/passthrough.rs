@@ -3,6 +3,7 @@
 
 use crate::container::SectionRole;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
@@ -23,6 +24,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 /// extent is the record, so a shortened region would retain bytes the source
 /// never stated.
 pub(super) fn preserve_passthrough_sections(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<Vec<UnknownRecord>, CodecError> {
@@ -99,7 +101,7 @@ pub(super) fn preserve_passthrough_sections(
         unknowns.push(UnknownRecord::retained(
             id,
             offset as u64,
-            bytes.to_vec(),
+            ctx.copy_retained(bytes, "retain Creo passthrough section")?,
             Vec::new(),
         ));
     }

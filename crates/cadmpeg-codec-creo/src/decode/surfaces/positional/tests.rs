@@ -68,11 +68,12 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_tori(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_tori(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         0
     );
@@ -105,11 +106,12 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::transfer_positional_tori(
+        crate::decode::with_test_decode_ctx(|ctx| super::transfer_positional_tori(
+            ctx,
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
-        )
+        ))
         .expect("valid source object identity"),
         1
     );

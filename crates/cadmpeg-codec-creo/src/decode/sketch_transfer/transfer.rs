@@ -71,6 +71,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// the sketch, which the model carries, so the refusal is a loss note naming
 /// the feature definition and the entity offset.
 pub(in super::super) fn transfer_sketches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -485,6 +486,7 @@ pub(in super::super) fn transfer_sketches(
             }
         }
         let (mut entities, profiles) = transfer_section_entities(
+            ctx,
             scan,
             ir,
             annotations,
@@ -525,6 +527,7 @@ pub(in super::super) fn transfer_sketches(
                 "solver_only_section_entity",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_entities")?;
             entities.push(
                 SketchEntity::new(
                     id,
@@ -676,6 +679,13 @@ pub(in super::super) fn transfer_sketches(
                 )
                 .then_some(())?;
                 let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"))?;
+                let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                    constraint_definition,
+                )
+                .ok()?;
+                if let Err(error) = ctx.charge_entities(1, "admit Creo model sketch_constraints") {
+                    return Some(Err(error));
+                }
                 annotate(
                     annotations,
                     id.as_str(),
@@ -684,13 +694,10 @@ pub(in super::super) fn transfer_sketches(
                     "section_verhor_constraint",
                     Exactness::ByteExact,
                 );
-                Some(SketchConstraint {
+                Some(Ok(SketchConstraint {
                     id,
                     sketch: sketch_id.clone(),
-                    definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                        constraint_definition,
-                    )
-                    .ok()?,
+                    definition,
                     name: None,
                     driving: None,
                     active: None,
@@ -701,9 +708,9 @@ pub(in super::super) fn transfer_sketches(
                     label_position: None,
                     metadata: None,
                     native_ref: Some(sketch_native_ref(&sketch_id)),
-                })
+                }))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
         for (relation_index, (mut constraint, offset)) in
             section_dimension_constraints(definition, &sketch_id)
                 .into_iter()
@@ -740,6 +747,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_dimension_constraint",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
         for (constraint, offset) in section_segment_radius_constraints_for_emitted(
@@ -756,6 +764,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_segment_radius_constraint",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
         let equation_constraints =
@@ -837,6 +846,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_equation_constraint",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
         typed_equation_offsets.extend(
@@ -855,6 +865,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
         for (mut constraint, offset) in section_skamp_constraints_for_geometry(
@@ -877,6 +888,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_solver_constraint",
                 Exactness::ByteExact,
             );
+            ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
         ir.model.sketch_entities.extend(entities);
@@ -894,6 +906,7 @@ pub(in super::super) fn transfer_sketches(
             },
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model sketches")?;
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
             name: None,
@@ -915,6 +928,7 @@ pub(in super::super) fn transfer_sketches(
                 "section_sketch_feature",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model features")?;
             ir.model.features.push(Feature {
                 id: feature_id,
                 ordinal: ir.model.features.len() as u64,
