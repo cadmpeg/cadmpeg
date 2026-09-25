@@ -102,6 +102,86 @@ fn gradient_userdata_with_payload(archive: ArchiveVersion, payload: &[u8]) -> Ve
     )
 }
 
+fn basepoint_userdata(archive: ArchiveVersion, complete: bool) -> Vec<u8> {
+    let mut body = [0_u8; 16].to_vec();
+    body.extend(2.5_f64.to_le_bytes());
+    if complete {
+        body.extend(3.5_f64.to_le_bytes());
+    }
+    let payload = crate::test_support::test_dump::anonymous_chunk(archive, 0, &body);
+    crate::test_support::test_dump::class_userdata_v2_with_class_and_item_direct_payload(
+        archive,
+        crate::hatch::V5_HATCH_EXTRA.to_wire(),
+        crate::hatch::V5_HATCH_EXTRA.to_wire(),
+        [
+            0xc8, 0xcd, 0xa5, 0x97, 0xd9, 0x57, 0x46, 0x25, 0xa4, 0xb3, 0xa0, 0xb5, 0x10, 0xfc,
+            0x30, 0xd4,
+        ],
+        50,
+        202_608_010,
+        &payload,
+    )
+}
+
+fn assert_mixed_hatch_extensions(
+    basepoint_complete: bool,
+    gradient_valid: bool,
+    expected_basepoint: &str,
+    expected_gradient: bool,
+    losses: usize,
+) {
+    let archive = ArchiveVersion::V8;
+    let malformed_gradient =
+        crate::test_support::test_dump::anonymous_chunk(archive, 0, &5_i32.to_le_bytes());
+    let gradient = if gradient_valid {
+        gradient_userdata(archive, 1)
+    } else {
+        gradient_userdata_with_payload(archive, &malformed_gradient)
+    };
+    let hatch = hatch_record(
+        archive,
+        &[basepoint_userdata(archive, basepoint_complete), gradient].concat(),
+    );
+    let result = decode(support::archive_writer("80", 202_608_010, &[hatch]));
+    let parameters = hatch_parameters(&result);
+    assert_eq!(parameters["basepoint"], expected_basepoint);
+    assert_eq!(parameters.contains_key("gradient"), expected_gradient);
+    let messages = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("hatch userdata extension failed"))
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(messages.len(), losses, "{messages:?}");
+    if !basepoint_complete {
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("exceeds bound")));
+    }
+    if !gradient_valid {
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("gradient type")));
+    }
+    assert_valid(&result);
+}
+
+#[test]
+fn valid_hatch_basepoint_reports_malformed_gradient() {
+    assert_mixed_hatch_extensions(true, false, "2.5,3.5", false, 1);
+}
+
+#[test]
+fn valid_hatch_gradient_reports_malformed_basepoint() {
+    assert_mixed_hatch_extensions(false, true, "3,4", true, 1);
+}
+
+#[test]
+fn two_malformed_hatch_extension_families_are_both_reported() {
+    assert_mixed_hatch_extensions(false, false, "3,4", false, 2);
+}
+
 #[test]
 fn current_gradient_userdata_reaches_the_hatch_native_parameter() {
     let archive = ArchiveVersion::V8;

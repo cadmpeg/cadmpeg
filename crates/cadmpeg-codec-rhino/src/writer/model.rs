@@ -487,11 +487,20 @@ impl<'a> WritableModel<'a> {
                             edge.id.as_str()
                         )));
                     }
-                    (
-                        WritableEdgeCurve::Nurbs(nurbs),
-                        nurbs.control_points()[0].get(),
-                        nurbs.control_points()[count - 1].get(),
-                    )
+                    let geometry = WritableEdgeCurve::Nurbs(nurbs);
+                    let expected_start = geometry.point(domain[0]).map_err(|_| {
+                        CodecError::malformed(format_args!(
+                            "edge {} curve has no finite start point",
+                            edge.id.as_str()
+                        ))
+                    })?;
+                    let expected_end = geometry.point(domain[1]).map_err(|_| {
+                        CodecError::malformed(format_args!(
+                            "edge {} curve has no finite end point",
+                            edge.id.as_str()
+                        ))
+                    })?;
+                    (geometry, expected_start.get(), expected_end.get())
                 }
                 _ => {
                     return Err(CodecError::NotImplemented(format!(

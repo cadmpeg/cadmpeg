@@ -929,21 +929,52 @@ fn parse_layer_extensions(
         } else {
             None
         };
-        let plot_weight_value = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
-            Some(entry_reader.f64()?)
+        let plot_weight_mm = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
+            let offset = entry_reader.position();
+            let value = entry_reader.f64()?;
+            Some(
+                FiniteReal::new(value)
+                    .filter(|weight| weight.get() >= 0.0 || weight.get() == -1.0)
+                    .ok_or_else(|| {
+                        FramingError::structural(offset, "invalid layer per-viewport plot weight")
+                    })?,
+            )
         } else {
             None
         };
         let (visible_value, compatibility_visible) = if bits & LAYER_PER_VIEWPORT_VISIBLE != 0 {
-            let value = entry_reader.u8()?;
-            let compatibility_value = (entry_minor >= 1).then(|| entry_reader.u8()).transpose()?;
+            let offset = entry_reader.position();
+            let value = LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                FramingError::structural(offset, "invalid layer per-viewport visibility")
+            })?;
+            let compatibility_value = if entry_minor >= 1 {
+                let offset = entry_reader.position();
+                Some(
+                    LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                        FramingError::structural(
+                            offset,
+                            "invalid layer per-viewport persistent visibility",
+                        )
+                    })?,
+                )
+            } else {
+                None
+            };
             (Some(value), compatibility_value)
         } else {
             (None, None)
         };
         let persistent_value =
             if entry_minor >= 2 && bits & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0 {
-                Some(entry_reader.u8()?)
+                let offset = entry_reader.position();
+                Some(
+                    LayerVisibility::from_byte(entry_reader.u8()?).ok_or_else(|| {
+                        FramingError::structural(
+                            offset,
+                            "invalid layer per-viewport persistent visibility",
+                        )
+                    })?,
+                )
             } else {
                 compatibility_visible
             };
@@ -951,14 +982,11 @@ fn parse_layer_extensions(
 
         let color = color_value.filter(|value| *value != [u8::MAX; 4]);
         let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
-        let plot_weight_mm = plot_weight_value
-            .and_then(FiniteReal::new)
-            .filter(|value| value.get() >= 0.0 || value.get() == -1.0);
-        let visible = visible_value.and_then(LayerVisibility::from_byte);
+        let visible = visible_value;
         let persistent_visibility = if parent_is_nil {
             None
         } else {
-            persistent_value.and_then(LayerVisibility::from_byte)
+            persistent_value
         };
         if !viewport_id.is_nil()
             && (color.is_some()
