@@ -10,6 +10,7 @@ use cadmpeg_asm::{sab, sat};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use std::collections::BTreeMap;
@@ -248,7 +249,7 @@ fn build_result(
         AsmTransferRemainder {
             unknowns,
             stats,
-            annotation_records: _,
+            annotation_records,
         },
     ) = transfer_into_ir(ctx, &mut ir, FORMAT, brep)?;
 
@@ -284,7 +285,20 @@ fn build_result(
         ))
     };
 
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    let mut annotations = AnnotationBuilder::new();
+    for record in annotation_records {
+        let stream =
+            StreamHandle::new(cadmpeg_ir::stream_name!("sat:").with_suffix(&record.stream));
+        annotations
+            .note(&record.id, &stream, record.offset)
+            .tag(record.tag.as_str());
+        for field in record.derived_fields {
+            annotations
+                .derived(&record.id, field)
+                .map_err(CodecError::malformed)?;
+        }
+    }
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations.build());
     source_fidelity
         .attach_native_unknown_records(&mut ir, FORMAT, unknowns)
         .map_err(|error| {
