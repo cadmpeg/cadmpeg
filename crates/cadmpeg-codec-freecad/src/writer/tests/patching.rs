@@ -5,7 +5,7 @@
 
 use super::super::target::retained_baseline;
 use crate::native::{PropertyRecord, ValueRecord};
-use crate::test_support::test_archive::CORE_DESIGN_PRODUCT;
+use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::writer::{serialize_property, serialize_value, validate_entry_names};
 use crate::FcstdCodec;
 use cadmpeg_ir::codec::write::Encoder;
@@ -34,6 +34,35 @@ fn admitted_unsafe_and_duplicate_entry_names_are_writer_limits() {
         duplicate_error,
         cadmpeg_core::CodecError::NotImplemented(_)
     ));
+}
+
+#[test]
+fn x65_backslash_entry_is_refused_by_writer_reader_and_native_record() {
+    let entry = crate::native::EntryRecord {
+        id: "test:native:entry#backslash".into(),
+        name: r"..\outside".into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(),
+        data: Vec::new(),
+    };
+    let error = validate_entry_names(&[entry.clone()])
+        .expect_err("writer refuses a backslash in an archive name");
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(error.to_string().contains("unsafe FCStd output entry name"));
+    let wire = serde_json::to_value(&entry).expect("entry serialization");
+    let error = serde_json::from_value::<crate::native::EntryRecord>(wire)
+        .expect_err("native entry refuses a backslash in an archive name");
+    assert!(error.to_string().contains("unsafe ZIP entry path"));
+
+    let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
+    let bytes = archive_entries(&[("Document.xml", xml), (r"..\outside", b"payload")]);
+    let error = FcstdCodec
+        .inspect(
+            &mut Cursor::new(bytes),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .expect_err("reader refuses a backslash in an archive name");
+    assert!(error.to_string().contains("unsafe ZIP entry path"));
 }
 
 #[test]

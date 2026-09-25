@@ -3037,6 +3037,18 @@ pub(crate) struct EntryRecord {
     pub(crate) data: Vec<u8>,
 }
 
+/// Check the exact ZIP name used by source scans and retained entry records.
+pub(crate) fn check_entry_name(name: &str) -> Result<(), String> {
+    if name.contains('\\')
+        || name
+            .split('/')
+            .any(|component| component.is_empty() || component == "." || component == "..")
+    {
+        return Err(format!("unsafe ZIP entry path {name:?}"));
+    }
+    Ok(())
+}
+
 impl EntryRecord {
     /// Logical byte length.
     pub(crate) fn byte_len(&self) -> u64 {
@@ -3091,6 +3103,7 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
     type Error = String;
 
     fn try_from(wire: EntryRecordWire) -> Result<Self, Self::Error> {
+        check_entry_name(&wire.name)?;
         let record = Self {
             id: wire.id,
             name: wire.name,

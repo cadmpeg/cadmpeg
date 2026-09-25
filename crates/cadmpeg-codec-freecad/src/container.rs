@@ -4,7 +4,7 @@
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::{Component, Path};
+use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
@@ -84,7 +84,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
     let mut data = BTreeMap::new();
     for file in archive.entries() {
         let name = file.name.clone();
-        validate_name(&name)?;
+        crate::native::check_entry_name(&name).map_err(CodecError::Malformed)?;
         let view = archive.open(ctx, &file.name)?;
         data.insert(name, view);
     }
@@ -145,25 +145,6 @@ pub(crate) fn summary_notes(scan: &Scan) -> Vec<String> {
         notes.push(format!("ProgramVersion={version}"));
     }
     notes
-}
-
-fn validate_name(name: &str) -> Result<(), CodecError> {
-    let path = Path::new(name);
-    if name.is_empty()
-        || path.is_absolute()
-        || name.contains('\\')
-        || path.components().any(|part| {
-            matches!(
-                part,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(CodecError::malformed(format_args!(
-            "unsafe ZIP entry path {name:?}"
-        )));
-    }
-    Ok(())
 }
 
 fn classify(name: &str) -> ContainerRole {
