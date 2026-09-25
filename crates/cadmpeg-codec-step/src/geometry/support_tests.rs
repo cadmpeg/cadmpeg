@@ -75,7 +75,7 @@ fn numerical_audit_pcurve_keeps_large_finite_direction_and_magnitude() {
 }
 
 #[test]
-fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
+fn conical_surface_emits_a_positive_half_angle_and_reversed_axis() {
     use super::surface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     let cone = cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -97,11 +97,11 @@ fn conical_surface_emits_a_signed_half_angle_and_keeps_the_axis() {
     assert!(emitted.ends_with(&format!(
         ",{},{});",
         crate::writer::Emitter::new().real(5.0),
-        crate::writer::Emitter::new().real(-0.715_584_993_317_674_8)
+        crate::writer::Emitter::new().real(0.715_584_993_317_674_8)
     )));
     assert!(lines
         .iter()
-        .any(|line| line.contains("DIRECTION('',(0.,0.,1.))")));
+        .any(|line| line.contains("DIRECTION('',(-0.,-0.,-1.))")));
 }
 
 /// The deepest chain of affine placements the writer accepts over one basis
