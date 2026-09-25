@@ -312,6 +312,7 @@ pub(in crate::families) fn try_decode_e5(
             },
             annotations,
             unknowns,
+            admitted_model_entities: 0,
         }))
     })()
     .transpose()

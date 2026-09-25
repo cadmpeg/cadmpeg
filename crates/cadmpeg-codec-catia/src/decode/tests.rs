@@ -321,6 +321,7 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 ),
                 annotations: cadmpeg_ir::Annotations::default(),
                 unknowns: Vec::new(),
+                admitted_model_entities: 0,
             })
         })();
         Ok(output)
