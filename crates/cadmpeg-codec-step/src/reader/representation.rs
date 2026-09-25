@@ -12,20 +12,20 @@ pub(super) fn parameters(record: &RawRecord) -> Option<&[Value]> {
 }
 
 pub(super) fn items(record: &RawRecord) -> Option<Vec<u64>> {
+    item_values(record).map(|items| {
+        items
+            .iter()
+            .filter_map(ValueExt::reference)
+            .collect::<Vec<_>>()
+    })
+}
+
+pub(super) fn item_values(record: &RawRecord) -> Option<&[Value]> {
     record.partials.iter().find_map(|partial| {
         if !is_representation_name(&partial.name) {
             return None;
         }
-        partial
-            .parameters
-            .get(1)
-            .and_then(ValueExt::list)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(ValueExt::reference)
-                    .collect::<Vec<_>>()
-            })
+        partial.parameters.get(1).and_then(ValueExt::list)
     })
 }
 
