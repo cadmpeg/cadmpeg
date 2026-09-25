@@ -3592,11 +3592,6 @@ fn pcurve_locus_witness(
     fractions.extend(break_fractions);
     fractions.sort_by(f64::total_cmp);
     fractions.dedup_by(|left, right| *left == *right);
-    let parameter_span = endpoint.end_parameter - endpoint.start_parameter;
-    let curve_parameter_span = curve_end_parameter - curve_start_parameter;
-    if !parameter_span.is_finite() || !curve_parameter_span.is_finite() {
-        return false;
-    }
     for fraction in fractions {
         let pcurve_parameter = endpoint
             .start_parameter
