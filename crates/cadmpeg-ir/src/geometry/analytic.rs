@@ -402,7 +402,8 @@ impl ConeSurface {
     ///   cone frames.
     /// - Every finite angle: the STEP `CONICAL_SURFACE` reader and the `FCStd`
     ///   b-rep reader, which pass the file's number through unchecked. The STEP
-    ///   writer emits it back unchanged.
+    ///   writer reverses the frame axis and both chart parameters when the
+    ///   angle is negative and its magnitude is below `pi/2`.
     ///
     /// Consumers that need a narrower angle state it where they need it: the
     /// F3D patch validator admits `[0, pi/2]` because the ASM cone record

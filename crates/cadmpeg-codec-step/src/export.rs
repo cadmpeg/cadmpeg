@@ -117,7 +117,10 @@ fn out_of_domain_cone_half_angle(mut geometry: &SolvedSurfaceGeometry) -> Option
         match geometry {
             SolvedSurfaceGeometry::Cone(cone) => {
                 let angle = cone.half_angle().get();
-                return (angle <= 0.0 || angle >= std::f64::consts::FRAC_PI_2).then_some(angle);
+                return (!angle.is_finite()
+                    || angle == 0.0
+                    || angle.abs() >= std::f64::consts::FRAC_PI_2)
+                    .then_some(angle);
             }
             SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
             _ => return None,
@@ -196,12 +199,18 @@ struct LoopSegment {
 /// what the file holds and not what the document holds.
 enum WrittenAnalyticSurface<'a> {
     /// Written by `geometry::surface`, which takes a sphere radius and a torus
-    /// tube radius through `abs()` and emits every other value verbatim. A
+    /// tube radius through `abs()` and reverses a negative cone's axis. A
     /// `Transformed` carrier is held here through its emitted basis.
     Carrier(&'a SolvedSurfaceGeometry),
     /// Written as `DEGENERATE_TOROIDAL_SURFACE`, which represents a tube radius
     /// larger than the major radius and takes both radii through `abs()`.
     DegenerateTorus(&'a TorusSurface),
+}
+
+#[derive(Clone, Copy)]
+struct WrittenSurface {
+    reference: Ref,
+    reversed_chart: bool,
 }
 
 pub(crate) struct Builder<'a> {
@@ -223,9 +232,9 @@ pub(crate) struct Builder<'a> {
     pcurves: HashMap<&'a str, &'a Pcurve>,
     procedural_surfaces: HashMap<&'a str, &'a ProceduralSurface>,
     procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
-    edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
+    edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str, &'a str)>>,
 
-    surface_refs: HashMap<String, Ref>,
+    surface_refs: HashMap<String, WrittenSurface>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
     vertex_refs: HashMap<String, Ref>,
@@ -287,42 +296,38 @@ pub(crate) struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     pub(crate) fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
-        let loop_surfaces = ir
+        let loop_faces = ir
             .model
             .faces
             .iter()
             .flat_map(|face| {
                 face.loops
                     .iter()
-                    .map(move |loop_id| (loop_id.as_str(), face.surface.as_str()))
+                    .map(move |loop_id| (loop_id.as_str(), face))
             })
             .collect::<HashMap<_, _>>();
-        let coedge_surfaces: HashMap<&str, &str> = ir
-            .model
-            .loops
-            .iter()
-            .filter_map(|loop_| {
-                loop_surfaces
-                    .get(loop_.id.as_str())
-                    .map(|surface| (loop_, *surface))
-            })
-            .flat_map(|(loop_, surface)| {
-                loop_
-                    .coedges()
-                    .iter()
-                    .map(move |coedge| (coedge.as_str(), surface))
-            })
-            .collect();
-        let mut edge_coedges = HashMap::<&str, Vec<(&str, &str)>>::new();
+        let coedge_faces: HashMap<&str, (&str, &str)> =
+            ir.model
+                .loops
+                .iter()
+                .filter_map(|loop_| loop_faces.get(loop_.id.as_str()).map(|face| (loop_, *face)))
+                .flat_map(|(loop_, face)| {
+                    loop_.coedges().iter().map(move |coedge| {
+                        (coedge.as_str(), (face.surface.as_str(), face.id.as_str()))
+                    })
+                })
+                .collect();
+        let mut edge_coedges = HashMap::<&str, Vec<(&str, &str, &str)>>::new();
         for coedge in &ir.model.coedges {
-            let Some(surface) = coedge_surfaces.get(coedge.id.as_str()) else {
+            let Some((surface, face)) = coedge_faces.get(coedge.id.as_str()) else {
                 continue;
             };
             for pcurve in &coedge.pcurves {
-                edge_coedges
-                    .entry(coedge.edge.as_str())
-                    .or_default()
-                    .push((pcurve.pcurve.as_str(), *surface));
+                edge_coedges.entry(coedge.edge.as_str()).or_default().push((
+                    pcurve.pcurve.as_str(),
+                    *surface,
+                    *face,
+                ));
             }
         }
         Builder {
@@ -760,7 +765,9 @@ impl<'a> Builder<'a> {
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Surface(id) => (
-                    self.surface_refs.get(id.as_str()).copied(),
+                    self.surface_refs
+                        .get(id.as_str())
+                        .map(|surface| surface.reference),
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Curve(id) => {
@@ -1053,7 +1060,7 @@ impl<'a> Builder<'a> {
                     PresentationItem::Surface { surface } => self
                         .surface_refs
                         .get(surface.as_str())
-                        .copied()
+                        .map(|surface| surface.reference)
                         .into_iter()
                         .collect(),
                     PresentationItem::Product { product } => self
@@ -2548,9 +2555,16 @@ impl<'a> Builder<'a> {
         };
         let associated = self.edge_coedges.get(edge_id).cloned().unwrap_or_default();
         let mut pcurve_refs = Vec::new();
-        for (pcurve_id, surface_id) in associated {
+        for (pcurve_id, surface_id, face_id) in associated {
             if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
                 pcurve_refs.push(pcurve);
+            } else if self.surface_chart_reversed(surface_id) {
+                self.loss(
+                    StepLossCode::PcurveCarrierUnwritable,
+                    format!(
+                        "face {face_id} pcurve {pcurve_id} was omitted because its geometry or surface reference could not be mapped to the reversed cone chart"
+                    ),
+                );
             } else if self.pcurves.contains_key(pcurve_id) {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
@@ -2575,7 +2589,12 @@ impl<'a> Builder<'a> {
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
         let surface = self.emit_surface(surface_id)?;
-        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry)?;
+        let reversed_cone = self.surface_chart_reversed(surface_id);
+        let curve = if reversed_cone {
+            geometry::pcurve_on_reversed_cone(&mut self.emitter, &pcurve.geometry)?
+        } else {
+            geometry::pcurve(&mut self.emitter, &pcurve.geometry)?
+        };
         let context = if let Some(context) = self.pcurve_context {
             context
         } else {
@@ -2610,8 +2629,8 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_surface(&mut self, surface_id: &str) -> Option<Ref> {
-        if let Some(r) = self.surface_refs.get(surface_id) {
-            return Some(*r);
+        if let Some(written) = self.surface_refs.get(surface_id) {
+            return Some(written.reference);
         }
         if self.geometry_emission_depth >= 256
             || !self.active_surfaces.insert(surface_id.to_string())
@@ -2629,12 +2648,24 @@ impl<'a> Builder<'a> {
             });
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_surface(solved, &definition)
-                    .map(|reference| (id, reference))
+                let reference = self.emit_procedural_surface(solved, &definition)?;
+                let reversed = match &definition {
+                    ProceduralSurfaceDefinition::ParallelOffset(payload) => {
+                        self.surface_chart_reversed(payload.support().as_str())
+                    }
+                    // The emitted trim maps its support ranges; its own local
+                    // chart remains unchanged.
+                    ProceduralSurfaceDefinition::Subset(_) => false,
+                    ProceduralSurfaceDefinition::Replica { source, .. } => {
+                        self.surface_chart_reversed(source.as_str())
+                    }
+                    _ => false,
+                };
+                Some((id, reference, reversed))
             });
-            let r = if let Some((id, reference)) = emitted {
+            let (r, reversed) = if let Some((id, reference, reversed)) = emitted {
                 self.written_procedural_surfaces.insert(id);
-                reference
+                (reference, reversed)
             } else {
                 let solved = solved?;
                 if !geometry::surface_is_supported(solved) {
@@ -2646,16 +2677,30 @@ impl<'a> Builder<'a> {
                 let reference = geometry::surface(&mut self.emitter, solved)?;
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
-                reference
+                let reversed = matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0);
+                (reference, reversed)
             };
-            Some(r)
+            Some((r, reversed))
         })();
         self.active_surfaces.remove(surface_id);
         self.geometry_emission_depth -= 1;
-        if let Some(r) = result {
-            self.surface_refs.insert(surface_id.to_string(), r);
+        if let Some((r, reversed)) = result {
+            self.surface_refs.insert(
+                surface_id.to_string(),
+                WrittenSurface {
+                    reference: r,
+                    reversed_chart: reversed,
+                },
+            );
+            return Some(r);
         }
-        result
+        None
+    }
+
+    fn surface_chart_reversed(&self, surface_id: &str) -> bool {
+        self.surface_refs
+            .get(surface_id)
+            .is_some_and(|surface| surface.reversed_chart)
     }
 
     fn emit_procedural_surface(
@@ -2716,12 +2761,19 @@ impl<'a> Builder<'a> {
             }
             ProceduralSurfaceDefinition::Subset(payload) => {
                 let support = payload.support();
-                let parameter_ranges = payload
+                let mut parameter_ranges = payload
                     .parameter_ranges()
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
                 let u_sense = payload.u_sense().as_ref()?;
                 let v_sense = payload.v_sense().as_ref()?;
                 let support = self.emit_surface(support.as_str())?;
+                let reverse_chart = self.surface_chart_reversed(payload.support().as_str());
+                if reverse_chart {
+                    for range in &mut parameter_ranges {
+                        range[0] = -range[0];
+                        range[1] = -range[1];
+                    }
+                }
                 Some(self.emitter.emit(
                     "RECTANGULAR_TRIMMED_SURFACE",
                     &format!(
@@ -2730,8 +2782,16 @@ impl<'a> Builder<'a> {
                         self.emitter.real(parameter_ranges[0][1]),
                         self.emitter.real(parameter_ranges[1][0]),
                         self.emitter.real(parameter_ranges[1][1]),
-                        if *u_sense { ".T." } else { ".F." },
-                        if *v_sense { ".T." } else { ".F." },
+                        if *u_sense == reverse_chart {
+                            ".F."
+                        } else {
+                            ".T."
+                        },
+                        if *v_sense == reverse_chart {
+                            ".F."
+                        } else {
+                            ".T."
+                        },
                     ),
                 ))
             }
