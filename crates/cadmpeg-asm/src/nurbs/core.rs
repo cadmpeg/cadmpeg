@@ -168,7 +168,7 @@ pub(super) fn owned_curve_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsCu
 }
 
 /// Decode the cache of each scope the `{ref N}` references in `toks` reach,
-/// depth first in stream order. `seen` breaks reference cycles.
+/// depth first in stream order. A visited set breaks reference cycles.
 ///
 /// [`toks::SubtypeTable::span`] answers with the balanced scope the reference
 /// names, so `decode_scope` reads a proven scope and needs no walk of its own
@@ -176,14 +176,19 @@ pub(super) fn owned_curve_cache(scope: toks::SubtypeScope<'_>) -> Option<NurbsCu
 fn cache_from_subtype_refs<T, D>(
     toks: &[Token],
     table: &toks::SubtypeTable,
-    seen: &mut Vec<usize>,
     decode_scope: D,
 ) -> Option<T>
 where
-    D: Fn(toks::SubtypeScope<'_>) -> Option<T> + Copy,
+    D: Fn(toks::SubtypeScope<'_>) -> Option<T>,
 {
-    for index in toks::subtype_refs(toks) {
-        if seen.contains(&index) {
+    let mut seen = std::collections::HashSet::new();
+    let mut pending = vec![toks::subtype_refs(toks)];
+    while let Some(references) = pending.last_mut() {
+        let Some(index) = references.next() else {
+            pending.pop();
+            continue;
+        };
+        if !seen.insert(index) {
             continue;
         }
         // The doc states what the index means. `docs/formats/asm.md`: "A named
@@ -196,14 +201,11 @@ where
         // decoder does about it is the decoder's decision: the search refuses
         // the stream rather than skipping the reference and reading the one
         // behind it.
-        seen.push(index);
         let target = table.span(index)?;
         if let Some(decoded) = decode_scope(target) {
             return Some(decoded);
         }
-        if let Some(decoded) = cache_from_subtype_refs(target.tokens(), table, seen, decode_scope) {
-            return Some(decoded);
-        }
+        pending.push(toks::subtype_refs(target.tokens()));
     }
     None
 }
@@ -213,11 +215,8 @@ pub fn surface_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsSurface> {
-    surface_cache(toks).or_else(|| {
-        cache_from_subtype_refs(toks, table, &mut Vec::new(), |scope| {
-            surface_cache(scope.tokens())
-        })
-    })
+    surface_cache(toks)
+        .or_else(|| cache_from_subtype_refs(toks, table, |scope| surface_cache(scope.tokens())))
 }
 
 /// [`owned_surface_cache`], following subtype-table references.
@@ -225,9 +224,8 @@ pub(super) fn owned_surface_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<NurbsSurface> {
-    owned_surface_cache(scope).or_else(|| {
-        cache_from_subtype_refs(scope.tokens(), table, &mut Vec::new(), owned_surface_cache)
-    })
+    owned_surface_cache(scope)
+        .or_else(|| cache_from_subtype_refs(scope.tokens(), table, owned_surface_cache))
 }
 
 /// Decode a curve cache, following subtype-table references.
@@ -235,11 +233,8 @@ pub fn curve_cache_resolving_refs(
     toks: &[Token],
     table: &toks::SubtypeTable,
 ) -> Option<NurbsCurve> {
-    curve_cache(toks).or_else(|| {
-        cache_from_subtype_refs(toks, table, &mut Vec::new(), |scope| {
-            curve_cache(scope.tokens())
-        })
-    })
+    curve_cache(toks)
+        .or_else(|| cache_from_subtype_refs(toks, table, |scope| curve_cache(scope.tokens())))
 }
 
 /// [`owned_curve_cache`], following subtype-table references.
@@ -247,9 +242,8 @@ pub(super) fn owned_curve_cache_resolving_refs(
     scope: toks::SubtypeScope<'_>,
     table: &toks::SubtypeTable,
 ) -> Option<NurbsCurve> {
-    owned_curve_cache(scope).or_else(|| {
-        cache_from_subtype_refs(scope.tokens(), table, &mut Vec::new(), owned_curve_cache)
-    })
+    owned_curve_cache(scope)
+        .or_else(|| cache_from_subtype_refs(scope.tokens(), table, owned_curve_cache))
 }
 
 /// Decode a surface `nubs`/`nurbs` block at `marker_pos`, or `None` if the bytes

@@ -2006,6 +2006,7 @@ fn model_brep_candidates(
 /// with more than one contributing entry, each graph is qualified by its
 /// entry basename.
 fn try_decode_text_model(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<Option<(BrepFacts, Brep)>, CodecError> {
     let names: Vec<String> = container::text_brep_names(scan)
@@ -2015,12 +2016,26 @@ fn try_decode_text_model(
     let mut parts: Vec<(BrepFacts, Brep)> = Vec::new();
     for name in &names {
         let bytes = scan.entry_bytes(name)?;
-        let stream = cadmpeg_asm::sat::parse(bytes).map_err(|error| {
-            CodecError::malformed(format_args!(
-                "text BREP entry {name} failed to parse: {error}"
-            ))
-        })?;
-        let decoded = brep::decode_text(&stream, bytes, name, crate::ids::ID_FORMAT)?;
+        let stream = match scan.text_breps.get(name) {
+            Some(crate::container::TextBrepFraming::Parsed(stream)) => stream,
+            Some(crate::container::TextBrepFraming::Unframed(error)) => {
+                return Err(CodecError::malformed(format_args!(
+                    "text BREP entry {name} failed to parse: {error}"
+                )));
+            }
+            Some(crate::container::TextBrepFraming::Malformed(error)) => {
+                return Err(CodecError::malformed(error));
+            }
+            Some(crate::container::TextBrepFraming::UnsupportedLength(error)) => {
+                return Err(CodecError::NotImplemented(error.to_string()));
+            }
+            None => {
+                return Err(CodecError::malformed(format_args!(
+                    "text BREP entry {name} was not framed"
+                )))
+            }
+        };
+        let decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
         if decoded.asm.surfaces.is_empty()
             && decoded.asm.points.is_empty()
             && decoded.asm.faces.is_empty()
@@ -3059,7 +3074,7 @@ fn decode_scanned_document<'a>(
                 .insert(binding.asm_body_key);
         }
         for candidate in &model_breps {
-            let Some(mut part) = try_decode_brep(scan, candidate)? else {
+            let Some(mut part) = try_decode_brep(ctx, scan, candidate)? else {
                 continue;
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
@@ -3136,7 +3151,7 @@ fn decode_scanned_document<'a>(
 
     // No binary stream decoded: the model may be carried only in the text
     // encoding.
-    if let Some((text_facts, text_brep)) = try_decode_text_model(scan)? {
+    if let Some((text_facts, text_brep)) = try_decode_text_model(ctx, scan)? {
         return finish_model_decode(
             ctx,
             scan,
@@ -4157,12 +4172,7 @@ fn decode_asm_history(
             header.width
         });
     let bytes = scan.entry_bytes(&history_brep.name)?;
-    Ok(crate::history::decode(
-        bytes,
-        &history_brep.name,
-        width,
-        &ctx.policy().limits,
-    ))
+    crate::history::decode(ctx, bytes, &history_brep.name, width, &ctx.policy().limits)
 }
 
 fn extend_related_design_records(
@@ -4803,6 +4813,7 @@ fn extend_related_design_records(
 /// The function returns `None` for an invalid header or a framed stream with no
 /// geometry. The caller then builds the container-metadata IR.
 fn try_decode_brep(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     brep_entry: &BrepFacts,
 ) -> Result<Option<Brep>, CodecError> {
@@ -4823,15 +4834,22 @@ fn try_decode_brep(
     // `End-of-ASM-data` record ends at EOF without the `0x11` terminator, so
     // it needs the EOF-tolerant framer used for the history partition.
     let framed = match *solved_record_limit {
-        Some(limit) => sab::frame(bytes, start, limit, width),
-        None => sab::frame_history(bytes, start, bytes.len(), width),
+        Some(limit) => sab::frame(ctx, bytes, start, limit, width),
+        None => sab::frame_history(ctx, bytes, start, bytes.len(), width),
     };
     let records = match framed {
         Ok(r) if !r.is_empty() => r,
+        Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         _ => return Ok(None),
     };
 
-    let decoded = brep::decode(&records, bytes, &brep_entry.name, crate::ids::ID_FORMAT)?;
+    let decoded = brep::decode(
+        ctx,
+        &records,
+        bytes,
+        &brep_entry.name,
+        crate::ids::ID_FORMAT,
+    )?;
     if decoded.asm.surfaces.is_empty()
         && decoded.asm.points.is_empty()
         && decoded.asm.faces.is_empty()

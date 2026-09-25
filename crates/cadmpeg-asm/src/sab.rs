@@ -12,8 +12,8 @@
 //! of each payload.
 
 use crate::kernel_header::RefWidth;
-use crate::stream_error::{StreamError, StreamFormat};
-use cadmpeg_core::decode::View;
+use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -36,6 +36,7 @@ pub(crate) fn vec3_le_at(bytes: &[u8], offset: usize) -> Option<[f64; 3]> {
 /// Header partition scanners use this after the framed solved records. Keeping
 /// the token law with SAB framing prevents ACIS and ASM headers from defining
 /// subtly different boundary recognizers.
+#[cfg(test)]
 pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bool {
     let Some((&0x0d, rest)) = bytes.get(at..).and_then(|tail| tail.split_first()) else {
         return false;
@@ -45,6 +46,62 @@ pub(crate) fn exact_identifier_at(bytes: &[u8], at: usize, expected: &str) -> bo
     };
     usize::from(length) == expected.len()
         && payload.get(..usize::from(length)) == Some(expected.as_bytes())
+}
+
+/// Scan record boundaries and exact names without constructing a record table.
+/// The history-partition classifiers use this before the admitted SAB parse.
+pub(crate) fn scan_history_boundary(
+    bytes: &[u8],
+    start: usize,
+    ref_width: RefWidth,
+    preamble: Option<&[&str]>,
+) -> Option<usize> {
+    let mut pos = start;
+    while pos < bytes.len() {
+        let rec_start = pos;
+        let mut name_index = 0usize;
+        let mut preamble_matches = preamble.is_some();
+        let mut delta_matches = true;
+        let mut preamble_candidate = false;
+        let mut name_done = false;
+        let mut depth = 0usize;
+        loop {
+            let (lexed, next) = lex(bytes, pos, ref_width).ok()?;
+            pos = next;
+            let terminal_name = matches!(lexed, Lexed::Ident(_));
+            match lexed {
+                Lexed::SubIdent(part) | Lexed::Ident(part) if !name_done => {
+                    preamble_matches &= preamble
+                        .and_then(|parts| parts.get(name_index))
+                        .is_some_and(|expected| *expected == part);
+                    delta_matches &= name_index == 0 && part == "delta_state";
+                    name_index += 1;
+                    if terminal_name {
+                        name_done = true;
+                        preamble_candidate = (preamble_matches
+                            && preamble.is_some_and(|parts| parts.len() == name_index))
+                            || (preamble.is_some()
+                                && name_index == 1
+                                && part == "Begin-of-ASM-History-Data");
+                        if delta_matches && name_index == 1 {
+                            return Some(rec_start);
+                        }
+                    }
+                }
+                Lexed::Value(Token::SubtypeOpen) => depth = depth.checked_add(1)?,
+                Lexed::Value(Token::SubtypeClose) => depth = depth.checked_sub(1)?,
+                Lexed::Terminator if depth == 0 => {
+                    if preamble_candidate {
+                        return Some(rec_start);
+                    }
+                    break;
+                }
+                Lexed::Terminator => return None,
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 /// A decoded SAB token. The codec assigns typed values to the payload it
@@ -220,6 +277,10 @@ pub fn payload_subtype_range(
                 }
                 payload_index += 1;
             }
+            Lexed::Str(_) => {
+                name_done = true;
+                payload_index += 1;
+            }
             Lexed::Terminator => return None,
             Lexed::Ident(_) | Lexed::SubIdent(_) => {}
         }
@@ -253,6 +314,13 @@ pub fn payload_token(
                 }
                 payload_index += 1;
             }
+            Lexed::Str(value) => {
+                name_done = true;
+                if payload_index == token_index {
+                    return Some((token_offset, Token::Str(value.to_owned())));
+                }
+                payload_index += 1;
+            }
             Lexed::Terminator => return None,
             Lexed::Ident(_) | Lexed::SubIdent(_) => {}
         }
@@ -263,13 +331,15 @@ pub fn payload_token(
 /// Read one token starting at `pos`. Returns the token (or a control marker) and
 /// the offset just past it. Control tags (`0x0d`/`0x0e` name tokens, `0x11`
 /// terminator) are returned via [`Lexed`] so the framer can act on them.
-pub(crate) enum Lexed {
+pub(crate) enum Lexed<'a> {
     /// A payload token.
     Value(Token),
     /// `0x0d` identifier (name terminator).
-    Ident(String),
+    Ident(&'a str),
     /// `0x0e` sub-identifier (name component).
-    SubIdent(String),
+    SubIdent(&'a str),
+    /// A borrowed `0x07`/`0x08`/`0x09`/`0x12` payload string.
+    Str(&'a str),
     /// `0x11` record terminator.
     Terminator,
 }
@@ -278,7 +348,7 @@ pub(crate) fn lex(
     bytes: &[u8],
     pos: usize,
     ref_width: RefWidth,
-) -> Result<(Lexed, usize), StreamError> {
+) -> Result<(Lexed<'_>, usize), StreamError> {
     let err = |reason: &str| StreamError {
         format: StreamFormat::Binary,
         offset: pos,
@@ -294,13 +364,11 @@ pub(crate) fn lex(
     let string = |start: usize, len: usize| {
         let end = start.checked_add(len).ok_or_else(truncated)?;
         let slice = bytes.get(start..end).ok_or_else(truncated)?;
-        std::str::from_utf8(slice)
-            .map_err(|error| StreamError {
-                format: StreamFormat::Binary,
-                offset: start + error.valid_up_to(),
-                reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
-            })
-            .map(str::to_owned)
+        std::str::from_utf8(slice).map_err(|error| StreamError {
+            format: StreamFormat::Binary,
+            offset: start + error.valid_up_to(),
+            reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+        })
     };
     let out = match tag {
         0x02 => (
@@ -331,17 +399,17 @@ pub(crate) fn lex(
         ),
         0x07 => {
             let len = *bytes.get(p).ok_or_else(truncated)? as usize;
-            (Lexed::Value(Token::Str(string(p + 1, len)?)), p + 1 + len)
+            (Lexed::Str(string(p + 1, len)?), p + 1 + len)
         }
         0x08 => {
             let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
-            (Lexed::Value(Token::Str(string(p + 2, len)?)), p + 2 + len)
+            (Lexed::Str(string(p + 2, len)?), p + 2 + len)
         }
         0x09 | 0x12 => {
             let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
-                Lexed::Value(Token::Str(string(p + ref_width.bytes(), len)?)),
+                Lexed::Str(string(p + ref_width.bytes(), len)?),
                 p + ref_width.bytes() + len,
             )
         }
@@ -401,32 +469,136 @@ pub(crate) fn lex(
 /// the end of `bytes` is a truncated stream, and it is refused with both the
 /// declared end and the available length.
 pub fn frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
-    frame_impl(bytes, start, limit, ref_width, false)
+) -> Result<Vec<Record>, StreamFailure> {
+    frame_impl(Some(ctx), bytes, start, limit, ref_width, false)
 }
 
 /// Frame a history-section slice whose final record ends at the enclosing
 /// stream boundary without an explicit `0x11` terminator.
 pub fn frame_history(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
-) -> Result<Vec<Record>, StreamError> {
-    frame_impl(bytes, start, limit, ref_width, true)
+) -> Result<Vec<Record>, StreamFailure> {
+    frame_impl(Some(ctx), bytes, start, limit, ref_width, true)
+}
+
+/// Frame source records for an encoder edit, outside a decode session.
+pub(crate) fn frame_for_edit(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: RefWidth,
+) -> Result<Vec<Record>, StreamFailure> {
+    frame_impl(None, bytes, start, limit, ref_width, false)
+}
+
+fn charge_items(
+    ctx: Option<&DecodeContext<'_>>,
+    count: u64,
+    operation: &'static str,
+) -> Result<(), StreamFailure> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(count, operation)?;
+    }
+    Ok(())
+}
+
+fn charge_retained(
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: u64,
+    operation: &'static str,
+) -> Result<(), StreamFailure> {
+    if let Some(ctx) = ctx {
+        ctx.charge_retained(bytes, operation)?;
+    }
+    Ok(())
+}
+
+fn grow_scratch(
+    scratch: &mut Option<ScopedReservation<'_>>,
+    bytes: u64,
+) -> Result<(), StreamFailure> {
+    if let Some(scratch) = scratch {
+        scratch.grow(bytes)?;
+    }
+    Ok(())
+}
+
+fn refuse_size(ctx: Option<&DecodeContext<'_>>, operation: &'static str) -> StreamFailure {
+    match ctx {
+        Some(ctx) => StreamFailure::Resource(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)),
+        None => StreamFailure::Parse(StreamError {
+            format: StreamFormat::Binary,
+            offset: 0,
+            reason: format!("{operation} exceeds the address space"),
+        }),
+    }
+}
+
+/// Admit a valid string payload before `lex` copies it. Invalid or truncated
+/// payloads stay with the lexer's byte-specific parse error.
+fn admit_lex_string(
+    ctx: Option<&DecodeContext<'_>>,
+    bytes: &[u8],
+    pos: usize,
+    ref_width: RefWidth,
+    name_done: bool,
+    scratch: &mut Option<ScopedReservation<'_>>,
+) -> Result<(), StreamFailure> {
+    let Some(tag) = bytes.get(pos).copied() else {
+        return Ok(());
+    };
+    let Some(prefix) = pos.checked_add(1) else {
+        return Ok(());
+    };
+    let (start, len) = match tag {
+        0x07 | 0x0d | 0x0e => (
+            prefix.checked_add(1),
+            bytes.get(prefix).copied().map(usize::from),
+        ),
+        0x08 => (
+            prefix.checked_add(2),
+            View::u16_le_at(bytes, prefix).map(usize::from),
+        ),
+        0x09 | 0x12 => (
+            prefix.checked_add(ref_width.bytes()),
+            int_le_at(bytes, prefix, ref_width).and_then(|value| usize::try_from(value).ok()),
+        ),
+        _ => return Ok(()),
+    };
+    let Some(payload) = start
+        .zip(len)
+        .and_then(|(start, len)| start.checked_add(len).and_then(|end| bytes.get(start..end)))
+    else {
+        return Ok(());
+    };
+    if std::str::from_utf8(payload).is_err() {
+        return Ok(());
+    }
+    if (tag == 0x0d || tag == 0x0e) && !name_done {
+        grow_scratch(scratch, payload.len() as u64)?;
+    } else {
+        charge_retained(ctx, payload.len() as u64, "retain SAB token string")?;
+    }
+    Ok(())
 }
 
 fn frame_impl(
+    ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
     start: usize,
     limit: usize,
     ref_width: RefWidth,
     eof_terminates_final_record: bool,
-) -> Result<Vec<Record>, StreamError> {
+) -> Result<Vec<Record>, StreamFailure> {
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -435,14 +607,16 @@ fn frame_impl(
                 "record stream declares its end at byte {limit}, but the stream holds {} bytes",
                 bytes.len()
             ),
-        });
+        }
+        .into());
     };
     if start > limit {
         return Err(StreamError {
             format: StreamFormat::Binary,
             offset: start,
             reason: format!("record stream starts at byte {start} after its end at byte {limit}"),
-        });
+        }
+        .into());
     }
     let mut records = Vec::new();
     let mut pos = start;
@@ -450,33 +624,52 @@ fn frame_impl(
 
     while pos < limit {
         let rec_start = pos;
+        let mut scratch = match ctx {
+            Some(ctx) => Some(ctx.reserve_scoped(0, "frame SAB record")?),
+            None => None,
+        };
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
-        let mut depth = 0usize;
+        let mut depth_guards = Vec::new();
         let mut name_done = false;
         let mut is_delta = false;
         let mut embedded_history_edge = false;
         let mut payload_start = true;
 
         loop {
-            if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
+            if eof_terminates_final_record
+                && pos == limit
+                && depth_guards.is_empty()
+                && !name_parts.is_empty()
+            {
                 break;
             }
             let token_offset = pos;
+            admit_lex_string(ctx, bytes, pos, ref_width, name_done, &mut scratch)?;
+            if let Some(ctx) = ctx {
+                ctx.charge_work(1, "lex SAB token")?;
+            }
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
-                Lexed::Terminator if depth == 0 => break,
+                Lexed::Terminator if depth_guards.is_empty() => break,
                 Lexed::Terminator => {
                     return Err(StreamError {
                         format: StreamFormat::Binary,
                         offset: token_offset,
                         reason: "record terminates inside a subtype scope".to_string(),
-                    });
+                    }
+                    .into());
                 }
-                Lexed::SubIdent(s) if !name_done => name_parts.push(s),
+                Lexed::SubIdent(s) if !name_done => {
+                    charge_items(ctx, 1, "frame SAB name part")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
+                    name_parts.push(s.to_owned());
+                }
                 Lexed::Ident(s) if !name_done => {
-                    name_parts.push(s);
+                    charge_items(ctx, 1, "frame SAB name part")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
+                    name_parts.push(s.to_owned());
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
@@ -493,39 +686,68 @@ fn frame_impl(
                     // marker chain; its following identifier is the wrapped
                     // record's dispatch name.
                     if payload_start
-                        && name_parts.join("-") == "End-of-ASM-History-Section"
+                        && name_parts
+                            .iter()
+                            .map(String::as_str)
+                            .eq(["End", "of", "ASM", "History", "Section"])
                         && identifier == "edge"
                     {
                         embedded_history_edge = true;
                     }
                     payload_start = false;
-                    tokens.push(Token::Ident(identifier));
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    tokens.push(Token::Ident(identifier.to_owned()));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
-                    tokens.push(Token::SubIdent(identifier));
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    tokens.push(Token::SubIdent(identifier.to_owned()));
+                }
+                Lexed::Str(value) => {
+                    payload_start = false;
+                    name_done = true;
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    tokens.push(Token::Str(value.to_owned()));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
-                    depth += 1;
+                    let guard = match ctx {
+                        Some(ctx) => Some(ctx.enter_nested("frame SAB subtype")?),
+                        None => None,
+                    };
+                    charge_items(ctx, 1, "frame SAB subtype guards")?;
+                    grow_scratch(
+                        &mut scratch,
+                        std::mem::size_of::<Option<cadmpeg_core::decode::DepthGuard<'_>>>() as u64,
+                    )?;
+                    depth_guards.push(guard);
                     name_done = true;
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     tokens.push(Token::SubtypeOpen);
                 }
                 Lexed::Value(Token::SubtypeClose) => {
                     payload_start = false;
-                    if depth == 0 {
+                    if depth_guards.pop().is_none() {
                         return Err(StreamError {
                             format: StreamFormat::Binary,
                             offset: token_offset,
                             reason: "record closes an unopened subtype scope".to_string(),
-                        });
+                        }
+                        .into());
                     }
-                    depth -= 1;
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
                     payload_start = false;
                     name_done = true;
+                    charge_items(ctx, 1, "frame SAB token")?;
+                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     tokens.push(v);
                 }
             }
@@ -534,12 +756,40 @@ fn frame_impl(
         if is_delta {
             break;
         }
+        let separators = if name_parts.is_empty() {
+            0
+        } else {
+            name_parts.len() - 1
+        };
+        let name_bytes = name_parts
+            .iter()
+            .try_fold(0usize, |used, part| used.checked_add(part.len()))
+            .and_then(|length| length.checked_add(separators))
+            .ok_or_else(|| refuse_size(ctx, "SAB record name"))?;
+        charge_retained(
+            ctx,
+            if embedded_history_edge {
+                4
+            } else {
+                name_bytes as u64
+            },
+            "retain SAB record name",
+        )?;
         let name = if embedded_history_edge {
             "edge".to_owned()
         } else {
             name_parts.join("-")
         };
 
+        let token_bytes = tokens
+            .len()
+            .checked_mul(std::mem::size_of::<Token>())
+            .ok_or_else(|| refuse_size(ctx, "SAB token bytes"))?;
+        charge_retained(ctx, token_bytes as u64, "retain SAB tokens")?;
+        charge_items(ctx, 1, "frame SAB record")?;
+        if let Some(ctx) = ctx {
+            ctx.charge_entities(1, "admit SAB native record")?;
+        }
         records.push(Record {
             index,
             name,
@@ -556,8 +806,103 @@ fn frame_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{exact_identifier_at, frame, frame_history, payload_token};
+    use super::{
+        exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
+        payload_token, Record,
+    };
     use crate::kernel_header::RefWidth;
+    use crate::stream_error::{StreamError, StreamFailure};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn sab_framing_refuses_token_name_record_and_scope_resources() {
+        type LimitCase = (ResourceDimension, fn(&mut DecodePolicy));
+        let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
+        let cases: [LimitCase; 6] = [
+            (ResourceDimension::RetainedBytes, |policy| {
+                policy.limits.max_retained_bytes = 0;
+            }),
+            (ResourceDimension::Entities, |policy| {
+                policy.limits.max_entities = 0;
+            }),
+            (ResourceDimension::CollectionItems, |policy| {
+                policy.limits.max_collection_items = 0;
+            }),
+            (ResourceDimension::MaterializedBytes, |policy| {
+                policy.limits.max_materialized_bytes = 0;
+            }),
+            (ResourceDimension::WorkUnits, |policy| {
+                policy.limits.max_work_units = 0;
+            }),
+            (ResourceDimension::RecursionDepth, |policy| {
+                policy.limits.max_recursion_depth = 0;
+            }),
+        ];
+        for (expected, set_limit) in cases {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            set_limit(&mut policy);
+            let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+                .expect("source fits input limit");
+            let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight)
+                .expect_err("resource limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(limit.dimension, expected);
+        }
+        assert_eq!(
+            frame(bytes, 0, bytes.len(), RefWidth::Eight).unwrap().len(),
+            1
+        );
+    }
+
+    fn framed(
+        bytes: &[u8],
+        start: usize,
+        limit: usize,
+        width: RefWidth,
+        history: bool,
+    ) -> Result<Vec<Record>, StreamError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("test stream fits the service input limit");
+        let outcome = if history {
+            frame_history_stream(&ctx, bytes, start, limit, width)
+        } else {
+            frame_stream(&ctx, bytes, start, limit, width)
+        };
+        match outcome {
+            Ok(records) => Ok(records),
+            Err(
+                StreamFailure::Parse(error)
+                | StreamFailure::Malformed(error)
+                | StreamFailure::NotImplemented(error),
+            ) => Err(error),
+            Err(StreamFailure::Resource(error)) => {
+                panic!("test stream exhausted a resource: {error}")
+            }
+        }
+    }
+
+    fn frame(
+        bytes: &[u8],
+        start: usize,
+        limit: usize,
+        width: RefWidth,
+    ) -> Result<Vec<Record>, StreamError> {
+        framed(bytes, start, limit, width, false)
+    }
+
+    fn frame_history(
+        bytes: &[u8],
+        start: usize,
+        limit: usize,
+        width: RefWidth,
+    ) -> Result<Vec<Record>, StreamError> {
+        framed(bytes, start, limit, width, true)
+    }
 
     #[test]
     fn subtype_lookup_rejects_a_record_terminator_before_its_close() {

@@ -4745,6 +4745,7 @@ pub(super) fn emit_attributes(
 /// Preserve undecoded carriers and opaque cached procedural surfaces referenced
 /// by real topology as passthrough unknown records.
 pub(super) fn emit_passthrough_unknowns(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
     bytes: &[u8],
@@ -4773,10 +4774,12 @@ pub(super) fn emit_passthrough_unknowns(
                     bytes.len()
                 ))
             })?;
+            let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
+            ctx.charge_collection_items(1, "retain ASM unknown record")?;
             out.unknowns.push(UnknownRecord::retained(
                 unknown_record_id(r, format)?,
                 r.offset as u64,
-                retained.to_vec(),
+                retained,
                 Vec::new(),
             ));
         }

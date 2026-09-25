@@ -155,8 +155,10 @@ impl AsmEditSet {
         let limit =
             asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
         let ref_width = header.width;
-        let records = sab::frame(bytes, start, limit, ref_width).map_err(|error| {
-            CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
+        let records = sab::frame_for_edit(bytes, start, limit, ref_width).map_err(|failure| {
+            failure.into_codec_error(|error| {
+                CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
+            })
         })?;
         let header_scale = header.metadata.scale.unwrap_or(1.0);
         Ok(Self::from_framed(records, ref_width, header_scale))
@@ -1971,7 +1973,7 @@ mod tests {
             let mut bytes = vec![0x0d, 1, b'x', 0x06];
             bytes.extend_from_slice(&1.0_f64.to_le_bytes());
             bytes.push(0x11);
-            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
             for expected in [
                 0.0_f64,
@@ -2149,7 +2151,8 @@ mod tests {
     #[test]
     fn ascii_field_patch_rejects_a_truncated_payload() {
         let original = b"\x0d\x01x\x07\x05surf1\x11";
-        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
         let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
         let mut bytes = original[..7].to_vec();
         let before = bytes.clone();
@@ -2170,7 +2173,8 @@ mod tests {
             let mut original = vec![0x0d, 1, b'x', tag];
             original.extend_from_slice(&[0; 8][..payload_width]);
             original.push(0x11);
-            let records = crate::sab::frame(&original, 0, original.len(), width).unwrap();
+            let records =
+                crate::test_support::sab::frame(&original, 0, original.len(), width).unwrap();
             let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
             let mut bytes = original[..4].to_vec();
             let before = bytes.clone();
@@ -2196,7 +2200,8 @@ mod tests {
     #[test]
     fn ascii_field_patch_preserves_the_token_length_and_surrounding_bytes() {
         let mut bytes = b"\x0d\x01x\x07\x05surf1\x11".to_vec();
-        let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
         let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1.0);
         edits
             .patch_ascii_field(&mut bytes, &records[0], 0, "surf2")
@@ -2220,7 +2225,7 @@ mod tests {
             let mut bytes = vec![0x0d, 1, b'x', tag];
             bytes.extend_from_slice(&[0; 8][..payload_width]);
             bytes.push(0x11);
-            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             let edits = AsmEditSet::from_framed(records.clone(), width, 1.0);
             edits
                 .patch_truecolor_field(&mut bytes, &records[0], 0, u32::MAX)
@@ -2237,7 +2242,8 @@ mod tests {
     #[test]
     fn native_bool_patch_rejects_a_truncated_record_without_writing() {
         let original = b"\x0d\x08intcurve\x0b\x11";
-        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
         let offset =
             AsmEditSet::required_payload_field_at(original, &records[0], RefWidth::Eight, 0, 0x0b)
                 .unwrap();
@@ -2252,7 +2258,8 @@ mod tests {
     #[test]
     fn procedural_writer_returns_malformed_for_a_truncated_framed_record() {
         let original = b"\x0d\x08intcurve\x11";
-        let records = crate::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(original, 0, original.len(), RefWidth::Eight).unwrap();
         let mut truncated = original[..original.len() - 1].to_vec();
         let before = truncated.clone();
         let error = super::patch_subset_definition(
@@ -2289,7 +2296,8 @@ mod tests {
             original.extend_from_slice(&component.to_le_bytes());
         }
         original.push(0x11);
-        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
         let geometry = PcurveNurbs::from_lanes(
             1,
             vec![0.0, 0.0, 1.0, 1.0],
@@ -2344,7 +2352,8 @@ mod tests {
         bytes.push(0x06);
         bytes.extend_from_slice(&1.0f64.to_le_bytes());
         bytes.push(0x11);
-        let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
         let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, 1e308);
         let transform = cadmpeg_ir::transform::Transform::affine([
             [1.0, 0.0, 0.0, 1e308],
@@ -2373,7 +2382,8 @@ mod tests {
         original.push(0x06);
         original.extend_from_slice(&1.0f64.to_le_bytes());
         original.push(0x11);
-        let records = crate::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
+        let records =
+            crate::test_support::sab::frame(&original, 0, original.len(), RefWidth::Eight).unwrap();
         for scale in [0.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut bytes = original.clone();
             let edits = AsmEditSet::from_framed(records.clone(), RefWidth::Eight, scale);

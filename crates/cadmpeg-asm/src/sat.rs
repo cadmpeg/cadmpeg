@@ -22,7 +22,8 @@
 
 use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
-use crate::stream_error::{StreamError, StreamFormat};
+use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +151,12 @@ impl FieldReader<'_> {
     /// Read one raw whitespace-delimited field. Returns `None` at end of
     /// input. An `@N` field consumes one separator byte and exactly `N` raw
     /// bytes, which may include whitespace and newlines.
-    fn next_field(&mut self) -> Result<Option<(usize, String)>, StreamError> {
+    fn next_field(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scratch: &mut ScopedReservation<'_>,
+        retained: bool,
+    ) -> Result<Option<(usize, String)>, StreamFailure> {
         self.skip_ws();
         if self.pos >= self.bytes.len() {
             return Ok(None);
@@ -159,19 +165,29 @@ impl FieldReader<'_> {
         while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
             self.pos += 1;
         }
-        let word = std::str::from_utf8(&self.bytes[start..self.pos])
-            .map_err(|error| StreamError {
+        let word =
+            std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|error| StreamError {
                 format: StreamFormat::Text,
                 offset: start + error.valid_up_to(),
                 reason: "field is not valid UTF-8".to_string(),
-            })?
-            .to_owned();
+            })?;
+        if retained {
+            ctx.charge_retained(word.len() as u64, "retain SAT record name")?;
+        } else {
+            scratch.grow(word.len() as u64)?;
+        }
+        let word = word.to_owned();
         Ok(Some((start, word)))
     }
 
     /// Consume the `@N` payload after its length field: one separator byte,
     /// then `N` raw bytes.
-    fn read_str_payload(&mut self, len: usize, at: usize) -> Result<String, StreamError> {
+    fn read_str_payload(
+        &mut self,
+        len: usize,
+        at: usize,
+        scratch: &mut ScopedReservation<'_>,
+    ) -> Result<String, StreamFailure> {
         self.pos += 1; // one separator byte after the length field
         let end = self
             .pos
@@ -182,15 +198,17 @@ impl FieldReader<'_> {
                 format: StreamFormat::Text,
                 offset: at,
                 reason: format!("truncated @{len} string"),
-            });
+            }
+            .into());
         };
-        let payload = std::str::from_utf8(&self.bytes[self.pos..end])
-            .map_err(|error| StreamError {
+        let payload =
+            std::str::from_utf8(&self.bytes[self.pos..end]).map_err(|error| StreamError {
                 format: StreamFormat::Text,
                 offset: self.pos + error.valid_up_to(),
                 reason: format!("@{len} string is not valid UTF-8"),
-            })?
-            .to_owned();
+            })?;
+        scratch.grow(payload.len() as u64)?;
+        let payload = payload.to_owned();
         self.pos = end;
         Ok(payload)
     }
@@ -201,11 +219,7 @@ impl FieldReader<'_> {
 // ---------------------------------------------------------------------------
 
 /// Split one header line into whitespace-separated fields.
-fn header_line<'a>(
-    bytes: &'a [u8],
-    pos: &mut usize,
-    what: &str,
-) -> Result<Vec<&'a [u8]>, StreamError> {
+fn header_line<'a>(bytes: &'a [u8], pos: &mut usize, what: &str) -> Result<&'a [u8], StreamError> {
     let start = *pos;
     let end = bytes[start..]
         .iter()
@@ -217,14 +231,11 @@ fn header_line<'a>(
             reason: format!("missing {what} line"),
         })?;
     *pos = end + 1;
-    Ok(bytes[start..end]
-        .split(|b| is_ws(*b))
-        .filter(|field| !field.is_empty())
-        .collect())
+    Ok(&bytes[start..end])
 }
 
 fn header_int<T: std::str::FromStr>(
-    field: Option<&&[u8]>,
+    field: Option<&[u8]>,
     at: usize,
     what: &str,
 ) -> Result<T, StreamError> {
@@ -241,11 +252,12 @@ fn header_int<T: std::str::FromStr>(
 /// Read one `N <bytes>` counted string from a header line's raw byte slice.
 /// Header strings use a bare count without the record encoding's `@` prefix.
 fn counted_string(
+    ctx: &DecodeContext<'_>,
     line: &[u8],
     pos: &mut usize,
     at: usize,
     what: &str,
-) -> Result<String, StreamError> {
+) -> Result<String, StreamFailure> {
     while *pos < line.len() && is_ws(line[*pos]) {
         *pos += 1;
     }
@@ -266,7 +278,8 @@ fn counted_string(
             format: StreamFormat::Text,
             offset: at,
             reason: format!("header {what} count has no separator"),
-        });
+        }
+        .into());
     }
     *pos += 1;
     let end = pos
@@ -277,31 +290,38 @@ fn counted_string(
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
-    let value = std::str::from_utf8(&line[*pos..end])
-        .map_err(|error| StreamError {
-            format: StreamFormat::Text,
-            offset: at + *pos + error.valid_up_to(),
-            reason: format!("header {what} string is not valid UTF-8"),
-        })?
-        .to_owned();
+    let value = std::str::from_utf8(&line[*pos..end]).map_err(|error| StreamError {
+        format: StreamFormat::Text,
+        offset: at + *pos + error.valid_up_to(),
+        reason: format!("header {what} string is not valid UTF-8"),
+    })?;
+    ctx.charge_retained(value.len() as u64, "retain SAT header string")?;
+    let value = value.to_owned();
     *pos = end;
     Ok(value)
 }
 
-fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError> {
+fn parse_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    pos: &mut usize,
+) -> Result<TextHeader, StreamFailure> {
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
-    if line1.len() != 4 {
+    let mut fields = line1.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
+    let line1: [Option<&[u8]>; 4] = std::array::from_fn(|_| fields.next());
+    if line1.iter().any(Option::is_none) || fields.next().is_some() {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "save-format header line must contain four fields".to_string(),
-        });
+        }
+        .into());
     }
-    let save_format_version = header_int(line1.first(), at, "save format")?;
-    header_int::<u32>(line1.get(1), at, "record count")?;
-    let entity_count = header_int(line1.get(2), at, "entity count")?;
-    let flags = header_int(line1.get(3), at, "flags")?;
+    let save_format_version = header_int(line1[0], at, "save format")?;
+    header_int::<u32>(line1[1], at, "record count")?;
+    let entity_count = header_int(line1[2], at, "entity count")?;
+    let flags = header_int(line1[3], at, "flags")?;
 
     let at = *pos;
     let line2_start = *pos;
@@ -317,27 +337,31 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
     let line2 = &bytes[line2_start..line2_end];
     *pos = line2_end + 1;
     let mut cursor = 0usize;
-    let product_family = counted_string(line2, &mut cursor, at, "product family")?;
-    let product_version = counted_string(line2, &mut cursor, at, "product version")?;
-    let save_date = counted_string(line2, &mut cursor, at, "save date")?;
+    let product_family = counted_string(ctx, line2, &mut cursor, at, "product family")?;
+    let product_version = counted_string(ctx, line2, &mut cursor, at, "product version")?;
+    let save_date = counted_string(ctx, line2, &mut cursor, at, "save date")?;
     if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "product header line must contain three counted strings".to_string(),
-        });
+        }
+        .into());
     }
 
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
-    if line3.len() != 3 {
+    let mut fields = line3.split(|b| is_ws(*b)).filter(|field| !field.is_empty());
+    let line3: [Option<&[u8]>; 3] = std::array::from_fn(|_| fields.next());
+    if line3.iter().any(Option::is_none) || fields.next().is_some() {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "tolerance header line must contain three fields".to_string(),
-        });
+        }
+        .into());
     }
-    let float = |field: Option<&&[u8]>, what: &str| -> Result<f64, StreamError> {
+    let float = |field: Option<&[u8]>, what: &str| -> Result<f64, StreamError> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
             .and_then(|field| field.parse().ok())
@@ -347,22 +371,24 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
                 reason: format!("header line has no {what} field"),
             })
     };
-    let scale = float(line3.first(), "scale")?;
+    let scale = float(line3[0], "scale")?;
     if !scale.is_finite() || scale <= 0.0 {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header scale must be finite and positive".to_string(),
-        });
+        }
+        .into());
     }
-    let resabs = float(line3.get(1), "resabs")?;
-    let resnor = float(line3.get(2), "resnor")?;
+    let resabs = float(line3[1], "resabs")?;
+    let resnor = float(line3[2], "resnor")?;
     if !resabs.is_finite() || resabs < 0.0 || !resnor.is_finite() || resnor < 0.0 {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
-        });
+        }
+        .into());
     }
     let normalized_resabs = resabs_cm(scale, resabs);
     if resabs > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
@@ -370,7 +396,8 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
             format: StreamFormat::Text,
             offset: at,
             reason: "header resabs cannot be represented in centimetres".to_string(),
-        });
+        }
+        .into());
     }
     Ok(TextHeader {
         save_format_version,
@@ -390,18 +417,28 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, StreamError
 // ---------------------------------------------------------------------------
 
 /// Parse a complete text stream into its header and typed record table.
-pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
+pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, StreamFailure> {
     let mut pos = 0usize;
-    let header = parse_header(bytes, &mut pos)?;
+    let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let len_factor = header.scale / 10.0;
+    let scale = header.scale;
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
     let mut terminator = None;
+    let mut admitted_entities = 0_u64;
+    ctx.admit_entities(
+        header.entity_count,
+        &mut admitted_entities,
+        "preflight SAT header entities",
+    )?;
     // Record name field, then payload fields until the terminator.
-    'stream: while let Some((rec_start, name)) = reader.next_field()? {
+    'stream: loop {
+        let mut scratch = ctx.reserve_scoped(0, "frame SAT record")?;
+        let Some((rec_start, name)) = reader.next_field(ctx, &mut scratch, true)? else {
+            break;
+        };
         match name.as_str() {
             "End-of-ASM-data" => {
                 terminator = Some(Terminator::Asm);
@@ -417,12 +454,13 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
         let mut prims = Vec::new();
         let mut subtype_depth = 0usize;
         loop {
-            let Some((at, field)) = reader.next_field()? else {
+            let Some((at, field)) = reader.next_field(ctx, &mut scratch, false)? else {
                 return Err(StreamError {
                     format: StreamFormat::Text,
                     offset: rec_start,
                     reason: format!("record `{name}` has no `#` terminator"),
-                });
+                }
+                .into());
             };
             if field == "#" {
                 if subtype_depth != 0 {
@@ -430,11 +468,12 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
                         format: StreamFormat::Text,
                         offset: at,
                         reason: format!("record `{name}` terminates inside a subtype scope"),
-                    });
+                    }
+                    .into());
                 }
                 break;
             }
-            let prim = lex_prim(&mut reader, at, field)?;
+            let prim = lex_prim(&mut reader, at, field, &mut scratch)?;
             match prim {
                 Prim::Open => subtype_depth += 1,
                 Prim::Close if subtype_depth == 0 => {
@@ -442,15 +481,61 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
                         format: StreamFormat::Text,
                         offset: at,
                         reason: format!("record `{name}` closes an unopened subtype scope"),
-                    });
+                    }
+                    .into());
                 }
                 Prim::Close => subtype_depth -= 1,
                 _ => {}
             }
+            ctx.charge_collection_items(1, "frame SAT primitive")?;
+            scratch.grow(std::mem::size_of::<Prim>() as u64)?;
+            ctx.charge_work(1, "lex SAT primitive")?;
             prims.push(prim);
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
-        let tokens = type_record(head, &prims, len_factor);
+        let candidates = head_shapes(head).len() + 1;
+        let possible_tokens = prims
+            .len()
+            .checked_mul(candidates)
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(possible_tokens as u64, "type SAT tokens")?;
+        ctx.charge_work(possible_tokens as u64, "type SAT tokens")?;
+        let token_bytes = possible_tokens
+            .checked_mul(std::mem::size_of::<Token>())
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
+        scratch.grow(token_bytes as u64)?;
+        let string_bytes = prims
+            .iter()
+            .try_fold(0usize, |used, prim| {
+                let extra = match prim {
+                    Prim::Str(value) | Prim::Word(value) => value.len(),
+                    _ => 0,
+                };
+                used.checked_add(extra)
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
+        ctx.charge_retained(string_bytes as u64, "retain SAT typed strings")?;
+        let tokens = type_record(head, &prims, scale).map_err(|failure| {
+            let error = StreamError {
+                format: StreamFormat::Text,
+                offset: rec_start,
+                reason: failure.reason().to_string(),
+            };
+            match failure {
+                TypeFailure::UnrepresentableLength => StreamFailure::NotImplemented(error),
+                TypeFailure::InvalidSplineCount => StreamFailure::Malformed(error),
+            }
+        })?;
+        ctx.charge_retained(
+            (tokens.len() * std::mem::size_of::<Token>()) as u64,
+            "retain SAT typed tokens",
+        )?;
+        ctx.charge_collection_items(1, "frame SAT record")?;
+        ctx.admit_entities(
+            (records.len() + 1) as u64,
+            &mut admitted_entities,
+            "admit SAT native records",
+        )?;
         records.push(Record {
             index: records.len(),
             name,
@@ -465,7 +550,8 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
             format: StreamFormat::Text,
             offset: reader.pos,
             reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
-        });
+        }
+        .into());
     };
     reader.skip_ws();
     if reader.pos != bytes.len() {
@@ -473,7 +559,8 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
             format: StreamFormat::Text,
             offset: reader.pos,
             reason: "non-whitespace data follows the stream terminator".to_string(),
-        });
+        }
+        .into());
     }
     Ok(TextStream {
         header,
@@ -482,7 +569,12 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
     })
 }
 
-fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Prim, StreamError> {
+fn lex_prim(
+    reader: &mut FieldReader<'_>,
+    at: usize,
+    field: String,
+    scratch: &mut ScopedReservation<'_>,
+) -> Result<Prim, StreamFailure> {
     if let Some(rest) = field.strip_prefix('$') {
         let index = rest.parse::<i64>().map_err(|_| StreamError {
             format: StreamFormat::Text,
@@ -497,7 +589,7 @@ fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Pr
             offset: at,
             reason: "string field has no valid decimal byte count".to_string(),
         })?;
-        return Ok(Prim::Str(reader.read_str_payload(len, at)?));
+        return Ok(Prim::Str(reader.read_str_payload(len, at, scratch)?));
     }
     if field == "{" {
         return Ok(Prim::Open);
@@ -510,14 +602,14 @@ fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Pr
         .or_else(|| field.strip_prefix('-'))
         .unwrap_or(&field);
     if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return field
-            .parse::<i64>()
-            .map(Prim::Integer)
-            .map_err(|_| StreamError {
+        return field.parse::<i64>().map(Prim::Integer).map_err(|_| {
+            StreamError {
                 format: StreamFormat::Text,
                 offset: at,
                 reason: "integer field is outside the signed 64-bit range".to_string(),
-            });
+            }
+            .into()
+        });
     }
     if let Ok(value) = field.parse::<f64>() {
         return Ok(Prim::Real(value));
@@ -605,11 +697,54 @@ const CURV_DIR: &[(&str, i64)] = &[("left", 0), ("right", 2)];
 struct Cur<'a> {
     prims: &'a [Prim],
     pos: usize,
-    /// Multiplier converting stream-unit lengths into centimetres.
-    k: f64,
+    /// Millimetres per stream length unit.
+    scale: f64,
+    failure: Option<TypeFailure>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypeFailure {
+    UnrepresentableLength,
+    InvalidSplineCount,
+}
+
+impl TypeFailure {
+    fn reason(self) -> &'static str {
+        match self {
+            Self::UnrepresentableLength => "source length cannot be represented in centimetres",
+            Self::InvalidSplineCount => "spline multiplicity or degree is invalid",
+        }
+    }
+}
+
+/// Keep the division after multiplication when a subnormal scale loses its
+/// value in `scale / 10`; otherwise the first product avoids an intermediate
+/// overflow for large source coordinates.
+fn length_cm(value: f64, scale: f64) -> Option<f64> {
+    let direct = value * (scale / 10.0);
+    let converted = if value != 0.0 && direct == 0.0 {
+        (value / 10.0) * scale
+    } else {
+        direct
+    };
+    (converted.is_finite() && (value == 0.0 || converted != 0.0)).then_some(converted)
 }
 
 impl<'a> Cur<'a> {
+    fn length(&mut self, value: f64) -> Option<f64> {
+        match length_cm(value, self.scale) {
+            Some(converted) => Some(converted),
+            None => {
+                self.failure = Some(TypeFailure::UnrepresentableLength);
+                None
+            }
+        }
+    }
+
+    fn invalid_spline_count<T>(&mut self) -> Option<T> {
+        self.failure = Some(TypeFailure::InvalidSplineCount);
+        None
+    }
     fn peek(&self) -> Option<&'a Prim> {
         self.prims.get(self.pos)
     }
@@ -701,7 +836,7 @@ impl<'a> Cur<'a> {
                 self.pos = mark;
                 return None;
             };
-            *value = if scale { number * self.k } else { number };
+            *value = if scale { self.length(number)? } else { number };
         }
         Some(values)
     }
@@ -759,12 +894,16 @@ fn take_slot(cur: &mut Cur<'_>, slot: Slot, out: &mut Vec<Token>) -> Option<()> 
         }
         Slot::DLen => {
             let value = cur.num()?;
-            out.push(Token::Double(value * cur.k));
+            out.push(Token::Double(cur.length(value)?));
             Some(())
         }
         Slot::DLenSentinel => {
             let value = cur.num()?;
-            let converted = if value == -1.0 { value } else { value * cur.k };
+            let converted = if value == -1.0 {
+                value
+            } else {
+                cur.length(value)?
+            };
             out.push(Token::Double(converted));
             Some(())
         }
@@ -841,11 +980,23 @@ fn run_shape(cur: &mut Cur<'_>, slots: &[Slot], out: &mut Vec<Token>) -> Option<
 }
 
 /// Try one candidate shape against the complete field list.
-fn try_shape(prims: &[Prim], k: f64, slots: &[Slot]) -> Option<Vec<Token>> {
-    let mut cur = Cur { prims, pos: 0, k };
+fn try_shape(
+    prims: &[Prim],
+    scale: f64,
+    slots: &[Slot],
+) -> Result<Option<Vec<Token>>, TypeFailure> {
+    let mut cur = Cur {
+        prims,
+        pos: 0,
+        scale,
+        failure: None,
+    };
     let mut out = Vec::new();
-    run_shape(&mut cur, slots, &mut out)?;
-    cur.done().then_some(out)
+    let matched = run_shape(&mut cur, slots, &mut out).is_some() && cur.done();
+    match cur.failure {
+        Some(failure) => Err(failure),
+        None => Ok(matched.then_some(out)),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -859,6 +1010,42 @@ enum BsKind {
     Parameter,
     /// Three model-space lengths per pole.
     Model,
+}
+
+/// Read one spline knot vector and derive its pole count without signed
+/// overflow or an unchecked loop count.
+fn spline_poles(cur: &mut Cur<'_>, knots: i64, degree: i64, out: &mut Vec<Token>) -> Option<usize> {
+    let Some(knot_count) = usize::try_from(knots).ok() else {
+        return cur.invalid_spline_count();
+    };
+    if degree < 1 || knot_count < 2 || knot_count > (cur.prims.len() - cur.pos) / 2 {
+        return cur.invalid_spline_count();
+    }
+    let mut sum = 0i64;
+    for _ in 0..knot_count {
+        let knot = cur.num()?;
+        let mult = cur.long()?;
+        if mult < 1 {
+            return cur.invalid_spline_count();
+        }
+        sum = match sum.checked_add(mult) {
+            Some(value) => value,
+            None => return cur.invalid_spline_count(),
+        };
+        out.push(Token::Double(knot));
+        out.push(Token::Long(mult));
+    }
+    let Some(poles) = degree
+        .checked_sub(1)
+        .and_then(|endpoint_adjustment| sum.checked_sub(endpoint_adjustment))
+        .and_then(|count| usize::try_from(count).ok())
+    else {
+        return cur.invalid_spline_count();
+    };
+    if poles < 2 {
+        return cur.invalid_spline_count();
+    }
+    Some(poles)
 }
 
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
@@ -877,29 +1064,24 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
     cur.enum_word(CLOSURE, out)?;
     let knots = cur.long()?;
     out.push(Token::Long(knots));
-    let mut mult_sum = 0i64;
-    for _ in 0..usize::try_from(knots).ok()? {
-        let knot = cur.num()?;
-        let mult = cur.long()?;
-        mult_sum += mult;
-        out.push(Token::Double(knot));
-        out.push(Token::Long(mult));
-    }
-    // Endpoint multiplicities are stored as `degree`, so the pole count is
-    // `sum(mult) - (degree - 1)` ([`asm.md` §6.5]).
-    let poles = usize::try_from(mult_sum - (degree - 1))
-        .ok()
-        .filter(|count| *count >= 2)?;
+    let poles = spline_poles(cur, knots, degree, out)?;
     let coords = match kind {
         BsKind::Parameter => 2,
         BsKind::Model => 3,
     };
     let per_pole = coords + usize::from(rational);
+    if poles > (cur.prims.len() - cur.pos) / per_pole {
+        return cur.invalid_spline_count();
+    }
     for _ in 0..poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
             let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
-            out.push(Token::Double(if scaled { value * cur.k } else { value }));
+            out.push(Token::Double(if scaled {
+                cur.length(value)?
+            } else {
+                value
+            }));
         }
     }
     Some(())
@@ -933,24 +1115,20 @@ fn bs_surface_block(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         .into_iter()
         .enumerate()
     {
-        let mut mult_sum = 0i64;
-        for _ in 0..usize::try_from(knots).ok()? {
-            let knot = cur.num()?;
-            let mult = cur.long()?;
-            mult_sum += mult;
-            out.push(Token::Double(knot));
-            out.push(Token::Long(mult));
-        }
-        poles[direction] = usize::try_from(mult_sum - (degree - 1))
-            .ok()
-            .filter(|count| *count >= 2)?;
+        poles[direction] = spline_poles(cur, knots, degree, out)?;
     }
     let per_pole = 3 + usize::from(rational);
-    for _ in 0..poles[0].checked_mul(poles[1])? {
+    let Some(total_poles) = poles[0].checked_mul(poles[1]) else {
+        return cur.invalid_spline_count();
+    };
+    if total_poles > (cur.prims.len() - cur.pos) / per_pole {
+        return cur.invalid_spline_count();
+    }
+    for _ in 0..total_poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
             out.push(Token::Double(if coordinate < 3 {
-                value * cur.k
+                cur.length(value)?
             } else {
                 value
             }));
@@ -976,7 +1154,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     cur.enum_word(CACHE_FORM, out)?;
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(tolerance * cur.k));
+    out.push(Token::Double(cur.length(tolerance)?));
     for _ in 0..2 {
         cur.word_is("null_surface")?;
         out.push(Token::Ident("null_surface".to_string()));
@@ -1037,7 +1215,7 @@ fn exact_spl_sur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
     cur.enum_word(CACHE_FORM, out)?;
     bs_surface_block(cur, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(tolerance * cur.k));
+    out.push(Token::Double(cur.length(tolerance)?));
     for _ in 0..4 {
         let value = cur.num()?;
         out.push(Token::Double(value));
@@ -1164,7 +1342,7 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
     out.push(Token::Enum(0));
     bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
-    out.push(Token::Double(tolerance * cur.k));
+    out.push(Token::Double(cur.length(tolerance)?));
     nullable_surface(cur, out)?;
     nullable_surface(cur, out)?;
     nullable_bs2(cur, out)?;
@@ -1189,7 +1367,7 @@ fn revision_surface_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> 
             out.push(Token::Enum(0));
             bs_surface_block(cur, out)?;
             let tolerance = cur.num()?;
-            out.push(Token::Double(tolerance * cur.k));
+            out.push(Token::Double(cur.length(tolerance)?));
         }
         "none" => {
             out.push(Token::Enum(2));
@@ -1460,13 +1638,13 @@ fn head_shapes(head: &str) -> &'static [&'static [Slot]] {
 /// Type one record's payload. Every tabled candidate must consume the
 /// complete field list; otherwise the record is typed lexically, one token
 /// per field.
-fn type_record(head: &str, prims: &[Prim], k: f64) -> Vec<Token> {
+fn type_record(head: &str, prims: &[Prim], scale: f64) -> Result<Vec<Token>, TypeFailure> {
     for slots in head_shapes(head) {
-        if let Some(tokens) = try_shape(prims, k, slots) {
-            return tokens;
+        if let Some(tokens) = try_shape(prims, scale, slots)? {
+            return Ok(tokens);
         }
     }
-    prims.iter().map(lexical_token).collect()
+    Ok(prims.iter().map(lexical_token).collect())
 }
 
 #[cfg(test)]
@@ -1477,7 +1655,8 @@ mod tests {
         let mut cur = Cur {
             prims: &prims,
             pos: 0,
-            k: 1.0,
+            scale: 10.0,
+            failure: None,
         };
         let mut output = Vec::new();
         assert_eq!(cur.float_array(&mut output), None);
@@ -1500,8 +1679,72 @@ mod tests {
         }
     }
 
-    use super::{parse, Cur, Prim, Terminator};
+    use super::{
+        bs_curve_block, bs_surface_block, BsKind, Cur, Prim, Terminator, TextStream, TypeFailure,
+    };
     use crate::sab::Token;
+    use crate::stream_error::{StreamError, StreamFailure};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn sat_framing_refuses_each_resource_before_record_materialization() {
+        type LimitCase = (ResourceDimension, fn(&mut DecodePolicy));
+        let source = asm_stream("point $-1 -1 $-1 10 0 0 #\n");
+        let cases: [LimitCase; 5] = [
+            (ResourceDimension::RetainedBytes, |policy| {
+                policy.limits.max_retained_bytes = 0;
+            }),
+            (ResourceDimension::Entities, |policy| {
+                policy.limits.max_entities = 1;
+            }),
+            (ResourceDimension::CollectionItems, |policy| {
+                policy.limits.max_collection_items = 0;
+            }),
+            (ResourceDimension::MaterializedBytes, |policy| {
+                policy.limits.max_materialized_bytes = 0;
+            }),
+            (ResourceDimension::WorkUnits, |policy| {
+                policy.limits.max_work_units = 0;
+            }),
+        ];
+        for (expected, set_limit) in cases {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            set_limit(&mut policy);
+            let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+                .expect("source fits input limit");
+            let error = super::parse(&ctx, &source).expect_err("resource limit must refuse");
+            let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+                panic!("expected resource refusal, got {error:?}");
+            };
+            assert_eq!(limit.dimension, expected);
+        }
+        assert_eq!(
+            parse(&source)
+                .expect("service profile admits point")
+                .records
+                .len(),
+            1
+        );
+    }
+
+    fn parse(bytes: &[u8]) -> Result<TextStream, StreamError> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("test stream fits the service input limit");
+        match super::parse(&ctx, bytes) {
+            Ok(stream) => Ok(stream),
+            Err(
+                StreamFailure::Parse(error)
+                | StreamFailure::Malformed(error)
+                | StreamFailure::NotImplemented(error),
+            ) => Err(error),
+            Err(StreamFailure::Resource(error)) => {
+                panic!("test stream exhausted a resource: {error}")
+            }
+        }
+    }
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1.0e-12 * a.abs().max(b.abs()).max(1.0)
@@ -1931,6 +2174,90 @@ mod tests {
             tokens.iter().filter(|t| **t == Token::Enum(0)).count(),
             4 // full + open + UNEXTENDED x2
         );
+    }
+
+    #[test]
+    fn positive_subnormal_scale_preserves_or_refuses_each_point_coordinate() {
+        let source = String::from_utf8(asm_stream("point $-1 -1 $-1 10 0 0 #\n"))
+            .expect("ASCII stream")
+            .replacen("1 1e-06 1.0e-10", "5e-324 0 0", 1);
+        let stream = parse(source.as_bytes()).expect("representable subnormal coordinate");
+        assert_eq!(stream.header.scale, f64::from_bits(1));
+        assert_eq!(
+            stream.records[0].tokens[3],
+            Token::Position([f64::from_bits(1), 0.0, 0.0])
+        );
+
+        let collapsed = source.replacen(" 10 0 0 #", " 1 0 0 #", 1);
+        let error = parse(collapsed.as_bytes()).expect_err("unrepresentable coordinate");
+        assert_eq!(
+            error.reason,
+            "source length cannot be represented in centimetres"
+        );
+    }
+
+    #[test]
+    fn curve_multiplicity_overflow_is_a_malformed_count() {
+        let prims = [
+            Prim::Word("nubs".into()),
+            Prim::Integer(1),
+            Prim::Word("open".into()),
+            Prim::Integer(2),
+            Prim::Real(0.0),
+            Prim::Integer(i64::MAX),
+            Prim::Real(1.0),
+            Prim::Integer(1),
+        ];
+        let mut cur = Cur {
+            prims: &prims,
+            pos: 0,
+            scale: 10.0,
+            failure: None,
+        };
+        assert_eq!(
+            bs_curve_block(&mut cur, BsKind::Model, &mut Vec::new()),
+            None
+        );
+        assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
+
+        let text = asm_stream(
+            "intcurve-curve $-1 -1 $-1 forward { exact_int_cur 23100 full nubs 1 open 2 0 9223372036854775807 1 1 1 2 3 4 5 6 0 null_surface null_surface nullbs nullbs I I 0 0 0 0 F 1 F 0 UNEXTENDED UNEXTENDED } I I #\n",
+        );
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&text, &arena, &DecodePolicy::service())
+            .expect("source fits input limit");
+        assert!(matches!(
+            super::parse(&ctx, &text),
+            Err(StreamFailure::Malformed(error))
+                if error.reason == "spline multiplicity or degree is invalid"
+        ));
+    }
+
+    #[test]
+    fn surface_multiplicity_overflow_is_a_malformed_count() {
+        let prims = [
+            Prim::Word("nubs".into()),
+            Prim::Integer(1),
+            Prim::Integer(1),
+            Prim::Word("open".into()),
+            Prim::Word("open".into()),
+            Prim::Word("none".into()),
+            Prim::Word("none".into()),
+            Prim::Integer(2),
+            Prim::Integer(2),
+            Prim::Real(0.0),
+            Prim::Integer(i64::MAX),
+            Prim::Real(1.0),
+            Prim::Integer(1),
+        ];
+        let mut cur = Cur {
+            prims: &prims,
+            pos: 0,
+            scale: 10.0,
+            failure: None,
+        };
+        assert_eq!(bs_surface_block(&mut cur, &mut Vec::new()), None);
+        assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
     }
 
     #[test]

@@ -47,3 +47,22 @@ fn inspect_reports_the_stream_kind_and_header_facts() {
         Some(&"End-of-ASM-data".to_string())
     );
 }
+
+#[test]
+fn text_inspect_propagates_framing_collection_limit() {
+    use cadmpeg_core::decode::{InspectOptions, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = text_sphere_stream(1.0);
+    let mut options = InspectOptions::default();
+    options.limits.max_collection_items = 0;
+    let error = SatCodec
+        .inspect(&mut Cursor::new(bytes), &options)
+        .expect_err("text framing cannot create a primitive");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "frame SAT primitive"
+    ));
+}

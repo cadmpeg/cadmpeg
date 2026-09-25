@@ -1917,7 +1917,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         start,
         limit,
@@ -1947,7 +1947,7 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     nested.splice(at..at, *b"\x0f\x0d\x14srf_srf_v_bl_spl_sur");
     let terminator = nested.len() - 1;
     nested.insert(terminator, 0x10);
-    let nested_records = cadmpeg_asm::sab::frame(
+    let nested_records = cadmpeg_asm::test_support::sab::frame(
         &nested,
         0,
         nested.len(),

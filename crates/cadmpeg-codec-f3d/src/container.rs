@@ -249,6 +249,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) entries: Vec<ContainerEntry>,
     /// Decoded BREP stream facts, in archive order.
     pub(crate) breps: Vec<BrepFacts>,
+    /// Each text B-rep's one admitted parse, shared by model and report paths.
+    pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
     pub(crate) kind: F3dContainerKind,
     /// Entry payload views, keyed by archive path.
@@ -259,6 +261,14 @@ pub(crate) struct ContainerScan<'a> {
     metastream_cache: std::cell::RefCell<
         std::collections::HashMap<String, std::rc::Rc<crate::metastream::MetaStream>>,
     >,
+}
+
+/// The framing outcome of one text B-rep member.
+pub(crate) enum TextBrepFraming {
+    Parsed(cadmpeg_asm::sat::TextStream),
+    Unframed(cadmpeg_asm::stream_error::StreamError),
+    Malformed(cadmpeg_asm::stream_error::StreamError),
+    UnsupportedLength(cadmpeg_asm::stream_error::StreamError),
 }
 
 impl<'a> ContainerScan<'a> {
@@ -520,15 +530,39 @@ pub(crate) fn scan<'a>(
             .push(index);
     }
 
-    Ok(ContainerScan {
+    let mut scan = ContainerScan {
         source_image,
         entries,
         breps,
+        text_breps: std::collections::HashMap::new(),
         kind,
         inflated_entries,
         scope_entry_indices,
         metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
-    })
+    };
+    let text_names = text_brep_names(&scan)
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for name in text_names {
+        let bytes = scan.entry_bytes(&name)?;
+        let framing = match cadmpeg_asm::sat::parse(ctx, bytes) {
+            Ok(stream) => TextBrepFraming::Parsed(stream),
+            Err(cadmpeg_asm::stream_error::StreamFailure::Parse(error)) => {
+                TextBrepFraming::Unframed(error)
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Malformed(error)) => {
+                TextBrepFraming::Malformed(error)
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::NotImplemented(error)) => {
+                TextBrepFraming::UnsupportedLength(error)
+            }
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
+        };
+        ctx.charge_collection_items(1, "retain F3D text B-rep framing")?;
+        scan.text_breps.insert(name, framing);
+    }
+    Ok(scan)
 }
 
 /// Build a [`ContainerSummary`] without assigning model authority from a ZIP

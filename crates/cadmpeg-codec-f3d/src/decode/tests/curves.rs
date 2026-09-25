@@ -812,7 +812,7 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .windows(b"\x0d\x09asmheader".len())
             .position(|window| window == b"\x0d\x09asmheader")
             .expect("generated ASM record table");
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &generated_smbh,
             record_start,
             generated_smbh.len(),

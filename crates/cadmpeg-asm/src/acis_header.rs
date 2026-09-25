@@ -81,15 +81,7 @@ pub fn solved_record_limit_with_header(bytes: &[u8], header: &BinaryHeader) -> O
         return None;
     }
     let start = record_stream_start_with_header(bytes, header)?;
-    let records = crate::sab::frame(bytes, start, bytes.len(), RefWidth::Four).ok()?;
-    let mut next = match records.last() {
-        Some(record) => record.offset.checked_add(record.len)?,
-        None => start,
-    };
-    while bytes.get(next) == Some(&0x11) {
-        next += 1;
-    }
-    crate::sab::exact_identifier_at(bytes, next, "delta_state").then_some(next)
+    crate::sab::scan_history_boundary(bytes, start, RefWidth::Four, None)
 }
 
 #[cfg(test)]

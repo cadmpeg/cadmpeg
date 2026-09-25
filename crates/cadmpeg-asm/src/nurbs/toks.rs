@@ -535,25 +535,23 @@ pub(super) fn subtype_span(toks: &[Token], start: usize) -> Option<SubtypeScope<
 /// Subtype-table reference indices in `toks`, in token order: the
 /// `{ref N}` form (`SubtypeOpen`, `Ident("ref")`, `Long(N)`) and the bare
 /// index form (`SubtypeOpen`, `Long(N)`, `SubtypeClose`).
-pub(super) fn subtype_refs(toks: &[Token]) -> Vec<usize> {
-    let mut refs = Vec::new();
-    for (pos, token) in toks.iter().enumerate() {
+pub(super) fn subtype_refs(toks: &[Token]) -> impl Iterator<Item = usize> + '_ {
+    toks.iter().enumerate().filter_map(|(pos, token)| {
         if !matches!(token, Token::SubtypeOpen) {
-            continue;
+            return None;
         }
         match (toks.get(pos + 1), toks.get(pos + 2)) {
             (Some(Token::Ident(name)), Some(Token::Long(index)))
                 if name == "ref" && *index >= 0 =>
             {
-                refs.push(*index as usize);
+                usize::try_from(*index).ok()
             }
             (Some(Token::Long(index)), Some(Token::SubtypeClose)) if *index >= 0 => {
-                refs.push(*index as usize);
+                usize::try_from(*index).ok()
             }
-            _ => {}
+            _ => None,
         }
-    }
-    refs
+    })
 }
 
 /// The subtype scope at payload chunk `chunk_index` when its immediately
@@ -648,6 +646,59 @@ impl SubtypeTable {
     }
 }
 
+/// Admit every subtype-reference walk before semantic candidates read the
+/// table. The stack holds policy depth guards for the active reference path.
+pub(crate) fn admit_subtype_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[crate::sab::Record],
+    table: &SubtypeTable,
+) -> Result<(), cadmpeg_core::CodecError> {
+    for record in records {
+        ctx.charge_work(record.tokens.len() as u64, "scan ASM subtype references")?;
+        let mut visited = std::collections::HashSet::new();
+        let mut pending = Vec::new();
+        let mut scratch = ctx.reserve_scoped(0, "walk ASM subtype references")?;
+        let root = (subtype_refs(&record.tokens), None);
+        ctx.charge_collection_items(1, "walk ASM subtype stack")?;
+        scratch.grow(std::mem::size_of_val(&root) as u64)?;
+        pending.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+        })?;
+        pending.push(root);
+        while let Some((references, _guard)) = pending.last_mut() {
+            let Some(index) = references.next() else {
+                pending.pop();
+                continue;
+            };
+            ctx.charge_work(1, "follow ASM subtype reference")?;
+            if visited.contains(&index) {
+                continue;
+            }
+            ctx.charge_collection_items(1, "visit ASM subtype reference")?;
+            visited.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("ASM subtype visited allocation", u64::MAX, u64::MAX)
+            })?;
+            visited.insert(index);
+            let Some((tokens, _)) = table.defs.get(index) else {
+                continue;
+            };
+            ctx.charge_work(tokens.len() as u64, "scan ASM subtype definition")?;
+            let Some(target) = table.span(index) else {
+                continue;
+            };
+            let guard = ctx.enter_nested("follow ASM subtype reference")?;
+            let frame = (subtype_refs(target.tokens()), Some(guard));
+            ctx.charge_collection_items(1, "walk ASM subtype stack")?;
+            scratch.grow(std::mem::size_of_val(&frame) as u64)?;
+            pending.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("ASM subtype stack allocation", u64::MAX, u64::MAX)
+            })?;
+            pending.push(frame);
+        }
+    }
+    Ok(())
+}
+
 /// Lex a bare byte span (a subtype scope or block without a record name or
 /// terminator) into payload tokens, for tests that build byte fixtures.
 ///
@@ -662,7 +713,7 @@ pub fn lex_test_span(
     let mut wrapped = vec![0x0d, 1, b'x'];
     wrapped.extend_from_slice(bytes);
     wrapped.push(0x11);
-    let records = crate::sab::frame(&wrapped, 0, wrapped.len(), ref_width)?;
+    let records = crate::test_support::sab::frame(&wrapped, 0, wrapped.len(), ref_width)?;
     let [record]: [crate::sab::Record; 1] =
         records
             .try_into()
@@ -703,6 +754,52 @@ mod tests {
     use crate::kernel_header::RefWidth;
     use crate::nurbs::reader::BsplineMarker;
     use crate::sab::Token;
+
+    #[test]
+    fn subtype_reference_walk_refuses_depth_before_following_next_definition() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let records: Vec<crate::sab::Record> = (0..3)
+            .map(|index| {
+                let mut tokens = vec![Token::SubtypeOpen, Token::Ident("node".into())];
+                if index < 2 {
+                    tokens.extend([
+                        Token::SubtypeOpen,
+                        Token::Ident("ref".into()),
+                        Token::Long(index + 1),
+                        Token::SubtypeClose,
+                    ]);
+                }
+                tokens.push(Token::SubtypeClose);
+                crate::sab::Record {
+                    index: index as usize,
+                    name: "node".into(),
+                    tokens: tokens.into(),
+                    offset: 0,
+                    len: 0,
+                }
+            })
+            .collect();
+        let table = super::SubtypeTable::from_records(&records);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        let error = super::admit_subtype_references(&ctx, &records, &table)
+            .expect_err("second followed reference exceeds depth one");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "follow ASM subtype reference");
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+        super::admit_subtype_references(&ctx, &records, &table)
+            .expect("service profile admits finite chain");
+    }
 
     fn ident(name: &str) -> Token {
         Token::Ident(name.to_string())
@@ -781,7 +878,7 @@ mod tests {
             Token::SubtypeClose,
         ];
         assert_eq!(owned_subtype_defs(&toks), Some(vec![(0, "exactcur")]));
-        assert_eq!(subtype_refs(&toks), vec![3]);
+        assert_eq!(subtype_refs(&toks).collect::<Vec<_>>(), vec![3]);
         assert_eq!(
             owned_construction_subtype(&toks),
             Some("exact_int_cur".to_string())
@@ -982,7 +1079,7 @@ mod tests {
             active.extend_from_slice(b"\x0f\x0d\x08real_def\x10");
             active.push(0x11);
 
-            let records = crate::sab::frame(&active, 0, active.len(), ref_width)
+            let records = crate::test_support::sab::frame(&active, 0, active.len(), ref_width)
                 .expect("wide-string record frames at its declared width");
             let table = super::SubtypeTable::from_records(&records);
             assert_eq!(table.defs.len(), 1);

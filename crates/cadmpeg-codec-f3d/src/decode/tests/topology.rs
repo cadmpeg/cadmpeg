@@ -125,9 +125,16 @@ fn history_topology_decode_matches_full_brep_graph() {
         (synthetic_geometry_with_face_attribute_smbh(), 3),
         (synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"), 0),
     ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("fixture is within the service input limit");
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &bytes,
             start,
             limit,
@@ -135,12 +142,12 @@ fn history_topology_decode_matches_full_brep_graph() {
         )
         .expect("frame BREP");
 
-        let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT)
+        let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
         let full =
             crate::history::historical_topology_with_tags(&full_brep).expect("full topology");
         let history_brep =
-            crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT)
+            crate::brep::decode_history_topology(&ctx, &records, &bytes, crate::ids::ID_FORMAT)
                 .expect("valid BREP tolerances");
         let history =
             crate::history::historical_topology_with_tags(&history_brep).expect("history topology");
@@ -1273,7 +1280,7 @@ fn decode_reports_faces_with_missing_surface_references() {
         let mut smbh = synthetic_mixed_smbh();
         let start = asm_header::record_stream_start(&smbh).unwrap();
         let limit = asm_header::solved_record_limit(&smbh).unwrap();
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &smbh,
             start,
             limit,
@@ -1346,7 +1353,7 @@ fn decode_reports_dangling_edge_curve_references() {
     let mut smbh = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&smbh).unwrap();
     let limit = asm_header::solved_record_limit(&smbh).unwrap();
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &smbh,
         start,
         limit,

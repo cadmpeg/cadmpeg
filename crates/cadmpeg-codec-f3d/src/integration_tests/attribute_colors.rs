@@ -20,7 +20,7 @@ fn rgb_attribute_chain_decodes_body_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         0,
         bytes.len(),
@@ -52,7 +52,7 @@ fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
     bytes.extend_from_slice(&(0xc240_80c0i64).to_le_bytes());
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         0,
         bytes.len(),
@@ -83,7 +83,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
     push_u8_string(&mut bytes, "4227264"); // 0x4080c0
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         0,
         bytes.len(),
@@ -115,7 +115,7 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
         push_u8_string(&mut bytes, value);
         t_end(&mut bytes);
 
-        let records = cadmpeg_asm::sab::frame(
+        let records = cadmpeg_asm::test_support::sab::frame(
             &bytes,
             0,
             bytes.len(),
@@ -152,7 +152,7 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
     t_dbl(&mut bytes, 0.3);
     t_end(&mut bytes);
 
-    let records = cadmpeg_asm::sab::frame(
+    let records = cadmpeg_asm::test_support::sab::frame(
         &bytes,
         0,
         bytes.len(),

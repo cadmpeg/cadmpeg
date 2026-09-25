@@ -477,7 +477,15 @@ fn saved_top_level_edge_projects_as_a_wire_body() {
     bytes.extend_from_slice(&2u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("fixture is within the service input limit");
     let brep = decode_with_purpose(
+        &ctx,
         &records,
         &bytes,
         "BREP.saved-edge.smbh",
@@ -959,7 +967,7 @@ fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
     record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell bytes must frame");
     let by_index = records
         .iter()
@@ -991,7 +999,7 @@ fn subshell_wires_project_onto_the_nearest_shell() {
     record(&mut bytes, "wire", &[]); // 5
     record(&mut bytes, "wire", &[]); // 6
 
-    let records = crate::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), RefWidth::Eight)
         .expect("generated subshell-wire bytes must frame");
     let by_index = records
         .iter()

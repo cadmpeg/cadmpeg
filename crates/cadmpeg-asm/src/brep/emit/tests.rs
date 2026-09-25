@@ -17,6 +17,58 @@ use cadmpeg_ir::topology::Sense;
 use std::collections::HashSet;
 
 #[test]
+fn unknown_carrier_source_copy_refuses_retained_limit_before_emission() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = b"opaque";
+    let records = [Record {
+        index: 0,
+        name: "unknown".into(),
+        tokens: Vec::<Token>::new().into(),
+        offset: 0,
+        len: bytes.len(),
+    }];
+    let reach = Reachable {
+        undecoded_carriers: HashSet::from([0]),
+        ..Reachable::default()
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = (bytes.len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut out = AsmBrep::default();
+    let error = super::emit_passthrough_unknowns(
+        &ctx,
+        &mut out,
+        &records,
+        bytes,
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("unknown source exceeds retained limit");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected resource refusal, got {error:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+    assert!(out.unknowns.is_empty());
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    super::emit_passthrough_unknowns(
+        &ctx,
+        &mut out,
+        &records,
+        bytes,
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .expect("service profile admits unknown source");
+    assert_eq!(out.unknowns.len(), 1);
+}
+
+#[test]
 fn face_sidedness_retains_the_decode_time_carrier_flip() {
     for (cosine, native, normalized) in [
         (1.0, Sense::Forward, Sense::Forward),
@@ -210,7 +262,7 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
             bytes.push(0x11);
-            let records = crate::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+            let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
             assert_eq!(records[0].chunk(6), Some(&Token::Double(0.03)));
             assert_eq!(records[0].chunk(7), Some(&Token::Double(0.07)));
             let by_index = records
@@ -472,7 +524,15 @@ fn invalid_cache_first_context_keeps_the_decoded_curve() {
         record(5, "unknown-surface", vec![]),
     ];
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty source is within the service limit");
     let result = super::super::decode_with_header(
+        &ctx,
         &records,
         &[],
         None,
