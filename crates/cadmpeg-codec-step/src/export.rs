@@ -85,6 +85,18 @@ pub(crate) fn write_step_outcome(
     schema: StepSchema,
     opts: &StepWriteOptions,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
+    for surface in &ir.model.surfaces {
+        if let Some(half_angle) = surface
+            .geometry
+            .solved()
+            .and_then(out_of_domain_cone_half_angle)
+        {
+            return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                "STEP conical_surface cannot represent surface '{}' with semi-angle {half_angle} outside (0, pi/2)",
+                surface.id
+            )));
+        }
+    }
     let mut b = Builder::new(ir, schema);
     b.build();
     let outcome = b.finish_outcome();
@@ -98,6 +110,32 @@ pub(crate) fn write_step_outcome(
     writeln!(w, "ENDSEC;")?;
     writeln!(w, "END-ISO-10303-21;")?;
     Ok(outcome)
+}
+
+fn out_of_domain_cone_half_angle(mut geometry: &SolvedSurfaceGeometry) -> Option<f64> {
+    loop {
+        match geometry {
+            SolvedSurfaceGeometry::Cone(cone) => {
+                let angle = cone.half_angle().get();
+                return (angle <= 0.0 || angle >= std::f64::consts::FRAC_PI_2).then_some(angle);
+            }
+            SolvedSurfaceGeometry::Transformed(placed) => geometry = placed.basis(),
+            _ => return None,
+        }
+    }
+}
+
+fn step_triangle_index(index: u32) -> u64 {
+    u64::from(index) + 1
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn triangle_index_widens_before_one_based_conversion() {
+        assert_eq!(super::step_triangle_index(0), 1);
+        assert_eq!(super::step_triangle_index(u32::MAX), 4_294_967_296);
+    }
 }
 
 fn write_header(
@@ -171,7 +209,6 @@ pub(crate) struct Builder<'a> {
     schema: StepSchema,
     emitter: Emitter,
     losses: Vec<LossNote>,
-    notes: Vec<String>,
 
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
@@ -293,7 +330,6 @@ impl<'a> Builder<'a> {
             schema,
             emitter: Emitter::new(),
             losses: Vec::new(),
-            notes: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             bodies: ir
                 .model
@@ -800,6 +836,14 @@ impl<'a> Builder<'a> {
                 .get(*body_id)
                 .is_some_and(|body| body.kind == BodyKind::Wire)
             {
+                if spec.appearance.is_none() && spec.color.a() < 1.0 {
+                    self.loss(
+                        StepLossCode::WireBodyTransparencyOmitted,
+                        format!(
+                            "wire body '{body_id}' direct color transparency was omitted from STEP CURVE_STYLE"
+                        ),
+                    );
+                }
                 self.curve_style(spec.color, name, &mut style_refs)
             } else {
                 self.surface_style(spec.color, name, &mut style_refs)
@@ -2030,9 +2074,9 @@ impl<'a> Builder<'a> {
                     .map(|triangle| {
                         format!(
                             "({},{},{})",
-                            triangle[0] + 1,
-                            triangle[1] + 1,
-                            triangle[2] + 1
+                            step_triangle_index(triangle[0]),
+                            step_triangle_index(triangle[1]),
+                            step_triangle_index(triangle[2])
                         )
                     })
                     .collect::<Vec<_>>()
@@ -2059,9 +2103,9 @@ impl<'a> Builder<'a> {
                     .map(|triangle| {
                         format!(
                             "({},{},{})",
-                            triangle[0] + 1,
-                            triangle[1] + 1,
-                            triangle[2] + 1
+                            step_triangle_index(triangle[0]),
+                            step_triangle_index(triangle[1]),
+                            step_triangle_index(triangle[2])
                         )
                     })
                     .collect::<Vec<_>>()
@@ -3816,30 +3860,6 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        // ISO 10303-42 `conical_surface` WR2 holds `semi_angle` in `(0, pi/2)`.
-        // `geometry::surface` emits the IR half angle verbatim, so a half angle
-        // outside that interval leaves the emitted record outside WR2. This
-        // note carries that to the caller and to `--reject-lossy=export`.
-        let out_of_domain_cone_semi_angles = self
-            .written_analytic_surfaces
-            .iter()
-            .filter(|written| {
-                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let half_angle = cone_surface.half_angle().get();
-                    half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2
-                })
-            })
-            .count();
-        if out_of_domain_cone_semi_angles > 0 {
-            self.loss(
-                StepLossCode::ConeSemiAngleOutOfDomain,
-                format!(
-                    "{out_of_domain_cone_semi_angles} conical surface(s) were written with a \
-                     semi-angle outside the STEP conical_surface domain (0 < semi_angle < pi/2)"
-                ),
-            );
-        }
         if !self.curveless_edges.is_empty() {
             self.loss(
                 StepLossCode::CurvelessEdgeOmitted,
@@ -4599,7 +4619,7 @@ impl<'a> Builder<'a> {
                 counts: cadmpeg_ir::CensusKey::count_map(self.emitter.counts()),
             },
             losses: self.losses.clone(),
-            notes: self.notes.clone(),
+            notes: Vec::new(),
         }
     }
 }
