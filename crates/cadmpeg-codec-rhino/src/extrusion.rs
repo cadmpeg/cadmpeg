@@ -371,15 +371,33 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))?;
     let start = evaluate_profile_point(&curve, domain[0], offset)?;
     let end = evaluate_profile_point(&curve, domain[1], offset)?;
+    let sample_parameter = |start: f64, end: f64, fraction: f64, ordinary: f64| {
+        if ordinary.is_finite() {
+            Ok(ordinary)
+        } else {
+            cadmpeg_ir::math::interpolate(start, end, fraction)
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+                .ok_or_else(|| error(offset, "extrusion profile parameter domain is invalid"))
+        }
+    };
     if !source_periodic(&curve) {
         if !points_coincident(start, end) {
             return Ok(0);
         }
-        let one_third =
-            evaluate_profile_point(&curve, domain[0] + (domain[1] - domain[0]) / 3.0, offset)?;
+        let span = domain[1] - domain[0];
+        let one_third = evaluate_profile_point(
+            &curve,
+            sample_parameter(domain[0], domain[1], 1.0 / 3.0, domain[0] + span / 3.0)?,
+            offset,
+        )?;
         let two_thirds = evaluate_profile_point(
             &curve,
-            domain[0] + 2.0 * (domain[1] - domain[0]) / 3.0,
+            sample_parameter(
+                domain[0],
+                domain[1],
+                2.0 / 3.0,
+                domain[0] + 2.0 * span / 3.0,
+            )?,
             offset,
         )?;
         if points_coincident(start, one_third)
@@ -432,7 +450,12 @@ fn exact_orientation(curve: &DecodedCurve, offset: usize) -> Result<i8, Geometry
         }
         for sample in 0..samples_per_span {
             let fraction = sample as f64 / samples_per_span as f64;
-            let parameter = span_start + fraction * (span_end - span_start);
+            let parameter = sample_parameter(
+                span_start,
+                span_end,
+                fraction,
+                span_start + fraction * (span_end - span_start),
+            )?;
             let current = evaluate_profile_point(&curve, parameter, offset)?;
             twice_area += (previous.x - current.x) * (previous.y + current.y);
             previous = current;
@@ -1382,6 +1405,35 @@ pub(crate) mod tests {
             })
             .expect("valid test curve edit");
         assert!(exact_orientation(&off_plane, 0).is_err());
+    }
+
+    #[test]
+    fn orientation_keeps_finite_samples_across_a_wide_profile_domain() {
+        let mut profile = decoded_polygon(false, true);
+        let DecodedCurve::Leaf {
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            ..
+        } = &mut profile
+        else {
+            panic!("polygon NURBS fixture");
+        };
+        curve
+            .edit_knots(|knots| {
+                knots.copy_from_slice(&[
+                    -f64::MAX,
+                    -f64::MAX,
+                    -f64::MAX * 0.5,
+                    0.0,
+                    f64::MAX * 0.5,
+                    f64::MAX,
+                    f64::MAX,
+                ]);
+            })
+            .expect("wide polygon knot interval");
+        assert_eq!(
+            exact_orientation(&profile, 0).expect("finite orientation"),
+            1
+        );
     }
 
     #[test]
