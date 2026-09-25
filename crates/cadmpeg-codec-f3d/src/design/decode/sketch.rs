@@ -42,8 +42,6 @@ use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
 };
 
-const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1.0e-9;
-const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1.0e-12;
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
@@ -2636,9 +2634,17 @@ fn decode_sketch_curve_identities_from_stream(
             frame.design_type.version,
             &frame.design_type.module,
         );
-        let parsed_geometry = curve_class.and_then(|curve_class| {
-            decode_sketch_curve_geometry(payload, geometry_shift, record_index, curve_class)
-        });
+        let parsed_geometry = if let Some(curve_class) = curve_class {
+            decode_sketch_curve_geometry(
+                payload,
+                geometry_shift,
+                record_index,
+                curve_class,
+                frame.start,
+            )?
+        } else {
+            None
+        };
         let (geometry, geometry_offset) = parsed_geometry
             .map_or((None, geometry_shift + 133), |parsed| {
                 (Some(parsed.geometry), parsed.geometry_offset)
@@ -3097,6 +3103,39 @@ fn decode_sketch_curve_geometry(
     geometry_shift: usize,
     record_index: u32,
     class: SketchCurveClass,
+    record_at: usize,
+) -> Result<Option<DecodedSketchCurveGeometry>, CodecError> {
+    if class == SketchCurveClass::Circular {
+        let Some(geometry_payload) = payload.get(geometry_shift..) else {
+            return Ok(None);
+        };
+        let decoded = if let Some(geometry) = decode_circular_arc(geometry_payload, record_at)? {
+            Some((geometry, 133))
+        } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
+            decode_circular_arc(referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
+        } else {
+            None
+        };
+        return Ok(
+            decoded.map(|(geometry, offset)| DecodedSketchCurveGeometry {
+                geometry,
+                geometry_offset: geometry_shift + offset,
+            }),
+        );
+    }
+    Ok(decode_sketch_curve_geometry_non_circular(
+        payload,
+        geometry_shift,
+        record_index,
+        class,
+    ))
+}
+
+fn decode_sketch_curve_geometry_non_circular(
+    payload: &[u8],
+    geometry_shift: usize,
+    record_index: u32,
+    class: SketchCurveClass,
 ) -> Option<DecodedSketchCurveGeometry> {
     let geometry_payload = payload.get(geometry_shift..)?;
     let decoded = match class {
@@ -3109,14 +3148,7 @@ fn decode_sketch_curve_geometry(
                 Some((geometry, 11 + 133))
             }
         }
-        SketchCurveClass::Circular => {
-            if let Some(geometry) = decode_circular_arc(geometry_payload) {
-                Some((geometry, 133))
-            } else {
-                let referenced = referenced_analytic_payload(geometry_payload)?;
-                Some((decode_circular_arc(referenced)?, 11 + 133))
-            }
-        }
+        SketchCurveClass::Circular => return None,
         SketchCurveClass::Nurbs => decode_legacy_sketch_nurbs(geometry_payload)
             .or_else(|| decode_sketch_nurbs(geometry_payload))
             .map(|(geometry, _)| (geometry, 133)),
@@ -3131,36 +3163,49 @@ fn decode_sketch_curve_geometry(
     })
 }
 
-fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
-    let values = (0..12)
+fn decode_circular_arc(
+    payload: &[u8],
+    record_at: usize,
+) -> Result<Option<SketchCurveGeometry>, CodecError> {
+    let Some(values) = (0..12)
         .map(|ordinal| View::f64_le_at(payload, 133 + ordinal * 8))
-        .collect::<Option<Vec<_>>>()?;
-    if values.iter().any(|value| !value.is_finite()) {
-        return None;
-    }
-    let normal = Vector3::new(values[3], values[4], values[5]);
-    let reference_direction = Vector3::new(values[6], values[7], values[8]);
-    let dot = normal.x * reference_direction.x
-        + normal.y * reference_direction.y
-        + normal.z * reference_direction.z;
-    if (normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
-        || (reference_direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
-        || dot.abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
-        || values[9] <= 0.0
-        || values[10].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
-        || values[11].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
-        || (values[11] - values[10]).abs() < EPS_SKETCH_DECODE_CIRCULAR_ARC_E12
-    {
-        return None;
-    }
-    Some(SketchCurveGeometry::Arc {
-        center: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let (Some(center_cm), Some(normal), Some(reference_direction), Some(radius_cm)) = (
+        FinitePoint3::new(Point3::new(values[0], values[1], values[2])),
+        UnitVector3::new(Vector3::new(values[3], values[4], values[5])),
+        UnitVector3::new(Vector3::new(values[6], values[7], values[8])),
+        PositiveLength::new(values[9]),
+    ) else {
+        return Ok(None);
+    };
+    let (Some(start_angle), Some(end_angle)) = (Angle::new(values[10]), Angle::new(values[11]))
+    else {
+        return Ok(None);
+    };
+    let center_cm = center_cm.get();
+    let center = FinitePoint3::new(Point3::new(
+        center_cm.x * 10.0,
+        center_cm.y * 10.0,
+        center_cm.z * 10.0,
+    ));
+    let radius = PositiveLength::new(radius_cm.get() * 10.0);
+    let (Some(center), Some(radius)) = (center, radius) else {
+        return Err(CodecError::malformed(format_args!(
+            "F3D sketch arc at byte {record_at} overflows millimetres"
+        )));
+    };
+    Ok(SketchCurveGeometry::arc_from_parts(
+        center,
         normal,
         reference_direction,
-        radius: values[9] * 10.0,
-        start_angle: values[10],
-        end_angle: values[11],
-    })
+        radius,
+        start_angle,
+        end_angle,
+    )
+    .ok())
 }
 
 fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {

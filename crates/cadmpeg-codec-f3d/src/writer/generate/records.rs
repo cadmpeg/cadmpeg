@@ -641,6 +641,9 @@ fn encode_sketch_curve_identity(
             start_angle,
             end_angle,
         }) => {
+            let center = center.as_raw();
+            let normal = normal.as_raw();
+            let reference_direction = reference_direction.as_raw();
             let values = [
                 center.x / LEN_TO_MM,
                 center.y / LEN_TO_MM,
@@ -651,9 +654,9 @@ fn encode_sketch_curve_identity(
                 reference_direction.x,
                 reference_direction.y,
                 reference_direction.z,
-                radius / LEN_TO_MM,
-                *start_angle,
-                *end_angle,
+                radius.get() / LEN_TO_MM,
+                start_angle.get(),
+                end_angle.get(),
             ];
             encode_f64_sequence(&mut record, &values)?;
         }

@@ -23,7 +23,7 @@ use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use super::{
-    geometry::{orthonormal_pair, unchanged_unique_knot_count, writable_nurbs_degree},
+    geometry::{unchanged_unique_knot_count, writable_nurbs_degree},
     records::native_stream,
 };
 use crate::native::F3dNative;
@@ -2540,21 +2540,7 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
 fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
     match geometry {
         SketchCurveGeometry::Line { .. } => true,
-        SketchCurveGeometry::Arc {
-            center,
-            normal,
-            reference_direction,
-            radius,
-            start_angle,
-            end_angle,
-        } => {
-            center.is_finite()
-                && orthonormal_pair(*normal, *reference_direction)
-                && radius.is_finite()
-                && *radius > 0.0
-                && start_angle.is_finite()
-                && end_angle.is_finite()
-        }
+        SketchCurveGeometry::Arc { .. } => true,
         SketchCurveGeometry::Nurbs {
             degree,
             fit_tolerance,

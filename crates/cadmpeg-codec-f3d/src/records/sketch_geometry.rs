@@ -1352,19 +1352,19 @@ pub(crate) enum SketchCurveGeometry {
     /// A circular arc.
     Arc {
         /// Arc center in sketch space, millimetres.
-        center: Point3,
+        center: FinitePoint3,
         /// Normal of the sketch plane the arc lies in; the decoder admits a norm
         /// within `1e-9` of one.
-        normal: Vector3,
+        normal: UnitVector3,
         /// Zero-angle direction for `start_angle`/`end_angle`; the decoder admits a
         /// norm within `1e-9` of one.
-        reference_direction: Vector3,
+        reference_direction: UnitVector3,
         /// Arc radius in millimetres.
-        radius: f64,
+        radius: PositiveLength,
         /// Start angle in radians, measured from `reference_direction`.
-        start_angle: f64,
+        start_angle: Angle,
         /// End angle in radians, measured from `reference_direction`.
-        end_angle: f64,
+        end_angle: Angle,
     },
     /// A NURBS (procedural spline) curve.
     Nurbs {
@@ -1391,6 +1391,8 @@ pub(crate) enum SketchCurveGeometry {
 }
 
 const EPS_SKETCH_LINE_FRAME: f64 = 1.0e-9;
+const EPS_SKETCH_ARC_FRAME: f64 = 1.0e-9;
+const EPS_SKETCH_ARC_SWEEP: f64 = 1.0e-12;
 
 impl SketchCurveGeometry {
     pub(crate) fn line_from_parts(
@@ -1442,6 +1444,56 @@ impl SketchCurveGeometry {
             FinitePoint3::new(end).ok_or("line end is not finite")?,
             UnitVector3::new(direction).ok_or("line direction is not unit")?,
             UnitVector3::new(normal).ok_or("line normal is not unit")?,
+        )
+    }
+
+    pub(crate) fn arc_from_parts(
+        center: FinitePoint3,
+        normal: UnitVector3,
+        reference_direction: UnitVector3,
+        radius: PositiveLength,
+        start_angle: Angle,
+        end_angle: Angle,
+    ) -> Result<Self, String> {
+        let normal_raw = normal.as_raw();
+        let reference_raw = reference_direction.as_raw();
+        let dot = normal_raw.x * reference_raw.x
+            + normal_raw.y * reference_raw.y
+            + normal_raw.z * reference_raw.z;
+        if dot.abs() > EPS_SKETCH_ARC_FRAME {
+            return Err("arc frame directions are not perpendicular".into());
+        }
+        if start_angle.get().abs() > std::f64::consts::TAU + EPS_SKETCH_ARC_FRAME
+            || end_angle.get().abs() > std::f64::consts::TAU + EPS_SKETCH_ARC_FRAME
+            || (end_angle.get() - start_angle.get()).abs() < EPS_SKETCH_ARC_SWEEP
+        {
+            return Err("arc sweep is outside the source domain".into());
+        }
+        Ok(Self::Arc {
+            center,
+            normal,
+            reference_direction,
+            radius,
+            start_angle,
+            end_angle,
+        })
+    }
+
+    pub(crate) fn arc(
+        center: Point3,
+        normal: Vector3,
+        reference_direction: Vector3,
+        radius: f64,
+        start_angle: f64,
+        end_angle: f64,
+    ) -> Result<Self, String> {
+        Self::arc_from_parts(
+            FinitePoint3::new(center).ok_or("arc center is not finite")?,
+            UnitVector3::new(normal).ok_or("arc normal is not unit")?,
+            UnitVector3::new(reference_direction).ok_or("arc reference direction is not unit")?,
+            PositiveLength::new(radius).ok_or("arc radius must be positive and finite")?,
+            Angle::new(start_angle).ok_or("arc start angle is not finite")?,
+            Angle::new(end_angle).ok_or("arc end angle is not finite")?,
         )
     }
 }
@@ -1521,14 +1573,14 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
                 radius,
                 start_angle,
                 end_angle,
-            } => Self::Arc {
+            } => Self::arc(
                 center,
                 normal,
                 reference_direction,
                 radius,
                 start_angle,
                 end_angle,
-            },
+            )?,
             SketchCurveGeometryWire::Nurbs {
                 carrier_reference,
                 subtype_class_tag,
@@ -1576,12 +1628,12 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                 start_angle,
                 end_angle,
             } => Self::Arc {
-                center,
-                normal,
-                reference_direction,
-                radius,
-                start_angle,
-                end_angle,
+                center: center.get(),
+                normal: *normal.as_raw(),
+                reference_direction: *reference_direction.as_raw(),
+                radius: radius.get(),
+                start_angle: start_angle.get(),
+                end_angle: end_angle.get(),
             },
             SketchCurveGeometry::Nurbs {
                 carrier_reference,
@@ -1704,6 +1756,46 @@ mod tests {
                 [{"x":1.0,"y":0.0,"z":0.0},{"x":1.0,"y":1.0,"z":0.0}]
             ]
         })
+    }
+
+    fn native_arc_wire() -> serde_json::Value {
+        json!({
+            "kind": "arc",
+            "center": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+            "reference_direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "radius": 1.0,
+            "start_angle": 0.0,
+            "end_angle": 1.0
+        })
+    }
+
+    #[test]
+    fn native_arc_refuses_zero_sweep() {
+        let mut wire = native_arc_wire();
+        wire["end_angle"] = json!(0.0);
+        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+    }
+
+    #[test]
+    fn native_arc_refuses_angle_past_full_turn() {
+        let mut wire = native_arc_wire();
+        wire["end_angle"] = json!(7.0);
+        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+    }
+
+    #[test]
+    fn native_arc_refuses_zero_radius() {
+        let mut wire = native_arc_wire();
+        wire["radius"] = json!(0.0);
+        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
+    }
+
+    #[test]
+    fn native_arc_refuses_nonperpendicular_frame() {
+        let mut wire = native_arc_wire();
+        wire["reference_direction"] = json!({"x": 0.0, "y": 0.0, "z": 1.0});
+        assert!(serde_json::from_value::<SketchCurveGeometry>(wire).is_err());
     }
 
     #[test]

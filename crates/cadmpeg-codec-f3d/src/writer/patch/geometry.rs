@@ -22,8 +22,6 @@ use cadmpeg_asm::edit::{
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
 
-const EPS_ORTHONORMAL: f64 = 1.0e-9;
-
 /// Whether an edited NURBS degree is one an ASM spline record states.
 ///
 /// Every spline layout reader bounds the degree it reads to `1..=20`, so a
@@ -48,14 +46,6 @@ pub(super) const fn writable_nurbs_degree(after_degree: u32) -> bool {
 /// non-decreasing knots therefore hold for every value this reads.
 pub(super) fn unchanged_unique_knot_count(before_knots: &[f64], after_knots: &[f64]) -> bool {
     unique_knot_count(after_knots) == unique_knot_count(before_knots)
-}
-
-pub(super) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
-    first.is_finite()
-        && second.is_finite()
-        && (first.norm() - 1.0).abs() <= EPS_ORTHONORMAL
-        && (second.norm() - 1.0).abs() <= EPS_ORTHONORMAL
-        && first.dot(second).abs() <= EPS_ORTHONORMAL
 }
 
 /// The per-entity BREP edit maps that the geometry patchers apply as a unit.

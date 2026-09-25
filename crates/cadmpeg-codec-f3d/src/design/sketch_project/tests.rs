@@ -450,14 +450,17 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         entity_genesis: None,
         primary_id: std::num::NonZeroU64::new(22).unwrap(),
         secondary_id: 0,
-        geometry: Some(SketchCurveGeometry::Arc {
-            center: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, -1.0),
-            reference_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-            start_angle: 0.0,
-            end_angle: std::f64::consts::FRAC_PI_2,
-        }),
+        geometry: Some(
+            SketchCurveGeometry::arc(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+            )
+            .unwrap(),
+        ),
     };
     let nonclamped_nurbs = SketchCurveIdentity {
         id: "f3d:native:curve#218".into(),
@@ -881,14 +884,15 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         curve(
             102,
             2,
-            SketchCurveGeometry::Arc {
-                center: Point3::new(1.0, 2.0, 3.0),
-                normal: Vector3::new(1.0, 0.0, 0.0),
-                reference_direction: Vector3::new(0.0, 1.0, 0.0),
-                radius: 2.0,
-                start_angle: 0.0,
-                end_angle: std::f64::consts::TAU,
-            },
+            SketchCurveGeometry::arc(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                2.0,
+                0.0,
+                std::f64::consts::TAU,
+            )
+            .unwrap(),
         ),
         curve(
             108,
