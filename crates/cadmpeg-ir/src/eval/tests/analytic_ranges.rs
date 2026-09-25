@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::{
-    circular_arc_partials, curve_point_solved, curve_tangent_solved, minor_circular_arc_point,
-    pcurve_tangent, pcurve_uv, ContactTrackDifferential,
+    circular_arc_first_order, curve_point_solved, curve_tangent_solved, minor_circular_arc_point,
+    pcurve_tangent, pcurve_uv,
 };
+use super::contact_track;
 use crate::geometry::analytic::{CircleCurve, HyperbolaCurve, ParabolaCurve};
 use crate::geometry::pcurve::{HyperbolaPcurve, ParabolaPcurve};
 use crate::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry};
@@ -92,21 +93,18 @@ fn numerical_ranges_shallow_arc_point_and_partials_keep_curvature() {
     let angle = 1e-9_f64;
     let zero = Vector3::new(0., 0., 0.);
     let center = Point3::new(0., 0., 0.);
-    let first = ContactTrackDifferential {
-        point: Point3::new(radius, 0., 0.),
-        tangent: zero,
-        normal: Vector3::new(1., 0., 0.),
-        normal_derivative: Some(zero),
-    };
-    let second = ContactTrackDifferential {
-        point: Point3::new(radius * angle.cos(), radius * angle.sin(), 0.),
-        tangent: zero,
-        normal: Vector3::new(angle.cos(), angle.sin(), 0.),
-        normal_derivative: Some(zero),
-    };
-    let point = minor_circular_arc_point(center, first.point, second.point, radius, 0.5).unwrap();
+    let first = contact_track(Point3::new(radius, 0., 0.), zero);
+    let second = contact_track(
+        Point3::new(radius * angle.cos(), radius * angle.sin(), 0.),
+        zero,
+    );
+    let point =
+        minor_circular_arc_point(center, first.point(), second.point(), radius, 0.5).unwrap();
     assert!((point.y - 0.5).abs() < EPS_RELATIVE);
-    let partials = circular_arc_partials(center, zero, &first, &second, radius, 0., 0.5).unwrap();
+    let partials = circular_arc_first_order(center, Ok(zero), &first, &second, radius, Ok(0.), 0.5)
+        .and_then(super::super::SurfaceFirstOrder::partials)
+        .unwrap()
+        .into_raw();
     assert!((partials.point.y - 0.5).abs() < EPS_RELATIVE);
     assert!((partials.du.y - 1.).abs() < EPS_RELATIVE);
     assert!((partials.du.x / (-0.5 * angle) - 1.).abs() < EPS_RELATIVE);

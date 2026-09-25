@@ -2811,7 +2811,8 @@ fn surface_measure(
     if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
         let tolerance = fit_tolerance?;
         let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
-        let partials = cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v)?;
+        let partials =
+            cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v).ok()?;
         let residual = point.distance(partials.point.get());
         if residual > tolerance {
             return None;

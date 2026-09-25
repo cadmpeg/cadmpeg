@@ -1346,8 +1346,9 @@ fn blend_surface_u_derivative_with_index_and_budget(
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
     let carrier = index.curves(spine.as_str())?;
     let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
-    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget)?;
-    let acceleration = curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
+    let acceleration =
+        curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget).ok()?;
     let speed = velocity.norm();
     if !speed.is_finite() || speed == 0.0 {
         return None;
@@ -1474,7 +1475,9 @@ impl BlendContactDerivativeContext<'_> {
             uv.u,
             uv.v,
             geometry_budget,
-        )?;
+        )
+        .ok()?
+        .into_raw();
         let contact_derivative = Vector3::new(
             support.du.x * uv_derivative.u + support.dv.x * uv_derivative.v,
             support.du.y * uv_derivative.u + support.dv.y * uv_derivative.v,
@@ -2013,7 +2016,8 @@ fn closest_contact_pcurve_parameter_with_geometry_and_budget(
         let uv = pcurve_uv(contact_pcurve, parameter).ok()?;
         let uv_tangent = pcurve_tangent(contact_pcurve, parameter).ok()?;
         let partials =
-            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget)?;
+            model_surface_partials_by_id_with_budget(index, support, uv.u, uv.v, geometry_budget)
+                .ok()?;
         let tangent = Vector3::new(
             partials.du.x * uv_tangent.u + partials.dv.x * uv_tangent.v,
             partials.du.y * uv_tangent.u + partials.dv.y * uv_tangent.v,
@@ -3521,7 +3525,9 @@ fn model_curve_tangent_with_index_and_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
     let carrier = index.curves(curve.as_str())?;
-    curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)?.unit_nonzero()
+    curve_tangent_with_budget(&carrier.geometry, parameter, geometry_budget)
+        .ok()?
+        .unit_nonzero()
 }
 
 #[cfg(test)]

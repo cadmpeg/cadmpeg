@@ -240,6 +240,34 @@ impl ScaledValue {
             ),
         }
     }
+
+    /// The scaled form of the exact product of nonzero finite factors,
+    /// rounded once as [`ExactSignedSum::finish`] rounds the same product.
+    ///
+    /// The accumulator holds the one product on the side its sign names, and
+    /// every factor's significand is nonzero, so that side is the product's
+    /// magnitude and has a highest set bit. Nothing is checked.
+    pub(crate) fn product_of_nonzero<const N: usize>(factors: [NonZeroReal; N]) -> Self {
+        let mut sum = ExactSignedSum::default();
+        sum.add_factors(factors.map(NonZeroReal::get));
+        let negative = factors
+            .iter()
+            .fold(false, |negative, factor| negative ^ (factor.get() < 0.0));
+        let magnitude = if negative { sum.negative } else { sum.positive };
+        // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
+        // the accumulator is a `u16`; a zero word takes no part.
+        let highest_bit = magnitude
+            .iter()
+            .enumerate()
+            .fold(0_u16, |highest, (word, value)| {
+                if *value == 0 {
+                    highest
+                } else {
+                    (word * 64 + 63 - value.leading_zeros() as usize) as u16
+                }
+            });
+        rounded_magnitude(negative, &magnitude, highest_bit)
+    }
 }
 
 /// The sign, the integer significand, and the significand's exponent biased by
@@ -383,36 +411,7 @@ impl ExactSignedSum {
         // `word` indexes `EXACT_SUM_WORDS` words of 64 bits, so a bit index of
         // the accumulator is a `u16` and converts to `i32` with no range check.
         let highest_bit = (word * 64 + magnitude[word].checked_ilog2()? as usize) as u16;
-        let keep = (highest_bit + 1).min(53);
-        let mut significand = 0_u64;
-        for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
-            significand = (significand << 1) | u64::from(bit_is_set(&magnitude, usize::from(bit)));
-        }
-        if keep == 53 {
-            let guard_bit = highest_bit
-                .checked_sub(keep)
-                .is_some_and(|bit| bit_is_set(&magnitude, usize::from(bit)));
-            let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
-                (0..bit).any(|candidate| bit_is_set(&magnitude, usize::from(candidate)))
-            });
-            if guard_bit && (sticky || significand & 1 != 0) {
-                significand += 1;
-                if significand == 1_u64 << 53 {
-                    return Some(ScaledValue {
-                        sign: if negative { -1.0 } else { 1.0 },
-                        mantissa: 0.5,
-                        exponent: ScaledExponent(
-                            EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2,
-                        ),
-                    });
-                }
-            }
-        }
-        Some(ScaledValue {
-            sign: if negative { -1.0 } else { 1.0 },
-            mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
-            exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
-        })
+        Some(rounded_magnitude(negative, &magnitude, highest_bit))
     }
 
     /// Round a sum in the subnormal range directly onto the binary64 grid.
@@ -479,6 +478,44 @@ fn signed_difference(
 
 fn bit_is_set(words: &[u64; EXACT_SUM_WORDS], bit: usize) -> bool {
     words[bit / 64] & (1_u64 << (bit % 64)) != 0
+}
+
+/// The scaled form of an accumulator magnitude whose highest set bit is
+/// `highest_bit`, rounded to 53 bits, half to even, with `negative` as its
+/// sign.
+fn rounded_magnitude(
+    negative: bool,
+    magnitude: &[u64; EXACT_SUM_WORDS],
+    highest_bit: u16,
+) -> ScaledValue {
+    let keep = (highest_bit + 1).min(53);
+    let mut significand = 0_u64;
+    for bit in (highest_bit + 1 - keep..=highest_bit).rev() {
+        significand = (significand << 1) | u64::from(bit_is_set(magnitude, usize::from(bit)));
+    }
+    if keep == 53 {
+        let guard_bit = highest_bit
+            .checked_sub(keep)
+            .is_some_and(|bit| bit_is_set(magnitude, usize::from(bit)));
+        let sticky = highest_bit.checked_sub(keep).is_some_and(|bit| {
+            (0..bit).any(|candidate| bit_is_set(magnitude, usize::from(candidate)))
+        });
+        if guard_bit && (sticky || significand & 1 != 0) {
+            significand += 1;
+            if significand == 1_u64 << 53 {
+                return ScaledValue {
+                    sign: if negative { -1.0 } else { 1.0 },
+                    mantissa: 0.5,
+                    exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 2),
+                };
+            }
+        }
+    }
+    ScaledValue {
+        sign: if negative { -1.0 } else { 1.0 },
+        mantissa: significand as f64 * 2.0_f64.powi(-i32::from(keep)),
+        exponent: ScaledExponent(EXACT_PRODUCT_EXPONENT + i32::from(highest_bit) + 1),
+    }
 }
 
 /// The scaled form of a finite nonzero value; a zero or non-finite value has

@@ -107,7 +107,7 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+        Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
         .report()
@@ -197,7 +197,7 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, -0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
+        Ok(Point3::new(95.496_093_75, 268.464_843_75, -95.496_093_75,))
     );
     assert!(result
         .report()

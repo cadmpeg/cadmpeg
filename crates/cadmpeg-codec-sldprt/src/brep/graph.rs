@@ -4774,7 +4774,7 @@ fn extended_nurbs_isocurve_axis_candidate(
             );
             if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point.get(), None)
                 .filter(|parameters| {
-                    nurbs_surface_point(surface, parameters.u, parameters.v).is_some_and(|mapped| {
+                    nurbs_surface_point(surface, parameters.u, parameters.v).is_ok_and(|mapped| {
                         Point3::distance(point.get(), mapped.get()) <= tolerance
                     })
                 })
@@ -4928,7 +4928,7 @@ fn nurbs_edge_endpoint_parameters(
     );
     let project = |point| {
         let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
-        let mapped = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let mapped = nurbs_surface_point(surface, parameters.u, parameters.v).ok()?;
         (Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters.get())
     };
     Some([project(first.get())?, project(last.get())?])
@@ -4948,7 +4948,7 @@ fn nurbs_curve_surface_deviation(
             .and_then(|seed| nurbs_surface_parameter_near_point(surface, point.get(), Some(seed)))
             .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?
             .get();
-        let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v).ok()?;
         seed = Some(parameters);
         maximum = maximum.max(Point3::distance(point.get(), surface_point.get()));
     }
@@ -4981,8 +4981,8 @@ fn nurbs_degree_one_cache_lanes(
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
         let model_point = nurbs_curve_point_at(curve, parameter).ok()?;
-        let uv = nurbs_pcurve_uv(1, curve.knots(), &control_points, None, parameter)?;
-        let mapped_point = nurbs_surface_point(surface, uv.u, uv.v)?;
+        let uv = nurbs_pcurve_uv(1, curve.knots(), &control_points, None, parameter).ok()?;
+        let mapped_point = nurbs_surface_point(surface, uv.u, uv.v).ok()?;
         fit_tolerance = fit_tolerance.max(Point3::distance(model_point.get(), mapped_point.get()));
     }
     if !fit_tolerance.is_finite() {
@@ -5123,8 +5123,8 @@ fn ruled_surface_line_pcurve(
         let (u0, v0) = parameters(varying_min);
         let (u1, v1) = parameters(varying_max);
         Some((
-            nurbs_surface_point(surface, u0, v0)?,
-            nurbs_surface_point(surface, u1, v1)?,
+            nurbs_surface_point(surface, u0, v0).ok()?,
+            nurbs_surface_point(surface, u1, v1).ok()?,
         ))
     };
     let direction_squared = line_direction.x * line_direction.x

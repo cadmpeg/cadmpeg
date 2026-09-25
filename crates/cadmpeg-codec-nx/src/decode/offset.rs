@@ -276,13 +276,14 @@ fn offset_candidate_sample_error(
     }
     let u = u0 + (u1 - u0) * 0.5;
     let v = v0 + (v1 - v0) * 0.5;
-    let support_partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
+    let support_partials =
+        nurbs_surface_partials_with_budget(support, u, v, geometry_budget).ok()?;
     let normal = oriented_nurbs_normal(
         support,
         support_partials.du.cross(support_partials.dv.get()),
     )?;
     let candidate_point =
-        cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
+        cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget).ok()?;
     let expected = Point3::new(
         support_partials.point.x + distance * normal.x,
         support_partials.point.y + distance * normal.y,
@@ -595,10 +596,12 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             return None;
         }
         let support_point =
-            cadmpeg_ir::eval::nurbs_surface_point_with_budget(support, u, v, geometry_budget)?;
+            cadmpeg_ir::eval::nurbs_surface_point_with_budget(support, u, v, geometry_budget)
+                .ok()?;
         let candidate_point =
-            cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
-        let partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
+            cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)
+                .ok()?;
+        let partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget).ok()?;
         let normal_vector = partials.du.cross(partials.dv.get());
         let normal_size = normal_vector.norm();
         let half_u = (u1 - u0) * 0.5;
@@ -1420,14 +1423,14 @@ fn model_surface_derivative(
     periods: [Option<f64>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
-    if let Some(partials) = model_surface_partials_by_id_with_budget(
+    if let Ok(partials) = model_surface_partials_by_id_with_budget(
         index,
         surface,
         parameters.u,
         parameters.v,
         geometry_budget,
     ) {
-        return Some(if along_u { partials.du } else { partials.dv });
+        return Some(if along_u { partials.du } else { partials.dv }.get());
     }
 
     let mut before = parameters;
@@ -1471,13 +1474,14 @@ fn model_surface_point_and_derivatives(
     domain: Option<([f64; 2], [f64; 2])>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    if let Some(partials) = model_surface_partials_by_id_with_budget(
+    if let Ok(partials) = model_surface_partials_by_id_with_budget(
         index,
         surface,
         parameters.u,
         parameters.v,
         geometry_budget,
     ) {
+        let partials = partials.into_raw();
         return Some((partials.point, partials.du, partials.dv));
     }
     let position = model_surface_point_by_id_with_budget(

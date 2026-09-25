@@ -187,7 +187,7 @@ impl Transform {
     /// Build an affine transform from finite coefficients. Every coefficient
     /// is finite, so the rows keep the admission of [`Self::affine`] without
     /// a check.
-    fn from_finite_rows(rows: [[FiniteReal; 4]; 3]) -> Self {
+    pub(crate) fn from_finite_rows(rows: [[FiniteReal; 4]; 3]) -> Self {
         Self {
             rows: rows.map(|row| row.map(FiniteReal::get)),
         }

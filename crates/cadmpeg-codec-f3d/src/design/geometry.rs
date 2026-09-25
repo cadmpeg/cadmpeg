@@ -1219,6 +1219,7 @@ fn sketch_geometry_point(
                 weights.as_deref(),
                 parameter,
             )
+            .ok()
             .map(Point2::from)
         }
         _ => None,
@@ -1795,7 +1796,8 @@ fn certified_nurbs_tubes(
                     &control_points,
                     weights.as_deref(),
                     parameter(index),
-                )?
+                )
+                .ok()?
                 .as_raw(),
                 end: *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     degree as u32,
@@ -1803,7 +1805,8 @@ fn certified_nurbs_tubes(
                     &control_points,
                     weights.as_deref(),
                     parameter(index + 1),
-                )?
+                )
+                .ok()?
                 .as_raw(),
                 error,
             });
@@ -3105,7 +3108,8 @@ pub(super) fn sketch_entity_endpoints(
                     &control_points,
                     weights.as_deref(),
                     start_parameter,
-                )?
+                )
+                .ok()?
                 .as_raw(),
                 *cadmpeg_ir::eval::nurbs_pcurve_uv(
                     curve.degree(),
@@ -3113,7 +3117,8 @@ pub(super) fn sketch_entity_endpoints(
                     &control_points,
                     weights.as_deref(),
                     end_parameter,
-                )?
+                )
+                .ok()?
                 .as_raw(),
             ])
         }

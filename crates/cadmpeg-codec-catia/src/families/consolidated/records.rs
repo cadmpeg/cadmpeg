@@ -1571,7 +1571,7 @@ fn support_points(
                 .iter()
                 .map(|site| {
                     let [u, v] = site.point.get();
-                    let partials = nurbs_surface_partials(surface, u, v)?;
+                    let partials = nurbs_surface_partials(surface, u, v).ok()?;
                     let normal = partials.du.cross(partials.dv.get()).unit()?;
                     Some(Point3::new(
                         partials.point.x + offset.get() * normal.x,
@@ -1612,7 +1612,7 @@ fn nurbs_carrier_offset(
     }
     let mut offsets = Vec::with_capacity(parameters.len());
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        let partials = nurbs_surface_partials(surface, u, v)?;
+        let partials = nurbs_surface_partials(surface, u, v).ok()?;
         let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
         if residual == Vector3::new(0.0, 0.0, 0.0) {

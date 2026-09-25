@@ -199,7 +199,7 @@ fn numerical_audit_affine_evaluation_keeps_cancelled_products() {
     );
     assert_eq!(
         curve_tangent(&curve, 1.0).map(crate::features::FiniteVector3::get),
-        Some(Vector3::new(3.0, 2.0, 3.0))
+        Ok(Vector3::new(3.0, 2.0, 3.0))
     );
     for a in [1e-200, 1.0, 1e200] {
         let reflection =
@@ -312,7 +312,8 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
 
 #[test]
 fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
-    use super::super::{scalar_unary_sweep_law_differential, ScalarSweepDifferential};
+    use super::super::scalar_unary_sweep_law_differential;
+    use super::law_operand;
     for (operator, x, derivative, expected) in [
         ("LN", 1e-310, 1e-310, 1.0),
         ("COT", 1e-200, 1e-200, -1e200),
@@ -325,16 +326,10 @@ fn numerical_audit_chain_rules_keep_finite_composed_derivatives() {
             (-375.0_f64).exp() * ((-375.0_f64).exp() * 1e300),
         ),
     ] {
-        let result = scalar_unary_sweep_law_differential(
-            operator,
-            ScalarSweepDifferential {
-                value: x,
-                derivative,
-            },
-        )
-        .unwrap();
+        let result =
+            scalar_unary_sweep_law_differential(operator, law_operand(x, derivative)).unwrap();
         assert!(
-            (result.derivative / expected - 1.0).abs() <= 16.0 * f64::EPSILON,
+            (result.derivative.unwrap().get() / expected - 1.0).abs() <= 16.0 * f64::EPSILON,
             "{operator}"
         );
     }
@@ -502,12 +497,12 @@ fn numerical_audit_small_nurbs_span_keeps_finite_curve_derivatives() {
     assert_eq!(
         super::super::curve_tangent_solved(&line, width / 2.0)
             .map(crate::features::FiniteVector3::get),
-        Some(Vector3::new(1.0, 0.0, 0.0))
+        Ok(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
         super::super::curve_second_derivative_solved(&line, width / 2.0)
             .map(crate::features::FiniteVector3::get),
-        Some(Vector3::new(0.0, 0.0, 0.0))
+        Ok(Vector3::new(0.0, 0.0, 0.0))
     );
 
     let width = 1e-155;

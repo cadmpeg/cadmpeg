@@ -5090,10 +5090,10 @@ fn nurbs_surface_closed_u(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64
     [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]]
         .into_iter()
         .all(|v| {
-            let Some(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v) else {
+            let Ok(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v) else {
                 return false;
             };
-            let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v) else {
+            let Ok(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v) else {
                 return false;
             };
             close_point(start.get(), end.get())
@@ -5104,10 +5104,10 @@ fn nurbs_surface_closed_v(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64
     [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]]
         .into_iter()
         .all(|u| {
-            let Some(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]) else {
+            let Ok(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]) else {
                 return false;
             };
-            let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]) else {
+            let Ok(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]) else {
                 return false;
             };
             close_point(start.get(), end.get())

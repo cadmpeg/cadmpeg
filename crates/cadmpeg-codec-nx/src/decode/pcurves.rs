@@ -683,7 +683,8 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
             let selected_forward = (|| {
                 let curve = index.curves(curve.as_str())?;
                 let curve_tangent =
-                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)?
+                    curve_tangent_with_budget(&curve.geometry, range[0], geometry_budget)
+                        .ok()?
                         .unit_nonzero()?;
                 let alignment = |candidate: &PcurveGeometry| {
                     let uv = pcurve_uv(candidate, range[0]).ok()?;
@@ -694,7 +695,8 @@ fn orient_tolerant_intersection_pcurve_with_index_and_budget(
                         uv.u,
                         uv.v,
                         geometry_budget,
-                    )?;
+                    )
+                    .ok()?;
                     let tangent = FiniteVector3::new(Vector3::new(
                         uv_tangent.u * partials.du.x + uv_tangent.v * partials.dv.x,
                         uv_tangent.u * partials.du.y + uv_tangent.v * partials.dv.y,
@@ -1803,7 +1805,8 @@ fn exact_boundary_pcurve_with_index(
             parameters[index].u,
             parameters[index].v,
             geometry_budget,
-        )?;
+        )
+        .ok()?;
         let error = Point3::distance(point.get(), endpoints[index]);
         if !error.is_finite() || error > tolerance {
             return None;
@@ -2049,13 +2052,16 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
     let parameter = range[0];
     let uv = pcurve_uv(&candidate, parameter).ok()?;
     geometry_budget.charge().then_some(())?;
-    let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)?;
+    let surface_jet = surface_second_partials(&surface_carrier.geometry, uv.u, uv.v)
+        .ok()?
+        .into_raw();
     let curve_position =
         curve_point_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
     let curve_tangent =
-        curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+        curve_tangent_with_budget(&curve_carrier.geometry, parameter, geometry_budget).ok()?;
     let curve_acceleration =
-        curve_second_derivative_with_budget(&curve_carrier.geometry, parameter, geometry_budget)?;
+        curve_second_derivative_with_budget(&curve_carrier.geometry, parameter, geometry_budget)
+            .ok()?;
     let surface_tangent = Vector3::new(
         direction.u * surface_jet.du.x + direction.v * surface_jet.dv.x,
         direction.u * surface_jet.du.y + direction.v * surface_jet.dv.y,
@@ -2945,6 +2951,7 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
         return false;
     };
     let Some(tangent) = curve_tangent_with_budget(&curve.geometry, parameters.u, geometry_budget)
+        .ok()
         .and_then(FiniteVector3::unit_nonzero)
     else {
         return false;

@@ -183,7 +183,7 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+        Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result
         .report()
@@ -820,7 +820,7 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
+        Ok(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -1453,7 +1453,7 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(nurbs, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+        Ok(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -1481,7 +1481,7 @@ fn decode_projects_a_degree_zero_bspline_surface() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(1.0, 2.0, 3.0))
+        Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
@@ -1507,12 +1507,12 @@ fn decode_projects_multispan_degree_zero_bspline_surface() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(1.0, 2.0, 3.0))
+        Ok(Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, 0.5)
             .map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(4.0, 5.0, 6.0))
+        Ok(Point3::new(4.0, 5.0, 6.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

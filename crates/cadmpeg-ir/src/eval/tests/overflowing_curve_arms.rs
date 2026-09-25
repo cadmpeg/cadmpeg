@@ -5,7 +5,7 @@
 
 use crate::eval::{
     curve_point, model_curve_point_by_id, model_surface_point, model_surface_point_by_id,
-    pcurve_tangent, pcurve_uv, EvaluationFailure,
+    model_surface_point_by_id_with_budget, pcurve_tangent, pcurve_uv, EvaluationFailure,
 };
 use crate::features::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
@@ -68,18 +68,26 @@ fn curve_surface_model(
     (ir, surface_id, geometry)
 }
 
-/// Both surface routes' result at `(u, v)`.
+/// Every surface point route's result at `(u, v)`: the geometry route, and
+/// the arena route without and within a work budget.
 fn surface_routes(
     ir: &CadIr,
     surface: &SurfaceId,
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
-) -> [Result<FinitePoint3, EvaluationFailure<Point3>>; 2] {
+) -> [Result<FinitePoint3, EvaluationFailure<Point3>>; 3] {
     let index = crate::index::ModelIndex::new(ir);
     [
         model_surface_point(ir, geometry, u, v),
         model_surface_point_by_id(&index, surface, u, v),
+        model_surface_point_by_id_with_budget(
+            &index,
+            surface,
+            u,
+            v,
+            &cadmpeg_core::decode::WorkBudget::new(1_000_000),
+        ),
     ]
 }
 
@@ -269,10 +277,11 @@ fn a_subset_curve_whose_span_overflows_reaches_no_coordinate() {
 }
 
 /// A helix over the angles `[0, 1]` whose major and minor vectors reach
-/// `0.9 MAX` and whose apex factor 10 scales its radius: at angle 0 the
-/// point `(0.9 MAX, 0, 0)` is finite, and the tangent's radial term
-/// `10 / TAU * 0.9 MAX` overflows.
-fn overflowing_tangent_helix() -> ProceduralCurveDefinition {
+/// `0.9 MAX` and whose `apex_factor` scales its radius: at angle 0 the point
+/// `(0.9 MAX, 0, 0)` is finite, the tangent's radial term is
+/// `apex_factor / TAU * 0.9 MAX` along `x` and the acceleration's
+/// `2 apex_factor / TAU * 0.9 MAX` along `y`.
+fn large_helix(apex_factor: f64) -> ProceduralCurveDefinition {
     ProceduralCurveDefinition::Helix(
         HelixCurveConstruction::try_new(
             [0.0, 1.0],
@@ -283,7 +292,7 @@ fn overflowing_tangent_helix() -> ProceduralCurveDefinition {
                 pitch: Vector3::new(0.0, 0.0, 1.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
             },
-            10.0,
+            apex_factor,
             None,
         )
         .expect("helix fixture"),
@@ -291,16 +300,14 @@ fn overflowing_tangent_helix() -> ProceduralCurveDefinition {
 }
 
 #[test]
-fn a_helix_whose_tangent_overflows_reports_its_finite_point_as_left_the_finite_range() {
-    let (ir, helix) = procedural_curve_model(Vec::new(), |_| overflowing_tangent_helix());
+fn a_helix_whose_tangent_overflows_has_its_finite_point() {
+    // The tangent at angle 0 leaves the finite range; the point reads no
+    // tangent.
+    let (ir, helix) = procedural_curve_model(Vec::new(), |_| large_helix(10.0));
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
-        model_curve_point_by_id(&index, &helix, 0.0),
-        Err(EvaluationFailure::NonFinite(Point3::new(
-            0.9 * f64::MAX,
-            0.0,
-            0.0
-        )))
+        model_curve_point_by_id(&index, &helix, 0.0).map(FinitePoint3::get),
+        Ok(Point3::new(0.9 * f64::MAX, 0.0, 0.0))
     );
     assert_eq!(
         model_curve_point_by_id(&index, &helix, 2.0),
@@ -309,11 +316,10 @@ fn a_helix_whose_tangent_overflows_reports_its_finite_point_as_left_the_finite_r
 }
 
 #[test]
-fn an_extrusion_whose_directrix_tangent_overflows_reports_the_finite_point_it_reached() {
-    // The helix directrix is finite at angle 0 and its tangent overflows, so
-    // the extrusion's partials leave the finite range at the finite point
-    // the extrusion reaches.
-    let (mut ir, helix) = procedural_curve_model(Vec::new(), |_| overflowing_tangent_helix());
+fn an_extrusion_over_a_helix_whose_tangent_overflows_has_its_finite_point() {
+    // The helix directrix is finite at angle 0 and its tangent overflows; the
+    // extrusion point reads the directrix point only.
+    let (mut ir, helix) = procedural_curve_model(Vec::new(), |_| large_helix(10.0));
     let surface = SurfaceId::mint("test:model:surface#extrusion").expect("valid identity");
     let construction =
         ProceduralSurfaceId::mint("test:model:procedural#extrusion").expect("valid identity");
@@ -342,12 +348,8 @@ fn an_extrusion_whose_directrix_tangent_overflows_reports_the_finite_point_it_re
     ));
     for route in surface_routes(&ir, &surface, &geometry, 0.0, 2.0) {
         assert_eq!(
-            route,
-            Err(EvaluationFailure::NonFinite(Point3::new(
-                0.9 * f64::MAX,
-                0.0,
-                2.0
-            )))
+            route.map(FinitePoint3::get),
+            Ok(Point3::new(0.9 * f64::MAX, 0.0, 2.0))
         );
     }
 }
@@ -531,4 +533,366 @@ fn an_offset_pcurve_over_an_offset_basis_has_no_tangent() {
         Ok(Point2::new(0.5, 2.0))
     );
     assert_eq!(pcurve_tangent(&outer, 0.5), Err(EvaluationFailure::NoValue));
+}
+
+#[test]
+fn an_extrusion_whose_directrix_tangent_overflows_has_its_finite_point_on_every_route() {
+    // The line through the origin along (1, 1, 0) / sqrt(2), placed by rows
+    // whose first sums the two lanes at the largest finite scale: its point
+    // at t = 0 is the origin, and its tangent reaches x = MAX * sqrt(2),
+    // outside the finite range. The extrusion point by v = 2 along z reads no
+    // tangent.
+    let directrix = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(
+                LineCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(
+                        std::f64::consts::FRAC_1_SQRT_2,
+                        std::f64::consts::FRAC_1_SQRT_2,
+                        0.0,
+                    ),
+                )
+                .expect("line fixture"),
+            )),
+            Transform::affine([
+                [f64::MAX, f64::MAX, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed curve fixture"),
+    ));
+    assert!(crate::eval::curve_tangent(&directrix, 0.0).is_err());
+    let (ir, surface, geometry) = curve_surface_model(vec![directrix], |curves| {
+        ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(
+                curves[0].clone(),
+                None,
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                CacheContract::from_form(None),
+            )
+            .expect("extrusion fixture"),
+        )
+    });
+    for route in surface_routes(&ir, &surface, &geometry, 0.0, 2.0) {
+        assert_eq!(route.map(FinitePoint3::get), Ok(Point3::new(0.0, 0.0, 2.0)));
+    }
+}
+
+/// The circle of radius 2 about `(-2, 0, 0)` in the `xy` plane, placed by a
+/// transform that scales `x` by `f64::MAX`: at `t = 0` its point is the
+/// origin and its tangent `(0, 2, 0)`, and its acceleration `(-2, 0, 0)`
+/// reaches `x = -inf`.
+fn overflowing_acceleration_circle() -> CurveGeometry {
+    CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Circle(
+                crate::geometry::analytic::CircleCurve::try_new(
+                    Point3::new(-2.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("circle fixture"),
+            )),
+            Transform::affine([
+                [f64::MAX, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed curve fixture"),
+    ))
+}
+
+/// The line through `origin` along `direction`.
+fn line(origin: Point3, direction: Vector3) -> CurveGeometry {
+    CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(origin, direction).expect("line fixture"),
+    ))
+}
+
+/// A surface over [`overflowing_acceleration_circle`] has its point on every
+/// route and its first partials `[du, dv]` there; its second partials leave
+/// the finite range at the point.
+fn assert_second_order_alone_overflows(
+    (ir, surface, geometry): (CadIr, SurfaceId, SurfaceGeometry),
+    (u, v): (f64, f64),
+    point: Point3,
+    [du, dv]: [Vector3; 2],
+) {
+    assert!(crate::eval::curve_second_derivative(&overflowing_acceleration_circle(), 0.0).is_err());
+    for route in surface_routes(&ir, &surface, &geometry, u, v) {
+        assert_eq!(route.map(FinitePoint3::get), Ok(point));
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
+    let expected = Ok(crate::eval::SurfacePartials { point, du, dv });
+    assert_eq!(
+        crate::eval::model_surface_partials_by_id(&index, &surface, u, v)
+            .map(crate::eval::SurfacePartials::into_raw),
+        expected
+    );
+    assert_eq!(
+        crate::eval::model_surface_partials_by_id_with_budget(&index, &surface, u, v, &budget)
+            .map(crate::eval::SurfacePartials::into_raw),
+        expected
+    );
+    assert_eq!(
+        crate::eval::model_surface_second_partials_by_id(&index, &surface, u, v)
+            .map(crate::eval::SurfaceSecondPartials::into_raw),
+        Err(EvaluationFailure::NonFinite(point))
+    );
+}
+
+#[test]
+fn an_extrusion_whose_directrix_acceleration_overflows_keeps_its_point_and_first_partials() {
+    assert_second_order_alone_overflows(
+        curve_surface_model(vec![overflowing_acceleration_circle()], |curves| {
+            ProceduralSurfaceDefinition::Extrusion(
+                ExtrusionSurfaceConstruction::try_new(
+                    curves[0].clone(),
+                    None,
+                    Vector3::new(0.0, 0.0, 1.0),
+                    None,
+                    CacheContract::from_form(None),
+                )
+                .expect("extrusion fixture"),
+            )
+        }),
+        (0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        [Vector3::new(0.0, 2.0, 0.0), Vector3::new(0.0, 0.0, 1.0)],
+    );
+}
+
+#[test]
+fn a_linear_sweep_whose_directrix_acceleration_overflows_keeps_its_point_and_first_partials() {
+    assert_second_order_alone_overflows(
+        curve_surface_model(vec![overflowing_acceleration_circle()], |curves| {
+            ProceduralSurfaceDefinition::LinearSweep(
+                LinearSweepSurfaceConstruction::try_new(
+                    curves[0].clone(),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("linear sweep fixture"),
+            )
+        }),
+        (0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        [Vector3::new(0.0, 2.0, 0.0), Vector3::new(0.0, 0.0, 1.0)],
+    );
+}
+
+#[test]
+fn a_ruled_surface_whose_rail_acceleration_overflows_keeps_its_point_and_first_partials() {
+    // Halfway from the circle's origin to the line's (0, 0, 2) along y.
+    assert_second_order_alone_overflows(
+        curve_surface_model(
+            vec![
+                overflowing_acceleration_circle(),
+                line(Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 1.0, 0.0)),
+            ],
+            |curves| ProceduralSurfaceDefinition::Ruled {
+                first: curves[0].clone(),
+                second: curves[1].clone(),
+                cache: None,
+            },
+        ),
+        (0.0, 0.5),
+        Point3::new(0.0, 0.0, 1.0),
+        [Vector3::new(0.0, 1.5, 0.0), Vector3::new(0.0, 0.0, 2.0)],
+    );
+}
+
+#[test]
+fn a_sum_surface_whose_curve_acceleration_overflows_keeps_its_point_and_first_partials() {
+    assert_second_order_alone_overflows(
+        curve_surface_model(
+            vec![
+                overflowing_acceleration_circle(),
+                line(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+            ],
+            |curves| {
+                ProceduralSurfaceDefinition::Sum(
+                    SumSurfaceConstruction::try_new(
+                        curves[0].clone(),
+                        curves[1].clone(),
+                        Vector3::new(0.0, 0.0, 0.0),
+                        CacheContract::from_form(None),
+                    )
+                    .expect("sum fixture"),
+                )
+            },
+        ),
+        (0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        [Vector3::new(0.0, 2.0, 0.0), Vector3::new(0.0, 0.0, 1.0)],
+    );
+}
+
+#[test]
+fn a_revolution_whose_directrix_acceleration_overflows_keeps_its_point_and_first_partials() {
+    // The origin revolved by angle 0 about the z axis through (1, 0, 0).
+    assert_second_order_alone_overflows(
+        curve_surface_model(vec![overflowing_acceleration_circle()], |curves| {
+            ProceduralSurfaceDefinition::Revolution(
+                RevolutionSurfaceConstruction::try_new(
+                    curves[0].clone(),
+                    (
+                        FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite origin"),
+                        crate::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0))
+                            .expect("unit axis"),
+                    ),
+                    [0.0, std::f64::consts::TAU],
+                    None,
+                    None,
+                    false,
+                    CacheContract::from_form(None),
+                )
+                .expect("revolution fixture"),
+            )
+        }),
+        (0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+        [Vector3::new(0.0, 2.0, 0.0), Vector3::new(0.0, -1.0, 0.0)],
+    );
+}
+
+#[test]
+fn an_axis_revolution_whose_directrix_acceleration_overflows_keeps_its_point_and_first_partials() {
+    // The angle is u and the directrix parameter v.
+    assert_second_order_alone_overflows(
+        curve_surface_model(vec![overflowing_acceleration_circle()], |curves| {
+            ProceduralSurfaceDefinition::AxisRevolution(
+                AxisRevolutionSurfaceConstruction::try_new(
+                    curves[0].clone(),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .expect("axis revolution fixture"),
+            )
+        }),
+        (0.0, 0.0),
+        Point3::new(0.0, 0.0, 0.0),
+        [Vector3::new(0.0, -1.0, 0.0), Vector3::new(0.0, 2.0, 0.0)],
+    );
+}
+
+#[test]
+fn a_hyperbola_whose_scaled_cosh_alone_overflows_keeps_its_point_and_second_derivative() {
+    // With major radius 1 and minor radius MAX, the point and second
+    // derivative read cosh(t) and MAX sinh(t), both finite at t = 1e-7; the
+    // tangent reads MAX cosh(t), which overflows.
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+        crate::geometry::analytic::HyperbolaCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            f64::MAX,
+        )
+        .expect("hyperbola fixture"),
+    ));
+    let t = 1.0e-7_f64;
+    let lanes = |value: Vector3| {
+        assert_eq!(value.x, t.cosh());
+        assert!((value.y / (f64::MAX * t.sinh()) - 1.0).abs() <= 4.0 * f64::EPSILON);
+        assert_eq!(value.z, 0.0);
+    };
+    lanes(
+        curve_point(&hyperbola, t)
+            .expect("point")
+            .get()
+            .vector_from(Point3::new(0.0, 0.0, 0.0)),
+    );
+    lanes(
+        crate::eval::curve_second_derivative(&hyperbola, t)
+            .expect("second derivative")
+            .get(),
+    );
+    assert_eq!(
+        crate::eval::curve_tangent(&hyperbola, t),
+        Err(EvaluationFailure::NonFinite(()))
+    );
+}
+
+#[test]
+fn an_extrusion_over_a_helix_whose_acceleration_overflows_keeps_its_first_partials() {
+    // With apex factor 5 the tangent's radial term 5 / TAU * 0.9 MAX is
+    // finite and the acceleration's 10 / TAU * 0.9 MAX overflows.
+    let (mut ir, helix) = procedural_curve_model(Vec::new(), |_| large_helix(5.0));
+    let surface = SurfaceId::mint("test:model:surface#extrusion").expect("valid identity");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:procedural#extrusion").expect("valid identity");
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction,
+        ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(
+                helix,
+                None,
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                CacheContract::from_form(None),
+            )
+            .expect("extrusion fixture"),
+        ),
+        None,
+    ));
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = Point3::new(0.9 * f64::MAX, 0.0, 2.0);
+    let partials = crate::eval::model_surface_partials_by_id(&index, &surface, 0.0, 2.0)
+        .expect("first partials")
+        .into_raw();
+    assert_eq!(partials.point, point);
+    let radial = 5.0 / std::f64::consts::TAU * 0.9 * f64::MAX;
+    assert!((partials.du.x / radial - 1.0).abs() <= 8.0 * f64::EPSILON);
+    assert!((partials.du.y / (0.9 * f64::MAX) - 1.0).abs() <= 8.0 * f64::EPSILON);
+    assert!((partials.du.z * std::f64::consts::TAU - 1.0).abs() <= 8.0 * f64::EPSILON);
+    assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(
+        crate::eval::model_surface_second_partials_by_id(&index, &surface, 0.0, 2.0)
+            .map(crate::eval::SurfaceSecondPartials::into_raw),
+        Err(EvaluationFailure::NonFinite(point))
+    );
+}
+
+#[test]
+fn a_helix_whose_axis_length_overflows_has_its_point() {
+    // The helix reads its pitch, not its axis; an axis whose length
+    // overflows leaves the point as it is.
+    let (ir, helix) = procedural_curve_model(Vec::new(), |_| {
+        ProceduralCurveDefinition::Helix(
+            HelixCurveConstruction::try_new(
+                [0.0, 1.0],
+                HelixFrame {
+                    center: Point3::new(0.0, 0.0, 0.0),
+                    major: Vector3::new(1.0, 0.0, 0.0),
+                    minor: Vector3::new(0.0, 1.0, 0.0),
+                    pitch: Vector3::new(0.0, 0.0, 1.0),
+                    axis: Vector3::new(f64::MAX, f64::MAX, 0.0),
+                },
+                0.0,
+                None,
+            )
+            .expect("helix fixture"),
+        )
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_curve_point_by_id(&index, &helix, 0.0).map(FinitePoint3::get),
+        Ok(Point3::new(1.0, 0.0, 0.0))
+    );
 }

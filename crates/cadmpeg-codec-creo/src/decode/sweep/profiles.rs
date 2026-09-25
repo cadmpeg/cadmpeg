@@ -886,7 +886,7 @@ fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) ->
         {
             let parameter = middle + half_width * node;
             let point = cadmpeg_ir::eval::curve_point(&carrier, parameter).ok()?;
-            let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
+            let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter).ok()?;
             area_twice += weight * (point.x * tangent.y - point.y * tangent.x) * half_width;
         }
     }

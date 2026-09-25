@@ -987,7 +987,8 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
                 surface,
                 parameters[0],
                 parameters[1],
-            )?
+            )
+            .ok()?
         }
         None => {
             // A support with no procedural entry takes `model_surface_mapping`'s
@@ -1004,10 +1005,11 @@ fn indicator_normal(ir: &CadIr, surface: &SurfaceId) -> Option<Vector3> {
                 .iter()
                 .rev()
                 .find(|carrier| carrier.id == *surface)?;
-            cadmpeg_ir::eval::surface_partials(&carrier.geometry, parameters[0], parameters[1])?
+            cadmpeg_ir::eval::surface_partials(&carrier.geometry, parameters[0], parameters[1])
+                .ok()?
         }
     };
-    unit_vector(partials.du.cross(partials.dv))
+    unit_vector(partials.du.cross(partials.dv.get()))
 }
 
 fn indicator_orientation(

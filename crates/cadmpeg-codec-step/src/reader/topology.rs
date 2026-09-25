@@ -3853,7 +3853,7 @@ fn mapped_pcurve_closest(
         let uv = pcurve_selection_uv(geometry, parameter)?;
         let tangent_uv = pcurve_tangent(geometry, parameter).ok()?;
         let [u, v] = surface_selection_parameters(index, surface_id, uv.u, uv.v);
-        let partials = model_surface_partials_by_id(index, surface_id, u, v)?;
+        let partials = model_surface_partials_by_id(index, surface_id, u, v).ok()?;
         Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,

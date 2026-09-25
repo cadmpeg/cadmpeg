@@ -492,8 +492,6 @@ impl FiniteReal {
     pub const HALF: Self = Self(0.5);
     /// Two.
     pub(crate) const TWO: Self = Self(2.0);
-    /// One full turn in radians.
-    pub(crate) const TAU: Self = Self(std::f64::consts::TAU);
 
     /// Reverse the sign.
     #[must_use]
@@ -537,6 +535,70 @@ impl FiniteReal {
     #[must_use]
     pub(crate) fn from_integer(value: i64) -> Self {
         Self(value as f64)
+    }
+
+    /// The turns from `start` to `self`: `(self - start) / τ`, rounded once
+    /// from the exact difference.
+    ///
+    /// The exact difference of two finite values is at most `2 * f64::MAX`
+    /// in magnitude and `τ` exceeds two, so the quotient is finite and nothing
+    /// is checked. The route lives beside [`FiniteReal`] because only this
+    /// module constructs one.
+    #[must_use]
+    pub(crate) fn turns_from(self, start: Self) -> Self {
+        use crate::math::sum::{ExactSignedSum, ScaledValue};
+        let mut difference = ExactSignedSum::default();
+        difference.add_product(self.0, 1.0);
+        difference.add_product(start.0, -1.0);
+        let turn = ScaledValue::of_nonzero(NonZeroReal(std::f64::consts::TAU));
+        Self(difference.finish().map_or(0.0, |difference| {
+            difference.quotient_shifted_product(turn, 0)
+        }))
+    }
+
+    /// Where `self` lies against the segment from `start` to `end`: outside
+    /// it, on a segment of zero width, or at the fraction `(self - start) /
+    /// (end - start)`, rounded once from the exact differences.
+    ///
+    /// A value within the segment lies no farther from `start` than `end`
+    /// does, and on the same side, so the fraction lies in `[0, 1]` and
+    /// nothing is checked. The route lives beside [`FiniteReal`] because only
+    /// this module constructs one.
+    pub(crate) fn segment_position(self, start: Self, end: Self) -> SegmentPosition {
+        use crate::math::sum::ExactSignedSum;
+        if !((self >= start && self <= end) || (self <= start && self >= end)) {
+            return SegmentPosition::Outside;
+        }
+        let mut width = ExactSignedSum::default();
+        width.add_product(end.0, 1.0);
+        width.add_product(start.0, -1.0);
+        let Some(width) = width.finish() else {
+            return SegmentPosition::Degenerate;
+        };
+        let mut distance = ExactSignedSum::default();
+        distance.add_product(self.0, 1.0);
+        distance.add_product(start.0, -1.0);
+        SegmentPosition::Within(Self(
+            distance
+                .finish()
+                .map_or(0.0, |distance| distance.quotient_shifted_product(width, 0)),
+        ))
+    }
+
+    /// `exp(-|self|)` and `(1 + exp(-|self|)²)²`, the tail and the squared
+    /// denominator of the hyperbolic tangent's derivative. The tail lies in
+    /// `[0, 1]`, so the denominator lies in `[1, 4]` and nothing is checked.
+    /// The route lives beside [`FiniteReal`] because only this module
+    /// constructs a nonzero value.
+    pub(crate) fn hyperbolic_tail(self) -> (f64, NonZeroReal) {
+        let tail = (-self.0.abs()).exp();
+        (tail, NonZeroReal((1.0 + tail * tail).powi(2)))
+    }
+
+    /// The value as a magnitude above one, or none where its magnitude is at
+    /// most one.
+    pub(crate) fn beyond_unit(self) -> Option<BeyondUnit> {
+        (self.0.abs() > 1.0).then_some(BeyondUnit(self.0))
     }
 
     /// Half the value. Half a finite value is finite.
@@ -833,6 +895,29 @@ impl crate::features::FiniteVector3 {
             component(vector.z, z),
         ))
     }
+
+    /// The unit direction, and the factors `[scale, scale, scale, length³]`
+    /// of the cubed length, where `scale` is the largest component magnitude
+    /// and `length` the norm of the components over it; none for the zero
+    /// vector.
+    ///
+    /// The scale of a nonzero vector is nonzero and finite. Each component
+    /// over it lies in `[-1, 1]` and the largest is `±1` exactly, so `length`
+    /// lies in `[1, √3]` and its cube in `[1, 3√3]`: nothing is checked.
+    #[must_use]
+    pub(crate) fn unit_with_cubed_length(self) -> Option<(crate::math::Vector3, [NonZeroReal; 4])> {
+        let unit = self.unit_nonzero()?;
+        let vector = self.get();
+        let scale = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+        let length = (vector.x / scale)
+            .hypot(vector.y / scale)
+            .hypot(vector.z / scale);
+        let scale = NonZeroReal(scale);
+        Some((
+            unit,
+            [scale, scale, scale, NonZeroReal(length * length * length)],
+        ))
+    }
 }
 
 impl crate::units::FinitePoint2 {
@@ -893,6 +978,60 @@ impl ExtendedReal {
     /// The four-quadrant arctangent of `self / x`, an angle in `[-π, π]`.
     pub(crate) fn atan2(self, x: Self) -> FiniteReal {
         FiniteReal(self.0.atan2(x.0))
+    }
+}
+
+/// Where a value lies against a segment of two finite bounds.
+pub(crate) enum SegmentPosition {
+    /// The value lies outside the segment.
+    Outside,
+    /// The bounds are equal: the segment has zero width.
+    Degenerate,
+    /// The value lies at this fraction of the segment, in `[0, 1]`.
+    Within(FiniteReal),
+}
+
+/// A finite value whose magnitude exceeds one.
+#[derive(Clone, Copy)]
+pub(crate) struct BeyondUnit(f64);
+
+impl BeyondUnit {
+    /// `dividend / self`. The quotient's magnitude is below the dividend's,
+    /// so it is finite and nothing is checked.
+    pub(crate) fn quotient(self, dividend: FiniteReal) -> FiniteReal {
+        FiniteReal(dividend.0 / self.0)
+    }
+
+    /// `((self - 1) / self) * ((self + 1) / self)`, which is `1 - 1/self²`.
+    ///
+    /// For `self` in `(1, 2]` the difference `self - 1` is exact and at least
+    /// `2^-52`, and beyond two it is at least one; the sum `self + 1` is at
+    /// least two. Each quotient lies in `(0, 2)`, and their product is
+    /// positive, finite and at least `2^-53`; the negative side is the mirror
+    /// image. Nothing is checked.
+    pub(crate) fn square_complement(self) -> NonZeroReal {
+        let x = self.0;
+        NonZeroReal(((x - 1.0) / x) * ((x + 1.0) / x))
+    }
+
+    /// The inverse hyperbolic cotangent, `atanh(1 / self)`. The reciprocal's
+    /// magnitude is below one, so the value is finite and nothing is checked.
+    pub(crate) fn arcoth(self) -> FiniteReal {
+        FiniteReal((1.0 / self.0).atanh())
+    }
+}
+
+impl PositiveReal {
+    /// `sqrt((1 - self) * (1 + self))` for a value below one, and none
+    /// otherwise.
+    ///
+    /// Below one each factor is at least `2^-53`: `1 - self` is exact from
+    /// one half on and at least one half before it. The product is normal and
+    /// at most one, so the root is positive and finite and nothing is
+    /// checked. The route lives beside [`FiniteReal`] because only this
+    /// module constructs one.
+    pub(crate) fn unit_complement_root(self) -> Option<Self> {
+        (self.0 < 1.0).then(|| Self(((1.0 - self.0) * (1.0 + self.0)).sqrt()))
     }
 }
 

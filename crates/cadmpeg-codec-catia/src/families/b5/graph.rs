@@ -2229,13 +2229,16 @@ pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64;
             .map(PositiveReal::get)
             .collect::<Vec<_>>()
     });
-    let point = Point2::from(nurbs_pcurve_uv(
-        pcurve.degree,
-        &knots,
-        &control_points,
-        weights.as_deref(),
-        parameter,
-    )?);
+    let point = Point2::from(
+        nurbs_pcurve_uv(
+            pcurve.degree,
+            &knots,
+            &control_points,
+            weights.as_deref(),
+            parameter,
+        )
+        .ok()?,
+    );
     Some([point.u, point.v])
 }
 
@@ -4219,7 +4222,7 @@ fn lift_pcurve_endpoints(
 }
 
 fn evaluate_nurbs(surface: &NurbsSurface, u: f64, v: f64) -> Option<[f64; 3]> {
-    let point = nurbs_surface_point(surface, u, v)?;
+    let point = nurbs_surface_point(surface, u, v).ok()?;
     Some([point.x, point.y, point.z])
 }
 

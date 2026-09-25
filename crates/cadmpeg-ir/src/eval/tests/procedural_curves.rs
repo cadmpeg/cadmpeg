@@ -62,10 +62,13 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         let differential = model_curve_differential_by_id(&index, &subset, 1.0).unwrap();
         assert_eq!(differential.point, expected);
         assert_eq!(
-            differential.tangent,
+            differential.tangent.unwrap().get(),
             Vector3::new(if sense { 1.0 } else { -1.0 }, 0.0, 0.0)
         );
-        assert_eq!(differential.acceleration, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            differential.acceleration.unwrap().get(),
+            Vector3::new(0.0, 0.0, 0.0)
+        );
         assert_eq!(
             model_curve_parameter_near_point_with_tolerance(
                 &index,

@@ -344,3 +344,259 @@ fn a_coedge_use_curve_whose_end_overflows_misses_its_traversal_vertices_by_nan()
         "{findings:?}"
     );
 }
+
+/// Make `surface` the circular variable blend of radius 3 between the planes
+/// `z = 0` and `x = 0` along the contacts `(3, v, 0)` and `(0, v, 3)`, whose
+/// first support is the plane `z = 0` over `u` in `[0, 3]` with a ramp of
+/// `1e293` along `x` over the next representable `u`: at the contact `u = 3`
+/// the support's `u` partial overflows, so the section's support normal and
+/// every blend point between the contacts leave the finite range.
+fn make_steep_circular_blend(ir: &mut crate::document::CadIr, surface: &crate::ids::SurfaceId) {
+    use crate::geometry::{
+        RevisionSurfaceParameterization, RollingBallSide, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry, VariableBlendConstruction, VariableBlendConvexity,
+        VariableBlendCrossSection, VariableBlendRadii, VariableBlendRenderMode,
+        VariableBlendSupportKind, VariableBlendSurfaceSubtype, VariableBlendValue,
+        VariableBlendValuePayload,
+    };
+    let mint = |name: &str| crate::ids::SurfaceId::mint(format!("test:model:surface#{name}"));
+    let first = mint("steep-support").expect("valid identity");
+    let second = mint("wall-support").expect("valid identity");
+    let slice = crate::ids::CurveId::mint("test:model:curve#blend-slice").expect("valid identity");
+    let construction = crate::ids::ProceduralSurfaceId::mint("test:model:procedural#steep-blend")
+        .expect("valid identity");
+    let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
+    ir.model.surfaces.extend([
+        Surface {
+            id: first.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                crate::geometry::nurbs::NurbsSurface::from_lanes(
+                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
+                        false,
+                    ),
+                    crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                        1,
+                        vec![0.0, 0.0, 1.0, 1.0],
+                        false,
+                    ),
+                    crate::geometry::nurbs::NurbsSurfaceLanes::new(
+                        [0.0, 3.0, 3.0 + 1.0e293]
+                            .map(|x| vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)])
+                            .to_vec(),
+                        None,
+                    ),
+                    false,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        },
+        Surface {
+            id: second.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                crate::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        },
+    ]);
+    ir.model.curves.push(crate::geometry::Curve {
+        id: slice.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|candidate| candidate.id == *surface)
+        .expect("blend surface")
+        .geometry = SurfaceGeometry::Procedural {
+        construction: construction.clone(),
+        cache: None,
+    };
+    let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
+        support_kind: VariableBlendSupportKind::Surface,
+        surface: Some(crate::geometry::RollingBallSupportSurface {
+            surface,
+            parameter_ranges: [[None, None], [None, None]],
+        }),
+        curve: None,
+        pcurve: Some(PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(origin, direction).unwrap(),
+        )),
+        location: Point3::new(0.0, 0.0, 0.0),
+        secondary_pcurve: None,
+        extension: None,
+    };
+    let radius = VariableBlendValue {
+        modern_flag: false,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::TwoEnds {
+            discriminator: 0,
+            parameters: [0.0, 1.0],
+            radii: [3.0, 3.0],
+        },
+    };
+    let blend = VariableBlendConstruction {
+        subtype: VariableBlendSurfaceSubtype::VariableBlend,
+        revision: crate::scalar::PositiveI64::new(23100).expect("positive revision"),
+        sides: [
+            side(first, Point2::new(3.0, 0.0), Point2::new(0.0, 1.0)),
+            side(second, Point2::new(0.0, 3.0), Point2::new(1.0, 0.0)),
+        ],
+        slice,
+        slice_range: [Some(0.0), Some(1.0)],
+        offsets: [0.0, 0.0],
+        radii: VariableBlendRadii::Single { value: radius },
+        cross_section: Some(VariableBlendCrossSection::Circular {}),
+        u_range: [0.0, 1.0],
+        v_lower: Some(0.0),
+        shape_parameter: 0.0,
+        shape_length: 0.0,
+        shape_tail: 0,
+        cache: crate::geometry::VariableBlendCache::Parameterization {
+            shape_prefix: 1,
+            parameterization: RevisionSurfaceParameterization {
+                u_interval: [Some(0.0), Some(1.0)],
+                v_interval: [Some(0.0), Some(1.0)],
+                ..Default::default()
+            },
+        },
+        discontinuities: std::array::from_fn(|_| Vec::new()),
+        tail_flag: false,
+        tail_extensions: [0; 3],
+        secondary_curve: None,
+        convexity: VariableBlendConvexity::Convex,
+        render_mode: VariableBlendRenderMode::RollingBallEnvelope,
+        post_range: [None, None],
+        post_curve: None,
+        post_pcurve: None,
+    };
+    ir.model
+        .procedural_surfaces
+        .push(crate::geometry::ProceduralSurface::new(
+            construction,
+            crate::geometry::ProceduralSurfaceDefinition::VariableBlend(
+                crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                    blend,
+                ))
+                .unwrap(),
+            ),
+            None,
+        ));
+}
+
+#[test]
+fn a_support_side_on_a_blend_whose_support_partial_overflows_misses_its_contract_by_nan() {
+    // The surface curve's support is the blend; the side's pcurve runs over
+    // the section parameters 0.25 to 0.75 at v = 0.5, where the blend points
+    // leave the finite range with no coordinate.
+    let mut ir = mapped_surface_curve_with_pcurve(
+        PcurveGeometry::Line(
+            crate::geometry::pcurve::LinePcurve::try_new(
+                Point2::new(0.25, 0.5),
+                Point2::new(0.5, 0.0),
+            )
+            .unwrap(),
+        ),
+        [0.0, 1.0],
+    );
+    let support = ir.model.surfaces[0].id.clone();
+    make_steep_circular_blend(&mut ir, &support);
+    let mut findings = Vec::new();
+    check_procedural_support_consistency(&ir, &mut findings);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(
+        findings[0].message,
+        "procedural support side 0 misses its endpoint distance contract by NaN"
+    );
+}
+
+#[test]
+fn a_charted_tolerant_intersection_on_a_blend_whose_support_partial_overflows_misses_its_witnesses_by_nan(
+) {
+    // The first support is the blend and the second the plane y = 0; the
+    // line pcurve (0.25 + 0.25 t, 0.5) over t in [0, 1] stays between the
+    // blend's contacts, where the blend points have no coordinate.
+    let mut ir = crate::document::CadIr::empty();
+    let supports = ["test:model:surface#first", "test:model:surface#second"]
+        .map(|id| crate::ids::SurfaceId::mint(id).unwrap());
+    ir.model.surfaces.extend(supports.clone().map(|id| {
+        crate::geometry::Surface {
+            id,
+            geometry: crate::geometry::SurfaceGeometry::Solved(
+                crate::geometry::SolvedSurfaceGeometry::Plane(
+                    crate::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(0.0, 0.0, 0.0),
+                        Vector3::new(0.0, -1.0, 0.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                ),
+            ),
+            source_object: None,
+        }
+    }));
+    make_steep_circular_blend(&mut ir, &supports[0]);
+    let curve = crate::ids::CurveId::mint("test:model:curve#intersection").unwrap();
+    ir.model.curves.push(crate::geometry::Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    let pcurve = PcurveGeometry::Line(
+        crate::geometry::pcurve::LinePcurve::try_new(
+            Point2::new(0.25, 0.5),
+            Point2::new(0.25, 0.0),
+        )
+        .unwrap(),
+    );
+    ir.model
+        .add_procedural_curve(
+            curve,
+            crate::geometry::ProceduralCurve::new(
+                crate::ids::ProceduralCurveId::mint("test:model:procedural#intersection").unwrap(),
+                crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
+                    construction: crate::geometry::TolerantIntersectionConstruction::try_new(
+                        supports,
+                        [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                        1.0e-9,
+                    )
+                    .unwrap(),
+                    parameterization: Some(
+                        crate::geometry::TolerantIntersectionParameterization::try_new(
+                            [pcurve.clone(), pcurve],
+                            [0.0, 1.0],
+                        )
+                        .unwrap(),
+                    ),
+                    cache: None,
+                },
+            ),
+        )
+        .unwrap();
+    let mut findings = Vec::new();
+    check_procedural_support_consistency(&ir, &mut findings);
+    assert_eq!(
+        messages(&findings),
+        ["charted tolerant intersection misses its endpoint witnesses by NaN"]
+    );
+}
