@@ -99,6 +99,30 @@ mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
+/// A contact track through `point` whose track tangent is `tangent`: the
+/// support's first `u` partial is the tangent and the pcurve runs along `u`.
+fn contact_track(point: Point3, tangent: Vector3) -> crate::eval::ContactTrack {
+    let finite = |vector| crate::features::FiniteVector3::new(vector).unwrap();
+    crate::eval::ContactTrack {
+        support: crate::eval::SurfaceFirstOrder {
+            point: crate::features::FinitePoint3::new(point).unwrap(),
+            first: Ok([finite(tangent), finite(Vector3::new(0.0, 0.0, 0.0))]),
+        },
+        uv_tangent: Ok(
+            crate::units::FinitePoint2::new(crate::math::Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        normal_derivative: Err(crate::eval::EvaluationFailure::NoValue),
+    }
+}
+
+/// A scalar law operand with value `value` and derivative `derivative`.
+fn law_operand(value: f64, derivative: f64) -> crate::eval::ScalarSweepDifferential {
+    crate::eval::ScalarSweepDifferential {
+        value: crate::scalar::FiniteReal::new(value).unwrap(),
+        derivative: Ok(crate::scalar::FiniteReal::new(derivative).unwrap()),
+    }
+}
+
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
@@ -139,8 +163,8 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         .unwrap();
     };
     let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
-    assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
-    assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
+    assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Ok(expected));
+    assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Ok(expected));
 
     {
         let replacement = false;
@@ -162,7 +186,7 @@ fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
         })
         .unwrap();
     };
-    assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
+    assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Ok(expected));
 }
 
 #[test]
@@ -287,19 +311,19 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
 fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
     let surface = bilinear_surface();
     let budget = WorkBudget::new(3);
-    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(12);
-    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_ok());
     assert_eq!(budget.consumed(), 12);
 
     let budget = WorkBudget::new(27);
-    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_err());
     assert!(budget.exhausted());
 
     let budget = WorkBudget::new(28);
-    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_ok());
     assert_eq!(budget.consumed(), 28);
 
     let transformed = SolvedSurfaceGeometry::Transformed(
@@ -407,7 +431,9 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
     .unwrap();
     let point = Point3::new(1.0, 2.0, 3.0);
     assert_eq!(
-        nurbs_surface_point(&surface, 0.25, 0.75).map(crate::features::FinitePoint3::get),
+        nurbs_surface_point(&surface, 0.25, 0.75)
+            .ok()
+            .map(crate::features::FinitePoint3::get),
         Some(point)
     );
     let bound = nurbs_surface_parameter_segment_chord_bound(
@@ -1681,6 +1707,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
     assert_eq!(
         curve_second_derivative(&CurveGeometry::Solved(circle.clone()), parameter)
+            .ok()
             .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(
             -3.0 * parameter.cos(),
@@ -1689,7 +1716,7 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         ))
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(circle.clone()), f64::NAN),
+        curve_tangent(&CurveGeometry::Solved(circle.clone()), f64::NAN).ok(),
         None
     );
 
@@ -1743,11 +1770,12 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
     );
     assert_eq!(
         curve_tangent(&CurveGeometry::Solved(corner.clone()), 0.5)
+            .ok()
             .map(crate::features::FiniteVector3::get),
         Some(Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        curve_tangent(&CurveGeometry::Solved(corner.clone()), 1.0),
+        curve_tangent(&CurveGeometry::Solved(corner.clone()), 1.0).ok(),
         None
     );
 }

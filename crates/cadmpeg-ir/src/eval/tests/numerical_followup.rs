@@ -3,8 +3,9 @@ use super::super::{
     direct_curve_parameter_near_point, map_nurbs_curve_parameter, nurbs_curve_parameter_near_point,
     nurbs_curve_parameter_near_point_with_nonnegative_tolerance, nurbs_curve_speed_bound,
     nurbs_pcurve_contains_point, nurbs_surface_parameter_near_point, scalar_sweep_law_differential,
-    scalar_unary_sweep_law_differential, ScalarSweepDifferential,
+    scalar_unary_sweep_law_differential,
 };
+use super::law_operand;
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -150,53 +151,31 @@ fn numerical_followup_sweep_quotient_retains_finite_derivatives() {
                 LawExpression::Double { value: denominator },
             ],
         };
-        let value = scalar_sweep_law_differential(&expression.admit().unwrap(), 1.).unwrap();
-        assert_eq!(value.value, 1. / denominator);
-        assert_eq!(value.derivative, 1. / denominator);
+        let value = scalar_sweep_law_differential(
+            &expression.admit().unwrap(),
+            crate::scalar::FiniteReal::new(1.).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(value.value.get(), 1. / denominator);
+        assert_eq!(value.derivative.unwrap().get(), 1. / denominator);
     }
 }
 
 #[test]
 fn numerical_followup_hyperbolic_laws_preserve_values_and_chain_derivatives() {
-    let tanh = scalar_unary_sweep_law_differential(
-        "TANH",
-        ScalarSweepDifferential {
-            value: 20.,
-            derivative: 1e20,
-        },
-    )
-    .unwrap();
+    let tanh = scalar_unary_sweep_law_differential("TANH", law_operand(20., 1e20)).unwrap();
     let expected = 1e20 / 20.0_f64.cosh().powi(2);
-    assert!((tanh.derivative / expected - 1.).abs() <= 8. * f64::EPSILON);
+    assert!((tanh.derivative.unwrap().get() / expected - 1.).abs() <= 8. * f64::EPSILON);
     for operator in ["ARCSINH", "ARCCOSH"] {
-        let result = scalar_unary_sweep_law_differential(
-            operator,
-            ScalarSweepDifferential {
-                value: 1e200,
-                derivative: 1e200,
-            },
-        )
-        .unwrap();
-        assert!((result.derivative - 1.).abs() <= 4. * f64::EPSILON);
+        let result =
+            scalar_unary_sweep_law_differential(operator, law_operand(1e200, 1e200)).unwrap();
+        assert!((result.derivative.unwrap().get() - 1.).abs() <= 4. * f64::EPSILON);
     }
-    let coth = scalar_unary_sweep_law_differential(
-        "ARCOTH",
-        ScalarSweepDifferential {
-            value: 1e20,
-            derivative: 1.,
-        },
-    )
-    .unwrap();
-    assert!((coth.value / 1e-20 - 1.).abs() <= 4. * f64::EPSILON);
-    let tail = scalar_unary_sweep_law_differential(
-        "TANH",
-        ScalarSweepDifferential {
-            value: 400.,
-            derivative: 1e300,
-        },
-    )
-    .unwrap();
-    assert!(tail.derivative > 0.0 && tail.derivative.is_finite());
+    let coth = scalar_unary_sweep_law_differential("ARCOTH", law_operand(1e20, 1.)).unwrap();
+    assert!((coth.value.get() / 1e-20 - 1.).abs() <= 4. * f64::EPSILON);
+    let tail = scalar_unary_sweep_law_differential("TANH", law_operand(400., 1e300)).unwrap();
+    let tail = tail.derivative.unwrap().get();
+    assert!(tail > 0.0 && tail.is_finite());
 }
 
 #[test]
@@ -229,16 +208,11 @@ fn inverse_laws_preserve_scaled_chain_derivatives() {
         ("ARCCSCH", -1.),
     ] {
         for x in [-1e200, 1e200] {
-            let result = scalar_unary_sweep_law_differential(
-                operator,
-                ScalarSweepDifferential {
-                    value: x,
-                    derivative: 1e300,
-                },
-            )
-            .unwrap();
+            let result =
+                scalar_unary_sweep_law_differential(operator, law_operand(x, 1e300)).unwrap();
             assert!(
-                (result.derivative / (sign * 1e-100) - 1.).abs() <= 8. * f64::EPSILON,
+                (result.derivative.unwrap().get() / (sign * 1e-100) - 1.).abs()
+                    <= 8. * f64::EPSILON,
                 "{operator}"
             );
         }
@@ -249,48 +223,30 @@ fn inverse_laws_preserve_scaled_chain_derivatives() {
 fn reciprocal_hyperbolic_laws_preserve_exponential_tails() {
     for x in [-720.0_f64, 720.] {
         for operator in ["SECH", "CSCH"] {
-            let result = scalar_unary_sweep_law_differential(
-                operator,
-                ScalarSweepDifferential {
-                    value: x,
-                    derivative: 1e300,
-                },
-            )
-            .unwrap();
+            let result =
+                scalar_unary_sweep_law_differential(operator, law_operand(x, 1e300)).unwrap();
             let expected_magnitude = 2. * (-360.0_f64).exp() * (1e300 * (-360.0_f64).exp());
             let sign = if operator == "SECH" { -x.signum() } else { -1. };
             assert!(
-                (result.derivative / (sign * expected_magnitude) - 1.).abs() <= 8. * f64::EPSILON
+                (result.derivative.unwrap().get() / (sign * expected_magnitude) - 1.).abs()
+                    <= 8. * f64::EPSILON
             );
-            assert!(result.value != 0. && result.value.is_finite());
+            assert!(result.value.get() != 0. && result.value.get().is_finite());
         }
     }
-    let result = scalar_unary_sweep_law_differential(
-        "COTH",
-        ScalarSweepDifferential {
-            value: 400.,
-            derivative: 1e300,
-        },
-    )
-    .unwrap();
+    let result = scalar_unary_sweep_law_differential("COTH", law_operand(400., 1e300)).unwrap();
     let expected = -4. * (-400.0_f64).exp() * (1e300 * (-400.0_f64).exp());
-    assert!((result.derivative / expected - 1.).abs() <= 8. * f64::EPSILON);
+    assert!((result.derivative.unwrap().get() / expected - 1.).abs() <= 8. * f64::EPSILON);
 }
 
 #[test]
 fn inverse_cosecant_hyperbolic_retains_subnormal_arguments() {
     for x in [-1e-320_f64, 1e-320] {
-        let result = scalar_unary_sweep_law_differential(
-            "ARCCSCH",
-            ScalarSweepDifferential {
-                value: x,
-                derivative: x.abs(),
-            },
-        )
-        .unwrap();
+        let result =
+            scalar_unary_sweep_law_differential("ARCCSCH", law_operand(x, x.abs())).unwrap();
         let expected = (std::f64::consts::LN_2 - x.abs().ln()).copysign(x);
-        assert!((result.value / expected - 1.).abs() <= 4. * f64::EPSILON);
-        assert_eq!(result.derivative, -1.);
+        assert!((result.value.get() / expected - 1.).abs() <= 4. * f64::EPSILON);
+        assert_eq!(result.derivative.unwrap().get(), -1.);
     }
 }
 #[test]
@@ -301,16 +257,50 @@ fn reciprocal_hyperbolic_laws_preserve_ordinary_values() {
             ("SECH", 1. / x.cosh(), -3. * x.tanh() / x.cosh()),
             ("CSCH", 1. / x.sinh(), -3. * x.cosh() / x.sinh().powi(2)),
         ] {
-            let result = scalar_unary_sweep_law_differential(
-                op,
-                ScalarSweepDifferential {
-                    value: x,
-                    derivative: 3.,
-                },
-            )
-            .unwrap();
-            assert!((result.value / value - 1.).abs() <= 8. * f64::EPSILON);
-            assert!((result.derivative / derivative - 1.).abs() <= 8. * f64::EPSILON);
+            let result = scalar_unary_sweep_law_differential(op, law_operand(x, 3.)).unwrap();
+            assert!((result.value.get() / value - 1.).abs() <= 8. * f64::EPSILON);
+            assert!(
+                (result.derivative.unwrap().get() / derivative - 1.).abs() <= 8. * f64::EPSILON
+            );
         }
     }
+}
+
+#[test]
+fn a_law_at_its_domain_boundary_keeps_its_value_without_a_derivative() {
+    for (operator, x, value) in [
+        ("ABS", 0.0, 0.0),
+        ("SQRT", 0.0, 0.0),
+        ("ARCCOS", 1.0, 0.0),
+        ("ARCSIN", -1.0, -std::f64::consts::FRAC_PI_2),
+        ("ARCSEC", 1.0, 0.0),
+        ("ARCCSC", -1.0, -std::f64::consts::FRAC_PI_2),
+        ("ARCCOSH", 1.0, 0.0),
+        ("ARCSECH", 1.0, 0.0),
+    ] {
+        let result = scalar_unary_sweep_law_differential(operator, law_operand(x, 1.0))
+            .unwrap_or_else(|failure| panic!("{operator} at {x}: {failure:?}"));
+        assert_eq!(result.value.get(), value, "{operator}");
+        assert_eq!(
+            result.derivative,
+            Err(crate::eval::EvaluationFailure::NoValue),
+            "{operator}"
+        );
+    }
+}
+
+#[test]
+fn an_inverse_hyperbolic_cotangent_whose_derivative_overflows_keeps_its_value() {
+    // Next to x = 1 the chain factor 1 / (1 - x^2) is about -2^51, so the
+    // derivative 1e300 / (1 - x^2) leaves the finite range; the value is
+    // atanh(1 / x).
+    let x = 1.0 + f64::EPSILON;
+    let result = scalar_unary_sweep_law_differential("ARCOTH", law_operand(x, 1.0e300))
+        .expect("the value is finite");
+    let expected = 0.5 * ((x + 1.0) / (x - 1.0)).ln();
+    assert!((result.value.get() / expected - 1.0).abs() <= 8.0 * f64::EPSILON);
+    assert_eq!(
+        result.derivative,
+        Err(crate::eval::EvaluationFailure::NonFinite(()))
+    );
 }

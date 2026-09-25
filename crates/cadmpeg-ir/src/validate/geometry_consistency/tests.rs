@@ -1393,3 +1393,53 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
         Some(-8.0e307)
     );
 }
+
+#[test]
+fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent() {
+    // The line u = 5 offset twice by 1 toward smaller u maps to (3, t, 0) on
+    // the plane through the origin; an offset over an offset states no
+    // tangent, and the seed already maps onto the target.
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    ));
+    let surface_id =
+        SurfaceId::mint("test:model:surface#plane".to_string()).expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: surface.clone(),
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let context = SurfacePcurveContext {
+        index: &index,
+        surface_id: &surface_id,
+        geometry: &surface,
+    };
+    let offset = |basis| {
+        PcurveGeometry::Offset(
+            crate::geometry::pcurve::OffsetPcurve::try_new(1.0, Box::new(basis)).unwrap(),
+        )
+    };
+    let pcurve = offset(offset(PcurveGeometry::Line(
+        crate::geometry::pcurve::LinePcurve::try_new(Point2::new(5.0, 0.0), Point2::new(0.0, 1.0))
+            .unwrap(),
+    )));
+    assert!(crate::eval::pcurve_tangent(&pcurve, 0.5).is_err());
+    let seed = crate::scalar::FiniteReal::new(0.5).expect("finite seed");
+    assert_eq!(
+        mapped_pcurve_parameter_near_point(
+            &context,
+            &pcurve,
+            Point3::new(3.0, 0.5, 0.0),
+            seed,
+            0.0
+        ),
+        Some(seed)
+    );
+}

@@ -6815,7 +6815,7 @@ fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> O
 }
 
 fn nurbs_surface_point_distance(surface: &NurbsSurface, point: Point3, uv: Point2) -> Option<f64> {
-    let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v)?;
+    let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v).ok()?;
     let distance = position.distance(point);
     distance.is_finite().then_some(distance)
 }
@@ -6829,7 +6829,7 @@ fn refine_nurbs_surface_point(
     let mut parameters = seed;
     for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
         let partials =
-            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v).ok()?;
         let residual = partials.point.vector_from(point);
         let Some((u, v)) =
             cadmpeg_ir::math::solve::least_squares_step(partials.du, partials.dv, residual)
@@ -6961,7 +6961,7 @@ fn owner_matches_a5_carrier(
     }
     [tail.lower()[0], tail.upper()[0]].into_iter().all(|u| {
         [tail.lower()[1], tail.upper()[1]].into_iter().all(|v| {
-            cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_some_and(|point| {
+            cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_ok_and(|point| {
                 [point.x, point.y, point.z]
                     .into_iter()
                     .enumerate()

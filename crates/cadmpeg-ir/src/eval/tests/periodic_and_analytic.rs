@@ -444,39 +444,39 @@ fn conic_arms_refuse_points_and_derivatives_that_overflow() {
     let circle = solved(SolvedCurveGeometry::Circle(
         CircleCurve::try_new(origin, axis, stretched, f64::MAX).unwrap(),
     ));
-    assert!(curve_tangent(&circle, 0.0).is_none());
-    assert!(curve_second_derivative(&circle, 0.0).is_none());
-    assert!(curve_tangent(&circle, std::f64::consts::FRAC_PI_4).is_some());
-    assert!(curve_second_derivative(&circle, std::f64::consts::FRAC_PI_4).is_some());
+    assert!(curve_tangent(&circle, 0.0).is_err());
+    assert!(curve_second_derivative(&circle, 0.0).is_err());
+    assert!(curve_tangent(&circle, std::f64::consts::FRAC_PI_4).is_ok());
+    assert!(curve_second_derivative(&circle, std::f64::consts::FRAC_PI_4).is_ok());
     let ellipse = solved(SolvedCurveGeometry::Ellipse(
         EllipseCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
-    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_2).is_none());
-    assert!(curve_second_derivative(&ellipse, 0.0).is_none());
-    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_4).is_some());
+    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_2).is_err());
+    assert!(curve_second_derivative(&ellipse, 0.0).is_err());
+    assert!(curve_tangent(&ellipse, std::f64::consts::FRAC_PI_4).is_ok());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, stretched, 0.5 * f64::MAX).unwrap(),
     ));
-    assert!(curve_tangent(&parabola, 1.0).is_none());
-    assert!(curve_second_derivative(&parabola, 0.0).is_none());
+    assert!(curve_tangent(&parabola, 1.0).is_err());
+    assert!(curve_second_derivative(&parabola, 0.0).is_err());
     let parabola = solved(SolvedCurveGeometry::Parabola(
         ParabolaCurve::try_new(origin, axis, reference, 0.5 * f64::MAX).unwrap(),
     ));
-    assert!(curve_tangent(&parabola, 0.5).is_some());
-    assert!(curve_second_derivative(&parabola, 0.0).is_some());
+    assert!(curve_tangent(&parabola, 0.5).is_ok());
+    assert!(curve_second_derivative(&parabola, 0.0).is_ok());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, 1.0, f64::MAX).unwrap(),
     ));
-    assert!(curve_tangent(&hyperbola, 0.0).is_none());
+    assert!(curve_tangent(&hyperbola, 0.0).is_err());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, stretched, f64::MAX, 1.0).unwrap(),
     ));
-    assert!(curve_second_derivative(&hyperbola, 0.0).is_none());
+    assert!(curve_second_derivative(&hyperbola, 0.0).is_err());
     let hyperbola = solved(SolvedCurveGeometry::Hyperbola(
         HyperbolaCurve::try_new(origin, axis, reference, 1.0, f64::MAX).unwrap(),
     ));
-    assert!(curve_tangent(&hyperbola, 0.0).is_some());
-    assert!(curve_second_derivative(&hyperbola, 0.0).is_some());
+    assert!(curve_tangent(&hyperbola, 0.0).is_ok());
+    assert!(curve_second_derivative(&hyperbola, 0.0).is_ok());
 }
 
 #[test]
@@ -500,7 +500,7 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
             if point.x.is_nan() && point.y == 0.0 && point.z == 0.0
     ));
     assert_eq!(
-        crate::eval::curve_tangent(&near_edge, 0.0),
+        crate::eval::curve_tangent(&near_edge, 0.0).ok(),
         FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0))
     );
 
@@ -520,7 +520,7 @@ fn curve_evaluators_hand_back_admitted_values_and_refuse_overflow() {
         FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
     );
     assert_eq!(
-        crate::eval::curve_tangent_with_budget(&placed, 0.0, &budget),
+        crate::eval::curve_tangent_with_budget(&placed, 0.0, &budget).ok(),
         FiniteVector3::new(Vector3::new(f64::MAX, 0.0, 0.0))
     );
     assert_eq!(

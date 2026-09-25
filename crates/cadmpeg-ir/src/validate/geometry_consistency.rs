@@ -859,45 +859,50 @@ fn mapped_pcurve_parameter_near_point(
     };
     // A non-finite pcurve or surface point is evaluated as a finite one is;
     // the search reads its non-finite distance.
-    let evaluate = |parameter: FiniteReal| {
-        let parameter = parameter.get();
-        let uv = match pcurve_uv(pcurve_geometry, parameter) {
-            Ok(uv) => uv.get(),
-            Err(failure) => failure.non_finite()?,
-        };
-        let point = match model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v) {
-            Ok(point) => point.get(),
-            Err(failure) => failure.non_finite()?,
-        };
-        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter).ok()?;
-        let partials = model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v)?;
-        let tangent = Vector3::new(
+    let uv_at = |parameter: FiniteReal| match pcurve_uv(pcurve_geometry, parameter.get()) {
+        Ok(uv) => Some(uv.get()),
+        Err(failure) => failure.non_finite(),
+    };
+    let point_at = |parameter: FiniteReal| {
+        let uv = uv_at(parameter)?;
+        match model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v) {
+            Ok(point) => Some(point.get()),
+            Err(failure) => failure.non_finite(),
+        }
+    };
+    // Only a Newton step reads the tangent pushed through the partials.
+    let tangent_at = |parameter: FiniteReal| {
+        let uv = uv_at(parameter)?;
+        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter.get()).ok()?;
+        let partials =
+            model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v).ok()?;
+        Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
             partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
-        );
-        Some((point, tangent))
+        ))
     };
     let mismatch = |point: Point3| Point3::distance(point, target);
     let mut parameter = domain.map_or(seed, |domain| {
         domain.project(ExtendedReal::from_finite(seed))
     });
     for _ in 0..32 {
-        let (point, tangent) = evaluate(parameter)?;
+        let point = point_at(parameter)?;
         let error = mismatch(point);
         if error.is_finite() && error <= tolerance {
             return Some(parameter);
         }
-        let step = crate::math::solve::projection_step(tangent, point.vector_from(target))?;
+        let step =
+            crate::math::solve::projection_step(tangent_at(parameter)?, point.vector_from(target))?;
         let mut candidate = stepped(parameter, step)?;
-        let mut candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
+        let mut candidate_error = point_at(candidate).map(mismatch)?;
         for _ in 0..12 {
             if candidate_error <= error {
                 break;
             }
             // Both parameters lie in the domain, so their midpoint does too.
             candidate = candidate.midpoint(parameter);
-            candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
+            candidate_error = point_at(candidate).map(mismatch)?;
         }
         if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
             return None;

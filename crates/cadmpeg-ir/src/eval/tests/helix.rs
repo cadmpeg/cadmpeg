@@ -115,8 +115,8 @@ fn cacheless_helix_curve_evaluates_point_and_exact_differentials() {
             .expect("helix differential");
         assert_point_close(actual_point.get(), expected_point);
         assert_point_close(actual.point.get(), expected_point);
-        assert_vector_close(actual.tangent, expected_tangent);
-        assert_vector_close(actual.acceleration, expected_acceleration);
+        assert_vector_close(actual.tangent.unwrap().get(), expected_tangent);
+        assert_vector_close(actual.acceleration.unwrap().get(), expected_acceleration);
     }
 }
 
@@ -137,8 +137,14 @@ fn reversing_a_tapered_helix_preserves_points_and_derivatives() {
         let before = super::super::helix_differential(&original, parameter).unwrap();
         let after = super::super::helix_differential(&reversed, -parameter).unwrap();
         assert_point_close(after.point.get(), before.point.get());
-        assert_vector_close(after.tangent, before.tangent.scale(-1.0));
-        assert_vector_close(after.acceleration, before.acceleration);
+        assert_vector_close(
+            after.tangent.unwrap().get(),
+            before.tangent.unwrap().get().scale(-1.0),
+        );
+        assert_vector_close(
+            after.acceleration.unwrap().get(),
+            before.acceleration.unwrap().get(),
+        );
     }
 }
 
@@ -166,11 +172,11 @@ fn helix_angle_range_can_span_both_large_finite_signs() {
         Point3::new(parameter.cos(), parameter.sin(), 0.0)
     );
     assert_eq!(
-        result.tangent,
+        result.tangent.unwrap().get(),
         Vector3::new(-parameter.sin(), parameter.cos(), 0.0)
     );
     assert_eq!(
-        result.acceleration,
+        result.acceleration.unwrap().get(),
         Vector3::new(-parameter.cos(), -parameter.sin(), 0.0)
     );
 }

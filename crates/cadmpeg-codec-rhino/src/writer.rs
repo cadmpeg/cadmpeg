@@ -1403,12 +1403,16 @@ fn validate_nurbs_trim(
                     pcurve.id.as_str()
                 )));
             }
-            let mapped = nurbs_surface_point(surface, uv.u, uv.v).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "pcurve {} cannot be evaluated through its NURBS surface",
-                    pcurve.id.as_str()
-                ))
-            })?;
+            // A non-finite surface point is measured as a finite one is.
+            let mapped = match nurbs_surface_point(surface, uv.u, uv.v) {
+                Ok(point) => point.get(),
+                Err(failure) => failure.non_finite().ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "pcurve {} cannot be evaluated through its NURBS surface",
+                        pcurve.id.as_str()
+                    ))
+                })?,
+            };
             let curve_parameter = if sense == Sense::Forward {
                 sample
             } else {
@@ -1425,7 +1429,7 @@ fn validate_nurbs_trim(
                     ))
                 })?,
             };
-            let distance = mapped.distance(edge_point);
+            let distance = cadmpeg_ir::math::Point3::distance(mapped, edge_point);
             if !distance.is_finite() || distance > tolerance {
                 return Err(CodecError::malformed(format_args!(
                     "pcurve {} misses directed edge curve {} by {distance}",

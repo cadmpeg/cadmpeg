@@ -58,3 +58,55 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
         )
     );
 }
+
+#[test]
+fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_ends() {
+    // With major radius 1 and minor radius MAX, the directrix point at
+    // t = 1e-7 is (cosh t, MAX sinh t, 0), which is finite; only MAX cosh t,
+    // which the point does not read, overflows. The Type 122 ends therefore
+    // evaluate, and the refusal comes from the Type 104 conic endpoint, which
+    // reads the minor pair whole.
+    let directrix = CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
+    let construction =
+        ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: directrix.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+            cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                f64::MAX,
+            )
+            .expect("valid HyperbolaCurve fixture"),
+        )),
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Extrusion(
+            ExtrusionSurfaceConstruction::try_new(
+                directrix,
+                Some([0.0, 1.0e-7]),
+                Vector3::new(0.0, 0.0, 1.0),
+                None,
+                CacheContract::from_form(None),
+            )
+            .expect("valid extrusion fixture"),
+        ),
+        None,
+    ));
+    assert_eq!(
+        extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
+            .err()
+            .map(|error| error.to_string()),
+        Some(
+            cadmpeg_core::CodecError::NotImplemented(
+                "IGES hyperbola endpoint is non-finite".into()
+            )
+            .to_string()
+        )
+    );
+}

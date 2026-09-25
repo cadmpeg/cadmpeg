@@ -487,7 +487,7 @@ fn a_placed_surface_whose_partial_overflows_has_its_finite_point_on_both_point_r
         .expect("placed surface fixture"),
     ));
     let u = 0.25_f64.acos();
-    assert!(crate::eval::surface_partials(&surface, u, 1.0).is_none());
+    assert!(crate::eval::surface_partials(&surface, u, 1.0).is_err());
     let budget = WorkBudget::new(64);
     let with_budget = surface_point_with_budget(&surface, u, 1.0, &budget);
     let point = surface_point(&surface, u, 1.0);
@@ -740,15 +740,14 @@ fn a_contact_track_evaluates_its_support_where_its_offset_pcurve_point_overflows
         )
         .expect("offset pcurve fixture"),
     ));
-    let differential =
-        super::super::variable_blend_contact_track_differential(&index, &overflowing, 0.0)
-            .expect("the support is evaluated at the reached point");
-    assert!(!differential.point.is_finite());
+    assert_eq!(
+        super::super::variable_blend_contact_track(&index, &overflowing, 0.0).err(),
+        Some(EvaluationFailure::NonFinite(()))
+    );
     let finite = side(line(Point2::new(1.0, 2.0), Point2::new(0.0, 1.0)));
-    let differential =
-        super::super::variable_blend_contact_track_differential(&index, &finite, 0.0)
-            .expect("a finite contact track");
-    assert_eq!(differential.point, Point3::new(1.0, 2.0, 0.0));
+    let track = super::super::variable_blend_contact_track(&index, &finite, 0.0)
+        .expect("a finite contact track");
+    assert_eq!(track.point(), Point3::new(1.0, 2.0, 0.0));
 }
 
 #[test]
@@ -768,4 +767,232 @@ fn a_difference_quotient_over_an_empty_domain_has_no_value_and_one_that_overflow
             .map(FiniteReal::get),
         Ok(0.5)
     );
+}
+
+/// The degree-2 by degree-1 NURBS surface over `u` in `[0, 1e-200]` whose
+/// middle pole row sits at `x = 1e-190`: at `u = 0` its point is on the `x = 0`
+/// edge and its `u` partial `2e10` along `x`, and its second `u` partial of
+/// order `1e-190 / 1e-400` overflows.
+fn narrow_quadratic_nurbs() -> NurbsSurface {
+    NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0e-200, 1.0e-200, 1.0e-200], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            [0.0, 1.0e-190, 0.0]
+                .map(|x| vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)])
+                .to_vec(),
+            None,
+        ),
+        false,
+    )
+    .expect("quadratic NURBS surface fixture")
+}
+
+#[test]
+fn a_nurbs_surface_whose_second_partial_overflows_keeps_its_first_partials() {
+    let surface = narrow_quadratic_nurbs();
+    let point = Point3::new(0.0, 0.5, 0.0);
+    let budget = WorkBudget::new(1_000);
+    for partials in [
+        crate::eval::nurbs_surface_partials(&surface, 0.0, 0.5),
+        crate::eval::nurbs_surface_partials_with_budget(&surface, 0.0, 0.5, &budget),
+    ] {
+        let partials = partials.expect("first partials").into_raw();
+        assert_eq!(partials.point, point);
+        assert!((partials.du.x / 2.0e10 - 1.0).abs() <= 8.0 * f64::EPSILON);
+        assert_eq!([partials.du.y, partials.du.z], [0.0, 0.0]);
+        assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+    }
+    for second in [
+        crate::eval::nurbs_surface_second_partials(&surface, 0.0, 0.5),
+        crate::eval::nurbs_surface_second_partials_with_budget(&surface, 0.0, 0.5, &budget),
+    ] {
+        assert_eq!(
+            second.map(crate::eval::SurfaceSecondPartials::into_raw),
+            Err(EvaluationFailure::NonFinite(point))
+        );
+    }
+}
+
+#[test]
+fn an_analytic_surface_whose_point_overflows_has_no_partials() {
+    // The plane through (MAX, 0, 0) leaves the finite range in x at u = MAX,
+    // where x has no value; the partials report the point it reached.
+    let plane = solved(SolvedSurfaceGeometry::Plane(
+        crate::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(f64::MAX, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("plane fixture"),
+    ));
+    let reached = |failure: Option<EvaluationFailure<Point3>>| {
+        matches!(
+            failure,
+            Some(EvaluationFailure::NonFinite(point))
+                if point.x.is_nan() && point.y == 2.0 && point.z == 0.0
+        )
+    };
+    assert!(reached(surface_point(&plane, f64::MAX, 2.0).err()));
+    assert!(reached(
+        crate::eval::surface_partials(&plane, f64::MAX, 2.0).err()
+    ));
+    assert!(reached(
+        crate::eval::surface_second_partials(&plane, f64::MAX, 2.0).err()
+    ));
+    let id = SurfaceId::mint("test:model:surface#plane").expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: id.clone(),
+        geometry: plane,
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(reached(
+        crate::eval::model_surface_partials_by_id(&index, &id, f64::MAX, 2.0).err()
+    ));
+    assert!(reached(
+        crate::eval::model_surface_partials_by_id_with_budget(
+            &index,
+            &id,
+            f64::MAX,
+            2.0,
+            &WorkBudget::new(64)
+        )
+        .err()
+    ));
+}
+
+#[test]
+fn a_placed_surface_whose_second_partial_overflows_keeps_its_first_partials() {
+    // The cylinder of radius 2 about (-2, 0, 0), stretched by MAX in x: at
+    // u = 0 its point is the origin shifted by v along z and its u partial
+    // (0, 2, 0); its second u partial -2 MAX along x overflows.
+    let surface = solved(SolvedSurfaceGeometry::Transformed(
+        crate::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Cylinder(
+                crate::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(-2.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .expect("cylinder fixture"),
+            )),
+            crate::transform::Transform::affine([
+                [f64::MAX, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("affine transform"),
+        )
+        .expect("placed surface fixture"),
+    ));
+    let point = Point3::new(0.0, 0.0, 1.0);
+    assert_eq!(
+        crate::eval::surface_partials(&surface, 0.0, 1.0)
+            .map(crate::eval::SurfacePartials::into_raw),
+        Ok(crate::eval::SurfacePartials {
+            point,
+            du: Vector3::new(0.0, 2.0, 0.0),
+            dv: Vector3::new(0.0, 0.0, 1.0),
+        })
+    );
+    assert_eq!(
+        crate::eval::surface_second_partials(&surface, 0.0, 1.0)
+            .map(crate::eval::SurfaceSecondPartials::into_raw),
+        Err(EvaluationFailure::NonFinite(point))
+    );
+}
+
+#[test]
+fn an_arena_nurbs_surface_whose_partial_overflows_has_its_finite_point_on_both_id_routes() {
+    // The surface of the both-point-routes case above, stored in the arena
+    // directly and under a subset over its whole domain.
+    let support = solved(SolvedSurfaceGeometry::Nurbs(bilinear_nurbs(
+        [0.0, 0.0, 1.0e-300, 1.0e-300],
+        1.0e10,
+    )));
+    let (ir, subset) = procedural_surface_model(support, |support| {
+        ProceduralSurfaceDefinition::Subset(
+            crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(
+                support,
+                [[0.0, 1.0e-300], [0.0, 1.0]],
+                None,
+                None,
+                None,
+            )
+            .expect("subset fixture"),
+        )
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let support = SurfaceId::mint("test:model:surface#support").expect("valid identity");
+    for surface in [&support, &subset] {
+        assert_eq!(
+            model_surface_point_by_id(&index, surface, 5.0e-301, 0.5)
+                .map(crate::features::FinitePoint3::get),
+            Ok(Point3::new(5.0e9, 0.5, 0.0))
+        );
+        assert_eq!(
+            crate::eval::model_surface_point_by_id_with_budget(
+                &index,
+                surface,
+                5.0e-301,
+                0.5,
+                &WorkBudget::new(64)
+            )
+            .map(crate::features::FinitePoint3::get),
+            Ok(Point3::new(5.0e9, 0.5, 0.0))
+        );
+        assert!(matches!(
+            crate::eval::model_surface_partials_by_id(&index, surface, 5.0e-301, 0.5),
+            Err(EvaluationFailure::NonFinite(point)) if point == Point3::new(5.0e9, 0.5, 0.0)
+        ));
+    }
+}
+
+#[test]
+fn an_offset_surface_whose_support_partial_overflows_reaches_no_coordinate() {
+    // The offset point reads the support normal, which the overflowing `u`
+    // partial of the both-point-routes surface leaves without a value.
+    let support = solved(SolvedSurfaceGeometry::Nurbs(bilinear_nurbs(
+        [0.0, 0.0, 1.0e-300, 1.0e-300],
+        1.0e10,
+    )));
+    let (ir, offset) = procedural_surface_model(support, |support| {
+        ProceduralSurfaceDefinition::Offset(
+            crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                support,
+                1.0,
+                None,
+                None,
+                false,
+                crate::geometry::OffsetExtension::Legacy {
+                    flags: crate::geometry::LegacyExtensionFlags::Absent {},
+                    cache: None,
+                },
+            )
+            .expect("offset construction fixture"),
+        )
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    for route in [
+        model_surface_point_by_id(&index, &offset, 5.0e-301, 0.5),
+        crate::eval::model_surface_point_by_id_with_budget(
+            &index,
+            &offset,
+            5.0e-301,
+            0.5,
+            &WorkBudget::new(64),
+        ),
+    ] {
+        assert!(
+            matches!(
+                route,
+                Err(EvaluationFailure::NonFinite(point))
+                    if point.x.is_nan() && point.y.is_nan() && point.z.is_nan()
+            ),
+            "{route:?}"
+        );
+    }
 }

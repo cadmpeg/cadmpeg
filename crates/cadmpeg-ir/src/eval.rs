@@ -33,7 +33,7 @@ use crate::math::{product_quotient, scaled_sinh_cosh};
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{
     ExtendedReal, FiniteReal, Length, NonNegativeLength, NonNegativeReal, NonZeroLength,
-    NonZeroReal, PositiveReal,
+    NonZeroReal, PositiveReal, SegmentPosition,
 };
 use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
@@ -761,14 +761,14 @@ fn refine_nurbs_surface_parameters(
     );
     for _ in 0..32 {
         let position =
-            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget)?;
+            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget).ok()?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
             position.z - point.z,
         );
         let partials =
-            nurbs_surface_partials_with_budget(surface, parameters.u, parameters.v, budget)?;
+            nurbs_surface_partials_with_budget(surface, parameters.u, parameters.v, budget).ok()?;
         let Some((step_u, step_v)) = least_squares_step(partials.du, partials.dv, residual) else {
             break;
         };
@@ -782,7 +782,7 @@ fn refine_nurbs_surface_parameters(
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
             let candidate_position =
-                nurbs_surface_point_with_budget(surface, candidate.u, candidate.v, budget)?;
+                nurbs_surface_point_with_budget(surface, candidate.u, candidate.v, budget).ok()?;
             if distance(candidate_position.get()) <= current_distance {
                 accepted = Some(candidate);
                 break;
@@ -844,7 +844,7 @@ fn complete_nurbs_surface_starts(
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let distance_at = |parameters: FinitePoint2| {
         let position =
-            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget)?;
+            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget).ok()?;
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
@@ -1052,7 +1052,7 @@ fn solve_nurbs_surface_parameter(
             v_domain.project(ExtendedReal::from_finite(seed_v)),
         );
         let position =
-            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget)?;
+            nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget).ok()?;
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
@@ -1062,7 +1062,8 @@ fn solve_nurbs_surface_parameter(
         if let Some(refined) =
             refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)
         {
-            let position = nurbs_surface_point_with_budget(surface, refined.u, refined.v, budget)?;
+            let position =
+                nurbs_surface_point_with_budget(surface, refined.u, refined.v, budget).ok()?;
             let distance = (position.x - point.x)
                 .hypot(position.y - point.y)
                 .hypot(position.z - point.z);
@@ -1081,7 +1082,7 @@ fn solve_nurbs_surface_parameter(
         else {
             continue;
         };
-        let Some(position) =
+        let Ok(position) =
             nurbs_surface_point_with_budget(surface, parameters.u, parameters.v, budget)
         else {
             continue;
@@ -1173,7 +1174,7 @@ pub fn nurbs_surface_parameter_near_point(
                         v_end,
                         v_index as f64 / COARSE_GRID as f64,
                     )?;
-                    let candidate = nurbs_surface_point(surface, u.get(), v.get())?;
+                    let candidate = nurbs_surface_point(surface, u.get(), v.get()).ok()?;
                     let distance = candidate.distance(point);
                     if best.is_none_or(|(_, best_distance)| distance < best_distance) {
                         best = Some((FinitePoint2::from_coordinates(u, v), distance));
@@ -1185,7 +1186,7 @@ pub fn nurbs_surface_parameter_near_point(
     };
     let distance = |left: Point3| left.distance(point);
     for _ in 0..MAX_ITERATIONS {
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v).ok()?;
         let current_distance = distance(partials.point.get());
         if current_distance == 0.0 {
             return Some(parameters);
@@ -1206,7 +1207,7 @@ pub fn nurbs_surface_parameter_near_point(
                 u_domain.project(ExtendedReal::stepped(u, scale, step_u)),
                 v_domain.project(ExtendedReal::stepped(v, scale, step_v)),
             );
-            let candidate_point = nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            let candidate_point = nurbs_surface_point(surface, candidate.u, candidate.v).ok()?;
             if distance(candidate_point.get()) < current_distance {
                 parameters = candidate;
                 accepted = true;
@@ -2027,17 +2028,22 @@ pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: FiniteReal) -> O
     })
 }
 
-/// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles. The
-/// point is absent when a coordinate is not finite.
+/// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles, or
+/// report why it has no finite point there.
+///
+/// A parameter that is not finite, a pole that is not finite, a knot vector
+/// or pole list that states no span at `t`, and a zero weight sum have no
+/// value. A basis that leaves the finite range reaches no coordinate, and
+/// each reads NaN; a projection that overflows carries each coordinate it
+/// reached.
 pub fn nurbs_pcurve_uv(
     degree: u32,
     knots: &[f64],
     control_points: &[Point2],
     weights: Option<&[f64]>,
     t: f64,
-) -> Option<FinitePoint2> {
+) -> Result<FinitePoint2, EvaluationFailure<Point2>> {
     nurbs_pcurve_differential(degree, knots, control_points, weights, t)
-        .ok()
         .map(|differential| differential.point)
 }
 
@@ -2457,13 +2463,9 @@ pub fn nurbs_pcurve_contains_point(
             return None;
         }
         let middle = start.midpoint(end);
-        let curve_uv = Point2::from(nurbs_pcurve_uv(
-            degree,
-            knots,
-            control_points,
-            Some(weights),
-            middle,
-        )?);
+        let curve_uv = Point2::from(
+            nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle).ok()?,
+        );
         let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
@@ -2481,24 +2483,164 @@ pub fn nurbs_pcurve_contains_point(
     (!truncated).then_some(false)
 }
 
-/// Evaluate a tensor-product NURBS surface at `(u, v)`. The point is absent
-/// when a coordinate is not finite.
-pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Option<FinitePoint3> {
-    nurbs_surface_point_evaluation(surface, u_at, v_at).ok()
-}
-
 /// Evaluate a tensor-product NURBS surface at `(u, v)`, or report why it has
 /// no finite point there.
+///
+/// A parameter that is not finite, a knot vector or pole net that states no
+/// span at the parameter, and a zero weight sum have no value. A basis that
+/// leaves the finite range reaches no coordinate, and each reads NaN; a
+/// projection that overflows carries each coordinate it reached.
+pub fn nurbs_surface_point(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let [x, y, z] = nurbs_surface_local(surface, u_at, v_at)?.point;
+    Ok(FinitePoint3::from_coordinates(x, y, z))
+}
+
+/// A tensor-product NURBS surface at a parameter: its spans, its bases and
+/// its homogeneous base sum, with its finite point.
+struct NurbsSurfaceLocal<'a> {
+    surface: &'a NurbsSurface,
+    degrees: [usize; 2],
+    spans: [usize; 2],
+    parameters: [f64; 2],
+    bases: [Vec<f64>; 2],
+    base: Homogeneous,
+    point: [FiniteReal; 3],
+}
+
+/// The first partials of a NURBS surface at a parameter: the derivative
+/// bases, the homogeneous derivative sums and the finite lanes.
+struct NurbsSurfaceFirstPartials {
+    bases: [Vec<f64>; 2],
+    sums: [Homogeneous; 2],
+    lanes: [[FiniteReal; 3]; 2],
+}
+
+/// The homogeneous sum of a NURBS surface's poles local to `spans`, blended
+/// by `u_values` along `u` and `v_values` along `v`. A missing pole and a
+/// value that is not finite leave no sum.
+fn nurbs_local_sum(
+    surface: &NurbsSurface,
+    [u_degree, v_degree]: [usize; 2],
+    [u_span, v_span]: [usize; 2],
+    u_values: &[f64],
+    v_values: &[f64],
+) -> Option<Homogeneous> {
+    Homogeneous::sum(
+        u_values
+            .iter()
+            .copied()
+            .enumerate()
+            .flat_map(|(i, u_value)| {
+                v_values
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(move |(j, v_value)| {
+                        let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
+                        Some((
+                            [u_value, v_value],
+                            surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
+                            surface.pole(pole_u, pole_v)?,
+                        ))
+                    })
+            }),
+    )
+}
+
+impl NurbsSurfaceLocal<'_> {
+    /// The homogeneous sum of the local poles blended by `u_values` along
+    /// `u` and `v_values` along `v`.
+    fn sum(&self, u_values: &[f64], v_values: &[f64]) -> Option<Homogeneous> {
+        nurbs_local_sum(self.surface, self.degrees, self.spans, u_values, v_values)
+    }
+
+    /// The first partials, or why they have none. At the finite point over
+    /// finite knots, a derivative basis that is absent, a sum that is absent
+    /// and a projection that is absent or overflows each left the finite
+    /// range.
+    fn first(&self) -> Result<NurbsSurfaceFirstPartials, EvaluationFailure<()>> {
+        let non_finite = EvaluationFailure::NonFinite(());
+        let knots = [self.surface.u_knots(), self.surface.v_knots()];
+        let derivative = |axis: usize| {
+            bspline_basis_derivative(
+                knots[axis],
+                self.degrees[axis],
+                self.spans[axis],
+                self.parameters[axis],
+            )
+            .ok_or(non_finite)
+        };
+        let bases = [derivative(0)?, derivative(1)?];
+        let u = self.sum(&bases[0], &self.bases[1]).ok_or(non_finite)?;
+        let v = self.sum(&self.bases[0], &bases[1]).ok_or(non_finite)?;
+        let lane = |sum: Homogeneous| {
+            finite_lanes(
+                sum.project(self.base, &[(sum, self.point)])
+                    .ok_or(non_finite)?,
+            )
+            .map_err(|_| non_finite)
+        };
+        let lanes = [lane(u)?, lane(v)?];
+        Ok(NurbsSurfaceFirstPartials {
+            bases,
+            sums: [u, v],
+            lanes,
+        })
+    }
+
+    /// The second partials over `first`, or why they have none, in the terms
+    /// of [`Self::first`].
+    fn second(
+        &self,
+        first: &NurbsSurfaceFirstPartials,
+    ) -> Result<[[FiniteReal; 3]; 3], EvaluationFailure<()>> {
+        let non_finite = EvaluationFailure::NonFinite(());
+        let knots = [self.surface.u_knots(), self.surface.v_knots()];
+        let second = |axis: usize| {
+            bspline_basis_second_derivative(
+                knots[axis],
+                self.degrees[axis],
+                self.spans[axis],
+                self.parameters[axis],
+            )
+            .ok_or(non_finite)
+        };
+        let [u_second, v_second] = [second(0)?, second(1)?];
+        let [u, v] = first.sums;
+        let [du, dv] = first.lanes;
+        let uu = self.sum(&u_second, &self.bases[1]).ok_or(non_finite)?;
+        let uv = self
+            .sum(&first.bases[0], &first.bases[1])
+            .ok_or(non_finite)?;
+        let vv = self.sum(&self.bases[0], &v_second).ok_or(non_finite)?;
+        let lane = |sum: Homogeneous, corrections: &[(Homogeneous, [FiniteReal; 3])]| {
+            finite_lanes(sum.project(self.base, corrections).ok_or(non_finite)?)
+                .map_err(|_| non_finite)
+        };
+        Ok([
+            lane(uu, &[(uu, self.point), (u, du), (u, du)])?,
+            lane(uv, &[(uv, self.point), (u, dv), (v, du)])?,
+            lane(vv, &[(vv, self.point), (v, dv), (v, dv)])?,
+        ])
+    }
+}
+
+/// A tensor-product NURBS surface at `(u, v)`, or why it has no finite
+/// point there.
 ///
 /// A basis that leaves the finite range reaches no coordinate, and each
 /// coordinate reads NaN; a projection that overflows carries each coordinate
 /// it reached. A parameter that is not finite, a knot vector or pole net that
 /// states no span at the parameter, and a zero weight sum have no value.
-fn nurbs_surface_point_evaluation(
+fn nurbs_surface_local(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+) -> Result<NurbsSurfaceLocal<'_>, EvaluationFailure<Point3>> {
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(Point3::new(f64::NAN, f64::NAN, f64::NAN));
     let u_degree = usize::try_from(surface.u_degree()).map_err(|_| no_value)?;
@@ -2536,46 +2678,66 @@ fn nurbs_surface_point_evaluation(
     {
         return Err(unreached);
     }
-    let base = Homogeneous::sum(
-        u_basis
-            .iter()
-            .copied()
-            .enumerate()
-            .flat_map(|(i, u_value)| {
-                v_basis
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(move |(j, v_value)| {
-                        let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-                        Some((
-                            [u_value, v_value],
-                            surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                            surface.pole(pole_u, pole_v)?,
-                        ))
-                    })
-            }),
-    )
-    .ok_or(no_value)?;
-    let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
+    let degrees = [u_degree, v_degree];
+    let spans = [u_span, v_span];
+    let base = nurbs_local_sum(surface, degrees, spans, &u_basis, &v_basis).ok_or(no_value)?;
+    let point = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
-    Ok(FinitePoint3::from_coordinates(x, y, z))
+    Ok(NurbsSurfaceLocal {
+        surface,
+        degrees,
+        spans,
+        parameters: [u_at, v_at],
+        bases: [u_basis, v_basis],
+        base,
+        point,
+    })
 }
 
-/// Evaluate a tensor-product NURBS surface at `(u, v)` within a caller-owned
-/// work slice.
-pub fn nurbs_surface_point_with_budget(
+/// A NURBS surface's point and first partials at `(u, v)`, the partials with
+/// their own outcome, or why the point has none.
+fn nurbs_surface_first_order(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-    budget: &WorkBudget<'_>,
-) -> Option<FinitePoint3> {
-    nurbs_surface_point_with_budget_evaluation(surface, u_at, v_at, budget).ok()
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let local = nurbs_surface_local(surface, u_at, v_at)?;
+    let [x, y, z] = local.point;
+    Ok(SurfaceFirstOrder {
+        point: FinitePoint3::from_coordinates(x, y, z),
+        first: local.first().map(|first| first.lanes.map(finite_vector)),
+    })
 }
 
-/// [`nurbs_surface_point_evaluation`] within a caller-owned work slice. A
-/// refused charge leaves no value.
-fn nurbs_surface_point_with_budget_evaluation(
+/// A NURBS surface's point with its first and second partials at `(u, v)`,
+/// each order with its own outcome, or why the point has none.
+fn nurbs_surface_jet(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    let local = nurbs_surface_local(surface, u_at, v_at)?;
+    let [x, y, z] = local.point;
+    let first = local.first();
+    let second = first
+        .as_ref()
+        .map_err(|failure| *failure)
+        .and_then(|first| local.second(first));
+    Ok(SurfaceJet {
+        point: FinitePoint3::from_coordinates(x, y, z),
+        first: first.map(|first| first.lanes.map(finite_vector)),
+        second: second.map(|lanes| lanes.map(finite_vector)),
+    })
+}
+
+/// The vector of three finite lanes.
+fn finite_vector([x, y, z]: [FiniteReal; 3]) -> FiniteVector3 {
+    FiniteVector3::from_components(x, y, z)
+}
+
+/// [`nurbs_surface_point`] within a caller-owned work slice. A refused
+/// charge leaves no value.
+pub fn nurbs_surface_point_with_budget(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
@@ -2585,7 +2747,7 @@ fn nurbs_surface_point_with_budget_evaluation(
     if !budget.charge_by(cost) {
         return Err(EvaluationFailure::NoValue);
     }
-    nurbs_surface_point_evaluation(surface, u_at, v_at)
+    nurbs_surface_point(surface, u_at, v_at)
 }
 
 /// The parametric direction a surface isoline holds fixed.
@@ -2687,19 +2849,19 @@ pub fn nurbs_surface_isocurve(
     NurbsCurve::from_lanes(degree, knots, control_points, weights, periodic).ok()
 }
 
-/// Why a surface or pcurve evaluator has no finite value at its input.
+/// Why an evaluator has no finite value at its input.
 ///
 /// [`NoValue`](Self::NoValue) states that there is no value: the input is
-/// not a finite parameter, the carrier states no value there, or a step of
-/// the evaluation is undefined, such as the angle of a polar chart at its
-/// origin. An arm that reads a model curve through the curve evaluators,
-/// which state no reason, also reports every failure of that curve this way.
+/// not a finite parameter, the carrier states no value there, or a step the
+/// value needs is undefined, such as the angle of a polar chart at its
+/// origin.
 ///
 /// [`NonFinite`](Self::NonFinite) states that the evaluation left the finite
 /// range, and carries the value it reached. A coordinate that no step
-/// reached is NaN. Where an evaluator forms derivatives together with its
-/// value, a derivative that leaves the finite range leaves the evaluation
-/// there, and the value it carries can be finite.
+/// reached is NaN. Where the value an evaluator returns includes
+/// derivatives, as a surface's partials do, a derivative that leaves the
+/// finite range leaves the evaluation there, and the point it carries can be
+/// finite.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EvaluationFailure<R> {
     /// There is no value at the input.
@@ -2804,122 +2966,158 @@ impl SurfaceSecondPartials<FinitePoint3, FiniteVector3> {
     }
 }
 
+/// A surface's finite point with its first and second partials, each order
+/// with its own outcome: an order that has no value there, or that left the
+/// finite range, leaves the point and the other order as they are. A reader
+/// fails on the orders it reads.
+#[derive(Clone, Copy)]
+struct SurfaceJet {
+    point: FinitePoint3,
+    first: Result<[FiniteVector3; 2], EvaluationFailure<()>>,
+    second: Result<[FiniteVector3; 3], EvaluationFailure<()>>,
+}
+
+impl SurfaceJet {
+    /// The jet an arm forms at a finite point from raw lanes: an order with a
+    /// lane outside the finite range left it.
+    fn formed(
+        point: FinitePoint3,
+        first: Result<[Vector3; 2], EvaluationFailure<()>>,
+        second: Result<[Vector3; 3], EvaluationFailure<()>>,
+    ) -> Self {
+        Self {
+            point,
+            first: first.and_then(admit_lanes),
+            second: second.and_then(admit_lanes),
+        }
+    }
+
+    /// An order's failure carrying the finite point.
+    fn at_point(self, failure: EvaluationFailure<()>) -> EvaluationFailure<Point3> {
+        failure.map(|()| self.point.get())
+    }
+
+    /// The point with the first partials.
+    fn first_order(self) -> SurfaceFirstOrder {
+        SurfaceFirstOrder {
+            point: self.point,
+            first: self.first,
+        }
+    }
+
+    /// The point with both orders, or the failure of the first order that has
+    /// none, carrying the finite point.
+    fn second_partials(
+        self,
+    ) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+        let [du, dv] = self.first.map_err(|failure| self.at_point(failure))?;
+        let [duu, duv, dvv] = self.second.map_err(|failure| self.at_point(failure))?;
+        Ok(SurfaceSecondPartials {
+            point: self.point,
+            du,
+            dv,
+            duu,
+            duv,
+            dvv,
+        })
+    }
+}
+
+/// A surface's finite point with its first partials, which state their own
+/// outcome.
+#[derive(Clone, Copy)]
+struct SurfaceFirstOrder {
+    point: FinitePoint3,
+    first: Result<[FiniteVector3; 2], EvaluationFailure<()>>,
+}
+
+impl SurfaceFirstOrder {
+    /// The point and first partials, or the first partials' failure carrying
+    /// the finite point.
+    fn partials(
+        self,
+    ) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+        let [du, dv] = self
+            .first
+            .map_err(|failure| failure.map(|()| self.point.get()))?;
+        Ok(SurfacePartials {
+            point: self.point,
+            du,
+            dv,
+        })
+    }
+}
+
+/// Admit the lanes of one partial order together: a lane outside the finite
+/// range leaves the order there.
+fn admit_lanes<const N: usize>(
+    lanes: [Vector3; N],
+) -> Result<[FiniteVector3; N], EvaluationFailure<()>> {
+    FiniteVector3::array(lanes).ok_or(EvaluationFailure::NonFinite(()))
+}
+
 /// Evaluate a tensor-product NURBS surface and its exact rational first
-/// partials at `(u, v)`.
+/// partials at `(u, v)`, or report why they have no finite value there.
+///
+/// The point fails as [`nurbs_surface_point`] states. At a finite point,
+/// first partials outside the finite range leave the evaluation there,
+/// carrying the point.
 pub fn nurbs_surface_partials(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
-    nurbs_surface_second_partials(surface, u_at, v_at).map(|partials| SurfacePartials {
-        point: partials.point,
-        du: partials.du,
-        dv: partials.dv,
-    })
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    nurbs_surface_first_order(surface, u_at, v_at)?.partials()
 }
 
-/// Evaluate a tensor-product NURBS surface and its exact first partials within
-/// a caller-owned work slice.
+/// [`nurbs_surface_partials`] within a caller-owned work slice. A refused
+/// charge leaves no value.
 pub fn nurbs_surface_partials_with_budget(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
     budget: &WorkBudget<'_>,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
-    budget
-        .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
-        .then_some(())?;
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    charge_nurbs_surface_partials(surface, budget)?;
     nurbs_surface_partials(surface, u_at, v_at)
 }
 
+/// Charge the work of a NURBS surface's partials to `budget`: a cost that
+/// does not fit and a refused charge leave no value.
+fn charge_nurbs_surface_partials(
+    surface: &NurbsSurface,
+    budget: &WorkBudget<'_>,
+) -> Result<(), EvaluationFailure<Point3>> {
+    nurbs_surface_partials_evaluation_cost(surface)
+        .is_some_and(|cost| budget.charge_by(cost))
+        .then_some(())
+        .ok_or(EvaluationFailure::NoValue)
+}
+
 /// Evaluate a tensor-product NURBS surface and its exact rational first and
-/// second partials at `(u, v)`.
+/// second partials at `(u, v)`, or report why they have no finite value
+/// there.
+///
+/// The point fails as [`nurbs_surface_point`] states. At a finite point,
+/// partials outside the finite range leave the evaluation there, carrying
+/// the point.
 pub fn nurbs_surface_second_partials(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
-) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
-    let u_degree = usize::try_from(surface.u_degree()).ok()?;
-    let v_degree = usize::try_from(surface.v_degree()).ok()?;
-    let u_count = surface.u_count();
-    let v_count = surface.v_count();
-    let u_at = periodic_parameter(
-        surface.u_knots(),
-        u_degree,
-        u_count,
-        surface.u_periodic(),
-        FiniteReal::new(u_at)?,
-    )?
-    .get();
-    let v_at = periodic_parameter(
-        surface.v_knots(),
-        v_degree,
-        v_count,
-        surface.v_periodic(),
-        FiniteReal::new(v_at)?,
-    )?
-    .get();
-    let u_span = bspline_span(surface.u_knots(), u_degree, u_count, u_at)?;
-    let v_span = bspline_span(surface.v_knots(), v_degree, v_count, v_at)?;
-    let u_basis = bspline_basis(surface.u_knots(), u_degree, u_span, u_at)?;
-    let v_basis = bspline_basis(surface.v_knots(), v_degree, v_span, v_at)?;
-    let u_derivative = bspline_basis_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
-    let v_derivative = bspline_basis_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
-    let u_second = bspline_basis_second_derivative(surface.u_knots(), u_degree, u_span, u_at)?;
-    let v_second = bspline_basis_second_derivative(surface.v_knots(), v_degree, v_span, v_at)?;
-    let sum = |u_values: &[f64], v_values: &[f64]| {
-        Homogeneous::sum(
-            u_values
-                .iter()
-                .copied()
-                .enumerate()
-                .flat_map(|(i, u_value)| {
-                    v_values
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .map(move |(j, v_value)| {
-                            let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-                            Some((
-                                [u_value, v_value],
-                                surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                                surface.pole(pole_u, pole_v)?,
-                            ))
-                        })
-                }),
-        )
-    };
-    let base = sum(&u_basis, &v_basis)?;
-    let u = sum(&u_derivative, &v_basis)?;
-    let v = sum(&u_basis, &v_derivative)?;
-    let uu = sum(&u_second, &v_basis)?;
-    let uv = sum(&u_derivative, &v_derivative)?;
-    let vv = sum(&u_basis, &v_second)?;
-    let point = finite_lanes(base.project(base, &[])?).ok()?;
-    let du = finite_lanes(u.project(base, &[(u, point)])?).ok()?;
-    let dv = finite_lanes(v.project(base, &[(v, point)])?).ok()?;
-    let vector = |[x, y, z]: [FiniteReal; 3]| FiniteVector3::from_components(x, y, z);
-    Some(SurfaceSecondPartials {
-        point: FinitePoint3::from_coordinates(point[0], point[1], point[2]),
-        du: vector(du),
-        dv: vector(dv),
-        duu: vector(finite_lanes(uu.project(base, &[(uu, point), (u, du), (u, du)])?).ok()?),
-        duv: vector(finite_lanes(uv.project(base, &[(uv, point), (u, dv), (v, du)])?).ok()?),
-        dvv: vector(finite_lanes(vv.project(base, &[(vv, point), (v, dv), (v, dv)])?).ok()?),
-    })
+) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    nurbs_surface_jet(surface, u_at, v_at)?.second_partials()
 }
 
-/// Evaluate a tensor-product NURBS surface and its exact first and second
-/// partials within a caller-owned work slice.
+/// [`nurbs_surface_second_partials`] within a caller-owned work slice. A
+/// refused charge leaves no value.
 pub fn nurbs_surface_second_partials_with_budget(
     surface: &NurbsSurface,
     u_at: f64,
     v_at: f64,
     budget: &WorkBudget<'_>,
-) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
-    budget
-        .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
-        .then_some(())?;
+) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    charge_nurbs_surface_partials(surface, budget)?;
     nurbs_surface_second_partials(surface, u_at, v_at)
 }
 
@@ -2955,21 +3153,27 @@ fn periodic_parameter(
     crate::math::wrap_parameter(parameter.get(), start, end)
 }
 
-/// Evaluate the exact first derivative of a directly stored curve. The
-/// derivative is absent when the curve has none at `t` or a component is not
-/// finite.
-pub fn curve_tangent_solved(geometry: &SolvedCurveGeometry, t: f64) -> Option<FiniteVector3> {
-    curve_derivative_evaluation(geometry, t, CurveDerivative::First).ok()
+/// Evaluate the exact first derivative of a directly stored curve, or report
+/// why it has no finite value.
+///
+/// A parameter that is not finite, a degenerate carrier, a polyline
+/// parameter outside its segments or at a vertex whose segments disagree,
+/// and a NURBS span of zero width have no derivative. A derivative that
+/// leaves the finite range is non-finite; it carries no value.
+pub fn curve_tangent_solved(
+    geometry: &SolvedCurveGeometry,
+    t: f64,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_derivative_evaluation(geometry, t, CurveDerivative::First)
 }
 
-/// Evaluate the exact second derivative of a directly stored curve. The
-/// derivative is absent when the curve has none at `t` or a component is not
-/// finite.
+/// Evaluate the exact second derivative of a directly stored curve, or report
+/// why it has no finite value, as [`curve_tangent_solved`] states.
 pub fn curve_second_derivative_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
-) -> Option<FiniteVector3> {
-    curve_derivative_evaluation(geometry, t, CurveDerivative::Second).ok()
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_derivative_evaluation(geometry, t, CurveDerivative::Second)
 }
 
 /// Evaluate a directly stored curve at `t` within a caller-owned work slice.
@@ -3015,24 +3219,24 @@ pub fn curve_point_with_budget_solved(
     evaluate(geometry, t, budget)
 }
 
-/// Evaluate the exact first derivative of a directly stored curve within a
-/// caller-owned work slice.
+/// [`curve_tangent_solved`] within a caller-owned work slice. A refused
+/// charge leaves no value.
 pub fn curve_tangent_with_budget_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FiniteVector3> {
-    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::First, budget).ok()
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::First, budget)
 }
 
-/// Evaluate the exact second derivative of a directly stored curve within a
-/// caller-owned work slice.
+/// [`curve_second_derivative_solved`] within a caller-owned work slice. A
+/// refused charge leaves no value.
 pub fn curve_second_derivative_with_budget_solved(
     geometry: &SolvedCurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FiniteVector3> {
-    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::Second, budget).ok()
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_derivative_with_budget_evaluation(geometry, t, CurveDerivative::Second, budget)
 }
 
 fn nurbs_curve_evaluation_cost(curve: &NurbsCurve) -> Option<usize> {
@@ -3200,17 +3404,19 @@ fn curve_derivative_evaluation(
             let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().magnitude();
             let minor_radius = Length::from(hyperbola_curve.minor_radius()).magnitude();
-            // A product outside the finite range leaves the derivative there.
-            let (Ok((major_sinh, major_cosh)), Ok((minor_sinh, minor_cosh))) = (
-                scaled_sinh_cosh(major_radius, parameter),
-                scaled_sinh_cosh(minor_radius, parameter),
-            ) else {
-                return Err(EvaluationFailure::NonFinite(()));
-            };
+            // A product the derivative reads outside the finite range leaves
+            // the derivative there.
+            let [major_sinh, major_cosh] =
+                sinh_cosh_lanes(scaled_sinh_cosh(major_radius, parameter));
+            let [minor_sinh, minor_cosh] =
+                sinh_cosh_lanes(scaled_sinh_cosh(minor_radius, parameter));
             let (major, minor) = if second {
                 (major_cosh, minor_sinh)
             } else {
                 (major_sinh, minor_cosh)
+            };
+            let (Ok(major), Ok(minor)) = (major, minor) else {
+                return Err(EvaluationFailure::NonFinite(()));
             };
             admit_derivative(vector_sum(&[
                 (major.get(), *major_direction),
@@ -3241,6 +3447,22 @@ fn curve_derivative_evaluation(
         SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Unknown { .. } => Err(EvaluationFailure::NoValue),
+    }
+}
+
+/// The products `scale * sinh(parameter)` and `scale * cosh(parameter)` of a
+/// [`scaled_sinh_cosh`] pair, each finite or the plain product it reached. A
+/// pair outside the finite range carries both plain products, so one of
+/// them can be finite.
+fn sinh_cosh_lanes(
+    pair: Result<(FiniteReal, FiniteReal), (f64, f64)>,
+) -> [Result<FiniteReal, f64>; 2] {
+    match pair {
+        Ok((sinh, cosh)) => [Ok(sinh), Ok(cosh)],
+        Err((sinh, cosh)) => [
+            FiniteReal::new(sinh).ok_or(sinh),
+            FiniteReal::new(cosh).ok_or(cosh),
+        ],
     }
 }
 
@@ -3439,45 +3661,37 @@ pub fn model_curve_point_by_id_with_budget(
     model_curve_point_by_id_inner(index, curve_id, parameter, 0, Some(budget))
 }
 
+/// A model curve's finite point with its tangent and acceleration, each
+/// derivative with its own outcome: a derivative that has no value there, or
+/// that left the finite range, leaves the point and the other derivative as
+/// they are. A reader fails on the derivatives it reads.
 #[derive(Clone, Copy)]
 struct ModelCurveDifferential {
     point: FinitePoint3,
-    tangent: Vector3,
-    acceleration: Vector3,
+    tangent: Result<FiniteVector3, EvaluationFailure<()>>,
+    acceleration: Result<FiniteVector3, EvaluationFailure<()>>,
 }
 
-/// A differential whose point is finite and whose derivatives the arm formed
-/// raw: a derivative outside the finite range leaves the evaluation there,
-/// carrying the finite point.
-fn admitted_differential(
-    point: FinitePoint3,
-    tangent: Vector3,
-    acceleration: Vector3,
-) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    (tangent.is_finite() && acceleration.is_finite())
-        .then_some(ModelCurveDifferential {
-            point,
-            tangent,
-            acceleration,
-        })
-        .ok_or(EvaluationFailure::NonFinite(point.get()))
+impl ModelCurveDifferential {
+    /// The tangent, or its failure carrying the finite point, for a reader
+    /// that fails on it.
+    fn tangent(&self) -> Result<FiniteVector3, EvaluationFailure<Point3>> {
+        self.tangent
+            .map_err(|failure| failure.map(|()| self.point.get()))
+    }
 }
 
 /// The differential of a curve whose point is `point` and whose derivatives
-/// are evaluated separately. A derivative that has no value leaves the
-/// differential without one; a derivative outside the finite range leaves
-/// the evaluation there, carrying the finite point.
+/// are evaluated separately, each once the point is finite.
 fn differential_at(
     point: Result<FinitePoint3, EvaluationFailure<Point3>>,
     tangent: impl FnOnce() -> Result<FiniteVector3, EvaluationFailure<()>>,
     acceleration: impl FnOnce() -> Result<FiniteVector3, EvaluationFailure<()>>,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    let point = point?;
-    let at_point = |failure: EvaluationFailure<()>| failure.map(|()| point.get());
     Ok(ModelCurveDifferential {
-        point,
-        tangent: tangent().map_err(at_point)?.get(),
-        acceleration: acceleration().map_err(at_point)?.get(),
+        point: point?,
+        tangent: tangent(),
+        acceleration: acceleration(),
     })
 }
 
@@ -3488,9 +3702,9 @@ fn differential_at(
 /// the interval's lower bound, while the major and minor vectors define the
 /// radial frame at the stored angle.
 ///
-/// A parameter outside the interval and a zero axis have no value. An axis
-/// whose length overflows, and a revolution fraction that overflows, reach
-/// no coordinate.
+/// A parameter outside the interval and a zero axis have no value. The point
+/// reads no derivative, so a tangent or acceleration outside the finite
+/// range is that derivative's own failure.
 fn helix_differential(
     definition: &ProceduralCurveDefinition,
     parameter: f64,
@@ -3504,24 +3718,12 @@ fn helix_differential(
     let minor = helix_payload.minor().get();
     let pitch = helix_payload.pitch().get();
     let apex_factor = helix_payload.apex_factor().get();
-    let axis = helix_payload.axis().get();
     let finite_parameter = FiniteReal::new(parameter).ok_or(EvaluationFailure::NoValue)?;
     if finite_parameter < start || finite_parameter > end {
         return Err(EvaluationFailure::NoValue);
     }
-    let axis_length = axis.norm();
-    if !axis_length.is_finite() {
-        return Err(EvaluationFailure::NonFinite(UNREACHED_POINT));
-    }
-    if axis_length <= f64::EPSILON {
-        return Err(EvaluationFailure::NoValue);
-    }
-
     let inverse_revolution = 1.0 / std::f64::consts::TAU;
-    let revolution_fraction =
-        difference_quotient(finite_parameter, start, FiniteReal::TAU, FiniteReal::ZERO)
-            .map_err(|failure| failure.map(|_| UNREACHED_POINT))?
-            .get();
+    let revolution_fraction = finite_parameter.turns_from(start).get();
     let radial_scale = 1.0 + apex_factor * revolution_fraction;
     let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
     let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
@@ -3536,7 +3738,11 @@ fn helix_differential(
         (inverse_revolution, pitch),
     ]);
     let acceleration = vector_sum(&[(-radial_scale, radial), (2.0 * scale_first, radial_first)]);
-    admitted_differential(admit_point(point)?, tangent, acceleration)
+    Ok(ModelCurveDifferential {
+        point: admit_point(point)?,
+        tangent: admit_derivative(tangent),
+        acceleration: admit_derivative(acceleration),
+    })
 }
 
 fn model_curve_differential_by_id(
@@ -3547,20 +3753,10 @@ fn model_curve_differential_by_id(
     model_curve_differential_by_id_inner(index, curve_id, parameter, 0, None)
 }
 
-fn model_curve_differential_by_id_with_budget(
-    index: &crate::index::ModelIndex<'_>,
-    curve_id: &crate::ids::CurveId,
-    parameter: f64,
-    budget: &WorkBudget<'_>,
-) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    model_curve_differential_by_id_inner(index, curve_id, parameter, 0, Some(budget))
-}
-
 /// The point, tangent and acceleration of a model curve at `parameter`, or
-/// why it has none there. The failure is the point's, or, at a finite point,
-/// that of a derivative: no value where the curve has no derivative there,
-/// and non-finite, carrying the point, where a derivative left the finite
-/// range.
+/// why its point has no finite value there. At a finite point each
+/// derivative states its own outcome: no value where the curve has no
+/// derivative there, non-finite where the derivative left the finite range.
 fn model_curve_differential_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
@@ -3600,16 +3796,10 @@ fn model_curve_differential_by_id_inner(
                 let point = transform
                     .apply_point_reaching(differential.point.get())
                     .map_err(EvaluationFailure::NonFinite)?;
-                let placed = |vector: Vector3| {
-                    transform
-                        .apply_vector(vector)
-                        .map(FiniteVector3::get)
-                        .ok_or(EvaluationFailure::NonFinite(point.get()))
-                };
                 return Ok(ModelCurveDifferential {
                     point,
-                    tangent: placed(differential.tangent)?,
-                    acceleration: placed(differential.acceleration)?,
+                    tangent: placed_derivative(*transform, differential.tangent),
+                    acceleration: placed_derivative(*transform, differential.acceleration),
                 });
             }
             ProceduralCurveDefinition::Subset(definition_payload) => {
@@ -3624,10 +3814,15 @@ fn model_curve_differential_by_id_inner(
                     depth + 1,
                     budget,
                 )?;
-                let parameter_scale = if *sense { 1.0 } else { -1.0 };
                 return Ok(ModelCurveDifferential {
                     point: differential.point,
-                    tangent: scale_vector(differential.tangent, parameter_scale),
+                    tangent: differential.tangent.map(|tangent| {
+                        if *sense {
+                            tangent
+                        } else {
+                            tangent.negated()
+                        }
+                    }),
                     acceleration: differential.acceleration,
                 });
             }
@@ -3769,10 +3964,11 @@ fn model_axis_revolution_point(
     admit_point(revolved_point(point.get(), axis_origin, axis, angle))
 }
 
-/// The partials of a directrix revolved about an axis, or why it has none. A
-/// directrix evaluation that leaves the finite range leaves the surface
-/// there, at the point its revolution reaches.
-fn model_axis_revolution_partials(
+/// The jet of a directrix revolved about an axis, or why its point has none.
+/// A directrix point outside the finite range leaves the surface there, at
+/// the point its revolution reaches. The first partials read the directrix
+/// tangent; the second read its acceleration as well.
+fn model_axis_revolution_jet(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
     axis_origin: Point3,
@@ -3780,35 +3976,32 @@ fn model_axis_revolution_partials(
     angle: f64,
     parameter: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Result<SurfaceSecondPartials, EvaluationFailure<Point3>> {
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
     if !angle.is_finite() {
         return Err(EvaluationFailure::NoValue);
     }
     let axis = unit_length_axis(axis_direction);
-    let differential = budget
-        .map_or_else(
-            || model_curve_differential_by_id(index, directrix, parameter),
-            |budget| {
-                model_curve_differential_by_id_with_budget(index, directrix, parameter, budget)
-            },
-        )
+    let differential = model_curve_differential_by_id_inner(index, directrix, parameter, 0, budget)
         .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     let rotated = rotate_vector_about_axis(
         point_displacement(differential.point.get(), axis_origin),
         axis,
         angle,
     );
-    let rotated_tangent = rotate_vector_about_axis(differential.tangent, axis, angle);
-    let rotated_acceleration = rotate_vector_about_axis(differential.acceleration, axis, angle);
+    let point = admit_point(offset(axis_origin, &[(1.0, rotated)]))?;
     let du = axis.cross(rotated);
-    Ok(SurfaceSecondPartials {
-        point: offset(axis_origin, &[(1.0, rotated)]),
-        du,
-        dv: rotated_tangent,
-        duu: axis.cross(du),
-        duv: axis.cross(rotated_tangent),
-        dvv: rotated_acceleration,
-    })
+    let rotated_tangent = differential
+        .tangent
+        .map(|tangent| rotate_vector_about_axis(tangent.get(), axis, angle));
+    let rotated_acceleration = differential
+        .acceleration
+        .map(|acceleration| rotate_vector_about_axis(acceleration.get(), axis, angle));
+    Ok(SurfaceJet::formed(
+        point,
+        rotated_tangent.map(|tangent| [du, tangent]),
+        rotated_tangent
+            .and_then(|tangent| Ok([axis.cross(du), axis.cross(tangent), rotated_acceleration?])),
+    ))
 }
 
 /// Map a construction-space directrix parameter to the carrier curve and
@@ -3838,12 +4031,23 @@ fn is_line_geometry(geometry: &SolvedCurveGeometry) -> bool {
     }
 }
 
+/// A construction parameter mapped onto its carrier curve.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ConstructionParameter {
+    /// The carrier parameter.
+    parameter: FiniteReal,
+    /// The carrier parameter's derivative with respect to the construction
+    /// parameter, or why it has no finite value. A line carrier forms it
+    /// apart from the parameter, which does not need it.
+    derivative: Result<FiniteReal, EvaluationFailure<()>>,
+}
+
 /// The carrier parameter of a construction parameter and its derivative, or
-/// why there is none. A parameter that is not finite or lies outside its
-/// interval, an interval that is empty or reversed, and a line carrier whose
-/// edge ranges disagree have no value. A width, derivative or mapped
-/// parameter that overflows leaves the finite range; the evaluation reaches
-/// no coordinate there.
+/// why there is no carrier parameter. A parameter that is not finite or lies
+/// outside its interval, an interval that is empty or reversed, and a line
+/// carrier whose edge ranges disagree have no value. A width or mapped
+/// parameter that overflows, and a derivative the mapping reads, leave the
+/// finite range; the evaluation reaches no coordinate there.
 fn construction_curve_parameter(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
@@ -3851,7 +4055,7 @@ fn construction_curve_parameter(
     surface_interval: Option<[FiniteReal; 2]>,
     carrier_interval: Option<[FiniteReal; 2]>,
     reversed: bool,
-) -> Result<(FiniteReal, FiniteReal), EvaluationFailure<()>> {
+) -> Result<ConstructionParameter, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let non_finite = EvaluationFailure::NonFinite(());
     let overflow = |value: f64| FiniteReal::new(value).ok_or(non_finite);
@@ -3904,21 +4108,26 @@ fn construction_curve_parameter(
         (None, None) => (parameter, FiniteReal::ONE, None),
     };
     let curve = index.curves(directrix.as_str()).ok_or(no_value)?;
+    let directed = |parameter: FiniteReal, derivative: FiniteReal| {
+        Ok(if reversed {
+            ConstructionParameter {
+                parameter: parameter.negated(),
+                derivative: Ok(derivative.negated()),
+            }
+        } else {
+            ConstructionParameter {
+                parameter,
+                derivative: Ok(derivative),
+            }
+        })
+    };
     let (Some([surface_start, surface_end]), Some(surface_width)) =
         (surface_interval, surface_width)
     else {
-        return Ok(if reversed {
-            (parameter.negated(), surface_derivative.negated())
-        } else {
-            (parameter, surface_derivative)
-        });
+        return directed(parameter, surface_derivative);
     };
     if !curve.geometry.solved().is_some_and(is_line_geometry) {
-        return Ok(if reversed {
-            (parameter.negated(), surface_derivative.negated())
-        } else {
-            (parameter, surface_derivative)
-        });
+        return directed(parameter, surface_derivative);
     }
     let line_interval = if let Some(carrier_interval) = carrier_interval {
         carrier_interval
@@ -3939,39 +4148,46 @@ fn construction_curve_parameter(
     let [curve_start, curve_end] = line_interval;
     let curve_width = positive_width(curve_start, curve_end)?;
     // An absent product is one that no finite value holds.
-    let [derivative] = scaled_ratio_products(curve_width, surface_width, [surface_derivative])
-        .ok_or(non_finite)?;
-    let derivative = if reversed {
-        derivative.negated()
-    } else {
-        derivative
-    };
+    let derivative = scaled_ratio_products(curve_width, surface_width, [surface_derivative])
+        .map(|[derivative]| {
+            if reversed {
+                derivative.negated()
+            } else {
+                derivative
+            }
+        })
+        .ok_or(non_finite);
     let fraction = if reversed {
         (surface_end.get() - parameter.get()) / surface_width.get()
     } else {
         (parameter.get() - surface_start.get()) / surface_width.get()
     };
     let parameter = overflow(curve_start.get() + fraction * curve_width.get())?;
-    Ok((parameter, derivative))
+    Ok(ConstructionParameter {
+        parameter,
+        derivative,
+    })
 }
 
-// The native and carrier parameter intervals are independent serialized semantics;
-// the revision reversal affects the derivative mapping, and the optional budget
-// must remain explicit across recursive evaluation.
-fn model_native_extrusion_partials(
+/// The point of a native extrusion: the directrix point at the carrier
+/// parameter, displaced by `v` along the extrusion direction, or why it has
+/// none. The point fails on no derivative. A `v` that is not finite has no
+/// value; a directrix point outside the finite range leaves the surface
+/// there, at the point its displacement reaches.
+fn model_native_extrusion_point(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::surface_payloads::ExtrusionSurfaceConstruction,
     carrier_interval: Option<[FiniteReal; 2]>,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     if !v.is_finite() {
         return Err(EvaluationFailure::NoValue);
     }
     let directrix = construction.directrix();
-    let direction = *construction.direction();
-    let (parameter, derivative) = construction_curve_parameter(
+    let direction = construction.direction().get();
+    let carrier = construction_curve_parameter(
         index,
         directrix,
         u,
@@ -3982,67 +4198,80 @@ fn model_native_extrusion_partials(
         extrusion_directrix_reversed(construction.revision_form()),
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    // A directrix evaluation that leaves the finite range leaves the surface
+    let point =
+        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), 0, budget)
+            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
+            .point;
+    admit_point(offset(point.get(), &[(v, direction)]))
+}
+
+// The native and carrier parameter intervals are independent serialized semantics;
+// the revision reversal affects the derivative mapping, and the optional budget
+// must remain explicit across recursive evaluation.
+fn model_native_extrusion_jet(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::ExtrusionSurfaceConstruction,
+    carrier_interval: Option<[FiniteReal; 2]>,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    if !v.is_finite() {
+        return Err(EvaluationFailure::NoValue);
+    }
+    let directrix = construction.directrix();
+    let direction = construction.direction().get();
+    let carrier = construction_curve_parameter(
+        index,
+        directrix,
+        u,
+        construction
+            .parameter_interval()
+            .map(FiniteVector::finite_components),
+        carrier_interval,
+        extrusion_directrix_reversed(construction.revision_form()),
+    )
+    .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
+    // A directrix point that leaves the finite range leaves the surface
     // there, at the point its extrusion reaches.
-    let differential = budget
-        .map_or_else(
-            || model_curve_differential_by_id(index, directrix, parameter.get()),
-            |budget| {
-                model_curve_differential_by_id_with_budget(
-                    index,
-                    directrix,
-                    parameter.get(),
-                    budget,
-                )
-            },
-        )
-        .map_err(|failure| failure.map(|point| offset(point, &[(v, direction.get())])))?;
+    let differential =
+        model_curve_differential_by_id_inner(index, directrix, carrier.parameter.get(), 0, budget)
+            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
+    let point = admit_point(offset(differential.point.get(), &[(v, direction)]))?;
+    let derivative = carrier.derivative;
     // A product outside the finite range reaches its signed infinity; a
     // component that is not finite reaches no product.
     let squared_derivative_component =
-        |component| match crate::math::sum::product_sum(std::iter::once(Some([
-            derivative.get(),
-            derivative.get(),
-            component,
-        ]))) {
+        |derivative: FiniteReal, component| match crate::math::sum::product_sum(std::iter::once(
+            Some([derivative.get(), derivative.get(), component]),
+        )) {
             crate::math::sum::ProductSum::Zero => 0.0,
             crate::math::sum::ProductSum::Value(value) => value
                 .finite()
                 .map_or_else(|reached| reached, FiniteReal::get),
             crate::math::sum::ProductSum::Undefined => f64::NAN,
         };
-    let zero = Vector3::new(0.0, 0.0, 0.0);
-    admitted_partials(SurfaceSecondPartials {
-        point: offset(differential.point.get(), &[(v, direction.get())]),
-        du: scale_vector(differential.tangent, derivative.get()),
-        dv: direction.get(),
-        duu: Vector3::new(
-            squared_derivative_component(differential.acceleration.x),
-            squared_derivative_component(differential.acceleration.y),
-            squared_derivative_component(differential.acceleration.z),
-        ),
-        duv: zero,
-        dvv: zero,
+    Ok(SurfaceJet {
+        point,
+        first: derivative.and_then(|derivative| {
+            Ok([
+                admit_derivative(scale_vector(differential.tangent?.get(), derivative.get()))?,
+                *construction.direction(),
+            ])
+        }),
+        second: derivative.and_then(|derivative| {
+            let acceleration = differential.acceleration?.get();
+            Ok([
+                admit_derivative(Vector3::new(
+                    squared_derivative_component(derivative, acceleration.x),
+                    squared_derivative_component(derivative, acceleration.y),
+                    squared_derivative_component(derivative, acceleration.z),
+                ))?,
+                FiniteVector3::ZERO,
+                FiniteVector3::ZERO,
+            ])
+        }),
     })
-}
-
-/// Partials an arm forms raw, admitted together: finite when every lane is.
-/// Otherwise the evaluation left the finite range, and it carries the point
-/// it reached, which is finite where only a derivative left the range.
-fn admitted_partials(
-    partials: SurfaceSecondPartials,
-) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
-    let admit = || {
-        Some(SurfaceSecondPartials {
-            point: FinitePoint3::new(partials.point)?,
-            du: FiniteVector3::new(partials.du)?,
-            dv: FiniteVector3::new(partials.dv)?,
-            duu: FiniteVector3::new(partials.duu)?,
-            duv: FiniteVector3::new(partials.duv)?,
-            dvv: FiniteVector3::new(partials.dvv)?,
-        })
-    };
-    admit().ok_or(EvaluationFailure::NonFinite(partials.point))
 }
 
 fn extrusion_directrix_reversed(
@@ -4054,37 +4283,16 @@ fn extrusion_directrix_reversed(
         .unwrap_or(false)
 }
 
-/// The raw partials of a native revolution, or why it has none. An angular
-/// parameter that is not finite has no value; an angular span or angle that
+/// The angle of a native revolution at its angular parameter, and the
+/// angle's derivative, or why there is none. An angular span or angle that
 /// overflows reaches no coordinate.
-fn model_native_revolution_partials(
-    index: &crate::index::ModelIndex<'_>,
+fn native_revolution_angle(
     construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
-    carrier_interval: Option<[FiniteReal; 2]>,
-    u: f64,
-    v: f64,
-    budget: Option<&WorkBudget<'_>>,
-) -> Result<SurfaceSecondPartials, EvaluationFailure<Point3>> {
-    let directrix = construction.directrix();
-    let angular_interval = construction.angular_interval().endpoints();
-    let transposed = *construction.transposed();
-    let (directrix_parameter, angular_parameter) = if transposed { (v, u) } else { (u, v) };
-    if !angular_parameter.is_finite() {
-        return Err(EvaluationFailure::NoValue);
-    }
+    angular_parameter: FiniteReal,
+) -> Result<(f64, f64), EvaluationFailure<Point3>> {
+    let angular_parameter = angular_parameter.get();
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
-    let (directrix_parameter, derivative) = construction_curve_parameter(
-        index,
-        directrix,
-        directrix_parameter,
-        construction
-            .parameter_interval()
-            .map(crate::topology::IncreasingParameterInterval::finite_endpoints),
-        carrier_interval,
-        false,
-    )
-    .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    let (directrix_parameter, derivative) = (directrix_parameter.get(), derivative.get());
+    let angular_interval = construction.angular_interval().endpoints();
     let (angle, angular_derivative) = match construction.angular_parameter_interval() {
         None => (angular_parameter, 1.0),
         Some(parameter_interval) => {
@@ -4107,35 +4315,136 @@ fn model_native_revolution_partials(
     if !angle.is_finite() {
         return Err(unreached);
     }
-    let partials = model_axis_revolution_partials(
+    Ok((angle, angular_derivative))
+}
+
+/// The directrix and angular parameters of a native revolution at `(u, v)`.
+/// An angular parameter that is not finite has no value.
+fn native_revolution_parameters(
+    construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
+    u: f64,
+    v: f64,
+) -> Result<(f64, FiniteReal), EvaluationFailure<Point3>> {
+    let (directrix_parameter, angular_parameter) = if *construction.transposed() {
+        (v, u)
+    } else {
+        (u, v)
+    };
+    Ok((
+        directrix_parameter,
+        FiniteReal::new(angular_parameter).ok_or(EvaluationFailure::NoValue)?,
+    ))
+}
+
+/// The directrix parameter of a native revolution on its carrier curve, or
+/// why there is none.
+fn native_revolution_carrier(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
+    carrier_interval: Option<[FiniteReal; 2]>,
+    directrix_parameter: f64,
+) -> Result<ConstructionParameter, EvaluationFailure<Point3>> {
+    construction_curve_parameter(
         index,
-        directrix,
+        construction.directrix(),
+        directrix_parameter,
+        construction
+            .parameter_interval()
+            .map(crate::topology::IncreasingParameterInterval::finite_endpoints),
+        carrier_interval,
+        false,
+    )
+    .map_err(|failure| failure.map(|()| UNREACHED_POINT))
+}
+
+/// The point of a native revolution, or why it has none: the directrix point
+/// at the carrier parameter revolved by the mapped angle. The point fails on
+/// no derivative.
+fn model_native_revolution_point(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
+    carrier_interval: Option<[FiniteReal; 2]>,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let (directrix_parameter, angular_parameter) =
+        native_revolution_parameters(construction, u, v)?;
+    let carrier =
+        native_revolution_carrier(index, construction, carrier_interval, directrix_parameter)?;
+    let (angle, _) = native_revolution_angle(construction, angular_parameter)?;
+    let axis_origin = construction.axis_origin().get();
+    let axis = unit_length_axis(construction.axis_direction());
+    let point = model_curve_differential_by_id_inner(
+        index,
+        construction.directrix(),
+        carrier.parameter.get(),
+        0,
+        budget,
+    )
+    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
+    .point;
+    admit_point(revolved_point(point.get(), axis_origin, axis, angle))
+}
+
+/// The jet of a native revolution, or why its point has none. Each partial
+/// order reads the carrier parameter's derivative besides the axis
+/// revolution's order.
+fn model_native_revolution_jet(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::RevolutionSurfaceConstruction,
+    carrier_interval: Option<[FiniteReal; 2]>,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    let (directrix_parameter, angular_parameter) =
+        native_revolution_parameters(construction, u, v)?;
+    let carrier =
+        native_revolution_carrier(index, construction, carrier_interval, directrix_parameter)?;
+    let (angle, angular_derivative) = native_revolution_angle(construction, angular_parameter)?;
+    let jet = model_axis_revolution_jet(
+        index,
+        construction.directrix(),
         construction.axis_origin().get(),
         construction.axis_direction(),
         angle,
-        directrix_parameter,
+        carrier.parameter.get(),
         budget,
     )?;
-
-    Ok(if transposed {
-        SurfaceSecondPartials {
-            point: partials.point,
-            du: scale_vector(partials.du, angular_derivative),
-            dv: scale_vector(partials.dv, derivative),
-            duu: scale_vector(partials.duu, angular_derivative * angular_derivative),
-            duv: scale_vector(partials.duv, derivative * angular_derivative),
-            dvv: scale_vector(partials.dvv, derivative * derivative),
-        }
-    } else {
-        SurfaceSecondPartials {
-            point: partials.point,
-            du: scale_vector(partials.dv, derivative),
-            dv: scale_vector(partials.du, angular_derivative),
-            duu: scale_vector(partials.dvv, derivative * derivative),
-            duv: scale_vector(partials.duv, derivative * angular_derivative),
-            dvv: scale_vector(partials.duu, angular_derivative * angular_derivative),
-        }
-    })
+    let derivative = carrier.derivative.map(FiniteReal::get);
+    let transposed = *construction.transposed();
+    let first = derivative.and_then(|derivative| {
+        let [du, dv] = FiniteVector3::raw_array(jet.first?);
+        Ok(if transposed {
+            [
+                scale_vector(du, angular_derivative),
+                scale_vector(dv, derivative),
+            ]
+        } else {
+            [
+                scale_vector(dv, derivative),
+                scale_vector(du, angular_derivative),
+            ]
+        })
+    });
+    let second = derivative.and_then(|derivative| {
+        let [duu, duv, dvv] = FiniteVector3::raw_array(jet.second?);
+        Ok(if transposed {
+            [
+                scale_vector(duu, angular_derivative * angular_derivative),
+                scale_vector(duv, derivative * angular_derivative),
+                scale_vector(dvv, derivative * derivative),
+            ]
+        } else {
+            [
+                scale_vector(dvv, derivative * derivative),
+                scale_vector(duv, derivative * angular_derivative),
+                scale_vector(duu, angular_derivative * angular_derivative),
+            ]
+        })
+    });
+    Ok(SurfaceJet::formed(jet.point, first, second))
 }
 
 fn model_curve_point_by_id_inner(
@@ -4637,12 +4946,15 @@ fn helix_parameter_near_point(
         if distance.is_finite() && distance <= tolerance {
             return Some(parameter);
         }
-        let denominator = differential.tangent.dot(differential.tangent);
+        let Ok(tangent) = differential.tangent else {
+            return None;
+        };
+        let tangent = tangent.get();
+        let denominator = tangent.dot(tangent);
         if !denominator.is_finite() || denominator <= 0.0 {
             break;
         }
-        let Some(next) =
-            FiniteReal::new(parameter.get() - residual.dot(differential.tangent) / denominator)
+        let Some(next) = FiniteReal::new(parameter.get() - residual.dot(tangent) / denominator)
         else {
             break;
         };
@@ -4937,27 +5249,27 @@ pub fn curve_point_solved(
             let major_direction = hyperbola_curve.frame().reference().as_raw();
             let major_radius = hyperbola_curve.major_radius().magnitude();
             let minor_radius = Length::from(hyperbola_curve.minor_radius()).magnitude();
-            match (
-                scaled_sinh_cosh(major_radius, parameter),
-                scaled_sinh_cosh(minor_radius, parameter),
-            ) {
-                (Ok((_, major_cosh)), Ok((minor_sinh, _))) => admit_point(offset(
+            // The point reads the major cosine and the minor sine products
+            // only; one outside the finite range carries its plain value.
+            let [_, major_cosh] = sinh_cosh_lanes(scaled_sinh_cosh(major_radius, parameter));
+            let [minor_sinh, _] = sinh_cosh_lanes(scaled_sinh_cosh(minor_radius, parameter));
+            match (major_cosh, minor_sinh) {
+                (Ok(major_cosh), Ok(minor_sinh)) => admit_point(offset(
                     center,
                     &[
                         (major_cosh.get(), *major_direction),
                         (minor_sinh.get(), axis.cross(*major_direction)),
                     ],
                 )),
-                // A product outside the finite range carries its plain value.
-                (major, minor) => {
-                    let plain = |pair: Result<(FiniteReal, FiniteReal), (f64, f64)>| {
-                        pair.map_or_else(|plain| plain, |(sinh, cosh)| (sinh.get(), cosh.get()))
+                (major_cosh, minor_sinh) => {
+                    let plain = |lane: Result<FiniteReal, f64>| {
+                        lane.map_or_else(|plain| plain, FiniteReal::get)
                     };
                     Err(EvaluationFailure::NonFinite(offset(
                         center,
                         &[
-                            (plain(major).1, *major_direction),
-                            (plain(minor).0, axis.cross(*major_direction)),
+                            (plain(major_cosh), *major_direction),
+                            (plain(minor_sinh), axis.cross(*major_direction)),
                         ],
                     )))
                 }
@@ -4994,25 +5306,24 @@ pub fn curve_point_solved(
 /// the azimuth angle and `v` the axial distance / polar angle on analytic
 /// quadrics, and both are knot-domain parameters on NURBS surfaces.
 ///
-/// The evaluation fails only on the point: a NURBS or placed carrier
-/// evaluates its point alone, so partials outside the finite range at a
-/// finite point leave the point finite.
+/// The evaluation fails only on the point: every carrier evaluates its point
+/// alone, so partials outside the finite range at a finite point leave the
+/// point finite.
 pub fn surface_point_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match geometry {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_evaluation(nurbs, u, v),
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
         SolvedSurfaceGeometry::Transformed(placed) => placed_point(
             *placed.transform(),
             surface_point_solved(placed.basis(), u, v),
         ),
-        _ => {
-            let partials =
-                surface_second_partials_solved(geometry, u, v).ok_or(EvaluationFailure::NoValue)?;
-            admit_point(partials.point)
-        }
+        _ => analytic_surface_second_partials(geometry, u, v)
+            .map_or(Err(EvaluationFailure::NoValue), |partials| {
+                admit_point(partials.point)
+            }),
     }
 }
 
@@ -5036,23 +5347,11 @@ fn placed_point(
     }
 }
 
-/// The second partials of a placed carrier: its basis partials under the
-/// placement. A non-finite basis lane, and a lane the placement leaves
-/// non-finite, leave the carrier without partials.
-fn transformed_surface_second_partials(
-    placed: &crate::geometry::PlacedSurface,
-    u: f64,
-    v: f64,
-) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
-    transform_surface_second_partials(
-        surface_second_partials_solved(placed.basis(), u, v)?,
-        *placed.transform(),
-    )
-}
-
 /// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
 /// slice. Analytic surfaces are constant-cost; transformed carriers charge
-/// each transform layer and NURBS carriers charge their local basis work.
+/// each transform layer and NURBS carriers charge their local basis work. A
+/// refused charge leaves no value; otherwise the failure is
+/// [`surface_point_solved`]'s.
 ///
 /// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
 /// construction; no arm follows an arena id.
@@ -5063,94 +5362,7 @@ pub fn surface_point_with_budget_solved(
     budget: &WorkBudget<'_>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match geometry {
-        SolvedSurfaceGeometry::Plane(plane_surface) => {
-            let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis().as_raw();
-            let u_axis = plane_surface.frame().reference().as_raw();
-            let v_axis = normal.cross(*u_axis);
-            admit_point(offset(origin, &[(u, *u_axis), (v, v_axis)]))
-        }
-        SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
-            let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis().as_raw();
-            let ref_direction = cylinder_surface.frame().reference().as_raw();
-            let radius = cylinder_surface.radius().get();
-            let transverse = axis.cross(*ref_direction);
-            let cosine = u.cos();
-            let sine = u.sin();
-            admit_point(offset(
-                origin,
-                &[
-                    (radius * cosine, *ref_direction),
-                    (radius * sine, transverse),
-                    (v, *axis),
-                ],
-            ))
-        }
-        SolvedSurfaceGeometry::Cone(cone_surface) => {
-            let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let ref_direction = cone_surface.frame().reference().as_raw();
-            let radius = cone_surface.radius().get();
-            let ratio = cone_surface.ratio().get();
-            let half_angle = cone_surface.half_angle().get();
-            let transverse = axis.cross(*ref_direction);
-            let cosine = u.cos();
-            let sine = u.sin();
-            let radial_slope = half_angle.tan();
-            let local_radius = radius + v * radial_slope;
-            admit_point(offset(
-                origin,
-                &[
-                    (local_radius * cosine, *ref_direction),
-                    (local_radius * ratio * sine, transverse),
-                    (v, *axis),
-                ],
-            ))
-        }
-        SolvedSurfaceGeometry::Sphere(sphere_surface) => {
-            let center = sphere_surface.center().get();
-            let axis = sphere_surface.frame().axis().as_raw();
-            let ref_direction = sphere_surface.frame().reference().as_raw();
-            let radius = sphere_surface.radius().get();
-            let transverse = axis.cross(*ref_direction);
-            let u_cosine = u.cos();
-            let u_sine = u.sin();
-            let v_cosine = v.cos();
-            let v_sine = v.sin();
-            admit_point(offset(
-                center,
-                &[
-                    (radius * v_cosine * u_cosine, *ref_direction),
-                    (radius * v_cosine * u_sine, transverse),
-                    (radius * v_sine, *axis),
-                ],
-            ))
-        }
-        SolvedSurfaceGeometry::Torus(torus_surface) => {
-            let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis().as_raw();
-            let ref_direction = torus_surface.frame().reference().as_raw();
-            let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            let transverse = axis.cross(*ref_direction);
-            let u_cosine = u.cos();
-            let u_sine = u.sin();
-            let v_cosine = v.cos();
-            let v_sine = v.sin();
-            let ring = major_radius + minor_radius * v_cosine;
-            admit_point(offset(
-                center,
-                &[
-                    (ring * u_cosine, *ref_direction),
-                    (ring * u_sine, transverse),
-                    (minor_radius * v_sine, *axis),
-                ],
-            ))
-        }
-        SolvedSurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_surface_point_with_budget_evaluation(nurbs, u, v, budget)
-        }
+        SolvedSurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
         SolvedSurfaceGeometry::Transformed(placed) => {
             if !budget.charge() {
                 return Err(EvaluationFailure::NoValue);
@@ -5160,9 +5372,7 @@ pub fn surface_point_with_budget_solved(
                 surface_point_with_budget_solved(placed.basis(), u, v, budget),
             )
         }
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => {
-            Err(EvaluationFailure::NoValue)
-        }
+        _ => surface_point_solved(geometry, u, v),
     }
 }
 
@@ -5378,25 +5588,24 @@ fn rolling_ball_jet_interpolate_scalar(
     }
 }
 
-/// Evaluate a directly stored surface and its exact first partial derivatives.
+/// Evaluate a directly stored surface and its exact first partial
+/// derivatives, or report why they have no finite value.
+///
+/// The point fails as [`surface_point_solved`] states. At a finite point,
+/// first partials outside the finite range leave the evaluation there,
+/// carrying the point.
 pub fn surface_partials_solved(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials> {
-    surface_second_partials_solved(geometry, u, v).map(|partials| SurfacePartials {
-        point: partials.point,
-        du: partials.du,
-        dv: partials.dv,
-    })
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    surface_first_order_solved(geometry, u, v, None)?.partials()
 }
 
-/// Evaluate a directly stored surface and its exact first and second partial
-/// derivatives.
-///
-/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
-/// construction; no arm follows an arena id.
-pub fn surface_second_partials_solved(
+/// The raw point and exact first and second partials of an analytic surface
+/// at `(u, v)`, or none for a carrier that is not analytic. The lanes are
+/// formed from finite frames and can leave the finite range.
+fn analytic_surface_second_partials(
     geometry: &SolvedSurfaceGeometry,
     u: f64,
     v: f64,
@@ -5576,14 +5785,157 @@ pub fn surface_second_partials_solved(
                 ]),
             })
         }
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+/// The point with the first and second partials of a directly stored
+/// surface at `(u, v)`, each partial order with its own outcome, or why the
+/// point has none. Within a work slice, NURBS carriers charge their partials
+/// work and placed carriers each placement; a refused charge leaves no
+/// value.
+///
+/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
+/// construction; no arm follows an arena id.
+fn surface_jet_solved(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    match geometry {
         SolvedSurfaceGeometry::Nurbs(nurbs) => {
-            nurbs_surface_second_partials(nurbs, u, v).map(SurfaceSecondPartials::into_raw)
+            if let Some(budget) = budget {
+                charge_nurbs_surface_partials(nurbs, budget)?;
+            }
+            nurbs_surface_jet(nurbs, u, v)
         }
         SolvedSurfaceGeometry::Transformed(placed) => {
-            transformed_surface_second_partials(placed, u, v).map(SurfaceSecondPartials::into_raw)
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return Err(EvaluationFailure::NoValue);
+            }
+            placed_jet(
+                *placed.transform(),
+                surface_jet_solved(placed.basis(), u, v, budget),
+            )
         }
-        SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Unknown { .. } => None,
+        _ => {
+            let partials = analytic_surface_second_partials(geometry, u, v)
+                .ok_or(EvaluationFailure::NoValue)?;
+            Ok(SurfaceJet::formed(
+                admit_point(partials.point)?,
+                Ok([partials.du, partials.dv]),
+                Ok([partials.duu, partials.duv, partials.dvv]),
+            ))
+        }
     }
+}
+
+/// The point with the first partials of a directly stored surface at
+/// `(u, v)`, the partials with their own outcome, or why the point has none,
+/// in the terms of [`surface_jet_solved`].
+///
+/// The descent is bounded by [`PlacedSurface`](crate::geometry::PlacedSurface)
+/// construction; no arm follows an arena id.
+fn surface_first_order_solved(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    match geometry {
+        SolvedSurfaceGeometry::Nurbs(nurbs) => {
+            if let Some(budget) = budget {
+                charge_nurbs_surface_partials(nurbs, budget)?;
+            }
+            nurbs_surface_first_order(nurbs, u, v)
+        }
+        SolvedSurfaceGeometry::Transformed(placed) => {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return Err(EvaluationFailure::NoValue);
+            }
+            let transform = *placed.transform();
+            let basis = surface_first_order_solved(placed.basis(), u, v, budget)
+                .map_err(|failure| failure.map(|point| placed_reach(transform, point)))?;
+            Ok(SurfaceFirstOrder {
+                point: transform
+                    .apply_point_reaching(basis.point.get())
+                    .map_err(EvaluationFailure::NonFinite)?,
+                first: basis
+                    .first
+                    .and_then(|vectors| placed_vectors(transform, vectors)),
+            })
+        }
+        _ => {
+            let partials = analytic_surface_second_partials(geometry, u, v)
+                .ok_or(EvaluationFailure::NoValue)?;
+            Ok(SurfaceFirstOrder {
+                point: admit_point(partials.point)?,
+                first: admit_lanes([partials.du, partials.dv]),
+            })
+        }
+    }
+}
+
+/// The point a placement reaches from a basis point outside the finite
+/// range, finite or not.
+fn placed_reach(transform: Transform, point: Point3) -> Point3 {
+    transform
+        .apply_point_reaching(point)
+        .map_or_else(|point| point, FinitePoint3::get)
+}
+
+/// Vectors under a placement's linear part: a vector the placement leaves
+/// outside the finite range leaves them there.
+fn placed_vectors<const N: usize>(
+    transform: Transform,
+    vectors: [FiniteVector3; N],
+) -> Result<[FiniteVector3; N], EvaluationFailure<()>> {
+    let mut placed = vectors;
+    for vector in &mut placed {
+        *vector = transform
+            .apply_vector(vector.get())
+            .ok_or(EvaluationFailure::NonFinite(()))?;
+    }
+    Ok(placed)
+}
+
+/// A placed carrier's jet from its basis jet: the placed point, and each
+/// order under the placement's linear part. A basis point outside the finite
+/// range carries the point the placement reaches from it.
+fn placed_jet(
+    transform: Transform,
+    basis: Result<SurfaceJet, EvaluationFailure<Point3>>,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    let basis = basis.map_err(|failure| failure.map(|point| placed_reach(transform, point)))?;
+    Ok(SurfaceJet {
+        point: transform
+            .apply_point_reaching(basis.point.get())
+            .map_err(EvaluationFailure::NonFinite)?,
+        first: basis
+            .first
+            .and_then(|vectors| placed_vectors(transform, vectors)),
+        second: basis
+            .second
+            .and_then(|vectors| placed_vectors(transform, vectors)),
+    })
+}
+
+/// Evaluate a directly stored surface and its exact first and second partial
+/// derivatives, or report why they have no finite value.
+///
+/// The point fails as [`surface_point_solved`] states. At a finite point,
+/// partials outside the finite range leave the evaluation there, carrying
+/// the point.
+pub fn surface_second_partials_solved(
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    surface_jet_solved(geometry, u, v, None)?.second_partials()
 }
 
 /// Evaluate a surface carrier with access to construction and child-carrier
@@ -5610,29 +5962,13 @@ pub fn model_surface_point(
     let index = crate::index::ModelIndex::new(ir);
     match procedural.definition() {
         ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
-            model_native_extrusion_partials(
-                &index,
-                definition_payload,
-                carrier_interval,
-                u,
-                v,
-                None,
-            )
-            .map(|partials| partials.point)
+            model_native_extrusion_point(&index, definition_payload, carrier_interval, u, v, None)
         }
         ProceduralSurfaceDefinition::LinearSweep(definition_payload) => {
             model_linear_sweep_point(&index, definition_payload, u, v, None)
         }
         ProceduralSurfaceDefinition::Revolution(definition_payload) => {
-            model_native_revolution_partials(
-                &index,
-                definition_payload,
-                carrier_interval,
-                u,
-                v,
-                None,
-            )
-            .and_then(|partials| admit_point(partials.point))
+            model_native_revolution_point(&index, definition_payload, carrier_interval, u, v, None)
         }
         ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
             model_axis_revolution_point(
@@ -5646,11 +5982,10 @@ pub fn model_surface_point(
             )
         }
         ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
-            model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
+            model_ruled_surface_jet(&index, first, second, u, v).map(|jet| jet.point)
         }
         ProceduralSurfaceDefinition::Sum(definition_payload) => {
-            model_sum_surface_partials(&index, definition_payload, u, v)
-                .map(|partials| partials.point)
+            model_sum_surface_jet(&index, definition_payload, u, v).map(|jet| jet.point)
         }
         ProceduralSurfaceDefinition::Sweep(definition_payload) => {
             let construction = definition_payload
@@ -5719,60 +6054,76 @@ fn model_linear_sweep_point(
     admit_point(offset(point.get(), &[(v, direction)]))
 }
 
+/// The jet of a linear sweep, or why its point has none. The first partials
+/// read the directrix tangent, and the second its acceleration.
+fn model_linear_sweep_jet(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::surface_payloads::LinearSweepSurfaceConstruction,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    if !v.is_finite() {
+        return Err(EvaluationFailure::NoValue);
+    }
+    let directrix = construction.directrix();
+    let direction = *construction.direction();
+    let differential = model_curve_differential_by_id_inner(index, directrix, u, 0, budget)
+        .map_err(|failure| failure.map(|point| offset(point, &[(v, direction.get())])))?;
+    Ok(SurfaceJet {
+        point: admit_point(offset(differential.point.get(), &[(v, direction.get())]))?,
+        first: differential.tangent.map(|tangent| [tangent, direction]),
+        second: differential
+            .acceleration
+            .map(|acceleration| [acceleration, FiniteVector3::ZERO, FiniteVector3::ZERO]),
+    })
+}
+
+/// A scalar law's finite value with its derivative, which states its own
+/// outcome: a value can exist where its derivative has no value, or where
+/// its derivative left the finite range.
 #[derive(Clone, Copy)]
 struct ScalarSweepDifferential {
-    value: f64,
-    derivative: f64,
+    value: FiniteReal,
+    derivative: Result<FiniteReal, EvaluationFailure<()>>,
 }
 
-/// A value and derivative the law computed from finite operands: a value or
-/// derivative outside the finite range leaves the law there.
-fn finite_sweep_differential(
-    value: f64,
-    derivative: f64,
-) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
-    (value.is_finite() && derivative.is_finite())
-        .then_some(ScalarSweepDifferential { value, derivative })
-        .ok_or(EvaluationFailure::NonFinite(()))
-}
-
-/// [`finite_sweep_differential`] for an admitted derivative, which leaves the
-/// value as the only condition to test.
-fn sweep_differential_of(
-    value: f64,
-    derivative: FiniteReal,
-) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
-    value
-        .is_finite()
-        .then_some(ScalarSweepDifferential {
-            value,
-            derivative: derivative.get(),
-        })
-        .ok_or(EvaluationFailure::NonFinite(()))
+/// A law value or derivative computed from finite operands: one outside the
+/// finite range leaves the law there.
+fn law_real(value: f64) -> Result<FiniteReal, EvaluationFailure<()>> {
+    FiniteReal::new(value).ok_or(EvaluationFailure::NonFinite(()))
 }
 
 /// A constant law whose value is finite by its type.
 fn constant_sweep_differential(value: FiniteReal) -> ScalarSweepDifferential {
     ScalarSweepDifferential {
-        value: value.get(),
-        derivative: 0.0,
+        value,
+        derivative: Ok(FiniteReal::ZERO),
     }
 }
 
-/// A scalar sweep law's value and derivative at `parameter`, or why it has
+/// The derivatives of two operands, or the failure of the first that has
 /// none.
+fn operand_derivatives(
+    first: ScalarSweepDifferential,
+    second: ScalarSweepDifferential,
+) -> Result<(FiniteReal, FiniteReal), EvaluationFailure<()>> {
+    Ok((first.derivative?, second.derivative?))
+}
+
+/// A scalar sweep law's value and derivative at `parameter`, or why it has
+/// no value.
 ///
-/// A parameter that is not finite, a form the evaluator does not read, a
-/// text that is not a finite number or a finite multiple of `X`, an operand
-/// outside its operator's domain and a division by zero state no value. A
-/// value or derivative that overflows leaves the law outside the finite
-/// range.
+/// A form the evaluator does not read, a text that is not a finite number or
+/// a finite multiple of `X`, an operand outside its operator's domain and a
+/// division by zero state no value; a value that overflows leaves the law
+/// outside the finite range. The derivative states its own outcome in the
+/// same terms.
 fn scalar_sweep_law_differential(
     expression: &LawExpression<FiniteReal, FiniteVector3, FinitePoint3>,
-    parameter: f64,
+    parameter: FiniteReal,
 ) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
-    let finite_parameter = FiniteReal::new(parameter).ok_or(no_value)?;
     match expression {
         LawExpression::Null {} => Ok(constant_sweep_differential(FiniteReal::ZERO)),
         LawExpression::Integer { value } => Ok(constant_sweep_differential(
@@ -5783,8 +6134,8 @@ fn scalar_sweep_law_differential(
             let value = value.as_str().trim();
             if value == "X" {
                 return Ok(ScalarSweepDifferential {
-                    value: finite_parameter.get(),
-                    derivative: 1.0,
+                    value: parameter,
+                    derivative: Ok(FiniteReal::ONE),
                 });
             }
             // A text constant that is not finite states no value.
@@ -5801,11 +6152,11 @@ fn scalar_sweep_law_differential(
             } else {
                 return Err(no_value);
             };
-            let coefficient = coefficient
-                .ok()
-                .filter(|coefficient| coefficient.is_finite())
-                .ok_or(no_value)?;
-            finite_sweep_differential(coefficient * parameter, coefficient)
+            let coefficient = coefficient.ok().and_then(FiniteReal::new).ok_or(no_value)?;
+            Ok(ScalarSweepDifferential {
+                value: law_real(coefficient.get() * parameter.get())?,
+                derivative: Ok(coefficient),
+            })
         }
         LawExpression::Algebraic { operator, operands } => {
             if let [operand] = operands.as_slice() {
@@ -5818,37 +6169,51 @@ fn scalar_sweep_law_differential(
                 };
                 let inner = scalar_sweep_law_differential(inner, parameter)?;
                 let outer = scalar_sweep_law_differential(outer, inner.value)?;
-                return finite_sweep_differential(outer.value, outer.derivative * inner.derivative);
+                return Ok(ScalarSweepDifferential {
+                    value: outer.value,
+                    derivative: operand_derivatives(outer, inner)
+                        .and_then(|(outer, inner)| law_real(outer.get() * inner.get())),
+                });
             }
             let [left, right] = operands.as_slice() else {
                 return Err(no_value);
             };
             let left = scalar_sweep_law_differential(left, parameter)?;
             let right = scalar_sweep_law_differential(right, parameter)?;
+            let (x, y) = (left.value.get(), right.value.get());
+            let derivatives = operand_derivatives(left, right);
             match operator.as_str() {
-                "ADD" => finite_sweep_differential(
-                    left.value + right.value,
-                    left.derivative + right.derivative,
-                ),
-                "SUB" => finite_sweep_differential(
-                    left.value - right.value,
-                    left.derivative - right.derivative,
-                ),
-                "MUL" => finite_sweep_differential(
-                    left.value * right.value,
-                    left.derivative * right.value + left.value * right.derivative,
-                ),
-                "DIV" if right.value != 0.0 => {
-                    let mut numerator = ExactSignedSum::default();
-                    numerator.add_product(left.derivative, right.value);
-                    numerator.add_product(-left.value, right.derivative);
-                    let mut denominator = ExactSignedSum::default();
-                    denominator.add_product(right.value, right.value);
-                    let derivative = match numerator.finish() {
-                        Some(value) => sweep_quotient(value, denominator.finish())?,
-                        None => FiniteReal::ZERO,
-                    };
-                    sweep_differential_of(left.value / right.value, derivative)
+                "ADD" => Ok(ScalarSweepDifferential {
+                    value: law_real(x + y)?,
+                    derivative: derivatives.and_then(|(dx, dy)| law_real(dx.get() + dy.get())),
+                }),
+                "SUB" => Ok(ScalarSweepDifferential {
+                    value: law_real(x - y)?,
+                    derivative: derivatives.and_then(|(dx, dy)| law_real(dx.get() - dy.get())),
+                }),
+                "MUL" => Ok(ScalarSweepDifferential {
+                    value: law_real(x * y)?,
+                    derivative: derivatives
+                        .and_then(|(dx, dy)| law_real(dx.get() * y + x * dy.get())),
+                }),
+                "DIV" => {
+                    let divisor = NonZeroReal::new(y).ok_or(no_value)?;
+                    Ok(ScalarSweepDifferential {
+                        value: law_real(x / y)?,
+                        derivative: derivatives.and_then(|(dx, dy)| {
+                            let mut numerator = ExactSignedSum::default();
+                            numerator.add_product(dx.get(), y);
+                            numerator.add_product(-x, dy.get());
+                            numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+                                sweep_quotient(
+                                    value,
+                                    crate::math::sum::ScaledValue::product_of_nonzero([
+                                        divisor, divisor,
+                                    ]),
+                                )
+                            })
+                        }),
+                    })
                 }
                 _ => Err(no_value),
             }
@@ -5862,19 +6227,18 @@ fn scalar_sweep_law_differential(
     }
 }
 
-/// `numerator / denominator` for a law derivative, over a denominator whose
-/// exact zero (`None`) states no value. A quotient that overflows leaves the
-/// law outside the finite range.
+/// `numerator / denominator` for a law derivative. A quotient that overflows
+/// leaves the derivative outside the finite range.
 fn sweep_quotient(
     numerator: crate::math::sum::ScaledValue,
-    denominator: Option<crate::math::sum::ScaledValue>,
+    denominator: crate::math::sum::ScaledValue,
 ) -> Result<FiniteReal, EvaluationFailure<()>> {
     numerator
-        .quotient(denominator.ok_or(EvaluationFailure::NoValue)?)
+        .quotient(denominator)
         .map_err(|_| EvaluationFailure::NonFinite(()))
 }
 
-/// A law denominator formed before its numerator: an exact zero states no
+/// A law denominator formed from an exact sum: an exact zero states no
 /// value.
 fn sweep_denominator(
     denominator: Option<crate::math::sum::ScaledValue>,
@@ -5882,108 +6246,140 @@ fn sweep_denominator(
     denominator.ok_or(EvaluationFailure::NoValue)
 }
 
+/// The derivative `factor * derivative` of a unary law whose operand has
+/// derivative `derivative`, or the first failure among the two.
+fn chain_derivative(
+    factor: Result<f64, EvaluationFailure<()>>,
+    derivative: Result<FiniteReal, EvaluationFailure<()>>,
+) -> Result<FiniteReal, EvaluationFailure<()>> {
+    let derivative = derivative?;
+    law_real(factor? * derivative.get())
+}
+
 /// A unary law operator applied to its operand's value and derivative. An
-/// operand outside the operator's domain, and an operator the evaluator does
-/// not read, state no value; a value or derivative that overflows leaves the
-/// law outside the finite range.
+/// operand outside the domain of the operator's value, and an operator the
+/// evaluator does not read, state no value; a value that overflows leaves
+/// the law outside the finite range. The derivative states its own outcome:
+/// an operand outside the domain of the operator's derivative states no
+/// derivative, and a derivative that overflows left the finite range.
 fn scalar_unary_sweep_law_differential(
     operator: &str,
     operand: ScalarSweepDifferential,
 ) -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let non_finite = EvaluationFailure::NonFinite(());
-    let x = operand.value;
+    let x = operand.value.get();
+    let law = |value: f64,
+               derivative: Result<FiniteReal, EvaluationFailure<()>>|
+     -> Result<ScalarSweepDifferential, EvaluationFailure<()>> {
+        Ok(ScalarSweepDifferential {
+            value: law_real(value)?,
+            derivative,
+        })
+    };
     match operator {
         "LN" => {
             if x <= 0.0 {
                 return Err(no_value);
             }
-            return finite_sweep_differential(x.ln(), operand.derivative / x);
+            return law(
+                x.ln(),
+                operand
+                    .derivative
+                    .and_then(|derivative| law_real(derivative.get() / x)),
+            );
         }
         "EXP" => {
             let value = x.exp();
-            if !value.is_finite() {
-                return Err(non_finite);
-            }
             let half = (0.5 * x).exp();
-            let mut product = ExactSignedSum::default();
-            product.add_factors([half, half, operand.derivative]);
-            let derivative = product.finish().map_or(Ok(FiniteReal::ZERO), |value| {
-                value.finite().map_err(|_| non_finite)
-            })?;
-            return Ok(ScalarSweepDifferential {
+            return law(
                 value,
-                derivative: derivative.get(),
-            });
+                operand.derivative.and_then(|derivative| {
+                    let mut product = ExactSignedSum::default();
+                    product.add_factors([half, half, derivative.get()]);
+                    product.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+                        value.finite().map_err(|_| non_finite)
+                    })
+                }),
+            );
         }
         "COT" | "CSC" | "TAN" | "SEC" | "ARCSECH" => {
-            let mut denominator = ExactSignedSum::default();
-            let (value, factor) = match operator {
+            let (value, factor, denominator) = match operator {
                 "COT" | "CSC" => {
-                    let sine = x.sin();
-                    if sine == 0.0 {
-                        return Err(no_value);
-                    }
-                    denominator.add_product(sine, sine);
+                    let sine = NonZeroReal::new(x.sin()).ok_or(no_value)?;
+                    let denominator =
+                        crate::math::sum::ScaledValue::product_of_nonzero([sine, sine]);
                     if operator == "COT" {
-                        (1.0 / x.tan(), -1.0)
+                        (1.0 / x.tan(), -1.0, Ok(denominator))
                     } else {
-                        (1.0 / sine, -x.cos())
+                        (1.0 / sine.get(), -x.cos(), Ok(denominator))
                     }
                 }
                 "TAN" | "SEC" => {
-                    let cosine = x.cos();
-                    if cosine == 0.0 {
-                        return Err(no_value);
-                    }
-                    denominator.add_product(cosine, cosine);
+                    let cosine = NonZeroReal::new(x.cos()).ok_or(no_value)?;
+                    let denominator =
+                        crate::math::sum::ScaledValue::product_of_nonzero([cosine, cosine]);
                     if operator == "TAN" {
-                        (x.tan(), 1.0)
+                        (x.tan(), 1.0, Ok(denominator))
                     } else {
-                        (1.0 / cosine, x.sin())
+                        (1.0 / cosine.get(), x.sin(), Ok(denominator))
                     }
                 }
                 _ => {
-                    if x <= 0.0 || x >= 1.0 {
+                    // The value is defined on (0, 1]; at 1 the root is zero
+                    // and the derivative has no value.
+                    let positive = PositiveReal::new(x).ok_or(no_value)?;
+                    if x > 1.0 {
                         return Err(no_value);
                     }
-                    let root = ((1.0 - x) * (1.0 + x)).sqrt();
-                    denominator.add_product(x, root);
-                    (((1.0 + root).ln() - x.ln()), -1.0)
+                    let root = positive.unit_complement_root();
+                    (
+                        (1.0 + root.map_or(0.0, PositiveReal::get)).ln() - x.ln(),
+                        -1.0,
+                        root.map(|root| {
+                            crate::math::sum::ScaledValue::product_of_nonzero([
+                                positive.into(),
+                                root.into(),
+                            ])
+                        })
+                        .ok_or(no_value),
+                    )
                 }
             };
-            let mut numerator = ExactSignedSum::default();
-            numerator.add_product(factor, operand.derivative);
-            let denominator = sweep_denominator(denominator.finish())?;
-            return sweep_differential_of(
+            return law(
                 value,
-                numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
-                    sweep_quotient(value, Some(denominator))
-                })?,
+                operand.derivative.and_then(|derivative| {
+                    let denominator = denominator?;
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_product(factor, derivative.get());
+                    numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+                        sweep_quotient(value, denominator)
+                    })
+                }),
             );
         }
         "ARCTAN" | "ARCOT" | "ARCSEC" | "ARCCSC" | "ARCCSCH" => {
             let mut denominator = ExactSignedSum::default();
-            let (value, sign) = match operator {
+            let (value, sign, derivative_domain) = match operator {
                 "ARCTAN" | "ARCOT" => {
                     denominator.add_product(x, x);
                     denominator.add_product(1.0, 1.0);
                     if operator == "ARCTAN" {
-                        (x.atan(), 1.0)
+                        (x.atan(), 1.0, true)
                     } else {
-                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0)
+                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0, true)
                     }
                 }
                 "ARCSEC" | "ARCCSC" => {
-                    if x.abs() <= 1.0 {
+                    if x.abs() < 1.0 {
                         return Err(no_value);
                     }
                     let factor = (((x.abs() - 1.0) / x.abs()) * (1.0 + 1.0 / x.abs())).sqrt();
                     denominator.add_factors([x.abs(), x.abs(), factor]);
                     if operator == "ARCSEC" {
-                        ((1.0 / x).acos(), 1.0)
+                        ((1.0 / x).acos(), 1.0, x.abs() > 1.0)
                     } else {
-                        ((1.0 / x).asin(), -1.0)
+                        ((1.0 / x).asin(), -1.0, x.abs() > 1.0)
                     }
                 }
                 _ => {
@@ -5997,23 +6393,33 @@ fn scalar_unary_sweep_law_differential(
                     } else {
                         (std::f64::consts::LN_2 - x.abs().ln()).copysign(x)
                     };
-                    (value, -1.0)
+                    (value, -1.0, true)
                 }
             };
-            // The operand derivative is finite, so it has a scaled form
-            // exactly when it is not zero.
-            let derivative = match crate::math::sum::scaled_finite(operand.derivative) {
-                Some(numerator) => {
-                    let quotient = sweep_quotient(numerator, denominator.finish())?;
-                    if sign < 0.0 {
-                        quotient.negated()
-                    } else {
-                        quotient
+            return law(
+                value,
+                operand.derivative.and_then(|derivative| {
+                    if !derivative_domain {
+                        return Err(no_value);
                     }
-                }
-                None => FiniteReal::ZERO,
-            };
-            return sweep_differential_of(value, derivative);
+                    // The operand derivative is finite, so it has a scaled
+                    // form exactly when it is not zero.
+                    match crate::math::sum::scaled_finite(derivative.get()) {
+                        Some(numerator) => {
+                            let quotient = sweep_quotient(
+                                numerator,
+                                sweep_denominator(denominator.finish())?,
+                            )?;
+                            Ok(if sign < 0.0 {
+                                quotient.negated()
+                            } else {
+                                quotient
+                            })
+                        }
+                        None => Ok(FiniteReal::ZERO),
+                    }
+                }),
+            );
         }
         "COTH" | "SECH" | "CSCH" => {
             if x == 0.0 && operator != "SECH" {
@@ -6021,136 +6427,162 @@ fn scalar_unary_sweep_law_differential(
             }
             let tail = (-x.abs()).exp();
             let sinh_denominator = -(-2.0 * x.abs()).exp_m1();
-            let mut numerator = ExactSignedSum::default();
             let mut denominator = ExactSignedSum::default();
-            let value = match operator {
+            let (value, numerator_factors) = match operator {
                 "COTH" => {
-                    numerator.add_factors([-4.0, tail, tail, operand.derivative]);
                     denominator.add_product(sinh_denominator, sinh_denominator);
-                    1.0 / x.tanh()
+                    (1.0 / x.tanh(), [-4.0, tail, tail])
                 }
                 "SECH" => {
                     let half_tail = (-0.5 * x.abs()).exp();
-                    numerator.add_factors([
-                        -2.0 * x.tanh(),
-                        half_tail,
-                        half_tail,
-                        operand.derivative,
-                    ]);
                     denominator.add_product(1.0 + tail * tail, 1.0);
-                    2.0 * tail / (1.0 + tail * tail)
+                    (
+                        2.0 * tail / (1.0 + tail * tail),
+                        [-2.0 * x.tanh(), half_tail, half_tail],
+                    )
                 }
                 _ => {
                     let half_tail = (-0.5 * x.abs()).exp();
-                    numerator.add_factors([
-                        -2.0 * (1.0 + tail * tail),
-                        half_tail,
-                        half_tail,
-                        operand.derivative,
-                    ]);
                     denominator.add_product(sinh_denominator, sinh_denominator);
-                    (2.0 * tail / sinh_denominator).copysign(x)
+                    (
+                        (2.0 * tail / sinh_denominator).copysign(x),
+                        [-2.0 * (1.0 + tail * tail), half_tail, half_tail],
+                    )
                 }
             };
-            let derivative = match numerator.finish() {
-                Some(value) => sweep_quotient(value, denominator.finish())?,
-                None => FiniteReal::ZERO,
-            };
-            return sweep_differential_of(value, derivative);
+            return law(
+                value,
+                operand.derivative.and_then(|derivative| {
+                    let [first, second, third] = numerator_factors;
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_factors([first, second, third, derivative.get()]);
+                    match numerator.finish() {
+                        Some(value) => {
+                            sweep_quotient(value, sweep_denominator(denominator.finish())?)
+                        }
+                        None => Ok(FiniteReal::ZERO),
+                    }
+                }),
+            );
         }
         "TANH" => {
-            let exponential = (-x.abs()).exp();
-            let mut numerator = ExactSignedSum::default();
-            numerator.add_factors([4.0, exponential, exponential, operand.derivative]);
-            let denominator = sweep_denominator(crate::math::sum::scaled_finite(
-                (1.0 + exponential * exponential).powi(2),
-            ))?;
-            let derivative = match numerator.finish() {
-                Some(value) => sweep_quotient(value, Some(denominator))?,
-                None => FiniteReal::ZERO,
-            };
-            return sweep_differential_of(x.tanh(), derivative);
+            let (tail, denominator) = operand.value.hyperbolic_tail();
+            return law(
+                x.tanh(),
+                operand.derivative.and_then(|derivative| {
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_factors([4.0, tail, tail, derivative.get()]);
+                    match numerator.finish() {
+                        Some(value) => sweep_quotient(
+                            value,
+                            crate::math::sum::ScaledValue::of_nonzero(denominator),
+                        ),
+                        None => Ok(FiniteReal::ZERO),
+                    }
+                }),
+            );
         }
         "ARCSINH" => {
-            return finite_sweep_differential(x.asinh(), operand.derivative / x.hypot(1.0))
+            return law(
+                x.asinh(),
+                operand
+                    .derivative
+                    .and_then(|derivative| law_real(derivative.get() / x.hypot(1.0))),
+            )
         }
         "ARCCOSH" => {
-            if x <= 1.0 {
+            if x < 1.0 {
                 return Err(no_value);
             }
-            let denominator = if x < 2.0 {
-                ((x - 1.0) * (x + 1.0)).sqrt()
-            } else {
-                x * (1.0 - (1.0 / x).powi(2)).sqrt()
-            };
-            return finite_sweep_differential(x.acosh(), operand.derivative / denominator);
+            return law(
+                x.acosh(),
+                operand.derivative.and_then(|derivative| {
+                    if x == 1.0 {
+                        return Err(no_value);
+                    }
+                    let denominator = if x < 2.0 {
+                        ((x - 1.0) * (x + 1.0)).sqrt()
+                    } else {
+                        x * (1.0 - (1.0 / x).powi(2)).sqrt()
+                    };
+                    law_real(derivative.get() / denominator)
+                }),
+            );
         }
         "ARCOTH" => {
-            if x.abs() <= 1.0 {
-                return Err(no_value);
-            }
-            let inverse = 1.0 / x;
-            let denominator = ((x - 1.0) / x) * ((x + 1.0) / x);
-            let [left, right, denominator] =
-                FiniteReal::array([operand.derivative / x, -inverse, denominator])
-                    .ok_or(non_finite)?;
-            // The denominator is positive, so an absent product overflowed.
-            let derivative =
-                crate::math::multiply_divide(left, right, denominator).ok_or(non_finite)?;
-            return sweep_differential_of(inverse.atanh(), derivative);
+            let beyond = operand.value.beyond_unit().ok_or(no_value)?;
+            return Ok(ScalarSweepDifferential {
+                value: beyond.arcoth(),
+                derivative: operand.derivative.and_then(|derivative| {
+                    // (derivative / x) * (-1 / x) over 1 - 1/x², formed as one
+                    // exact product and one quotient.
+                    let mut numerator = ExactSignedSum::default();
+                    numerator.add_product(
+                        beyond.quotient(derivative).get(),
+                        beyond.quotient(FiniteReal::ONE).negated().get(),
+                    );
+                    numerator.finish().map_or(Ok(FiniteReal::ZERO), |value| {
+                        sweep_quotient(
+                            value,
+                            crate::math::sum::ScaledValue::of_nonzero(beyond.square_complement()),
+                        )
+                    })
+                }),
+            });
         }
         _ => {}
     }
 
-    let derivative = match operator {
-        "SIN" => x.cos(),
-        "COS" => -x.sin(),
-        "COSH" => x.sinh(),
-        "SINH" => x.cosh(),
-        "ARCCOS" => {
-            let denominator = (1.0 - x * x).sqrt();
-            (denominator > 0.0)
-                .then_some(-1.0 / denominator)
-                .ok_or(no_value)?
-        }
-        "ARCSIN" => {
-            let denominator = (1.0 - x * x).sqrt();
-            (denominator > 0.0)
-                .then_some(1.0 / denominator)
-                .ok_or(no_value)?
-        }
-        "ARCTANH" => (x.abs() < 1.0)
-            .then_some(1.0 / (1.0 - x * x))
-            .ok_or(no_value)?,
-        "ABS" => {
-            if x > 0.0 {
-                1.0
-            } else if x < 0.0 {
-                -1.0
-            } else {
+    let (value, factor) = match operator {
+        "SIN" => (x.sin(), Ok(x.cos())),
+        "COS" => (x.cos(), Ok(-x.sin())),
+        "COSH" => (x.cosh(), Ok(x.sinh())),
+        "SINH" => (x.sinh(), Ok(x.cosh())),
+        "ARCCOS" | "ARCSIN" => {
+            if x.abs() > 1.0 {
                 return Err(no_value);
             }
+            let denominator = (1.0 - x * x).sqrt();
+            let factor = (denominator > 0.0)
+                .then_some(1.0 / denominator)
+                .ok_or(no_value);
+            if operator == "ARCCOS" {
+                (x.acos(), factor.map(|factor| -factor))
+            } else {
+                (x.asin(), factor)
+            }
         }
-        "SIGN" => (x != 0.0).then_some(0.0).ok_or(no_value)?,
-        "SQRT" => (x > 0.0).then_some(0.5 / x.sqrt()).ok_or(no_value)?,
+        "ARCTANH" => {
+            if x.abs() >= 1.0 {
+                return Err(no_value);
+            }
+            (x.atanh(), Ok(1.0 / (1.0 - x * x)))
+        }
+        "ABS" => (
+            x.abs(),
+            if x > 0.0 {
+                Ok(1.0)
+            } else if x < 0.0 {
+                Ok(-1.0)
+            } else {
+                Err(no_value)
+            },
+        ),
+        "SIGN" => {
+            if x == 0.0 {
+                return Err(no_value);
+            }
+            (x.signum(), Ok(0.0))
+        }
+        "SQRT" => {
+            if x < 0.0 {
+                return Err(no_value);
+            }
+            (x.sqrt(), (x > 0.0).then(|| 0.5 / x.sqrt()).ok_or(no_value))
+        }
         _ => return Err(no_value),
     };
-    finite_sweep_differential(
-        match operator {
-            "SIN" => x.sin(),
-            "COS" => x.cos(),
-            "COSH" => x.cosh(),
-            "SINH" => x.sinh(),
-            "ARCCOS" => x.acos(),
-            "ARCSIN" => x.asin(),
-            "ARCTANH" => x.atanh(),
-            "ABS" => x.abs(),
-            "SIGN" => x.signum(),
-            "SQRT" => x.sqrt(),
-            _ => return Err(no_value),
-        },
-        derivative * operand.derivative,
-    )
+    law(value, chain_derivative(factor, operand.derivative))
 }
 
 fn sweep_scale(
@@ -6182,36 +6614,31 @@ fn sweep_scale(
 }
 
 /// The profile differential scaled about `frame_point`. A scaled point
-/// outside the finite range is non-finite; a scaled derivative outside it
-/// leaves the evaluation there, carrying the finite point.
+/// outside the finite range is non-finite; each scaled derivative states its
+/// own outcome.
 fn scale_sweep_profile(
     profile: ModelCurveDifferential,
     frame_point: Point3,
     scale: Vector3,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
-    let displacement = point_displacement(profile.point.get(), frame_point);
+    let scaled =
+        |vector: Vector3| Vector3::new(vector.x * scale.x, vector.y * scale.y, vector.z * scale.z);
     let point = offset(
         frame_point,
         &[(
             1.0,
-            Vector3::new(
-                displacement.x * scale.x,
-                displacement.y * scale.y,
-                displacement.z * scale.z,
-            ),
+            scaled(point_displacement(profile.point.get(), frame_point)),
         )],
     );
-    let tangent = Vector3::new(
-        profile.tangent.x * scale.x,
-        profile.tangent.y * scale.y,
-        profile.tangent.z * scale.z,
-    );
-    let acceleration = Vector3::new(
-        profile.acceleration.x * scale.x,
-        profile.acceleration.y * scale.y,
-        profile.acceleration.z * scale.z,
-    );
-    admitted_differential(admit_point(point)?, tangent, acceleration)
+    Ok(ModelCurveDifferential {
+        point: admit_point(point)?,
+        tangent: profile
+            .tangent
+            .and_then(|tangent| admit_derivative(scaled(tangent.get()))),
+        acceleration: profile
+            .acceleration
+            .and_then(|acceleration| admit_derivative(scaled(acceleration.get()))),
+    })
 }
 
 fn unit_domain_sweep_formula(name: &str) -> bool {
@@ -6276,11 +6703,13 @@ fn sweep_rail_transform(
     {
         return None;
     }
-    let transform = Transform::affine([
-        [vectors[0].x, vectors[1].x, vectors[2].x, 0.0],
-        [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
-        [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
-    ])?;
+    let [x, y, z] = [vectors[0], vectors[1], vectors[2]].map(FiniteVector3::components);
+    let zero = FiniteReal::ZERO;
+    let transform = Transform::from_finite_rows([
+        [x[0], y[0], z[0], zero],
+        [x[1], y[1], z[1], zero],
+        [x[2], y[2], z[2], zero],
+    ]);
     transform.is_proper_rigid().then_some(transform)
 }
 
@@ -6315,63 +6744,55 @@ fn point_displacement(point: Point3, origin: Point3) -> Vector3 {
     Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
 }
 
-fn sweep_tail_interval_contains(interval: [Option<FiniteReal>; 2], parameter: f64) -> bool {
-    parameter.is_finite()
-        && interval[0].is_none_or(|lower| parameter >= lower.get())
-        && interval[1].is_none_or(|upper| parameter <= upper.get())
+fn sweep_tail_interval_contains(interval: [Option<FiniteReal>; 2], parameter: FiniteReal) -> bool {
+    interval[0].is_none_or(|lower| parameter >= lower)
+        && interval[1].is_none_or(|upper| parameter <= upper)
 }
 
-/// The unit direction of `vector` and its derivative, given the derivative
-/// of `vector`. A zero vector has no direction; a vector or derivative
-/// outside the finite range, and a derivative quotient that overflows, leave
-/// the evaluation there.
+/// The unit direction of a nonzero `vector`, none for the zero vector, and
+/// the unit direction's derivative given the vector's derivative, with its
+/// own outcome: a vector derivative without a value leaves it without one,
+/// and a quotient that overflows leaves it outside the finite range.
 fn unit_vector_with_derivative(
-    vector: Vector3,
-    derivative: Vector3,
-) -> Result<(Vector3, Vector3), EvaluationFailure<()>> {
-    use crate::math::sum::ExactSignedSum;
-
-    let non_finite = EvaluationFailure::NonFinite(());
-    let unit = FiniteVector3::new(vector)
-        .ok_or(non_finite)?
-        .unit_nonzero()
-        .ok_or(EvaluationFailure::NoValue)?;
-    if !derivative.is_finite() {
-        return Err(non_finite);
-    }
+    vector: FiniteVector3,
+    derivative: Result<FiniteVector3, EvaluationFailure<()>>,
+) -> Option<(Vector3, Result<Vector3, EvaluationFailure<()>>)> {
+    let (unit, cubed_length) = vector.unit_with_cubed_length()?;
+    let vector = vector.get();
     let components = [vector.x, vector.y, vector.z];
-    let derivatives = [derivative.x, derivative.y, derivative.z];
-    let scale = components
-        .iter()
-        .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-    let length = (vector.x / scale)
-        .hypot(vector.y / scale)
-        .hypot(vector.z / scale);
-    let mut denominator = ExactSignedSum::default();
-    denominator.add_factors([scale, scale, scale, length * length * length]);
-    // The vector is not zero, so neither is its cubed length.
-    let denominator = denominator.finish().ok_or(EvaluationFailure::NoValue)?;
-    // (|v|² d - v(v·d)) / |v|³. Exact products keep parallel derivatives
-    // zero and postpone range checks until the normalized result is formed.
-    let component = |index: usize| {
-        let mut numerator = ExactSignedSum::default();
-        for other in 0..3 {
-            if other != index {
-                numerator.add_factors([components[other], components[other], derivatives[index]]);
-                numerator.add_factors([-components[index], components[other], derivatives[other]]);
+    let denominator = crate::math::sum::ScaledValue::product_of_nonzero(cubed_length);
+    let unit_derivative = derivative.and_then(|derivative| {
+        let derivative = derivative.get();
+        let derivatives = [derivative.x, derivative.y, derivative.z];
+        // (|v|² d - v(v·d)) / |v|³. Exact products keep parallel derivatives
+        // zero and postpone range checks until the normalized result is
+        // formed.
+        let component = |index: usize| {
+            let mut numerator = ExactSignedSum::default();
+            for other in 0..3 {
+                if other != index {
+                    numerator.add_factors([
+                        components[other],
+                        components[other],
+                        derivatives[index],
+                    ]);
+                    numerator.add_factors([
+                        -components[index],
+                        components[other],
+                        derivatives[other],
+                    ]);
+                }
             }
-        }
-        numerator.finish().map_or(Ok(0.0), |value| {
-            value
-                .quotient(denominator)
-                .map(FiniteReal::get)
-                .map_err(|_| non_finite)
-        })
-    };
-    Ok((
-        unit,
-        Vector3::new(component(0)?, component(1)?, component(2)?),
-    ))
+            numerator.finish().map_or(Ok(0.0), |value| {
+                value
+                    .quotient(denominator)
+                    .map(FiniteReal::get)
+                    .map_err(|_| EvaluationFailure::NonFinite(()))
+            })
+        };
+        Ok(Vector3::new(component(0)?, component(1)?, component(2)?))
+    });
+    Some((unit, unit_derivative))
 }
 
 /// Whether the profile frame runs against the spine tangent. A frame
@@ -6402,19 +6823,21 @@ fn sweep_profile_reversed(
 /// The profile curve's differential at a sweep profile parameter. A
 /// parameter outside the profile range, an empty range, and a reversed
 /// profile on a carrier without a native domain have no value. A range span
-/// or native parameter that overflows reaches no coordinate.
+/// or native parameter that overflows reaches no coordinate. Each derivative
+/// scaled into the profile parameter states its own outcome.
 fn sweep_profile_differential(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     profile_range: [FiniteReal; 2],
     reversed: bool,
-    parameter: f64,
+    parameter: FiniteReal,
 ) -> Result<ModelCurveDifferential, EvaluationFailure<Point3>> {
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
     if !sweep_tail_interval_contains([Some(profile_range[0]), Some(profile_range[1])], parameter) {
         return Err(no_value);
     }
+    let parameter = parameter.get();
     let [profile_start, profile_end] = FiniteReal::raw_array(profile_range);
     let profile_span = profile_end - profile_start;
     if profile_span <= 0.0 {
@@ -6442,17 +6865,37 @@ fn sweep_profile_differential(
         _ if !reversed => (parameter, 1.0),
         _ => return Err(no_value),
     };
-    let mut differential = model_curve_differential_by_id(index, profile, native_parameter)?;
-    differential.tangent = scale_vector(differential.tangent, parameter_scale);
-    differential.acceleration =
-        scale_vector(differential.acceleration, parameter_scale * parameter_scale);
-    Ok(differential)
+    let differential = model_curve_differential_by_id(index, profile, native_parameter)?;
+    Ok(ModelCurveDifferential {
+        point: differential.point,
+        tangent: differential
+            .tangent
+            .and_then(|tangent| admit_derivative(scale_vector(tangent.get(), parameter_scale))),
+        acceleration: differential.acceleration.and_then(|acceleration| {
+            admit_derivative(scale_vector(
+                acceleration.get(),
+                parameter_scale * parameter_scale,
+            ))
+        }),
+    })
 }
 
-/// The profile and spine differentials, the law value and derivative, and
-/// the straight path origin of a law-driven sweep at `(u, v)`, or why there
-/// are none. A sweep outside the law-driven straight form the evaluator
-/// reads, and a parameter outside its intervals, have no value.
+/// The spine of a law-driven sweep at a spine parameter: its point, its
+/// tangent, which the section frame reads, and its acceleration with its
+/// own outcome.
+#[derive(Clone, Copy)]
+struct SweepSpine {
+    point: FinitePoint3,
+    tangent: FiniteVector3,
+    acceleration: Result<FiniteVector3, EvaluationFailure<()>>,
+}
+
+/// The placed profile differential, the spine, the law value and derivative,
+/// and the straight path origin of a law-driven sweep at `(u, v)`, or why
+/// there are none. A sweep outside the law-driven straight form the
+/// evaluator reads, and a parameter outside its intervals, have no value.
+/// The section frame reads the spine tangent, so a spine tangent without a
+/// value fails the sweep, carrying the spine point.
 fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
@@ -6467,7 +6910,7 @@ fn cacheless_law_sweep_differentials(
 ) -> Result<
     (
         ModelCurveDifferential,
-        ModelCurveDifferential,
+        SweepSpine,
         ScalarSweepDifferential,
         Point3,
     ),
@@ -6496,6 +6939,9 @@ fn cacheless_law_sweep_differentials(
     };
     let rail_transform = sweep_rail_transform(formula).ok_or(no_value)?;
     let scale = sweep_scale(second_law).ok_or(no_value)?;
+    let (Some(u), Some(v)) = (FiniteReal::new(u), FiniteReal::new(v)) else {
+        return Err(no_value);
+    };
     if *path_mode != 1
         || *formula_mode != 0
         || *trailing_flag
@@ -6505,28 +6951,32 @@ fn cacheless_law_sweep_differentials(
     {
         return Err(no_value);
     }
-    let spine = model_curve_differential_by_id(index, spine, v)?;
-    let reversed = sweep_profile_reversed(*profile_frame, spine.tangent).map_err(unreached)?;
+    let spine = model_curve_differential_by_id(index, spine, v.get())?;
+    let spine = SweepSpine {
+        point: spine.point,
+        tangent: spine.tangent()?,
+        acceleration: spine.acceleration,
+    };
+    let reversed =
+        sweep_profile_reversed(*profile_frame, spine.tangent.get()).map_err(unreached)?;
     let profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
     let frame_point = profile_frame.map_or(*origin, |(point, _)| point).get();
-    let mut profile = scale_sweep_profile(profile, frame_point, scale)?;
-    profile.point = rail_transform
-        .apply_point_reaching(profile.point.get())
-        .map_err(EvaluationFailure::NonFinite)?;
-    let placed = |vector: Vector3| {
-        rail_transform
-            .apply_vector(vector)
-            .map(FiniteVector3::get)
-            .ok_or(EvaluationFailure::NonFinite(profile.point.get()))
+    let profile = scale_sweep_profile(profile, frame_point, scale)?;
+    let profile = ModelCurveDifferential {
+        point: rail_transform
+            .apply_point_reaching(profile.point.get())
+            .map_err(EvaluationFailure::NonFinite)?,
+        tangent: placed_derivative(rail_transform, profile.tangent),
+        acceleration: placed_derivative(rail_transform, profile.acceleration),
     };
-    profile.tangent = placed(profile.tangent)?;
-    profile.acceleration = placed(profile.acceleration)?;
     let law = scalar_sweep_law_differential(first_law, v).map_err(unreached)?;
     Ok((profile, spine, law, path_origin))
 }
 
 /// The raw point of a law-driven sweep, or why it has none: the profile
 /// point displaced along the spine and by the law along the section normal.
+/// The normal reads the profile and spine tangents; the point reads no
+/// acceleration and no law derivative.
 fn cacheless_law_sweep_point(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
@@ -6539,24 +6989,31 @@ fn cacheless_law_sweep_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<Point3>> {
-    let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
     let (profile, spine, law, path_origin) =
         cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
-    let (profile_tangent, _) =
-        unit_vector_with_derivative(profile.tangent, profile.acceleration).map_err(unreached)?;
-    let (spine_tangent, _) =
-        unit_vector_with_derivative(spine.tangent, spine.acceleration).map_err(unreached)?;
+    let profile_tangent = profile
+        .tangent()?
+        .unit_nonzero()
+        .ok_or(EvaluationFailure::NoValue)?;
+    let spine_tangent = spine
+        .tangent
+        .unit_nonzero()
+        .ok_or(EvaluationFailure::NoValue)?;
     let normal = profile_tangent.cross(spine_tangent);
     Ok(offset(
         profile.point.get(),
         &[
             (1.0, point_displacement(spine.point.get(), path_origin)),
-            (law.value, normal),
+            (law.value.get(), normal),
         ],
     ))
 }
 
-fn cacheless_law_sweep_partials(
+/// The point and first partials of a law-driven sweep, the partials with
+/// their own outcome, or why the point has none. The partials read the
+/// profile and spine accelerations and the law derivative besides what the
+/// point reads.
+fn cacheless_law_sweep_first_order(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
     spine: &crate::ids::CurveId,
@@ -6567,35 +7024,33 @@ fn cacheless_law_sweep_partials(
     >,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials> {
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
     let (profile, spine, law, path_origin) =
-        cacheless_law_sweep_differentials(index, profile, spine, construction, u, v).ok()?;
-    let (profile_tangent, profile_tangent_derivative) =
-        unit_vector_with_derivative(profile.tangent, profile.acceleration).ok()?;
-    let (spine_tangent, spine_tangent_derivative) =
-        unit_vector_with_derivative(spine.tangent, spine.acceleration).ok()?;
-    let normal = profile_tangent.cross(spine_tangent);
-    let normal_u = profile_tangent_derivative.cross(spine_tangent)
-        + profile_tangent.cross(spine_tangent_derivative);
-    Some(SurfacePartials {
-        point: offset(
-            profile.point.get(),
-            &[
-                (1.0, point_displacement(spine.point.get(), path_origin)),
-                (law.value, normal),
-            ],
-        ),
-        du: profile.tangent + scale_vector(normal_u, law.value),
-        dv: spine.tangent + scale_vector(normal, law.derivative),
-    })
-}
-
-#[derive(Clone, Copy)]
-struct ContactTrackDifferential {
-    point: Point3,
-    tangent: Vector3,
-    normal: Vector3,
-    normal_derivative: Option<Vector3>,
+        cacheless_law_sweep_differentials(index, profile, spine, construction, u, v)?;
+    let profile_tangent = profile.tangent()?;
+    let (profile_unit, profile_unit_derivative) =
+        unit_vector_with_derivative(profile_tangent, profile.acceleration)
+            .ok_or(EvaluationFailure::NoValue)?;
+    let (spine_unit, spine_unit_derivative) =
+        unit_vector_with_derivative(spine.tangent, spine.acceleration)
+            .ok_or(EvaluationFailure::NoValue)?;
+    let normal = profile_unit.cross(spine_unit);
+    let point = admit_point(offset(
+        profile.point.get(),
+        &[
+            (1.0, point_displacement(spine.point.get(), path_origin)),
+            (law.value.get(), normal),
+        ],
+    ))?;
+    let first = (|| {
+        let normal_u =
+            profile_unit_derivative?.cross(spine_unit) + profile_unit.cross(spine_unit_derivative?);
+        admit_lanes([
+            profile_tangent.get() + scale_vector(normal_u, law.value.get()),
+            spine.tangent.get() + scale_vector(normal, law.derivative?.get()),
+        ])
+    })();
+    Ok(SurfaceFirstOrder { point, first })
 }
 
 /// The unit direction of a vector formed from finite values: a component
@@ -6608,12 +7063,47 @@ fn unit_direction(vector: Vector3) -> Result<Vector3, EvaluationFailure<()>> {
     vector.unit().ok_or(EvaluationFailure::NoValue)
 }
 
-/// The contact track of a blend side at `parameter`: its support point,
-/// tangent and unit normal, or why it has none. A side without a support or
-/// pcurve, a pcurve without a point or tangent there, a support without
-/// partials, and a degenerate normal have no value; a pcurve tangent or
-/// normal outside the finite range leaves the evaluation there.
-fn variable_blend_contact_track_differential(
+/// The contact track of a blend side at a parameter: the support's point
+/// with its first partials, the side pcurve's tangent, and the derivative of
+/// the support's unit normal along the track, each derivative with its own
+/// outcome.
+#[derive(Clone, Copy)]
+struct ContactTrack {
+    support: SurfaceFirstOrder,
+    uv_tangent: Result<FinitePoint2, EvaluationFailure<()>>,
+    normal_derivative: Result<Vector3, EvaluationFailure<()>>,
+}
+
+impl ContactTrack {
+    /// The support point.
+    fn point(&self) -> Point3 {
+        self.support.point.get()
+    }
+
+    /// The support's unit normal: a degenerate normal has no direction, and
+    /// one outside the finite range left it.
+    fn normal(&self) -> Result<Vector3, EvaluationFailure<()>> {
+        let [du, dv] = self.support.first?;
+        unit_direction(du.get().cross(dv.get()))
+    }
+
+    /// The track tangent: the pcurve tangent carried by the support's first
+    /// partials.
+    fn tangent(&self) -> Result<Vector3, EvaluationFailure<()>> {
+        let uv_tangent = self.uv_tangent?;
+        let [du, dv] = self.support.first?;
+        Ok(vector_sum(&[
+            (uv_tangent.u, du.get()),
+            (uv_tangent.v, dv.get()),
+        ]))
+    }
+}
+
+/// The contact track of a blend side at `parameter`, or why its support
+/// point has none. A side without a support or pcurve, and a pcurve without
+/// a point there, have no value. The track's derivatives state their own
+/// outcomes.
+fn variable_blend_contact_track(
     index: &crate::index::ModelIndex<'_>,
     side: &crate::geometry::RollingBallSide<
         crate::ids::SurfaceId,
@@ -6623,7 +7113,7 @@ fn variable_blend_contact_track_differential(
         FinitePoint3,
     >,
     parameter: f64,
-) -> Result<ContactTrackDifferential, EvaluationFailure<()>> {
+) -> Result<ContactTrack, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let surface = &side.surface.as_ref().ok_or(no_value)?.surface;
     let pcurve = side.pcurve.as_ref().ok_or(no_value)?;
@@ -6634,22 +7124,30 @@ fn variable_blend_contact_track_differential(
         Err(EvaluationFailure::NonFinite(uv)) => uv,
         Err(EvaluationFailure::NoValue) => return Err(no_value),
     };
-    let uv_tangent = pcurve_tangent(pcurve, parameter).map_err(|failure| failure.map(|_| ()))?;
-    let support = model_surface_partials_by_id(index, surface, uv.u, uv.v).ok_or(no_value)?;
-    let normal_derivative = model_surface_second_partials_by_id(index, surface, uv.u, uv.v)
-        .and_then(|support| {
-            let du = vector_sum(&[(uv_tangent.u, support.duu), (uv_tangent.v, support.duv)]);
-            let dv = vector_sum(&[(uv_tangent.u, support.duv), (uv_tangent.v, support.dvv)]);
-            let normal = support.du.cross(support.dv);
-            let normal_derivative = du.cross(support.dv) + support.du.cross(dv);
-            unit_vector_with_derivative(normal, normal_derivative)
-                .ok()
-                .map(|(_, derivative)| derivative)
-        });
-    Ok(ContactTrackDifferential {
-        point: support.point,
-        tangent: vector_sum(&[(uv_tangent.u, support.du), (uv_tangent.v, support.dv)]),
-        normal: unit_direction(support.du.cross(support.dv))?,
+    let support = model_surface_first_order_by_id(index, surface, uv.u, uv.v, None)
+        .map_err(|failure| failure.map(|_| ()))?;
+    let uv_tangent = pcurve_tangent(pcurve, parameter).map_err(|failure| failure.map(|_| ()));
+    let normal_derivative = uv_tangent.and_then(|uv_tangent| {
+        let support = model_surface_second_partials_by_id(index, surface, uv.u, uv.v)
+            .map_err(|failure| failure.map(|_| ()))?;
+        let [du, dv, duu, duv, dvv] = FiniteVector3::raw_array([
+            support.du,
+            support.dv,
+            support.duu,
+            support.duv,
+            support.dvv,
+        ]);
+        let du_along = vector_sum(&[(uv_tangent.u, duu), (uv_tangent.v, duv)]);
+        let dv_along = vector_sum(&[(uv_tangent.u, duv), (uv_tangent.v, dvv)]);
+        let normal = admit_derivative(du.cross(dv))?;
+        let normal_derivative = admit_derivative(du_along.cross(dv) + du.cross(dv_along));
+        let (_, derivative) = unit_vector_with_derivative(normal, normal_derivative)
+            .ok_or(EvaluationFailure::NoValue)?;
+        derivative
+    });
+    Ok(ContactTrack {
+        support,
+        uv_tangent,
         normal_derivative,
     })
 }
@@ -6660,8 +7158,8 @@ fn cacheless_variable_blend_domain_contains(
         FiniteVector3,
         FinitePoint3,
     >,
-    u: f64,
-    v: f64,
+    u: FiniteReal,
+    v: FiniteReal,
 ) -> bool {
     let exact_construction = matches!(
         construction.cache,
@@ -6669,12 +7167,21 @@ fn cacheless_variable_blend_domain_contains(
             | crate::geometry::VariableBlendCache::Stale {}
     );
     exact_construction
-        && (0.0..=1.0).contains(&u)
+        && (0.0..=1.0).contains(&u.get())
         && sweep_tail_interval_contains(construction.slice_range, v)
         && construction.cache.parameterization().is_none_or(|tail| {
             sweep_tail_interval_contains(tail.u_interval, u)
                 && sweep_tail_interval_contains(tail.v_interval, v)
         })
+}
+
+/// The finite blend parameters `(u, v)`, or no value where either is not
+/// finite.
+fn blend_parameters(u: f64, v: f64) -> Result<(FiniteReal, FiniteReal), EvaluationFailure<()>> {
+    match (FiniteReal::new(u), FiniteReal::new(v)) {
+        (Some(u), Some(v)) => Ok((u, v)),
+        _ => Err(EvaluationFailure::NoValue),
+    }
 }
 
 fn variable_blend_has_current_cache(
@@ -6713,15 +7220,6 @@ fn revision_surface_tail_has_current_cache<P>(
     )
 }
 
-fn surface_cache_evaluation(
-    geometry: &crate::geometry::SurfaceGeometry,
-    u: f64,
-    v: f64,
-) -> Option<(Point3, Option<Vector3>)> {
-    let partials = surface_partials(geometry, u, v)?;
-    Some((partials.point, partials.du.cross(partials.dv).unit()))
-}
-
 fn variable_blend_is_zero_radius(
     value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
 ) -> bool {
@@ -6742,7 +7240,10 @@ fn variable_blend_is_zero_radius(
     }
 }
 
-fn cacheless_ruled_variable_blend_partials(
+/// The two contact tracks of a zero-radius rounded chamfer at `(u, v)`, or
+/// why there are none: a blend outside that form or its domain has no
+/// value.
+fn cacheless_ruled_variable_blend_tracks(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction<
         FiniteReal,
@@ -6751,31 +7252,70 @@ fn cacheless_ruled_variable_blend_partials(
     >,
     u: f64,
     v: f64,
-) -> Result<SurfacePartials, EvaluationFailure<()>> {
+) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
     let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
         construction.cross_section.as_ref()
     else {
         return Err(no_value);
     };
-    if !cacheless_variable_blend_domain_contains(construction, u, v)
+    let (finite_u, finite_v) = blend_parameters(u, v)?;
+    if !cacheless_variable_blend_domain_contains(construction, finite_u, finite_v)
         || radius
             .as_deref()
             .is_some_and(|radius| !variable_blend_is_zero_radius(radius))
     {
         return Err(no_value);
     }
-    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
-    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
-    let chord = Vector3::new(
-        second.point.x - first.point.x,
-        second.point.y - first.point.y,
-        second.point.z - first.point.z,
-    );
-    Ok(SurfacePartials {
-        point: offset(first.point, &[(u, chord)]),
-        du: chord,
-        dv: vector_sum(&[(1.0 - u, first.tangent), (u, second.tangent)]),
+    Ok([
+        variable_blend_contact_track(index, &construction.sides[0], v)?,
+        variable_blend_contact_track(index, &construction.sides[1], v)?,
+    ])
+}
+
+/// The point of a zero-radius rounded chamfer: its chord between the two
+/// contact points at fraction `u`. It reads the contact points only.
+fn cacheless_ruled_variable_blend_point(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+    u: f64,
+    v: f64,
+) -> Result<Point3, EvaluationFailure<()>> {
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)?;
+    Ok(offset(
+        first.point(),
+        &[(u, point_displacement(second.point(), first.point()))],
+    ))
+}
+
+/// The point and first partials of a zero-radius rounded chamfer, the first
+/// partials reading the track tangents, or why its point has none.
+fn cacheless_ruled_variable_blend_first_order(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+    u: f64,
+    v: f64,
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)
+        .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
+    let chord = point_displacement(second.point(), first.point());
+    let point = admit_point(offset(first.point(), &[(u, chord)]))?;
+    let tangents = first
+        .tangent()
+        .and_then(|first| Ok([first, second.tangent()?]));
+    Ok(SurfaceFirstOrder {
+        point,
+        first: tangents
+            .map(|[first, second]| [chord, vector_sum(&[(1.0 - u, first), (u, second)])])
+            .and_then(admit_lanes),
     })
 }
 
@@ -6815,10 +7355,12 @@ fn variable_blend_radius(
     }
 }
 
-fn variable_blend_radius_differential(
+/// The derivative of a variable blend radius at `parameter`, or why it has
+/// none, in the terms of [`variable_blend_radius`].
+fn variable_blend_radius_derivative(
     value: &crate::geometry::VariableBlendValue<FiniteReal, FiniteVector3, FinitePoint3>,
     parameter: f64,
-) -> Option<ScalarSweepDifferential> {
+) -> Result<FiniteReal, EvaluationFailure<()>> {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters, radii, ..
@@ -6827,28 +7369,21 @@ fn variable_blend_radius_differential(
             let [first_radius, second_radius] = FiniteReal::raw_array(*radii);
             let width = second_parameter - first_parameter;
             if width == 0.0 {
-                return None;
+                return Err(EvaluationFailure::NoValue);
             }
-            let fraction = (parameter - first_parameter) / width;
-            finite_sweep_differential(
-                first_radius + fraction * (second_radius - first_radius),
-                (second_radius - first_radius) / width,
-            )
-            .ok()
+            law_real((second_radius - first_radius) / width)
         }
         crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
-            variable_blend_radius_differential(nested, parameter)
+            variable_blend_radius_derivative(nested, parameter)
         }
         crate::geometry::VariableBlendValuePayload::Functional { function, .. }
         | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
-            let [radius, _] = pcurve_uv(function, parameter).ok()?.coordinates();
-            let [derivative, _] = pcurve_tangent(function, parameter).ok()?.coordinates();
-            Some(ScalarSweepDifferential {
-                value: radius.get(),
-                derivative: derivative.get(),
-            })
+            let [derivative, _] = pcurve_tangent(function, parameter)
+                .map_err(|failure| failure.map(|_| ()))?
+                .coordinates();
+            Ok(derivative)
         }
-        _ => None,
+        _ => Err(EvaluationFailure::NoValue),
     }
 }
 
@@ -6892,6 +7427,47 @@ fn minor_circular_arc_point(
     Ok(offset(center, &[(radius, radial)]))
 }
 
+/// Whether a variable blend takes the circular cross section with a single
+/// radius over its domain at `(u, v)`.
+fn circular_variable_blend_applies(
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+    u: FiniteReal,
+    v: FiniteReal,
+) -> bool {
+    cacheless_variable_blend_domain_contains(construction, u, v)
+        && construction.radii.is_single()
+        && matches!(
+            construction.cross_section,
+            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
+        )
+}
+
+/// The two contact tracks of a circular variable blend at `(u, v)`, or why
+/// there are none: a blend outside that form or its domain has no value.
+fn circular_variable_blend_tracks(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+    u: f64,
+    v: f64,
+) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
+    let (finite_u, finite_v) = blend_parameters(u, v)?;
+    if !circular_variable_blend_applies(construction, finite_u, finite_v) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    Ok([
+        variable_blend_contact_track(index, &construction.sides[0], v)?,
+        variable_blend_contact_track(index, &construction.sides[1], v)?,
+    ])
+}
+
 fn cacheless_circular_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction<
@@ -6902,28 +7478,18 @@ fn cacheless_circular_variable_blend_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    if !cacheless_variable_blend_domain_contains(construction, u, v)
-        || !construction.radii.is_single()
-        || !matches!(
-            construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
-        )
-    {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
-    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
+    let tracks = circular_variable_blend_tracks(index, construction, u, v)?;
     if u == 0.0 {
-        return Ok(first.point);
+        return Ok(tracks[0].point());
     }
     if u == 1.0 {
-        return Ok(second.point);
+        return Ok(tracks[1].point());
     }
-    let section = cacheless_circular_variable_blend_section(index, construction, u, v)?;
+    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)?;
     minor_circular_arc_point(
         section.center,
-        section.first.point,
-        section.second.point,
+        section.first.point(),
+        section.second.point(),
         section.radius,
         u,
     )
@@ -6932,13 +7498,18 @@ fn cacheless_circular_variable_blend_point(
 struct CircularVariableBlendSection {
     center: Point3,
     signs: [f64; 2],
-    first: ContactTrackDifferential,
-    second: ContactTrackDifferential,
+    first: ContactTrack,
+    second: ContactTrack,
+    normals: [Vector3; 2],
     radius: f64,
-    radius_derivative: Option<f64>,
+    radius_derivative: Result<f64, EvaluationFailure<()>>,
     tolerance: f64,
 }
 
+/// The circular section of a variable blend at `v` over its contact tracks:
+/// the common center of the two normal offsets by the radius, or why there
+/// is none. The section reads the contact points and normals and the radius;
+/// the radius derivative states its own outcome.
 fn cacheless_circular_variable_blend_section(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction<
@@ -6946,36 +7517,26 @@ fn cacheless_circular_variable_blend_section(
         FiniteVector3,
         FinitePoint3,
     >,
-    u: f64,
     v: f64,
+    [first, second]: [ContactTrack; 2],
 ) -> Result<CircularVariableBlendSection, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
-    if !cacheless_variable_blend_domain_contains(construction, u, v)
-        || !construction.radii.is_single()
-        || !matches!(
-            construction.cross_section,
-            None | Some(crate::geometry::VariableBlendCrossSection::Circular {})
-        )
-    {
-        return Err(no_value);
-    }
     let signed_radius = variable_blend_radius(construction.radii.first(), v)?.get();
     let radius = signed_radius.abs();
     if radius <= f64::EPSILON {
         return Err(no_value);
     }
-    let radius_derivative = variable_blend_radius_differential(construction.radii.first(), v)
-        .filter(|differential| differential.value.signum() == signed_radius.signum())
-        .map(|differential| differential.derivative * signed_radius.signum());
-    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
-    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
+    let radius_derivative = variable_blend_radius_derivative(construction.radii.first(), v)
+        .map(|derivative| derivative.get() * signed_radius.signum());
+    let normals = [first.normal()?, second.normal()?];
+    let [first_point, second_point] = [first.point(), second.point()];
     let scale = radius
-        .max(first.point.x.abs())
-        .max(first.point.y.abs())
-        .max(first.point.z.abs())
-        .max(second.point.x.abs())
-        .max(second.point.y.abs())
-        .max(second.point.z.abs());
+        .max(first_point.x.abs())
+        .max(first_point.y.abs())
+        .max(first_point.z.abs())
+        .max(second_point.x.abs())
+        .max(second_point.y.abs())
+        .max(second_point.z.abs());
     let tolerance = index
         .ir()
         .tolerances
@@ -6983,36 +7544,32 @@ fn cacheless_circular_variable_blend_section(
         .get()
         .max(256.0 * f64::EPSILON * scale.max(1.0));
 
-    let mut best = None;
+    let candidate = |first_sign: f64, second_sign: f64| {
+        let first_center = offset(first_point, &[(first_sign * radius, normals[0])]);
+        let second_center = offset(second_point, &[(second_sign * radius, normals[1])]);
+        let residual = point_displacement(second_center, first_center).norm();
+        (
+            Point3::new(
+                (first_center.x + second_center.x) * 0.5,
+                (first_center.y + second_center.y) * 0.5,
+                (first_center.z + second_center.z) * 0.5,
+            ),
+            [first_sign, second_sign],
+            residual,
+        )
+    };
+    let mut best = candidate(-1.0, -1.0);
     let mut second_best_residual = f64::INFINITY;
-    for first_sign in [-1.0, 1.0] {
-        for second_sign in [-1.0, 1.0] {
-            let first_center = offset(first.point, &[(first_sign * radius, first.normal)]);
-            let second_center = offset(second.point, &[(second_sign * radius, second.normal)]);
-            let residual = point_displacement(second_center, first_center).norm();
-            if best
-                .as_ref()
-                .is_none_or(|(_, _, best_residual)| residual < *best_residual)
-            {
-                if let Some((_, _, best_residual)) = best {
-                    second_best_residual = best_residual;
-                }
-                best = Some((
-                    Point3::new(
-                        (first_center.x + second_center.x) * 0.5,
-                        (first_center.y + second_center.y) * 0.5,
-                        (first_center.z + second_center.z) * 0.5,
-                    ),
-                    [first_sign, second_sign],
-                    residual,
-                ));
-            } else if residual < second_best_residual {
-                second_best_residual = residual;
-            }
+    for (first_sign, second_sign) in [(-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+        let next = candidate(first_sign, second_sign);
+        if next.2 < best.2 {
+            second_best_residual = best.2;
+            best = next;
+        } else if next.2 < second_best_residual {
+            second_best_residual = next.2;
         }
     }
-    // The first candidate is always taken, so a best candidate exists.
-    let (center, signs, residual) = best.ok_or(no_value)?;
+    let (center, signs, residual) = best;
     if residual > tolerance || second_best_residual <= tolerance {
         return Err(no_value);
     }
@@ -7021,6 +7578,7 @@ fn cacheless_circular_variable_blend_section(
         signs,
         first,
         second,
+        normals,
         radius,
         radius_derivative,
         tolerance,
@@ -7047,8 +7605,8 @@ fn cacheless_constant_rolling_ball_point(
     )?;
     minor_circular_arc_point(
         section.center,
-        section.first.point,
-        section.second.point,
+        section.first.point(),
+        section.second.point(),
         section.radius,
         u,
     )
@@ -7056,12 +7614,16 @@ fn cacheless_constant_rolling_ball_point(
 
 struct ConstantRollingBallSection {
     center: Point3,
-    center_tangent: Option<Vector3>,
-    first: ContactTrackDifferential,
-    second: ContactTrackDifferential,
+    center_tangent: Result<Vector3, EvaluationFailure<()>>,
+    first: ContactTrack,
+    second: ContactTrack,
     radius: f64,
 }
 
+/// The section of a constant rolling ball at `(u, v)`, or why there is none:
+/// its spine point as the center of the two contact points. The section
+/// reads the contact points and the spine point; the spine tangent states
+/// its own outcome.
 fn cacheless_constant_rolling_ball_section(
     index: &crate::index::ModelIndex<'_>,
     supports: &[Option<crate::geometry::BlendSupport>; 2],
@@ -7076,18 +7638,19 @@ fn cacheless_constant_rolling_ball_section(
         return Err(no_value);
     };
     let signed_radius = signed_radius.get();
+    let (finite_u, finite_v) = blend_parameters(u, v)?;
     if !matches!(
         native.cache,
         crate::geometry::RevisionCacheForm::Parameterization(_)
     ) || native.third.is_some()
         || *cross_section != crate::geometry::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
-        || !sweep_tail_interval_contains(native.slice_range, v)
-        || !sweep_tail_interval_contains(native.u_range, u)
-        || !sweep_tail_interval_contains(native.v_range, v)
+        || !sweep_tail_interval_contains(native.slice_range, finite_v)
+        || !sweep_tail_interval_contains(native.u_range, finite_u)
+        || !sweep_tail_interval_contains(native.v_range, finite_v)
         || !native.cache.parameterization().is_some_and(|tail| {
-            sweep_tail_interval_contains(tail.u_interval, u)
-                && sweep_tail_interval_contains(tail.v_interval, v)
+            sweep_tail_interval_contains(tail.u_interval, finite_u)
+                && sweep_tail_interval_contains(tail.v_interval, finite_v)
         })
     {
         return Err(no_value);
@@ -7105,23 +7668,25 @@ fn cacheless_constant_rolling_ball_section(
             return Err(no_value);
         }
     }
-    let first = variable_blend_contact_track_differential(index, &native.sides[0], v)?;
-    let second = variable_blend_contact_track_differential(index, &native.sides[1], v)?;
+    let first = variable_blend_contact_track(index, &native.sides[0], v)?;
+    let second = variable_blend_contact_track(index, &native.sides[1], v)?;
     let center =
         model_curve_point_by_id(index, &native.slice, v).map_err(|failure| failure.map(|_| ()))?;
     let center_tangent = model_curve_differential_by_id(index, &native.slice, v)
-        .ok()
-        .map(|differential| differential.tangent);
+        .map_err(|failure| failure.map(|_| ()))
+        .and_then(|differential| differential.tangent)
+        .map(FiniteVector3::get);
+    let [first_point, second_point] = [first.point(), second.point()];
     let tolerance = index.ir().tolerances.linear.get().max(
         256.0
             * f64::EPSILON
             * radius
-                .max(first.point.x.abs())
-                .max(first.point.y.abs())
-                .max(first.point.z.abs())
-                .max(second.point.x.abs())
-                .max(second.point.y.abs())
-                .max(second.point.z.abs())
+                .max(first_point.x.abs())
+                .max(first_point.y.abs())
+                .max(first_point.z.abs())
+                .max(second_point.x.abs())
+                .max(second_point.y.abs())
+                .max(second_point.z.abs())
                 .max(1.0),
     );
     let radius_error = |point: Point3| {
@@ -7132,8 +7697,8 @@ fn cacheless_constant_rolling_ball_section(
         .offsets
         .iter()
         .any(|offset| (offset.get() - signed_radius).abs() > tolerance)
-        || radius_error(first.point) > tolerance
-        || radius_error(second.point) > tolerance
+        || radius_error(first_point) > tolerance
+        || radius_error(second_point) > tolerance
     {
         return Err(no_value);
     }
@@ -7146,7 +7711,10 @@ fn cacheless_constant_rolling_ball_section(
     })
 }
 
-fn cacheless_circular_variable_blend_partials(
+/// The point and first partials of a circular variable blend, the first
+/// partials reading the radius derivative, the normal derivatives and the
+/// tangents of both tracks, or why its point has none.
+fn cacheless_circular_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction<
         FiniteReal,
@@ -7155,42 +7723,46 @@ fn cacheless_circular_variable_blend_partials(
     >,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
-    let section = cacheless_circular_variable_blend_section(index, construction, u, v).ok()?;
-    let radius_derivative = section.radius_derivative?;
-    let first_normal_derivative = section.first.normal_derivative?;
-    let second_normal_derivative = section.second.normal_derivative?;
-    let first_center_tangent = vector_sum(&[
-        (1.0, section.first.tangent),
-        (section.signs[0] * radius_derivative, section.first.normal),
-        (section.signs[0] * section.radius, first_normal_derivative),
-    ]);
-    let second_center_tangent = vector_sum(&[
-        (1.0, section.second.tangent),
-        (section.signs[1] * radius_derivative, section.second.normal),
-        (section.signs[1] * section.radius, second_normal_derivative),
-    ]);
-    if vector_sum(&[(1.0, second_center_tangent), (-1.0, first_center_tangent)]).norm()
-        > section.tolerance
-    {
-        return None;
-    }
-    let center_tangent = scale_vector(
-        vector_sum(&[(1.0, first_center_tangent), (1.0, second_center_tangent)]),
-        0.5,
-    );
-    circular_arc_partials(
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
+    let tracks = circular_variable_blend_tracks(index, construction, u, v).map_err(unreached)?;
+    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)
+        .map_err(unreached)?;
+    let center_tangent = (|| {
+        let radius_derivative = section.radius_derivative?;
+        let center_tangent = |track: &ContactTrack, sign: f64, normal: Vector3| {
+            Ok(vector_sum(&[
+                (1.0, track.tangent()?),
+                (sign * radius_derivative, normal),
+                (sign * section.radius, track.normal_derivative?),
+            ]))
+        };
+        let first_center_tangent =
+            center_tangent(&section.first, section.signs[0], section.normals[0])?;
+        let second_center_tangent =
+            center_tangent(&section.second, section.signs[1], section.normals[1])?;
+        if vector_sum(&[(1.0, second_center_tangent), (-1.0, first_center_tangent)]).norm()
+            > section.tolerance
+        {
+            return Err(EvaluationFailure::NoValue);
+        }
+        Ok(scale_vector(
+            vector_sum(&[(1.0, first_center_tangent), (1.0, second_center_tangent)]),
+            0.5,
+        ))
+    })();
+    circular_arc_first_order(
         section.center,
         center_tangent,
         &section.first,
         &section.second,
         section.radius,
-        radius_derivative,
+        section.radius_derivative,
         u,
     )
 }
 
-fn cacheless_constant_rolling_ball_partials(
+fn cacheless_constant_rolling_ball_first_order(
     index: &crate::index::ModelIndex<'_>,
     supports: &[Option<crate::geometry::BlendSupport>; 2],
     radius: &crate::geometry::BlendRadiusLaw,
@@ -7198,7 +7770,7 @@ fn cacheless_constant_rolling_ball_partials(
     native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
     let section = cacheless_constant_rolling_ball_section(
         index,
         supports,
@@ -7208,81 +7780,107 @@ fn cacheless_constant_rolling_ball_partials(
         u,
         v,
     )
-    .ok()?;
-    constant_rolling_ball_partials(&section, u)
+    .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
+    constant_rolling_ball_first_order(&section, u)
 }
 
-fn constant_rolling_ball_partials(
+fn constant_rolling_ball_first_order(
     section: &ConstantRollingBallSection,
     u: f64,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
-    let center_tangent = section.center_tangent?;
-    circular_arc_partials(
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    circular_arc_first_order(
         section.center,
-        center_tangent,
+        section.center_tangent,
         &section.first,
         &section.second,
         section.radius,
-        0.0,
+        Ok(0.0),
         u,
     )
 }
 
-fn circular_arc_partials(
+/// The point at fraction `u` of the circular arc about `center` from the
+/// first contact point to the second, with the arc's first partials, or why
+/// its point has none. Contact points whose offsets from the center overflow
+/// reach no coordinate; offsets that vanish or are parallel state no arc.
+/// The first partials read the center tangent, the track tangents and the
+/// radius derivative.
+fn circular_arc_first_order(
     center: Point3,
-    center_tangent: Vector3,
-    first: &ContactTrackDifferential,
-    second: &ContactTrackDifferential,
+    center_tangent: Result<Vector3, EvaluationFailure<()>>,
+    first: &ContactTrack,
+    second: &ContactTrack,
     radius: f64,
-    radius_derivative: f64,
+    radius_derivative: Result<f64, EvaluationFailure<()>>,
     u: f64,
-) -> Option<SurfacePartials<FinitePoint3, FiniteVector3>> {
-    let first_delta = point_displacement(first.point, center);
-    let second_delta = point_displacement(second.point, center);
-    let first_delta_v = vector_sum(&[(1.0, first.tangent), (-1.0, center_tangent)]);
-    let second_delta_v = vector_sum(&[(1.0, second.tangent), (-1.0, center_tangent)]);
-    let (first_radius, first_radius_v) =
-        unit_vector_with_derivative(first_delta, first_delta_v).ok()?;
-    let (second_radius, second_radius_v) =
-        unit_vector_with_derivative(second_delta, second_delta_v).ok()?;
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
+    let delta_derivative = |track: &ContactTrack| {
+        let center_tangent = center_tangent?;
+        admit_derivative(vector_sum(&[
+            (1.0, track.tangent()?),
+            (-1.0, center_tangent),
+        ]))
+    };
+    let radius_direction = |track: &ContactTrack| {
+        let delta = admit_derivative(point_displacement(track.point(), center))?;
+        unit_vector_with_derivative(delta, delta_derivative(track))
+            .ok_or(EvaluationFailure::NoValue)
+    };
+    let (first_radius, first_radius_v) = radius_direction(first).map_err(unreached)?;
+    let (second_radius, second_radius_v) = radius_direction(second).map_err(unreached)?;
     let cosine = first_radius.dot(second_radius).clamp(-1.0, 1.0);
     let cross = first_radius.cross(second_radius);
     let sine = cross.norm();
-    let axis = FiniteVector3::new(cross)?.unit_nonzero()?;
+    let axis = FiniteVector3::new(cross)
+        .and_then(FiniteVector3::unit_nonzero)
+        .ok_or(EvaluationFailure::NoValue)?;
     let angle = sine.atan2(cosine);
-    let cosine_v = first_radius_v.dot(second_radius) + first_radius.dot(second_radius_v);
-    let cross_v = vector_sum(&[
-        (1.0, first_radius_v.cross(second_radius)),
-        (1.0, first_radius.cross(second_radius_v)),
-    ]);
-    let sine_v = axis.dot(cross_v);
-    let angle_v = cosine * sine_v - sine * cosine_v;
-    let axis_v = vector_sum(&[(1.0, cross_v), (-sine_v, axis)]).scale(1.0 / sine);
     let transverse = axis.cross(first_radius);
-    let transverse_v = vector_sum(&[
-        (1.0, axis_v.cross(first_radius)),
-        (1.0, axis.cross(first_radius_v)),
-    ]);
     let (section_sine, section_cosine) = (u * angle).sin_cos();
     let radial = vector_sum(&[(section_cosine, first_radius), (section_sine, transverse)]);
     let angular_direction =
         vector_sum(&[(-section_sine, first_radius), (section_cosine, transverse)]);
-    let radial_v = vector_sum(&[
-        (section_cosine, first_radius_v),
-        (section_sine, transverse_v),
-        (u * angle_v, angular_direction),
-    ]);
-    Some(SurfacePartials {
-        point: FinitePoint3::new(offset(center, &[(radius, radial)]))?,
-        du: FiniteVector3::new(angular_direction.scale(radius * angle))?,
-        dv: FiniteVector3::new(vector_sum(&[
-            (1.0, center_tangent),
-            (radius_derivative, radial),
-            (radius, radial_v),
-        ]))?,
+    let point = admit_point(offset(center, &[(radius, radial)]))?;
+    let first_order = (|| {
+        let first_radius_v = first_radius_v?;
+        let second_radius_v = second_radius_v?;
+        let center_tangent = center_tangent?;
+        let radius_derivative = radius_derivative?;
+        let cosine_v = first_radius_v.dot(second_radius) + first_radius.dot(second_radius_v);
+        let cross_v = vector_sum(&[
+            (1.0, first_radius_v.cross(second_radius)),
+            (1.0, first_radius.cross(second_radius_v)),
+        ]);
+        let sine_v = axis.dot(cross_v);
+        let angle_v = cosine * sine_v - sine * cosine_v;
+        let axis_v = vector_sum(&[(1.0, cross_v), (-sine_v, axis)]).scale(1.0 / sine);
+        let transverse_v = vector_sum(&[
+            (1.0, axis_v.cross(first_radius)),
+            (1.0, axis.cross(first_radius_v)),
+        ]);
+        let radial_v = vector_sum(&[
+            (section_cosine, first_radius_v),
+            (section_sine, transverse_v),
+            (u * angle_v, angular_direction),
+        ]);
+        admit_lanes([
+            angular_direction.scale(radius * angle),
+            vector_sum(&[
+                (1.0, center_tangent),
+                (radius_derivative, radial),
+                (radius, radial_v),
+            ]),
+        ])
+    })();
+    Ok(SurfaceFirstOrder {
+        point,
+        first: first_order,
     })
 }
 
+/// The point of a variable blend: the zero-radius rounded chamfer's, or the
+/// circular section's.
 fn cacheless_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction<
@@ -7293,8 +7891,8 @@ fn cacheless_variable_blend_point(
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<Point3>> {
-    match cacheless_ruled_variable_blend_partials(index, construction, u, v) {
-        Ok(partials) => Ok(partials.point),
+    match cacheless_ruled_variable_blend_point(index, construction, u, v) {
+        Ok(point) => Ok(point),
         // The routes need different cross sections, so at most one reaches
         // past its structure: its failure outside the finite range is the
         // evaluation's.
@@ -7307,13 +7905,41 @@ fn cacheless_variable_blend_point(
     }
 }
 
-fn model_ruled_surface_partials(
+/// The point and first partials of a variable blend: the zero-radius rounded
+/// chamfer's, or the circular section's.
+fn cacheless_variable_blend_first_order(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction<
+        FiniteReal,
+        FiniteVector3,
+        FinitePoint3,
+    >,
+    u: f64,
+    v: f64,
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    match cacheless_ruled_variable_blend_first_order(index, construction, u, v) {
+        Ok(order) => Ok(order),
+        // The routes need different cross sections, so at most one reaches
+        // past its structure: its failure outside the finite range is the
+        // evaluation's.
+        Err(ruled) => cacheless_circular_variable_blend_first_order(index, construction, u, v)
+            .map_err(|circular| match ruled {
+                EvaluationFailure::NonFinite(_) => ruled,
+                EvaluationFailure::NoValue => circular,
+            }),
+    }
+}
+
+/// The jet of a ruled surface between two model curves, or why its point
+/// has none. The point reads both curve points only; the first partials read
+/// both tangents, and the second both accelerations as well.
+fn model_ruled_surface_jet(
     index: &crate::index::ModelIndex<'_>,
     first: &crate::ids::CurveId,
     second: &crate::ids::CurveId,
     u: f64,
     v: f64,
-) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
     if !v.is_finite() {
         return Err(EvaluationFailure::NoValue);
     }
@@ -7324,24 +7950,38 @@ fn model_ruled_surface_partials(
         model_curve_differential_by_id(index, second, u),
         rule,
     )?;
-    let point = rule(first.point.get(), second.point.get());
+    let point = admit_point(rule(first.point.get(), second.point.get()))?;
     let blend = |first: Vector3, second: Vector3| vector_sum(&[(1.0 - v, first), (v, second)]);
-    admitted_partials(SurfaceSecondPartials {
+    let tangents = first
+        .tangent
+        .and_then(|first| Ok([first.get(), second.tangent?.get()]));
+    Ok(SurfaceJet {
         point,
-        du: blend(first.tangent, second.tangent),
-        dv: point_displacement(second.point.get(), first.point.get()),
-        duu: blend(first.acceleration, second.acceleration),
-        duv: vector_sum(&[(-1.0, first.tangent), (1.0, second.tangent)]),
-        dvv: Vector3::new(0.0, 0.0, 0.0),
+        first: tangents.and_then(|[first_tangent, second_tangent]| {
+            admit_lanes([
+                blend(first_tangent, second_tangent),
+                point_displacement(second.point.get(), first.point.get()),
+            ])
+        }),
+        second: tangents.and_then(|[first_tangent, second_tangent]| {
+            let [acceleration, twist] = admit_lanes([
+                blend(first.acceleration?.get(), second.acceleration?.get()),
+                vector_sum(&[(-1.0, first_tangent), (1.0, second_tangent)]),
+            ])?;
+            Ok([acceleration, twist, FiniteVector3::ZERO])
+        }),
     })
 }
 
-fn model_sum_surface_partials(
+/// The jet of a sum surface of two model curves, or why its point has none.
+/// The point reads both curve points only; the first partials read both
+/// tangents, and the second both accelerations.
+fn model_sum_surface_jet(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::surface_payloads::SumSurfaceConstruction,
     u: f64,
     v: f64,
-) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
     let basepoint = *construction.basepoint();
     let sum = |first: Point3, second: Point3| {
         Point3::new(
@@ -7355,13 +7995,13 @@ fn model_sum_surface_partials(
         model_curve_differential_by_id(index, construction.second(), v),
         sum,
     )?;
-    admitted_partials(SurfaceSecondPartials {
-        point: sum(first.point.get(), second.point.get()),
-        du: first.tangent,
-        dv: second.tangent,
-        duu: first.acceleration,
-        duv: Vector3::new(0.0, 0.0, 0.0),
-        dvv: second.acceleration,
+    let point = admit_point(sum(first.point.get(), second.point.get()))?;
+    Ok(SurfaceJet {
+        point,
+        first: first.tangent.and_then(|first| Ok([first, second.tangent?])),
+        second: first
+            .acceleration
+            .and_then(|first| Ok([first, FiniteVector3::ZERO, second.acceleration?])),
     })
 }
 
@@ -7397,7 +8037,7 @@ fn model_surface_point_with_budget_solved(
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     match (geometry, budget) {
         (SolvedSurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
-            nurbs_surface_point_with_budget_evaluation(nurbs, u, v, budget)
+            nurbs_surface_point_with_budget(nurbs, u, v, budget)
         }
         (SolvedSurfaceGeometry::Transformed(placed), Some(budget)) => {
             if !budget.charge() {
@@ -7409,85 +8049,6 @@ fn model_surface_point_with_budget_solved(
             )
         }
         _ => surface_point_solved(geometry, u, v),
-    }
-}
-
-fn surface_partials_with_budget_solved(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-    budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfacePartials> {
-    /// The descent is bounded by
-    /// [`PlacedSurface`](crate::geometry::PlacedSurface) construction; no arm
-    /// follows an arena id.
-    fn evaluate(
-        geometry: &SolvedSurfaceGeometry,
-        u: f64,
-        v: f64,
-        budget: &WorkBudget<'_>,
-    ) -> Option<SurfacePartials> {
-        match geometry {
-            SolvedSurfaceGeometry::Nurbs(nurbs) => {
-                nurbs_surface_partials_with_budget(nurbs, u, v, budget)
-                    .map(SurfacePartials::into_raw)
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => {
-                budget.charge().then_some(())?;
-                evaluate(placed.basis(), u, v, budget).and_then(|partials| {
-                    let transform = placed.transform();
-                    Some(SurfacePartials {
-                        point: transform.apply_point(partials.point)?.get(),
-                        du: transform.apply_vector(partials.du)?.get(),
-                        dv: transform.apply_vector(partials.dv)?.get(),
-                    })
-                })
-            }
-            _ => surface_partials_solved(geometry, u, v),
-        }
-    }
-
-    match (geometry, budget) {
-        (_, Some(budget)) => evaluate(geometry, u, v, budget),
-        _ => surface_partials_solved(geometry, u, v),
-    }
-}
-
-fn surface_second_partials_with_budget_solved(
-    geometry: &SolvedSurfaceGeometry,
-    u: f64,
-    v: f64,
-    budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfaceSecondPartials> {
-    /// The descent is bounded by
-    /// [`PlacedSurface`](crate::geometry::PlacedSurface) construction; no arm
-    /// follows an arena id.
-    fn evaluate(
-        geometry: &SolvedSurfaceGeometry,
-        u: f64,
-        v: f64,
-        budget: &WorkBudget<'_>,
-    ) -> Option<SurfaceSecondPartials> {
-        match geometry {
-            SolvedSurfaceGeometry::Nurbs(nurbs) => {
-                nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
-                    .map(SurfaceSecondPartials::into_raw)
-            }
-            SolvedSurfaceGeometry::Transformed(placed) => {
-                budget.charge().then_some(())?;
-                evaluate(placed.basis(), u, v, budget)
-                    .and_then(|partials| {
-                        transform_surface_second_partials(partials, *placed.transform())
-                    })
-                    .map(SurfaceSecondPartials::into_raw)
-            }
-            _ => surface_second_partials_solved(geometry, u, v),
-        }
-    }
-
-    match (geometry, budget) {
-        (_, Some(budget)) => evaluate(geometry, u, v, budget),
-        _ => surface_second_partials_solved(geometry, u, v),
     }
 }
 
@@ -7523,11 +8084,14 @@ fn model_surface_point_by_id_inner(
     budget: Option<&WorkBudget<'_>>,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     /// An arm's point, admitted where the arm computes it raw, and the
-    /// support's oriented normal.
+    /// support's oriented unit normal for an offset that reads it.
     struct SurfaceEvaluation {
         /// The point, or the non-finite point the arm reached.
         point: Result<FinitePoint3, Point3>,
-        oriented_normal: Option<Vector3>,
+        /// The oriented unit normal, or why it has none: an arm that forms
+        /// no normal, and an evaluation whose reader reads none, have no
+        /// value.
+        oriented_normal: Result<Vector3, EvaluationFailure<()>>,
     }
 
     /// Admit a point an arm computes raw, keeping the non-finite point.
@@ -7540,23 +8104,6 @@ fn model_surface_point_by_id_inner(
         point.map_or_else(|point| point, FinitePoint3::get)
     }
 
-    /// The evaluation of an arm whose partials are admitted together.
-    fn partials_evaluation(
-        partials: Result<
-            SurfaceSecondPartials<FinitePoint3, FiniteVector3>,
-            EvaluationFailure<Point3>,
-        >,
-    ) -> Option<SurfaceEvaluation> {
-        let point = match partials {
-            Ok(partials) => Ok(partials.point),
-            Err(failure) => Err(failure.non_finite()?),
-        };
-        Some(SurfaceEvaluation {
-            point,
-            oriented_normal: None,
-        })
-    }
-
     /// The evaluation of an arm that forms its point alone.
     fn point_evaluation(
         point: Result<FinitePoint3, EvaluationFailure<Point3>>,
@@ -7567,7 +8114,7 @@ fn model_surface_point_by_id_inner(
         };
         Some(SurfaceEvaluation {
             point,
-            oriented_normal: None,
+            oriented_normal: Err(EvaluationFailure::NoValue),
         })
     }
 
@@ -7583,59 +8130,111 @@ fn model_surface_point_by_id_inner(
             (Some(cached), _) if cached.point.is_ok() => Some(cached),
             (_, EvaluationFailure::NonFinite(point)) => Some(SurfaceEvaluation {
                 point: Err(point),
-                oriented_normal: None,
+                oriented_normal: Err(EvaluationFailure::NonFinite(())),
             }),
             (cached, EvaluationFailure::NoValue) => cached,
         }
     }
 
-    /// A stored cache's point and oriented normal, or the point its
-    /// evaluation reached where it left the finite range.
-    fn cache_evaluation(
-        geometry: &SurfaceGeometry,
-        u: f64,
-        v: f64,
-        budget: Option<&WorkBudget<'_>>,
-    ) -> Option<SurfaceEvaluation> {
-        surface_cache_evaluation(geometry, u, v)
-            .map(|(point, oriented_normal)| SurfaceEvaluation {
-                point: evaluated(point),
-                oriented_normal,
-            })
-            .or_else(|| partials_left_finite_range(geometry, u, v, budget))
+    /// The oriented unit normal of first partials: their cross product,
+    /// reversed where `reversed` is set, over its length. A normal whose
+    /// length is zero has no direction; one whose length overflows left the
+    /// finite range.
+    fn oriented_normal(
+        first: Result<[FiniteVector3; 2], EvaluationFailure<()>>,
+        reversed: bool,
+    ) -> Result<Vector3, EvaluationFailure<()>> {
+        let [du, dv] = first?;
+        let normal = du.get().cross(dv.get());
+        let normal = if reversed {
+            scale_vector(normal, -1.0)
+        } else {
+            normal
+        };
+        let magnitude = normal.norm();
+        if !magnitude.is_finite() {
+            return Err(EvaluationFailure::NonFinite(()));
+        }
+        if magnitude <= 0.0 {
+            return Err(EvaluationFailure::NoValue);
+        }
+        Ok(Vector3::new(
+            normal.x / magnitude,
+            normal.y / magnitude,
+            normal.z / magnitude,
+        ))
     }
 
-    /// A stored carrier whose partials are absent: the point its evaluation
-    /// reached where the evaluation left the finite range. A finite point
-    /// states that a partial left the finite range. An exhausted budget, and a
-    /// carrier with no point, leave no value.
-    fn partials_left_finite_range(
-        geometry: &SurfaceGeometry,
-        u: f64,
-        v: f64,
-        budget: Option<&WorkBudget<'_>>,
-    ) -> Option<SurfaceEvaluation> {
-        if budget.is_some_and(WorkBudget::exhausted) {
-            return None;
-        }
+    /// A stored cache's point and unit normal. The point is evaluated alone;
+    /// the normal is that of the cache's first partials.
+    fn cache_evaluation(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfaceEvaluation> {
         let point = match surface_point(geometry, u, v) {
-            Ok(point) => point.get(),
-            Err(failure) => failure.non_finite()?,
+            Ok(point) => Ok(point),
+            Err(failure) => Err(failure.non_finite()?),
         };
         Some(SurfaceEvaluation {
-            point: Err(point),
-            oriented_normal: None,
+            point,
+            oriented_normal: surface_first_order(geometry, u, v, None)
+                .map_err(|failure| failure.map(|_| ()))
+                .and_then(|order| {
+                    let [du, dv] = order.first?;
+                    du.get()
+                        .cross(dv.get())
+                        .unit()
+                        .ok_or(EvaluationFailure::NoValue)
+                }),
         })
     }
 
-    /// The offset of a support whose normal is absent: a support point
-    /// outside the finite range reaches no normal, so the offset reaches no
-    /// coordinate; a finite support point without a normal has no offset.
-    fn offset_without_normal(support: &SurfaceEvaluation) -> Option<SurfaceEvaluation> {
-        support.point.is_err().then_some(SurfaceEvaluation {
-            point: Err(Point3::new(f64::NAN, f64::NAN, f64::NAN)),
-            oriented_normal: None,
+    /// A directly stored carrier's point and, for a reader that reads it,
+    /// its oriented unit normal. The point is evaluated alone where no normal
+    /// is read; otherwise it is the point of the first partials, which leave
+    /// the point finite where they leave the finite range.
+    fn direct_evaluation(
+        geometry: &SurfaceGeometry,
+        u: f64,
+        v: f64,
+        budget: Option<&WorkBudget<'_>>,
+        normal: bool,
+    ) -> Option<SurfaceEvaluation> {
+        if !normal {
+            return point_evaluation(match budget {
+                Some(budget) => surface_point_with_budget(geometry, u, v, budget),
+                None => surface_point(geometry, u, v),
+            });
+        }
+        let order = match surface_first_order(geometry, u, v, budget) {
+            Ok(order) => order,
+            Err(failure) => {
+                return Some(SurfaceEvaluation {
+                    point: Err(failure.non_finite()?),
+                    oriented_normal: Err(EvaluationFailure::NonFinite(())),
+                })
+            }
+        };
+        let reversed = matches!(
+            geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.normal_reversed()
+        );
+        Some(SurfaceEvaluation {
+            point: Ok(order.point),
+            oriented_normal: oriented_normal(order.first, reversed),
         })
+    }
+
+    /// The offset of a support whose normal has no value: a support point
+    /// outside the finite range, and a normal outside it, reach no offset
+    /// coordinate; a finite support point without a normal has no offset.
+    fn offset_without_normal(
+        support: &SurfaceEvaluation,
+        failure: EvaluationFailure<()>,
+    ) -> Option<SurfaceEvaluation> {
+        (support.point.is_err() || failure == EvaluationFailure::NonFinite(())).then_some(
+            SurfaceEvaluation {
+                point: Err(Point3::new(f64::NAN, f64::NAN, f64::NAN)),
+                oriented_normal: Err(EvaluationFailure::NonFinite(())),
+            },
+        )
     }
 
     fn linear_nurbs_support_extension(
@@ -7666,22 +8265,13 @@ fn model_surface_point_by_id_inner(
         if boundary_u == u && boundary_v == v {
             return None;
         }
-        let partials =
-            surface_partials_with_budget(&support.geometry, boundary_u, boundary_v, budget)?;
-        let normal = partials.du.cross(partials.dv);
-        let normal = if nurbs.normal_reversed() {
-            scale_vector(normal, -1.0)
-        } else {
-            normal
-        };
-        let magnitude = normal.norm();
-        let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
-            Vector3::new(
-                normal.x / magnitude,
-                normal.y / magnitude,
-                normal.z / magnitude,
-            )
-        })?;
+        let partials = surface_first_order(&support.geometry, boundary_u, boundary_v, budget)
+            .ok()?
+            .partials()
+            .ok()?;
+        let oriented_normal =
+            oriented_normal(Ok([partials.du, partials.dv]), nurbs.normal_reversed()).ok()?;
+        let partials = partials.into_raw();
         let du = u - boundary_u;
         let dv = v - boundary_v;
         Some(SurfaceEvaluation {
@@ -7690,10 +8280,13 @@ fn model_surface_point_by_id_inner(
                 partials.point.y + du * partials.du.y + dv * partials.dv.y,
                 partials.point.z + du * partials.du.z + dv * partials.dv.z,
             )),
-            oriented_normal: Some(oriented_normal),
+            oriented_normal: Ok(oriented_normal),
         })
     }
 
+    /// The evaluation of `surface_id` at `(u, v)`, with the oriented normal
+    /// where `normal` is set: an offset reads its support's normal, and a
+    /// placement or subset passes its reader's need on to its support.
     fn evaluate(
         index: &crate::index::ModelIndex<'_>,
         surface_id: &crate::ids::SurfaceId,
@@ -7701,6 +8294,7 @@ fn model_surface_point_by_id_inner(
         v: f64,
         visiting: &mut Vec<crate::ids::SurfaceId>,
         budget: Option<&WorkBudget<'_>>,
+        normal: bool,
     ) -> Option<SurfaceEvaluation> {
         if let Some(budget) = budget {
             budget.charge().then_some(())?;
@@ -7726,7 +8320,7 @@ fn model_surface_point_by_id_inner(
                 ))
             }
             Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
-                partials_evaluation(model_native_extrusion_partials(
+                point_evaluation(model_native_extrusion_point(
                     index,
                     definition_payload,
                     carrier_interval,
@@ -7738,23 +8332,22 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => point_evaluation(
                 model_linear_sweep_point(index, definition_payload, u, v, budget),
             ),
-            Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => point_evaluation(
-                model_native_revolution_partials(
+            Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
+                point_evaluation(model_native_revolution_point(
                     index,
                     definition_payload,
                     carrier_interval,
                     u,
                     v,
                     budget,
-                )
-                .and_then(|partials| admit_point(partials.point)),
+                ))
+            }
+            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => point_evaluation(
+                model_ruled_surface_jet(index, first, second, u, v).map(|jet| jet.point),
             ),
-            Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
-                partials_evaluation(model_ruled_surface_partials(index, first, second, u, v))
-            }
-            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
-                partials_evaluation(model_sum_surface_partials(index, definition_payload, u, v))
-            }
+            Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => point_evaluation(
+                model_sum_surface_jet(index, definition_payload, u, v).map(|jet| jet.point),
+            ),
             Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
                 if let Some(construction) = definition_payload.native() {
                     let profile = definition_payload.profile();
@@ -7763,41 +8356,17 @@ fn model_surface_point_by_id_inner(
                     match cacheless_law_sweep_point(index, profile, spine, construction, u, v) {
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
-                            oriented_normal: None,
+                            oriented_normal: Err(EvaluationFailure::NoValue),
                         }),
                         Err(failure) => cache_fallback(
                             failure,
                             sweep_has_current_cache(construction)
-                                .then(|| cache_evaluation(&surface.geometry, u, v, budget))
+                                .then(|| cache_evaluation(&surface.geometry, u, v))
                                 .flatten(),
                         ),
                     }
                 } else {
-                    surface_partials_with_budget(&surface.geometry, u, v, budget)
-                        .map(|partials| {
-                            let normal = partials.du.cross(partials.dv);
-                            let normal =
-                                match &surface.geometry {
-                                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                        nurbs,
-                                    )) if nurbs.normal_reversed() => scale_vector(normal, -1.0),
-                                    _ => normal,
-                                };
-                            let magnitude = normal.norm();
-                            let oriented_normal =
-                                (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                                    Vector3::new(
-                                        normal.x / magnitude,
-                                        normal.y / magnitude,
-                                        normal.z / magnitude,
-                                    )
-                                });
-                            SurfaceEvaluation {
-                                point: evaluated(partials.point),
-                                oriented_normal,
-                            }
-                        })
-                        .or_else(|| partials_left_finite_range(&surface.geometry, u, v, budget))
+                    direct_evaluation(&surface.geometry, u, v, budget, normal)
                 }
             }
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
@@ -7806,12 +8375,12 @@ fn model_surface_point_by_id_inner(
                 match cacheless_variable_blend_point(index, construction, u, v) {
                     Ok(point) => Some(SurfaceEvaluation {
                         point: evaluated(point),
-                        oriented_normal: None,
+                        oriented_normal: Err(EvaluationFailure::NoValue),
                     }),
                     Err(failure) => cache_fallback(
                         failure,
                         variable_blend_has_current_cache(construction)
-                            .then(|| cache_evaluation(&surface.geometry, u, v, budget))
+                            .then(|| cache_evaluation(&surface.geometry, u, v))
                             .flatten(),
                     ),
                 }
@@ -7831,91 +8400,85 @@ fn model_surface_point_by_id_inner(
                         u,
                         v,
                     ) {
-                        Ok(point) => {
-                            let oriented_normal = cacheless_constant_rolling_ball_partials(
-                                index,
-                                supports,
-                                radius,
-                                cross_section,
-                                native,
-                                u,
-                                v,
-                            )
-                            .and_then(|partials| partials.du.cross(partials.dv.get()).unit());
-                            Some(SurfaceEvaluation {
-                                point: evaluated(point),
-                                oriented_normal,
-                            })
-                        }
+                        Ok(point) => Some(SurfaceEvaluation {
+                            point: evaluated(point),
+                            oriented_normal: if normal {
+                                cacheless_constant_rolling_ball_first_order(
+                                    index,
+                                    supports,
+                                    radius,
+                                    cross_section,
+                                    native,
+                                    u,
+                                    v,
+                                )
+                                .map_err(|failure| failure.map(|_| ()))
+                                .and_then(|order| {
+                                    let [du, dv] = order.first?;
+                                    du.get()
+                                        .cross(dv.get())
+                                        .unit()
+                                        .ok_or(EvaluationFailure::NoValue)
+                                })
+                            } else {
+                                Err(EvaluationFailure::NoValue)
+                            },
+                        }),
                         Err(failure) => cache_fallback(
                             failure.map(|()| UNREACHED_POINT),
                             revision_surface_tail_has_current_cache(&native.cache)
-                                .then(|| cache_evaluation(&surface.geometry, u, v, budget))
+                                .then(|| cache_evaluation(&surface.geometry, u, v))
                                 .flatten(),
                         ),
                     }
                 } else {
-                    surface_partials_with_budget(&surface.geometry, u, v, budget)
-                        .map(|partials| {
-                            let normal = partials.du.cross(partials.dv);
-                            let normal =
-                                match &surface.geometry {
-                                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                                        nurbs,
-                                    )) if nurbs.normal_reversed() => scale_vector(normal, -1.0),
-                                    _ => normal,
-                                };
-                            let magnitude = normal.norm();
-                            let oriented_normal =
-                                (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                                    Vector3::new(
-                                        normal.x / magnitude,
-                                        normal.y / magnitude,
-                                        normal.z / magnitude,
-                                    )
-                                });
-                            SurfaceEvaluation {
-                                point: evaluated(partials.point),
-                                oriented_normal,
-                            }
-                        })
-                        .or_else(|| partials_left_finite_range(&surface.geometry, u, v, budget))
+                    direct_evaluation(&surface.geometry, u, v, budget, normal)
                 }
             }
             Some(definition @ ProceduralSurfaceDefinition::RollingBallJet(_)) => {
                 point_evaluation(rolling_ball_jet_point(definition, u, v))
             }
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-                evaluate(index, support, u, v, visiting, budget)
+                evaluate(index, support, u, v, visiting, budget, normal)
             }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-                let mut evaluation = evaluate(index, source, u, v, visiting, budget)?;
-                let transformed_normal =
-                    model_surface_second_partials_by_id_inner(index, source, u, v, budget)
-                        .and_then(|partials| {
-                            let normal = transform
-                                .apply_vector(partials.du)?
-                                .get()
-                                .cross(transform.apply_vector(partials.dv)?.get());
-                            normal.unit()
-                        })
-                        .or_else(|| {
-                            evaluation
-                                .oriented_normal
-                                .and_then(|normal| transform.apply_normal(normal))
-                                .and_then(|normal| {
-                                    Some(scale_vector(*normal.as_raw(), transform.orientation()?))
-                                })
+                let mut evaluation = evaluate(index, source, u, v, visiting, budget, normal)?;
+                if normal {
+                    let placed_normal = model_surface_jet_by_id(index, source, u, v, budget)
+                        .map_err(|failure| failure.map(|_| ()))
+                        .and_then(|jet| {
+                            let [du, dv] = placed_vectors(*transform, jet.first?)?;
+                            du.get()
+                                .cross(dv.get())
+                                .unit()
+                                .ok_or(EvaluationFailure::NoValue)
                         });
+                    evaluation.oriented_normal = placed_normal.or_else(|placed_failure| {
+                        evaluation
+                            .oriented_normal
+                            .and_then(|normal| {
+                                transform
+                                    .apply_normal(normal)
+                                    .ok_or(EvaluationFailure::NonFinite(()))
+                            })
+                            .and_then(|normal| {
+                                Ok(scale_vector(
+                                    *normal.as_raw(),
+                                    transform.orientation().ok_or(EvaluationFailure::NoValue)?,
+                                ))
+                            })
+                            .map_err(|evaluation_failure| match placed_failure {
+                                EvaluationFailure::NonFinite(()) => placed_failure,
+                                EvaluationFailure::NoValue => evaluation_failure,
+                            })
+                    });
+                }
                 evaluation.point = match evaluation.point {
                     Ok(point) => transform.apply_point_reaching(point.get()),
                     // The placement of a point outside the finite range stays
                     // outside it, whatever point the placement reaches.
-                    Err(point) => Err(transform
-                        .apply_point_reaching(point)
-                        .map_or_else(|point| point, FinitePoint3::get)),
+                    Err(point) => Err(placed_reach(*transform, point)),
                 };
-                evaluation.oriented_normal = transformed_normal;
                 Some(evaluation)
             }
             Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
@@ -7934,8 +8497,9 @@ fn model_surface_point_by_id_inner(
                             *u_sense,
                             *v_sense,
                         )?;
-                    let mut evaluation =
-                        evaluate(index, support, support_u, support_v, visiting, budget)?;
+                    let mut evaluation = evaluate(
+                        index, support, support_u, support_v, visiting, budget, normal,
+                    )?;
                     if u_derivative * v_derivative < 0.0 {
                         evaluation.oriented_normal = evaluation
                             .oriented_normal
@@ -7948,16 +8512,16 @@ fn model_surface_point_by_id_inner(
                 let support = definition_payload.support();
                 let distance = definition_payload.distance();
                 {
-                    let support = evaluate(index, support, u, v, visiting, budget)?;
+                    let support = evaluate(index, support, u, v, visiting, budget, true)?;
                     match support.oriented_normal {
-                        Some(normal) => Some(SurfaceEvaluation {
+                        Ok(normal) => Some(SurfaceEvaluation {
                             point: evaluated(offset(
                                 reached(support.point),
                                 &[(distance.get(), normal)],
                             )),
-                            oriented_normal: Some(normal),
+                            oriented_normal: Ok(normal),
                         }),
-                        None => offset_without_normal(&support),
+                        Err(failure) => offset_without_normal(&support, failure),
                     }
                 }
             }
@@ -7969,181 +8533,158 @@ fn model_surface_point_by_id_inner(
                     let support = linear_extension
                         .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
                         .flatten()
-                        .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
+                        .or_else(|| evaluate(index, support, u, v, visiting, budget, true))?;
                     match support.oriented_normal {
-                        Some(normal) => Some(SurfaceEvaluation {
+                        Ok(normal) => Some(SurfaceEvaluation {
                             point: evaluated(offset(
                                 reached(support.point),
                                 &[(distance.get(), normal)],
                             )),
-                            oriented_normal: Some(normal),
+                            oriented_normal: Ok(normal),
                         }),
-                        None => offset_without_normal(&support),
+                        Err(failure) => offset_without_normal(&support, failure),
                     }
                 }
             }
             _ if procedural.is_some() => {
                 // A non-finite point enters the evaluation as a finite one
                 // does.
-                match model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget) {
-                    Ok(point) => Some(Ok(point)),
-                    Err(failure) => failure.non_finite().map(Err),
-                }
-                .map(|point| SurfaceEvaluation {
-                    point,
-                    oriented_normal: None,
-                })
+                point_evaluation(model_surface_point_with_budget(
+                    index.ir(),
+                    &surface.geometry,
+                    u,
+                    v,
+                    budget,
+                ))
             }
-            _ => surface_partials_with_budget(&surface.geometry, u, v, budget)
-                .map(|partials| {
-                    let normal = partials.du.cross(partials.dv);
-                    let normal = match &surface.geometry {
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                            if nurbs.normal_reversed() =>
-                        {
-                            scale_vector(normal, -1.0)
-                        }
-                        _ => normal,
-                    };
-                    let magnitude = normal.norm();
-                    let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                        Vector3::new(
-                            normal.x / magnitude,
-                            normal.y / magnitude,
-                            normal.z / magnitude,
-                        )
-                    });
-                    SurfaceEvaluation {
-                        point: evaluated(partials.point),
-                        oriented_normal,
-                    }
-                })
-                .or_else(|| partials_left_finite_range(&surface.geometry, u, v, budget)),
+            _ => direct_evaluation(&surface.geometry, u, v, budget, normal),
         };
         visiting.pop();
         result
     }
 
-    if let Some(budget) = budget {
-        if index
-            .procedural_surface_for_surface(surface.as_str())
-            .is_none()
-        {
-            budget
-                .charge()
-                .then_some(())
-                .ok_or(EvaluationFailure::NoValue)?;
-            let surface = index
-                .surfaces(surface.as_str())
-                .ok_or(EvaluationFailure::NoValue)?;
-            return surface_point_with_budget(&surface.geometry, u, v, budget);
-        }
-    }
-    evaluate(index, surface, u, v, &mut Vec::new(), budget)
+    evaluate(index, surface, u, v, &mut Vec::new(), budget, false)
         .ok_or(EvaluationFailure::NoValue)?
         .point
         .map_err(EvaluationFailure::NonFinite)
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
-/// its exact first partial derivatives.
+/// its exact first partial derivatives, or report why they have no finite
+/// value.
 ///
 /// Subsets map the support parameterization through a linear local domain;
 /// offsets follow the support's oriented normal. The recursive carrier walk
 /// preserves both contracts before evaluating the final point and partials.
+/// The point fails as [`model_surface_point_by_id`]'s arms state; at a finite
+/// point, first partials without a value, or outside the finite range, fail
+/// the evaluation, carrying the point.
 pub fn model_surface_partials_by_id(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
-) -> Option<SurfacePartials> {
-    if let Some(ProceduralSurfaceDefinition::Blend(definition_payload)) = index
-        .procedural_surface_for_surface(surface.as_str())
-        .map(crate::geometry::ProceduralSurface::definition)
-    {
-        if let Some(native) = definition_payload.native() {
-            let supports = definition_payload.supports();
-            let radius = definition_payload.radius();
-            let cross_section = definition_payload.cross_section();
-
-            if let Some(partials) = cacheless_constant_rolling_ball_partials(
-                index,
-                supports,
-                radius,
-                cross_section,
-                native,
-                u,
-                v,
-            ) {
-                return Some(partials.into_raw());
-            }
-            if !revision_surface_tail_has_current_cache(&native.cache) {
-                return None;
-            }
-        }
-    }
-    if let Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) = index
-        .procedural_surface_for_surface(surface.as_str())
-        .map(crate::geometry::ProceduralSurface::definition)
-    {
-        let construction = definition_payload.construction();
-
-        if let Ok(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
-            return Some(partials);
-        }
-        if let Some(partials) =
-            cacheless_circular_variable_blend_partials(index, construction, u, v)
-        {
-            return Some(partials.into_raw());
-        }
-        if !variable_blend_has_current_cache(construction) {
-            return None;
-        }
-    }
-    if let Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) = index
-        .procedural_surface_for_surface(surface.as_str())
-        .map(crate::geometry::ProceduralSurface::definition)
-    {
-        if let Some(construction) = definition_payload.native() {
-            let profile = definition_payload.profile();
-            let spine = definition_payload.spine();
-
-            if let Some(partials) =
-                cacheless_law_sweep_partials(index, profile, spine, construction, u, v)
-            {
-                return Some(partials);
-            }
-            if !sweep_has_current_cache(construction) {
-                return None;
-            }
-        }
-    }
-    model_surface_second_partials_by_id_inner(index, surface, u, v, None).map(|partials| {
-        SurfacePartials {
-            point: partials.point,
-            du: partials.du,
-            dv: partials.dv,
-        }
-    })
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    model_surface_first_order_by_id(index, surface, u, v, None)?.partials()
 }
 
-/// Evaluate an arena-selected surface and its exact first partial derivatives
-/// within a caller-owned work slice.
+/// The point and first partials of an arena surface, the first partials
+/// with their own outcome, or why the point has none.
+///
+/// A cacheless blend or sweep whose point and first partials both have
+/// values is evaluated without its cache, and the budget does not reach it.
+/// Otherwise one with a current cache falls back to the cache: the cache's
+/// complete evaluation wins, then an evaluation with a point, the cacheless
+/// one first; of two failures, the cacheless one outside the finite range
+/// wins.
+fn model_surface_first_order_by_id(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    let cacheless = match index
+        .procedural_surface_for_surface(surface.as_str())
+        .map(crate::geometry::ProceduralSurface::definition)
+    {
+        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
+            definition_payload.native().map(|native| {
+                (
+                    cacheless_constant_rolling_ball_first_order(
+                        index,
+                        definition_payload.supports(),
+                        definition_payload.radius(),
+                        definition_payload.cross_section(),
+                        native,
+                        u,
+                        v,
+                    ),
+                    revision_surface_tail_has_current_cache(&native.cache),
+                )
+            })
+        }
+        Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
+            let construction = definition_payload.construction();
+            Some((
+                cacheless_variable_blend_first_order(index, construction, u, v),
+                variable_blend_has_current_cache(construction),
+            ))
+        }
+        Some(ProceduralSurfaceDefinition::Sweep(definition_payload)) => {
+            definition_payload.native().as_deref().map(|construction| {
+                (
+                    cacheless_law_sweep_first_order(
+                        index,
+                        definition_payload.profile(),
+                        definition_payload.spine(),
+                        construction,
+                        u,
+                        v,
+                    ),
+                    sweep_has_current_cache(construction),
+                )
+            })
+        }
+        _ => None,
+    };
+    let cached =
+        || model_surface_jet_by_id(index, surface, u, v, budget).map(SurfaceJet::first_order);
+    let complete = |order: &Result<SurfaceFirstOrder, EvaluationFailure<Point3>>| {
+        order.as_ref().is_ok_and(|order| order.first.is_ok())
+    };
+    match cacheless {
+        None => cached(),
+        Some((cacheless, _)) if complete(&cacheless) => cacheless,
+        Some((cacheless, false)) => cacheless,
+        Some((cacheless, true)) => {
+            let cached = cached();
+            if complete(&cached) {
+                return cached;
+            }
+            match (cacheless, cached) {
+                (Ok(order), _) | (Err(_), Ok(order)) => Ok(order),
+                (Err(cacheless), Err(cached)) => Err(match cacheless {
+                    EvaluationFailure::NonFinite(_) => cacheless,
+                    EvaluationFailure::NoValue => cached,
+                }),
+            }
+        }
+    }
+}
+
+/// [`model_surface_partials_by_id`] within a caller-owned work slice.
+/// Surface-carrier recursion and NURBS evaluation both consume the supplied
+/// budget; a refused charge leaves no value.
 pub fn model_surface_partials_by_id_with_budget(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
     budget: &WorkBudget<'_>,
-) -> Option<SurfacePartials> {
-    let _guard = budget.recursion_guard()?;
-    model_surface_second_partials_by_id_inner(index, surface, u, v, Some(budget)).map(|partials| {
-        SurfacePartials {
-            point: partials.point,
-            du: partials.du,
-            dv: partials.dv,
-        }
-    })
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    let _guard = budget.recursion_guard().ok_or(EvaluationFailure::NoValue)?;
+    model_surface_first_order_by_id(index, surface, u, v, Some(budget))?.partials()
 }
 
 fn model_surface_second_partials_by_id(
@@ -8151,44 +8692,64 @@ fn model_surface_second_partials_by_id(
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
-) -> Option<SurfaceSecondPartials> {
-    model_surface_second_partials_by_id_inner(index, surface, u, v, None)
+) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    model_surface_jet_by_id(index, surface, u, v, None)?.second_partials()
 }
 
-fn model_surface_second_partials_by_id_inner(
+/// The point with the first and second partials of an arena surface through
+/// its carrier walk, each order with its own outcome, or why the point has
+/// none. An offset's point reads its support's first partials and its first
+/// partials read the support's second.
+fn model_surface_jet_by_id(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfaceSecondPartials> {
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
     let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new(), budget)?;
-    let mut partials = if mapping.offset_distance == 0.0 {
+    let jet = if mapping.offset_distance == 0.0 {
         mapping.base
     } else {
-        offset_surface_second_partials(mapping.base, mapping.offset_distance)?
+        offset_surface_jet(mapping.base, mapping.offset_distance)?
     };
-    partials.du = scale_vector(partials.du, mapping.u_scale);
-    partials.dv = scale_vector(partials.dv, mapping.v_scale);
-    partials.duu = scale_vector(partials.duu, mapping.u_scale * mapping.u_scale);
-    partials.duv = scale_vector(partials.duv, mapping.u_scale * mapping.v_scale);
-    partials.dvv = scale_vector(partials.dvv, mapping.v_scale * mapping.v_scale);
-    Some(partials)
+    let reversed = |vector: FiniteVector3, reversed: bool| {
+        if reversed {
+            vector.negated()
+        } else {
+            vector
+        }
+    };
+    let [u_reversed, v_reversed] = mapping.reversed;
+    Ok(SurfaceJet {
+        point: jet.point,
+        first: jet
+            .first
+            .map(|[du, dv]| [reversed(du, u_reversed), reversed(dv, v_reversed)]),
+        second: jet
+            .second
+            .map(|[duu, duv, dvv]| [duu, reversed(duv, u_reversed != v_reversed), dvv]),
+    })
 }
 
-#[derive(Debug, Clone, Copy)]
+/// A surface's carrier walk to its direct support: the support's jet at the
+/// mapped support coordinates, the offset from it, and the directions the
+/// mapping reverses.
+#[derive(Clone, Copy)]
 struct SurfaceMapping {
-    /// Direct support derivatives at the mapped support coordinates.
-    base: SurfaceSecondPartials,
+    /// The direct support's jet at the mapped support coordinates.
+    base: SurfaceJet,
     /// Signed distance from `base` to the evaluated surface.
     offset_distance: f64,
-    /// Derivative of support U/V with respect to the evaluated U/V.
-    u_scale: f64,
-    v_scale: f64,
+    /// Whether the support's `u` and `v` run against the evaluated `u` and
+    /// `v`.
+    reversed: [bool; 2],
     /// Support normal orientation relative to the direct base normal.
     orientation: f64,
 }
 
+/// The carrier walk of an arena surface to its direct support at `(u, v)`,
+/// or why its point has none.
 fn model_surface_mapping(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
@@ -8196,129 +8757,71 @@ fn model_surface_mapping(
     v: f64,
     visiting: &mut Vec<crate::ids::SurfaceId>,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfaceMapping> {
-    if let Some(budget) = budget {
-        budget.charge().then_some(())?;
+) -> Result<SurfaceMapping, EvaluationFailure<Point3>> {
+    let no_value = EvaluationFailure::NoValue;
+    if budget.is_some_and(|budget| !budget.charge()) {
+        return Err(no_value);
     }
     if visiting.contains(surface) {
-        return None;
+        return Err(no_value);
     }
     visiting.push(surface.clone());
-    let carrier = index.surfaces(surface.as_str())?;
+    let carrier = index.surfaces(surface.as_str()).ok_or(no_value)?;
     let procedural = index.procedural_surface_for_surface(surface.as_str());
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds()));
+    let direct = |base: SurfaceJet| SurfaceMapping {
+        base,
+        offset_distance: 0.0,
+        reversed: [false, false],
+        orientation: 1.0,
+    };
     let result = match procedural.map(crate::geometry::ProceduralSurface::definition) {
         Some(ProceduralSurfaceDefinition::AxisRevolution(definition_payload)) => {
-            Some(SurfaceMapping {
-                base: model_axis_revolution_partials(
-                    index,
-                    definition_payload.directrix(),
-                    definition_payload.axis_origin().get(),
-                    definition_payload.axis_direction(),
-                    u,
-                    v,
-                    budget,
-                )
-                .ok()?,
-                offset_distance: 0.0,
-                u_scale: 1.0,
-                v_scale: 1.0,
-                orientation: 1.0,
-            })
-        }
-        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => Some(SurfaceMapping {
-            base: model_native_extrusion_partials(
+            model_axis_revolution_jet(
                 index,
-                definition_payload,
-                carrier_interval,
+                definition_payload.directrix(),
+                definition_payload.axis_origin().get(),
+                definition_payload.axis_direction(),
                 u,
                 v,
                 budget,
             )
-            .ok()?
-            .into_raw(),
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
+            .map(direct)
+        }
+        Some(ProceduralSurfaceDefinition::Extrusion(definition_payload)) => {
+            model_native_extrusion_jet(index, definition_payload, carrier_interval, u, v, budget)
+                .map(direct)
+        }
         Some(ProceduralSurfaceDefinition::LinearSweep(definition_payload)) => {
-            let directrix = definition_payload.directrix();
-            let direction = definition_payload.direction();
-            let differential = budget
-                .map_or_else(
-                    || model_curve_differential_by_id(index, directrix, u),
-                    |budget| {
-                        model_curve_differential_by_id_with_budget(index, directrix, u, budget)
-                    },
-                )
-                .ok()?;
-            let zero = Vector3::new(0.0, 0.0, 0.0);
-            Some(SurfaceMapping {
-                base: SurfaceSecondPartials {
-                    point: offset(differential.point.get(), &[(v, direction.get())]),
-                    du: differential.tangent,
-                    dv: direction.get(),
-                    duu: differential.acceleration,
-                    duv: zero,
-                    dvv: zero,
-                },
-                offset_distance: 0.0,
-                u_scale: 1.0,
-                v_scale: 1.0,
-                orientation: 1.0,
-            })
+            model_linear_sweep_jet(index, definition_payload, u, v, budget).map(direct)
         }
-        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => Some(SurfaceMapping {
-            base: model_native_revolution_partials(
-                index,
-                definition_payload,
-                carrier_interval,
-                u,
-                v,
-                budget,
-            )
-            .ok()?,
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
-        Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => Some(SurfaceMapping {
-            base: model_ruled_surface_partials(index, first, second, u, v)
-                .ok()?
-                .into_raw(),
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
-        Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => Some(SurfaceMapping {
-            base: model_sum_surface_partials(index, definition_payload, u, v)
-                .ok()?
-                .into_raw(),
-            offset_distance: 0.0,
-            u_scale: 1.0,
-            v_scale: 1.0,
-            orientation: 1.0,
-        }),
+        Some(ProceduralSurfaceDefinition::Revolution(definition_payload)) => {
+            model_native_revolution_jet(index, definition_payload, carrier_interval, u, v, budget)
+                .map(direct)
+        }
+        Some(ProceduralSurfaceDefinition::Ruled { first, second, .. }) => {
+            model_ruled_surface_jet(index, first, second, u, v).map(direct)
+        }
+        Some(ProceduralSurfaceDefinition::Sum(definition_payload)) => {
+            model_sum_surface_jet(index, definition_payload, u, v).map(direct)
+        }
         Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
             model_surface_mapping(index, support, u, v, visiting, budget)
         }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-            let source = model_surface_mapping(index, source, u, v, visiting, budget)?;
-            let base = if source.offset_distance == 0.0 {
-                source.base
-            } else {
-                offset_surface_second_partials(source.base, source.offset_distance)?
-            };
-            Some(SurfaceMapping {
-                base: transform_surface_second_partials(base, *transform)?.into_raw(),
-                offset_distance: 0.0,
-                u_scale: source.u_scale,
-                v_scale: source.v_scale,
-                orientation: source.orientation * transform.orientation()?,
+            model_surface_mapping(index, source, u, v, visiting, budget).and_then(|source| {
+                let base = if source.offset_distance == 0.0 {
+                    source.base
+                } else {
+                    offset_surface_jet(source.base, source.offset_distance)?
+                };
+                Ok(SurfaceMapping {
+                    base: placed_jet(*transform, Ok(base))?,
+                    offset_distance: 0.0,
+                    reversed: source.reversed,
+                    orientation: source.orientation * transform.orientation().ok_or(no_value)?,
+                })
             })
         }
         Some(ProceduralSurfaceDefinition::Subset(definition_payload)) => {
@@ -8328,52 +8831,43 @@ fn model_surface_mapping(
                 .map(crate::geometry::DirectedParameterRange::finite_endpoints);
             let u_sense = definition_payload.u_sense();
             let v_sense = definition_payload.v_sense();
-            {
-                let (support_u, support_v, u_derivative, v_derivative) =
-                    subset_support_parameters_with_derivatives(
-                        u,
-                        v,
-                        parameter_ranges,
-                        *u_sense,
-                        *v_sense,
+            subset_support_parameters_with_derivatives(u, v, parameter_ranges, *u_sense, *v_sense)
+                .ok_or(no_value)
+                .and_then(|(support_u, support_v, u_derivative, v_derivative)| {
+                    let support = model_surface_mapping(
+                        index, support, support_u, support_v, visiting, budget,
                     )?;
-                let support =
-                    model_surface_mapping(index, support, support_u, support_v, visiting, budget)?;
-                Some(SurfaceMapping {
-                    base: support.base,
-                    offset_distance: support.offset_distance,
-                    u_scale: support.u_scale * u_derivative,
-                    v_scale: support.v_scale * v_derivative,
-                    orientation: support.orientation * u_derivative * v_derivative,
+                    let [u_reversed, v_reversed] = support.reversed;
+                    Ok(SurfaceMapping {
+                        base: support.base,
+                        offset_distance: support.offset_distance,
+                        reversed: [
+                            u_reversed != (u_derivative < 0.0),
+                            v_reversed != (v_derivative < 0.0),
+                        ],
+                        orientation: support.orientation * u_derivative * v_derivative,
+                    })
                 })
-            }
         }
         Some(ProceduralSurfaceDefinition::ParallelOffset(payload)) => {
-            let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
-            Some(SurfaceMapping {
-                offset_distance: support.offset_distance
-                    + payload.distance().get() * support.orientation,
-                ..support
+            model_surface_mapping(index, payload.support(), u, v, visiting, budget).map(|support| {
+                SurfaceMapping {
+                    offset_distance: support.offset_distance
+                        + payload.distance().get() * support.orientation,
+                    ..support
+                }
             })
         }
         Some(ProceduralSurfaceDefinition::Offset(payload)) => {
-            let support = model_surface_mapping(index, payload.support(), u, v, visiting, budget)?;
-            Some(SurfaceMapping {
-                offset_distance: support.offset_distance
-                    + payload.distance().get() * support.orientation,
-                ..support
+            model_surface_mapping(index, payload.support(), u, v, visiting, budget).map(|support| {
+                SurfaceMapping {
+                    offset_distance: support.offset_distance
+                        + payload.distance().get() * support.orientation,
+                    ..support
+                }
             })
         }
-        _ => {
-            let base = surface_second_partials_with_budget(&carrier.geometry, u, v, budget)?;
-            Some(SurfaceMapping {
-                base,
-                offset_distance: 0.0,
-                u_scale: 1.0,
-                v_scale: 1.0,
-                orientation: 1.0,
-            })
-        }
+        _ => surface_jet(&carrier.geometry, u, v, budget).map(direct),
     };
     visiting.pop();
     result
@@ -8411,28 +8905,42 @@ fn subset_parameter(
     Some((start + derivative * parameter, derivative))
 }
 
-fn offset_surface_second_partials(
-    base: SurfaceSecondPartials,
+/// The jet of the offset by `distance` along the unit normal of `base`, or
+/// why its point has none. The offset point reads the base's first partials,
+/// and its first partials read the base's second. A distance or normal
+/// outside the finite range reaches no coordinate; a zero normal has no
+/// direction. The second partials are the base's.
+fn offset_surface_jet(
+    base: SurfaceJet,
     distance: f64,
-) -> Option<SurfaceSecondPartials> {
-    let normal_vector = base.du.cross(base.dv);
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
+    if !distance.is_finite() {
+        return Err(unreached);
+    }
+    let [du, dv] = FiniteVector3::raw_array(
+        base.first
+            .map_err(|failure| failure.map(|()| UNREACHED_POINT))?,
+    );
+    let normal_vector = du.cross(dv);
     let normal_magnitude = normal_vector.norm();
-    if !normal_magnitude.is_finite() || normal_magnitude == 0.0 || !distance.is_finite() {
-        return None;
+    if !normal_magnitude.is_finite() {
+        return Err(unreached);
+    }
+    if normal_magnitude == 0.0 {
+        return Err(EvaluationFailure::NoValue);
     }
     let normal = Vector3::new(
         normal_vector.x / normal_magnitude,
         normal_vector.y / normal_magnitude,
         normal_vector.z / normal_magnitude,
     );
-    let normal_u_numerator = vector_sum(&[
-        (1.0, base.duu.cross(base.dv)),
-        (1.0, base.du.cross(base.duv)),
-    ]);
-    let normal_v_numerator = vector_sum(&[
-        (1.0, base.duv.cross(base.dv)),
-        (1.0, base.du.cross(base.dvv)),
-    ]);
+    let base_point = base.point.get();
+    let point = admit_point(Point3::new(
+        base_point.x + distance * normal.x,
+        base_point.y + distance * normal.y,
+        base_point.z + distance * normal.z,
+    ))?;
     let unit_normal_derivative = |derivative: Vector3| {
         let normal_component =
             normal.x * derivative.x + normal.y * derivative.y + normal.z * derivative.z;
@@ -8442,27 +8950,29 @@ fn offset_surface_second_partials(
             (derivative.z - normal_component * normal.z) / normal_magnitude,
         )
     };
-    let normal_u = unit_normal_derivative(normal_u_numerator);
-    let normal_v = unit_normal_derivative(normal_v_numerator);
-    Some(SurfaceSecondPartials {
-        point: Point3::new(
-            base.point.x + distance * normal.x,
-            base.point.y + distance * normal.y,
-            base.point.z + distance * normal.z,
-        ),
-        du: Vector3::new(
-            base.du.x + distance * normal_u.x,
-            base.du.y + distance * normal_u.y,
-            base.du.z + distance * normal_u.z,
-        ),
-        dv: Vector3::new(
-            base.dv.x + distance * normal_v.x,
-            base.dv.y + distance * normal_v.y,
-            base.dv.z + distance * normal_v.z,
-        ),
-        duu: base.duu,
-        duv: base.duv,
-        dvv: base.dvv,
+    let first = base.second.and_then(|second| {
+        let [duu, duv, dvv] = FiniteVector3::raw_array(second);
+        let normal_u =
+            unit_normal_derivative(vector_sum(&[(1.0, duu.cross(dv)), (1.0, du.cross(duv))]));
+        let normal_v =
+            unit_normal_derivative(vector_sum(&[(1.0, duv.cross(dv)), (1.0, du.cross(dvv))]));
+        admit_lanes([
+            Vector3::new(
+                du.x + distance * normal_u.x,
+                du.y + distance * normal_u.y,
+                du.z + distance * normal_u.z,
+            ),
+            Vector3::new(
+                dv.x + distance * normal_v.x,
+                dv.y + distance * normal_v.y,
+                dv.z + distance * normal_v.z,
+            ),
+        ])
+    });
+    Ok(SurfaceJet {
+        point,
+        first,
+        second: base.second,
     })
 }
 
@@ -8503,9 +9013,10 @@ fn difference_quotient(
 }
 
 /// The point of a sampled polyline at `t`, interpolated on the first
-/// segment whose parameters enclose it. A parameter outside every segment,
-/// and a segment of zero parameter width, have no value; a coordinate whose
-/// interpolation overflows carries its plain sum.
+/// segment whose parameters enclose it, at its fraction of that segment. A
+/// parameter outside every segment, and a segment of zero parameter width,
+/// have no value; a coordinate whose interpolation overflows carries its
+/// plain sum.
 fn polyline_point(
     points: &[FinitePoint3],
     parameters: &[FiniteReal],
@@ -8515,18 +9026,17 @@ fn polyline_point(
         return Err(EvaluationFailure::NoValue);
     }
     let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let segment = parameters
+    let (segment, fraction) = parameters
         .windows(2)
-        .position(|window| (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1]))
-        .ok_or(EvaluationFailure::NoValue)?;
-    let fraction = difference_quotient(
-        t,
-        parameters[segment],
-        parameters[segment + 1],
-        parameters[segment],
-    )
-    .map_err(|failure| failure.map(|_| UNREACHED_POINT))?
-    .get();
+        .enumerate()
+        .find_map(
+            |(segment, window)| match t.segment_position(window[0], window[1]) {
+                SegmentPosition::Outside => None,
+                SegmentPosition::Degenerate => Some(Err(EvaluationFailure::NoValue)),
+                SegmentPosition::Within(fraction) => Some(Ok((segment, fraction.get()))),
+            },
+        )
+        .ok_or(EvaluationFailure::NoValue)??;
     let start = points[segment].get();
     let end = points[segment + 1].get();
     let lerp = |start, end| crate::math::sum::finite_dot([1.0 - fraction, fraction], [start, end]);
@@ -8575,20 +9085,6 @@ fn polyline_tangent(
         tangent = Some(candidate);
     }
     tangent.ok_or(EvaluationFailure::NoValue)
-}
-
-fn transform_surface_second_partials(
-    partials: SurfaceSecondPartials,
-    transform: Transform,
-) -> Option<SurfaceSecondPartials<FinitePoint3, FiniteVector3>> {
-    Some(SurfaceSecondPartials {
-        point: transform.apply_point(partials.point)?,
-        du: transform.apply_vector(partials.du)?,
-        dv: transform.apply_vector(partials.dv)?,
-        duu: transform.apply_vector(partials.duu)?,
-        duv: transform.apply_vector(partials.duv)?,
-        dvv: transform.apply_vector(partials.dvv)?,
-    })
 }
 
 fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {
@@ -9330,14 +9826,24 @@ pub fn curve_point(
     curve_point_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
 }
 
-/// Evaluate the exact first derivative of a stored curve carrier.
-pub fn curve_tangent(geometry: &CurveGeometry, t: f64) -> Option<FiniteVector3> {
-    curve_tangent_solved(geometry.solved()?, t)
+/// Evaluate the exact first derivative of a stored curve carrier, or report
+/// why it has no finite value, as [`curve_tangent_solved`] states. A
+/// procedural carrier without a solved cache has no value here.
+pub fn curve_tangent(
+    geometry: &CurveGeometry,
+    t: f64,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_tangent_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
 }
 
-/// Evaluate the exact second derivative of a stored curve carrier.
-pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<FiniteVector3> {
-    curve_second_derivative_solved(geometry.solved()?, t)
+/// Evaluate the exact second derivative of a stored curve carrier, or report
+/// why it has no finite value, as [`curve_tangent_solved`] states. A
+/// procedural carrier without a solved cache has no value here.
+pub fn curve_second_derivative(
+    geometry: &CurveGeometry,
+    t: f64,
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_second_derivative_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, t)
 }
 
 /// Evaluate a stored curve carrier at `t` within a caller-owned work slice.
@@ -9353,22 +9859,32 @@ pub fn curve_point_with_budget(
     )
 }
 
-/// Evaluate the first derivative of a stored curve within a work slice.
+/// [`curve_tangent`] within a caller-owned work slice. A refused charge
+/// leaves no value.
 pub fn curve_tangent_with_budget(
     geometry: &CurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FiniteVector3> {
-    curve_tangent_with_budget_solved(geometry.solved()?, t, budget)
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_tangent_with_budget_solved(
+        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
+        t,
+        budget,
+    )
 }
 
-/// Evaluate the second derivative of a stored curve within a work slice.
+/// [`curve_second_derivative`] within a caller-owned work slice. A refused
+/// charge leaves no value.
 pub fn curve_second_derivative_with_budget(
     geometry: &CurveGeometry,
     t: f64,
     budget: &WorkBudget<'_>,
-) -> Option<FiniteVector3> {
-    curve_second_derivative_with_budget_solved(geometry.solved()?, t, budget)
+) -> Result<FiniteVector3, EvaluationFailure<()>> {
+    curve_second_derivative_with_budget_solved(
+        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
+        t,
+        budget,
+    )
 }
 
 /// Evaluate a surface carrier at `(u, v)` on its own parameterization.
@@ -9395,18 +9911,26 @@ pub fn surface_point_with_budget(
     )
 }
 
-/// Evaluate the first partial derivatives of a surface carrier.
-pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
-    surface_partials_solved(geometry.solved()?, u, v)
+/// Evaluate the first partial derivatives of a surface carrier, or report
+/// why they have no finite value, as [`surface_partials_solved`] states. A
+/// procedural carrier without a solved cache has no value here.
+pub fn surface_partials(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Result<SurfacePartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    surface_partials_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
 }
 
-/// Evaluate the second partial derivatives of a surface carrier.
+/// Evaluate the second partial derivatives of a surface carrier, or report
+/// why they have no finite value, as [`surface_second_partials_solved`]
+/// states. A procedural carrier without a solved cache has no value here.
 pub fn surface_second_partials(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
-) -> Option<SurfaceSecondPartials> {
-    surface_second_partials_solved(geometry.solved()?, u, v)
+) -> Result<SurfaceSecondPartials<FinitePoint3, FiniteVector3>, EvaluationFailure<Point3>> {
+    surface_second_partials_solved(geometry.solved().ok_or(EvaluationFailure::NoValue)?, u, v)
 }
 
 /// Analytic surface parameters of the point on a surface carrier.
@@ -9417,22 +9941,36 @@ pub fn analytic_surface_parameters(
     analytic_surface_parameters_solved(geometry.solved()?, point)
 }
 
-fn surface_partials_with_budget(
+/// [`surface_first_order_solved`] of a surface carrier's solved geometry. A
+/// procedural carrier without a solved cache has no value here.
+fn surface_first_order(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfacePartials> {
-    surface_partials_with_budget_solved(geometry.solved()?, u, v, budget)
+) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
+    surface_first_order_solved(
+        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
+        u,
+        v,
+        budget,
+    )
 }
 
-fn surface_second_partials_with_budget(
+/// [`surface_jet_solved`] of a surface carrier's solved geometry. A
+/// procedural carrier without a solved cache has no value here.
+fn surface_jet(
     geometry: &SurfaceGeometry,
     u: f64,
     v: f64,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<SurfaceSecondPartials> {
-    surface_second_partials_with_budget_solved(geometry.solved()?, u, v, budget)
+) -> Result<SurfaceJet, EvaluationFailure<Point3>> {
+    surface_jet_solved(
+        geometry.solved().ok_or(EvaluationFailure::NoValue)?,
+        u,
+        v,
+        budget,
+    )
 }
 
 fn model_surface_point_with_budget(

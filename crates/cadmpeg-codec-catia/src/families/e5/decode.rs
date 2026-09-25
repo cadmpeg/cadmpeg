@@ -760,6 +760,7 @@ fn e5_native_uv_endpoints(
                     None,
                     parameter.get(),
                 )
+                .ok()
                 .map(FiniteVector::from)
             });
             Some([endpoints[0]?, endpoints[1]?])

@@ -39,10 +39,11 @@ fn cacheless_law_differential_applies_algebraic_product_rule() {
             },
         ],
     };
-    let differential = scalar_sweep_law_differential(&law.admit().expect("finite law"), 3.0)
-        .expect("law differential");
-    assert_eq!(differential.value, 6.0);
-    assert_eq!(differential.derivative, 2.0);
+    let differential =
+        scalar_sweep_law_differential(&law.admit().expect("finite law"), finite(3.0))
+            .expect("law differential");
+    assert_eq!(differential.value.get(), 6.0);
+    assert_eq!(differential.derivative.unwrap().get(), 2.0);
 }
 
 #[test]
@@ -61,9 +62,12 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         operands: vec![inner.clone()],
     };
     let differential =
-        scalar_sweep_law_differential(&law.admit().expect("finite law"), 0.75).expect("sine law");
-    assert!((differential.value - 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
-    assert!((differential.derivative - 2.0 * 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
+        scalar_sweep_law_differential(&law.admit().expect("finite law"), finite(0.75))
+            .expect("sine law");
+    assert!((differential.value.get() - 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
+    assert!(
+        (differential.derivative.unwrap().get() - 2.0 * 1.5f64.cos()).abs() <= f64::EPSILON * 64.0
+    );
 
     let composition = LawExpression::Algebraic {
         operator: "O".into(),
@@ -78,24 +82,26 @@ fn cacheless_law_differential_applies_elementary_functions_and_composition() {
         ],
     };
     let differential =
-        scalar_sweep_law_differential(&composition.admit().expect("finite law"), 0.75)
+        scalar_sweep_law_differential(&composition.admit().expect("finite law"), finite(0.75))
             .expect("composed cosine law");
-    assert!((differential.value - 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
-    assert!((differential.derivative + 2.0 * 1.5f64.sin()).abs() <= f64::EPSILON * 64.0);
+    assert!((differential.value.get() - 1.5f64.cos()).abs() <= f64::EPSILON * 64.0);
+    assert!(
+        (differential.derivative.unwrap().get() + 2.0 * 1.5f64.sin()).abs() <= f64::EPSILON * 64.0
+    );
 }
 
 #[test]
-fn cacheless_law_differential_rejects_undefined_domains() {
+fn a_law_whose_derivative_has_no_value_keeps_its_value() {
+    // |x| at 0 is 0 and asin(x) at 1 is pi/2; neither has a derivative there.
     let absolute = LawExpression::Algebraic {
         operator: "ABS".into(),
         operands: vec![LawExpression::Text {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    assert!(matches!(
-        scalar_sweep_law_differential(&absolute, 0.0),
-        Err(crate::eval::EvaluationFailure::NoValue)
-    ));
+    let law = scalar_sweep_law_differential(&absolute, finite(0.0)).expect("absolute value");
+    assert_eq!(law.value.get(), 0.0);
+    assert_eq!(law.derivative, Err(crate::eval::EvaluationFailure::NoValue));
 
     let inverse = LawExpression::Algebraic {
         operator: "ARCSIN".into(),
@@ -103,10 +109,14 @@ fn cacheless_law_differential_rejects_undefined_domains() {
             value: cadmpeg_core::nonblank_literal!("X"),
         }],
     };
-    assert!(matches!(
-        scalar_sweep_law_differential(&inverse, 1.0),
-        Err(crate::eval::EvaluationFailure::NoValue)
-    ));
+    let law = scalar_sweep_law_differential(&inverse, finite(1.0)).expect("inverse sine");
+    assert_eq!(law.value.get(), std::f64::consts::FRAC_PI_2);
+    assert_eq!(law.derivative, Err(crate::eval::EvaluationFailure::NoValue));
+}
+
+/// A finite test parameter.
+fn finite(value: f64) -> crate::scalar::FiniteReal {
+    crate::scalar::FiniteReal::new(value).unwrap()
 }
 
 #[test]
@@ -309,7 +319,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
         model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
-    assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_err());
 }
 
 #[test]
@@ -345,25 +355,25 @@ fn numerical_seventh_sweep_rail_keeps_finite_rotated_coordinates() {
 #[test]
 fn numerical_seventh_normalized_derivative_keeps_finite_results() {
     use crate::eval::unit_vector_with_derivative;
+    let vector = |x, y, z| crate::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
     for magnitude in [1.0, 1.0e200, f64::MAX] {
         let (_, derivative) = unit_vector_with_derivative(
-            Vector3::new(1.0, 1.0, 1.0),
-            Vector3::new(magnitude, magnitude, magnitude),
+            vector(1.0, 1.0, 1.0),
+            Ok(vector(magnitude, magnitude, magnitude)),
         )
         .unwrap();
-        assert_eq!(derivative, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(derivative.unwrap(), Vector3::new(0.0, 0.0, 0.0));
         let (unit, derivative) = unit_vector_with_derivative(
-            Vector3::new(magnitude, magnitude, 0.0),
-            Vector3::new(0.0, 0.0, 0.0),
+            vector(magnitude, magnitude, 0.0),
+            Ok(vector(0.0, 0.0, 0.0)),
         )
         .unwrap();
         assert!((unit.norm() - 1.0).abs() <= 4.0 * f64::EPSILON);
-        assert_eq!(derivative, Vector3::new(0.0, 0.0, 0.0));
+        assert_eq!(derivative.unwrap(), Vector3::new(0.0, 0.0, 0.0));
     }
     let (_, derivative) =
-        unit_vector_with_derivative(Vector3::new(3.0, 0.0, 0.0), Vector3::new(7.0, 6.0, 0.0))
-            .unwrap();
-    assert_eq!(derivative, Vector3::new(0.0, 2.0, 0.0));
+        unit_vector_with_derivative(vector(3.0, 0.0, 0.0), Ok(vector(7.0, 6.0, 0.0))).unwrap();
+    assert_eq!(derivative.unwrap(), Vector3::new(0.0, 2.0, 0.0));
 }
 
 /// A cacheless law-driven sweep of the x-axis profile along the vertical
@@ -481,4 +491,36 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
             "{route:?}"
         );
     }
+}
+
+#[test]
+fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
+    // ABS(X) at X = 0 has the value 0 and no derivative; the section point
+    // reads the value alone and matches the sweep of the law X there.
+    let (ir, surface_id) = law_sweep_model(LawExpression::Algebraic {
+        operator: "ABS".into(),
+        operands: vec![LawExpression::Text {
+            value: cadmpeg_core::nonblank_literal!("X"),
+        }],
+    });
+    let (plain, plain_id) = law_sweep_model(LawExpression::Text {
+        value: cadmpeg_core::nonblank_literal!("X"),
+    });
+    let expected =
+        model_surface_point_by_id(&crate::index::ModelIndex::new(&plain), &plain_id, 0.5, 0.0)
+            .expect("sweep of the law X");
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.5, 0.0),
+        Ok(expected)
+    );
+    assert_eq!(
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.0),
+        Ok(expected)
+    );
+    assert_eq!(
+        model_surface_partials_by_id(&index, &surface_id, 0.5, 0.0)
+            .map(crate::eval::SurfacePartials::into_raw),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
 }

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::eval::constant_rolling_ball_partials;
+use crate::eval::constant_rolling_ball_first_order;
 use crate::eval::model_surface_partials_by_id;
 use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::tests::bilinear_surface;
+use crate::eval::tests::contact_track;
 use crate::eval::variable_blend_is_zero_radius;
 use crate::eval::variable_blend_radius;
 use crate::eval::ConstantRollingBallSection;
-use crate::eval::ContactTrackDifferential;
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::geometry::sampled::PolylineSamples;
 use crate::geometry::sampled::PolylineVertex;
@@ -343,7 +343,7 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
-    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_err());
 }
 
 #[test]
@@ -438,7 +438,7 @@ fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
     assert!((point.x - expected).abs() <= tolerance);
     assert!((point.y - 0.5).abs() <= tolerance);
     assert!((point.z - expected).abs() <= tolerance);
-    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_err());
 }
 
 /// The constant rolling ball of radius 3 between the planes `z = 0` and
@@ -607,7 +607,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     ));
     let index = crate::index::ModelIndex::new(&ir);
     assert!(model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5).is_ok());
-    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_err());
 
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
@@ -717,7 +717,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
     );
-    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_err());
 }
 
 /// Both surface routes of `surface` at `(u, v)` left the finite range at a
@@ -804,32 +804,28 @@ fn rolling_ball_partials_follow_a_changing_section_angle() {
     let zero = Vector3::new(0.0, 0.0, 0.0);
     let section = ConstantRollingBallSection {
         center: Point3::new(0.0, 0.0, 0.0),
-        center_tangent: Some(zero),
-        first: ContactTrackDifferential {
-            point: Point3::new(radius, 0.0, 0.0),
-            tangent: zero,
-            normal: zero,
-            normal_derivative: None,
-        },
-        second: ContactTrackDifferential {
-            point: Point3::new(
+        center_tangent: Ok(zero),
+        first: contact_track(Point3::new(radius, 0.0, 0.0), zero),
+        second: contact_track(
+            Point3::new(
                 radius * section_angle.cos(),
                 0.0,
                 radius * section_angle.sin(),
             ),
-            tangent: Vector3::new(
+            Vector3::new(
                 -radius * section_angle.sin(),
                 0.0,
                 radius * section_angle.cos(),
             ),
-            normal: zero,
-            normal_derivative: None,
-        },
+        ),
         radius,
     };
     let u = 0.4;
     let angle = u * section_angle;
-    let partials = constant_rolling_ball_partials(&section, u).expect("rolling-ball partials");
+    let partials = constant_rolling_ball_first_order(&section, u)
+        .and_then(crate::eval::SurfaceFirstOrder::partials)
+        .expect("rolling-ball partials")
+        .into_raw();
     let tolerance = 128.0 * f64::EPSILON;
     assert!((partials.point.x - radius * angle.cos()).abs() <= tolerance);
     assert!(partials.point.y.abs() <= tolerance);
@@ -893,5 +889,211 @@ fn variable_blend_function_uses_its_first_coordinate_as_radius() {
     assert_eq!(
         variable_blend_radius(&value, 0.5).map(FiniteReal::get),
         Ok(3.5)
+    );
+}
+
+/// The plane `z = 0` over `u` in `[0, 3]` with `x = u`, `y = v`, followed by
+/// a ramp of `1e293` along `x` over the next representable `u` after 3. At
+/// `u = 3` the point is `(3, v, 0)` and the `u` partial overflows.
+fn steep_plane_support() -> SurfaceGeometry {
+    let ramp_end = f64::from_bits(3.0_f64.to_bits() + 1);
+    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsSurface::from_lanes(
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![0.0, 0.0, 3.0, ramp_end, ramp_end],
+                false,
+            ),
+            crate::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            crate::geometry::nurbs::NurbsSurfaceLanes::new(
+                [0.0, 3.0, 3.0 + 1.0e293]
+                    .map(|x| vec![Point3::new(x, 0.0, 0.0), Point3::new(x, 1.0, 0.0)])
+                    .to_vec(),
+                None,
+            ),
+            false,
+        )
+        .expect("steep plane fixture"),
+    ))
+}
+
+/// The contacts `(3, v, 0)` and `(0, v, 3)` of a blend between the planes
+/// `z = 0` and `x = 0`, with `cross_section`, whose first support is
+/// [`steep_plane_support`].
+fn steep_support_blend_fixture(cross_section: VariableBlendCrossSection) -> (CadIr, SurfaceId) {
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(3.0, 0.0), Point2::new(0.0, 1.0)),
+            (Point2::new(0.0, 3.0), Point2::new(1.0, 0.0)),
+        ],
+        [3.0, 3.0],
+        Some(cross_section),
+    );
+    ir.model.surfaces[0].geometry = steep_plane_support();
+    (ir, blend_surface)
+}
+
+/// The first support's partials at the contact `(3, 0.5, 0)` overflow.
+fn assert_first_support_partial_overflows(ir: &CadIr) {
+    let index = crate::index::ModelIndex::new(ir);
+    assert_eq!(
+        model_surface_partials_by_id(&index, &ir.model.surfaces[0].id, 3.0, 0.5)
+            .map(crate::eval::SurfacePartials::into_raw),
+        Err(crate::eval::EvaluationFailure::NonFinite(Point3::new(
+            3.0, 0.5, 0.0
+        )))
+    );
+}
+
+#[test]
+fn a_ruled_variable_blend_whose_support_partial_overflows_keeps_its_point() {
+    // The zero-radius chamfer rules from (3, v, 0) to (0, v, 3).
+    let (ir, blend_surface) =
+        steep_support_blend_fixture(VariableBlendCrossSection::RoundedChamfer { radius: None });
+    assert_first_support_partial_overflows(&ir);
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = Point3::new(1.5, 0.5, 1.5);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+            .map(crate::features::FinitePoint3::get),
+        Ok(point)
+    );
+    assert_eq!(
+        model_surface_point(&ir, &ir.model.surfaces[2].geometry, 0.5, 0.5)
+            .map(crate::features::FinitePoint3::get),
+        Ok(point)
+    );
+    assert_eq!(
+        model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5)
+            .map(crate::eval::SurfacePartials::into_raw),
+        Err(crate::eval::EvaluationFailure::NonFinite(point))
+    );
+}
+
+#[test]
+fn a_circular_variable_blend_whose_support_partial_overflows_reaches_no_coordinate() {
+    // The circular section reads the support normals, which the
+    // overflowing partial leaves without a value.
+    let (ir, blend_surface) = steep_support_blend_fixture(VariableBlendCrossSection::Circular {});
+    assert_first_support_partial_overflows(&ir);
+    assert!(both_routes_reach_no_coordinate(
+        &ir,
+        &blend_surface,
+        0.5,
+        0.5
+    ));
+}
+
+#[test]
+fn a_constant_rolling_ball_whose_support_partial_overflows_keeps_its_point() {
+    // The section centered on the spine reads the contact points alone.
+    let (mut ir, blend_surface) =
+        constant_rolling_ball_fixture(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(3.0, 0.0, 3.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        )));
+    ir.model.surfaces[0].geometry = steep_plane_support();
+    assert_first_support_partial_overflows(&ir);
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.0, 0.5)
+            .map(crate::features::FinitePoint3::get),
+        Ok(Point3::new(3.0, 0.5, 0.0))
+    );
+    let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless constant rolling-ball blend");
+    let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
+    let tolerance = 64.0 * f64::EPSILON;
+    assert!((point.x - expected).abs() <= tolerance);
+    assert!((point.y - 0.5).abs() <= tolerance);
+    assert!((point.z - expected).abs() <= tolerance);
+    assert!(matches!(
+        model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5),
+        Err(crate::eval::EvaluationFailure::NonFinite(reached)) if reached == point.get()
+    ));
+}
+
+#[test]
+fn a_circular_variable_blend_whose_contact_pcurve_has_no_tangent_keeps_its_point() {
+    // The first contact pcurve offsets the line u = 5 twice by 1 toward
+    // smaller u: its point is (3, t) and an offset over an offset states no
+    // tangent.
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(3.0, 0.0), Point2::new(0.0, 1.0)),
+            (Point2::new(0.0, 3.0), Point2::new(1.0, 0.0)),
+        ],
+        [3.0, 3.0],
+        Some(VariableBlendCrossSection::Circular {}),
+    );
+    let offset = |basis| {
+        PcurveGeometry::Offset(
+            crate::geometry::pcurve::OffsetPcurve::try_new(1.0, Box::new(basis))
+                .expect("offset pcurve fixture"),
+        )
+    };
+    let pcurve = offset(offset(PcurveGeometry::Line(
+        crate::geometry::pcurve::LinePcurve::try_new(Point2::new(5.0, 0.0), Point2::new(0.0, 1.0))
+            .expect("line pcurve fixture"),
+    )));
+    assert_eq!(
+        crate::eval::pcurve_uv(&pcurve, 0.5).map(crate::units::FinitePoint2::get),
+        Ok(Point2::new(3.0, 0.5))
+    );
+    assert_eq!(
+        crate::eval::pcurve_tangent(&pcurve, 0.5),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::VariableBlend(definition_payload) = definition else {
+            unreachable!()
+        };
+        let mut construction = definition_payload.construction().to_raw();
+        construction.sides[0].pcurve = Some(pcurve);
+        *definition_payload =
+            crate::geometry::surface_payloads::VariableBlendSurfacePayload::try_new(Box::new(
+                construction,
+            ))
+            .unwrap();
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless circular variable blend");
+    let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
+    let tolerance = 64.0 * f64::EPSILON;
+    assert!((point.x - expected).abs() <= tolerance);
+    assert!((point.y - 0.5).abs() <= tolerance);
+    assert!((point.z - expected).abs() <= tolerance);
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_err());
+}
+
+#[test]
+fn a_cacheless_blend_has_the_same_partials_within_a_work_budget() {
+    let (ir, blend_surface) =
+        constant_rolling_ball_fixture(CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(3.0, 0.0, 3.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            )
+            .unwrap(),
+        )));
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = cadmpeg_core::decode::WorkBudget::new(1_000_000);
+    let partials = model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless rolling-ball partials");
+    assert_eq!(
+        crate::eval::model_surface_partials_by_id_with_budget(
+            &index,
+            &blend_surface,
+            0.5,
+            0.5,
+            &budget
+        ),
+        Ok(partials)
     );
 }
