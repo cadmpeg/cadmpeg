@@ -519,7 +519,7 @@ impl ParseError {
         match self {
             Self::Resource(error) => error,
             Self::Lex(error) => error.into_codec_error(),
-            error => CodecError::Malformed(error.to_string()),
+            error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
         }
     }
 }
