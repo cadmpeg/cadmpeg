@@ -171,7 +171,7 @@ fn synthesized_solid_writes_short_body_name_to_directory() {
 }
 
 #[test]
-fn synthesized_solid_reports_unrepresented_rgb_and_opacity() {
+fn synthesized_solid_writes_custom_rgb_and_reports_opacity() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_void_solid_file().0),
@@ -181,18 +181,64 @@ fn synthesized_solid_reports_unrepresented_rgb_and_opacity() {
     let mut ir = decoded.ir().clone();
     ir.model.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
     let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
-    assert!(generated.losses.iter().any(|loss| {
+    assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyColorNotRepresented.kind()
-            && loss.message.contains(ir.model.bodies[0].id.as_str())
     }));
     assert!(generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyOpacityNotRepresented.kind()
             && loss.message.contains(ir.model.bodies[0].id.as_str())
     }));
+    assert_eq!(generated.counts.get("314_color_definition"), Some(&1));
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
-    assert_eq!(round_trip.ir().model.bodies[0].color, None);
+    assert_eq!(
+        round_trip.ir().model.bodies[0].color,
+        cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
+    );
+    assert!(!round_trip.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("Directory color number or definition pointer is invalid")
+            || loss
+                .message
+                .contains("color definition Directory fields are invalid")
+    }));
+}
+
+#[test]
+fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0);
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let generated = crate::writer::synthesize(&ir, version).expect("synthesis");
+        assert_eq!(generated.counts.get("314_color_definition"), Some(&1));
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .expect("generated IGES decodes");
+        let body = round_trip
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("round-trip sheet");
+        assert_eq!(
+            body.color,
+            cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
+        );
+    }
 }
 
 #[test]
