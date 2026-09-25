@@ -630,15 +630,11 @@ pub(crate) fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// value blocks, and catalogs. A `None` value means that the raw tag exists but
 /// its canonical target is not unique.
 #[must_use]
-pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
-    let entity_runs = entity_table::parse_runs(data);
-    let paired_object_graph_roots = entity_runs
-        .iter()
-        .filter_map(|run| {
-            let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
-            (data.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
-        })
-        .collect::<HashMap<_, _>>();
+pub(crate) fn surface_alias_tag_map(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<HashMap<u32, Option<u32>>, cadmpeg_core::CodecError> {
+    let paired_object_graph_roots = entity_table::paired_object_graph_roots(ctx, data)?;
     let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
     let mut value_blocks = value_block::parse(data);
     value_blocks.retain(|block| {
@@ -706,7 +702,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
     }
-    tags
+    Ok(tags)
 }
 
 pub(crate) fn extent_contains(

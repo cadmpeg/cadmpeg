@@ -16,6 +16,21 @@ use crate::test_support::test_formula::standard_catpart_with_two_selector_value;
 use crate::test_support::test_object_graph::outer_container_object_graph_catpart;
 use crate::CatiaCodec;
 
+#[test]
+fn standard_alias_route_propagates_entity_candidate_limit() {
+    let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
+    let mut options = DecodeOptions::default();
+    options.policy = cadmpeg_core::decode::DecodePolicy::service();
+    options.policy.limits.max_collection_items = 0;
+    let error = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("7C05 identity candidate exceeds zero collection items");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "admit CATIA 7C05 identity candidate"));
+}
+
 fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
     CatiaObjectGraph {
         id: id.to_string(),

@@ -639,15 +639,26 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 
 #[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
+    fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("alias fixture fits the service input limit");
+        crate::object_graph::surface_alias_tag_map(&ctx, bytes)
+            .expect("alias fixture fits the service resource limits")
+    }
     let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
     bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
 
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = read_tags(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
 
     bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
-    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    let tags = read_tags(&bytes);
     assert_eq!(tags.get(&0x1234), Some(&None));
     assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
     assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));

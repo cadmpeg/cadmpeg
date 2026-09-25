@@ -216,11 +216,13 @@ fn finish_decode(
         "admit CATIA route entities",
     )?;
     let consolidated_record_sources = container::consolidated_record_sources(scan);
-    let native =
-        CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources, refusal);
-    // The native decode is the second and last producer of lane refusals, and
-    // it cannot fail; drain it here, before the transfers below can answer
-    // `Err`.
+    let native = CatiaNative::decode_with_record_sources(
+        ctx,
+        &scan.data,
+        &consolidated_record_sources,
+        refusal,
+    )?;
+    // Drain lane refusals from a successful native decode before transfers run.
     report.losses.extend(refusal.take_notes());
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
