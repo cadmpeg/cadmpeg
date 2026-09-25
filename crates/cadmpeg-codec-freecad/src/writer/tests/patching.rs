@@ -45,7 +45,7 @@ fn x65_backslash_entry_is_refused_by_writer_reader_and_native_record() {
         referenced_by: Vec::new(),
         data: Vec::new(),
     };
-    let error = validate_entry_names(&[entry.clone()])
+    let error = validate_entry_names(std::slice::from_ref(&entry))
         .expect_err("writer refuses a backslash in an archive name");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
     assert!(error.to_string().contains("unsafe FCStd output entry name"));
