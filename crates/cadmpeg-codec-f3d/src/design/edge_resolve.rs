@@ -2327,7 +2327,7 @@ pub(super) fn project_fixed_fillet_with_corners(
             .law()
         {
             crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Constant(radius) => {
-                (radius.value.get() > 0.0).then_some(RadiusSpec::Constant {
+                Some(RadiusSpec::Constant {
                     radius: cadmpeg_ir::scalar::PositiveLength::new(radius.value.get() * 10.0)?,
                 })
             }
