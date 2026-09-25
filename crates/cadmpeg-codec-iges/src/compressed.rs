@@ -8,9 +8,12 @@
 //! fields, then delegates all semantic work to the existing parser.
 
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use std::num::NonZeroUsize;
+use std::rc::Rc;
 
 const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
@@ -78,11 +81,11 @@ impl CompressedField {
 }
 
 #[derive(Debug, Clone)]
-struct DirectoryFields([Vec<u8>; 16]);
+struct DirectoryFields([Rc<Vec<u8>>; 16]);
 
 impl DirectoryFields {
     fn get(&self, field: CompressedField) -> &[u8] {
-        &self.0[field.slot()]
+        self.0[field.slot()].as_slice()
     }
 }
 
@@ -96,8 +99,24 @@ struct DataEntity {
 #[derive(Debug)]
 struct ParsedDirectoryRecord {
     sequence: u32,
-    specs: Vec<(CompressedField, Vec<u8>)>,
+    specs: [Option<Rc<Vec<u8>>>; 16],
     next: usize,
+}
+
+fn allocation_failed(
+    dimension: ResourceDimension,
+    limit: u64,
+    bytes: usize,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension,
+        reason: ResourceFailure::AllocationFailed,
+        limit,
+        used: 0,
+        additional: u64_from_index(bytes),
+        operation,
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -137,20 +156,60 @@ fn split_lines<'a>(source: &'a [u8], ctx: &DecodeContext<'_>) -> Result<Vec<&'a 
             None => (source.len(), source.len()),
         };
         ctx.charge_collection_items(1, "iges_compressed_ascii_lines")?;
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<&[u8]>()),
+            "iges_compressed_ascii_line_index",
+        )?;
+        lines.try_reserve(1).map_err(|_| {
+            allocation_failed(
+                ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                std::mem::size_of::<&[u8]>(),
+                "iges_compressed_ascii_line_index",
+            )
+        })?;
         lines.push(&source[start..end]);
         start = next;
     }
     Ok(lines)
 }
 
-fn logical_global_stream(cards: &[&[u8]]) -> Result<Vec<u8>, CodecError> {
-    let mut stream = Vec::new();
-    let mut pending_digits = Vec::new();
-    let mut hollerith_remaining = 0_usize;
-    for card in cards {
+fn logical_global_stream(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
+    let length = cards.iter().try_fold(0_usize, |length, card| {
         if card.len() != CARD_WIDTH {
             return Err(malformed("Start and Global records must be 80 columns"));
         }
+        length
+            .checked_add(CARD_DATA_WIDTH)
+            .ok_or_else(|| malformed("Global stream length overflows"))
+    })?;
+    let temporary_bytes = length
+        .checked_mul(2)
+        .ok_or_else(|| malformed("Global stream workspace overflows"))?;
+    let _storage = ctx.reserve_scoped(
+        u64_from_index(temporary_bytes),
+        "iges_compressed_global_stream",
+    )?;
+    let mut stream = Vec::new();
+    let mut pending_digits = Vec::new();
+    stream.try_reserve_exact(length).map_err(|_| {
+        allocation_failed(
+            ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            length,
+            "iges_compressed_global_stream",
+        )
+    })?;
+    pending_digits.try_reserve_exact(length).map_err(|_| {
+        allocation_failed(
+            ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            length,
+            "iges_compressed_global_digits",
+        )
+    })?;
+    let mut hollerith_remaining = 0_usize;
+    for card in cards {
         for byte in card[..CARD_DATA_WIDTH].iter().copied() {
             if hollerith_remaining > 0 {
                 stream.push(byte);
@@ -210,8 +269,8 @@ fn hollerith_at(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, Co
     Ok(Some((cursor + 1, payload_end)))
 }
 
-fn compressed_delimiters(cards: &[&[u8]]) -> Result<(u8, u8), CodecError> {
-    let bytes = logical_global_stream(cards)?;
+fn compressed_delimiters(cards: &[&[u8]], ctx: &DecodeContext<'_>) -> Result<(u8, u8), CodecError> {
+    let bytes = logical_global_stream(cards, ctx)?;
     let (parameter_delimiter, cursor) = if bytes.first() == Some(&b',') {
         (b',', 1)
     } else {
@@ -269,9 +328,11 @@ fn parse_sequence(bytes: &[u8], start: usize, label: &str) -> Result<(u32, usize
     Ok((value, end))
 }
 
-fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, CodecError> {
-    let mut specs = Vec::new();
-    let mut specified = [false; 21];
+fn parse_field_specs(
+    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<[Option<Rc<Vec<u8>>>; 16], CodecError> {
+    let mut specs = std::array::from_fn(|_| None);
     let mut cursor = 0_usize;
     while cursor < bytes.len() {
         if bytes[cursor] != b'@' {
@@ -305,18 +366,17 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
                     ))
                 }
             })?;
-        if specified[field] {
+        if specs[compressed_field.slot()].is_some() {
             return Err(malformed(format!(
                 "Directory field {field} is specified more than once"
             )));
         }
-        specified[field] = true;
         cursor += 1;
         let value_start = cursor;
         while bytes.get(cursor).is_some_and(|byte| *byte != b'@') {
             cursor += 1;
         }
-        let value = bytes[value_start..cursor].to_vec();
+        let value = &bytes[value_start..cursor];
         if value
             .iter()
             .any(|byte| !byte.is_ascii() || byte.is_ascii_control())
@@ -325,7 +385,12 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
                 "Directory field {field} contains a non-printable byte"
             )));
         }
-        specs.push((compressed_field, value));
+        let value = ctx.copy_retained(value, "iges_compressed_directory_field")?;
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<Vec<u8>>() + 2 * std::mem::size_of::<usize>()),
+            "iges_compressed_directory_field_owner",
+        )?;
+        specs[compressed_field.slot()] = Some(Rc::new(value));
     }
     Ok(specs)
 }
@@ -334,6 +399,7 @@ fn parse_directory_record(
     lines: &[&[u8]],
     start: usize,
     record_delimiter: u8,
+    ctx: &DecodeContext<'_>,
 ) -> Result<ParsedDirectoryRecord, CodecError> {
     let first = lines
         .get(start)
@@ -345,22 +411,28 @@ fn parse_directory_record(
         return Err(malformed("Directory field line exceeds 72 columns"));
     }
     let (sequence, cursor) = parse_sequence(first, 1, "Data record")?;
-    let mut spec_bytes = first[cursor..].to_vec();
+    let mut length = 0_usize;
     let mut line_index = start;
-    loop {
-        if let Some(delimiter) = spec_bytes.iter().position(|byte| *byte == record_delimiter) {
-            if spec_bytes[delimiter + 1..].iter().any(|byte| *byte != b' ') {
+    let delimiter_offset = loop {
+        let line = if line_index == start {
+            &first[cursor..]
+        } else {
+            lines[line_index]
+        };
+        if let Some(delimiter) = line.iter().position(|byte| *byte == record_delimiter) {
+            if line[delimiter + 1..].iter().any(|byte| *byte != b' ') {
                 return Err(malformed(
                     "Directory field record has data after its record delimiter",
                 ));
             }
-            spec_bytes.truncate(delimiter);
-            return Ok(ParsedDirectoryRecord {
-                sequence,
-                specs: parse_field_specs(&spec_bytes)?,
-                next: line_index + 1,
-            });
+            length = length
+                .checked_add(delimiter)
+                .ok_or_else(|| malformed("Directory field record length overflows"))?;
+            break delimiter;
         }
+        length = length
+            .checked_add(line.len())
+            .ok_or_else(|| malformed("Directory field record length overflows"))?;
         line_index += 1;
         let continuation = lines
             .get(line_index)
@@ -373,27 +445,51 @@ fn parse_directory_record(
                 "Directory field continuation does not begin with @",
             ));
         }
-        spec_bytes.extend_from_slice(continuation);
+    };
+    let _spec_storage = ctx.reserve_scoped(
+        u64_from_index(length),
+        "iges_compressed_directory_spec_bytes",
+    )?;
+    let mut spec_bytes = Vec::new();
+    spec_bytes.try_reserve_exact(length).map_err(|_| {
+        allocation_failed(
+            ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            length,
+            "iges_compressed_directory_spec_bytes",
+        )
+    })?;
+    if line_index == start {
+        spec_bytes.extend_from_slice(&first[cursor..cursor + delimiter_offset]);
+    } else {
+        spec_bytes.extend_from_slice(&first[cursor..]);
+        for continuation in lines.iter().take(line_index).skip(start + 1) {
+            spec_bytes.extend_from_slice(continuation);
+        }
+        spec_bytes.extend_from_slice(&lines[line_index][..delimiter_offset]);
     }
+    Ok(ParsedDirectoryRecord {
+        sequence,
+        specs: parse_field_specs(&spec_bytes, ctx)?,
+        next: line_index + 1,
+    })
 }
 
 fn apply_field_specs(
     previous: Option<&DirectoryFields>,
-    specs: Vec<(CompressedField, Vec<u8>)>,
+    specs: [Option<Rc<Vec<u8>>>; 16],
 ) -> Result<DirectoryFields, CodecError> {
     if let Some(previous) = previous {
         let mut fields = previous.clone();
-        for (field, value) in specs {
-            fields.0[field.slot()] = value;
+        for (index, value) in specs.into_iter().enumerate() {
+            if let Some(value) = value {
+                fields.0[index] = value;
+            }
         }
         return Ok(fields);
     }
-    let mut fields: [Option<Vec<u8>>; 16] = std::array::from_fn(|_| None);
-    for (field, value) in specs {
-        fields[field.slot()] = Some(value);
-    }
     let [Some(f0), Some(f1), Some(f2), Some(f3), Some(f4), Some(f5), Some(f6), Some(f7), Some(f8), Some(f9), Some(f10), Some(f11), Some(f12), Some(f13), Some(f14), Some(f15)] =
-        fields
+        specs
     else {
         return Err(malformed(
             "the first Data record does not specify every non-redundant Directory field",
@@ -637,8 +733,9 @@ fn parse_data_entity(
     previous: Option<&DirectoryFields>,
     parameter_delimiter: u8,
     record_delimiter: u8,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(DataEntity, usize), CodecError> {
-    let directory = parse_directory_record(lines, start, record_delimiter)?;
+    let directory = parse_directory_record(lines, start, record_delimiter, ctx)?;
     let fields = apply_field_specs(previous, directory.specs)?;
     let sequence = directory.sequence;
     let mut cursor = directory.next;
@@ -666,9 +763,21 @@ fn parse_data_entity(
         let source_lines = lines
             .get(cursor..end)
             .ok_or_else(|| malformed("Parameter Data lines end before the declared count"))?;
+        let headers = line_count
+            .checked_mul(std::mem::size_of::<Vec<u8>>())
+            .ok_or_else(|| malformed("Parameter Data line storage overflows"))?;
+        ctx.charge_retained(
+            u64_from_index(headers),
+            "iges_compressed_parameter_line_headers",
+        )?;
+        parameter_lines = ctx.alloc_filled(
+            line_count,
+            Vec::<u8>::new(),
+            "iges_compressed_parameter_lines",
+        )?;
         let mut state = ParameterLexState::default();
         let mut terminated = false;
-        for line in source_lines {
+        for (index, line) in source_lines.iter().enumerate() {
             if line.len() > PARAMETER_DATA_WIDTH {
                 return Err(malformed("Parameter Data line exceeds 64 columns"));
             }
@@ -682,7 +791,7 @@ fn parse_data_entity(
             {
                 terminated = true;
             }
-            parameter_lines.push((*line).to_vec());
+            parameter_lines[index] = ctx.copy_retained(line, "iges_compressed_parameter_line")?;
         }
         if !terminated {
             return Err(malformed(
@@ -793,19 +902,35 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .map(|index| data_begin + index)
         .ok_or_else(|| malformed("Terminate section is missing"))?;
 
-    let global_cards = lines[global_begin..data_begin].to_vec();
-    let (parameter_delimiter, record_delimiter) = compressed_delimiters(&global_cards)?;
-    let mut previous = None;
+    let global_cards = &lines[global_begin..data_begin];
+    let (parameter_delimiter, record_delimiter) = compressed_delimiters(global_cards, ctx)?;
     let mut entities = Vec::new();
     let mut data_cursor = data_begin;
     let mut expected_sequence = 1_u32;
+    charge_normalization(ctx, source.len())?;
     while data_cursor < terminate_index {
+        ctx.charge_collection_items(1, "iges_compressed_entities")?;
+        ctx.charge_retained(
+            u64_from_index(std::mem::size_of::<DataEntity>()),
+            "iges_compressed_entity_record",
+        )?;
+        entities.try_reserve_exact(1).map_err(|_| {
+            allocation_failed(
+                ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                std::mem::size_of::<DataEntity>(),
+                "iges_compressed_entity_record",
+            )
+        })?;
         let (entity, next) = parse_data_entity(
             &lines,
             data_cursor,
-            previous.as_ref(),
+            entities
+                .last()
+                .map(|previous: &DataEntity| &previous.fields),
             parameter_delimiter,
             record_delimiter,
+            ctx,
         )?;
         if entity.sequence != expected_sequence || entity.sequence % 2 == 0 {
             return Err(malformed(format!(
@@ -816,7 +941,6 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         expected_sequence = expected_sequence
             .checked_add(2)
             .ok_or_else(|| malformed("Directory sequence overflows"))?;
-        previous = Some(entity.fields.clone());
         entities.push(entity);
         data_cursor = next;
     }
@@ -837,16 +961,50 @@ pub(crate) fn normalize(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<u8
         .and_then(|count| count.checked_mul(CARD_WIDTH + 1))
         .and_then(|size| size.checked_add(source.len()))
         .ok_or_else(|| malformed("normalized source size overflows"))?;
-    charge_normalization(ctx, source.len().saturating_add(output_estimate))?;
+    charge_normalization(ctx, output_estimate)?;
+    ctx.charge_retained(
+        u64_from_index(output_estimate),
+        "iges_compressed_normalized_output",
+    )?;
 
-    let mut output = Vec::with_capacity(output_estimate);
+    let mut output = Vec::new();
+    output.try_reserve_exact(output_estimate).map_err(|_| {
+        allocation_failed(
+            ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            output_estimate,
+            "iges_compressed_normalized_output",
+        )
+    })?;
     for line in &lines[start_begin..global_begin] {
         append_source_card(&mut output, line, b'S')?;
     }
     for line in &lines[global_begin..data_begin] {
         append_source_card(&mut output, line, b'G')?;
     }
-    let mut parameter_starts = Vec::with_capacity(entities.len());
+    ctx.charge_collection_items(
+        u64_from_index(entities.len()),
+        "iges_compressed_parameter_starts",
+    )?;
+    let parameter_starts_bytes = entities
+        .len()
+        .checked_mul(std::mem::size_of::<u32>())
+        .ok_or_else(|| malformed("Parameter Data start storage overflows"))?;
+    ctx.charge_retained(
+        u64_from_index(parameter_starts_bytes),
+        "iges_compressed_parameter_starts",
+    )?;
+    let mut parameter_starts = Vec::new();
+    parameter_starts
+        .try_reserve_exact(entities.len())
+        .map_err(|_| {
+            allocation_failed(
+                ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                parameter_starts_bytes,
+                "iges_compressed_parameter_starts",
+            )
+        })?;
     let mut parameter_sequence = 1_u32;
     for entity in &entities {
         let parameter_start = if entity.parameter_lines.is_empty() {
