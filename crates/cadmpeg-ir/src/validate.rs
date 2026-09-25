@@ -23,6 +23,7 @@ pub mod admit;
 mod annotations_native;
 mod carriers_parameterization;
 mod drawings;
+pub(crate) mod evaluation_cycles;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
@@ -38,6 +39,7 @@ mod topology;
 use annotations_native::{check_annotations, check_native_links};
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
+use evaluation_cycles::check_evaluation_cycles;
 use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,
@@ -142,6 +144,7 @@ fn validate_model_with_index(
     check_identity_and_order(ir, &mut findings);
     check_tolerances(ir, &mut findings);
     check_references(ir, ids, &mut findings);
+    check_evaluation_cycles(ir, ids, &mut findings);
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);

@@ -70,6 +70,34 @@ impl CodecBackend for RejectFloorCodec {
 
 struct ForeignIdentityCodec;
 
+struct CyclicModelCodec;
+
+impl CodecBackend for CyclicModelCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
+        Confidence::No
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the cycle admission test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        Ok(decoded(
+            crate::test_support::evaluation_cycles::cyclic_model().0,
+        ))
+    }
+}
+
 impl CodecBackend for ForeignIdentityCodec {
     const FORMAT: FormatId = FormatId::new("selected");
 
@@ -144,6 +172,24 @@ fn sealed_decode_rejects_a_document_authored_for_another_format() {
         panic!("expected a wrong-format refusal, got {error:?}")
     };
     assert_eq!(message, "codec \"selected\" decoded a \"foreign\" document");
+}
+
+#[test]
+fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
+    let (_, curve, surface) = crate::test_support::evaluation_cycles::cyclic_model();
+    let error = CyclicModelCodec
+        .decode(
+            &mut Cursor::new(vec![1u8, 2, 3, 4]),
+            &DecodeOptions::default(),
+        )
+        .expect_err("a cyclic model cannot leave the codec");
+    let DecodeFailure::Codec(CodecError::Malformed(message)) = error else {
+        panic!("expected a malformed cycle refusal, got {error:?}")
+    };
+    assert_eq!(
+        message,
+        format!("malformed curve/surface reference cycle: {curve} -> {surface} -> {curve}")
+    );
 }
 
 fn strict_options(container_only: bool) -> DecodeOptions {

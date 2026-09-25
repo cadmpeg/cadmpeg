@@ -22,4 +22,5 @@ pub(crate) fn make_first_face_surface_unknown(
     surface_id
 }
 
+pub(crate) mod evaluation_cycles;
 pub(crate) mod nurbs;

@@ -76,7 +76,6 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
                 expected,
                 1.0,
                 NonNegativeLength::ZERO,
-                0,
             )
             .map(crate::scalar::FiniteReal::get),
             Some(1.0),

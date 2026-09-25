@@ -430,6 +430,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             ))
             .into());
         }
+        crate::validate::evaluation_cycles::admit_evaluation_cycles(result.ir())?;
         let strict_loss_index =
             if options.policy.mode == DecodeMode::Strict && !options.container_only {
                 result

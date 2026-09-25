@@ -3,7 +3,8 @@
 //! it reached; an arm with no value reports that.
 
 use crate::eval::{
-    model_curve_point_by_id, model_surface_point_by_id, pcurve_tangent, pcurve_uv, surface_point,
+    model_curve_point_by_id, model_curve_point_by_id_with_budget, model_surface_point_by_id,
+    model_surface_point_by_id_with_budget, pcurve_tangent, pcurve_uv, surface_point,
     surface_point_with_budget, EvaluationFailure,
 };
 use crate::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
@@ -19,7 +20,8 @@ use crate::geometry::{
 };
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point2, Point3, Vector3};
-use crate::transform::Transform2;
+use crate::test_support::evaluation_cycles::cyclic_model;
+use crate::transform::{Transform, Transform2};
 use crate::CadIr;
 use cadmpeg_core::decode::WorkBudget;
 
@@ -659,6 +661,106 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
         )
         .expect("procedural curve fixture");
     (ir, curve)
+}
+
+#[test]
+fn curve_surface_curve_cycle_terminates_on_unbudgeted_point_evaluation() {
+    let (ir, curve, _) = cyclic_model();
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_curve_point_by_id(&index, &curve, 0.0),
+        Err(EvaluationFailure::NoValue)
+    );
+}
+
+#[test]
+fn surface_curve_surface_cycle_terminates_on_unbudgeted_point_evaluation() {
+    let (ir, _, surface) = cyclic_model();
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface, 0.0, 0.0),
+        Err(EvaluationFailure::NoValue)
+    );
+}
+
+#[test]
+fn curve_surface_curve_cycle_exhausts_the_shared_budget_depth() {
+    let (ir, curve, _) = cyclic_model();
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(usize::MAX);
+    assert_eq!(
+        model_curve_point_by_id_with_budget(&index, &curve, 0.0, &budget),
+        Err(EvaluationFailure::NoValue)
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn surface_curve_surface_cycle_exhausts_the_shared_budget_depth() {
+    let (ir, _, surface) = cyclic_model();
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(usize::MAX);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &surface, 0.0, 0.0, &budget),
+        Err(EvaluationFailure::NoValue)
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget() {
+    let curve = CurveId::mint("test:model:curve#replica").expect("valid identity");
+    let surface = SurfaceId::mint("test:model:surface#ruled").expect("valid identity");
+    let mut ir = CadIr::empty();
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line curve fixture"),
+        )),
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_curve(
+            curve.clone(),
+            ProceduralCurve::new(
+                ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
+                ProceduralCurveDefinition::Replica {
+                    source: curve.clone(),
+                    transform: Transform::identity(),
+                },
+            ),
+        )
+        .expect("procedural curve fixture");
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_surface(
+            surface.clone(),
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),
+                ProceduralSurfaceDefinition::Ruled {
+                    first: curve.clone(),
+                    second: curve,
+                    cache: None,
+                },
+                None,
+            ),
+        )
+        .expect("procedural surface fixture");
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(usize::MAX);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &surface, 0.0, 0.0, &budget),
+        Err(EvaluationFailure::NoValue)
+    );
+    assert!(budget.exhausted());
 }
 
 #[test]
