@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    malformed, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord,
-    PropertyFamily, PropertyRecord, ValueRecord,
+    copy_xml_text, malformed, DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire,
+    ObjectRecord, PropertyFamily, PropertyRecord, ValueRecord,
 };
 
 const MAX_OBJECTS: usize = 1_000_000;
@@ -39,6 +39,15 @@ pub(crate) fn parse_with_context(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
+    if let Some(ctx) = ctx {
+        ctx.charge_work(
+            bytes.len() as u64,
+            "FCStd persistence XML lexical admission",
+        )?;
+    }
+    if let (Some(ctx), Some((nodes, _))) = (ctx, crate::container::xml_envelope_counts(bytes)) {
+        ctx.charge_collection_items(nodes, "FCStd persistence XML node tree")?;
+    }
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
     parse_document(
@@ -47,6 +56,17 @@ pub(crate) fn parse_with_context(
         FcstdDialect::from_schema_version(schema_version),
         ctx,
     )
+}
+
+fn charge_items(
+    ctx: Option<&DecodeContext<'_>>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(count as u64, operation)?;
+    }
+    Ok(())
 }
 
 fn parse_document(
@@ -81,6 +101,7 @@ fn parse_document(
     if declared_count > object_limit {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
+    charge_items(ctx, declared_count, "FCStd object declarations")?;
     if schema == FcstdDialect::Schema2 && objects_node.attribute("Dependencies").is_some() {
         return Err(CodecError::Malformed(
             "schema 2 Features cannot carry object dependencies".into(),
@@ -99,6 +120,15 @@ fn parse_document(
             ));
         }
     }
+    let dependency_node_count = objects_node
+        .children()
+        .filter(|node| node.has_tag_name("ObjectDeps"))
+        .count();
+    charge_items(
+        ctx,
+        dependency_node_count,
+        "FCStd object dependency records",
+    )?;
     let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
@@ -113,6 +143,11 @@ fn parse_document(
     let mut dependency_map = HashMap::<String, DependencyInfo>::new();
     for (order, node) in dependency_nodes.into_iter().enumerate() {
         let name = required_attr(node, "Name")?;
+        let dependency_item_count = node
+            .children()
+            .filter(|child| child.has_tag_name("Dep"))
+            .count();
+        charge_items(ctx, dependency_item_count, "FCStd object dependencies")?;
         let dependencies = node
             .children()
             .filter(|child| child.has_tag_name("Dep"))
@@ -159,6 +194,7 @@ fn parse_document(
         .children()
         .filter(|node| node.has_tag_name(record_tag))
     {
+        charge_items(ctx, 1, "FCStd object data lookup")?;
         let name = required_attr(node, "name")?;
         if data_by_name.insert(name.clone(), node).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -179,6 +215,7 @@ fn parse_document(
         )));
     }
 
+    charge_items(ctx, declared_count, "FCStd object records")?;
     let mut objects = Vec::new();
     let mut object_names = HashSet::new();
     for (order, node) in objects_node
@@ -186,20 +223,26 @@ fn parse_document(
         .filter(|node| node.has_tag_name(record_tag))
         .enumerate()
     {
-        let name = required_attr(node, "name")?;
+        let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         if !object_names.insert(name.clone()) {
             return Err(CodecError::malformed(format_args!(
                 "duplicate object declaration name {name}"
             )));
         }
-        let type_name = required_attr(node, "type")?;
+        let type_name = retained_attr(ctx, node, "type", "FCStd object type")?;
         let id = object_id(&name);
         let data_node = data_by_name.get(&name);
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
-            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-            .collect();
+            .map(|attribute| {
+                charge_items(ctx, 1, "FCStd object attributes")?;
+                Ok((
+                    copy_xml_text(ctx, attribute.name(), "FCStd object attribute name")?,
+                    copy_xml_text(ctx, attribute.value(), "FCStd object attribute")?,
+                ))
+            })
+            .collect::<Result<_, CodecError>>()?;
         let dependency = dependency_map.remove(&name);
         if dependencies_enabled
             && dependency
@@ -224,13 +267,14 @@ fn parse_document(
             order,
             data: data_node
                 .map(|data| {
-                    crate::native::RetainedXml::from_text(
-                        text[data.range()].to_owned(),
+                    crate::native::RetainedXml::from_source(
+                        ctx,
+                        &text[data.range()],
                         data.range().start as u64,
+                        "FCStd object XML",
                     )
                 })
-                .transpose()
-                .map_err(CodecError::Malformed)?,
+                .transpose()?,
         });
     }
 
@@ -268,6 +312,15 @@ fn parse_document(
 
     let mut properties = Vec::new();
     let mut extensions = Vec::new();
+    let document_property_containers = root
+        .children()
+        .filter(|node| node.has_tag_name("Properties"))
+        .count();
+    charge_items(
+        ctx,
+        document_property_containers,
+        "FCStd document property containers",
+    )?;
     let document_properties = root
         .children()
         .filter(|node| node.has_tag_name("Properties"))
@@ -293,6 +346,8 @@ fn parse_document(
         let data = data_by_name.get(&object.name).ok_or_else(|| {
             CodecError::malformed(format_args!("missing ObjectData for {}", object.name))
         })?;
+        let children = data.children().filter(roxmltree::Node::is_element).count();
+        charge_items(ctx, children, "FCStd object data children")?;
         let children = data
             .children()
             .filter(roxmltree::Node::is_element)
@@ -331,6 +386,11 @@ fn parse_document(
         }
         let mut extension_ids_by_start = HashMap::new();
         if let Some(extensions_node) = extension_containers.first() {
+            let extension_count = extensions_node
+                .children()
+                .filter(|node| node.has_tag_name("Extension"))
+                .count();
+            charge_items(ctx, extension_count, "FCStd extension nodes")?;
             let nodes = extensions_node
                 .children()
                 .filter(|node| node.has_tag_name("Extension"))
@@ -351,8 +411,8 @@ fn parse_document(
             let mut extension_names = HashSet::new();
             let mut extension_types = HashSet::new();
             for (order, node) in nodes.into_iter().enumerate() {
-                let name = required_attr(node, "name")?;
-                let type_name = required_attr(node, "type")?;
+                let name = retained_attr(ctx, node, "name", "FCStd extension name")?;
+                let type_name = retained_attr(ctx, node, "type", "FCStd extension type")?;
                 if !extension_names.insert(name.clone()) {
                     return Err(malformed(format!(
                         "duplicate extension name {name} for {}",
@@ -367,13 +427,14 @@ fn parse_document(
                 }
                 let id = extension_id(&object.id, &name, order);
                 extension_ids_by_start.insert(node.range().start, id.clone());
+                charge_items(ctx, 1, "FCStd extension records")?;
                 extensions.push(ExtensionRecord {
                     id,
                     owner: object.id.clone(),
                     name,
                     type_name,
                     order,
-                    raw_xml: text[node.range()].to_owned(),
+                    raw_xml: copy_xml_text(ctx, &text[node.range()], "FCStd extension XML")?,
                 });
             }
         }
@@ -436,10 +497,20 @@ fn parse_properties(
     output: &mut Vec<PropertyRecord>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
+    let node_count = container
+        .children()
+        .filter(|node| node.has_tag_name("Property"))
+        .count();
+    charge_items(ctx, node_count, "FCStd property nodes")?;
     let nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
         .collect::<Vec<_>>();
+    let transient_node_count = container
+        .children()
+        .filter(|node| node.has_tag_name("_Property"))
+        .count();
+    charge_items(ctx, transient_node_count, "FCStd transient property nodes")?;
     let transient_nodes = container
         .children()
         .filter(|node| node.has_tag_name("_Property"))
@@ -478,8 +549,9 @@ fn parse_properties(
         )));
     }
     for (order, node) in transient_nodes.into_iter().enumerate() {
-        let name = required_attr(node, "name")?;
-        let type_name = required_attr(node, "type")?;
+        let name = retained_attr(ctx, node, "name", "FCStd transient property name")?;
+        let type_name = retained_attr(ctx, node, "type", "FCStd transient property type")?;
+        charge_items(ctx, 1, "FCStd transient property records")?;
         output.push(PropertyRecord {
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
@@ -491,17 +563,23 @@ fn parse_properties(
                 .and_then(|value| value.parse().ok()),
             body: crate::native::PropertyBody::Transient,
             order,
-            xml: crate::native::RetainedXml::from_text(
-                text[node.range()].to_owned(),
+            xml: crate::native::RetainedXml::from_source(
+                ctx,
+                &text[node.range()],
                 node.range().start as u64,
-            )
-            .map_err(CodecError::Malformed)?,
+                "FCStd transient property XML",
+            )?,
         });
     }
     for (order, node) in nodes.into_iter().enumerate() {
-        let name = required_attr(node, "name")?;
-        let type_name = required_attr(node, "type")?;
+        let name = retained_attr(ctx, node, "name", "FCStd persisted property name")?;
+        let type_name = retained_attr(ctx, node, "type", "FCStd persisted property type")?;
         let mut retained_value_bytes = 0_usize;
+        let value_count = node
+            .descendants()
+            .filter(|value| value.is_element() && *value != node)
+            .count();
+        charge_items(ctx, value_count, "FCStd property value records")?;
         let values = node
             .descendants()
             .filter(|value| value.is_element() && *value != node)
@@ -516,30 +594,29 @@ fn parse_properties(
                             "property {name} retained value XML limit exceeded"
                         ))
                     })?;
-                if let Some(ctx) = ctx {
-                    let len = u64::try_from(len).map_err(|_| {
-                        CodecError::malformed(format_args!(
-                            "property {name} retained value XML length exceeds u64"
-                        ))
-                    })?;
-                    ctx.charge_retained(len, "fcstd_property_value_xml")?;
-                }
                 Ok(ValueRecord {
-                    tag: value.tag_name().name().to_owned(),
+                    tag: copy_xml_text(ctx, value.tag_name().name(), "FCStd value tag")?,
                     order: value_order,
                     attributes: value
                         .attributes()
                         .map(|attribute| {
-                            (attribute.name().to_owned(), attribute.value().to_owned())
+                            charge_items(ctx, 1, "FCStd value attributes")?;
+                            Ok((
+                                copy_xml_text(ctx, attribute.name(), "FCStd value attribute name")?,
+                                copy_xml_text(ctx, attribute.value(), "FCStd value attribute")?,
+                            ))
                         })
-                        .collect(),
-                    text: value.text().map(str::to_owned),
-                    raw_xml: text[value.range()].to_owned(),
+                        .collect::<Result<_, CodecError>>()?,
+                    text: value
+                        .text()
+                        .map(|text| copy_xml_text(ctx, text, "FCStd value text"))
+                        .transpose()?,
+                    raw_xml: copy_xml_text(ctx, &text[value.range()], "FCStd value XML")?,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
         let links = if link_grammar(&type_name).is_some() {
-            parse_link_targets(node, &type_name)?
+            parse_link_targets(node, &type_name, ctx)?
         } else {
             Vec::new()
         };
@@ -554,10 +631,14 @@ fn parse_properties(
                             || (property_family(&type_name) == PropertyFamily::File
                                 && matches!(name.as_str(), "name" | "Name"))
                     })
-                    .map(|(_, value)| value.clone())
+                    .filter(|(_, value)| !value.is_empty())
+                    .map(|(_, value)| {
+                        charge_items(ctx, 1, "FCStd side entry references")?;
+                        copy_xml_text(ctx, value, "FCStd side entry name")
+                    })
             })
-            .filter(|value| !value.is_empty())
-            .collect();
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        charge_items(ctx, 1, "FCStd persisted property records")?;
         output.push(PropertyRecord {
             id: crate::native::native_child_id("property", owner, &name),
             owner: owner.to_owned(),
@@ -571,20 +652,31 @@ fn parse_properties(
                 values,
                 links,
                 side_entries,
-                dynamic: node.attribute("group").map(|group| DynamicPropertyMeta {
-                    group: group.to_owned(),
-                    documentation: node.attribute("doc").map(str::to_owned),
-                    attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
-                    read_only: bool_attr(node.attribute("ro")),
-                    hidden: bool_attr(node.attribute("hide")),
-                }),
+                dynamic: node
+                    .attribute("group")
+                    .map(|group| -> Result<DynamicPropertyMeta, CodecError> {
+                        Ok(DynamicPropertyMeta {
+                            group: copy_xml_text(ctx, group, "FCStd dynamic property group")?,
+                            documentation: node
+                                .attribute("doc")
+                                .map(|doc| {
+                                    copy_xml_text(ctx, doc, "FCStd dynamic property documentation")
+                                })
+                                .transpose()?,
+                            attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
+                            read_only: bool_attr(node.attribute("ro")),
+                            hidden: bool_attr(node.attribute("hide")),
+                        })
+                    })
+                    .transpose()?,
             },
             order,
-            xml: crate::native::RetainedXml::from_text(
-                text[node.range()].to_owned(),
+            xml: crate::native::RetainedXml::from_source(
+                ctx,
+                &text[node.range()],
                 node.range().start as u64,
-            )
-            .map_err(CodecError::Malformed)?,
+                "FCStd persisted property XML",
+            )?,
         });
     }
     Ok(())
@@ -599,12 +691,13 @@ pub(crate) fn validate_link_property(
     } else {
         type_name
     };
-    parse_link_targets(property, grammar_type).map(|_| ())
+    parse_link_targets(property, grammar_type, None).map(|_| ())
 }
 
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
     type_name: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Vec<Option<LinkTarget>>, CodecError> {
     let grammar = link_grammar(type_name);
     let Some(grammar) = grammar else {
@@ -614,33 +707,39 @@ fn parse_link_targets(
     match grammar {
         LinkGrammar::Link => {
             reject_nested_link_value(root)?;
-            Ok(vec![local_link(root, "value", &[])?])
+            charge_items(ctx, 1, "FCStd link target records")?;
+            Ok(vec![local_link(root, "value", Vec::new(), ctx)?])
         }
-        LinkGrammar::LinkList => counted_children(root, "Link", type_name)?
+        LinkGrammar::LinkList => counted_children(root, "Link", type_name, ctx)?
             .map(|node| {
                 reject_nested_link_value(node)?;
-                local_link(node, "value", &[])
+                local_link(node, "value", Vec::new(), ctx)
             })
             .collect(),
         LinkGrammar::LinkSub => {
-            let subelements = counted_children(root, "Sub", type_name)?
+            let subelements = counted_children(root, "Sub", type_name, ctx)?
                 .map(|node| {
                     reject_nested_link_value(node)?;
-                    restored_subelement(node, "value")
+                    restored_subelement(node, "value", ctx)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(vec![local_link(root, "value", &subelements)?])
+            charge_items(ctx, 1, "FCStd link target records")?;
+            Ok(vec![local_link(root, "value", subelements, ctx)?])
         }
-        LinkGrammar::LinkSubList => counted_children(root, "Link", type_name)?
+        LinkGrammar::LinkSubList => counted_children(root, "Link", type_name, ctx)?
             .map(|node| {
                 reject_nested_link_value(node)?;
-                let sub = restored_subelement(node, "sub")?;
-                local_link(node, "obj", &[sub])
+                let sub = restored_subelement(node, "sub", ctx)?;
+                charge_items(ctx, 1, "FCStd link subelements")?;
+                local_link(node, "obj", vec![sub], ctx)
             })
             .collect(),
-        LinkGrammar::XLink => Ok(vec![xlink(root)?]),
-        LinkGrammar::XLinkSubList => counted_children(root, "XLink", type_name)?
-            .map(xlink)
+        LinkGrammar::XLink => {
+            charge_items(ctx, 1, "FCStd link target records")?;
+            Ok(vec![xlink(root, ctx)?])
+        }
+        LinkGrammar::XLinkSubList => counted_children(root, "XLink", type_name, ctx)?
+            .map(|node| xlink(node, ctx))
             .collect(),
     }
 }
@@ -725,10 +824,13 @@ fn counted_children<'a, 'input>(
     parent: roxmltree::Node<'a, 'input>,
     tag: &'static str,
     type_name: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<impl Iterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
     let count = required_attr(parent, "count")?
         .parse::<usize>()
         .map_err(|_| CodecError::malformed(format_args!("{type_name} count is invalid")))?;
+    charge_items(ctx, count, "FCStd link nodes")?;
+    charge_items(ctx, count, "FCStd link target or subelement records")?;
     let children = parent
         .children()
         .filter(roxmltree::Node::is_element)
@@ -745,7 +847,8 @@ fn counted_children<'a, 'input>(
 fn local_link(
     node: roxmltree::Node<'_, '_>,
     object_attribute: &str,
-    subelements: &[String],
+    subelements: Vec<String>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<LinkTarget>, CodecError> {
     if object_attribute == "obj" {
         reject_link_aliases(node, &["obj", "sub"])?;
@@ -755,21 +858,37 @@ fn local_link(
     LinkTarget::optional_from_wire(LinkTargetWire {
         document: None,
         document_attribute: None,
-        object: Some(required_attr(node, object_attribute)?),
-        subelements: subelements.to_vec(),
+        object: Some(retained_attr(
+            ctx,
+            node,
+            object_attribute,
+            "FCStd link object",
+        )?),
+        subelements,
     })
     .map_err(CodecError::Malformed)
 }
 
-fn xlink(node: roxmltree::Node<'_, '_>) -> Result<Option<LinkTarget>, CodecError> {
+fn xlink(
+    node: roxmltree::Node<'_, '_>,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<LinkTarget>, CodecError> {
     reject_link_aliases(node, &["name", "file", "sub"])?;
-    let file = node.attribute("file").map(str::to_owned);
+    let file = node
+        .attribute("file")
+        .map(|value| copy_xml_text(ctx, value, "FCStd link document"))
+        .transpose()?;
+    let child_count = node.children().filter(roxmltree::Node::is_element).count();
+    charge_items(ctx, child_count, "FCStd XLink children")?;
     let children = node
         .children()
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let subelements = match (node.attribute("sub"), node.attribute("count")) {
-        (Some(_), None) if children.is_empty() => vec![restored_subelement(node, "sub")?],
+        (Some(_), None) if children.is_empty() => {
+            charge_items(ctx, 1, "FCStd link subelements")?;
+            vec![restored_subelement(node, "sub", ctx)?]
+        }
         (Some(_), None) => {
             return Err(CodecError::Malformed(
                 "App::PropertyXLink sub carrier has nested values".into(),
@@ -785,14 +904,14 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<Option<LinkTarget>, CodecError
                     "App::PropertyXLink uses count only for one or more Sub values".into(),
                 ));
             }
-            counted_children(node, "Sub", "App::PropertyXLink")?
+            counted_children(node, "Sub", "App::PropertyXLink", ctx)?
                 .map(|child| {
                     if child.children().any(|value| value.is_element()) {
                         return Err(CodecError::Malformed(
                             "App::PropertyXLink Sub carrier has nested values".into(),
                         ));
                     }
-                    restored_subelement(child, "value")
+                    restored_subelement(child, "value", ctx)
                 })
                 .collect::<Result<Vec<_>, _>>()?
         }
@@ -811,7 +930,7 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<Option<LinkTarget>, CodecError
     LinkTarget::optional_from_wire(LinkTargetWire {
         document: file.filter(|file| !file.is_empty()),
         document_attribute: Some("file".to_owned()),
-        object: Some(required_attr(node, "name")?),
+        object: Some(retained_attr(ctx, node, "name", "FCStd link object")?),
         subelements,
     })
     .map_err(CodecError::Malformed)
@@ -820,9 +939,19 @@ fn xlink(node: roxmltree::Node<'_, '_>) -> Result<Option<LinkTarget>, CodecError
 fn restored_subelement(
     node: roxmltree::Node<'_, '_>,
     primary_attribute: &str,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> Result<String, CodecError> {
-    let primary = required_attr(node, primary_attribute)?;
-    Ok(node.attribute("shadowed").unwrap_or(&primary).to_owned())
+    let primary = node.attribute(primary_attribute).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "{} element has no {primary_attribute} attribute",
+            node.tag_name().name()
+        ))
+    })?;
+    copy_xml_text(
+        ctx,
+        node.attribute("shadowed").unwrap_or(primary),
+        "FCStd link subelement",
+    )
 }
 
 fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Result<(), CodecError> {
@@ -958,6 +1087,21 @@ fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, Co
             node.tag_name().name()
         ))
     })
+}
+
+fn retained_attr(
+    ctx: Option<&DecodeContext<'_>>,
+    node: roxmltree::Node<'_, '_>,
+    name: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let value = node.attribute(name).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "{} element has no {name} attribute",
+            node.tag_name().name()
+        ))
+    })?;
+    copy_xml_text(ctx, value, operation)
 }
 
 fn bool_attr(value: Option<&str>) -> Option<bool> {

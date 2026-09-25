@@ -7,7 +7,9 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeArena, DecodeContext, DecodePolicy, ResourceDimension,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -17,6 +19,8 @@ use crate::loss::StepLossCode;
 use crate::parse::Value;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::StepCodec;
+
+mod retained_body;
 
 const EPS_SAME_POINT: f64 = 1.0e-12;
 
@@ -52,8 +56,619 @@ fn decode_tessellation_under_policy(
     Ok(ir)
 }
 
+fn assert_tessellation_collection_refusal(records: &str, admitted: u64, operation: &'static str) {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service).expect("service admits tessellation");
+    let mut limited = service;
+    limited.limits.max_collection_items = admitted;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("selected collection limit refuses the next tessellation allocation");
+    assert!(
+        matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation),
+        "unexpected refusal: {error}"
+    );
+}
+
+const ONE_TRIANGLE: &str = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));";
+const ONE_TRIANGLE_WITH_PNINDEX: &str =
+    "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,(3,2,1),((1,2,3)));";
+const ONE_TRIANGLE_IN_CONTAINER: &str =
+    "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));
+#3=TESSELLATED_SOLID('',(#2),$);";
+const MISSING_CONTAINER_ITEMS: &str = "#1=TESSELLATED_SOLID('',$,$);";
+
+#[test]
+fn tessellation_loss_note_collection_is_admitted_before_creation() {
+    assert_tessellation_collection_refusal(
+        MISSING_CONTAINER_ITEMS,
+        0,
+        "step_tessellation_loss_notes",
+    );
+}
+
+#[test]
+fn tessellation_loss_note_bytes_are_admitted_before_formatting() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(MISSING_CONTAINER_ITEMS, service)
+        .expect("service admits the loss note");
+    let mut limited = service;
+    limited.limits.max_retained_bytes = 0;
+    let error = decode_tessellation_under_policy(MISSING_CONTAINER_ITEMS, limited)
+        .expect_err("loss note bytes exceed the retained limit");
+    assert!(
+        matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_loss_notes"),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+fn tessellation_mesh_key_is_admitted_before_identity_composition() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = u64::try_from(
+        3 * std::mem::size_of::<Point3>()
+            + std::mem::size_of::<(u64, Vec<Point3>)>()
+            + 3 * std::mem::size_of::<u32>()
+            + 3 * std::mem::size_of::<Point3>()
+            + 2 * std::mem::size_of::<[u32; 3]>()
+            + 3 * std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
+    )
+    .expect("pre-key materialized byte count fits u64");
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        .expect_err("identity key exceeds the temporary byte limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_mesh_key")
+    );
+}
+
+#[test]
+fn tessellation_mesh_id_is_charged_before_retention() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh identity");
+    let mut policy = service;
+    policy.limits.max_retained_bytes = 72 + 24 - 1;
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        .expect_err("mesh identity exceeds the retained byte limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_mesh_id")
+    );
+}
+
+#[test]
+fn tessellation_surface_id_is_reserved_before_lookup() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_FACE('',#1,3,$,#10000000000000000000,(1,2,3),((1,2,3)),());
+#10000000000000000000=TESSELLATED_ITEM();";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service)
+        .expect("service admits the complex face surface lookup");
+    let mut policy = service;
+    let prior_bytes = 3 * std::mem::size_of::<Point3>()
+        + std::mem::size_of::<(u64, Vec<Point3>)>()
+        + 3 * std::mem::size_of::<Point3>()
+        + std::mem::size_of::<[u32; 3]>();
+    let lookup_bytes = "step:data:surface#".len() + 2 * 20;
+    policy.limits.max_materialized_bytes = u64::try_from(prior_bytes + lookup_bytes - 1).unwrap();
+    let error = decode_tessellation_under_policy(records, policy)
+        .expect_err("surface lookup identity exceeds the temporary byte limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_surface_id")
+    );
+}
+
+#[test]
+fn tessellation_source_object_id_is_charged_before_formatting() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service)
+        .expect("service admits detached source association");
+    let message =
+        "tessellation item #2 is not declared by an exact body container; mesh retained as detached";
+    let prior_bytes = 72
+        + 24
+        + 12
+        + std::mem::size_of::<cadmpeg_ir::report::loss::LossNote>()
+        + message.len()
+        + StepLossCode::TessellationItemUndeclared.code().len()
+        + "step".len()
+        + std::mem::size_of::<cadmpeg_ir::tessellation::Tessellation>();
+    let mut policy = service;
+    policy.limits.max_retained_bytes = u64::try_from(prior_bytes + 1).unwrap();
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, policy)
+        .expect_err("source object id exceeds the retained byte limit");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_source_object_id")
+    );
+}
+const PLACED_ANNOTATION: &str = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((0.,0.,1.),(0.,0.,1.),(0.,0.,1.)),$,((1,2,3)));
+#3=CARTESIAN_POINT('',(1.,0.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=DIRECTION('',(1.,0.,0.));
+#6=AXIS2_PLACEMENT_3D('',#3,#4,#5);
+#7=(GEOMETRIC_REPRESENTATION_ITEM() REPOSITIONED_TESSELLATED_ITEM(#6) REPRESENTATION_ITEM('repositioned') TESSELLATED_GEOMETRIC_SET((#2)) TESSELLATED_ITEM());
+#8=TESSELLATED_ANNOTATION_OCCURRENCE('',(),#7);";
+
+fn tessellation_fixture_records() -> &'static str {
+    let source = std::str::from_utf8(include_bytes!(
+        "../../../tests/fixtures/ap242_tessellation.p21"
+    ))
+    .expect("tessellation fixture is UTF-8");
+    source
+        .split_once("\nDATA;\n")
+        .expect("fixture has DATA section")
+        .1
+        .split_once("\nENDSEC;")
+        .expect("fixture has DATA end")
+        .0
+}
+const PRODUCT_LINKS: &str = "#2=TESSELLATED_ITEM();
+#10=PRODUCT_DEFINITION_SHAPE('','',$);
+#11=SHAPE_DEFINITION_REPRESENTATION(#10,#20);
+#20=TESSELLATED_SHAPE_REPRESENTATION('',(#2),$);
+#21=SHAPE_REPRESENTATION('',(),$);
+#22=SHAPE_REPRESENTATION_RELATIONSHIP('','',#20,#21);";
+const PRODUCT_ITEMS_SOURCE: &str = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#2=TESSELLATED_ITEM();#10=PRODUCT_DEFINITION_SHAPE('','',$);#11=SHAPE_DEFINITION_REPRESENTATION(#10,#20);#20=TESSELLATED_SHAPE_REPRESENTATION('',(#2),$);ENDSEC;END-ISO-10303-21;";
+
+fn product_link_refusal(admitted: u64, operation: &'static str) {
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;{PRODUCT_LINKS}ENDSEC;END-ISO-10303-21;"
+    );
+    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("product links parse");
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &service)
+        .expect("service root admission");
+    let (linked, _bytes) = super::product_linked_representations(&exchange, &ctx)
+        .expect("service admits related product representations");
+    assert_eq!(linked, [20, 21].into());
+    let mut limited = service;
+    limited.limits.max_collection_items = admitted;
+    let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &limited)
+        .expect("limited root admission");
+    let error = super::product_linked_representations(&exchange, &ctx)
+        .expect_err("selected product collection limit refuses the next allocation");
+    assert!(
+        matches!(&error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation),
+        "unexpected refusal: {error}"
+    );
+}
+
+#[test]
+fn tessellation_product_definitions_charge_before_insertion() {
+    product_link_refusal(0, "step_tessellation_product_definitions");
+}
+
+#[test]
+fn tessellation_product_representations_charge_before_insertion() {
+    product_link_refusal(1, "step_tessellation_product_representations");
+}
+
+#[test]
+fn tessellation_relationship_nodes_charge_before_insertion() {
+    product_link_refusal(2, "step_tessellation_relationship_nodes");
+}
+
+#[test]
+fn tessellation_relationship_edges_charge_before_insertion() {
+    product_link_refusal(3, "step_tessellation_relationship_edges");
+}
+
+#[test]
+fn tessellation_product_pending_charges_before_collection() {
+    product_link_refusal(6, "step_tessellation_product_pending");
+}
+
+#[test]
+fn tessellation_relationship_expansion_charges_the_new_representation() {
+    product_link_refusal(7, "step_tessellation_product_representations");
+}
+
+#[test]
+fn tessellation_relationship_expansion_charges_the_pending_item() {
+    product_link_refusal(8, "step_tessellation_product_pending");
+}
+
+#[test]
+fn tessellation_product_items_charge_before_insertion() {
+    let (exchange, _) =
+        crate::parse::parse(PRODUCT_ITEMS_SOURCE.as_bytes()).expect("product items parse");
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(PRODUCT_ITEMS_SOURCE.as_bytes(), &arena, &service)
+            .expect("service root admission");
+    let (linked, _links_bytes) = super::product_linked_representations(&exchange, &ctx)
+        .expect("service admits product links");
+    let (items, _item_bytes) = super::product_representation_items(&exchange, &linked, &ctx)
+        .expect("service admits product items");
+    assert_eq!(items, [2].into());
+    let mut limited = service;
+    limited.limits.max_collection_items = 4;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(PRODUCT_ITEMS_SOURCE.as_bytes(), &arena, &limited)
+            .expect("limited root admission");
+    let (linked, _links_bytes) = super::product_linked_representations(&exchange, &ctx)
+        .expect("three prior product items fit");
+    let error = super::product_representation_items(&exchange, &linked, &ctx)
+        .expect_err("one product item exceeds four admitted items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_product_items")
+    );
+}
+
+#[test]
+fn tessellation_representation_items_charge_before_collection() {
+    let (exchange, _) =
+        crate::parse::parse(PRODUCT_ITEMS_SOURCE.as_bytes()).expect("product items parse");
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(PRODUCT_ITEMS_SOURCE.as_bytes(), &arena, &service)
+            .expect("service root admission");
+    let (linked, _links_bytes) = super::product_linked_representations(&exchange, &ctx)
+        .expect("service admits product links");
+    super::product_representation_items(&exchange, &linked, &ctx)
+        .expect("service admits representation item vector");
+    let mut limited = service;
+    limited.limits.max_collection_items = 3;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(PRODUCT_ITEMS_SOURCE.as_bytes(), &arena, &limited)
+            .expect("limited root admission");
+    let (linked, _links_bytes) = super::product_linked_representations(&exchange, &ctx)
+        .expect("three prior product items fit");
+    let error = super::product_representation_items(&exchange, &linked, &ctx)
+        .expect_err("one representation item exceeds three admitted items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_representation_items")
+    );
+}
+
+#[test]
+fn tessellation_declared_items_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        5,
+        "step_tessellation_declared_items",
+    );
+}
+
+#[test]
+fn tessellation_unresolved_containers_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        6,
+        "step_tessellation_unresolved_containers",
+    );
+}
+
+#[test]
+fn tessellation_active_items_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        7,
+        "step_tessellation_active_items",
+    );
+}
+
+#[test]
+fn tessellation_body_context_items_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        8,
+        "step_tessellation_body_context_items",
+    );
+}
+
+#[test]
+fn tessellation_item_body_entries_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        9,
+        "step_tessellation_item_body_entries",
+    );
+}
+
+#[test]
+fn tessellation_linked_bodies_charge_before_cloning() {
+    assert_tessellation_collection_refusal(
+        tessellation_fixture_records(),
+        11,
+        "step_tessellation_linked_bodies",
+    );
+}
+
+#[test]
+fn tessellation_body_candidates_charge_before_cloning() {
+    assert_tessellation_collection_refusal(
+        tessellation_fixture_records(),
+        12,
+        "step_tessellation_body_candidates",
+    );
+}
+
+#[test]
+fn tessellation_item_body_links_charge_before_cloning() {
+    assert_tessellation_collection_refusal(
+        tessellation_fixture_records(),
+        16,
+        "step_tessellation_item_body_links",
+    );
+}
+
+#[test]
+fn tessellation_claims_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_IN_CONTAINER,
+        10,
+        "step_tessellation_claims",
+    );
+}
+
+#[test]
+fn tessellation_unresolved_placements_charge_before_insertion() {
+    let source = std::str::from_utf8(include_bytes!(
+        "tests/data/ts01_repositioned_unresolved_placement.p21"
+    ))
+    .expect("unresolved placement fixture is UTF-8");
+    let records = source
+        .split_once("\nDATA;\n")
+        .expect("fixture has DATA section")
+        .1
+        .split_once("\nENDSEC;")
+        .expect("fixture has DATA end")
+        .0;
+    assert_tessellation_collection_refusal(records, 5, "step_tessellation_unresolved_placements");
+}
+
+#[test]
+fn tessellation_placement_entries_charge_before_insertion() {
+    assert_tessellation_collection_refusal(
+        PLACED_ANNOTATION,
+        9,
+        "step_tessellation_placement_entries",
+    );
+}
+
+#[test]
+fn tessellation_placements_charge_before_push() {
+    assert_tessellation_collection_refusal(PLACED_ANNOTATION, 10, "step_tessellation_placements");
+}
+
+#[test]
+fn tessellation_placed_vertices_charge_before_projection() {
+    assert_tessellation_collection_refusal(
+        PLACED_ANNOTATION,
+        27,
+        "step_tessellation_placed_vertices",
+    );
+}
+
+#[test]
+fn tessellation_placed_normals_charge_before_projection() {
+    assert_tessellation_collection_refusal(
+        PLACED_ANNOTATION,
+        30,
+        "step_tessellation_placed_normals",
+    );
+}
+
+#[test]
+fn tessellation_coordinate_rows_charge_before_collection() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 2, "step_tessellation_coordinate_rows");
+}
+
+#[test]
+fn tessellation_coordinate_lists_charge_before_insertion() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 3, "step_tessellation_coordinate_lists");
+}
+
+#[test]
+fn tessellation_coordinate_rows_reserve_temporary_bytes_before_collection() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service)
+        .expect("service admits coordinate rows");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(3 * std::mem::size_of::<Point3>() - 1);
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
+        .expect_err("coordinate row bytes exceed the selected temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_coordinate_rows")
+    );
+}
+
+#[test]
+fn tessellation_triangle_rows_reserve_temporary_bytes_before_collection() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits triangle rows");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(
+        3 * std::mem::size_of::<Point3>()
+            + std::mem::size_of::<(u64, Vec<Point3>)>()
+            + std::mem::size_of::<[u32; 3]>()
+            - 1,
+    );
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
+        .expect_err("triangle row bytes exceed the selected temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_triangle_rows")
+    );
+}
+
+#[test]
+fn tessellation_container_items_reserve_temporary_bytes_before_collection() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE_IN_CONTAINER, service)
+        .expect("service admits one container item");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(
+        3 * std::mem::size_of::<Point3>()
+            + std::mem::size_of::<(u64, Vec<Point3>)>()
+            + std::mem::size_of::<u64>()
+            - 1,
+    );
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE_IN_CONTAINER, limited)
+        .expect_err("one container item exceeds the temporary byte allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_container_items")
+    );
+}
+
+#[test]
+fn tessellation_pnindex_charges_before_collection() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_WITH_PNINDEX,
+        7,
+        "step_tessellation_pnindex",
+    );
+}
+
+#[test]
+fn tessellation_pn_vertices_charge_before_projection() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_WITH_PNINDEX,
+        10,
+        "step_tessellation_pn_vertices",
+    );
+}
+
+#[test]
+fn tessellation_pn_triangles_charge_before_projection() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE_WITH_PNINDEX,
+        11,
+        "step_tessellation_pn_triangles",
+    );
+}
+
+#[test]
+fn tessellation_coordinate_indices_charge_before_insertion() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 7, "step_tessellation_coordinate_indices");
+}
+
+#[test]
+fn tessellation_local_index_charges_before_projection() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 10, "step_tessellation_local_index");
+}
+
+#[test]
+fn tessellation_local_vertices_charge_before_projection() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 13, "step_tessellation_local_vertices");
+}
+
+#[test]
+fn tessellation_local_triangles_charge_before_projection() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 14, "step_tessellation_local_triangles");
+}
+
+#[test]
+fn tessellation_normal_rows_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)),$,((1,2,3)));";
+    assert_tessellation_collection_refusal(records, 17, "step_tessellation_normal_rows");
+}
+
+#[test]
+fn tessellation_projected_normals_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),$,((1,2,3)));";
+    assert_tessellation_collection_refusal(records, 22, "step_tessellation_projected_normals");
+}
+
+#[test]
+fn tessellation_shaded_rows_charge_before_pairing() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)),$,((1,2,3)));";
+    assert_tessellation_collection_refusal(records, 20, "step_tessellation_shaded_rows");
+}
+
+#[test]
+fn tessellation_admitted_vertices_charge_before_conversion() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 17, "step_tessellation_admitted_vertices");
+}
+
+#[test]
+fn tessellation_admitted_normals_charge_before_conversion() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.)),$,((1,2,3)));";
+    assert_tessellation_collection_refusal(records, 26, "step_tessellation_admitted_normals");
+}
+
+#[test]
+fn tessellation_validation_triangles_charge_before_copy() {
+    assert_tessellation_collection_refusal(
+        ONE_TRIANGLE,
+        18,
+        "step_tessellation_validation_triangles",
+    );
+}
+
+#[test]
+fn tessellation_mesh_list_charges_before_push() {
+    assert_tessellation_collection_refusal(ONE_TRIANGLE, 20, "step_tessellation_mesh_list");
+}
+
+#[test]
+fn tessellation_mesh_entity_is_admitted_before_creation() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh entity");
+    let mut limited = service;
+    limited.limits.max_entities = 0;
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
+        .expect_err("one mesh entity exceeds zero admitted entities");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::Entities && limit.operation == "step_tessellation_mesh_entity")
+    );
+}
+
+#[test]
+fn tessellation_ir_mesh_charges_retained_bytes_before_creation() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits mesh bytes");
+    let mut limited = service;
+    limited.limits.max_retained_bytes = 71;
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
+        .expect_err("72 retained vertex bytes exceed a 71-byte allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_ir_mesh")
+    );
+}
+
+#[test]
+fn tessellation_local_triangles_commit_retained_bytes_before_push() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE, service).expect("service admits triangle bytes");
+    let mut limited = service;
+    limited.limits.max_retained_bytes = 107;
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE, limited)
+        .expect_err("triangle bytes exceed the allowance after retained vertices and mesh id");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_local_triangles")
+    );
+}
+
+#[test]
+fn tessellation_pn_triangles_commit_retained_bytes_before_push() {
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(ONE_TRIANGLE_WITH_PNINDEX, service)
+        .expect("service admits PN triangle bytes");
+    let mut limited = service;
+    limited.limits.max_retained_bytes = 107;
+    let error = decode_tessellation_under_policy(ONE_TRIANGLE_WITH_PNINDEX, limited)
+        .expect_err("PN triangle bytes exceed the allowance after retained vertices and mesh id");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "step_tessellation_pn_triangles")
+    );
+}
+
 #[test]
 fn tessellation_normal_rows_preserve_extreme_finite_directions() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::service())
+        .expect("empty test root");
     let rows = Value::List(vec![
         Value::List(vec![
             Value::Real(f64::MAX),
@@ -72,12 +687,200 @@ fn tessellation_normal_rows_preserve_extreme_finite_directions() {
         ]),
     ]);
     assert_eq!(
-        super::normal_rows(Some(&rows)),
+        super::normal_rows(Some(&rows), &ctx)
+            .expect("normal rows fit the service profile")
+            .map(|(normals, _bytes)| normals),
         Some(vec![
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         ])
+    );
+}
+
+#[test]
+fn tessellation_normal_rows_reserve_temporary_bytes_before_collection() {
+    let rows = Value::List(vec![Value::List(vec![
+        Value::Real(0.0),
+        Value::Real(0.0),
+        Value::Real(1.0),
+    ])]);
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &service).expect("service root admission");
+    assert!(super::normal_rows(Some(&rows), &ctx)
+        .expect("service admits normal row")
+        .is_some());
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(std::mem::size_of::<Vector3>() - 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+    let error = super::normal_rows(Some(&rows), &ctx)
+        .expect_err("one normal row exceeds the temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_normal_rows")
+    );
+}
+
+#[test]
+fn tessellation_normal_replication_reserves_temporary_bytes_before_allocation() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,((0.,0.,1.)),$,((1,2,3)));";
+    let service = DecodePolicy::service();
+    decode_tessellation_under_policy(records, service)
+        .expect("service admits three replicated normals");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(
+        3 * std::mem::size_of::<Point3>()
+            + std::mem::size_of::<(u64, Vec<Point3>)>()
+            + 3 * std::mem::size_of::<u32>()
+            + 3 * std::mem::size_of::<Point3>()
+            + std::mem::size_of::<[u32; 3]>()
+            + std::mem::size_of::<Vector3>()
+            + 3 * std::mem::size_of::<Vector3>()
+            - 1,
+    );
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("replicated normals exceed the selected temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_normal_replication")
+    );
+}
+
+#[test]
+fn tessellation_pnindex_reserves_temporary_bytes_before_collection() {
+    let values = Value::List(vec![
+        Value::Integer(1),
+        Value::Integer(2),
+        Value::Integer(3),
+    ]);
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &service).expect("service root admission");
+    assert!(super::index_list(Some(&values), &ctx)
+        .expect("service admits PNINDEX")
+        .is_some());
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(3 * std::mem::size_of::<u32>() - 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+    let error = super::index_list(Some(&values), &ctx)
+        .expect_err("three indices exceed the temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_tessellation_pnindex")
+    );
+}
+
+fn one_complex_strip() -> Value {
+    Value::List(vec![Value::List(vec![
+        Value::Integer(1),
+        Value::Integer(2),
+        Value::Integer(3),
+    ])])
+}
+
+#[test]
+fn complex_tessellation_rows_reserve_temporary_bytes_before_collection() {
+    let strips = one_complex_strip();
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &service).expect("service root admission");
+    super::index_rows(
+        Some(&strips),
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        "strip",
+        &ctx,
+    )
+    .expect("service admits strip row");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(std::mem::size_of::<Vec<u32>>() - 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+    let error = super::index_rows(
+        Some(&strips),
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        "strip",
+        &ctx,
+    )
+    .expect_err("outer strip row exceeds the temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_complex_tessellation_rows")
+    );
+}
+
+#[test]
+fn complex_tessellation_indices_reserve_temporary_bytes_before_collection() {
+    let strips = one_complex_strip();
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &service).expect("service root admission");
+    super::index_rows(
+        Some(&strips),
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        "strip",
+        &ctx,
+    )
+    .expect("service admits three strip indices");
+    let mut limited = service;
+    limited.limits.max_materialized_bytes =
+        u64_from_index(std::mem::size_of::<Vec<u32>>() + 3 * std::mem::size_of::<u32>() - 1);
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+    let error = super::index_rows(
+        Some(&strips),
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        "strip",
+        &ctx,
+    )
+    .expect_err("three strip indices exceed the temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_complex_tessellation_indices")
+    );
+}
+
+#[test]
+fn complex_tessellation_triangles_reserve_temporary_bytes_before_collection() {
+    let strips = one_complex_strip();
+    let arena = DecodeArena::new();
+    let service = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &service).expect("service root admission");
+    assert!(super::complex_triangles(
+        Some(&strips),
+        None,
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        &ctx
+    )
+    .expect("service admits one triangle")
+    .is_some());
+    let mut limited = service;
+    limited.limits.max_materialized_bytes = u64_from_index(
+        std::mem::size_of::<Vec<u32>>()
+            + 3 * std::mem::size_of::<u32>()
+            + std::mem::size_of::<[u32; 3]>()
+            - 1,
+    );
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &limited).expect("limited root admission");
+    let error = super::complex_triangles(
+        Some(&strips),
+        None,
+        "COMPLEX_TRIANGULATED_SURFACE_SET",
+        1,
+        &ctx,
+    )
+    .expect_err("one complex triangle exceeds the temporary allowance");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_complex_tessellation_triangles")
     );
 }
 
@@ -985,11 +1788,28 @@ fn single_tessellation_normal_replication_charges_collection_items() {
         .expect("service items admit three replicated normals");
     assert_eq!(accepted.model.tessellations[0].vertex_normals().len(), 3);
     let mut limited = service;
-    limited.limits.max_collection_items = 2;
+    limited.limits.max_collection_items = 18;
     let error = decode_tessellation_under_policy(records, limited)
         .expect_err("three normal copies exceed the selected item limit");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_normal_replication")
+    );
+}
+
+#[test]
+fn tessellation_triangle_rows_charge_before_collection() {
+    let records = "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,$,((1,2,3)));";
+    let service = DecodePolicy::service();
+    let accepted = decode_tessellation_under_policy(records, service)
+        .expect("service admits one triangle row");
+    assert_eq!(accepted.model.tessellations[0].triangles(), [[0, 1, 2]]);
+    let mut limited = service;
+    limited.limits.max_collection_items = 4;
+    let error = decode_tessellation_under_policy(records, limited)
+        .expect_err("one triangle row exceeds four prior admitted items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "step_tessellation_triangle_rows")
     );
 }
 
@@ -1001,7 +1821,7 @@ fn tessellation_container_items_charge_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service).expect("service admits both items");
     let mut limited = service;
-    limited.limits.max_collection_items = 1;
+    limited.limits.max_collection_items = 5;
     let error = decode_tessellation_under_policy(records, limited)
         .expect_err("two container items exceed one admitted item");
     assert!(
@@ -1016,7 +1836,7 @@ fn complex_tessellation_rows_charge_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service).expect("service admits both strips");
     let mut limited = service;
-    limited.limits.max_collection_items = 1;
+    limited.limits.max_collection_items = 6;
     let error = decode_tessellation_under_policy(records, limited)
         .expect_err("two strip rows exceed one admitted item");
     assert!(
@@ -1031,7 +1851,7 @@ fn complex_tessellation_indices_charge_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service).expect("service admits three indices");
     let mut limited = service;
-    limited.limits.max_collection_items = 3;
+    limited.limits.max_collection_items = 7;
     let error = decode_tessellation_under_policy(records, limited)
         .expect_err("one row plus three indices exceed three admitted items");
     assert!(
@@ -1046,7 +1866,7 @@ fn complex_tessellation_triangles_charge_before_collection() {
     let service = DecodePolicy::service();
     decode_tessellation_under_policy(records, service).expect("service admits one triangle");
     let mut limited = service;
-    limited.limits.max_collection_items = 4;
+    limited.limits.max_collection_items = 8;
     let error = decode_tessellation_under_policy(records, limited)
         .expect_err("one triangle exceeds the four prior admitted items");
     assert!(

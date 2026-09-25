@@ -102,6 +102,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
 }
 
 pub(in super::super) fn transfer_active_datum_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -127,6 +128,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             "active_datum_cylinder",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -152,6 +154,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
 }
 
 pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -233,6 +236,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             "constrained_slot_fillet_cylinder",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -261,6 +265,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
 mod tests;
 
 pub(in super::super) fn transfer_rowless_round_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -302,6 +307,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             "round_rowless_sibling_cylinder",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(*cylinder_surface)),
@@ -326,6 +332,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
 }
 
 pub(in super::super) fn transfer_hole_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -361,6 +368,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                 "hole_cap_outline_cylinder",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(geometry)),
@@ -386,6 +394,7 @@ pub(in super::super) fn transfer_hole_cylinders(
 }
 
 pub(in super::super) fn transfer_split_outline_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -482,6 +491,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 "split_outline_cylinder",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: geometry.clone(),
@@ -860,6 +870,7 @@ fn perpendicular_round_edge_cylinder_frame(
 }
 
 pub(in super::super) fn transfer_positional_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1164,6 +1175,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             mechanism.label(),
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
@@ -1362,6 +1374,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
 }
 
 pub(in super::super) fn transfer_positional_cones(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1394,6 +1407,7 @@ pub(in super::super) fn transfer_positional_cones(
             "positional_cone_frame",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)),
@@ -1419,6 +1433,7 @@ pub(in super::super) fn transfer_positional_cones(
 }
 
 pub(in super::super) fn transfer_circular_sweep_cylinders(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1456,6 +1471,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 "circular_sweep_cap_outline_cylinder",
                 Exactness::Derived,
             );
+            ctx.charge_entities(1, "admit Creo model surfaces")?;
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(sweep.geometry)),
@@ -1481,6 +1497,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
 }
 
 pub(in super::super) fn transfer_cross_section_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1520,6 +1537,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             "cross_section_plane_local_system",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -1564,6 +1582,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             "cross_section_plane_outline_held_coordinate",
             Exactness::Derived,
         );
+        ctx.charge_entities(1, "admit Creo model surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),

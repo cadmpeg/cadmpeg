@@ -127,13 +127,7 @@ struct WriteOutcome {
 fn validate_entry_names(entries: &[EntryRecord]) -> Result<(), CodecError> {
     let mut names = HashSet::new();
     for entry in entries {
-        if entry.name.is_empty()
-            || entry.name.starts_with('/')
-            || entry
-                .name
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == "..")
-        {
+        if crate::native::check_entry_name(&entry.name).is_err() {
             return Err(CodecError::NotImplemented(format!(
                 "unsafe FCStd output entry name {:?}",
                 entry.name

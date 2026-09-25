@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown)]
 
+mod resource_admission;
+
 use cadmpeg_test_support::wire;
 
 use crate::test_support::test_archive::{archive_entries, assert_valid_document};
