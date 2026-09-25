@@ -138,12 +138,15 @@ impl MergeSession<'_, '_> {
                 ClassifiedMember::Scanned(member_scan) => member_scan,
                 ClassifiedMember::Unreadable(_) => continue,
             };
+            let ctx = self.ctx;
+            let _depth = ctx.enter_nested("f3z member reference")?;
             let component = match crate::decode::decode_archive_member(
                 self.ctx,
                 member_scan,
                 &self.archive.layers,
             ) {
                 Ok(component) => component.into_decoded(),
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     parent_report
                         .losses
