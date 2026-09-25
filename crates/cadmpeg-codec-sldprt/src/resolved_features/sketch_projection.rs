@@ -22,6 +22,7 @@ pub(crate) struct ProjectedSketches {
 
 /// Decode nested feature-input Parasolid streams as placed planar sketches.
 pub(crate) fn sketches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<ProjectedSketches, cadmpeg_core::CodecError> {
@@ -41,7 +42,12 @@ pub(crate) fn sketches(
             source.ordinal()
         );
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep = crate::brep::graph::decode(&stream.payload, &stream.header, source_stream)?;
+            let brep = crate::brep::graph::decode(
+                Some(ctx),
+                &stream.payload,
+                &stream.header,
+                source_stream,
+            )?;
             project_brep(
                 &brep,
                 source.ordinal(),

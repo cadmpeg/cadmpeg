@@ -6,7 +6,10 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, InspectOptions, ResourceDimension,
+};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
 use crate::container::{self, Block, BlockName, CompoundStream, Section};
@@ -14,11 +17,96 @@ use crate::SldprtCodec;
 
 use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
 use crate::test_support::container::make_block;
+use crate::test_support::container::make_cache_cell;
+use crate::test_support::container::make_directory_entry;
 use crate::test_support::container::outer_header;
 use crate::test_support::container::sldprt_with_colliding_sites;
 use crate::test_support::container::synthetic_sldprt;
 use crate::test_support::parasolid::parasolid_with_body;
 use crate::test_support::parasolid::triangle_body;
+
+#[test]
+fn probe_x84_wrapped_double_length_admits_overflowed_cache_cell() {
+    let mut bytes = [0_u8; 27];
+    let l = 0x8000_0002_u32;
+    bytes[10..14].copy_from_slice(&l.wrapping_mul(2).to_le_bytes());
+    bytes[14..18].copy_from_slice(&(l / 2).to_le_bytes());
+    bytes[18..22].copy_from_slice(&l.to_le_bytes());
+    bytes[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[26] = b'A'.rotate_left(4);
+    assert!(super::try_cache_cell(&bytes, 0).is_none());
+}
+
+fn marker_collection_refusal(marker: Vec<u8>) -> cadmpeg_core::decode::ResourceLimit {
+    let mut source = outer_header();
+    source.extend(marker);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = container::scan(&ctx, root) else {
+        panic!("expected marker collection refusal");
+    };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected marker collection refusal");
+    };
+    limit
+}
+
+#[test]
+fn native_block_is_admitted_before_marker_collection_push() {
+    let limit = marker_collection_refusal(make_block(0x20, "PreviewPNG", b"png"));
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.operation, "admit SLDPRT block");
+}
+
+#[test]
+fn cache_cell_is_admitted_before_marker_collection_push() {
+    let limit = marker_collection_refusal(make_cache_cell(90, "Contents/DisplayLists"));
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.operation, "admit SLDPRT cache cell");
+}
+
+#[test]
+fn directory_entry_is_admitted_before_marker_collection_push() {
+    let limit = marker_collection_refusal(make_directory_entry(0x42, 4, "[Content_Types].xml"));
+    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.operation, "admit SLDPRT directory entry");
+}
+
+#[test]
+fn cache_cell_counts_against_entity_limit() {
+    let mut source = outer_header();
+    source.extend(make_cache_cell(90, "Contents/DisplayLists"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let Err(error) = container::scan(&ctx, root) else {
+        panic!("expected cache-cell entity refusal");
+    };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected cache-cell entity refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::Entities);
+    assert_eq!(limit.limit, 0);
+    assert_eq!(limit.operation, "admit SLDPRT cache cell");
+}
+
+#[test]
+fn native_marker_scan_succeeds_with_service_profile() {
+    let source = synthetic_sldprt();
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let scan = container::scan(&ctx, root).unwrap();
+    assert_eq!(scan.blocks.len(), 2);
+    assert_eq!(scan.cache_cells.len(), 1);
+    assert_eq!(scan.directory.len(), 1);
+}
 
 #[test]
 fn site_keys_use_outer_container_identity() {
@@ -190,8 +278,15 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
 #[test]
 fn parasolid_partition_selection_retains_a_compound_stream_site() {
     let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
-    let stream =
-        container::compound_stream("Contents/Config-0-Partition".into(), 7, 11, payload, None);
+    let stream = container::compound_stream(
+        None,
+        "Contents/Config-0-Partition".into(),
+        7,
+        11,
+        payload,
+        None,
+    )
+    .expect("compound stream");
     let scan = container::completed_scan(&[], 0, Vec::new(), Vec::new(), Vec::new(), vec![stream]);
 
     let site = container::select_active_parasolid_site(&scan).expect("compound partition");

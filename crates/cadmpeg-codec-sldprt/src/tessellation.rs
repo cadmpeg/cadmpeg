@@ -33,6 +33,21 @@ const DISPLAY_QUANTIZATION_ULPS: f64 = 8.0;
 const MAX_PLANAR_TRIM_ARC_SEGMENTS: usize = 4096;
 const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 
+#[cfg(test)]
+thread_local! {
+    static DISPLAY_PARSE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_display_parse_calls() {
+    DISPLAY_PARSE_CALLS.with(|calls| calls.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn display_parse_calls() -> usize {
+    DISPLAY_PARSE_CALLS.with(std::cell::Cell::get)
+}
+
 /// The evaluation tolerance of one face in the display lane.
 ///
 /// The display lane quantizes coordinates to `f32`, so a tolerance below
@@ -489,6 +504,8 @@ fn parse_table(bytes: &[u8], at: usize) -> Result<Option<(Mesh, usize)>, cadmpeg
 pub(crate) fn section_display_faces(
     section: Section<'_>,
 ) -> Result<Vec<DisplayFace>, cadmpeg_core::CodecError> {
+    #[cfg(test)]
+    DISPLAY_PARSE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let payload = section.payload();
     let markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
@@ -571,13 +588,6 @@ pub(crate) fn section_display_faces(
             persistent_surface_references(payload, faces[index].metadata);
     }
     Ok(faces)
-}
-
-fn section_meshes(section: Section<'_>) -> Result<Vec<Mesh>, cadmpeg_core::CodecError> {
-    Ok(section_display_faces(section)?
-        .into_iter()
-        .map(|face| face.mesh)
-        .collect())
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -734,23 +744,11 @@ fn persistent_surface_references(
     references
 }
 
-fn section_summary(section: Section<'_>) -> Result<Option<Summary>, cadmpeg_core::CodecError> {
-    let meshes = section_meshes(section)?;
-    Ok((!meshes.is_empty()).then(|| Summary {
-        vertices: meshes.iter().map(Mesh::vertex_count).sum(),
-        triangles: meshes.iter().map(Mesh::triangle_count).sum(),
-    }))
-}
-
-pub(crate) fn summary(scan: &ContainerScan) -> Result<Summary, cadmpeg_core::CodecError> {
-    let mut total = Summary::default();
-    for section in scan.sections() {
-        if let Some(next) = section_summary(section)? {
-            total.vertices += next.vertices;
-            total.triangles += next.triangles;
-        }
+pub(crate) fn summary_for_faces(faces: &[DisplayFace]) -> Summary {
+    Summary {
+        vertices: faces.iter().map(|face| face.mesh.vertex_count()).sum(),
+        triangles: faces.iter().map(|face| face.mesh.triangle_count()).sum(),
     }
-    Ok(total)
 }
 
 struct SurfaceCandidate<'a> {

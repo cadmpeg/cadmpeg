@@ -93,6 +93,7 @@ fn patch_partition_inner(
     // below, so the caller's `.transpose()` reports the cause instead of "no
     // patch".
     let native = match crate::brep::graph::decode_bodies(
+        None,
         &bodies,
         &cadmpeg_ir::stream_name!("native-patch-baseline"),
     ) {

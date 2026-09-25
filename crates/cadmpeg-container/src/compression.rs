@@ -3,7 +3,7 @@
 
 use std::io::Read;
 
-use cadmpeg_core::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_core::decode::{DecodeContext, ExpandSpec, ExpandWriter, View};
 use cadmpeg_core::CodecError;
 use flate2::read::{DeflateDecoder, ZlibDecoder};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -21,6 +21,25 @@ pub fn inflate_zlib_member<'a>(
     source: View<'_>,
     spec: ExpandSpec,
 ) -> Result<(View<'a>, usize), CodecError> {
+    let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
+    Ok((writer.finalize()?, consumed))
+}
+
+/// Inflates one zlib member into an owned buffer without copying arena output.
+pub fn inflate_zlib_member_owned(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    spec: ExpandSpec,
+) -> Result<(Vec<u8>, usize), CodecError> {
+    let (writer, consumed) = inflate_zlib_writer(ctx, source, spec)?;
+    Ok((writer.finalize_owned()?, consumed))
+}
+
+fn inflate_zlib_writer<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'a>,
+    source: View<'_>,
+    spec: ExpandSpec,
+) -> Result<(ExpandWriter<'ctx, 'a>, usize), CodecError> {
     let input = source.window();
     let mut decoder = Decompress::new(true);
     let mut writer = ctx.begin_expand(spec)?;
@@ -47,7 +66,7 @@ pub fn inflate_zlib_member<'a>(
             return Err(CodecError::Malformed("truncated zlib member".into()));
         }
     }
-    Ok((writer.finalize()?, source_offset))
+    Ok((writer, source_offset))
 }
 
 /// Inflates exactly one zlib member and rejects truncation or trailing input.
@@ -72,6 +91,23 @@ pub fn inflate_deflate<'a>(
     source: View<'_>,
     spec: ExpandSpec,
 ) -> Result<View<'a>, CodecError> {
+    inflate_deflate_writer(ctx, source, spec)?.finalize()
+}
+
+/// Inflates a raw-DEFLATE member into an owned buffer without copying arena output.
+pub fn inflate_deflate_owned(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    spec: ExpandSpec,
+) -> Result<Vec<u8>, CodecError> {
+    inflate_deflate_writer(ctx, source, spec)?.finalize_owned()
+}
+
+fn inflate_deflate_writer<'ctx, 'a>(
+    ctx: &'ctx DecodeContext<'a>,
+    source: View<'_>,
+    spec: ExpandSpec,
+) -> Result<ExpandWriter<'ctx, 'a>, CodecError> {
     let mut decoder = DeflateDecoder::new(source.window());
     let mut writer = ctx.begin_expand(spec)?;
     let mut chunk = [0_u8; INFLATE_CHUNK];
@@ -84,7 +120,7 @@ pub fn inflate_deflate<'a>(
         }
         writer.write(&chunk[..read])?;
     }
-    writer.finalize()
+    Ok(writer)
 }
 
 /// Inflates at most `cap` raw-DEFLATE output bytes for format detection.
@@ -128,13 +164,70 @@ fn probe_decoder(
 mod tests {
     use std::io::Write as _;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec};
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ResourceDimension,
+    };
+    use cadmpeg_core::CodecError;
     use flate2::{write::DeflateEncoder, write::ZlibEncoder, Compression};
 
     use super::{
-        inflate_bounded_probe, inflate_deflate, inflate_zlib_exact, inflate_zlib_member,
-        inflate_zlib_probe,
+        inflate_bounded_probe, inflate_deflate, inflate_deflate_owned, inflate_zlib_exact,
+        inflate_zlib_member, inflate_zlib_member_owned, inflate_zlib_probe,
     };
+
+    #[test]
+    fn owned_deflate_expansion_refuses_per_expand_limit() {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(b"owned output")
+            .expect("write test member");
+        let compressed = encoder.finish().expect("finish test member");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = 11;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        let error = inflate_deflate_owned(&ctx, root, ExpandSpec::Exact(12))
+            .expect_err("the per-expansion limit refuses the owned output");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::DecompressedBytes && limit.limit == 11));
+
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("root");
+        assert_eq!(
+            inflate_deflate_owned(&ctx, root, ExpandSpec::Exact(12)).expect("owned expansion"),
+            b"owned output"
+        );
+    }
+
+    #[test]
+    fn owned_zlib_expansion_refuses_per_expand_limit() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(b"owned member")
+            .expect("write test member");
+        let compressed = encoder.finish().expect("finish test member");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_decompressed_bytes_per_expand = 11;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &policy).expect("root");
+        let error = inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(12))
+            .expect_err("the per-expansion limit refuses the owned output");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::DecompressedBytes && limit.limit == 11));
+
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("root");
+        let (output, consumed) =
+            inflate_zlib_member_owned(&ctx, root, ExpandSpec::Exact(12)).expect("owned expansion");
+        assert_eq!(output, b"owned member");
+        assert_eq!(consumed, compressed.len());
+    }
 
     #[test]
     fn exact_inflate_rejects_trailing_bytes() {
