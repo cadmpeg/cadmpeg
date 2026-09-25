@@ -4,7 +4,9 @@
 use crate::card::{CardScan, Section};
 use crate::loss::IgesLossCode;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{
+    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -524,17 +526,11 @@ const fn prohibited_delimiter_byte(byte: u8) -> bool {
         || matches!(byte, b' ' | b'+' | b'-' | b'.' | b'D' | b'E' | b'H')
 }
 
-struct GlobalStream {
-    bytes: Vec<u8>,
-}
-
-type GlobalHollerith<'a> = (&'a [u8], usize, bool);
-
 fn source_span_crosses_card(start: usize, end: usize) -> bool {
     end > start && start / 72 != (end - 1) / 72
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<GlobalHollerith<'_>>, CodecError> {
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize, bool)>, CodecError> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -559,11 +555,11 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<GlobalHollerith<'_>>, 
     Ok(Some((payload, payload_end, header_crosses_card)))
 }
 
-fn first_delimiter(stream: &GlobalStream) -> Result<(u8, usize), CodecError> {
-    if stream.bytes.first() == Some(&b',') {
+fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
+    if bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor, header_crosses_card)) = hollerith(&stream.bytes, 0)? else {
+    let Some((payload, cursor, header_crosses_card)) = hollerith(bytes, 0)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
     if header_crosses_card {
@@ -575,7 +571,7 @@ fn first_delimiter(stream: &GlobalStream) -> Result<(u8, usize), CodecError> {
         return Err(malformed("parameter delimiter must contain one byte"));
     }
     let delimiter = payload[0];
-    if stream.bytes.get(cursor) != Some(&delimiter) {
+    if bytes.get(cursor) != Some(&delimiter) {
         return Err(malformed(
             "parameter delimiter does not terminate its Global field",
         ));
@@ -584,14 +580,13 @@ fn first_delimiter(stream: &GlobalStream) -> Result<(u8, usize), CodecError> {
 }
 
 fn delimited_value(
-    stream: &GlobalStream,
+    bytes: &[u8],
     start: usize,
     parameter_delimiter: u8,
     record_delimiter: Option<u8>,
     retain: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Value, usize, bool), CodecError> {
-    let bytes = &stream.bytes;
     let value_start = start
         + bytes[start..]
             .iter()
@@ -662,12 +657,12 @@ fn delimited_value(
     }
 }
 
-fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<GlobalStream, CodecError> {
+fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>, CodecError> {
     let card_count = scan.section(Section::Global).count();
     let length = card_count
         .checked_mul(72)
         .ok_or_else(|| malformed("Global section length overflows"))?;
-    ctx.charge_retained(length as u64, "iges_global_stream")?;
+    ctx.charge_retained(u64_from_index(length), "iges_global_stream")?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(length).map_err(|_| {
         CodecError::ResourceLimit(ResourceLimit {
@@ -675,24 +670,24 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<GlobalSt
             reason: ResourceFailure::AllocationFailed,
             limit: ctx.policy().limits.max_retained_bytes,
             used: 0,
-            additional: length as u64,
+            additional: u64_from_index(length),
             operation: "iges_global_stream",
         })
     })?;
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);
     }
-    Ok(GlobalStream { bytes })
+    Ok(bytes)
 }
 
 fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, CodecError> {
-    let stream = global_bytes(scan, ctx)?;
-    if stream.bytes.is_empty() {
+    let bytes = global_bytes(scan, ctx)?;
+    if bytes.is_empty() {
         return Err(malformed("section is missing"));
     }
-    let (parameter_delimiter, mut cursor) = first_delimiter(&stream)?;
+    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
     let (record_value, next, _) =
-        delimited_value(&stream, cursor, parameter_delimiter, None, true, ctx)?;
+        delimited_value(&bytes, cursor, parameter_delimiter, None, true, ctx)?;
     cursor = next;
     let record_delimiter = match &record_value {
         Value::Omitted => b';',
@@ -725,7 +720,7 @@ fn parse_raw(scan: &CardScan, ctx: &DecodeContext<'_>) -> Result<RawGlobal, Code
     loop {
         let retain = field_count < values.len();
         let (value, next, ended) = delimited_value(
-            &stream,
+            &bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
