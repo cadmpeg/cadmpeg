@@ -5039,7 +5039,7 @@ fn exact_line_arc_tangency(
         };
     let line_direction = Point2::new(line_end.u - line_start.u, line_end.v - line_start.v);
     let line_length = line_direction.u.hypot(line_direction.v);
-    if radius <= 0.0 || line_length <= EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E12 {
+    if line_length <= EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E12 {
         return false;
     }
     [line_start, line_end].into_iter().any(|line_point| {
