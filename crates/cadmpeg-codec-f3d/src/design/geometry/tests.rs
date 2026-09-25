@@ -19,7 +19,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::SketchProfileRegion;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
     SketchGeometryDefinition, SketchId,
@@ -27,6 +27,10 @@ use cadmpeg_ir::sketches::{
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
     WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
+}
+
+fn positive_radius(value: f64) -> PositiveLength {
+    PositiveLength::try_from(value).unwrap()
 }
 
 #[test]
@@ -586,7 +590,7 @@ fn analytic_arrangement_intersections_include_hidden_second_crossing() {
     };
     let circle = ProfileBoundarySegment::Arc {
         center: Point2::new(0.0, 0.0),
-        radius: 1.0,
+        radius: positive_radius(1.0),
         start_angle: 0.0,
         end_angle: std::f64::consts::TAU,
     };
@@ -678,7 +682,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
         },
         ProfileBoundarySegment::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: 2.0,
+            radius: positive_radius(2.0),
             start_angle: std::f64::consts::FRAC_PI_2,
             end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
         },
@@ -686,7 +690,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     let boundary = ProfileBoundary::CircularArcLoop(segments);
     let hole = ProfileBoundary::Circle {
         center: Point2::new(-1.0, 0.0),
-        radius: 0.5,
+        radius: positive_radius(0.5),
     };
 
     assert!(boundary.contains_point(Point2::new(-1.0, 0.0)));
@@ -711,7 +715,7 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
         ProfileBoundarySegment::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: 1.0,
+            radius: positive_radius(1.0),
             start_angle: 0.0,
             end_angle: std::f64::consts::PI,
         },
@@ -727,7 +731,7 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
         ProfileBoundarySegment::Arc {
             center: Point2::new(0.0, 0.0),
-            radius: 3.0,
+            radius: positive_radius(3.0),
             start_angle: 0.0,
             end_angle: std::f64::consts::PI,
         },
@@ -746,7 +750,7 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
             },
             ProfileBoundarySegment::Arc {
                 center: Point2::new(center_u, 0.0),
-                radius,
+                radius: positive_radius(radius),
                 start_angle: std::f64::consts::FRAC_PI_2,
                 end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
             },
@@ -1183,7 +1187,7 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
     for radius in [1.0e-150, 1.0e-4, 1.0, 1.0e150] {
         let circle = ProfileBoundarySegment::Arc {
             center: Point2::new(0.0, 0.0),
-            radius,
+            radius: positive_radius(radius),
             start_angle: 0.0,
             end_angle: std::f64::consts::TAU,
         };
@@ -1225,7 +1229,7 @@ fn numerical_followup_boolean_line_arc_matches_point_intersections() {
     let radius = 1e-4;
     let arc = ProfileBoundarySegment::Arc {
         center: Point2::new(0., 0.),
-        radius,
+        radius: positive_radius(radius),
         start_angle: 0.,
         end_angle: std::f64::consts::TAU,
     };
@@ -1261,7 +1265,7 @@ fn scaled_planar_intersections_preserve_separation_and_witnesses() {
         );
         let arc = |x| ProfileBoundarySegment::Arc {
             center: Point2::new(x, 0.),
-            radius: r,
+            radius: positive_radius(r),
             start_angle: 0.,
             end_angle: std::f64::consts::TAU,
         };
@@ -1283,7 +1287,7 @@ fn disparate_segment_and_point_scales_preserve_distance() {
     );
     let arc = ProfileBoundarySegment::Arc {
         center: Point2::new(0., 0.),
-        radius: 1e-6,
+        radius: positive_radius(1e-6),
         start_angle: 0.,
         end_angle: std::f64::consts::TAU,
     };
@@ -1300,7 +1304,7 @@ const LARGE_LINE_TOLERANCE: f64 = 1e-6;
 fn numerical_0922b_line_arc_crossings() {
     let arc = ProfileBoundarySegment::Arc {
         center: Point2::new(0., 0.),
-        radius: 0.001,
+        radius: positive_radius(0.001),
         start_angle: 0.,
         end_angle: std::f64::consts::TAU,
     };

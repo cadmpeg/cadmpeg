@@ -13,7 +13,7 @@ fn numerical_audit_area_keeps_translated_square() {
 fn numerical_audit_line_arc_does_not_keep_outside_root() {
     let arc = ProfileBoundarySegment::Arc {
         center: Point2::new(0., 0.),
-        radius: 0.001,
+        radius: super::positive_radius(0.001),
         start_angle: 0.,
         end_angle: std::f64::consts::TAU,
     };

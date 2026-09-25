@@ -9,6 +9,7 @@ use crate::records::{
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
 
 const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
@@ -426,7 +427,7 @@ fn arrangement_edges_meet_only_at_nodes(
     {
         if left_center == right_center && left_radius == right_radius {
             let strictly_inside = |angle: f64, start: f64, end: f64| {
-                angle_strictly_inside_arc(angle, start, end, *left_radius, tolerance)
+                angle_strictly_inside_arc(angle, start, end, left_radius.get(), tolerance)
             };
             return !strictly_inside(*left_start, *right_start, *right_end)
                 && !strictly_inside(*left_end, *right_start, *right_end)
@@ -678,10 +679,11 @@ fn line_arc_intersection_points(
     else {
         return None;
     };
+    let radius = radius.get();
     let offset = Point2::new(start.u - center.u, start.v - center.v);
     if start == end {
         return Some(
-            (offset.u.hypot(offset.v) == *radius
+            (offset.u.hypot(offset.v) == radius
                 && directed_angle_parameter(offset.v.atan2(offset.u), *start_angle, *end_angle)
                     .is_some())
             .then_some(start)
@@ -691,7 +693,7 @@ fn line_arc_intersection_points(
     }
     let mut points = Vec::new();
     let Some(parameters) =
-        cadmpeg_ir::math::planar::line_circle_intersections(start, end, *center, *radius)
+        cadmpeg_ir::math::planar::line_circle_intersections(start, end, *center, radius)
     else {
         return Some(points);
     };
@@ -744,7 +746,7 @@ fn arc_intersection_points(
         return None;
     };
     Some(
-        cadmpeg_ir::math::planar::circle_intersections(*lc, *lr, *rc, *rr)?
+        cadmpeg_ir::math::planar::circle_intersections(*lc, lr.get(), *rc, rr.get())?
             .into_iter()
             .map(cadmpeg_ir::units::FinitePoint2::get)
             .filter(|point| {
@@ -1054,7 +1056,7 @@ fn arrangement_edge_tubes(
         SketchGeometryDefinition::Circle { center, radius }
         | SketchGeometryDefinition::Arc { center, radius, .. } => certified_arc_tubes(
             center.get(),
-            radius.get(),
+            *radius,
             edge.boundary.parameter_range.endpoints()[0],
             edge.boundary.parameter_range.endpoints()[1],
             target_error,
@@ -1088,7 +1090,7 @@ fn arrangement_analytic_segment(
         | SketchGeometryDefinition::Arc { center, radius, .. } => {
             Some(ProfileBoundarySegment::Arc {
                 center: center.get(),
-                radius: radius.get(),
+                radius: *radius,
                 start_angle: edge.boundary.parameter_range.endpoints()[0],
                 end_angle: edge.boundary.parameter_range.endpoints()[1],
             })
@@ -1442,7 +1444,10 @@ fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Ve
 enum ProfileBoundary {
     Polygon(Vec<Point2>),
     CircularArcLoop(Vec<ProfileBoundarySegment>),
-    Circle { center: Point2, radius: f64 },
+    Circle {
+        center: Point2,
+        radius: PositiveLength,
+    },
     CertifiedLoop(CertifiedProfileLoop),
 }
 
@@ -1465,7 +1470,7 @@ enum ProfileBoundarySegment {
     },
     Arc {
         center: Point2,
-        radius: f64,
+        radius: PositiveLength,
         start_angle: f64,
         end_angle: f64,
     },
@@ -1476,7 +1481,7 @@ impl ProfileBoundary {
         match self {
             Self::Polygon(vertices) => point_in_polygon(point, vertices),
             Self::CircularArcLoop(segments) => point_in_circular_arc_loop(point, segments),
-            Self::Circle { center, radius } => point_distance(*center, point) < *radius,
+            Self::Circle { center, radius } => point_distance(*center, point) < radius.get(),
             Self::CertifiedLoop(loop_) => loop_.contains_point(point),
         }
     }
@@ -1493,24 +1498,27 @@ impl ProfileBoundary {
                     center: inner_center,
                     radius: inner_radius,
                 },
-            ) => point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius,
+            ) => {
+                point_distance(*outer_center, *inner_center) + inner_radius.get()
+                    < outer_radius.get()
+            }
             (Self::Polygon(outer), Self::Circle { center, radius }) => {
                 point_in_polygon(*center, outer)
                     && polygon_edges(outer)
-                        .all(|edge| point_segment_distance(*center, edge) > *radius)
+                        .all(|edge| point_segment_distance(*center, edge) > radius.get())
             }
             (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => {
                 point_in_circular_arc_loop(*center, outer)
-                    && outer
-                        .iter()
-                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius)
+                    && outer.iter().all(|segment| {
+                        point_boundary_segment_distance(*center, segment) > radius.get()
+                    })
             }
             (Self::Circle { center, radius }, Self::Polygon(inner)) => inner
                 .iter()
-                .all(|point| point_distance(*center, *point) < *radius),
+                .all(|point| point_distance(*center, *point) < radius.get()),
             (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => inner
                 .iter()
-                .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
+                .all(|segment| boundary_segment_max_distance(*center, segment) < radius.get()),
             (Self::Polygon(outer), Self::CircularArcLoop(inner)) => {
                 !polygon_arc_loop_intersects(outer, inner)
                     && inner.first().is_some_and(|segment| {
@@ -1550,11 +1558,13 @@ impl ProfileBoundary {
                     center: right_center,
                     radius: right_radius,
                 },
-            ) => point_distance(*left_center, *right_center) <= left_radius + right_radius,
-            (Self::Polygon(polygon), Self::Circle { center, radius })
-            | (Self::Circle { center, radius }, Self::Polygon(polygon)) => {
-                polygon_edges(polygon).any(|edge| point_segment_distance(*center, edge) <= *radius)
+            ) => {
+                point_distance(*left_center, *right_center)
+                    <= left_radius.get() + right_radius.get()
             }
+            (Self::Polygon(polygon), Self::Circle { center, radius })
+            | (Self::Circle { center, radius }, Self::Polygon(polygon)) => polygon_edges(polygon)
+                .any(|edge| point_segment_distance(*center, edge) <= radius.get()),
             (Self::Polygon(polygon), Self::CircularArcLoop(arc_loop))
             | (Self::CircularArcLoop(arc_loop), Self::Polygon(polygon)) => {
                 polygon_arc_loop_intersects(polygon, arc_loop)
@@ -1565,7 +1575,7 @@ impl ProfileBoundary {
             (Self::CircularArcLoop(arc_loop), Self::Circle { center, radius })
             | (Self::Circle { center, radius }, Self::CircularArcLoop(arc_loop)) => arc_loop
                 .iter()
-                .any(|segment| point_boundary_segment_distance(*center, segment) <= *radius),
+                .any(|segment| point_boundary_segment_distance(*center, segment) <= radius.get()),
             (Self::CertifiedLoop(_), _) | (_, Self::CertifiedLoop(_)) => return false,
         };
         !intersects && !self.strictly_contains(other) && !other.strictly_contains(self)
@@ -1634,7 +1644,7 @@ fn profile_boundary(
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
             return Some(ProfileBoundary::Circle {
                 center: center.get(),
-                radius: radius.get(),
+                radius,
             });
         }
     }
@@ -1684,7 +1694,7 @@ fn certified_profile_loop(
                 end_angle,
             } => certified_arc_tubes(
                 center.get(),
-                radius.get(),
+                *radius,
                 start_angle.get(),
                 end_angle.get(),
                 target_error,
@@ -1746,24 +1756,25 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
     CertifiedProfileLoop::new(tubes)
 }
 
-fn certified_circle(center: Point2, radius: f64) -> Option<CertifiedProfileLoop> {
-    let tolerance =
-        EPS_GEOMETRY_CERTIFIED_CIRCLE_E6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
+fn certified_circle(center: Point2, radius: PositiveLength) -> Option<CertifiedProfileLoop> {
+    let tolerance = EPS_GEOMETRY_CERTIFIED_CIRCLE_E6
+        * (1.0 + center.u.abs().max(center.v.abs()).max(radius.get()));
     let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
     CertifiedProfileLoop::new(tubes)
 }
 
 fn certified_arc_tubes(
     center: Point2,
-    radius: f64,
+    radius: PositiveLength,
     start: f64,
     end: f64,
     target_error: f64,
 ) -> Option<Vec<CertifiedCurveTube>> {
     let sweep = end - start;
-    if !radius.is_finite() || radius <= 0.0 || !sweep.is_finite() || sweep == 0.0 {
+    if !sweep.is_finite() || sweep == 0.0 {
         return None;
     }
+    let radius = radius.get();
     let count = subdivision_count(radius * sweep.abs(), target_error)?;
     let error = radius * sweep.abs() / count as f64;
     (0..count)
@@ -1915,7 +1926,7 @@ fn circular_arc_profile_segments(
                 };
                 ProfileBoundarySegment::Arc {
                     center: center.get(),
-                    radius: radius.get(),
+                    radius,
                     start_angle,
                     end_angle,
                 }
@@ -1977,16 +1988,19 @@ fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Poin
             radius,
             start_angle,
             end_angle,
-        } => (
-            Point2::new(
-                center.u + radius * start_angle.cos(),
-                center.v + radius * start_angle.sin(),
-            ),
-            Point2::new(
-                center.u + radius * end_angle.cos(),
-                center.v + radius * end_angle.sin(),
-            ),
-        ),
+        } => {
+            let radius = radius.get();
+            (
+                Point2::new(
+                    center.u + radius * start_angle.cos(),
+                    center.v + radius * start_angle.sin(),
+                ),
+                Point2::new(
+                    center.u + radius * end_angle.cos(),
+                    center.v + radius * end_angle.sin(),
+                ),
+            )
+        }
     }
 }
 
@@ -2013,7 +2027,7 @@ fn point_in_circular_arc_loop(point: Point2, segments: &[ProfileBoundarySegment]
                 radius,
                 start_angle,
                 end_angle,
-            } => horizontal_ray_arc_winding(point, *center, *radius, *start_angle, *end_angle),
+            } => horizontal_ray_arc_winding(point, *center, radius.get(), *start_angle, *end_angle),
         })
         .sum::<i32>()
         != 0
@@ -2094,6 +2108,7 @@ fn point_boundary_segment_distance(point: Point2, segment: &ProfileBoundarySegme
             start_angle,
             end_angle,
         } => {
+            let radius = radius.get();
             let endpoint_distance = [*start_angle, *end_angle]
                 .into_iter()
                 .map(|angle| {
@@ -2128,6 +2143,7 @@ fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment
     else {
         return endpoint_distance;
     };
+    let radius = radius.get();
     let farthest_angle = (point.v - center.v).atan2(point.u - center.u) + std::f64::consts::PI;
     if directed_angle_parameter(farthest_angle, *start_angle, *end_angle).is_some() {
         endpoint_distance.max(point_distance(point, *center) + radius)
@@ -2280,7 +2296,10 @@ fn boundary_segments_intersect(
     }
 }
 
-fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64)) -> bool {
+fn arcs_intersect(
+    left: (Point2, PositiveLength, f64, f64),
+    right: (Point2, PositiveLength, f64, f64),
+) -> bool {
     let (left_center, left_radius, left_start, left_end) = left;
     let (right_center, right_radius, right_start, right_end) = right;
     if left_center == right_center && left_radius == right_radius {
