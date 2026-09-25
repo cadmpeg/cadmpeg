@@ -11,7 +11,7 @@ use crate::records::{
         scope::DesignParameterScope,
     },
     parameters::DesignParameter,
-    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity, SketchPoint},
+    sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
         body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
@@ -2228,10 +2228,6 @@ pub(super) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
         }
         None => false,
     }
-}
-
-pub(super) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
-    point.depth().is_finite().then_some(point.depth())
 }
 
 #[cfg(test)]
