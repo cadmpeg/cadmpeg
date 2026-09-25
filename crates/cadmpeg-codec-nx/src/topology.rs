@@ -150,6 +150,51 @@ pub(crate) struct FinFields {
     pub(crate) sense: Sense,
 }
 
+/// Why a face's linked loop boundary cannot be admitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FaceLoopFailure {
+    InvalidFace {
+        face_xmt: u32,
+    },
+    InvalidLoopChain {
+        loop_xmt: u32,
+    },
+    InvalidFinRing {
+        loop_xmt: u32,
+        fin_xmt: u32,
+    },
+    UnresolvedFinEdge {
+        loop_xmt: u32,
+        fin_xmt: u32,
+        edge_xmt: Option<u32>,
+    },
+}
+
+impl std::fmt::Display for FaceLoopFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidFace { face_xmt } => write!(f, "FACE {face_xmt} has no decoded record"),
+            Self::InvalidLoopChain { loop_xmt } => {
+                write!(f, "LOOP {loop_xmt} breaks the face loop chain")
+            }
+            Self::InvalidFinRing { loop_xmt, fin_xmt } => {
+                write!(f, "FIN {fin_xmt} breaks LOOP {loop_xmt}'s ring")
+            }
+            Self::UnresolvedFinEdge {
+                loop_xmt,
+                fin_xmt,
+                edge_xmt,
+            } => match edge_xmt {
+                Some(edge_xmt) => write!(
+                    f,
+                    "FIN {fin_xmt} in LOOP {loop_xmt} refers to unresolved EDGE {edge_xmt}"
+                ),
+                None => write!(f, "FIN {fin_xmt} in LOOP {loop_xmt} has no EDGE reference"),
+            },
+        }
+    }
+}
+
 /// Sequentially decoded VERTEX fields.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct VertexFields {
@@ -1212,7 +1257,7 @@ impl Graph {
                 return false;
             };
             for face_xmt in face_xmts {
-                let Some(rings) = self.face_loop_rings(face_xmt) else {
+                let Ok(rings) = self.face_loop_rings(face_xmt) else {
                     return false;
                 };
                 if rings.is_empty() {
@@ -1246,27 +1291,39 @@ impl Graph {
     /// points back to the face. Each FIN cycle closes at its first FIN, stays in
     /// the loop, and has reciprocal forward/backward links. Every FIN resolves
     /// its edge and vertex.
-    pub(crate) fn face_loop_rings(&self, face_xmt: u32) -> Option<Vec<(u32, Vec<u32>)>> {
-        let face = self.get(NodeKind::Face, face_xmt)?.face_fields()?;
+    pub(crate) fn face_loop_rings(
+        &self,
+        face_xmt: u32,
+    ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopFailure> {
+        let face = self
+            .get(NodeKind::Face, face_xmt)
+            .and_then(Node::face_fields)
+            .ok_or(FaceLoopFailure::InvalidFace { face_xmt })?;
         let mut loop_xmt = face.loop_xmt;
         let mut seen_loops = BTreeSet::new();
         let mut rings = Vec::new();
         while let Some(target) = loop_xmt {
             let current = u32::from(target);
             if !seen_loops.insert(current) {
-                return None;
+                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current });
             }
-            let fields = self.get(NodeKind::Loop, current)?.loop_fields()?;
+            let fields = self
+                .get(NodeKind::Loop, current)
+                .and_then(Node::loop_fields)
+                .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
             if fields.face.map(u32::from) != Some(face_xmt) {
-                return None;
+                return Err(FaceLoopFailure::InvalidLoopChain { loop_xmt: current });
             }
-            rings.push((current, self.fin_ring(current, fields.fin?)?));
+            let first_fin = fields
+                .fin
+                .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
+            rings.push((current, self.fin_ring(current, first_fin)?));
             loop_xmt = fields.next_loop;
         }
-        Some(rings)
+        Ok(rings)
     }
 
-    fn fin_ring(&self, loop_xmt: u32, first: XmtTarget) -> Option<Vec<u32>> {
+    fn fin_ring(&self, loop_xmt: u32, first: XmtTarget) -> Result<Vec<u32>, FaceLoopFailure> {
         let first = u32::from(first);
         let mut current = first;
         let mut previous = None;
@@ -1274,41 +1331,61 @@ impl Graph {
         let mut ring = Vec::new();
         loop {
             if !seen.insert(current) {
-                return (current == first).then_some(ring);
+                return if current == first {
+                    Ok(ring)
+                } else {
+                    Err(FaceLoopFailure::InvalidFinRing {
+                        loop_xmt,
+                        fin_xmt: current,
+                    })
+                };
             }
             ring.push(current);
-            let fields = self.get(NodeKind::Fin, current)?.fin_fields()?;
+            let invalid_fin = FaceLoopFailure::InvalidFinRing {
+                loop_xmt,
+                fin_xmt: current,
+            };
+            let fields = self
+                .get(NodeKind::Fin, current)
+                .and_then(Node::fin_fields)
+                .ok_or(invalid_fin)?;
             let vertex_resolves = self.get_target(NodeKind::Vertex, fields.vertex).is_some()
                 || (fields.vertex.is_none()
                     && fields.forward.map(u32::from) == Some(current)
                     && fields.backward.map(u32::from) == Some(current));
-            if fields.loop_xmt.map(u32::from) != Some(loop_xmt)
-                || self.get_target(NodeKind::Edge, fields.edge).is_none()
-                || !vertex_resolves
-            {
-                return None;
+            if self.get_target(NodeKind::Edge, fields.edge).is_none() {
+                return Err(FaceLoopFailure::UnresolvedFinEdge {
+                    loop_xmt,
+                    fin_xmt: current,
+                    edge_xmt: fields.edge.map(u32::from),
+                });
+            }
+            if fields.loop_xmt.map(u32::from) != Some(loop_xmt) || !vertex_resolves {
+                return Err(invalid_fin);
             }
             if let Some(other_xmt) = fields.other {
                 let other = self
-                    .get(NodeKind::Fin, u32::from(other_xmt))?
-                    .fin_fields()?;
+                    .get(NodeKind::Fin, u32::from(other_xmt))
+                    .and_then(Node::fin_fields)
+                    .ok_or(invalid_fin)?;
                 if other.other.map(u32::from) != Some(current) || other.edge != fields.edge {
-                    return None;
+                    return Err(invalid_fin);
                 }
             }
             if let Some(previous) = previous {
                 if fields.backward.map(u32::from) != Some(previous) {
-                    return None;
+                    return Err(invalid_fin);
                 }
             }
             let next = self
-                .get_target(NodeKind::Fin, fields.forward)?
-                .fin_fields()?;
+                .get_target(NodeKind::Fin, fields.forward)
+                .and_then(Node::fin_fields)
+                .ok_or(invalid_fin)?;
             if next.backward.map(u32::from) != Some(current) {
-                return None;
+                return Err(invalid_fin);
             }
             previous = Some(current);
-            current = u32::from(fields.forward?);
+            current = u32::from(fields.forward.ok_or(invalid_fin)?);
         }
     }
 

@@ -116,6 +116,8 @@ loss_codes! {
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
     /// A face loop states no resolvable coedge ring and is omitted from its face.
     TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
+    /// A face's linked loop boundary cannot be admitted and is omitted.
+    TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
 }
@@ -188,6 +190,7 @@ mod tests {
                 "carrier.lanes-unpaired",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
+                "topology.face-loop-unresolved",
                 "annotation.semantic-order-unstatable",
             ]
         );

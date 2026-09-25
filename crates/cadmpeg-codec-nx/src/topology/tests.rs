@@ -7,8 +7,10 @@ use crate::test_support::test_bytes::put_f64;
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_bytes::put_vec3;
 use crate::test_support::test_bytes::record;
+use crate::test_support::test_deltas::partnered_trimmed_topology_partition_stream;
 use crate::test_support::test_deltas::variable_status_framed_deltas_stream;
 use crate::test_support::test_prt::prt_with_partition;
+use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
 use crate::test_support::test_streams::deltas_intersection_curve_stream;
 use crate::test_support::test_streams::offset_surface_topology_partition_stream;
 use crate::test_support::test_streams::topology_partition_stream;
@@ -16,8 +18,9 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::loss::NxLossCode;
 use crate::topology::{
-    intersection_data_curves, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
+    intersection_data_curves, FaceLoopFailure, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
 };
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
@@ -307,7 +310,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut stream, fin + 8, 99);
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.face_loop_rings(4).is_none());
+    assert!(graph.face_loop_rings(4).is_err());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -325,7 +328,136 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     put_ref(&mut broken_partner, fin + 14, 99);
     assert!(crate::topology::Graph::parse(&broken_partner)
         .face_loop_rings(4)
-        .is_none());
+        .is_err());
+}
+
+#[test]
+fn unresolved_fin_edge_records_face_boundary_loss() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("FIN");
+    put_ref(&mut stream, fin + 16, 99);
+    assert_eq!(
+        Graph::parse(&stream).face_loop_rings(4),
+        Err(FaceLoopFailure::UnresolvedFinEdge {
+            loop_xmt: 5,
+            fin_xmt: 7,
+            edge_xmt: Some(99),
+        })
+    );
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result.ir().model.loops.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyFaceLoopUnresolved.kind()
+            && loss.message.contains("FIN 7")
+            && loss.message.contains("EDGE 99")
+    }));
+}
+
+#[test]
+fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let vertex = graph.get(NodeKind::Vertex, 10).expect("vertex");
+    put_ref(&mut stream, vertex.pos + 16, 99);
+    assert!(Graph::parse(&stream).face_loop_rings(4).is_ok());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert!(result.ir().model.loops.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyLoopRingUnresolved.kind()
+            && loss.message.contains("LOOP 5")
+    }));
+}
+
+#[test]
+fn linked_fin_ring_order_is_emitted() {
+    let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
+    let graph = Graph::parse(&stream);
+    let loop_node = graph.get(NodeKind::Loop, 5).expect("loop node");
+    put_ref(&mut stream, loop_node.pos + 10, 13);
+    let first_fin = graph.get(NodeKind::Fin, 7).expect("first FIN");
+    put_ref(&mut stream, first_fin.pos + 8, 6);
+    let second_fin = graph.get(NodeKind::Fin, 13).expect("second FIN");
+    put_ref(&mut stream, second_fin.pos + 10, 6);
+    let mut third_fin = record(17, 23);
+    put_ref(&mut third_fin, 2, 6);
+    put_ref(&mut third_fin, 6, 5);
+    put_ref(&mut third_fin, 8, 13);
+    put_ref(&mut third_fin, 10, 7);
+    put_ref(&mut third_fin, 12, 14);
+    put_ref(&mut third_fin, 14, 1);
+    put_ref(&mut third_fin, 16, 8);
+    put_ref(&mut third_fin, 18, 12);
+    third_fin[22] = b'+';
+    stream.extend(third_fin);
+    let graph = Graph::parse(&stream);
+    assert_eq!(
+        graph.face_loop_rings(4).expect("source ring")[0].1,
+        vec![13, 7, 6]
+    );
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let ids = result.ir().model.loops[0]
+        .coedges()
+        .iter()
+        .map(cadmpeg_ir::ids::CoedgeId::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        ids[0].ends_with("#13") && ids[1].ends_with("#7") && ids[2].ends_with("#6"),
+        "{ids:?}"
+    );
+}
+
+#[test]
+fn face_loop_chain_order_is_emitted() {
+    let mut stream = partnered_trimmed_topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let face = graph.get(NodeKind::Face, 4).expect("first face");
+    let first_loop = graph.get(NodeKind::Loop, 5).expect("first loop");
+    let second_loop = graph.get(NodeKind::Loop, 21).expect("second loop");
+    put_ref(&mut stream, face.pos + 22, 21);
+    put_ref(&mut stream, second_loop.pos + 12, 4);
+    put_ref(&mut stream, second_loop.pos + 14, 5);
+    put_ref(&mut stream, first_loop.pos + 14, 1);
+    let graph = Graph::parse(&stream);
+    let source = graph.face_loop_rings(4).expect("linked loop chain");
+    assert_eq!(
+        source.iter().map(|(xmt, _)| *xmt).collect::<Vec<_>>(),
+        vec![21, 5]
+    );
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str().ends_with("#4"))
+        .expect("face");
+    let ids = face
+        .loops
+        .iter()
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<Vec<_>>();
+    assert!(ids[0].ends_with("#21") && ids[1].ends_with("#5"), "{ids:?}");
 }
 
 #[test]
