@@ -301,6 +301,17 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Normalize by multiplying each component by the reciprocal of the
+    /// Euclidean length. The length must be finite and nonzero, and the
+    /// rounded result must remain a unit vector.
+    #[must_use]
+    pub fn normalized_by_reciprocal(value: Vector3) -> Option<Self> {
+        let length = value.norm();
+        if !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Self::new(value.scale(1.0 / length))
+    }
     /// The unit direction of `value`: each component divided by the largest
     /// component magnitude, then by the `hypot` length of the quotients. The
     /// direction is absent when a component is not finite or every component
@@ -1351,6 +1362,26 @@ mod tests {
             Vector3::new(1.0, f64::INFINITY, 0.0),
         ] {
             assert_eq!(UnitVector3::normalized_by_largest_component(value), None);
+        }
+    }
+
+    #[test]
+    fn reciprocal_normalization_keeps_small_finite_directions_and_rejects_overflow() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e-16, 0.0, 0.0),
+            Vector3::new(1.0e-300, 0.0, 0.0),
+        ] {
+            let expected = value.scale(1.0 / value.norm());
+            let unit = UnitVector3::normalized_by_reciprocal(value).expect("finite unit result");
+            assert_eq!(*unit.as_raw(), expected);
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::INFINITY, 1.0, 0.0),
+            Vector3::new(1.0e-320, 0.0, 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
     }
 
