@@ -21,7 +21,7 @@ use crate::records::{
     sketch_placement::valid_sketch_transform,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::PositiveReal;
 
 pub(super) fn exact_solid_primitive(
     bytes: &[u8],
@@ -142,30 +142,30 @@ pub(super) fn exact_solid_primitive(
             let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
                 return None;
             };
-            (length.evaluated_value().get() > 0.0
-                && width.evaluated_value().get() > 0.0
-                && height.evaluated_value().get() > 0.0)
-                .then_some(DesignSolidPrimitive::Box(
-                    crate::records::feature::primitives::DesignBoxPrimitive {
-                        length: length.evaluated_value(),
-                        length_record_index: length.record_index(),
-                        length_offset: length.evaluated_value_offset(),
-                        width: width.evaluated_value(),
-                        width_record_index: width.record_index(),
-                        width_offset: width.evaluated_value_offset(),
-                        height: height.evaluated_value(),
-                        height_record_index: height.record_index(),
-                        height_offset: height.evaluated_value_offset(),
-                        offset_x: offset_x.evaluated_value(),
-                        offset_x_record_index: offset_x.record_index(),
-                        offset_x_offset: offset_x.evaluated_value_offset(),
-                        offset_y: offset_y.evaluated_value(),
-                        offset_y_record_index: offset_y.record_index(),
-                        offset_y_offset: offset_y.evaluated_value_offset(),
-                        operation,
-                        operation_offset: operation_offset as u64,
-                    },
-                ))
+            let length_value = PositiveReal::new(length.evaluated_value().get())?;
+            let width_value = PositiveReal::new(width.evaluated_value().get())?;
+            let height_value = PositiveReal::new(height.evaluated_value().get())?;
+            Some(DesignSolidPrimitive::Box(
+                crate::records::feature::primitives::DesignBoxPrimitive {
+                    length: length_value,
+                    length_record_index: length.record_index(),
+                    length_offset: length.evaluated_value_offset(),
+                    width: width_value,
+                    width_record_index: width.record_index(),
+                    width_offset: width.evaluated_value_offset(),
+                    height: height_value,
+                    height_record_index: height.record_index(),
+                    height_offset: height.evaluated_value_offset(),
+                    offset_x: offset_x.evaluated_value(),
+                    offset_x_record_index: offset_x.record_index(),
+                    offset_x_offset: offset_x.evaluated_value_offset(),
+                    offset_y: offset_y.evaluated_value(),
+                    offset_y_record_index: offset_y.record_index(),
+                    offset_y_offset: offset_y.evaluated_value_offset(),
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            ))
         }
         "CylinderPrimitive" => {
             if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
@@ -175,20 +175,21 @@ pub(super) fn exact_solid_primitive(
             let [height, diameter] = owners.as_slice() else {
                 return None;
             };
-            (height.evaluated_value().get() > 0.0 && diameter.evaluated_value().get() > 0.0)
-                .then_some(DesignSolidPrimitive::Cylinder(
-                    crate::records::feature::primitives::DesignCylinderPrimitive {
-                        height: height.evaluated_value(),
-                        height_record_index: height.record_index(),
-                        height_offset: height.evaluated_value_offset(),
-                        diameter: diameter.evaluated_value(),
-                        diameter_record_index: diameter.record_index(),
-                        diameter_offset: diameter.evaluated_value_offset(),
-                        transform: cylinder_transform,
-                        operation,
-                        operation_offset: operation_offset as u64,
-                    },
-                ))
+            let height_value = PositiveReal::new(height.evaluated_value().get())?;
+            let diameter_value = PositiveReal::new(diameter.evaluated_value().get())?;
+            Some(DesignSolidPrimitive::Cylinder(
+                crate::records::feature::primitives::DesignCylinderPrimitive {
+                    height: height_value,
+                    height_record_index: height.record_index(),
+                    height_offset: height.evaluated_value_offset(),
+                    diameter: diameter_value,
+                    diameter_record_index: diameter.record_index(),
+                    diameter_offset: diameter.evaluated_value_offset(),
+                    transform: cylinder_transform,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            ))
         }
         _ => None,
     }
@@ -481,9 +482,9 @@ fn exact_primitive_diameter(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
-) -> Option<(FiniteReal, u64)> {
+) -> Option<(PositiveReal, u64)> {
     let scalar = exact_fixed_scalar(bytes, records, record_index)?;
-    (scalar.value.get() > 0.0).then_some((scalar.value, scalar.value_offset))
+    Some((PositiveReal::new(scalar.value.get())?, scalar.value_offset))
 }
 
 #[cfg(test)]
