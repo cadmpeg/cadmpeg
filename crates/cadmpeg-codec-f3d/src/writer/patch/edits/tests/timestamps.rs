@@ -21,13 +21,15 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
             id: "f3d:generated:creation-timestamp#0".into(),
             target: AttributeTarget::Body(body),
             record_index: 0,
-            unix_microseconds: 1_579_392_000_000_001.0,
+            unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_001.0)
+                .unwrap(),
         },
         CreationTimestamp {
             id: "f3d:generated:creation-timestamp#1".into(),
             target: AttributeTarget::Face(face),
             record_index: 0,
-            unix_microseconds: 1_579_392_000_000_002.0,
+            unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1_579_392_000_000_002.0)
+                .unwrap(),
         },
     ];
     let mut bytes = Vec::new();
@@ -43,7 +45,9 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
         let mut native = f3d_native_mut(&mut target);
         assert_eq!(native.creation_timestamps.len(), 2);
         native.creation_timestamps.sort_by(|a, b| b.id.cmp(&a.id));
-        native.creation_timestamps[0].unix_microseconds += 100.0;
+        let previous = native.creation_timestamps[0].unix_microseconds.get();
+        native.creation_timestamps[0].unix_microseconds =
+            cadmpeg_ir::scalar::FiniteReal::new(previous + 100.0).unwrap();
         native
             .creation_timestamps
             .iter()

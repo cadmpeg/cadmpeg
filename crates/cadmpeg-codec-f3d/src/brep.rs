@@ -609,7 +609,7 @@ fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> 
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
         target: attribute.target.clone(),
         record_index: attribute_key(attribute).parse().ok()?,
-        unix_microseconds: unix_microseconds.get(),
+        unix_microseconds: *unix_microseconds,
     })
 }
 
@@ -971,13 +971,13 @@ mod tests {
                     id: "time-retained".into(),
                     target: target(1),
                     record_index: 1,
-                    unix_microseconds: 1.0,
+                    unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
                 },
                 CreationTimestamp {
                     id: "time-dropped".into(),
                     target: target(3),
                     record_index: 3,
-                    unix_microseconds: 3.0,
+                    unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
                 },
             ],
         };

@@ -188,7 +188,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         id: format!("f3d:generated:creation-timestamp#{ordinal}"),
         target,
         record_index: 0,
-        unix_microseconds,
+        unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(unix_microseconds).unwrap(),
     })
     .collect();
 
@@ -322,7 +322,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.creation_timestamps.len(), 5);
     assert!(native.creation_timestamps.iter().any(|timestamp| {
         matches!(timestamp.target, AttributeTarget::Vertex(_))
-            && timestamp.unix_microseconds == 1_579_392_000_000_005.0
+            && timestamp.unix_microseconds.get() == 1_579_392_000_000_005.0
     }));
     assert_eq!(
         round_trip.ir().model.bodies[0].color,
