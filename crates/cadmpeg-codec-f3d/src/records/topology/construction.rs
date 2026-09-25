@@ -346,8 +346,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     pub(crate) variant: bool,
 }
 
-/// Unchecked construction-frame input.
-pub(crate) struct DesignConstructionOperandGroupFrameDraft {
+/// Construction-frame fields before aggregate validation.
+pub(crate) struct DesignConstructionOperandGroupFrameDraft<T = f64, I = u32> {
     pub(crate) member_count_offset: u64,
     pub(crate) auxiliary_records: Vec<Located<u32>>,
     pub(crate) auxiliary_paths: Vec<DesignConstructionOperandPath>,
@@ -355,9 +355,9 @@ pub(crate) struct DesignConstructionOperandGroupFrameDraft {
     pub(crate) trailing_transforms: Vec<DesignConstructionOperandTransform>,
     pub(crate) trailing_dual_transforms: Vec<DesignConstructionOperandDualTransform>,
     pub(crate) trailing_flags: Vec<DesignConstructionOperandFlag>,
-    pub(crate) opaque_index: u32,
+    pub(crate) opaque_index: I,
     pub(crate) opaque_index_offset: u64,
-    pub(crate) opaque_scalar: f64,
+    pub(crate) opaque_scalar: T,
     pub(crate) opaque_scalar_offset: u64,
     pub(crate) variant: bool,
 }
@@ -372,6 +372,33 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             NonZeroU32::new(draft.opaque_index).ok_or("opaque_index must be nonzero")?;
         let opaque_scalar = cadmpeg_ir::scalar::NonNegativeReal::new(draft.opaque_scalar)
             .ok_or("opaque_scalar must be finite and nonnegative")?;
+        Self::from_parts(DesignConstructionOperandGroupFrameDraft {
+            member_count_offset: draft.member_count_offset,
+            auxiliary_records: draft.auxiliary_records,
+            auxiliary_paths: draft.auxiliary_paths,
+            trailing_records: draft.trailing_records,
+            trailing_transforms: draft.trailing_transforms,
+            trailing_dual_transforms: draft.trailing_dual_transforms,
+            trailing_flags: draft.trailing_flags,
+            opaque_index,
+            opaque_index_offset: draft.opaque_index_offset,
+            opaque_scalar,
+            opaque_scalar_offset: draft.opaque_scalar_offset,
+            variant: draft.variant,
+        })
+    }
+}
+
+impl DesignConstructionOperandGroupFrame {
+    pub(crate) fn from_parts(
+        draft: DesignConstructionOperandGroupFrameDraft<
+            cadmpeg_ir::scalar::NonNegativeReal,
+            NonZeroU32,
+        >,
+    ) -> Result<Self, String> {
+        if draft.trailing_records.len() > 1 {
+            return Err("construction frame permits at most one trailing record".into());
+        }
         if draft.opaque_index_offset < 18
             || draft.opaque_index_offset.checked_add(4) != Some(draft.opaque_scalar_offset)
         {
@@ -413,9 +440,9 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             trailing_transforms: draft.trailing_transforms,
             trailing_dual_transforms: draft.trailing_dual_transforms,
             trailing_flags: draft.trailing_flags,
-            opaque_index,
+            opaque_index: draft.opaque_index,
             opaque_index_offset: draft.opaque_index_offset,
-            opaque_scalar,
+            opaque_scalar: draft.opaque_scalar,
             variant: draft.variant,
         })
     }

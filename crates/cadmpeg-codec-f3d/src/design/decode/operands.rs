@@ -2215,9 +2215,12 @@ pub(super) fn parse_construction_operand_group(
     ) else {
         return NotAGroup;
     };
-    if opaque_index == 0 || !opaque_scalar.is_finite() {
+    let Some(opaque_index) = std::num::NonZeroU32::new(opaque_index) else {
         return NotAGroup;
-    }
+    };
+    let Some(opaque_scalar) = cadmpeg_ir::scalar::FiniteReal::new(opaque_scalar) else {
+        return NotAGroup;
+    };
     cursor += 12;
 
     // Past this point the record has opened the group grammar, so a tail that
@@ -2226,7 +2229,7 @@ pub(super) fn parse_construction_operand_group(
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
         if repeats_ordinal {
-            if View::u32_le_at(bytes, tail) != Some(opaque_index) {
+            if View::u32_le_at(bytes, tail) != Some(opaque_index.get()) {
                 continue;
             }
             tail += 4;
@@ -2274,7 +2277,9 @@ pub(super) fn parse_construction_operand_group(
             }
         }
     }
-    if let Some(legacy_tail) = legacy_body_group_tail(bytes, scope, header, cursor, opaque_index) {
+    if let Some(legacy_tail) =
+        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
+    {
         if closed.replace(legacy_tail).is_some() {
             return Unclosed;
         }
@@ -2303,7 +2308,10 @@ pub(super) fn parse_construction_operand_group(
     let Ok(paired_class_tag) = paired_class_tag.try_into() else {
         return Unclosed;
     };
-    let Ok(frame) = DesignConstructionOperandGroupFrame::try_from(
+    let Ok(opaque_scalar) = cadmpeg_ir::scalar::NonNegativeReal::try_from(opaque_scalar) else {
+        return Unclosed;
+    };
+    let Ok(frame) = DesignConstructionOperandGroupFrame::from_parts(
         crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
             member_count_offset,
             auxiliary_records,
