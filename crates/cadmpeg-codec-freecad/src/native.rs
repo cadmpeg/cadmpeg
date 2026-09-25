@@ -9,6 +9,7 @@ use crate::attachment::MapModeIndex;
 use cadmpeg_ir::units::FiniteVector;
 use frame::FiniteFrame;
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
@@ -1017,6 +1018,15 @@ impl RetainedXml {
             .ok_or("raw_xml byte_end overflow")?;
         Self::try_new(text, start, end)
     }
+    pub(crate) fn from_source(
+        ctx: Option<&DecodeContext<'_>>,
+        text: &str,
+        start: u64,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let copy = copy_xml_text(ctx, text, operation)?;
+        Self::from_text(copy, start).map_err(CodecError::Malformed)
+    }
     pub(crate) fn text(&self) -> &str {
         &self.text
     }
@@ -1025,6 +1035,21 @@ impl RetainedXml {
     }
     pub(crate) fn end(&self) -> u64 {
         self.span.end()
+    }
+}
+
+/// Charge the bytes of each separate retained XML string before copying them.
+pub(crate) fn copy_xml_text(
+    ctx: Option<&DecodeContext<'_>>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    if let Some(ctx) = ctx {
+        let bytes = ctx.copy_retained(text.as_bytes(), operation)?;
+        String::from_utf8(bytes)
+            .map_err(|_| CodecError::Malformed("retained XML is not UTF-8".into()))
+    } else {
+        Ok(text.to_owned())
     }
 }
 
