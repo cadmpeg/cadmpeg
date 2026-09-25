@@ -463,6 +463,19 @@ fn subd_edge_chain(
     let count = count(&mut reader, 1)?;
     let edge_ids = array(&mut reader, 4, BoundedReader::u32)?;
     let orientations = array(&mut reader, 1, BoundedReader::u8)?;
+    let orientation_start = reader.position() - orientations.len();
+    let orientations = orientations
+        .into_iter()
+        .enumerate()
+        .map(|(index, orientation)| match orientation {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(FramingError::structural(
+                orientation_start + index,
+                "invalid history SubD edge orientation",
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let edges = if edge_ids.len() != count || orientations.len() != count {
         warnings.push_coded(
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -473,10 +486,7 @@ fn subd_edge_chain(
         edge_ids
             .into_iter()
             .zip(orientations)
-            .map(|(id, orientation)| SubdEdge {
-                id,
-                reversed: orientation == 1,
-            })
+            .map(|(id, reversed)| SubdEdge { id, reversed })
             .collect()
     };
     reader.skip_remaining()?;
@@ -616,10 +626,16 @@ fn parse_record(
     values_reader.skip_remaining()?;
     reader.skip(next - reader.position())?;
     let record_type = if minor >= 1 {
+        let offset = reader.position();
         match reader.i32()? {
             0 => RecordType::HistoryParameters,
             1 => RecordType::FeatureParameters,
-            _ => RecordType::HistoryParameters,
+            _ => {
+                return Err(FramingError::structural(
+                    offset,
+                    "invalid history record type",
+                ))
+            }
         }
     } else {
         RecordType::HistoryParameters
@@ -982,7 +998,16 @@ fn extended_geometry_json(
     } else if value.class_id == crate::hatch::CLASS {
         let mut hatch =
             crate::hatch::decode(expand, value.class_data_range.clone(), scale, archive).ok()?;
-        crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch).ok()?;
+        if let Err(errors) =
+            crate::hatch::apply_userdata(data, &value.userdata, scale, archive, &mut hatch)
+        {
+            for error in errors {
+                warnings.push(format!(
+                    "embedded history hatch userdata at offset {}: {error}",
+                    value.class_data_range.start
+                ));
+            }
+        }
         let plane = hatch.plane;
         let millimetres = |coordinate: f64, field: &str| {
             crate::wire::scaled_coordinate(coordinate, scale).ok_or_else(|| {

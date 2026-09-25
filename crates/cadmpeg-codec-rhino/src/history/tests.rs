@@ -68,15 +68,23 @@ fn record(record_id: u8, command: u8, antecedents: &[u8], descendants: &[u8]) ->
 }
 
 fn source_band_history_record(archive: ArchiveVersion, minor: i32) -> Vec<u8> {
-    source_band_history_record_with_major(archive, 1, minor)
+    source_band_history_record_with_major(archive, 1, minor, 1, &[])
 }
 
 fn source_band_history_record_with_major(
     archive: ArchiveVersion,
     major: i32,
     minor: i32,
+    record_type: i32,
+    history_values: &[Vec<u8>],
 ) -> Vec<u8> {
-    let mut values_body = 0_i32.to_le_bytes().to_vec();
+    let mut values_body = i32::try_from(history_values.len())
+        .expect("fixture value count")
+        .to_le_bytes()
+        .to_vec();
+    for value in history_values {
+        values_body.extend(value);
+    }
     values_body.extend([0xcc, 0xdd]);
     let values = anonymous_chunk(archive, 0, &values_body);
     let empty_list = anonymous_chunk(archive, 0, &0_i32.to_le_bytes());
@@ -88,7 +96,7 @@ fn source_band_history_record_with_major(
     body.extend(&empty_list);
     body.extend(values);
     if minor >= 1 {
-        body.extend(1_i32.to_le_bytes());
+        body.extend(record_type.to_le_bytes());
     }
     if minor >= 2 {
         body.push(1);
@@ -309,7 +317,7 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
 #[test]
 fn future_history_major_is_retained_as_a_complete_record() {
     let archive = ArchiveVersion::V5;
-    let future_record = source_band_history_record_with_major(archive, 2, 1);
+    let future_record = source_band_history_record_with_major(archive, 2, 1, 1, &[]);
     let bytes = minimal_document(
         "50",
         &[
@@ -332,6 +340,33 @@ fn future_history_major_is_retained_as_a_complete_record() {
         &scan.data[retained.record.range.clone()],
         future_record.as_slice()
     );
+}
+
+#[test]
+fn unknown_history_record_type_is_retained_opaque() {
+    let archive = ArchiveVersion::V5;
+    let record = source_band_history_record_with_major(archive, 1, 1, 2, &[]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, std::slice::from_ref(&record)),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("history table");
+    assert!(scan.history.is_empty());
+    assert!(scan
+        .warnings
+        .messages()
+        .any(|message| message.contains("record type")));
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|value| value.table_typecode & !TCODE_CRC == 0x1000_0026)
+        .expect("unknown record type retained");
+    assert_eq!(&scan.data[retained.record.range.clone()], record.as_slice());
 }
 
 #[test]
@@ -535,6 +570,42 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
             && values[0].subd_id == subd_id
             && values[0].edges.iter().map(|edge| edge.id).collect::<Vec<_>>() == [11, 12]
             && values[0].edges.iter().map(|edge| u8::from(edge.reversed)).collect::<Vec<_>>() == [0, 1]));
+}
+
+#[test]
+fn unknown_history_subd_orientation_is_malformed() {
+    let archive = ArchiveVersion::V8;
+    let mut chain = [0_u8; 16].to_vec();
+    chain.extend(1_i32.to_le_bytes());
+    chain.extend(1_i32.to_le_bytes());
+    chain.extend(11_u32.to_le_bytes());
+    chain.extend(1_i32.to_le_bytes());
+    chain.push(2);
+    let mut chains = 1_i32.to_le_bytes().to_vec();
+    chains.extend(anonymous_value(1, &chain));
+    let history_value = value(14, &anonymous_value(1, &chains));
+    let record = source_band_history_record_with_major(archive, 1, 1, 1, &[history_value]);
+    let bytes = minimal_document(
+        "80",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, std::slice::from_ref(&record)),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("history table");
+    assert!(scan.history.is_empty());
+    assert!(scan
+        .warnings
+        .messages()
+        .any(|message| message.contains("orientation")));
+    let retained = scan
+        .opaque_records
+        .iter()
+        .find(|value| value.table_typecode & !TCODE_CRC == 0x1000_0026)
+        .expect("invalid orientation retained");
+    assert_eq!(&scan.data[retained.record.range.clone()], record.as_slice());
 }
 
 #[test]
@@ -988,4 +1059,48 @@ fn history_hatch_refuses_an_origin_that_overflows_in_millimetres() {
 #[test]
 fn history_hatch_refuses_an_equation_constant_that_overflows_in_millimetres() {
     assert_hatch_plane_overflow_is_refused(HATCH_EQUATION_CONSTANT_OFFSET, "plane.equation[3]");
+}
+
+#[test]
+fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
+    let archive = ArchiveVersion::V8;
+    let mut data = crate::hatch::tests::version_two_hatch_payload();
+    let hatch_end = data.len();
+    let gradient_start = data.len();
+    data.extend(anonymous_chunk(archive, 0, &5_i32.to_le_bytes()));
+    let geometry = EmbeddedGeometry {
+        class_id: crate::hatch::CLASS,
+        class_data_range: 0..hatch_end,
+        userdata: vec![crate::objects::UserdataDescriptor::Known(
+            crate::objects::ClassUserdata {
+                range: gradient_start..data.len(),
+                version: (2, 2),
+                class_uuid: crate::hatch::GRADIENT_COLOR_DATA,
+                item_uuid: crate::hatch::GRADIENT_COLOR_DATA,
+                copy_count: 1,
+                transform_range: 0..0,
+                application_uuid: None,
+                save_context: None,
+                payload_range: gradient_start..data.len(),
+            },
+        )],
+    };
+    let mut warnings = Diagnostics::new();
+    let semantic = crate::decode::with_expand_bytes(&data, |expand| {
+        extended_geometry_json(
+            expand,
+            &geometry,
+            archive,
+            None,
+            MillimeterScale::IDENTITY,
+            &mut warnings,
+        )
+    })
+    .expect("hatch geometry survives malformed gradient");
+    let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
+    assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
+    assert!(semantic.get("gradient").is_none());
+    assert!(warnings
+        .messages()
+        .any(|message| message.contains("invalid gradient type")));
 }

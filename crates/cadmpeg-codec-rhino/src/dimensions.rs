@@ -1041,6 +1041,33 @@ fn decode_v2(
     })
 }
 
+#[derive(Clone, Copy)]
+enum ArrowFitWire {
+    Modern,
+    Legacy,
+}
+
+fn read_arrow_position(
+    reader: &mut BoundedReader<'_>,
+    wire: ArrowFitWire,
+) -> Result<i32, FramingError> {
+    let offset = reader.position();
+    let value = reader.i32()?;
+    match (wire, value) {
+        (ArrowFitWire::Modern | ArrowFitWire::Legacy, 0) => Ok(0),
+        (ArrowFitWire::Modern | ArrowFitWire::Legacy, 1) => Ok(1),
+        (ArrowFitWire::Modern, 2) | (ArrowFitWire::Legacy, -1) => Ok(-1),
+        (ArrowFitWire::Modern, _) => Err(FramingError::structural(
+            offset,
+            "invalid dimension arrow fit",
+        )),
+        (ArrowFitWire::Legacy, _) => Err(FramingError::structural(
+            offset,
+            "invalid V5 dimension arrow position",
+        )),
+    }
+}
+
 /// Decodes one modern linear, angular, or radial dimension.
 pub(crate) fn decode(
     data: &[u8],
@@ -1074,11 +1101,7 @@ pub(crate) fn decode(
     let text_offset = common.position();
     let user_text_point = scaled_point(point2(&mut common)?, scale, text_offset)?;
     let flip_arrows = [common.bool()?, common.bool()?];
-    let arrow_position = match common.i32()? {
-        1 => 1,
-        2 => -1,
-        _ => 0,
-    };
+    let arrow_position = read_arrow_position(&mut common, ArrowFitWire::Modern)?;
     let detail_measured = uuid(&mut common)?;
     let distance_scale = common.f64()?;
     if !distance_scale.is_finite() || distance_scale <= 0.0 {
@@ -1331,13 +1354,7 @@ pub(crate) fn apply_userdata(
         archive,
     )?;
     uuid(&mut reader)?;
-    let arrow_position = reader.i32()?;
-    if !(-1..=1).contains(&arrow_position) {
-        return Err(FramingError::structural(
-            reader.position() - 4,
-            "invalid V5 dimension arrow position",
-        ));
-    }
+    let arrow_position = read_arrow_position(&mut reader, ArrowFitWire::Legacy)?;
     let rectangle_count = reader.i32()?;
     match rectangle_count {
         0 => {}
@@ -2264,6 +2281,45 @@ pub(crate) mod tests {
                 kink_offsets: [15.0, 7.5]
             }
         ));
+    }
+
+    #[test]
+    fn unknown_modern_arrow_fit_is_malformed_and_default_is_zero() {
+        let family = [3.0_f64, 4.0, 8.0, 9.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        for (wire, expected) in [(0, 0), (1, 1), (2, -1)] {
+            let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, wire);
+            let dimension = decode(
+                &bytes,
+                RADIAL,
+                0..bytes.len(),
+                MillimeterScale::IDENTITY,
+                ArchiveVersion::V8,
+            )
+            .expect("admitted arrow fit");
+            assert_eq!(dimension.arrow_position, expected);
+        }
+        let bytes = dimension_payload_with_arrow_fit(3, &family, [0; 16], &plane(), None, 3);
+        let error = decode(
+            &bytes,
+            RADIAL,
+            0..bytes.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .expect_err("unknown arrow fit");
+        assert!(error.to_string().contains("arrow fit"), "{error}");
+
+        for (wire, expected) in [(-1_i32, Some(-1)), (0, Some(0)), (1, Some(1)), (2, None)] {
+            let bytes = wire.to_le_bytes();
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("arrow field");
+            assert_eq!(
+                super::read_arrow_position(&mut reader, super::ArrowFitWire::Legacy).ok(),
+                expected
+            );
+        }
     }
 
     #[test]

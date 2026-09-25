@@ -19,6 +19,41 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
+fn nonclamped_nurbs_edge_uses_evaluated_endpoints() {
+    let mut ir = adjacent_quad_sheet();
+    let edge = &mut ir.model.edges[1];
+    edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(edge.curve().cloned(), Some([1.0, 3.0]))
+        .expect("edge range");
+    let geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0],
+            vec![
+                Point3::new(9.0, 0.0, 0.0),
+                Point3::new(-7.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid nonclamped NURBS"),
+    ));
+    let evaluated_start = cadmpeg_ir::eval::curve_point(&geometry, 1.0).expect("start point");
+    assert_eq!(evaluated_start.get(), Point3::new(1.0, 0.0, 0.0));
+    ir.model.curves[1].geometry = geometry;
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("evaluated edge endpoints are writable");
+    assert!(!output.is_empty());
+}
+
+#[test]
 fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
     let mut ir = adjacent_quad_sheet();
     let edge = &mut ir.model.edges[1];

@@ -312,9 +312,9 @@ pub(crate) fn apply_userdata(
     scale: MillimeterScale,
     archive: ArchiveVersion,
     hatch: &mut Hatch,
-) -> Result<(), GeometryError> {
+) -> Result<(), Vec<GeometryError>> {
     let mut last_basepoint = None;
-    let mut first_error = None;
+    let mut errors = Vec::new();
     let mut first_gradient = None;
     for extra in userdata
         .iter()
@@ -323,9 +323,7 @@ pub(crate) fn apply_userdata(
     {
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
-            Err(error) => {
-                first_error.get_or_insert(error);
-            }
+            Err(error) => errors.push(error),
         }
     }
     for extra in userdata
@@ -337,9 +335,7 @@ pub(crate) fn apply_userdata(
             Ok(gradient) => {
                 first_gradient.get_or_insert(gradient);
             }
-            Err(error) => {
-                first_error.get_or_insert(error);
-            }
+            Err(error) => errors.push(error),
         }
     }
     if let Some(basepoint) = last_basepoint {
@@ -348,12 +344,11 @@ pub(crate) fn apply_userdata(
     if let Some(gradient) = first_gradient {
         hatch.gradient = Some(gradient);
     }
-    if last_basepoint.is_none() && hatch.gradient.is_none() {
-        if let Some(error) = first_error {
-            return Err(error);
-        }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
-    Ok(())
 }
 
 fn parse_gradient_userdata(

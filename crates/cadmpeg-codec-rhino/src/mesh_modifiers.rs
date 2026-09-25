@@ -489,30 +489,30 @@ fn parse_xml(
             "displacement XML has no `{DISPLACEMENT_ROOT}` child"
         ))
     })?;
-    let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")
+    let sweep_resolution_formula = field_i32_optional(displacement, "sweep-res-formula")?
         .unwrap_or_else(|| i32::from(archive.value() < 60));
     let sub_items = displacement
         .children()
         .filter(|node| node.is_element() && same_name(*node, DISPLACEMENT_SUB))
         .map(parse_sub_item)
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(DisplacementModifier {
         xml_version,
-        on: field_bool(displacement, "on", false),
+        on: field_bool(displacement, "on", false)?,
         texture: field_uuid(displacement, "texture"),
-        channel: field_i32(displacement, "channel", 0),
-        black_point: field_f64(displacement, "black-point", 0.0),
-        white_point: field_f64(displacement, "white-point", 1.0),
-        sweep_pitch: field_i32(displacement, "sweep-pitch", 1000),
-        refine_steps: field_i32(displacement, "refine-steps", 1),
-        refine_sensitivity: field_f64(displacement, "refine-sensitivity", 0.5),
-        face_count_limit_enabled: field_bool(displacement, "face-count-limit-enabled", false),
-        face_count_limit: field_i32(displacement, "face-count-limit", 10_000),
-        post_weld_angle: field_f64(displacement, "post-weld-angle", 40.0),
-        mesh_memory_limit: field_i32(displacement, "mesh-memory-limit", 512),
-        fairing_enabled: field_bool(displacement, "fairing-enabled", false),
-        fairing_amount: field_i32(displacement, "fairing-amount", 4),
-        sub_object_count: field_i32_optional(displacement, "sub-object-count"),
+        channel: field_i32(displacement, "channel", 0)?,
+        black_point: field_f64(displacement, "black-point", 0.0)?,
+        white_point: field_f64(displacement, "white-point", 1.0)?,
+        sweep_pitch: field_i32(displacement, "sweep-pitch", 1000)?,
+        refine_steps: field_i32(displacement, "refine-steps", 1)?,
+        refine_sensitivity: field_f64(displacement, "refine-sensitivity", 0.5)?,
+        face_count_limit_enabled: field_bool(displacement, "face-count-limit-enabled", false)?,
+        face_count_limit: field_i32(displacement, "face-count-limit", 10_000)?,
+        post_weld_angle: field_f64(displacement, "post-weld-angle", 40.0)?,
+        mesh_memory_limit: field_i32(displacement, "mesh-memory-limit", 512)?,
+        fairing_enabled: field_bool(displacement, "fairing-enabled", false)?,
+        fairing_amount: field_i32(displacement, "fairing-amount", 4)?,
+        sub_object_count: field_i32_optional(displacement, "sub-object-count")?,
         sweep_resolution_formula,
         sub_items,
     })
@@ -539,12 +539,12 @@ fn parse_edge_softening_xml(
     })?;
     Ok(EdgeSofteningModifier {
         xml_version,
-        on: field_bool(edge_softening, "on", false),
-        softening: field_f64(edge_softening, "softening", 0.1),
-        chamfer: field_bool(edge_softening, "chamfer", false),
-        faceted: field_bool(edge_softening, "unweld", false),
-        force_softening: field_bool(edge_softening, "force-softening", false),
-        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0),
+        on: field_bool(edge_softening, "on", false)?,
+        softening: field_f64(edge_softening, "softening", 0.1)?,
+        chamfer: field_bool(edge_softening, "chamfer", false)?,
+        faceted: field_bool(edge_softening, "unweld", false)?,
+        force_softening: field_bool(edge_softening, "force-softening", false)?,
+        edge_angle_threshold: field_f64(edge_softening, "edge-threshold", 5.0)?,
     })
 }
 
@@ -563,11 +563,11 @@ fn parse_thickening_xml(xml: &str, xml_version: i32) -> Result<ThickeningModifie
     })?;
     Ok(ThickeningModifier {
         xml_version,
-        on: field_bool(thickening, "on", false),
-        solid: field_bool(thickening, "solid", true),
-        both_sides: field_bool(thickening, "both-sides", false),
-        offset_only: field_bool(thickening, "offset-only", false),
-        distance: field_f64(thickening, "distance", 0.1),
+        on: field_bool(thickening, "on", false)?,
+        solid: field_bool(thickening, "solid", true)?,
+        both_sides: field_bool(thickening, "both-sides", false)?,
+        offset_only: field_bool(thickening, "offset-only", false)?,
+        distance: field_f64(thickening, "distance", 0.1)?,
     })
 }
 
@@ -592,11 +592,11 @@ fn parse_curve_piping_xml(
     })?;
     Ok(CurvePipingModifier {
         xml_version,
-        on: field_bool(curve_piping, "on", false),
-        radius: field_f64(curve_piping, "radius", 1.0),
-        segments: field_i32(curve_piping, "segments", 16),
-        faceted: !field_bool(curve_piping, "weld", true),
-        accuracy: field_i32(curve_piping, "accuracy", 50),
+        on: field_bool(curve_piping, "on", false)?,
+        radius: field_f64(curve_piping, "radius", 1.0)?,
+        segments: field_i32(curve_piping, "segments", 16)?,
+        faceted: !field_bool(curve_piping, "weld", true)?,
+        accuracy: field_i32(curve_piping, "accuracy", 50)?,
         cap_type: field_cap_type(curve_piping, "cap-type"),
     })
 }
@@ -621,10 +621,10 @@ fn parse_shut_lining_xml(xml: &str, xml_version: i32) -> Result<ShutLiningModifi
         .collect();
     Ok(ShutLiningModifier {
         xml_version,
-        on: field_bool(shut_lining, "on", false),
-        faceted: field_bool(shut_lining, "faceted", false),
-        auto_update: field_bool(shut_lining, "auto-update", false),
-        force_update: field_bool(shut_lining, "force-update", false),
+        on: field_bool(shut_lining, "on", false)?,
+        faceted: field_bool(shut_lining, "faceted", false)?,
+        auto_update: field_bool(shut_lining, "auto-update", false)?,
+        force_update: field_bool(shut_lining, "force-update", false)?,
         curves,
     })
 }
@@ -640,15 +640,15 @@ fn parse_shut_lining_curve(node: roxmltree::Node<'_, '_>) -> ShutLiningCurve {
     }
 }
 
-fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> DisplacementSubItem {
-    DisplacementSubItem {
-        face_index: field_i32(node, "sub-index", -1),
-        on: field_bool(node, "sub-on", false),
+fn parse_sub_item(node: roxmltree::Node<'_, '_>) -> Result<DisplacementSubItem, FramingError> {
+    Ok(DisplacementSubItem {
+        face_index: field_i32(node, "sub-index", -1)?,
+        on: field_bool(node, "sub-on", false)?,
         texture: field_uuid(node, "sub-texture"),
-        channel: field_i32(node, "sub-channel", 0),
-        black_point: field_f64(node, "sub-black-point", 0.0),
-        white_point: field_f64(node, "sub-white-point", 1.0),
-    }
+        channel: field_i32(node, "sub-channel", 0)?,
+        black_point: field_f64(node, "sub-black-point", 0.0)?,
+        white_point: field_f64(node, "sub-white-point", 1.0)?,
+    })
 }
 
 fn direct_child<'a, 'input>(
@@ -675,86 +675,126 @@ fn attribute<'a>(node: roxmltree::Node<'a, '_>, name: &str) -> Option<&'a str> {
         .map(|attribute| attribute.value())
 }
 
-fn field_bool(parent: roxmltree::Node<'_, '_>, name: &str, default: bool) -> bool {
+fn malformed_typed_field(name: &str, kind: &str) -> FramingError {
+    FramingError::unpositioned(format!("XML field `{name}` has invalid {kind} value"))
+}
+
+fn parse_bool_text(text: &str) -> Option<bool> {
+    if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1" {
+        Some(true)
+    } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") || text == "0" {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn field_bool(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: bool,
+) -> Result<bool, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
-    if kind.eq_ignore_ascii_case("string") {
-        text.eq_ignore_ascii_case("true")
-            || text.eq_ignore_ascii_case("t")
-            || text.parse::<i32>().is_ok_and(|value| value != 0)
+    let value = if kind.eq_ignore_ascii_case("string") {
+        parse_bool_text(text).or_else(|| text.parse::<i32>().ok().map(|value| value != 0))
     } else if kind.eq_ignore_ascii_case("bool") {
-        text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1"
+        parse_bool_text(text)
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
     ) {
-        text.parse::<f64>().is_ok_and(|value| value != 0.0)
+        text.parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+            .map(|value| value != 0.0)
     } else {
-        false
-    }
+        None
+    };
+    value.ok_or_else(|| malformed_typed_field(name, kind))
 }
 
-fn field_i32(parent: roxmltree::Node<'_, '_>, name: &str, default: i32) -> i32 {
-    field_i32_optional(parent, name).unwrap_or(default)
+fn field_i32(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: i32,
+) -> Result<i32, FramingError> {
+    Ok(field_i32_optional(parent, name)?.unwrap_or(default))
 }
 
-fn field_i32_optional(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<i32> {
-    let node = typed_child(parent, name)?;
+fn field_i32_optional(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+) -> Result<Option<i32>, FramingError> {
+    let Some(node) = typed_child(parent, name) else {
+        return Ok(None);
+    };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
-        i32::from(
-            text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
-        )
+        parse_bool_text(text).map(i32::from)
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "float" | "double" | "real"
     ) {
-        text.parse::<f64>().ok().map_or(0, |value| value as i32)
+        text.parse::<f64>().ok().and_then(|value| {
+            if value.is_finite()
+                && value >= f64::from(i32::MIN)
+                && value < f64::from(i32::MAX) + 1.0
+            {
+                Some(value as i32)
+            } else {
+                None
+            }
+        })
     } else if kind.eq_ignore_ascii_case("string") {
         if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") {
-            1
+            Some(1)
+        } else if text.eq_ignore_ascii_case("false") || text.eq_ignore_ascii_case("f") {
+            Some(0)
         } else {
-            text.parse::<i32>().unwrap_or(0)
+            text.parse::<i32>().ok()
         }
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long"
     ) {
-        text.parse::<i32>().unwrap_or(0)
+        text.parse::<i32>().ok()
     } else {
-        0
+        None
     };
-    Some(value)
+    value
+        .map(Some)
+        .ok_or_else(|| malformed_typed_field(name, kind))
 }
 
-fn field_f64(parent: roxmltree::Node<'_, '_>, name: &str, default: f64) -> f64 {
+fn field_f64(
+    parent: roxmltree::Node<'_, '_>,
+    name: &str,
+    default: f64,
+) -> Result<f64, FramingError> {
     let Some(node) = typed_child(parent, name) else {
-        return default;
+        return Ok(default);
     };
     let text = node.text().unwrap_or_default().trim();
     let kind = attribute(node, "type").unwrap_or_default();
     let value = if kind.eq_ignore_ascii_case("bool") {
-        f64::from(
-            text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("t") || text == "1",
-        )
+        parse_bool_text(text).map(|value| f64::from(u8::from(value)))
     } else if matches!(
         kind.to_ascii_lowercase().as_str(),
         "int" | "short" | "char" | "long" | "float" | "double" | "real"
     ) || kind.eq_ignore_ascii_case("string")
     {
-        text.parse::<f64>().unwrap_or(0.0)
+        text.parse::<f64>().ok()
     } else {
-        0.0
+        None
     };
-    if value.is_finite() {
-        value
-    } else {
-        0.0
-    }
+    value
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| malformed_typed_field(name, kind))
 }
 
 fn field_uuid(parent: roxmltree::Node<'_, '_>, name: &str) -> Option<Uuid> {
@@ -965,6 +1005,40 @@ mod tests {
 <sub-channel type=\"int\">9</sub-channel><sub-black-point type=\"double\">-0.1</sub-black-point>\
 <sub-white-point type=\"double\">0.6</sub-white-point></sub>\
 </new-displacement-object-data></xml>";
+
+    fn assert_malformed_present_field_is_reported(field: &str, kind: &str, value: &str) {
+        let xml = format!(
+            "<xml><new-displacement-object-data><{field} type=\"{kind}\">{value}</{field}></new-displacement-object-data></xml>"
+        );
+        let error = parse_xml(&xml, 2, ArchiveVersion::V6).expect_err("malformed field");
+        assert!(error.to_string().contains(field), "{error}");
+
+        let payload = v2_payload(&xml);
+        let mut warnings = Diagnostics::new();
+        let modifiers = parse_attribute_userdata(
+            &payload,
+            &[descriptor(&payload, Some(MESH_MODIFIER_PLUGIN))],
+            ArchiveVersion::V6,
+            &mut warnings,
+        );
+        assert!(modifiers.is_none());
+        assert!(warnings.messages().any(|warning| warning.contains(field)));
+    }
+
+    #[test]
+    fn malformed_present_bool_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("on", "bool", "maybe");
+    }
+
+    #[test]
+    fn malformed_present_int_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("channel", "int", "bad");
+    }
+
+    #[test]
+    fn malformed_present_real_xml_field_is_reported() {
+        assert_malformed_present_field_is_reported("refine-sensitivity", "double", "bad");
+    }
 
     const EDGE_SOFTENING_XML: &str = "<xml><edge-softening-object-data>\
 <on type=\"bool\">true</on>\

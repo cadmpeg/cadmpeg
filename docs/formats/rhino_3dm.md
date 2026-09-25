@@ -624,6 +624,7 @@ not require that UUID to occur in only one record and does not carry a producer
 selector for an antecedent. Multiple records can therefore produce the same
 descendant UUID without a unique history dependency in the bytes.
 `record_type` is 0 for update history parameters and 1 for feature parameters.
+Other serialized record-type values make the complete history record malformed.
 
 The values wrapper and every history value are independent anonymous chunks.
 The writer emits version 1.0 for both. Each history value is an anonymous
@@ -737,6 +738,7 @@ archive array of u8 persistent_edge_orientations
 
 Both archive-array counts must equal `edge_count`. Orientations are 0 for
 forward and 1 for reversed traversal.
+Other orientation bytes make the complete history record malformed.
 
 The object-evaluation chunk contains `i32 evaluation_type`, an
 `ON_ComponentIndex`, four `f64` evaluation parameters, and three
@@ -1275,7 +1277,13 @@ The XML document has root `xml` and a direct child named
 `new-displacement-object-data`. Parameter and property names are matched
 case-insensitively. A parameter with no `type` property is absent to the
 parameter reader. Unknown child elements are ignored. Missing parameters use
-the class getter defaults below; a nil UUID is no texture:
+the class getter defaults below; a nil UUID is no texture.
+
+A present typed Boolean, integer, or real parameter with text outside its
+declared value grammar makes that userdata item malformed. Getter defaults
+apply only when the typed parameter is absent.
+
+The displacement parameters are:
 
 | XML child | Type | Meaning | Missing value |
 | --- | --- | --- | ---: |
@@ -2351,6 +2359,8 @@ has an effective mask only when its viewport ID is non-nil and at least one
 override is effective. `ON_UNSET_COLOR` means use the layer color or plot
 color. A plot weight is effective for a finite value `>= 0.0` or `-1.0`;
 `0.0` selects the application default pen and `-1.0` suppresses plotting.
+Other plot-weight values and visibility bytes other than 1 or 2 make the
+per-viewport userdata malformed.
 The first visible byte is the effective visibility. Minor 1 writes that byte
 twice so a minor-0 reader can consume the first value; the minor-1 reader
 consumes the second as its compatibility persistent value. Minor 2 adds the

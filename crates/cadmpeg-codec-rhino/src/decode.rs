@@ -925,17 +925,20 @@ impl<'a> DecodeContext<'a> {
                 )),
             );
         }
-        if let Err(error) = crate::hatch::apply_userdata(
+        if let Err(errors) = crate::hatch::apply_userdata(
             self.scan.data,
             &object.userdata,
             scale,
             self.archive(),
             &mut hatch,
         ) {
-            self.scan_warning(
-                source_order,
-                &format!("hatch userdata extension failed: {error}"),
-            );
+            let class = report_class(&self.scan.objects[source_order]);
+            for error in errors {
+                self.report.phase_warnings.push_coded(
+                    RhinoLossCode::ObjectDecodeDiagnostic,
+                    format!("{class}: hatch userdata extension failed: {error}"),
+                );
+            }
         }
         let Some(key) = self.checked_object_key(identity, source_order) else {
             return;

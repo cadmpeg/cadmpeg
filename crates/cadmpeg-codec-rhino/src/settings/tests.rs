@@ -1206,6 +1206,76 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     assert_eq!(root_values[1].persistent_visibility, None);
 }
 
+fn single_viewport_extension(bits: u32, field_bytes: &[u8]) -> (Vec<u8>, ClassUserdata) {
+    let archive = ArchiveVersion::V8;
+    let mut entry = bits.to_le_bytes().to_vec();
+    entry.extend(Uuid::from_canonical([1; 16]).to_wire());
+    entry.extend(field_bytes);
+    let mut outer_body = 1_i32.to_le_bytes().to_vec();
+    outer_body.extend(anonymous_chunk(archive, 2, &entry));
+    let payload = anonymous_chunk(archive, 0, &outer_body);
+    let descriptor = ClassUserdata {
+        range: 0..payload.len(),
+        version: (2, 2),
+        class_uuid: settings::LAYER_EXTENSIONS,
+        item_uuid: settings::LAYER_EXTENSIONS,
+        copy_count: 1,
+        transform_range: 0..0,
+        application_uuid: None,
+        save_context: None,
+        payload_range: 0..payload.len(),
+    };
+    (payload, descriptor)
+}
+
+fn assert_malformed_viewport_visibility(bits: u32, field_bytes: &[u8]) {
+    let (payload, descriptor) = single_viewport_extension(bits, field_bytes);
+    let error = settings::parse_layer_extensions(
+        &payload,
+        &descriptor,
+        ArchiveVersion::V8,
+        Some(Uuid::from_canonical([2; 16])),
+    )
+    .expect_err("malformed visibility-only entry");
+    assert!(error.to_string().contains("visibility"), "{error}");
+}
+
+#[test]
+fn malformed_present_viewport_visibility_is_reported() {
+    assert_malformed_viewport_visibility(
+        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_VISIBLE,
+        &[3, 1],
+    );
+}
+
+#[test]
+fn malformed_present_viewport_persistent_visibility_is_reported() {
+    assert_malformed_viewport_visibility(
+        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY,
+        &[3],
+    );
+}
+
+fn assert_malformed_viewport_plot_weight(weight: f64) {
+    let (payload, descriptor) = single_viewport_extension(
+        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PLOT_WEIGHT,
+        &weight.to_le_bytes(),
+    );
+    let error = settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
+        .expect_err("malformed weight-only entry");
+    assert!(error.to_string().contains("plot weight"), "{error}");
+}
+
+#[test]
+fn negative_viewport_plot_weight_is_reported() {
+    assert_malformed_viewport_plot_weight(-2.0);
+}
+
+#[test]
+fn nonfinite_viewport_plot_weight_is_reported() {
+    assert_malformed_viewport_plot_weight(f64::NAN);
+}
+
 #[test]
 fn layer_extensions_reject_negative_count() {
     let archive = ArchiveVersion::V8;
