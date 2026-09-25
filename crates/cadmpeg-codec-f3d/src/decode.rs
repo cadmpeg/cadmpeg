@@ -3345,12 +3345,17 @@ fn project_mesh_bodies(
         // The paramesh registry states an unshaded mesh by carrying no
         // corner-normal channel, so the lane arrives absent, never empty.
         let record = id.clone();
-        let tessellation = cadmpeg_ir::tessellation::Tessellation::new(
+        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
             id,
             cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,
-                body.corner_normals,
+                body.corner_normals.map(|normals| {
+                    normals
+                        .into_iter()
+                        .map(cadmpeg_ir::features::FiniteVector3::from)
+                        .collect()
+                }),
             )
             .map_err(|error| {
                 CodecError::malformed(format_args!("paramesh body record {record}: {error}"))

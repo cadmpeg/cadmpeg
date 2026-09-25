@@ -15,6 +15,10 @@
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::units::UnitVector3;
 
 use crate::error::malformed;
 use crate::records::mesh::DesignMeshUuid;
@@ -103,13 +107,13 @@ pub(crate) struct MeshContainer {
     /// Container-local version-4 UUID stored in registry field 12.
     pub(crate) mesh_uuid: DesignMeshUuid,
     /// One coordinate triple per vertex, in container coordinates.
-    pub(crate) vertices: Vec<[f64; 3]>,
+    pub(crate) vertices: Vec<FinitePoint3>,
     /// Triangle corner indices into `vertices`.
     pub(crate) triangles: Vec<[u32; 3]>,
     /// Source-classified feature edges as ascending vertex-index pairs.
     pub(crate) feature_edges: Vec<[u32; 2]>,
     /// One decoded unit normal per flattened triangle corner.
-    pub(crate) corner_normals: Option<Vec<[f64; 3]>>,
+    pub(crate) corner_normals: Option<Vec<UnitVector3>>,
     /// Source face groups as an ordered partition of triangle ordinals.
     pub(crate) triangle_groups: Vec<MeshTriangleGroup>,
     /// One texture-table selector per triangle, when the `tid` channel exists.
@@ -1177,21 +1181,19 @@ fn attribute_names(
 }
 
 /// One f32 coordinate triple per vertex.
-fn decode_vertices(stream: &[u8]) -> Result<Vec<[f64; 3]>, CodecError> {
+fn decode_vertices(stream: &[u8]) -> Result<Vec<FinitePoint3>, CodecError> {
     let mut view = View::over_retained(stream);
     let mut vertices = Vec::with_capacity(stream.len() / 12);
     while !view.is_empty() {
-        let mut point = [0.0f64; 3];
+        let mut point = [FiniteReal::ZERO; 3];
         for value in &mut point {
             let component = view.f32_le().ok_or_else(|| {
                 malformed("paramesh vertex stream is not a whole number of coordinate triples")
             })?;
-            if !component.is_finite() {
-                return Err(malformed("paramesh vertex coordinate is not finite"));
-            }
-            *value = f64::from(component);
+            *value = FiniteReal::new(f64::from(component))
+                .ok_or_else(|| malformed("paramesh vertex coordinate is not finite"))?;
         }
-        vertices.push(point);
+        vertices.push(FinitePoint3::from_coordinates(point[0], point[1], point[2]));
     }
     Ok(vertices)
 }
@@ -1367,7 +1369,7 @@ fn decode_index_positions(
 }
 
 /// Decode one octahedrally packed unit direction.
-fn decode_packed_direction(packed: [f32; 2]) -> Result<[f64; 3], CodecError> {
+fn decode_packed_direction(packed: [f32; 2]) -> Result<UnitVector3, CodecError> {
     let [encoded_x, encoded_y] = packed.map(f64::from);
     if !encoded_x.is_finite()
         || !encoded_y.is_finite()
@@ -1391,7 +1393,8 @@ fn decode_packed_direction(packed: [f32; 2]) -> Result<[f64; 3], CodecError> {
     if !length.is_finite() || length <= f64::EPSILON {
         return Err(malformed("paramesh packed direction is degenerate"));
     }
-    Ok([normal_x / length, normal_y / length, normal_z / length])
+    UnitVector3::normalized(Vector3::new(normal_x, normal_y, normal_z))
+        .ok_or_else(|| malformed("paramesh packed direction is degenerate"))
 }
 
 /// Expand the role-0 packed-direction channel to one normal per triangle
@@ -1405,7 +1408,7 @@ fn decode_corner_normals(
     attributes: &[MeshAttribute],
     vertices: usize,
     triangles: &[[u32; 3]],
-) -> Result<Option<Vec<[f64; 3]>>, CodecError> {
+) -> Result<Option<Vec<UnitVector3>>, CodecError> {
     let mut channels = attributes
         .iter()
         .filter_map(|attribute| match &attribute.elements {
@@ -1968,6 +1971,8 @@ mod tests {
         STREAM_VALUES, VERSION,
     };
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::units::UnitVector3;
 
     /// The implicit starting index is the one that keeps the whole corner
     /// sequence inside the vertex domain, and a domain too small for the
@@ -2416,7 +2421,10 @@ mod tests {
         ];
         for (packed, expected) in cases {
             let actual = decode_packed_direction(packed).expect("packed direction");
-            for (actual, expected) in actual.into_iter().zip(expected) {
+            for (actual, expected) in [actual.as_raw().x, actual.as_raw().y, actual.as_raw().z]
+                .into_iter()
+                .zip(expected)
+            {
                 assert!((actual - expected).abs() < 1.0e-12);
             }
         }
@@ -2447,7 +2455,11 @@ mod tests {
         .expect("mesh container");
         assert_eq!(
             mesh.corner_normals,
-            Some(vec![[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]])
+            Some(vec![
+                UnitVector3::Z_AXIS,
+                UnitVector3::Z_AXIS.reversed(),
+                UnitVector3::Y_AXIS,
+            ])
         );
         assert!(matches!(
             &mesh.attributes[0].addressing,
@@ -2819,7 +2831,7 @@ mod tests {
         let mesh = decode_mesh_container(&container).expect("mesh container");
         assert_eq!(mesh.fusion_uuid, GUID);
         assert_eq!(mesh.vertices.len(), 4);
-        assert_eq!(mesh.vertices[2], [1.0, 1.0, 0.0]);
+        assert_eq!(mesh.vertices[2].get(), Point3::new(1.0, 1.0, 0.0));
         assert_eq!(mesh.triangles, [[0, 1, 2], [3, 1, 2]]);
     }
 
