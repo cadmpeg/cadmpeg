@@ -195,6 +195,51 @@ fn rectangular_trimmed_surface_unwraps_cyclic_basis_parameters() {
 }
 
 #[test]
+fn rectangular_trimmed_surface_shifts_a_wide_finite_nurbs_seam() {
+    let max = f64::MAX;
+    let half = max * 0.5;
+    let source = format!(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));\n\
+#2=CARTESIAN_POINT('',(0.,1.,0.));\n\
+#3=CARTESIAN_POINT('',(1.,0.,0.));\n\
+#4=CARTESIAN_POINT('',(1.,1.,0.));\n\
+#5=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#1,#2),(#3,#4)),.UNSPECIFIED.,.T.,.F.,.F.,(2,2),(2,2),(-{max},{max}),(0.,1.),.UNSPECIFIED.);\n\
+#6=RECTANGULAR_TRIMMED_SURFACE('wide',#5,{half},-{max},0.,1.,.T.,.T.);\n\
+#7=GEOMETRIC_SET('',(#6));\n\
+#8=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#7),#9);\n\
+#9=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+        max = format_args!("{max:e}"),
+        half = format_args!("{half:e}")
+    );
+    let decoded = decode_inline(&source);
+    let construction = decoded
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| {
+            decoded
+                .ir()
+                .model
+                .procedural_surface_owner(&surface.id)
+                .map(SurfaceId::as_str)
+                == Some("step:data:surface#6")
+        })
+        .expect("wide trimmed surface construction");
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(payload) =
+        construction.definition()
+    else {
+        panic!("wide trim is not a subset surface");
+    };
+    assert_eq!(
+        payload
+            .parameter_ranges()
+            .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
+        [[half, max], [0.0, 1.0]]
+    );
+}
+
+#[test]
 fn rectangular_trimmed_surface_unwraps_both_periodic_directions_and_senses() {
     let decoded = StepCodec::default()
         .decode(

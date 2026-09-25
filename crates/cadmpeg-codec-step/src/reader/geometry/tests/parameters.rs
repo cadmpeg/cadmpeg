@@ -2,16 +2,16 @@
 use crate::parse::Value;
 use crate::reader::geometry::{
     curve_endpoint_seed, decode_pcurve_geometry, directrix_geometry_parameter_scale,
-    edge_parameter_range, nurbs_surface_parameter_period, pcurve_trim_parameter, si_prefix,
-    surface_parameter_periods, surface_parameter_scales_for_step, unit_scale_mm,
-    unit_scale_radians,
+    edge_parameter_range, nurbs_surface_parameter_domain, pcurve_trim_parameter, si_prefix,
+    surface_parameter_scales_for_step, surface_periodic_domains, trimmed_curve_parameter_range,
+    trimmed_pcurve_parameterization, unit_scale_mm, unit_scale_radians,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_curve_parameter_near_point;
 use cadmpeg_ir::eval::nurbs_curve_point_at;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
-    pcurve::PcurveGeometry,
+    pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles},
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -38,12 +38,68 @@ fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
     )
     .expect("periodic NURBS surface");
     assert_eq!(
-        nurbs_surface_parameter_period(1, surface.u_knots(), surface.u_count()),
-        Some(2.0)
+        nurbs_surface_parameter_domain(1, surface.u_knots(), surface.u_count()),
+        Some([0.0, 2.0])
     );
     assert_eq!(
-        surface_parameter_periods(&SolvedSurfaceGeometry::Nurbs(surface)),
-        [Some(2.0), Some(1.0)]
+        surface_periodic_domains(&SolvedSurfaceGeometry::Nurbs(surface)),
+        [Some([0.0, 2.0]), Some([0.0, 1.0])]
+    );
+}
+
+#[test]
+fn periodic_curve_trim_shifts_a_wide_finite_seam_endpoint() {
+    let max = f64::MAX;
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![-max, -max, max, max],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        true,
+    )
+    .expect("wide periodic curve");
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+    assert_eq!(
+        trimmed_curve_parameter_range(&geometry, max * 0.5, -max, true),
+        [max * 0.5, max]
+    );
+}
+
+#[test]
+fn periodic_edge_range_keeps_a_finite_sweep_across_a_wide_seam() {
+    let max = f64::MAX;
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![-max, -max, max, max],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        true,
+    )
+    .expect("wide periodic curve");
+    let start = FiniteReal::new(max * 0.5).expect("finite start");
+    let end = FiniteReal::new(-max).expect("finite end");
+    assert_eq!(
+        edge_parameter_range(&SolvedCurveGeometry::Nurbs(curve), start, end),
+        Some([max * 0.5, max])
+    );
+}
+
+#[test]
+fn periodic_pcurve_trim_shifts_a_wide_finite_seam_endpoint() {
+    let max = f64::MAX;
+    let nurbs = PcurveNurbs::new(
+        1,
+        vec![-max, -max, max, max],
+        PcurveNurbsPoles::Polynomial {
+            points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        },
+        true,
+    )
+    .expect("wide periodic pcurve");
+    let geometry = PcurveGeometry::Nurbs { nurbs };
+    assert_eq!(
+        trimmed_pcurve_parameterization(&geometry, max * 0.5, -max, true),
+        ([max * 0.5, max], true)
     );
 }
 
@@ -91,6 +147,25 @@ fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
         .expect("periodic interval");
     assert!((range[0] - 1.5).abs() < 1.0e-10);
     assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
+}
+
+#[test]
+fn periodic_edge_range_reduces_finite_endpoints_separately_when_difference_overflows() {
+    let circle = SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("finite circle"),
+    );
+    let start = FiniteReal::new(-f64::MAX).expect("finite start");
+    let end = FiniteReal::new(f64::MAX).expect("finite end");
+    let range = edge_parameter_range(&circle, start, end).expect("finite cyclic sweep");
+    assert!(range[0].is_finite() && range[1].is_finite());
+    assert!(range[1] > range[0]);
+    assert!(range[1] - range[0] < std::f64::consts::TAU);
 }
 
 #[test]
