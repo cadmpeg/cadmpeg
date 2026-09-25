@@ -16,7 +16,7 @@ use super::{offset_store_control_counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{Graph, Node};
+use crate::topology::{FaceLoopFailure, Graph, Node};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
@@ -48,6 +48,7 @@ const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 /// A face whose non-loop fields are decoded, held until its loops resolve so
 /// the face is constructed once with its complete boundary.
 struct PendingFace {
+    xmt: u32,
     id: FaceId,
     shell: ShellId,
     surface: SurfaceId,
@@ -84,10 +85,25 @@ pub(super) fn emit_topology(
         .filter_map(|shell| graph.shell_face_xmts(shell))
         .flatten()
         .collect();
-    let valid_loop_rings: BTreeMap<u32, Vec<u32>> = valid_face_xmts
-        .iter()
-        .filter_map(|face_xmt| graph.face_loop_rings(*face_xmt))
-        .flatten()
+    let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
+    let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
+    for face_xmt in &valid_face_xmts {
+        match graph.face_loop_rings(*face_xmt) {
+            Ok(rings) => {
+                face_loop_rings.insert(*face_xmt, rings);
+            }
+            Err(failure) => {
+                face_loop_failures.insert(*face_xmt, failure);
+            }
+        }
+    }
+    let valid_loop_rings: BTreeMap<u32, &[u32]> = face_loop_rings
+        .values()
+        .flat_map(|rings| {
+            rings
+                .iter()
+                .map(|(loop_xmt, ring)| (*loop_xmt, ring.as_slice()))
+        })
         .collect();
     let valid_fin_xmts: BTreeSet<u32> = valid_loop_rings
         .values()
@@ -549,6 +565,7 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         pending_faces.push(PendingFace {
+            xmt: node.xmt,
             id: id.clone(),
             shell: shell.clone(),
             surface,
@@ -559,21 +576,7 @@ pub(super) fn emit_topology(
     }
     let mut loops = BTreeMap::new();
     let mut loop_specs = BTreeMap::new();
-    let mut loop_coedges = BTreeMap::<u32, Vec<CoedgeId>>::new();
     for &loop_xmt in valid_loop_rings.keys() {
-        let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
-            graph
-                .get(NodeKind::Fin, *fin_xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| {
-                    fields
-                        .edge
-                        .is_some_and(|target| edges.contains_key(&u32::from(target)))
-                })
-        });
-        if !ring_resolves {
-            continue;
-        }
         let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
         };
@@ -588,6 +591,24 @@ pub(super) fn emit_topology(
             continue;
         };
         let id: LoopId = scope.id(&cadmpeg_ir::identity_component!("loop"), node.xmt);
+        let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
+            graph
+                .get(NodeKind::Fin, *fin_xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| {
+                    fields
+                        .edge
+                        .is_some_and(|target| edges.contains_key(&u32::from(target)))
+                })
+        });
+        if !ring_resolves {
+            topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                format!(
+                    "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
+                ),
+            ));
+            continue;
+        }
         annotate_node(annotations, &id, source_stream, node, "LOOP");
         loop_specs.insert(node.xmt, (id.clone(), face));
         loops.insert(node.xmt, id);
@@ -874,36 +895,43 @@ pub(super) fn emit_topology(
                 .collect::<Result<Vec<_>, CodecError>>()?,
             use_curve: None,
         });
-        if let Some(loop_xmt) = fields.loop_xmt {
-            loop_coedges
-                .entry(u32::from(loop_xmt))
-                .or_default()
-                .push(id);
-        }
     }
     let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
-    for (loop_xmt, (id, face)) in loop_specs {
-        let Some(ring) = loop_coedges
-            .remove(&loop_xmt)
-            .and_then(|coedges| LoopRing::new(coedges, Vec::new()).ok())
-        else {
-            // The ring did not resolve, so the loop states no boundary and is
-            // omitted from its face. That is a stated loss, not a silent one.
-            topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!(
-                    "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
-                ),
-            ));
-            continue;
-        };
-        ir.model.loops.push(Loop {
-            id: id.clone(),
-            face: face.clone(),
-            boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
-        });
-        face_loops.entry(face).or_default().push(id);
+    for rings in face_loop_rings.values() {
+        for (loop_xmt, fin_xmts) in rings {
+            let Some((id, face)) = loop_specs.get(loop_xmt) else {
+                continue;
+            };
+            let ring = fin_xmts
+                .iter()
+                .map(|fin_xmt| fin_ids.get(fin_xmt).cloned())
+                .collect::<Option<Vec<_>>>()
+                .and_then(|coedges| LoopRing::new(coedges, Vec::new()).ok());
+            let Some(ring) = ring else {
+                topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                    format!(
+                        "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
+                    ),
+                ));
+                continue;
+            };
+            ir.model.loops.push(Loop {
+                id: id.clone(),
+                face: face.clone(),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+            });
+            face_loops.entry(face.clone()).or_default().push(id.clone());
+        }
     }
     for pending in pending_faces {
+        if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
+            topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
+                format!(
+                    "parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
+                    pending.xmt
+                ),
+            ));
+        }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
         ir.model.faces.push(Face {
             id: pending.id,
