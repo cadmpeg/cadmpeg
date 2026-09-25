@@ -322,6 +322,33 @@ pub(crate) fn linear_offset_line_file(basis: i64) -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn wide_control_linear_offset_line_file() -> Vec<u8> {
+    wide_linear_offset_line_file("130,1,2,0,0,2,1,-9D306,3,9D306,0,0,1,0,1;")
+}
+
+pub(crate) fn wide_distance_linear_offset_line_file() -> Vec<u8> {
+    wide_linear_offset_line_file("130,1,2,0,0,2,-9D307,0,9D307,1,0,0,1,0,1;")
+}
+
+fn wide_linear_offset_line_file(parameters: &'static str) -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,10,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 130,
+            form: 0,
+            label: "OFFSET".into(),
+            status: "00000000",
+            parameters: parameters.into(),
+        },
+    ])
+}
+
 pub(crate) fn function_offset_line_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);

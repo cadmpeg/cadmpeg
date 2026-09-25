@@ -593,9 +593,28 @@ pub(super) fn project(
                     CurveOffsetLawBasis::ArcLength => parameter - start,
                 };
                 let evaluate_distance = |parameter: f64| {
-                    let alpha = (law_parameter(parameter) - control_range[0])
-                        / (control_range[1] - control_range[0]);
-                    distances[0] + alpha * (distances[1] - distances[0])
+                    let independent = law_parameter(parameter);
+                    let span = control_range[1] - control_range[0];
+                    let alpha = if span.is_finite() {
+                        (independent - control_range[0]) / span
+                    } else {
+                        cadmpeg_ir::math::parameter_fraction(
+                            independent,
+                            control_range[0],
+                            control_range[1],
+                        )
+                        .map_or(
+                            (independent - control_range[0]) / span,
+                            cadmpeg_ir::scalar::FiniteReal::get,
+                        )
+                    };
+                    let ordinary = distances[0] + alpha * (distances[1] - distances[0]);
+                    if ordinary.is_finite() {
+                        ordinary
+                    } else {
+                        cadmpeg_ir::math::interpolate(distances[0], distances[1], alpha)
+                            .map_or(ordinary, cadmpeg_ir::scalar::FiniteReal::get)
+                    }
                 };
                 let offset_direction = normal.cross(direction);
                 let Ok(source_start) = cadmpeg_ir::eval::curve_point(
