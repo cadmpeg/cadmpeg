@@ -398,56 +398,6 @@ impl TessellationMesh {
             triangles,
         })
     }
-
-    /// Pair a source's flat triangle-list lanes and corner normals into rows.
-    ///
-    /// An unshaded mesh is stated by absence — `None` — not by an empty lane.
-    ///
-    /// # Errors
-    ///
-    /// Refuses a corner-normal lane whose length differs from three times the
-    /// triangle count, naming both counts.
-    pub fn from_corner_lanes(
-        positions: Vec<Point3>,
-        triangles: Vec<[u32; 3]>,
-        corner_normals: Option<Vec<Vector3>>,
-    ) -> Result<Self, TessellationLaneError> {
-        let Some(corner_normals) = corner_normals else {
-            return Ok(Self::List {
-                vertices: positions,
-                triangles,
-            });
-        };
-        let Some(corner_count) = triangles.len().checked_mul(3) else {
-            return Err(TessellationLaneError::CornerCountOverflow {
-                triangles: triangles.len(),
-            });
-        };
-        if corner_normals.len() != corner_count {
-            return Err(TessellationLaneError::CornerNormalLane {
-                corners: corner_count,
-                normals: corner_normals.len(),
-            });
-        }
-        let mut normals = corner_normals.into_iter();
-        let rows = triangles
-            .into_iter()
-            .map(|corners| {
-                let triple: Vec<Vector3> = normals.by_ref().take(3).collect();
-                let normals = <[Vector3; 3]>::try_from(triple).map_err(|short: Vec<_>| {
-                    TessellationLaneError::CornerNormalLane {
-                        corners: corner_count,
-                        normals: short.len(),
-                    }
-                })?;
-                Ok(ShadedTriangle { corners, normals })
-            })
-            .collect::<Result<Vec<_>, TessellationLaneError>>()?;
-        Ok(Self::CornerShadedList {
-            vertices: positions,
-            triangles: rows,
-        })
-    }
 }
 
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
@@ -649,6 +599,52 @@ impl<P: Copy, N: Copy> TessellationMesh<P, N> {
 }
 
 impl<P, N> TessellationMesh<P, N> {
+    /// Pair flat triangle corners and their optional normal lane into rows.
+    ///
+    /// The lane's values keep their admitted type. Absence means unshaded;
+    /// a present lane has exactly three normals per triangle.
+    pub fn from_corner_lanes(
+        positions: Vec<P>,
+        triangles: Vec<[u32; 3]>,
+        corner_normals: Option<Vec<N>>,
+    ) -> Result<Self, TessellationLaneError> {
+        let Some(corner_normals) = corner_normals else {
+            return Ok(Self::List {
+                vertices: positions,
+                triangles,
+            });
+        };
+        let Some(corner_count) = triangles.len().checked_mul(3) else {
+            return Err(TessellationLaneError::CornerCountOverflow {
+                triangles: triangles.len(),
+            });
+        };
+        if corner_normals.len() != corner_count {
+            return Err(TessellationLaneError::CornerNormalLane {
+                corners: corner_count,
+                normals: corner_normals.len(),
+            });
+        }
+        let mut normals = corner_normals.into_iter();
+        let rows = triangles
+            .into_iter()
+            .map(|corners| {
+                let triple: Vec<N> = normals.by_ref().take(3).collect();
+                let normals = <[N; 3]>::try_from(triple).map_err(|short: Vec<_>| {
+                    TessellationLaneError::CornerNormalLane {
+                        corners: corner_count,
+                        normals: short.len(),
+                    }
+                })?;
+                Ok(ShadedTriangle { corners, normals })
+            })
+            .collect::<Result<Vec<_>, TessellationLaneError>>()?;
+        Ok(Self::CornerShadedList {
+            vertices: positions,
+            triangles: rows,
+        })
+    }
+
     /// Map every vertex position in mesh order, keeping the triangles, the
     /// strip spans and the normals.
     fn try_map_points<Q, E>(
@@ -1101,6 +1097,15 @@ impl Tessellation {
         let mesh = mesh
             .try_map_points(admit_vertex)?
             .try_map_normals(admit_normal)?;
+        Self::from_parts(id, mesh, channels)
+    }
+
+    /// Build from admitted positions and normals; check only relationships.
+    pub fn from_parts(
+        id: impl Into<String>,
+        mesh: TessellationMesh<FinitePoint3, FiniteVector3>,
+        channels: Vec<TessellationChannel>,
+    ) -> Result<Self, TessellationError> {
         let triangles = mesh.triangles();
         require_triangle_indices(mesh.vertex_count(), &triangles)?;
         require_channel_indices(triangles.len(), &channels)?;

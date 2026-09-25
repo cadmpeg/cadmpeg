@@ -6,8 +6,10 @@ use super::{
     TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
     TessellationWire,
 };
+use crate::features::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::NonNegativeReal;
+use crate::units::UnitVector3;
 
 fn square() -> Vec<Point3> {
     vec![
@@ -54,6 +56,33 @@ fn per_corner_mesh_exposes_its_normals() {
     assert_eq!(value.per_corner_normals().len(), 3 * value.triangle_count());
     assert_eq!(value.per_corner_normals(), normals);
     assert!(value.vertex_normals().is_empty());
+}
+
+#[test]
+fn admitted_corner_mesh_parts_preserve_normals_and_check_indices() {
+    let vertices = square()
+        .into_iter()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect::<Vec<_>>();
+    let normals = vec![FiniteVector3::from(UnitVector3::Z_AXIS); 3];
+    let admitted = TessellationMesh::from_corner_lanes(
+        vertices.clone(),
+        vec![[0, 1, 2]],
+        Some(normals.clone()),
+    )
+    .unwrap();
+    let value =
+        Tessellation::from_parts("test:mesh:tessellation#admitted", admitted, Vec::new()).unwrap();
+    assert_eq!(
+        value.per_corner_normals(),
+        vec![Vector3::new(0.0, 0.0, 1.0); 3]
+    );
+
+    let invalid =
+        TessellationMesh::from_corner_lanes(vertices, vec![[0, 1, 4]], Some(normals)).unwrap();
+    assert!(
+        Tessellation::from_parts("test:mesh:tessellation#invalid", invalid, Vec::new()).is_err()
+    );
 }
 
 #[test]

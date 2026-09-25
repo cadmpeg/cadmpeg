@@ -41,6 +41,8 @@ use crate::records::mesh::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
 const PARAMESH_MODULE: &str = "ParaMesh";
@@ -104,13 +106,13 @@ pub(crate) struct MeshBody {
     /// Deterministic native identifier, keyed by the mesh-body record.
     pub(crate) id: String,
     /// Vertex positions in model millimetres.
-    pub(crate) vertices: Vec<cadmpeg_ir::math::Point3>,
+    pub(crate) vertices: Vec<FinitePoint3>,
     /// Triangle corner indices into `vertices`.
     pub(crate) triangles: Vec<[u32; 3]>,
     /// Source-classified feature edges as ascending vertex-index pairs.
     pub(crate) feature_edges: Vec<[u32; 2]>,
     /// One transformed unit normal per flattened triangle corner.
-    pub(crate) corner_normals: Option<Vec<cadmpeg_ir::math::Vector3>>,
+    pub(crate) corner_normals: Option<Vec<UnitVector3>>,
     /// Source face groups as an ordered partition of triangle ordinals.
     pub(crate) triangle_groups: Vec<crate::paramesh::MeshTriangleGroup>,
     /// One texture-table selector per triangle, when authored.
@@ -128,8 +130,9 @@ impl MeshAffineTransform {
         Self::new(cells).ok()
     }
 
-    fn transform_point(self, point: [f64; 3]) -> Result<cadmpeg_ir::math::Point3, CodecError> {
-        let [x, y, z] = point;
+    fn transform_point(self, point: FinitePoint3) -> Result<FinitePoint3, CodecError> {
+        let point = point.get();
+        let (x, y, z) = (point.x, point.y, point.z);
         let cells = self.cells();
         let point = cadmpeg_ir::math::Point3::new(
             (cells[0] * x + cells[1] * y + cells[2] * z + cells[3])
@@ -139,23 +142,26 @@ impl MeshAffineTransform {
             (cells[8] * x + cells[9] * y + cells[10] * z + cells[11])
                 * cadmpeg_asm::nurbs::reader::LEN_TO_MM,
         );
-        if !point.is_finite() {
-            return Err(CodecError::Malformed(
-                "F3D mesh placement produces a non-finite vertex".into(),
-            ));
-        }
-        Ok(point)
+        FinitePoint3::new(point).ok_or_else(|| {
+            CodecError::Malformed("F3D mesh placement produces a non-finite vertex".into())
+        })
     }
 
     /// Transform an oriented surface normal with the cofactor of the linear
     /// map. The determinant sign keeps the normal aligned with the unchanged
     /// triangle tuple under a reflection.
-    fn transform_normal(self, normal: [f64; 3]) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
+    fn transform_normal(self, normal: UnitVector3) -> Result<UnitVector3, CodecError> {
         let transform = self.transform();
         transform
-            .apply_normal(cadmpeg_ir::math::Vector3::from(normal))
+            .apply_normal(*normal.as_raw())
             .zip(transform.orientation())
-            .map(|(normal, orientation)| normal.as_raw().scale(orientation))
+            .map(|(normal, orientation)| {
+                if orientation.is_sign_negative() {
+                    normal.reversed()
+                } else {
+                    normal
+                }
+            })
             .ok_or_else(|| CodecError::malformed("F3D mesh placement produces a degenerate normal"))
     }
 }
@@ -1549,6 +1555,8 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::units::UnitVector3;
 
     #[test]
     fn anisotropic_mesh_normal_preserves_orientation_without_cofactor_overflow() {
@@ -1573,7 +1581,10 @@ mod tests {
             ])
             .unwrap();
             assert_eq!(
-                transform.transform_normal([0.0, 0.0, 1.0]).unwrap(),
+                *transform
+                    .transform_normal(UnitVector3::Z_AXIS)
+                    .unwrap()
+                    .as_raw(),
                 cadmpeg_ir::math::Vector3::new(0.0, 0.0, sign)
             );
         }
@@ -2780,8 +2791,11 @@ mod tests {
         let transform = mesh_body_transform(&mesh_body_payload(cells)).expect("affine map");
         assert_eq!(
             transform
-                .transform_point([2.0, 5.0, 8.0])
-                .expect("transformed point"),
+                .transform_point(
+                    FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 5.0, 8.0)).unwrap(),
+                )
+                .expect("transformed point")
+                .get(),
             cadmpeg_ir::math::Point3::new(7.5, 10.0, 13.0)
         );
     }
@@ -2798,7 +2812,11 @@ mod tests {
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
-            vertices: vec![[2.0, 8.0, 3.0], [0.0, 0.0, 0.0], [4.0, 4.0, -1.0]],
+            vertices: vec![
+                FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 8.0, 3.0)).unwrap(),
+                FinitePoint3::ZERO,
+                FinitePoint3::new(cadmpeg_ir::math::Point3::new(4.0, 4.0, -1.0)).unwrap(),
+            ],
             triangles: vec![[2, 0, 1]],
             feature_edges: vec![[0, 2]],
             corner_normals: None,
@@ -2820,7 +2838,10 @@ mod tests {
             .expect("projected mesh");
 
         assert_eq!(
-            body.vertices,
+            body.vertices
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
             [
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 65.0),
                 cadmpeg_ir::math::Point3::new(10.0, -20.0, 5.0),
@@ -2847,10 +2868,14 @@ mod tests {
                 "11111111-2222-4333-8444-555555555555".to_owned(),
             )
             .unwrap(),
-            vertices: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            vertices: vec![
+                FinitePoint3::ZERO,
+                FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
+                FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)).unwrap(),
+            ],
             triangles: vec![[0, 1, 2]],
             feature_edges: vec![[0, 1]],
-            corner_normals: Some(vec![[0.0, 0.0, 1.0]; 3]),
+            corner_normals: Some(vec![UnitVector3::Z_AXIS; 3]),
             triangle_groups: Vec::new(),
             texture_ids: None,
             attributes: Vec::new(),
@@ -2858,8 +2883,9 @@ mod tests {
         let body = MeshBody::from_container("mesh.paramesh", 100, transform, container)
             .expect("projected mesh");
         let geometric_normal = body.vertices[1]
-            .vector_from(body.vertices[0])
-            .cross(body.vertices[2].vector_from(body.vertices[0]))
+            .get()
+            .vector_from(body.vertices[0].get())
+            .cross(body.vertices[2].get().vector_from(body.vertices[0].get()))
             .unit()
             .expect("triangle normal");
         let corner_normals = body
@@ -2867,7 +2893,7 @@ mod tests {
             .expect("a stated corner-normal channel reaches the body");
         assert_eq!(corner_normals.len(), 3);
         for normal in corner_normals {
-            assert!((normal.dot(geometric_normal) - 1.0).abs() < 1.0e-12);
+            assert!((normal.as_raw().dot(geometric_normal) - 1.0).abs() < 1.0e-12);
         }
     }
 
