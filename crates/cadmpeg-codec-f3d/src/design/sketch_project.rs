@@ -315,18 +315,15 @@ pub(crate) fn project_sketch_design(
                 };
                 geometry
             }
-            SketchCurveGeometry::Nurbs {
-                degree,
-                knots,
-                poles,
-                ..
-            } if *degree != 0
-                && poles.point_count() > index_from_u32(*degree)
-                && poles.points().all(planar_point) =>
+            SketchCurveGeometry::Nurbs { geometry, .. }
+                if geometry.degree() != 0
+                    && geometry.poles().point_count() > index_from_u32(geometry.degree())
+                    && geometry.poles().points().all(planar_point) =>
             {
+                let poles = geometry.poles();
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    *degree,
-                    knots.clone(),
+                    geometry.degree(),
+                    geometry.knots(),
                     poles
                         .points()
                         .map(|point| Point2::new(point.x, point.y))
@@ -335,7 +332,7 @@ pub(crate) fn project_sketch_design(
                         .weights()
                         .next()
                         .is_some()
-                        .then(|| poles.weights().copied().collect()),
+                        .then(|| poles.weights().collect()),
                     false,
                 )?)
             }
@@ -466,9 +463,10 @@ pub(crate) fn project_spatial_sketch_design(
         else {
             continue;
         };
-        let Some(SketchCurveGeometry::Nurbs { poles, .. }) = curve.geometry.as_ref() else {
+        let Some(SketchCurveGeometry::Nurbs { geometry, .. }) = curve.geometry.as_ref() else {
             continue;
         };
+        let poles = geometry.poles();
         if curve.owner_reference != Some(relation.owner_reference)
             || poles.point_count() != members.len()
         {
@@ -619,15 +617,11 @@ pub(crate) fn project_spatial_sketch_design(
                         };
                         geometry
                     }
-                    SketchCurveGeometry::Nurbs {
-                        degree,
-                        knots,
-                        poles,
-                        ..
-                    } => {
+                    SketchCurveGeometry::Nurbs { geometry, .. } => {
+                        let poles = geometry.poles();
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                            *degree,
-                            knots.clone(),
+                            geometry.degree(),
+                            geometry.knots(),
                             poles
                                 .points()
                                 .map(|point| transform_point(placement, point))
@@ -636,7 +630,7 @@ pub(crate) fn project_spatial_sketch_design(
                                 .weights()
                                 .next()
                                 .is_some()
-                                .then(|| poles.weights().copied().collect()),
+                                .then(|| poles.weights().collect()),
                             false,
                         )?;
                         let Ok(curve3d) = curve3d.try_into() else {

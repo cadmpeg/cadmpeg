@@ -13,7 +13,7 @@ use crate::records::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveNurbs},
     BlendRadiusLaw, Curve, ProceduralCurve, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface,
@@ -2473,9 +2473,7 @@ pub(super) fn validate_sketch_curve_edits(
         let geometry = curve.geometry.clone().ok_or_else(|| {
             CodecError::NotImplemented(format!("cannot remove sketch-curve geometry: {}", curve.id))
         })?;
-        if !valid_sketch_geometry(&geometry)
-            || !same_sketch_layout(before.geometry.as_ref(), &geometry)
-        {
+        if !same_sketch_layout(before.geometry.as_ref(), &geometry) {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-curve edit requires valid geometry with the original native layout: {}",
                 curve.id
@@ -2507,59 +2505,26 @@ fn same_sketch_layout(before: Option<&SketchCurveGeometry>, after: &SketchCurveG
                 carrier_reference: old_carrier,
                 subtype_class_tag: old_tag,
                 subtype_record_index: old_index,
-                degree: old_degree,
-                scalar_width: old_width,
-                knots: old_knots,
-                poles: old_poles,
+                geometry: old_geometry,
                 ..
             }),
             SketchCurveGeometry::Nurbs {
                 carrier_reference,
                 subtype_class_tag,
                 subtype_record_index,
-                degree,
-                scalar_width,
-                knots,
-                poles,
+                geometry,
                 ..
             },
         ) => {
             old_carrier == carrier_reference
                 && old_tag == subtype_class_tag
                 && old_index == subtype_record_index
-                && old_degree == degree
-                && old_width == scalar_width
-                && old_knots.len() == knots.len()
-                && old_poles.weights().len() == poles.weights().len()
-                && old_poles.point_count() == poles.point_count()
+                && old_geometry.degree() == geometry.degree()
+                && old_geometry.knot_count() == geometry.knot_count()
+                && old_geometry.poles().weights().len() == geometry.poles().weights().len()
+                && old_geometry.poles().point_count() == geometry.poles().point_count()
         }
         _ => false,
-    }
-}
-
-fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
-    match geometry {
-        SketchCurveGeometry::Line { .. } => true,
-        SketchCurveGeometry::Arc { .. } => true,
-        SketchCurveGeometry::Nurbs {
-            degree,
-            fit_tolerance,
-            scalar_width,
-            knots,
-            poles,
-            ..
-        } => {
-            *scalar_width == 8
-                && fit_tolerance.is_finite()
-                && *fit_tolerance >= 0.0
-                && knots.len() == poles.point_count() + *degree as usize + 1
-                && knots.iter().all(|knot| knot.is_finite())
-                && knots_nondecreasing(knots)
-                && poles
-                    .weights()
-                    .all(|weight| weight.is_finite() && *weight > 0.0)
-                && poles.points().all(Point3::is_finite)
-        }
     }
 }
 

@@ -6,7 +6,6 @@ use crate::records::{
     references::PersistentReferenceKind,
     sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
-use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -631,7 +630,7 @@ fn encode_sketch_curve_identity(
                 normal.y,
                 normal.z,
             ];
-            encode_f64_sequence(&mut record, &values)?;
+            encode_f64_sequence(&mut record, &values);
         }
         Some(SketchCurveGeometry::Arc {
             center,
@@ -658,27 +657,19 @@ fn encode_sketch_curve_identity(
                 start_angle.get(),
                 end_angle.get(),
             ];
-            encode_f64_sequence(&mut record, &values)?;
+            encode_f64_sequence(&mut record, &values);
         }
         Some(SketchCurveGeometry::Nurbs {
             carrier_reference,
             subtype_class_tag,
             subtype_record_index,
-            degree,
-            fit_tolerance,
-            scalar_width,
-            knots,
-            poles,
+            geometry,
         }) => encode_sketch_nurbs(
             &mut record,
             *carrier_reference,
             subtype_class_tag,
             *subtype_record_index,
-            *degree,
-            *fit_tolerance,
-            *scalar_width,
-            knots,
-            poles,
+            geometry,
         )?,
         None => {
             return Err(CodecError::NotImplemented(format!(
@@ -700,16 +691,10 @@ fn encode_entity_genesis(record: &mut [u8], entity_genesis: u64) {
     record[69..77].copy_from_slice(&entity_genesis.to_le_bytes());
 }
 
-fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {
-    if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::NotImplemented(
-            "source-less sketch geometry must contain finite scalars".into(),
-        ));
-    }
+fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
     for value in values {
         out.extend_from_slice(&value.to_le_bytes());
     }
-    Ok(())
 }
 
 /// The sketch NURBS null carrier reference.
@@ -718,32 +703,15 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
 /// all-`0xff` null sentinel or a non-null u64 carrier reference".
 const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 
-#[allow(clippy::too_many_arguments)]
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
     subtype_class_tag: &crate::records::references::DesignClassTag,
     subtype_record_index: u32,
-    degree: u32,
-    fit_tolerance: f64,
-    scalar_width: u32,
-    knots: &[f64],
-    poles: &crate::records::sketch_geometry::SketchNurbsPoles,
+    geometry: &crate::records::sketch_geometry::SketchNurbsGeometry,
 ) -> Result<(), CodecError> {
-    if scalar_width != 8 {
-        return Err(CodecError::NotImplemented(
-            "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),
-        ));
-    }
-    let expected_knots = poles
-        .point_count()
-        .checked_add(index_from_u32(degree))
-        .and_then(|count| count.checked_add(1));
-    if expected_knots != Some(knots.len()) {
-        return Err(CodecError::Malformed(
-            "source-less sketch NURBS knot count must equal control points + degree + 1".into(),
-        ));
-    }
+    let knots = geometry.knots();
+    let poles = geometry.poles();
     record.extend_from_slice(
         &carrier_reference
             .unwrap_or(NULL_CARRIER_REFERENCE)
@@ -755,20 +723,20 @@ fn encode_sketch_nurbs(
     record.resize(133 + 88, 0);
     record.push(1);
     record.push(0);
-    record.extend_from_slice(&degree.to_le_bytes());
-    record.extend_from_slice(&(fit_tolerance / LEN_TO_MM).to_le_bytes());
+    record.extend_from_slice(&geometry.degree().to_le_bytes());
+    record.extend_from_slice(&(geometry.fit_tolerance().get() / LEN_TO_MM).to_le_bytes());
     let knot_count = u32::try_from(knots.len())
         .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many knots".into()))?;
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, knots)?;
+    encode_f64_sequence(record, &knots);
     let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&weight_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, &poles.weights().copied().collect::<Vec<_>>())?;
+    encode_f64_sequence(record, &poles.weights().collect::<Vec<_>>());
     let point_count = u32::try_from(poles.point_count()).map_err(|_| {
         CodecError::NotImplemented("sketch NURBS has too many control points".into())
     })?;
@@ -785,7 +753,8 @@ fn encode_sketch_nurbs(
             ]
         })
         .collect::<Vec<_>>();
-    encode_f64_sequence(record, &coordinates)
+    encode_f64_sequence(record, &coordinates);
+    Ok(())
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {

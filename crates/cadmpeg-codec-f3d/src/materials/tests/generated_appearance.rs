@@ -292,10 +292,11 @@ fn decode_transfers_generated_protein_appearance() {
         &f3d_native(result.ir()).sketch_curve_identities[1].geometry,
         Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
             carrier_reference: Some(42),
-            degree: 2,
-            poles,
+            geometry,
             ..
-        }) if poles.weights().next().is_none() && poles.point_count() == 3
+        }) if geometry.degree() == 2
+            && geometry.poles().weights().next().is_none()
+            && geometry.poles().point_count() == 3
     ));
     assert_eq!(f3d_native(result.ir()).design_body_members.len(), 2);
     assert_eq!(

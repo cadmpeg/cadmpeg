@@ -706,32 +706,27 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             entity_genesis: None,
             primary_id: std::num::NonZeroU64::new(704).unwrap(),
             secondary_id: 705,
-            geometry: Some(SketchCurveGeometry::Nurbs {
-                carrier_reference: None,
-                subtype_class_tag: crate::records::references::DesignClassTag::try_from(
-                    "365".to_owned(),
+            geometry: Some(SketchCurveGeometry::nurbs_from_parts(
+                None,
+                crate::records::references::DesignClassTag::try_from("365".to_owned()).unwrap(),
+                602,
+                crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+                    2,
+                    1.0e-8,
+                    8,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+                        vec![
+                            Point3::new(0.0, 0.0, 0.0),
+                            Point3::new(10.0, 20.0, 0.0),
+                            Point3::new(30.0, 10.0, 0.0),
+                        ],
+                        vec![1.0, 0.8, 1.0],
+                    )
+                    .unwrap(),
                 )
                 .unwrap(),
-                subtype_record_index: 602,
-                degree: 2,
-                fit_tolerance: 1.0e-8,
-                scalar_width: 8,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                poles: crate::records::sketch_geometry::SketchNurbsPoles::Rational(vec![
-                    crate::records::sketch_geometry::SketchNurbsPole {
-                        point: Point3::new(0.0, 0.0, 0.0),
-                        weight: 1.0,
-                    },
-                    crate::records::sketch_geometry::SketchNurbsPole {
-                        point: Point3::new(10.0, 20.0, 0.0),
-                        weight: 0.8,
-                    },
-                    crate::records::sketch_geometry::SketchNurbsPole {
-                        point: Point3::new(30.0, 10.0, 0.0),
-                        weight: 1.0,
-                    },
-                ]),
-            }),
+            )),
         },
     ];
     native.sketch_relations =

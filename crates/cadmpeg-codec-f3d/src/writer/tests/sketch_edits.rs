@@ -187,20 +187,38 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let expected = update_f3d_native(&mut edited, |native| {
         let curve = &mut native.sketch_curve_identities[1];
         let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
-            fit_tolerance,
-            poles,
-            ..
-        }) = &mut curve.geometry
+            carrier_reference,
+            subtype_class_tag,
+            subtype_record_index,
+            geometry,
+        }) = &curve.geometry
         else {
             panic!("generated sketch curve must be NURBS")
         };
-        *fit_tolerance = 0.125;
-        let point = poles
-            .points_mut()
-            .nth(1)
-            .expect("second spline control point");
+        let mut points = geometry.poles().points().copied().collect::<Vec<_>>();
+        let point = points.get_mut(1).expect("second spline control point");
         point.x += 15.0;
         point.y -= 5.0;
+        let poles = crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
+            points,
+            geometry.poles().weights().collect(),
+        )
+        .expect("edited poles");
+        curve.geometry = Some(
+            crate::records::sketch_geometry::SketchCurveGeometry::nurbs_from_parts(
+                *carrier_reference,
+                subtype_class_tag.clone(),
+                *subtype_record_index,
+                crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+                    geometry.degree(),
+                    0.125,
+                    8,
+                    geometry.knots(),
+                    poles,
+                )
+                .expect("edited NURBS"),
+            ),
+        );
         curve.geometry.clone()
     });
 
