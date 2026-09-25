@@ -113,7 +113,7 @@ loss_codes! {
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
     /// A body name cannot fit in one Directory label.
     WriterBodyNameNotRepresented => "writer.body-name-not-represented",
-    /// A body RGB color has no emitted Directory color.
+    /// A body has no owning Directory Entry for its color.
     WriterBodyColorNotRepresented => "writer.body-color-not-represented",
     /// IGES Directory color cannot carry a body opacity value.
     WriterBodyOpacityNotRepresented => "writer.body-opacity-not-represented",

@@ -28,7 +28,8 @@ use cadmpeg_ir::report::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, Length};
 use cadmpeg_ir::topology::{
-    BodyKind, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region, Sense,
+    BodyKind, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region,
+    Sense,
 };
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
@@ -64,6 +65,7 @@ const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 #[derive(Clone, Copy)]
 enum EntityStatus {
     Independent,
+    Definition,
     PhysicallyDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
@@ -73,6 +75,7 @@ impl EntityStatus {
     const fn as_field(self) -> &'static str {
         match self {
             Self::Independent => "00000000",
+            Self::Definition => "00000200",
             Self::PhysicallyDependent => "00010000",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
@@ -128,7 +131,7 @@ const _: () = assert!(
 
 const WRITER_ENTITY_TYPES: &[u32] = &[
     100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
-    194, 196, 198, 502, 504, 508, 510, 514,
+    194, 196, 198, 314, 502, 504, 508, 510, 514,
 ];
 
 pub(crate) mod target;
@@ -179,8 +182,15 @@ struct Synthesis {
 
 struct BodyPresentation {
     label: Option<String>,
-    color: i64,
+    color: BodyColor,
     visible: Option<bool>,
+}
+
+#[derive(Clone, Copy)]
+enum BodyColor {
+    Standard(i64),
+    Custom(Color),
+    Definition(usize),
 }
 
 fn body_presentation(
@@ -204,7 +214,7 @@ fn body_presentation(
             None
         }
     });
-    let color = body.color.map_or(0, |color| {
+    let color = body.color.map_or(BodyColor::Standard(0), |color| {
         let rgb = (color.r(), color.g(), color.b());
         let number = match rgb {
             (0.0, 0.0, 0.0) => 1,
@@ -215,16 +225,7 @@ fn body_presentation(
             (1.0, 0.0, 1.0) => 6,
             (0.0, 1.0, 1.0) => 7,
             (1.0, 1.0, 1.0) => 8,
-            _ => {
-                losses.push(IgesLossCode::WriterBodyColorNotRepresented.note(format!(
-                    "IGES body {} color RGB ({}, {}, {}) has no emitted Directory color",
-                    body.id,
-                    color.r(),
-                    color.g(),
-                    color.b()
-                )));
-                0
-            }
+            _ => 0,
         };
         if color.a() != 1.0 {
             losses.push(IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
@@ -233,13 +234,49 @@ fn body_presentation(
                 color.a()
             )));
         }
-        number
+        if number == 0 {
+            BodyColor::Custom(color)
+        } else {
+            BodyColor::Standard(number)
+        }
     });
     BodyPresentation {
         label,
         color,
         visible: body.visible,
     }
+}
+
+fn append_color_definitions(
+    entities: &mut Vec<Entity>,
+    presentations: &mut BTreeMap<usize, BodyPresentation>,
+) -> Result<(), CodecError> {
+    for presentation in presentations.values_mut() {
+        let BodyColor::Custom(color) = presentation.color else {
+            continue;
+        };
+        let components = [color.r(), color.g(), color.b()]
+            .map(|component| finite(f64::from(component) * 100.0, "color percentage"))
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        let entity_index = entities.len();
+        entities.push(Entity {
+            type_code: 314,
+            form: 0,
+            label: "COLOR",
+            status: EntityStatus::Definition,
+            parameter_body: format!(
+                "{},{},{},;",
+                number(components[0]),
+                number(components[1]),
+                number(components[2])
+            )
+            .into_bytes(),
+            transform: None,
+        });
+        presentation.color = BodyColor::Definition(entity_index);
+    }
+    Ok(())
 }
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
@@ -395,6 +432,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         }
         entities
     };
+    append_color_definitions(&mut entities, &mut body_presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
     if entities.is_empty() {
@@ -610,7 +648,7 @@ impl crate::IgesVersion {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
                 (
-                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144,
+                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
                     0
                 ) | (104, 0 | 2 | 3)
             ),
@@ -629,14 +667,15 @@ impl crate::IgesVersion {
                         | 141
                         | 142
                         | 143
-                        | 144,
+                        | 144
+                        | 314,
                     0
                 ) | (104, 1..=3)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
                     100 | 102 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142 | 143
-                    | 144 | 186 => entity.form == 0,
+                    | 144 | 186 | 314 => entity.form == 0,
                     104 => matches!(entity.form, 0 | 2 | 3),
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
@@ -4302,6 +4341,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             143 => "143_bounded_surface",
             144 => "144_trimmed_surface",
             186 => "186_manifold_solid_brep",
+            314 => "314_color_definition",
             502 => "502_vertex_list",
             504 => "504_edge_list",
             508 => "508_loop",
@@ -6803,6 +6843,7 @@ fn encode_file(
     let global_cards = crate::global::layout_global_cards(&global)?;
     let global_count = global_cards.len();
     let mut expanded = Vec::with_capacity(entities.len() * 2);
+    let mut expanded_index_by_entity = Vec::with_capacity(entities.len());
     for (index, entity) in entities.iter().enumerate() {
         if let Some(placement) = entity.transform {
             let transform_parameters = placement
@@ -6832,8 +6873,10 @@ fn encode_file(
                 })?;
             let mut entity = entity.clone();
             entity.transform = None;
+            expanded_index_by_entity.push(expanded.len());
             expanded.push((entity, transform_sequence, body_presentations.get(&index)));
         } else {
+            expanded_index_by_entity.push(expanded.len());
             expanded.push((entity.clone(), 0, body_presentations.get(&index)));
         }
     }
@@ -6858,6 +6901,33 @@ fn encode_file(
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;
+        let color_number = match presentation.map(|presentation| presentation.color) {
+            None | Some(BodyColor::Standard(0)) => 0,
+            Some(BodyColor::Standard(number)) => number,
+            Some(BodyColor::Custom(_)) => {
+                return Err(CodecError::NotImplemented(
+                    "IGES color definition was not emitted".into(),
+                ));
+            }
+            Some(BodyColor::Definition(entity_index)) => {
+                let expanded_index =
+                    expanded_index_by_entity.get(entity_index).ok_or_else(|| {
+                        CodecError::NotImplemented(
+                            "IGES color definition reference is outside emitted entities".into(),
+                        )
+                    })?;
+                let sequence = u32::try_from(*expanded_index)
+                    .ok()
+                    .and_then(|index| index.checked_mul(2))
+                    .and_then(|index| index.checked_add(1))
+                    .ok_or_else(|| {
+                        CodecError::NotImplemented(
+                            "IGES color definition sequence overflows".into(),
+                        )
+                    })?;
+                -i64::from(sequence)
+            }
+        };
         directory.push(directory_card(
             [
                 entity.type_code.to_string(),
@@ -6879,9 +6949,7 @@ fn encode_file(
             [
                 entity.type_code.to_string(),
                 "0".into(),
-                presentation
-                    .map_or(0, |presentation| presentation.color)
-                    .to_string(),
+                color_number.to_string(),
                 parameter_count.to_string(),
                 entity.form.to_string(),
                 String::new(),
