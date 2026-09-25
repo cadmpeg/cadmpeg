@@ -706,6 +706,23 @@ fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
 }
 
 #[test]
+fn periodic_range_keeps_finite_endpoints_when_its_width_overflows() {
+    let geometry = SolvedCurveGeometry::Circle(
+        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .expect("finite circle"),
+    );
+    assert_eq!(
+        normalize_occt_curve_range(&geometry, Some([-f64::MAX, f64::MAX])),
+        Some([-f64::MAX, f64::MAX])
+    );
+}
+
+#[test]
 fn collapsed_pcurve_ranges_are_unbounded() {
     assert_eq!(bounded_pcurve_range(false, Some([2.0, 2.0])), None);
     assert_eq!(bounded_pcurve_range(true, Some([1.0, 3.0])), None);
