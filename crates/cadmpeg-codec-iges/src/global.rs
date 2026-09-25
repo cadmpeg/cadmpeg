@@ -530,7 +530,7 @@ fn source_span_crosses_card(start: usize, end: usize) -> bool {
     end > start && start / 72 != (end - 1) / 72
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize, bool)>, CodecError> {
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize)>, CodecError> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -551,18 +551,17 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(&[u8], usize, bool)>,
     let payload = bytes
         .get(payload_start..payload_end)
         .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
-    let header_crosses_card = source_span_crosses_card(start, cursor + 1);
-    Ok(Some((payload, payload_end, header_crosses_card)))
+    Ok(Some((payload, payload_end)))
 }
 
 fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
     if bytes.first() == Some(&b',') {
         return Ok((b',', 1));
     }
-    let Some((payload, cursor, header_crosses_card)) = hollerith(bytes, 0)? else {
+    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
         return Err(malformed("parameter delimiter is not a Hollerith string"));
     };
-    if header_crosses_card {
+    if source_span_crosses_card(0, cursor - payload.len()) {
         return Err(malformed(
             "parameter delimiter is not a valid one-card Hollerith string",
         ));
@@ -599,10 +598,10 @@ fn delimited_value(
         return Ok((Value::Omitted, value_start + 1, true));
     }
     let (value, end, allow_padding_after) =
-        if let Some((payload, end, header_crosses_card)) = hollerith(bytes, value_start)? {
+        if let Some((payload, end)) = hollerith(bytes, value_start)? {
             if !retain {
                 (Value::Omitted, end, true)
-            } else if header_crosses_card {
+            } else if source_span_crosses_card(value_start, end - payload.len()) {
                 (
                     Value::Malformed(ctx.copy_retained(payload, "iges_global_value")?),
                     end,
