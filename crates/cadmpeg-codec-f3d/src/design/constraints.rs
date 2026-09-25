@@ -312,7 +312,8 @@ fn exact_rectangular_pattern(
     let source = directions
         .iter()
         .map(|direction| {
-            if direction.direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
+            let source_direction = direction.direction.get();
+            if source_direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
                 return None;
             }
             let count_parameter = parameters.iter().find(|parameter| {
@@ -329,7 +330,7 @@ fn exact_rectangular_pattern(
             }) {
                 return None;
             }
-            let distance = direction.evaluated_distance * 10.0;
+            let distance = direction.evaluated_distance.get() * 10.0;
             if !distance.is_finite()
                 || distance < 0.0
                 || (count == 1 && !scalar_close(distance, 0.0))
@@ -341,7 +342,7 @@ fn exact_rectangular_pattern(
                 return None;
             }
             Some(RectangularPatternSourceDirection {
-                direction: [direction.direction[0], direction.direction[1]],
+                direction: [source_direction[0], source_direction[1]],
                 count,
                 distance,
                 distance_parameter: distance_parameter.map(neutral_parameter_id),
@@ -626,18 +627,15 @@ fn exact_circular_pattern(
         native_stream(&parameter.id) == Some(scope)
             && parameter.owner_record_index() == Some(*count_parameter)
     });
-    let angle = cadmpeg_ir::scalar::Angle::new(*evaluated_angle)?;
-    if !evaluated_angle.is_finite()
-        || angle_parameter.is_some_and(|parameter| {
-            design_angle(parameter).is_none_or(|value| !scalar_close(value.get(), angle.get()))
-        })
-        || count_parameter.is_some_and(|parameter| {
-            !scalar_close(
-                parameter.evaluated_value().get(),
-                f64::from(evaluated_count.get()),
-            )
-        })
-    {
+    let angle = cadmpeg_ir::scalar::Angle::from_assigned_real(*evaluated_angle);
+    if angle_parameter.is_some_and(|parameter| {
+        design_angle(parameter).is_none_or(|value| !scalar_close(value.get(), angle.get()))
+    }) || count_parameter.is_some_and(|parameter| {
+        !scalar_close(
+            parameter.evaluated_value().get(),
+            f64::from(evaluated_count.get()),
+        )
+    }) {
         return None;
     }
     // Relation ordinals do not classify center/seed/generated; partition by
@@ -692,7 +690,7 @@ fn exact_circular_pattern(
                 .enumerate()
                 .skip(1)
                 .map(|(index, instance)| {
-                    let rotation = *evaluated_angle * index as f64 / divisor;
+                    let rotation = evaluated_angle.get() * index as f64 / divisor;
                     seed.iter()
                         .zip(instance)
                         .all(|(source, result)| {
@@ -1106,8 +1104,11 @@ mod tests {
                                         evaluated_count,
                                     )
                                     .unwrap(),
-                                direction: [1.0, 0.0, 0.0],
-                                evaluated_distance,
+                                direction: [1.0, 0.0, 0.0].try_into().unwrap(),
+                                evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(
+                                    evaluated_distance,
+                                )
+                                .unwrap(),
                             },
                             crate::records::sketch_relations::SketchPatternDirection {
                                 count_parameter: 22,
@@ -1117,8 +1118,8 @@ mod tests {
                                         1,
                                     )
                                     .unwrap(),
-                                direction: [0.0, 1.0, 0.0],
-                                evaluated_distance: 0.0,
+                                direction: [0.0, 1.0, 0.0].try_into().unwrap(),
+                                evaluated_distance: cadmpeg_ir::scalar::FiniteReal::ZERO,
                             },
                         ],
                     },
@@ -1361,7 +1362,7 @@ mod tests {
                         crate::records::sketch_relations::SketchPatternDefinition::Circular {
                             angle_parameter: 20,
                             count_parameter: 21,
-                            evaluated_angle: angle,
+                            evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(angle).unwrap(),
                             evaluated_count:
                                 crate::records::sketch_relations::SketchPatternCount::try_from(3)
                                     .unwrap(),
@@ -1504,7 +1505,10 @@ mod tests {
                         crate::records::sketch_relations::SketchPatternDefinition::Circular {
                             angle_parameter: 20,
                             count_parameter: 21,
-                            evaluated_angle: std::f64::consts::TAU,
+                            evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(
+                                std::f64::consts::TAU,
+                            )
+                            .unwrap(),
                             evaluated_count:
                                 crate::records::sketch_relations::SketchPatternCount::try_from(3)
                                     .unwrap(),

@@ -5,7 +5,38 @@ use super::{
     identity::{Located, ReferenceRun},
     references::DesignClassTag,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
+
+const EPS_SKETCH_PATTERN_DIRECTION_SQUARED: f64 = 1.0e-6;
+
+/// A source sketch-pattern direction with squared length within the Design tolerance of one.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
+pub(crate) struct SketchPatternUnitDirection([f64; 3]);
+
+impl TryFrom<[f64; 3]> for SketchPatternUnitDirection {
+    type Error = &'static str;
+
+    fn try_from(value: [f64; 3]) -> Result<Self, Self::Error> {
+        let length = value.iter().map(|axis| axis * axis).sum::<f64>();
+        ((length - 1.0).abs() <= EPS_SKETCH_PATTERN_DIRECTION_SQUARED)
+            .then_some(Self(value))
+            .ok_or("sketch pattern direction squared length must be within 1e-6 of one")
+    }
+}
+
+impl From<SketchPatternUnitDirection> for [f64; 3] {
+    fn from(value: SketchPatternUnitDirection) -> Self {
+        value.0
+    }
+}
+
+impl SketchPatternUnitDirection {
+    pub(crate) fn get(self) -> [f64; 3] {
+        self.0
+    }
+}
 
 cadmpeg_core::named_optional_field!(
     deserialize_rectangular_counted_reference_count,
@@ -1055,7 +1086,7 @@ pub(crate) enum SketchPatternDefinition {
         /// Record index of the instance-count parameter value record.
         count_parameter: u32,
         /// Evaluated total pattern angle in radians.
-        evaluated_angle: f64,
+        evaluated_angle: FiniteReal,
         /// Evaluated instance count.
         evaluated_count: SketchPatternCount,
     },
@@ -1088,11 +1119,11 @@ pub(crate) struct SketchPatternDirection {
     pub(crate) count_parameter: u32,
     /// Direction in sketch coordinates; the decoder admits a squared length
     /// within `1e-6` of one.
-    pub(crate) direction: [f64; 3],
+    pub(crate) direction: SketchPatternUnitDirection,
     /// Evaluated source distance along this direction, in source units. The
     /// owning relation's [`SketchRelation::rectangular_counted_reference_count`]
     /// gives its meaning.
-    pub(crate) evaluated_distance: f64,
+    pub(crate) evaluated_distance: FiniteReal,
     /// Record index of the distance parameter value record.
     pub(crate) distance_parameter: u32,
 }

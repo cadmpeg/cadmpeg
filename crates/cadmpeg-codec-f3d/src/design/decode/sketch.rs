@@ -33,7 +33,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::UnitVector3;
@@ -43,7 +43,6 @@ use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
 };
 
-const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1.0e-6;
 const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1.0e-9;
 const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1.0e-12;
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
@@ -1300,7 +1299,6 @@ fn decode_pattern_definition(
     parsed: &ParsedSketchRelation,
 ) -> Option<crate::records::sketch_relations::SketchPatternDefinition> {
     use crate::records::sketch_relations::{SketchPatternDefinition, SketchPatternDirection};
-    let f64_at = |at: usize| View::f64_le_at(payload, at).filter(|value| value.is_finite());
     let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
     match &parsed.class_members {
         RelationClassMembers::CircularPattern => {
@@ -1308,7 +1306,7 @@ fn decode_pattern_definition(
                 return None;
             }
             let angle_at = reference_end(1)? + 6;
-            let evaluated_angle = f64_at(angle_at)?;
+            let evaluated_angle = FiniteReal::new(View::f64_le_at(payload, angle_at)?)?;
             let evaluated_count = crate::records::sketch_relations::SketchPatternCount::try_from(
                 View::u32_le_at(payload, angle_at + 8)?,
             )
@@ -1338,19 +1336,18 @@ fn decode_pattern_definition(
                     .ok()?;
                 let direction_at = count.offset + 4 + 6;
                 let direction = [
-                    f64_at(direction_at)?,
-                    f64_at(direction_at + 8)?,
-                    f64_at(direction_at + 16)?,
+                    View::f64_le_at(payload, direction_at)?,
+                    View::f64_le_at(payload, direction_at + 8)?,
+                    View::f64_le_at(payload, direction_at + 16)?,
                 ];
-                let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
-                if (length - 1.0).abs() > EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6 {
-                    return None;
-                }
                 directions.push(SketchPatternDirection {
                     evaluated_count,
                     count_parameter: count.value,
-                    direction,
-                    evaluated_distance: f64_at(direction_at + 24)?,
+                    direction: direction.try_into().ok()?,
+                    evaluated_distance: FiniteReal::new(View::f64_le_at(
+                        payload,
+                        direction_at + 24,
+                    )?)?,
                     distance_parameter: distance.value,
                 });
             }

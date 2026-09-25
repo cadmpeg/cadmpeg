@@ -1195,7 +1195,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
             Some(Kind::Circular {
                 angle_parameter: 2,
                 count_parameter: 3,
-                evaluated_angle: 1.5,
+                evaluated_angle: cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap(),
                 evaluated_count: crate::records::sketch_relations::SketchPatternCount::try_from(2)
                     .unwrap(),
             }),
@@ -1210,8 +1210,8 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
                         evaluated_count:
                             crate::records::sketch_relations::SketchPatternCount::try_from(2)
                                 .unwrap(),
-                        direction: [1.0, 0.0, 0.0],
-                        evaluated_distance: 1.5,
+                        direction: [1.0, 0.0, 0.0].try_into().unwrap(),
+                        evaluated_distance: cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap(),
                     }
                 }),
             }),
