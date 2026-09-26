@@ -55,7 +55,11 @@ fn solidworks_length_units_convert_to_millimeters() {
         ("1in", 25.4),
         ("1ft", 304.8),
     ] {
-        assert_eq!(parse_length_mm(literal), Some(expected), "{literal}");
+        assert_eq!(
+            parse_length_mm(literal).map(cadmpeg_ir::scalar::Length::get),
+            Some(expected),
+            "{literal}"
+        );
     }
 }
 

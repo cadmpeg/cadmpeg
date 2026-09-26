@@ -37,7 +37,7 @@ use cadmpeg_ir::{
         BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
         FeatureDefinition, FeatureOperation, ParameterId, ParameterValue, UnresolvedFamily,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, Length, PositiveLength},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -865,7 +865,7 @@ fn variable_fillet_radius_groups<'a>(
                 .map(|(parameter, (_, radius))| {
                     Some(VariableRadius {
                         parameter: parameter as f64,
-                        radius: Length::new(radius)?,
+                        radius: Length::from(radius),
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -879,7 +879,7 @@ fn variable_fillet_radius_groups<'a>(
         }
     }
 
-    let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
+    let mut vertex_radii = HashMap::<[u8; 12], PositiveLength>::new();
     let mut control_names = HashSet::<String>::new();
     let mut non_vertex_control_names = HashSet::<String>::new();
     let mut non_vertex_control_references = Vec::new();
@@ -922,7 +922,7 @@ fn variable_fillet_radius_groups<'a>(
                             entry.insert(radius);
                         }
                         std::collections::hash_map::Entry::Occupied(entry)
-                            if !same_dimension_length(*entry.get(), radius) =>
+                            if !same_dimension_length(entry.get().get(), radius.get()) =>
                         {
                             return None;
                         }
@@ -993,7 +993,7 @@ fn variable_fillet_radius_groups<'a>(
             .map(|(parameter, (_, radius))| {
                 Some(VariableRadius {
                     parameter: parameter as f64,
-                    radius: Length::new(radius)?,
+                    radius: Length::from(radius),
                 })
             })
             .collect::<Option<Vec<_>>>()?;
@@ -1032,16 +1032,16 @@ fn variable_fillet_radius_groups<'a>(
         return None;
     }
 
-    let mut groups = Vec::<((u64, u64), Vec<&FeatureInputEdgeSelection>)>::new();
+    let mut groups = Vec::<(
+        (PositiveLength, PositiveLength),
+        Vec<&FeatureInputEdgeSelection>,
+    )>::new();
     let mut unassigned = Vec::new();
     for &selection in selections {
         let endpoints = endpoint_signatures(selection);
         match endpoints.as_slice() {
             [first, second] => {
-                let pair = (
-                    vertex_radii.get(first)?.to_bits(),
-                    vertex_radii.get(second)?.to_bits(),
-                );
+                let pair = (*vertex_radii.get(first)?, *vertex_radii.get(second)?);
                 if let Some((_, grouped)) =
                     groups.iter_mut().find(|(candidate, _)| *candidate == pair)
                 {
@@ -1073,11 +1073,11 @@ fn variable_fillet_radius_groups<'a>(
                     points: cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
                         VariableRadius {
                             parameter: 0.0,
-                            radius: Length::new(f64::from_bits(first))?,
+                            radius: Length::from(first),
                         },
                         VariableRadius {
                             parameter: 1.0,
-                            radius: Length::new(f64::from_bits(second))?,
+                            radius: Length::from(second),
                         },
                     ])
                     .ok()?,

@@ -3,12 +3,9 @@
 
 use crate::classification::NativeClassKind;
 use crate::records::Feature;
-use cadmpeg_ir::{
-    features::{
-        patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureId, FeatureOperation, PathRef,
-    },
-    scalar::{PositiveAngle, PositiveLength},
+use cadmpeg_ir::features::{
+    patterns::{PatternKind, PatternSeed, PatternTransform},
+    FeatureDefinition, FeatureId, FeatureOperation, PathRef,
 };
 use std::collections::HashMap;
 
@@ -83,12 +80,12 @@ pub(super) fn project_pattern(
                     )?),
                     None => None,
                 },
-                spacing: PositiveLength::new(parse_positive_dimension_length_mm(
+                spacing: parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")
                         .or_else(|| feature.parameters.get("D3"))?,
-                )?)?,
+                )?,
                 count: parse_count(
                     feature
                         .parameters
@@ -105,9 +102,7 @@ pub(super) fn project_pattern(
                             direction: cadmpeg_ir::features::FeatureDirection3::new(
                                 parse_valid_direction(direction)?,
                             )?,
-                            spacing: PositiveLength::new(parse_positive_dimension_length_mm(
-                                spacing,
-                            )?)?,
+                            spacing: parse_positive_dimension_length_mm(spacing)?,
                             count: parse_count(count)?,
                         })
                     }
@@ -116,18 +111,14 @@ pub(super) fn project_pattern(
             })
             .ok()?,
             NativePatternClass::Circular => PatternKind::new(PatternTransform::Circular {
-                axis_origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
-                    feature.properties.get("AxisOrigin")?,
-                )?)?,
+                axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
                 axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
                     feature.properties.get("AxisDirection")?,
                 )?)?,
-                angle: PositiveAngle::new(
-                    feature
-                        .parameters
-                        .get("Angle")
-                        .and_then(|value| parse_positive_angle_rad(value))?,
-                )?,
+                angle: feature
+                    .parameters
+                    .get("Angle")
+                    .and_then(|value| parse_positive_angle_rad(value))?,
                 count: parse_count(feature.parameters.get("Count")?)?,
             })
             .ok()?,
@@ -139,12 +130,12 @@ pub(super) fn project_pattern(
                             .map_or_else(|| source.clone(), |id| (*id).to_string()),
                     )
                 }),
-                spacing: PositiveLength::new(parse_positive_dimension_length_mm(
+                spacing: parse_positive_dimension_length_mm(
                     feature
                         .parameters
                         .get("Spacing")
                         .or_else(|| feature.parameters.get("D3"))?,
-                )?)?,
+                )?,
                 count: parse_count(
                     feature
                         .parameters
@@ -154,9 +145,7 @@ pub(super) fn project_pattern(
             })
             .ok()?,
             NativePatternClass::Mirror => PatternKind::new(PatternTransform::Mirror {
-                plane_origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
-                    feature.properties.get("PlaneOrigin")?,
-                )?)?,
+                plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
                 plane_normal: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
                     feature.properties.get("PlaneNormal")?,
                 )?)?,

@@ -8,7 +8,7 @@ use cadmpeg_ir::{
         FaceSelection, FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef,
         WrapMode,
     },
-    scalar::{Angle, Length},
+    scalar::Angle,
 };
 use std::collections::HashMap;
 
@@ -24,7 +24,11 @@ pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition
     let u_axis = parse_vector3(feature.properties.get("UAxis")?)?;
     valid_plane_frame(normal, u_axis).then_some(FeatureDefinition::Operation(
         FeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)?,
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::from_parts(
+                origin,
+                cadmpeg_ir::features::FeatureDirection3::new(normal)?,
+                cadmpeg_ir::features::FeatureDirection3::new(u_axis)?,
+            )?,
         },
     ))
 }
@@ -33,7 +37,7 @@ pub(in crate::history) fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Option<FeatureDefinition> {
-    let distance = Length::new(parse_dimension_length_mm(feature.parameters.get("D1")?)?)?;
+    let distance = parse_dimension_length_mm(feature.parameters.get("D1")?)?;
     let reference = feature
         .properties
         .get("Reference")
@@ -42,10 +46,14 @@ pub(in crate::history) fn project_offset_plane(
         .map(|feature| DatumPlaneReference::Feature { feature })
         .or_else(|| {
             Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
                     parse_point3_mm(feature.properties.get("ReferenceFaceOrigin")?)?,
-                    parse_vector3(feature.properties.get("ReferenceFaceNormal")?)?,
-                    parse_vector3(feature.properties.get("ReferenceFaceUAxis")?)?,
+                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                        feature.properties.get("ReferenceFaceNormal")?,
+                    )?)?,
+                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                        feature.properties.get("ReferenceFaceUAxis")?,
+                    )?)?,
                 )?,
             })
         })
@@ -68,7 +76,7 @@ pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition>
     let direction = parse_vector3(feature.properties.get("Direction")?)?;
     valid_direction(direction).then_some(FeatureDefinition::Operation(
         FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            origin,
             direction: cadmpeg_ir::features::FeatureDirection3::new(direction)?,
         },
     ))
@@ -76,9 +84,7 @@ pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition>
 
 pub(super) fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::Operation(FeatureOperation::DatumPoint {
-        position: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
-            feature.properties.get("Position")?,
-        )?)?,
+        position: parse_point3_mm(feature.properties.get("Position")?)?,
         construction: None,
     }))
 }
@@ -90,8 +96,13 @@ pub(super) fn project_datum_coordinate_system(feature: &Feature) -> Option<Featu
     let z_axis = parse_vector3(feature.properties.get("ZAxis")?)?;
     Some(FeatureDefinition::Operation(
         FeatureOperation::DatumCoordinateSystem {
-            frame: cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                origin, x_axis, y_axis, z_axis,
+            frame: cadmpeg_ir::features::FeatureCoordinateFrame::from_parts(
+                cadmpeg_ir::features::FeatureUnitPlaneFrame::from_parts(
+                    origin,
+                    cadmpeg_ir::units::UnitVector3::new(x_axis)?,
+                    cadmpeg_ir::units::UnitVector3::new(y_axis)?,
+                )?,
+                cadmpeg_ir::units::UnitVector3::new(z_axis)?,
             )?,
         },
     ))
@@ -204,17 +215,17 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         .unwrap_or(false);
     let start_angle = match feature.parameters.get("StartAngle") {
         Some(value) => parse_angle_rad(value)?,
-        None => 0.0,
+        None => Angle::ZERO,
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Helix {
-        axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
+        axis_origin,
         axis_direction: cadmpeg_ir::features::FeatureDirection3::new(axis_direction)?,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+        radius,
         shape: cadmpeg_ir::features::HelixShape::Cylindrical {
-            pitch: cadmpeg_ir::scalar::NonZeroLength::new(pitch)?,
+            pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(pitch).ok()?,
         },
         revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
-        start_angle: Angle::new(start_angle)?,
+        start_angle,
         clockwise,
         segment_turns: None,
         construction_style: None,
@@ -231,7 +242,7 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite() && *value > 0.0)?;
-    let start_angle = Angle::new(parse_angle_rad(feature.parameters.get("D7")?)?)?;
+    let start_angle = parse_angle_rad(feature.parameters.get("D7")?)?;
     let clockwise = feature
         .properties
         .get("Clockwise")
@@ -240,8 +251,8 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
     Some(FeatureDefinition::Operation(
         FeatureOperation::HelixNativeAxis {
             axis_native_ref: cadmpeg_core::text::NonBlankString::new(feature.id.clone())?,
-            axial_rise: Length::new(axial_rise)?,
-            pitch: Length::new(pitch)?,
+            axial_rise,
+            pitch,
             revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
             start_angle,
             clockwise,
@@ -265,14 +276,10 @@ pub(super) fn project_wrap(
         .as_str()
     {
         "emboss" => WrapMode::Emboss {
-            depth: cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
-                feature.parameters.get("Depth")?,
-            )?)?,
+            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
         },
         "deboss" => WrapMode::Deboss {
-            depth: cadmpeg_ir::scalar::PositiveLength::new(parse_positive_length_mm(
-                feature.parameters.get("Depth")?,
-            )?)?,
+            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
         },
         "scribe" => WrapMode::Scribe,
         _ => return None,
