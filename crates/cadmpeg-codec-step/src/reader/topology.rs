@@ -3188,22 +3188,23 @@ fn connected_face_components(
     edge_vertices: &BTreeMap<String, (String, String)>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<Vec<usize>>, CodecError> {
-    let face_indices = face_ids
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let coedge_edges = coedges
-        .iter()
-        .map(|coedge| {
-            (
-                coedge.id.as_str().to_owned(),
-                coedge.edge.as_str().to_owned(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut faces_by_edge = BTreeMap::<String, BTreeSet<usize>>::new();
-    let mut faces_by_vertex = BTreeMap::<String, BTreeSet<usize>>::new();
+    let mut neighbors = ctx.alloc_filled(
+        face_ids.len(),
+        BTreeSet::new(),
+        "STEP connected-face neighbors",
+    )?;
+    let mut face_indices = BTreeMap::new();
+    for (index, face) in face_ids.iter().enumerate() {
+        ctx.charge_collection_items(1, "STEP connected-face indices")?;
+        face_indices.insert(face.as_str(), index);
+    }
+    let mut coedge_edges = BTreeMap::new();
+    for coedge in coedges {
+        ctx.charge_collection_items(1, "STEP connected-face coedge edges")?;
+        coedge_edges.insert(coedge.id.as_str(), coedge.edge.as_str());
+    }
+    let mut faces_by_edge = BTreeMap::<&str, BTreeSet<usize>>::new();
+    let mut faces_by_vertex = BTreeMap::<&str, BTreeSet<usize>>::new();
     for loop_ in loops {
         let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
             continue;
@@ -3212,59 +3213,91 @@ fn connected_face_components(
             let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
                 continue;
             };
-            faces_by_edge
-                .entry(edge_id.clone())
-                .or_default()
-                .insert(face_index);
-            if let Some((start, end)) = edge_vertices.get(edge_id) {
-                faces_by_vertex
-                    .entry(start.clone())
-                    .or_default()
-                    .insert(face_index);
-                faces_by_vertex
-                    .entry(end.clone())
-                    .or_default()
-                    .insert(face_index);
+            insert_connected_face_group(&mut faces_by_edge, edge_id, face_index, ctx)?;
+            if let Some((start, end)) = edge_vertices.get(*edge_id) {
+                insert_connected_face_group(&mut faces_by_vertex, start, face_index, ctx)?;
+                insert_connected_face_group(&mut faces_by_vertex, end, face_index, ctx)?;
             }
         }
         for vertex in loop_.vertices() {
-            faces_by_vertex
-                .entry(vertex.as_str().to_owned())
-                .or_default()
-                .insert(face_index);
+            insert_connected_face_group(&mut faces_by_vertex, vertex.as_str(), face_index, ctx)?;
         }
     }
 
-    let mut neighbors = ctx.alloc_filled(
-        face_ids.len(),
-        BTreeSet::new(),
-        "STEP connected-face neighbors",
-    )?;
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for &face in group {
-            neighbors[face].extend(group.iter().copied().filter(|other| *other != face));
+            for &other in group {
+                if other != face && !neighbors[face].contains(&other) {
+                    ctx.charge_collection_items(1, "STEP connected-face links")?;
+                    neighbors[face].insert(other);
+                }
+            }
         }
     }
-    let mut reached = BTreeSet::new();
+    let mut reached = ctx.alloc_filled(face_ids.len(), false, "STEP connected-face reached")?;
     let mut components = Vec::new();
     for start in 0..face_ids.len() {
-        if !reached.insert(start) {
+        if reached[start] {
             continue;
         }
+        reached[start] = true;
         let mut component = Vec::new();
-        let mut pending = vec![start];
+        let mut pending = Vec::new();
+        push_connected_face_item(&mut pending, start, ctx, "STEP connected-face pending")?;
         while let Some(face) = pending.pop() {
-            component.push(face);
+            push_connected_face_item(&mut component, face, ctx, "STEP connected-face component")?;
             for &neighbor in &neighbors[face] {
-                if reached.insert(neighbor) {
-                    pending.push(neighbor);
+                if !reached[neighbor] {
+                    reached[neighbor] = true;
+                    push_connected_face_item(
+                        &mut pending,
+                        neighbor,
+                        ctx,
+                        "STEP connected-face pending",
+                    )?;
                 }
             }
         }
         component.sort_unstable();
-        components.push(component);
+        push_connected_face_item(
+            &mut components,
+            component,
+            ctx,
+            "STEP connected-face components",
+        )?;
     }
     Ok(components)
+}
+
+fn insert_connected_face_group<'a>(
+    groups: &mut BTreeMap<&'a str, BTreeSet<usize>>,
+    key: &'a str,
+    face: usize,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if !groups.contains_key(key) {
+        ctx.charge_collection_items(1, "STEP connected-face groups")?;
+    }
+    let group = groups.entry(key).or_default();
+    if !group.contains(&face) {
+        ctx.charge_collection_items(1, "STEP connected-face group faces")?;
+        group.insert(face);
+    }
+    Ok(())
+}
+
+fn push_connected_face_item<T>(
+    values: &mut Vec<T>,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::decode::refuse_local_limit(operation, u64_from_index(values.len()), 1)
+    })?;
+    values.push(value);
+    Ok(())
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
