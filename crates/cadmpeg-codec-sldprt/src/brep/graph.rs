@@ -1162,13 +1162,14 @@ pub(crate) fn decode_bodies(
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
             topology::scan_deltas_with_curve_attrs_excluding(
+                ctx,
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
             )
         } else {
-            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
-        };
+            topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
+        }?;
         let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
@@ -1231,7 +1232,8 @@ fn decode_body(
                 .map(|face| face.offset)
                 .collect::<HashSet<_>>()
         });
-    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
+    let t =
+        topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
     decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
 }
