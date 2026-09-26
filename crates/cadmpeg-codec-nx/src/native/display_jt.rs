@@ -28,6 +28,7 @@ use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
 use std::num::NonZeroU64;
 
+use crate::jt::QuantizedRange;
 use crate::jt_topology::Polygon;
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
@@ -646,7 +647,7 @@ pub(super) struct DisplayJtVertexCoordinateArrayHeader {
     /// Number of coordinate components per record.
     component_count: u8,
     /// Inclusive component ranges as minimum and maximum pairs for X, Y, and Z.
-    component_ranges: [[f32; 2]; 3],
+    component_ranges: [QuantizedRange; 3],
     /// Quantization bits for X, Y, and Z.
     component_quantization_bits: [u8; 3],
     /// Remaining compressed component-data length.
@@ -665,7 +666,7 @@ pub(super) struct DisplayJtVertexCoordinates {
     /// Owning coordinate-array header.
     header: String,
     /// XYZ coordinates in the JT model's serialized metre unit.
-    points_m: Vec<[f32; 3]>,
+    points_m: Vec<[FiniteBinary32; 3]>,
     /// Combined hash serialized after the component vectors.
     coordinate_hash: u32,
     /// Complete byte length of the component packets and hash.
@@ -682,7 +683,7 @@ pub(super) struct DisplayJtVertexNormals {
     /// Owning compressed vertex-record header.
     vertex_records_header: String,
     /// Ordered unit normal vectors in attribute-record order.
-    normals: Vec<[f32; 3]>,
+    normals: Vec<[FiniteBinary32; 3]>,
     /// Combined hash serialized after the component vectors.
     normal_hash: u32,
     /// Complete byte length of the normal-array header, packets, and hash.
@@ -699,7 +700,7 @@ pub(super) struct DisplayJtVertexColors {
     /// Owning compressed vertex-record header.
     vertex_records_header: String,
     /// Ordered RGBA colors in vertex-attribute record order.
-    colors: Vec<[f32; 4]>,
+    colors: Vec<[FiniteBinary32; 4]>,
     /// Combined hash serialized after the component vectors.
     color_hash: u32,
     /// Complete byte length of the color-array header, packets, and hash.
@@ -718,7 +719,7 @@ pub(super) struct DisplayJtVertexTextureCoordinates {
     /// Zero-based texture-coordinate channel selected by the binding nibble.
     channel: u8,
     /// Ordered component vectors in vertex-attribute record order.
-    values: Vec<Vec<f32>>,
+    values: Vec<Vec<FiniteBinary32>>,
     /// Combined hash serialized after the component vectors.
     texture_coordinate_hash: u32,
     /// Complete byte length of the array header, packets, and hash.
@@ -2876,22 +2877,20 @@ pub(super) fn display_jt_topology_packet_sequences(
             if unique_vertex_count != topological_vertex_count || component_count != 3 {
                 return (Vec::new(), Vec::new(), Vec::new());
             }
-            let mut component_ranges = [[0.0; 2]; 3];
+            let mut component_ranges = [QuantizedRange::ZERO; 3];
             let mut component_quantization_bits = [0; 3];
             for (component, &[m0, m1, m2, m3, x0, x1, x2, x3, bits]) in
                 ranges.as_chunks::<9>().0.iter().enumerate()
             {
                 let minimum = assemble_f32_le([m0, m1, m2, m3]);
                 let maximum = assemble_f32_le([x0, x1, x2, x3]);
-                if !minimum.is_finite()
-                    || !maximum.is_finite()
-                    || minimum > maximum
-                    || bits > 32
-                    || bits != quantization[0]
-                {
+                let Some(range) = QuantizedRange::new(minimum, maximum) else {
+                    return (Vec::new(), Vec::new(), Vec::new());
+                };
+                if bits > 32 || bits != quantization[0] {
                     return (Vec::new(), Vec::new(), Vec::new());
                 }
-                component_ranges[component] = [minimum, maximum];
+                component_ranges[component] = range;
                 component_quantization_bits[component] = bits;
             }
             let compressed_components = &arrays[32..];
@@ -4680,7 +4679,7 @@ fn display_jt_tessellation_rows(
                 .join("-");
             let convert_point = |index: u32| {
                 let point = coordinates.points_m.get(index as usize)?;
-                transform_jt_point(transform, *point)
+                transform_jt_point(transform, point.map(FiniteBinary32::get))
             };
             let has_vertex_attributes = normal_array.is_some()
                 || color_array.is_some()
@@ -4742,17 +4741,18 @@ fn display_jt_tessellation_rows(
                         {
                             let normal = normal_array.normals.get(attribute)?;
                             normal_vectors.push(FiniteVector3::from(transform_jt_normal(
-                                transform, *normal,
+                                transform,
+                                normal.map(FiniteBinary32::get),
                             )?));
                         }
                         if let Some(color_array) = color_array {
                             for component in color_array.colors.get(attribute)? {
-                                color_data.extend_from_slice(&component.to_le_bytes());
+                                color_data.extend_from_slice(&component.get().to_le_bytes());
                             }
                         }
                         for (array, data) in texture_arrays.iter().zip(&mut texture_data) {
                             for component in array.values.get(attribute)? {
-                                data.extend_from_slice(&component.to_le_bytes());
+                                data.extend_from_slice(&component.get().to_le_bytes());
                             }
                         }
                         if let Some(array) = vertex_flag_array {
@@ -5017,10 +5017,16 @@ mod tests {
     use flate2::Compression;
 
     use super::super::hex::Sha256Hex;
-    use super::{DisplayJtMaterialAttribute, DisplayJtPartitionBounds, UnitBinary32};
+    use super::{
+        DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32,
+    };
     use cadmpeg_ir::topology::Color;
 
     const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
+
+    fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
+        values.map(|value| FiniteBinary32::new(value).expect("fixture values are finite"))
+    }
 
     #[test]
     fn display_jt_index_requires_every_declared_header() {
@@ -5442,7 +5448,11 @@ mod tests {
         let coordinates = DisplayJtVertexCoordinates {
             id: "coordinates".into(),
             header: "coordinate-header".into(),
-            points_m: vec![[0.0, 0.0, 0.0], [0.001, 0.0, 0.0], [0.0, 0.002, 0.0]],
+            points_m: vec![
+                finite([0.0, 0.0, 0.0]),
+                finite([0.001, 0.0, 0.0]),
+                finite([0.0, 0.002, 0.0]),
+            ],
             coordinate_hash: 0,
             byte_len: 4,
             source_offset: 90,
@@ -5452,7 +5462,7 @@ mod tests {
             element: "shape-element".into(),
             unique_vertex_count: 3,
             component_count: 3,
-            component_ranges: [[0.0, 0.0]; 3],
+            component_ranges: [super::QuantizedRange::ZERO; 3],
             component_quantization_bits: [0; 3],
             compressed_components_byte_len: 4,
             compressed_components_sha256: "00".repeat(32).try_into().unwrap(),
@@ -5742,7 +5752,11 @@ mod tests {
         let normals = DisplayJtVertexNormals {
             id: "normals".into(),
             vertex_records_header: "vertex-header".into(),
-            normals: vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            normals: vec![
+                finite([1.0, 0.0, 0.0]),
+                finite([0.0, 1.0, 0.0]),
+                finite([0.0, 0.0, 1.0]),
+            ],
             normal_hash: 0,
             byte_len: 4,
             source_offset: 94,
@@ -5751,9 +5765,9 @@ mod tests {
             id: "colors".into(),
             vertex_records_header: "vertex-header".into(),
             colors: vec![
-                [1.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 0.5],
-                [0.0, 0.0, 1.0, 0.25],
+                finite([1.0, 0.0, 0.0, 1.0]),
+                finite([0.0, 1.0, 0.0, 0.5]),
+                finite([0.0, 0.0, 1.0, 0.25]),
             ],
             color_hash: 0,
             byte_len: 4,
@@ -5763,7 +5777,11 @@ mod tests {
             id: "texture".into(),
             vertex_records_header: "vertex-header".into(),
             channel: 0,
-            values: vec![vec![0.0, 0.0], vec![1.0, 0.0], vec![0.0, 1.0]],
+            values: vec![
+                finite([0.0, 0.0]).to_vec(),
+                finite([1.0, 0.0]).to_vec(),
+                finite([0.0, 1.0]).to_vec(),
+            ],
             texture_coordinate_hash: 0,
             byte_len: 4,
             source_offset: 102,

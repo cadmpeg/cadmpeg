@@ -2,6 +2,41 @@
 //! Siemens JT integer packet decoding used by embedded NX display models.
 
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteBinary32;
+use serde::{Deserialize, Serialize};
+
+/// Ordered finite endpoints of one JT binary32 quantization interval.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "[f32; 2]", into = "[f32; 2]")]
+pub(crate) struct QuantizedRange([FiniteBinary32; 2]);
+
+impl QuantizedRange {
+    pub(crate) const ZERO: Self = Self([FiniteBinary32::ZERO; 2]);
+
+    pub(crate) fn new(minimum: f32, maximum: f32) -> Option<Self> {
+        let minimum = FiniteBinary32::new(minimum)?;
+        let maximum = FiniteBinary32::new(maximum)?;
+        (minimum.get() <= maximum.get()).then_some(Self([minimum, maximum]))
+    }
+
+    fn get(self) -> [f32; 2] {
+        self.0.map(FiniteBinary32::get)
+    }
+}
+
+impl TryFrom<[f32; 2]> for QuantizedRange {
+    type Error = &'static str;
+
+    fn try_from([minimum, maximum]: [f32; 2]) -> Result<Self, Self::Error> {
+        Self::new(minimum, maximum).ok_or("quantized range: finite ordered endpoints required")
+    }
+}
+
+impl From<QuantizedRange> for [f32; 2] {
+    fn from(value: QuantizedRange) -> Self {
+        value.get()
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 struct ProbabilityEntry {
@@ -85,7 +120,10 @@ pub(crate) fn unpack_predictor_residuals(residuals: &[i32], predictor: Predictor
     values
 }
 
-fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option<Vec<f32>> {
+fn lossless_coordinate_component(
+    exponents: &[i32],
+    mantissae: &[i32],
+) -> Option<Vec<FiniteBinary32>> {
     if exponents.len() != mantissae.len() {
         return None;
     }
@@ -94,10 +132,7 @@ fn lossless_coordinate_component(exponents: &[i32], mantissae: &[i32]) -> Option
         let exponent = exponent as u32 & 0x1ff;
         let mantissa = mantissa as u32 & 0x7f_ffff;
         let value = f32::from_bits((exponent << 23) | mantissa);
-        if !value.is_finite() {
-            return None;
-        }
-        values.push(value);
+        values.push(FiniteBinary32::new(value)?);
     }
     Some(values)
 }
@@ -193,7 +228,7 @@ fn deering_normal(
     octant: Octant,
     theta: NormalCode,
     psi: NormalCode,
-) -> Option<[f32; 3]> {
+) -> Option<[FiniteBinary32; 3]> {
     let theta_index = theta.index(u32::from(sextant.is_odd()));
     let psi_index = psi.index(0);
     let table_size = f64::from(1_u32 << 13);
@@ -218,10 +253,11 @@ fn deering_normal(
             result[component] = -result[component];
         }
     }
-    result
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(result)
+    Some([
+        FiniteBinary32::new(result[0])?,
+        FiniteBinary32::new(result[1])?,
+        FiniteBinary32::new(result[2])?,
+    ])
 }
 
 /// Decode one JT compressed normal array and its trailing hash.
@@ -229,7 +265,7 @@ pub(crate) fn decode_vertex_normals(
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
-) -> Option<(Vec<[f32; 3]>, u32, usize)> {
+) -> Option<(Vec<[FiniteBinary32; 3]>, u32, usize)> {
     let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
     if count != expected_count || *bytes.get(4)? != 3 || *bytes.get(5)? != expected_bits {
         return None;
@@ -286,7 +322,7 @@ pub(crate) fn decode_vertex_texture_coordinates(
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
-) -> Option<(Vec<Vec<f32>>, u32, usize)> {
+) -> Option<(Vec<Vec<FiniteBinary32>>, u32, usize)> {
     let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
     let component_count = usize::from(*bytes.get(4)?);
     if count != expected_count
@@ -315,14 +351,10 @@ pub(crate) fn decode_vertex_texture_coordinates(
             let minimum = View::f32_le_at(bytes, cursor)?;
             let maximum = View::f32_le_at(bytes, cursor + 4)?;
             let bits = *bytes.get(cursor + 8)?;
-            if bits != expected_bits
-                || !minimum.is_finite()
-                || !maximum.is_finite()
-                || minimum > maximum
-            {
+            if bits != expected_bits {
                 return None;
             }
-            ranges.push([minimum, maximum]);
+            ranges.push(QuantizedRange::new(minimum, maximum)?);
             cursor = cursor.checked_add(9)?;
         }
         for range in ranges {
@@ -360,7 +392,7 @@ pub(crate) fn decode_vertex_colors(
     bytes: &[u8],
     expected_count: usize,
     expected_bits: u8,
-) -> Option<(Vec<[f32; 4]>, u32, usize)> {
+) -> Option<(Vec<[FiniteBinary32; 4]>, u32, usize)> {
     let count = usize::try_from(read_u32(bytes, 0)?).ok()?;
     let component_count = usize::from(*bytes.get(4)?);
     if count != expected_count
@@ -395,7 +427,7 @@ pub(crate) fn decode_vertex_colors(
                     .get(3)
                     .and_then(|component| component.get(index))
                     .copied()
-                    .unwrap_or(1.0),
+                    .unwrap_or(FiniteBinary32::ONE),
             ]);
         }
         colors
@@ -414,7 +446,7 @@ pub(crate) fn decode_vertex_colors(
                 if bits == 0 || bits > 8 {
                     return None;
                 }
-                ranges.push(range);
+                ranges.push(QuantizedRange::new(range[0], range[1])?);
                 component_bits.push(bits);
                 cursor = cursor.checked_add(1)?;
             }
@@ -423,15 +455,10 @@ pub(crate) fn decode_vertex_colors(
                 let minimum = View::f32_le_at(bytes, cursor)?;
                 let maximum = View::f32_le_at(bytes, cursor + 4)?;
                 let bits = *bytes.get(cursor + 8)?;
-                if bits == 0
-                    || bits > 8
-                    || !minimum.is_finite()
-                    || !maximum.is_finite()
-                    || minimum > maximum
-                {
+                if bits == 0 || bits > 8 {
                     return None;
                 }
-                ranges.push([minimum, maximum]);
+                ranges.push(QuantizedRange::new(minimum, maximum)?);
                 component_bits.push(bits);
                 cursor = cursor.checked_add(9)?;
             }
@@ -473,14 +500,15 @@ pub(crate) fn decode_vertex_colors(
     Some((colors, hash, cursor))
 }
 
-fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Option<[f32; 3]> {
-    if !hue.is_finite() || !saturation.is_finite() || !value.is_finite() {
-        return None;
-    }
-    let hue = hue.rem_euclid(6.0);
-    let chroma = value * saturation;
+fn hsv_to_rgb(
+    hue: FiniteBinary32,
+    saturation: FiniteBinary32,
+    value: FiniteBinary32,
+) -> Option<[FiniteBinary32; 3]> {
+    let hue = hue.get().rem_euclid(6.0);
+    let chroma = value.get() * saturation.get();
     let intermediate = chroma * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
-    let minimum = value - chroma;
+    let minimum = value.get() - chroma;
     let [red, green, blue] = match Sextant::from_hue_sixth(hue) {
         Sextant::Zero => [chroma, intermediate, 0.0],
         Sextant::One => [intermediate, chroma, 0.0],
@@ -489,11 +517,11 @@ fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> Option<[f32; 3]> {
         Sextant::Four => [intermediate, 0.0, chroma],
         Sextant::Five => [chroma, 0.0, intermediate],
     };
-    let result = [red + minimum, green + minimum, blue + minimum];
-    result
-        .iter()
-        .all(|component| component.is_finite())
-        .then_some(result)
+    Some([
+        FiniteBinary32::new(red + minimum)?,
+        FiniteBinary32::new(green + minimum)?,
+        FiniteBinary32::new(blue + minimum)?,
+    ])
 }
 
 /// Decode one JT compressed vertex-flag array.
@@ -516,15 +544,11 @@ pub(crate) fn decode_vertex_flags(
     Some((flags, 4usize.checked_add(byte_len)?))
 }
 
-fn dequantize_uniform(code: u32, range: [f32; 2], bits: u8) -> Option<f32> {
-    if bits == 0
-        || bits > 32
-        || !range[0].is_finite()
-        || !range[1].is_finite()
-        || range[0] > range[1]
-    {
+fn dequantize_uniform(code: u32, range: QuantizedRange, bits: u8) -> Option<FiniteBinary32> {
+    if bits == 0 || bits > 32 {
         return None;
     }
+    let range = range.get();
     let maximum_code = if bits == 32 {
         u32::MAX
     } else {
@@ -535,16 +559,16 @@ fn dequantize_uniform(code: u32, range: [f32; 2], bits: u8) -> Option<f32> {
     }
     let step = (f64::from(range[1]) - f64::from(range[0])) / f64::from(maximum_code);
     let value = (f64::from(range[0]) + (f64::from(code) - 0.5) * step) as f32;
-    value.is_finite().then_some(value)
+    FiniteBinary32::new(value)
 }
 
 /// Decode the component vectors and hash of one JT vertex-coordinate array.
 pub(crate) fn decode_vertex_coordinates(
     bytes: &[u8],
     vertex_count: usize,
-    ranges: [[f32; 2]; 3],
+    ranges: [QuantizedRange; 3],
     quantization_bits: [u8; 3],
-) -> Option<(Vec<[f32; 3]>, u32, usize)> {
+) -> Option<(Vec<[FiniteBinary32; 3]>, u32, usize)> {
     let mut cursor = 0usize;
     let mut components = try_vec(3)?;
     for component in 0..3 {
