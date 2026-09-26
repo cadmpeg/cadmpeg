@@ -198,14 +198,16 @@ fn scale_plane(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<Plane, FramingError> {
-    for coordinate in &mut value.origin {
-        *coordinate = scaled_coordinate(*coordinate, scale)
-            .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?
-            .get();
+    let origin = value.origin.get();
+    let mut scaled = [FiniteReal::ZERO; 3];
+    for index in 0..3 {
+        scaled[index] = scaled_coordinate(origin[index], scale)
+            .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
     }
-    value.equation[3] = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?
-        .get();
+    value.origin = crate::settings::PlaneLane::Admitted(scaled.into());
+    let constant = scaled_coordinate(value.equation[3], scale)
+        .ok_or_else(|| FramingError::structural(offset, "scaled dimension plane is invalid"))?;
+    value.equation = value.equation.with_fourth(constant);
     Ok(value)
 }
 
@@ -521,12 +523,14 @@ fn legacy_text_scaling(stored: Option<bool>) -> bool {
 }
 
 fn shifted_plane(mut plane: Plane, point: [f64; 2]) -> Plane {
+    let mut origin = plane.origin.get();
     for index in 0..3 {
-        plane.origin[index] += point[0] * plane.xaxis[index] + point[1] * plane.yaxis[index];
+        origin[index] += point[0] * plane.xaxis[index] + point[1] * plane.yaxis[index];
     }
-    plane.equation[3] = -(plane.equation[0] * plane.origin[0]
-        + plane.equation[1] * plane.origin[1]
-        + plane.equation[2] * plane.origin[2]);
+    plane.origin = crate::settings::PlaneLane::Derived(origin);
+    let mut equation = plane.equation.get();
+    equation[3] = -(equation[0] * origin[0] + equation[1] * origin[1] + equation[2] * origin[2]);
+    plane.equation = crate::settings::PlaneLane::Derived(equation);
     plane
 }
 
@@ -1674,9 +1678,9 @@ pub(crate) fn project(
     let position = (!dimension.use_default_text_point)
         .then(|| {
             let [u, v] = dimension.user_text_point;
-            let origin = dimension.plane.origin;
-            let x_axis = dimension.plane.xaxis;
-            let y_axis = dimension.plane.yaxis;
+            let origin = dimension.plane.origin.get();
+            let x_axis = dimension.plane.xaxis.get();
+            let y_axis = dimension.plane.yaxis.get();
             [0, 1, 2].map(|axis| origin[axis] + u * x_axis[axis] + v * y_axis[axis])
         })
         .filter(|point| point.iter().all(|value| value.is_finite()));
@@ -1762,6 +1766,29 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Result<String, cadmpeg_cor
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    #[test]
+    fn shifted_plane_keeps_computed_overflow_outside_source_admission() {
+        let bytes = plane_bytes(
+            [f64::MAX, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        );
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("plane reader");
+        let plane = crate::settings::plane(&mut reader).expect("finite source plane");
+        let shifted = super::shifted_plane(plane, [f64::MAX, 0.0]);
+        assert!(matches!(
+            shifted.origin,
+            crate::settings::PlaneLane::Derived(_)
+        ));
+        assert!(shifted.origin[0].is_infinite());
+        assert!(matches!(
+            shifted.equation,
+            crate::settings::PlaneLane::Derived(_)
+        ));
+        assert!(shifted.equation[3].is_nan());
+    }
 
     #[test]
     fn numerical_ranges_v2_linear_dimension_preserves_tiny_length() {

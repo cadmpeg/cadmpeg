@@ -99,12 +99,20 @@ fn rejected_expansion_discards_every_report_bucket() {
 
 #[test]
 fn hatch_plane_places_and_scales_plane_space_loops_once() {
+    let admitted = |values| {
+        crate::settings::PlaneLane::Admitted(
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite test plane"),
+        )
+    };
     let plane = crate::settings::Plane {
-        origin: [10.0, 20.0, 30.0],
-        xaxis: [0.0, 1.0, 0.0],
-        yaxis: [-1.0, 0.0, 0.0],
-        zaxis: [0.0, 0.0, 1.0],
-        equation: [0.0, 0.0, 1.0, -30.0],
+        origin: admitted([10.0, 20.0, 30.0]),
+        xaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).expect("finite test x axis"),
+        yaxis: cadmpeg_ir::units::FiniteVector::new([-1.0, 0.0, 0.0]).expect("finite test y axis"),
+        zaxis: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0]).expect("finite test z axis"),
+        equation: crate::settings::PlaneLane::Admitted(
+            cadmpeg_ir::units::FiniteVector::new([0.0, 0.0, 1.0, -30.0])
+                .expect("finite test plane equation"),
+        ),
     };
     let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
     transform_decoded_curve(

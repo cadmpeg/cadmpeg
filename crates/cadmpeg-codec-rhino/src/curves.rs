@@ -1614,10 +1614,10 @@ fn read_circle(
     if !radius.is_finite() || radius <= 0.0 || !scaled_radius.is_finite() || scaled_radius <= 0.0 {
         return Err(error(reader.position(), "circle radius is invalid"));
     }
-    let xaxis = vector(native.xaxis);
-    let yaxis = vector(native.yaxis);
-    let axis = vector(native.zaxis);
-    let center = crate::wire::scaled_point(native.origin, scale)
+    let xaxis = vector(native.xaxis.get());
+    let yaxis = vector(native.yaxis.get());
+    let axis = vector(native.zaxis.get());
+    let center = crate::wire::scaled_point(native.origin.get(), scale)
         .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?
         .get();
     let norm_x = xaxis.norm();
@@ -1633,9 +1633,24 @@ fn read_circle(
         && xaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && yaxis.dot(axis).abs() < CIRCLE_TOLERANCE
         && crate::wire::close_vector(xaxis.cross(yaxis), axis, CIRCLE_TOLERANCE)
-        && close_native_point(zero.0.get(), native.origin, native.xaxis, radius)
-        && close_native_point(half_pi.0.get(), native.origin, native.yaxis, radius)
-        && close_native_point(at_pi.0.get(), native.origin, negate(native.xaxis), radius))
+        && close_native_point(
+            zero.0.get(),
+            native.origin.get(),
+            native.xaxis.get(),
+            radius,
+        )
+        && close_native_point(
+            half_pi.0.get(),
+            native.origin.get(),
+            native.yaxis.get(),
+            radius,
+        )
+        && close_native_point(
+            at_pi.0.get(),
+            native.origin.get(),
+            negate(native.xaxis.get()),
+            radius,
+        ))
     {
         return Err(error(reader.position(), "circle plane axes are invalid"));
     }
