@@ -35,7 +35,7 @@ pub(crate) enum Control {
         end: NurbsSurface,
     },
     Cage {
-        start_transform: [f64; 16],
+        start_transform: FiniteVector<16>,
         end: Cage,
     },
 }
@@ -285,17 +285,15 @@ fn control_child<T>(
 fn scaled_transform(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
-) -> Result<[f64; 16], GeometryError> {
-    let mut transform = xform(reader)?.0.get();
+) -> Result<FiniteVector<16>, GeometryError> {
+    let mut transform = xform(reader)?.0;
     for index in [3, 7, 11] {
-        transform[index] = scaled_coordinate(transform[index], scale)
-            .ok_or_else(|| {
-                GeometryError::malformed(
-                    reader.position() - 128,
-                    "scaled cage transform is invalid",
-                )
-            })?
-            .get();
+        let scaled = scaled_coordinate(transform[index], scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        })?;
+        transform = transform.with_component(index, scaled).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        })?;
     }
     Ok(transform)
 }

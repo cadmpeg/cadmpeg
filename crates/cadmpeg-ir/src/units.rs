@@ -60,6 +60,19 @@ impl<const N: usize> FiniteVector<N> {
         &self.0
     }
 
+    /// Replace one coordinate with an admitted finite scalar.
+    ///
+    /// Only an out-of-range index can refuse; the resulting vector remains finite.
+    #[must_use]
+    pub fn with_component(
+        mut self,
+        index: usize,
+        value: crate::scalar::FiniteReal,
+    ) -> Option<Self> {
+        *self.0.get_mut(index)? = value.get();
+        Some(self)
+    }
+
     /// Return three consecutive admitted coordinates. Only the index range
     /// can refuse; the selected values retain their finite admission.
     pub fn three_at(self, start: usize) -> Option<FiniteVector<3>> {
