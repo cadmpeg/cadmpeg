@@ -11,6 +11,37 @@ use std::io::Cursor;
 const EPS_PARAMETER_VALUE: f64 = 1.0e-12;
 
 #[test]
+fn circular_arc_admits_finite_fields_and_keeps_invalid_native_fallback() {
+    let mut attributes = std::collections::BTreeMap::from([
+        ("CenterX".to_owned(), "1".to_owned()),
+        ("CenterY".to_owned(), "2".to_owned()),
+        ("Radius".to_owned(), "4".to_owned()),
+        ("AngleXU".to_owned(), "0.6".to_owned()),
+        ("StartAngle".to_owned(), "0.2".to_owned()),
+        ("EndAngle".to_owned(), "1.2".to_owned()),
+    ]);
+    let arc = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("finite arc");
+    assert!(
+        matches!(arc.definition(), cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } if center.get() == cadmpeg_ir::math::Point2::new(1.0, 2.0)
+        && radius.get() == 4.0
+        && (start_angle.get() - 0.8).abs() < EPS_PARAMETER_VALUE
+        && (end_angle.get() - 1.8).abs() < EPS_PARAMETER_VALUE)
+    );
+
+    attributes.insert("CenterX".to_owned(), "NaN".to_owned());
+    let native = super::super::sketch_geometry("ArcOfCircle", &attributes).expect("native arc");
+    assert!(matches!(
+        native.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Native { .. }
+    ));
+}
+
+#[test]
 fn transfers_application_saved_rotated_conics_and_profile_chain() {
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
