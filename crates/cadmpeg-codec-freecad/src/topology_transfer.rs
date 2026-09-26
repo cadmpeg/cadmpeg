@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FiniteVector3;
+use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::pcurve::PcurveMetadata;
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry, PcurveNurbs},
@@ -21,7 +21,8 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
     RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -44,7 +45,7 @@ const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 struct IndexedPolygon {
-    samples: PolylineSamples,
+    samples: PolylineSamples<FiniteReal, FinitePoint3>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
@@ -55,8 +56,8 @@ impl IndexedPolygon {
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(
-        nodes: Vec<Point3>,
-        parameters: Option<Vec<f64>>,
+        nodes: Vec<FinitePoint3>,
+        parameters: Option<Vec<FiniteReal>>,
         deflection: cadmpeg_ir::scalar::NonNegativeReal,
     ) -> Result<Self, CodecError> {
         let samples = match parameters {
@@ -1154,7 +1155,9 @@ impl<'a> Builder<'a> {
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
-                        .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
+                        .and_then(|parameters| {
+                            Some([parameters.first()?.get(), parameters.last()?.get()])
+                        })
                 })
             });
         let param_range = curve
@@ -1231,7 +1234,7 @@ impl<'a> Builder<'a> {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                PolylineCurve::from_admitted_scaled_deflection(samples, deflection, scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()),
@@ -1256,7 +1259,7 @@ impl<'a> Builder<'a> {
                 ),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
+                    PolylineCurve::from_admitted_scaled_deflection(samples, deflection, scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()),
@@ -1279,7 +1282,7 @@ impl<'a> Builder<'a> {
                 usize::try_from(*node)
                     .ok()
                     .and_then(|node| node.checked_sub(1))
-                    .and_then(|node| triangulation.nodes().get(node).map(|point| point.get()))
+                    .and_then(|node| triangulation.nodes().get(node).copied())
                     .ok_or_else(|| {
                         CodecError::Malformed(
                             "polygon-on-triangulation node is out of bounds".into(),
@@ -1290,7 +1293,7 @@ impl<'a> Builder<'a> {
         IndexedPolygon::try_new(points, polygon.parameters.clone(), polygon.deflection)
     }
 
-    fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[f64]> {
+    fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[FiniteReal]> {
         match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 self.tables.polygons3d[polygon - 1].parameters.as_deref()
@@ -1893,20 +1896,16 @@ fn transform_surface(
 /// Places every polyline sample, refusing a sample the transform sends out of
 /// the finite range.
 fn place_polyline_samples(
-    samples: &mut PolylineSamples,
+    samples: &mut PolylineSamples<FiniteReal, FinitePoint3>,
     transform: Transform,
 ) -> Result<(), CodecError> {
     samples
-        .edit_points(|point| {
-            *point = transform
-                .apply_point(*point)
-                .ok_or_else(|| {
-                    GeometryLayoutError::EditRefused(
-                        "placed polyline sample contains a non-finite coordinate".to_string(),
-                    )
-                })?
-                .get();
-            Ok(())
+        .edit_admitted_points(|point| {
+            transform.apply_point(point.get()).ok_or_else(|| {
+                GeometryLayoutError::EditRefused(
+                    "placed polyline sample contains a non-finite coordinate".to_string(),
+                )
+            })
         })
         .map_err(|error| CodecError::malformed(error.to_string()))
 }

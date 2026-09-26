@@ -306,6 +306,87 @@ fn admitted_polygonal_surface_path_preserves_geometry_and_layout_refusal() {
 }
 
 #[test]
+fn admitted_polyline_path_keeps_samples_and_checks_parameter_order() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::sampled::{
+        GeometryLayoutError, PolylineCurve, PolylineSamples, PolylineVertex,
+    };
+    use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+
+    let raw = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: 0.0,
+                point: Point3::new(0.0, 0.0, 0.0),
+            },
+            PolylineVertex {
+                parameter: 1.0,
+                point: Point3::new(1.0, 0.0, 0.0),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let admitted = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ONE,
+                point: FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).unwrap(),
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    let deflection = NonNegativeReal::new(0.25).unwrap();
+    let scale = PositiveReal::new(2.0).unwrap();
+    assert_eq!(
+        PolylineCurve::from_admitted_scaled_deflection(admitted.clone(), deflection, scale)
+            .unwrap(),
+        PolylineCurve::from_scaled_deflection(raw, deflection, scale).unwrap(),
+    );
+
+    let mut edited = admitted.clone();
+    let error = edited
+        .edit_admitted_points(|point| {
+            if point.x == 1.0 {
+                Err(GeometryLayoutError::EditRefused(
+                    "refused second point".to_owned(),
+                ))
+            } else {
+                Ok(FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap())
+            }
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("refused second point"));
+    assert_eq!(edited, admitted);
+
+    let duplicate = PolylineSamples::Parameterized {
+        vertices: vec![
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+            PolylineVertex {
+                parameter: FiniteReal::ZERO,
+                point: FinitePoint3::ZERO,
+            },
+        ]
+        .try_into()
+        .unwrap(),
+    };
+    assert!(
+        PolylineCurve::from_admitted_scaled_deflection(duplicate, deflection, scale)
+            .unwrap_err()
+            .to_string()
+            .contains("strictly monotonic")
+    );
+}
+
+#[test]
 fn a_polyline_holds_its_admitted_samples() {
     use crate::features::FinitePoint3;
     use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
