@@ -52,9 +52,9 @@ pub(in super::super) fn build_container_ir(
     let (meta, coverage) = source_meta(scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
@@ -638,9 +638,9 @@ pub(in super::super) fn build_ir(
     let mut annotations = AnnotationBuilder::new();
     let mut brep_diagnostics = BrepTransferDiagnostics::default();
     let mut transfer_losses = Vec::new();
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
-    emit_reference_arenas(scan, &mut ir, &mut annotations)?;
+    emit_reference_arenas(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_lines(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_circles(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
@@ -660,8 +660,8 @@ pub(in super::super) fn build_ir(
         emit_model_features(ctx, scan, &mut ir, &mut annotations)?;
     let (feature_result_topology_count, feature_result_edge_count) =
         finish_feature_transfers(ctx, scan, &mut ir, &mut annotations, &mut coverage)?;
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = scan
         .framing
         .principal_unit

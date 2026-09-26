@@ -354,7 +354,12 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
         let mut ir = CadIr::empty();
-        let installed = install(&scan, &mut ir).expect("linetype install");
+        let installed = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("linetype install");
         let linetypes = &ir.native.namespace("rhino").unwrap().arenas()["linetypes"];
         assert_eq!(linetypes.len(), usize::from(typed), "unit={unit:?}");
         assert_eq!(
@@ -399,7 +404,12 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
-        let installed = install(&scan, &mut ir).expect("hatch install");
+        let installed = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("hatch install");
         let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
         let typed = unit == Some(2);
         assert_eq!(hatch_patterns.len(), usize::from(typed), "unit={unit:?}");
@@ -460,7 +470,12 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         );
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
-        let installed = install(&scan, &mut ir).expect("hatch install");
+        let installed = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("hatch install");
         let hatch_patterns = &ir.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
         assert_eq!(
             hatch_patterns.len(),
@@ -546,7 +561,11 @@ fn solid_hatch_pattern_needs_no_length_binding() {
         let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("rhino")
-            .set_arena("hatch_patterns", &[pattern])
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "hatch_patterns",
+                &[pattern],
+            )
             .unwrap();
         let admitted: CadIr = serde_json::from_slice(&serde_json::to_vec(&ir).unwrap()).unwrap();
         assert_eq!(

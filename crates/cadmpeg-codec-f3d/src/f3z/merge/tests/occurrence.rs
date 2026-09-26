@@ -252,7 +252,11 @@ fn occurrence_merge_remaps_and_retains_native_records() {
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
-        .set_arena("design_sketch_placements", &[placement])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_sketch_placements",
+            &[placement],
+        )
         .expect("store component native");
     let mut root = Native::default();
     extend_native(&mut root, component, "role/occurrence-0").unwrap();
@@ -281,7 +285,11 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
-        .set_arena("design_configurations", &[configuration])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_configurations",
+            &[configuration],
+        )
         .unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     extend_native(&mut ir.native, component, "component-0").unwrap();
@@ -338,11 +346,19 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let mut component = Native::default();
     component
         .namespace_mut("f3d")
-        .set_arena("design_configurations", &[configuration])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_configurations",
+            &[configuration],
+        )
         .expect("store configuration");
     component
         .namespace_mut("f3d")
-        .set_arena("body_visibilities", &[visibility])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "body_visibilities",
+            &[visibility],
+        )
         .expect("store typed native reference");
 
     let mut root = Native::default();

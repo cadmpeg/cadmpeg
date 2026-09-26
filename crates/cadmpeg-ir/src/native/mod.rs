@@ -3,8 +3,10 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::num::NonZeroUsize;
 
+use cadmpeg_core::decode::DecodeContext;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
@@ -13,6 +15,14 @@ use serde_json::{Map, Value};
 mod canon;
 pub mod catalogue;
 mod replay;
+
+#[cfg(test)]
+pub(crate) fn test_ctx() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    DecodeContext::from_root_bytes(&[], arena, &cadmpeg_core::decode::DecodePolicy::default())
+        .expect("empty test input fits the service policy")
+        .0
+}
 
 /// Deepest container chain one native record field may hold.
 ///
@@ -86,6 +96,9 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
+    /// The caller's decode budget refused native record storage.
+    #[error(transparent)]
+    Resource(#[from] cadmpeg_core::CodecError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,
@@ -157,7 +170,41 @@ pub enum NativeConvertError {
 
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
     fn from(error: NativeConvertError) -> Self {
-        Self::Malformed(error.to_string())
+        if let Some(limit) = error.resource_limit() {
+            Self::ResourceLimit(limit)
+        } else {
+            Self::Malformed(error.to_string())
+        }
+    }
+}
+
+impl NativeConvertError {
+    fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+        match self {
+            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
+            Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
+                source.resource_limit()
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Counts JSON bytes without creating a second copy of the record.
+#[derive(Default)]
+struct JsonByteCount(u64);
+
+impl Write for JsonByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len() as u64)
+            .ok_or_else(|| std::io::Error::other("native record JSON length exceeds u64"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -269,7 +316,7 @@ impl NativeRecord {
     /// not: a NaN or infinite number is refused by its member path, object
     /// keys must be distinct, and a `RawValue` payload is read through
     /// one-container replay rather than a recursion-limited parse.
-    fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
+    pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
         let serialized = record
             .serialize(canon::CanonValue::for_record())
             .map_err(|error| match error {
@@ -380,7 +427,7 @@ impl JsonSchema for NativeRecord {
 /// canonical records never has to read them back out of a namespace. Each
 /// record is converted before the next is read, and a record the source could
 /// not state stops the walk with that record's own error.
-pub fn arena_from<T, E, I>(records: I) -> Result<Vec<NativeRecord>, E>
+pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
     E: From<NativeConvertError>,
@@ -391,6 +438,13 @@ where
         .enumerate()
         .map(|(ordinal, record)| {
             let record = record?;
+            let mut serialized_bytes = JsonByteCount::default();
+            serde_json::to_writer(&mut serialized_bytes, &record)
+                .map_err(|error| E::from(NativeConvertError::Serde(error)))?;
+            ctx.charge_retained(serialized_bytes.0, "serialize native record")
+                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+            ctx.charge_collection_items(1, "store native record")
+                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
             NativeRecord::from_typed(&record).map_err(|source| {
                 E::from(NativeConvertError::WriteRecord {
                     ordinal,
@@ -436,10 +490,11 @@ impl NativeNamespace {
     /// Replace an arena by serializing codec-owned typed records.
     pub fn set_arena<T: Serialize>(
         &mut self,
+        ctx: &DecodeContext<'_>,
         name: impl Into<String>,
         records: &[T],
     ) -> Result<(), NativeConvertError> {
-        self.set_arena_from(name, records.iter())
+        self.set_arena_from(ctx, name, records.iter())
     }
 
     /// Replace an arena by serializing codec-owned typed records one at a time.
@@ -449,16 +504,15 @@ impl NativeNamespace {
     /// second copy of the population first.
     pub fn set_arena_from<T: Serialize, I: IntoIterator<Item = T>>(
         &mut self,
+        ctx: &DecodeContext<'_>,
         name: impl Into<String>,
         records: I,
     ) -> Result<(), NativeConvertError> {
         let name = name.into();
-        let converted =
-            arena_from(records.into_iter().map(Ok::<T, NativeConvertError>)).map_err(|source| {
-                NativeConvertError::Arena {
-                    arena: name.clone(),
-                    source: Box::new(source),
-                }
+        let converted = arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
+            .map_err(|source| NativeConvertError::Arena {
+                arena: name.clone(),
+                source: Box::new(source),
             })?;
         self.arenas.insert(name, converted);
         Ok(())

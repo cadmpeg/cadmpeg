@@ -159,7 +159,11 @@ fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalR
 }
 
 /// Installs the source product graph without requiring occurrence expansion.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     let mut object_records = BTreeMap::<Uuid, Vec<(usize, String)>>::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
@@ -285,9 +289,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
     }
 
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("product_definitions", &definitions)?;
-    namespace.set_arena("product_occurrences", &occurrences)?;
-    namespace.set_arena("external_references", &external)?;
+    namespace.set_arena(ctx, "product_definitions", &definitions)?;
+    namespace.set_arena(ctx, "product_occurrences", &occurrences)?;
+    namespace.set_arena(ctx, "external_references", &external)?;
     Ok(losses)
 }
 
@@ -315,7 +319,12 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let losses = install(&scan, &mut ir).expect("other product records remain transferable");
+        let losses = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("other product records remain transferable");
         assert_eq!(losses.len(), 1);
         let message = &losses[0].message;
         assert!(message.contains(&source_id));

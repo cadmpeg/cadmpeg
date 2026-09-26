@@ -580,68 +580,88 @@ fn decode_container<'a>(
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
     let namespace = ir.native.namespace_mut("inventor");
-    namespace.set_arena("storage_bands", &storage_bands)?;
-    namespace.set_arena("databases", &databases)?;
-    namespace.set_arena("database_issues", &database_issues)?;
-    namespace.set_arena("segment_registry", &segment_registry)?;
-    namespace.set_arena("revisions", &revisions)?;
-    namespace.set_arena("structural_issues", &structural_issues)?;
-    namespace.set_arena("property_sets", &property_sets)?;
-    namespace.set_arena("property_sections", &property_sections)?;
-    namespace.set_arena("properties", &properties)?;
-    namespace.set_arena("property_set_issues", &property_set_issues)?;
-    protein.install(namespace)?;
-    namespace.set_arena("protein_assets", &protein_assets)?;
-    namespace.set_arena("protein_rejections", &protein_rejections)?;
-    ufrx.install(namespace)?;
-    namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
-    namespace.set_arena("assembly_placements", &assembly_placements)?;
-    namespace.set_arena("assembly_record_issues", &assembly_inventory.issues)?;
-    namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
-    namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
-    namespace.set_arena("pm_graphics_faces", &pm_graphics_faces)?;
+    namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
+    namespace.set_arena(ctx, "databases", &databases)?;
+    namespace.set_arena(ctx, "database_issues", &database_issues)?;
+    namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
+    namespace.set_arena(ctx, "revisions", &revisions)?;
+    namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
+    namespace.set_arena(ctx, "property_sets", &property_sets)?;
+    namespace.set_arena(ctx, "property_sections", &property_sections)?;
+    namespace.set_arena(ctx, "properties", &properties)?;
+    namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
+    protein.install(ctx, namespace)?;
+    namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
+    namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
+    ufrx.install(ctx, namespace)?;
+    namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
+    namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
+    namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
+    namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
+    namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
     namespace.set_arena(
+        ctx,
         "pm_graphics_style_collections",
         &pm_graphics_style_collections,
     )?;
     namespace.set_arena(
+        ctx,
         "pm_graphics_primary_color_styles",
         &pm_graphics_primary_color_styles,
     )?;
-    namespace.set_arena("presentation_record_issues", &presentation_inventory.issues)?;
-    namespace.set_arena("pm_dc_parameters", &design_inventory.parameters)?;
-    namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
-    namespace.set_arena("pm_dc_units", &design_inventory.units)?;
-    namespace.set_arena("design_record_issues", &design_inventory.issues)?;
-    namespace.set_arena("pm_dc_sketches", &sketch_inventory.sketches)?;
-    namespace.set_arena("pm_dc_sketch_entities", &sketch_inventory.entities)?;
-    namespace.set_arena("pm_dc_transforms", &sketch_inventory.transforms)?;
-    namespace.set_arena("pm_dc_directions", &sketch_inventory.directions)?;
-    namespace.set_arena("pm_dc_sketch_constraints", &sketch_inventory.constraints)?;
-    namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
-    namespace.set_arena("pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
+        ctx,
+        "presentation_record_issues",
+        &presentation_inventory.issues,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
+    namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
+    namespace.set_arena(ctx, "pm_dc_units", &design_inventory.units)?;
+    namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
+    namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
+    namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
+    namespace.set_arena(ctx, "pm_dc_directions", &sketch_inventory.directions)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_sketch_constraints",
+        &sketch_inventory.constraints,
+    )?;
+    namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
+    namespace.set_arena(
+        ctx,
         "pm_dc_pattern_features",
         &feature_inventory.pattern_features,
     )?;
-    namespace.set_arena("pm_dc_feature_terminators", &feature_inventory.terminators)?;
-    namespace.set_arena("pm_dc_feature_properties", &feature_inventory.properties)?;
-    namespace.set_arena("pm_dc_feature_labels", &feature_inventory.labels)?;
     namespace.set_arena(
+        ctx,
+        "pm_dc_feature_terminators",
+        &feature_inventory.terminators,
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_properties",
+        &feature_inventory.properties,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    namespace.set_arena(
+        ctx,
         "pm_dc_entity_style_links",
         &feature_inventory.entity_style_links,
     )?;
-    namespace.set_arena("feature_record_issues", &feature_inventory.issues)?;
-    namespace.set_arena("segment_pairs", &segment_pairs)?;
-    namespace.set_arena("segment_meta", &segment_meta)?;
-    namespace.set_arena("meta_sections", &meta_sections)?;
-    namespace.set_arena("meta_types", &meta_types)?;
-    namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
-    namespace.set_arena("segment_bulk", &segment_bulk)?;
-    namespace.set_arena("rse_records", &rse_records)?;
-    namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
-    namespace.set_arena("unpaired_segments", &unpaired_segments)?;
-    namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
+    namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
+    namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
+    namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
+    namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
+    namespace.set_arena(ctx, "meta_types", &meta_types)?;
+    namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
+    namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
+    namespace.set_arena(ctx, "rse_records", &rse_records)?;
+    namespace.set_arena(ctx, "segment_bulk_issues", &segment_bulk_issues)?;
+    namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
+    namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {

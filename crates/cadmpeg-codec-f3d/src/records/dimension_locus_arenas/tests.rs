@@ -29,7 +29,11 @@ fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
     assert!(error.to_string().contains("design_dimension_locus_pairs"));
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
-        .set_arena("design_dimension_locus_pairs", &[null_pair])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_locus_pairs",
+            &[null_pair],
+        )
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
 }
@@ -43,7 +47,11 @@ fn null_arena_rejects_nonnull_form_at_construction_and_deserialization() {
     assert!(serde_json::from_str::<F3dNative>(&wire).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
-        .set_arena("design_dimension_null_locus_pairs", &[nonnull_pair])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "design_dimension_null_locus_pairs",
+            &[nonnull_pair],
+        )
         .unwrap();
     assert!(F3dNative::load(&namespace).is_err());
 }
@@ -60,7 +68,12 @@ fn nonnull_arena_preserves_pair_wire() {
     assert!(encoded.contains(&format!(r#""design_dimension_locus_pairs":[{entry}]"#)));
     assert_eq!(serde_json::from_str::<F3dNative>(&encoded).unwrap(), native);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
     let arena: Vec<DesignDimensionLocusPair> =
         namespace.arena_as("design_dimension_locus_pairs").unwrap();
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));

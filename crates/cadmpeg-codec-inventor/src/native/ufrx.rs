@@ -764,13 +764,14 @@ impl UfrxRecord {
     }
     pub(crate) fn install(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut NativeNamespace,
     ) -> Result<(), NativeConvertError> {
-        namespace.set_arena("ufrx", std::slice::from_ref(self))?;
-        namespace.set_arena("ufrx_model_states", self.model_states())?;
-        namespace.set_arena("external_references", self.external_references())?;
-        namespace.set_arena("embedded_references", self.embedded_references())?;
-        namespace.set_arena("ufrx_occurrences", self.occurrences())?;
+        namespace.set_arena(ctx, "ufrx", std::slice::from_ref(self))?;
+        namespace.set_arena(ctx, "ufrx_model_states", self.model_states())?;
+        namespace.set_arena(ctx, "external_references", self.external_references())?;
+        namespace.set_arena(ctx, "embedded_references", self.embedded_references())?;
+        namespace.set_arena(ctx, "ufrx_occurrences", self.occurrences())?;
         Ok(())
     }
     pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
@@ -989,7 +990,9 @@ mod tests {
             tail_sha256: Sha256Hex::try_from("0".repeat(64)).expect("64 hexadecimal digits"),
         };
         let mut namespace = NativeNamespace::default();
-        record.install(&mut namespace).expect("valid test fixture");
+        record
+            .install(&crate::native::test_ctx(), &mut namespace)
+            .expect("valid test fixture");
         assert_eq!(
             UfrxRecord::read(&namespace).expect("valid test fixture"),
             record
@@ -1000,7 +1003,7 @@ mod tests {
         assert_eq!(wire[0]["model_state_count"], 1);
         wire[0]["model_state_count"] = serde_json::json!(0);
         namespace
-            .set_arena("ufrx", &wire)
+            .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
             .expect("valid test fixture");
         assert!(UfrxRecord::read(&namespace)
             .expect_err("invalid test fixture")
@@ -1010,7 +1013,7 @@ mod tests {
             id: "inventor:ufrx:state#root".into(),
         };
         namespace
-            .set_arena("ufrx", &[absent])
+            .set_arena(&crate::native::test_ctx(), "ufrx", &[absent])
             .expect("valid test fixture");
         assert!(UfrxRecord::read(&namespace).is_err());
     }
@@ -1037,7 +1040,9 @@ mod tests {
             },
         ] {
             let mut namespace = NativeNamespace::default();
-            record.install(&mut namespace).expect("valid test fixture");
+            record
+                .install(&crate::native::test_ctx(), &mut namespace)
+                .expect("valid test fixture");
             assert_eq!(
                 UfrxRecord::read(&namespace).expect("valid test fixture"),
                 record
@@ -1047,7 +1052,7 @@ mod tests {
                 .expect("valid test fixture");
             wire[0]["caption"] = serde_json::json!("orphan");
             namespace
-                .set_arena("ufrx", &wire)
+                .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
                 .expect("valid test fixture");
             assert!(UfrxRecord::read(&namespace).is_err());
         }
