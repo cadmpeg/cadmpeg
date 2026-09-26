@@ -1081,14 +1081,12 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "plane coefficients are not numeric"));
             continue;
         };
-        if coefficients
-            .into_iter()
-            .flatten()
-            .any(|value| !value.is_finite())
-        {
+        let [Some(a), Some(b), Some(c), Some(d)] = [a, b, c, d].map(FiniteReal::new) else {
             losses.push(entity_loss(entry, "plane coefficients are not finite"));
             continue;
-        }
+        };
+        let finite_coefficients = [a, b, c, d];
+        let [a, b, c, d] = finite_coefficients.map(FiniteReal::get);
         let Some(boundary) = record.integer(5) else {
             losses.push(entity_loss(
                 entry,
