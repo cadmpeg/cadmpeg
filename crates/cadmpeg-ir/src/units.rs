@@ -301,6 +301,22 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Divide each component by the Euclidean length computed with
+    /// [`Vector3::norm`]. A positive finite length can still produce a
+    /// non-unit rounded quotient for subnormal components; admit the
+    /// quotient only when it satisfies the unit tolerance.
+    #[must_use]
+    pub fn normalized_by_hypot_division(value: Vector3) -> Option<Self> {
+        let length = value.norm();
+        if !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Self::new(Vector3::new(
+            value.x / length,
+            value.y / length,
+            value.z / length,
+        ))
+    }
     /// Normalize by multiplying each component by the reciprocal of the
     /// Euclidean length. The length must be finite and nonzero, and the
     /// rounded result must remain a unit vector.
@@ -975,6 +991,31 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized(value), None);
             assert_eq!(value.unit(), None);
+        }
+    }
+
+    #[test]
+    fn hypot_division_keeps_the_reader_quotient_bits() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e300, -1.0e300, 1.0e300),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let actual = UnitVector3::normalized_by_hypot_division(value)
+                .expect("finite nonzero hypot direction");
+            assert_eq!(
+                [actual.as_raw().x, actual.as_raw().y, actual.as_raw().z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(UnitVector3::new(*actual.as_raw()), Some(actual));
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::MAX, f64::MAX, 0.0),
+            Vector3::new(f64::from_bits(1), f64::from_bits(2), 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_by_hypot_division(value), None);
         }
     }
 

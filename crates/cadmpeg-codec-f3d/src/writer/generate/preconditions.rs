@@ -1027,15 +1027,11 @@ pub(super) fn validate_source_less_design_links(
         "tolerant-vertex",
         [id()],
         |tail, vertex| {
-            if tail
-                .leading_tolerances
-                .iter()
-                .any(|value| !value.is_finite())
-                || vertex.tolerance.is_some()
-                    != matches!(
-                        tail.evaluated_slot,
-                        EvaluatedToleranceSlot::Evaluated { .. }
-                    )
+            if vertex.tolerance.is_some()
+                != matches!(
+                    tail.evaluated_slot,
+                    EvaluatedToleranceSlot::Evaluated { .. }
+                )
             {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
@@ -1316,7 +1312,10 @@ mod tests {
                 source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
                 record_index: 0,
                 vertex: target.model.vertices[0].id.clone(),
-                leading_tolerances: [-1.0, -1.0],
+                leading_tolerances: [
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+                ],
                 evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
             }],
             ..F3dNative::default()
