@@ -38,7 +38,10 @@ fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {
     let ports = [[10, 11], [11, 12], [12, 13], [13, 10]];
     let pairs = [Some([0, 1]), Some([1, 2]), None, Some([3, 0])];
     assert_eq!(
-        propagate_edge_port_points(&ports, &pairs),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
     );
 }
@@ -50,7 +53,10 @@ fn ordered_endpoint_seed_orients_a_seedless_port_component() {
     let ordered = [Some([1, 0])];
 
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })
+        .expect("service resource budget"),
         Some(vec![Some([1, 0])])
     );
 }
@@ -58,11 +64,15 @@ fn ordered_endpoint_seed_orients_a_seedless_port_component() {
 #[test]
 fn ordered_endpoint_seed_must_agree_with_the_unordered_candidate() {
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds(
-            &[[10, 11]],
-            &[Some([0, 1])],
-            &[Some([0, 2])],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds(
+                ctx,
+                &[[10, 11]],
+                &[Some([0, 1])],
+                &[Some([0, 2])],
+            )
+        })
+        .expect("service resource budget"),
         None
     );
 }
@@ -89,12 +99,16 @@ fn deferred_mesh_port_component_does_not_orient_unordered_neighbors() {
     ];
 
     assert_eq!(
-        propagate_edge_port_points_with_ordered_seeds_and_deferred(
-            &ports,
-            &pairs,
-            &[],
-            &[true, false, false, false, false, false],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                ctx,
+                &ports,
+                &pairs,
+                &[],
+                &[true, false, false, false, false, false],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![None, None, None, None, None, None]),
     );
 }
@@ -106,7 +120,10 @@ fn partial_ordered_endpoint_seed_resolves_a_row_without_native_ports() {
     let ordered = [Some([1, 0]), Some([2, 3])];
 
     assert_eq!(
-        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)
+        })
+        .expect("service resource budget"),
         Some(vec![Some([1, 0]), Some([2, 3])])
     );
 }
@@ -123,7 +140,10 @@ fn partial_endpoint_ports_propagate_known_components_only() {
     let pairs = [Some([0, 1]), Some([1, 2]), Some([8, 9]), None, Some([3, 0])];
 
     assert_eq!(
-        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &[]),
+        crate::test_support::with_service_context(|ctx| {
+            propagate_partial_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &[])
+        })
+        .expect("service resource budget"),
         Some(vec![
             Some([0, 1]),
             Some([1, 2]),
@@ -137,15 +157,30 @@ fn partial_endpoint_ports_propagate_known_components_only() {
 #[test]
 fn endpoint_port_propagation_requires_a_point_bijection() {
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11]], &[Some([0, 1])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11]],
+            &[Some([0, 1])]
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1])])
     );
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11], [10, 12]], &[Some([0, 1]), Some([0, 1])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11], [10, 12]],
+            &[Some([0, 1]), Some([0, 1])]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        propagate_edge_port_points(&[[10, 11]], &[Some([0, 0])]),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx,
+            &[[10, 11]],
+            &[Some([0, 0])]
+        ))
+        .expect("service resource budget"),
         None
     );
 }
@@ -156,7 +191,10 @@ fn endpoint_port_propagation_closes_equal_port_edges() {
     let pairs = [Some([0, 1]), Some([1, 2]), None];
 
     assert_eq!(
-        propagate_edge_port_points(&ports, &pairs),
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), Some([1, 2]), Some([0, 0])])
     );
 }
@@ -1429,7 +1467,13 @@ fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
 fn endpoint_ports_reject_contradictory_pair_constraints() {
     let ports = [[10, 11], [11, 12], [12, 10]];
     let pairs = [Some([0, 1]), Some([1, 2]), Some([0, 3])];
-    assert_eq!(propagate_edge_port_points(&ports, &pairs), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| propagate_edge_port_points(
+            ctx, &ports, &pairs
+        ))
+        .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
@@ -1437,7 +1481,12 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
     let ports = [[10, 11], [12, 13], [10, 12], [11, 13]];
     let candidates = [vec![[0, 1]], vec![[2, 3]], vec![[0, 2]], vec![[1, 3]]];
     assert_eq!(
-        bind_edge_port_candidates(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
     );
 }
@@ -1448,7 +1497,12 @@ fn mesh_edge_ports_allow_one_coordinate_row_at_multiple_ports() {
     let candidates = [vec![[0, 1]], vec![[0, 2]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [0, 2]])
     );
 }
@@ -1459,7 +1513,12 @@ fn mesh_edge_ports_reject_multiple_unordered_assignments() {
     let candidates = [vec![[0, 1], [0, 2]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         None
     );
 }
@@ -1470,7 +1529,12 @@ fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
     let candidates = [vec![[0, 1]], vec![[0, 2]], vec![[1, 3]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        crate::test_support::with_service_context(|ctx| unique_mesh_edge_port_candidate_pairs(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 1], [0, 2], [1, 3]])
     );
 }
@@ -1481,7 +1545,15 @@ fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
     let candidates = [vec![[0, 1]], vec![[2, 3]]];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs_with_deferred(&ports, &candidates, &[false, true],),
+        crate::test_support::with_service_context(|ctx| {
+            unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
+                &ports,
+                &candidates,
+                &[false, true],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![Some([0, 1]), None])
     );
 }
@@ -1499,11 +1571,15 @@ fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
     ];
 
     assert_eq!(
-        unique_mesh_edge_port_candidate_pairs_with_deferred(
-            &ports,
-            &candidates,
-            &[true, false, false, false, false, false],
-        ),
+        crate::test_support::with_service_context(|ctx| {
+            unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
+                &ports,
+                &candidates,
+                &[true, false, false, false, false, false],
+            )
+        })
+        .expect("service resource budget"),
         Some(vec![None, None, None, None, None, None]),
     );
 }
@@ -1512,21 +1588,44 @@ fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
 fn native_edge_identities_reject_multiple_coordinate_bijections() {
     let ports = [[10, 11]];
     let candidates = [vec![[0, 1], [2, 3]]];
-    assert_eq!(bind_edge_port_candidates(&ports, &candidates), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &ports,
+            &candidates
+        ))
+        .expect("service resource budget"),
+        None
+    );
 }
 
 #[test]
 fn native_edge_identities_preserve_endpoint_equality() {
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 11]], &[vec![[0, 0]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 11]],
+            &[vec![[0, 0]]]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 1]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 10]],
+            &[vec![[0, 1]]]
+        ))
+        .expect("service resource budget"),
         None
     );
     assert_eq!(
-        bind_edge_port_candidates(&[[10, 10]], &[vec![[0, 0]]]),
+        crate::test_support::with_service_context(|ctx| bind_edge_port_candidates(
+            ctx,
+            &[[10, 10]],
+            &[vec![[0, 0]]]
+        ))
+        .expect("service resource budget"),
         Some(vec![[0, 0]])
     );
 }
@@ -1544,8 +1643,11 @@ fn native_edge_identities_bind_independent_components_with_local_budgets() {
         .map(|component| vec![[component * 2, component * 2 + 1]])
         .collect::<Vec<_>>();
 
-    let solution =
-        bind_edge_port_candidates(&ports, &candidates).expect("independent port components");
+    let solution = crate::test_support::with_service_context(|ctx| {
+        bind_edge_port_candidates(ctx, &ports, &candidates)
+    })
+    .expect("service resource budget")
+    .expect("independent port components");
 
     assert_eq!(solution.len(), COMPONENT_COUNT);
     assert!(solution
@@ -1567,8 +1669,11 @@ fn native_edge_identities_do_not_charge_forced_chain_depth() {
         .map(|edge| vec![[edge, edge + 1]])
         .collect::<Vec<_>>();
 
-    let solution =
-        bind_edge_port_candidates(&ports, &candidates).expect("forced connected port chain");
+    let solution = crate::test_support::with_service_context(|ctx| {
+        bind_edge_port_candidates(ctx, &ports, &candidates)
+    })
+    .expect("service resource budget")
+    .expect("forced connected port chain");
 
     assert_eq!(
         solution,

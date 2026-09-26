@@ -4790,9 +4790,11 @@ pub(crate) fn reconstruct_incidence_candidates(
             let oriented;
             let pairs = if let Some(ports) = edge_ports {
                 let Some(propagated) = propagate_edge_port_points(
+                    ctx,
                     ports,
                     &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
-                ) else {
+                )?
+                else {
                     invalid = true;
                     return Ok(ControlFlow::Break(()));
                 };

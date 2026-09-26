@@ -4491,10 +4491,12 @@ fn attach_standard_topology(
         Some(pairs) => {
             let Some(propagated) =
                 missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                    ctx,
                     &native_port_options,
                     pairs,
                     &ordered_endpoint_pairs,
                 )
+                .map_err(StandardTopologyError::Resource)?
             else {
                 return Err(StandardTopologyFailure::NativeEndpointPropagation.into());
             };
@@ -4829,12 +4831,19 @@ fn attach_standard_topology(
     let graph_propagated_pairs = graph_propagated_endpoint_pairs
         .as_ref()
         .and_then(|pairs| pairs.iter().copied().collect::<Option<Vec<_>>>());
-    let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
-        endpoint_options.as_ref().and_then(|options| {
+    let native_endpoint_pairs = if let Some(pairs) = graph_propagated_pairs {
+        Some(pairs)
+    } else {
+        (|| -> Result<Option<Vec<[usize; 2]>>, cadmpeg_core::CodecError> {
             const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
             const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
-            let ports = native_ports.as_ref()?;
+            let Some(options) = endpoint_options.as_ref() else {
+                return Ok(None);
+            };
+            let Some(ports) = native_ports.as_ref() else {
+                return Ok(None);
+            };
             let seeds = options
                 .iter()
                 .map(|choices| {
@@ -4843,47 +4852,56 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let propagated = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+            let Some(propagated) = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                ctx,
                 ports,
                 &seeds,
                 &ordered_endpoint_pairs,
-            )?;
+            )?
+            else {
+                return Ok(None);
+            };
             if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-                return Some(complete);
+                return Ok(Some(complete));
             }
             // Exhaustive binding is a fallback after exact identity propagation.
             // Large symmetric choice sets remain unresolved and continue through
             // trim-mesh and incidence paths instead of making decode unbounded.
             let choice_count = options.iter().map(Vec::len).sum::<usize>();
-            (choice_count <= MAX_NATIVE_PORT_CHOICES
+            if choice_count <= MAX_NATIVE_PORT_CHOICES
                 && options
                     .len()
                     .checked_mul(choice_count)
-                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-            .then(|| missing_edge::bind_edge_port_candidates(ports, options))?
-        })
-    });
-    let propagated_endpoint_pairs = endpoint_options
+                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK)
+            {
+                missing_edge::bind_edge_port_candidates(ctx, ports, options)
+            } else {
+                Ok(None)
+            }
+        })()
+        .map_err(StandardTopologyError::Resource)?
+    };
+    let propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options
         .as_ref()
         .zip(missing_edge::edge_port_identities(spine))
-        .and_then(|(options, ports)| {
-            let pairs = options
-                .iter()
-                .map(|pairs| {
-                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                        .ok()
-                        .map(|pair| pair[0])
-                })
-                .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-                &ports,
-                &pairs,
-                &ordered_endpoint_pairs,
-                &deferred_port_edges,
-            )
-        })
-        .zip(endpoint_options.as_ref())
-        .map(|(propagated, options)| {
+    {
+        let pairs = options
+            .iter()
+            .map(|pairs| {
+                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                    .ok()
+                    .map(|pair| pair[0])
+            })
+            .collect::<Vec<_>>();
+        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            ctx,
+            &ports,
+            &pairs,
+            &ordered_endpoint_pairs,
+            &deferred_port_edges,
+        )
+        .map_err(StandardTopologyError::Resource)?
+        .map(|propagated| {
             propagated
                 .into_iter()
                 .zip(options)
@@ -4895,26 +4913,33 @@ fn attach_standard_topology(
                     })
                 })
                 .collect::<Vec<_>>()
-        });
-    let mesh_propagated_endpoint_pairs = endpoint_options
+        })
+    } else {
+        None
+    };
+    let mesh_propagated_endpoint_pairs = if let Some((options, ports)) = endpoint_options
         .as_ref()
         .zip(missing_edge::standard_mesh_edge_ports(spine))
-        .and_then(|(options, ports)| {
-            let pairs = options
-                .iter()
-                .map(|pairs| {
-                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
-                        .ok()
-                        .map(|pair| pair[0])
-                })
-                .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
-                &ports,
-                &pairs,
-                &ordered_endpoint_pairs,
-                &deferred_port_edges,
-            )
-        });
+    {
+        let pairs = options
+            .iter()
+            .map(|pairs| {
+                <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                    .ok()
+                    .map(|pair| pair[0])
+            })
+            .collect::<Vec<_>>();
+        missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            ctx,
+            &ports,
+            &pairs,
+            &ordered_endpoint_pairs,
+            &deferred_port_edges,
+        )
+        .map_err(StandardTopologyError::Resource)?
+    } else {
+        None
+    };
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
         propagated_endpoint_pairs,
         mesh_propagated_endpoint_pairs,
@@ -4949,12 +4974,15 @@ fn attach_standard_topology(
         }
         let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
             missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                ctx,
                 &ports,
                 options,
                 &deferred_port_edges,
             )
+            .map_err(StandardTopologyError::Resource)?
         } else {
-            missing_edge::unique_mesh_edge_port_candidate_pairs(&ports, options)
+            missing_edge::unique_mesh_edge_port_candidate_pairs(ctx, &ports, options)
+                .map_err(StandardTopologyError::Resource)?
                 .map(|pairs| pairs.into_iter().map(Some).collect())
         };
         if let Some(pairs) = unique_pairs {
@@ -5016,12 +5044,13 @@ fn attach_standard_topology(
                 .into_iter()
                 .map(|[left, right]| Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?]))
                 .collect::<Option<Vec<_>>>();
-            ports.and_then(|ports| {
-                missing_edge::bind_edge_port_candidates(
-                    &ports,
-                    constrained_endpoint_options.as_ref()?,
-                )
-            })
+            let Some(ports) = ports else {
+                return Ok(None);
+            };
+            let Some(options) = constrained_endpoint_options.as_ref() else {
+                return Ok(None);
+            };
+            missing_edge::bind_edge_port_candidates(ctx, &ports, options)?
         };
         let Some(endpoint_pairs) = endpoint_pairs else {
             return Ok(None);

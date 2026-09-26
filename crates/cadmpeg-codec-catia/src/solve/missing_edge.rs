@@ -3297,10 +3297,11 @@ fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usiz
 /// contradicts a resolved pair.
 #[must_use]
 pub(super) fn propagate_edge_port_points(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    propagate_edge_port_points_with_ordered_seeds(edge_ports, endpoint_pairs, &[])
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    propagate_edge_port_points_with_ordered_seeds(ctx, edge_ports, endpoint_pairs, &[])
 }
 
 /// Propagate endpoint points through physical edge ports, retaining an
@@ -3313,126 +3314,147 @@ pub(super) fn propagate_edge_port_points(
 /// all carry the same unordered pair.
 #[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
-    if edge_ports.len() != endpoint_pairs.len() {
-        return None;
-    }
-    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
-        return None;
-    }
-    let mut resolved = endpoint_pairs.to_vec();
-    let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
-    for (edge, ports) in edge_ports.iter().enumerate() {
-        edges_by_port.entry(ports[0]).or_default().push(edge);
-        if ports[1] != ports[0] {
-            edges_by_port.entry(ports[1]).or_default().push(edge);
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
+    (|| -> Option<Result<Vec<Option<[usize; 2]>>, CodecError>> {
+        if edge_ports.len() != endpoint_pairs.len() {
+            return None;
         }
-    }
-    let mut port_points = HashMap::<u32, usize>::new();
+        if !ordered_endpoint_pairs.is_empty()
+            && ordered_endpoint_pairs.len() != endpoint_pairs.len()
+        {
+            return None;
+        }
+        let mut resolved = endpoint_pairs.to_vec();
+        let mut edges_by_port = HashMap::<u32, Vec<usize>>::new();
+        for (edge, ports) in edge_ports.iter().enumerate() {
+            edges_by_port.entry(ports[0]).or_default().push(edge);
+            if ports[1] != ports[0] {
+                edges_by_port.entry(ports[1]).or_default().push(edge);
+            }
+        }
+        let mut port_points = HashMap::<u32, usize>::new();
 
-    if !ordered_endpoint_pairs.is_empty() {
-        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
-            let Some(ordered) = ordered else { continue };
-            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                return None;
-            }
-            let ports = edge_ports[edge];
-            if ports[0] == ports[1] && ordered[0] != ordered[1] {
-                return None;
-            }
-            if !bind_port_point(&mut port_points, ports[0], ordered[0])
-                || !bind_port_point(&mut port_points, ports[1], ordered[1])
-            {
-                return None;
-            }
-            resolved[edge] = Some(*ordered);
-        }
-    }
-
-    for (&port, edges) in &edges_by_port {
-        let mut intersection: Option<HashSet<usize>> = None;
-        for &edge in edges {
-            let Some(pair) = resolved[edge] else { continue };
-            let points = HashSet::from(pair);
-            intersection = Some(match intersection {
-                Some(current) => current.intersection(&points).copied().collect(),
-                None => points,
-            });
-        }
-        if let Some(points) = intersection {
-            if points.len() == 1 && !bind_port_point(&mut port_points, port, *points.iter().next()?)
-            {
-                return None;
-            }
-        }
-    }
-
-    let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
-    let mut queued = alloc_filled(edge_ports.len(), true, "catia_edge_port_queue").ok()?;
-    while let Some(edge) = queue.pop_front() {
-        queued[edge] = false;
-        let ports = edge_ports[edge];
-        let mut inserted = Vec::new();
-        if let Some([left, right]) = resolved[edge] {
-            match (
-                port_points.get(&ports[0]).copied(),
-                port_points.get(&ports[1]).copied(),
-            ) {
-                (Some(point), None) if point == left => {
-                    port_points.insert(ports[1], right);
-                    inserted.push(ports[1]);
+        if !ordered_endpoint_pairs.is_empty() {
+            for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+                let Some(ordered) = ordered else { continue };
+                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                    return None;
                 }
-                (Some(point), None) if point == right => {
-                    port_points.insert(ports[1], left);
-                    inserted.push(ports[1]);
+                let ports = edge_ports[edge];
+                if ports[0] == ports[1] && ordered[0] != ordered[1] {
+                    return None;
                 }
-                (None, Some(point)) if point == left => {
-                    port_points.insert(ports[0], right);
-                    inserted.push(ports[0]);
-                }
-                (None, Some(point)) if point == right => {
-                    port_points.insert(ports[0], left);
-                    inserted.push(ports[0]);
-                }
-                (Some(_), None) | (None, Some(_)) => return None,
-                (Some(left_point), Some(right_point))
-                    if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                if !bind_port_point(&mut port_points, ports[0], ordered[0])
+                    || !bind_port_point(&mut port_points, ports[1], ordered[1])
                 {
                     return None;
                 }
-                _ => {}
+                resolved[edge] = Some(*ordered);
             }
         }
-        if let (Some(&left), Some(&right)) =
-            (port_points.get(&ports[0]), port_points.get(&ports[1]))
-        {
-            if ports[0] == ports[1] || left != right {
-                if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right])) {
+
+        for (&port, edges) in &edges_by_port {
+            let mut intersection: Option<HashSet<usize>> = None;
+            for &edge in edges {
+                let Some(pair) = resolved[edge] else { continue };
+                let points = HashSet::from(pair);
+                intersection = Some(match intersection {
+                    Some(current) => current.intersection(&points).copied().collect(),
+                    None => points,
+                });
+            }
+            if let Some(points) = intersection {
+                if points.len() == 1
+                    && !bind_port_point(&mut port_points, port, *points.iter().next()?)
+                {
                     return None;
                 }
-                resolved[edge] = Some([left, right]);
             }
         }
-        for port in inserted {
-            for &neighbor in edges_by_port.get(&port)? {
-                if !queued[neighbor] {
-                    queued[neighbor] = true;
-                    queue.push_back(neighbor);
+
+        let mut queue = (0..edge_ports.len()).collect::<std::collections::VecDeque<_>>();
+        let mut queued = match ctx.alloc_filled(edge_ports.len(), true, "catia_edge_port_queue") {
+            Ok(queued) => queued,
+            Err(error) => return Some(Err(error)),
+        };
+        while let Some(edge) = queue.pop_front() {
+            queued[edge] = false;
+            let ports = edge_ports[edge];
+            let mut inserted = Vec::new();
+            if let Some([left, right]) = resolved[edge] {
+                match (
+                    port_points.get(&ports[0]).copied(),
+                    port_points.get(&ports[1]).copied(),
+                ) {
+                    (Some(point), None) if point == left => {
+                        port_points.insert(ports[1], right);
+                        inserted.push(ports[1]);
+                    }
+                    (Some(point), None) if point == right => {
+                        port_points.insert(ports[1], left);
+                        inserted.push(ports[1]);
+                    }
+                    (None, Some(point)) if point == left => {
+                        port_points.insert(ports[0], right);
+                        inserted.push(ports[0]);
+                    }
+                    (None, Some(point)) if point == right => {
+                        port_points.insert(ports[0], left);
+                        inserted.push(ports[0]);
+                    }
+                    (Some(_), None) | (None, Some(_)) => return None,
+                    (Some(left_point), Some(right_point))
+                        if !same_unordered_pair([left_point, right_point], [left, right]) =>
+                    {
+                        return None;
+                    }
+                    _ => {}
+                }
+            }
+            if let (Some(&left), Some(&right)) =
+                (port_points.get(&ports[0]), port_points.get(&ports[1]))
+            {
+                if ports[0] == ports[1] || left != right {
+                    if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, [left, right]))
+                    {
+                        return None;
+                    }
+                    resolved[edge] = Some([left, right]);
+                }
+            }
+            for port in inserted {
+                for &neighbor in edges_by_port.get(&port)? {
+                    if !queued[neighbor] {
+                        queued[neighbor] = true;
+                        queue.push_back(neighbor);
+                    }
                 }
             }
         }
-    }
-    let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
-        .iter()
-        .copied()
-        .zip(resolved.iter().copied())
-        .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
-        .unzip();
-    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false, true)?;
-    Some(resolved)
+        let (resolved_ports, resolved_candidates): (Vec<_>, Vec<_>) = edge_ports
+            .iter()
+            .copied()
+            .zip(resolved.iter().copied())
+            .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
+            .unzip();
+        match edge_port_candidate_assignment(
+            ctx,
+            &resolved_ports,
+            &resolved_candidates,
+            false,
+            true,
+        ) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        }
+        Some(Ok(resolved))
+    })()
+    .transpose()
 }
 
 /// Propagate endpoint points while leaving every port component that touches
@@ -3441,21 +3463,22 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds(
 /// orient or constrain one another prematurely.
 #[must_use]
 pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
     deferred_edges: &[bool],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if edge_ports.len() != endpoint_pairs.len()
         || deferred_edges.len() != endpoint_pairs.len()
         || (!ordered_endpoint_pairs.is_empty()
             && ordered_endpoint_pairs.len() != endpoint_pairs.len())
     {
-        return None;
+        return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
     if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
-        return None;
+        return Ok(None);
     }
     let mut masked_pairs = endpoint_pairs.to_vec();
     for (edge, deferred) in effective_deferred.into_iter().enumerate() {
@@ -3469,7 +3492,12 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
             masked_pairs[edge] = None;
         }
     }
-    propagate_edge_port_points_with_ordered_seeds(edge_ports, &masked_pairs, ordered_endpoint_pairs)
+    propagate_edge_port_points_with_ordered_seeds(
+        ctx,
+        edge_ports,
+        &masked_pairs,
+        ordered_endpoint_pairs,
+    )
 }
 
 /// Propagate ordered endpoint seeds through the subset of rows with native
@@ -3477,22 +3505,23 @@ pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
 /// candidate, but cannot participate in port propagation.
 #[must_use]
 pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
+    ctx: &DecodeContext<'_>,
     edge_ports: &[Option<[u32; 2]>],
     endpoint_pairs: &[Option<[usize; 2]>],
     ordered_endpoint_pairs: &[Option<[usize; 2]>],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if edge_ports.len() != endpoint_pairs.len() {
-        return None;
+        return Ok(None);
     }
     if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
-        return None;
+        return Ok(None);
     }
     let mut resolved = endpoint_pairs.to_vec();
     if !ordered_endpoint_pairs.is_empty() {
         for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
             let Some(ordered) = ordered else { continue };
             if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
-                return None;
+                return Ok(None);
             }
             resolved[edge] = Some(*ordered);
         }
@@ -3503,7 +3532,7 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
         .collect::<Vec<_>>();
     if known.is_empty() {
-        return Some(resolved);
+        return Ok(Some(resolved));
     }
     let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
     let pairs = known
@@ -3514,11 +3543,15 @@ pub(crate) fn propagate_partial_edge_port_points_with_ordered_seeds(
         .iter()
         .map(|(edge, _)| ordered_endpoint_pairs.get(*edge).copied().flatten())
         .collect::<Vec<_>>();
-    let propagated = propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered)?;
+    let Some(propagated) =
+        propagate_edge_port_points_with_ordered_seeds(ctx, &ports, &pairs, &ordered)?
+    else {
+        return Ok(None);
+    };
     for ((edge, _), pair) in known.into_iter().zip(propagated) {
         resolved[edge] = pair;
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 #[derive(Clone, Copy)]
@@ -3696,10 +3729,11 @@ impl PortCandidateSearch<'_> {
 /// every edge's geometrically admissible unordered endpoint pairs.
 #[must_use]
 pub(crate) fn bind_edge_port_candidates(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<[usize; 2]>> {
-    edge_port_candidate_assignment(ports, candidates, true, true)
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    edge_port_candidate_assignment(ctx, ports, candidates, true, true)
 }
 
 /// Resolve mesh-port endpoint candidates without imposing a point-to-port
@@ -3709,14 +3743,18 @@ pub(crate) fn bind_edge_port_candidates(
 /// exactly one such assignment.
 #[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<[usize; 2]>> {
-    let mut pairs = edge_port_candidate_assignment(ports, candidates, true, false)?;
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let Some(mut pairs) = edge_port_candidate_assignment(ctx, ports, candidates, true, false)?
+    else {
+        return Ok(None);
+    };
     for pair in &mut pairs {
         pair.sort_unstable();
     }
-    Some(pairs)
+    Ok(Some(pairs))
 }
 
 /// Resolve only settled mesh-port rows when repeated-face rows still carry
@@ -3724,16 +3762,17 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs(
 /// connectivity to this search and remain unresolved in the result.
 #[must_use]
 pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     deferred_edges: &[bool],
-) -> Option<Vec<Option<[usize; 2]>>> {
+) -> Result<Option<Vec<Option<[usize; 2]>>>, CodecError> {
     if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
-        return None;
+        return Ok(None);
     }
     let mut effective_deferred = deferred_edges.to_vec();
     if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
-        return None;
+        return Ok(None);
     }
     let settled = (0..ports.len())
         .filter(|edge| !effective_deferred[*edge])
@@ -3743,84 +3782,98 @@ pub(crate) fn unique_mesh_edge_port_candidate_pairs_with_deferred(
         .iter()
         .map(|edge| candidates[*edge].clone())
         .collect::<Vec<_>>();
-    let settled_pairs = unique_mesh_edge_port_candidate_pairs(&settled_ports, &settled_candidates)?;
+    let Some(settled_pairs) =
+        unique_mesh_edge_port_candidate_pairs(ctx, &settled_ports, &settled_candidates)?
+    else {
+        return Ok(None);
+    };
     let mut resolved = candidates.iter().map(|_| None).collect::<Vec<_>>();
     for (edge, pair) in settled.into_iter().zip(settled_pairs) {
         resolved[edge] = Some(pair);
     }
-    Some(resolved)
+    Ok(Some(resolved))
 }
 
 fn edge_port_candidate_assignment(
+    ctx: &DecodeContext<'_>,
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     require_unique: bool,
     enforce_point_bijection: bool,
-) -> Option<Vec<[usize; 2]>> {
-    if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
-        return None;
-    }
-    let mut dependencies = UnionFind::new(ports.len());
-    let mut edge_by_port = HashMap::new();
-    let mut edge_by_point = HashMap::new();
-    for edge in 0..ports.len() {
-        for port in ports[edge] {
-            if let Some(previous) = edge_by_port.insert(port, edge) {
-                dependencies.union(previous, edge);
-            }
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    (|| -> Option<Result<Vec<[usize; 2]>, CodecError>> {
+        if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
+            return None;
         }
-        if enforce_point_bijection {
-            for point in candidates[edge].iter().flatten() {
-                if let Some(previous) = edge_by_point.insert(*point, edge) {
+        let mut dependencies = UnionFind::new(ports.len());
+        let mut edge_by_port = HashMap::new();
+        let mut edge_by_point = HashMap::new();
+        for edge in 0..ports.len() {
+            for port in ports[edge] {
+                if let Some(previous) = edge_by_port.insert(port, edge) {
                     dependencies.union(previous, edge);
                 }
             }
+            if enforce_point_bijection {
+                for point in candidates[edge].iter().flatten() {
+                    if let Some(previous) = edge_by_point.insert(*point, edge) {
+                        dependencies.union(previous, edge);
+                    }
+                }
+            }
         }
-    }
-    let mut components = HashMap::<usize, Vec<usize>>::new();
-    for edge in 0..ports.len() {
-        components
-            .entry(dependencies.find(edge))
-            .or_default()
-            .push(edge);
-    }
-    let mut components = components.into_values().collect::<Vec<_>>();
-    components.sort_by_key(|component| component[0]);
-    let mut solution = alloc_filled(ports.len(), None, "catia_edge_port_solution").ok()?;
-    for component in components {
-        let component_ports = component
-            .iter()
-            .map(|edge| ports[*edge])
-            .collect::<Vec<_>>();
-        let component_candidates = component
-            .iter()
-            .map(|edge| candidates[*edge].clone())
-            .collect::<Vec<_>>();
-        let mode = match (require_unique, enforce_point_bijection) {
-            (false, true) => PortCandidateSearchMode::FirstNative,
-            (true, true) => PortCandidateSearchMode::UniqueNative,
-            (true, false) => PortCandidateSearchMode::UniqueMesh,
-            (false, false) => return None,
-        };
-        let mut search = PortCandidateSearch {
-            ports: &component_ports,
-            candidates: &component_candidates,
-            port_points: HashMap::new(),
-            point_ports: HashMap::new(),
-            edge_pairs: alloc_filled(component.len(), None, "catia_edge_port_pairs").ok()?,
-            outcome: SearchOutcome::Open,
-            states: 0,
-            mode,
-        };
-        search.search();
-        let SearchOutcome::Solved(component_solution) = search.outcome else {
-            return None;
-        };
-        for (&edge, pair) in component.iter().zip(component_solution) {
-            solution[edge] = Some(pair);
+        let mut components = HashMap::<usize, Vec<usize>>::new();
+        for edge in 0..ports.len() {
+            components
+                .entry(dependencies.find(edge))
+                .or_default()
+                .push(edge);
         }
-    }
-    solution.into_iter().collect()
+        let mut components = components.into_values().collect::<Vec<_>>();
+        components.sort_by_key(|component| component[0]);
+        let mut solution = match ctx.alloc_filled(ports.len(), None, "catia_edge_port_solution") {
+            Ok(solution) => solution,
+            Err(error) => return Some(Err(error)),
+        };
+        for component in components {
+            let component_ports = component
+                .iter()
+                .map(|edge| ports[*edge])
+                .collect::<Vec<_>>();
+            let component_candidates = component
+                .iter()
+                .map(|edge| candidates[*edge].clone())
+                .collect::<Vec<_>>();
+            let mode = match (require_unique, enforce_point_bijection) {
+                (false, true) => PortCandidateSearchMode::FirstNative,
+                (true, true) => PortCandidateSearchMode::UniqueNative,
+                (true, false) => PortCandidateSearchMode::UniqueMesh,
+                (false, false) => return None,
+            };
+            let mut search = PortCandidateSearch {
+                ports: &component_ports,
+                candidates: &component_candidates,
+                port_points: HashMap::new(),
+                point_ports: HashMap::new(),
+                edge_pairs: match ctx.alloc_filled(component.len(), None, "catia_edge_port_pairs") {
+                    Ok(pairs) => pairs,
+                    Err(error) => return Some(Err(error)),
+                },
+                outcome: SearchOutcome::Open,
+                states: 0,
+                mode,
+            };
+            search.search();
+            let SearchOutcome::Solved(component_solution) = search.outcome else {
+                return None;
+            };
+            for (&edge, pair) in component.iter().zip(component_solution) {
+                solution[edge] = Some(pair);
+            }
+        }
+        Some(Ok(solution.into_iter().collect::<Option<Vec<_>>>()?))
+    })()
+    .transpose()
 }
 
 pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
