@@ -68,7 +68,7 @@ pub(crate) struct SketchCurveLink {
 
 /// Nonempty decimal text identifying a persistent Design entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[serde(try_from = "String")]
 pub(crate) struct DesignPersistentIdText(String);
 
 impl DesignPersistentIdText {

@@ -45,7 +45,7 @@ pub(crate) struct PersistentReference {
 
 /// A per-file dynamic class tag encoded as three ASCII digits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[serde(try_from = "String")]
 pub(crate) struct DesignClassTag(String);
 
 impl TryFrom<String> for DesignClassTag {
@@ -217,9 +217,15 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 }
 
 /// A complete serialized visual-appearance identity.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct DesignVisualToken(cadmpeg_ir::ids::IdentityKey);
+
+impl Serialize for DesignVisualToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0.as_str())
+    }
+}
 
 impl TryFrom<String> for DesignVisualToken {
     type Error = &'static str;
