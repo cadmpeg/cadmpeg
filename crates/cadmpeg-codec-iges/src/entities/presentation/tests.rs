@@ -928,3 +928,129 @@ fn decode_binds_the_directory_color_to_a_curve_source_object() {
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"))
     );
 }
+
+#[test]
+fn decode_reports_conflicting_body_name_properties() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 141,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "141,1,3,1,1,3,1,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 143,
+            form: 0,
+            label: "BOUNDED".into(),
+            status: "00000000",
+            parameters: "143,1,1,1,7,0,2,11,13;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_A".into(),
+            status: "00010000",
+            parameters: "406,1,5HFIRST;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME_B".into(),
+            status: "00010000",
+            parameters: "406,1,6HSECOND;".into(),
+        },
+    ];
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("conflicting property file decodes");
+    let body = decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
+        .expect("sheet body");
+    assert_eq!(body.name, None);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BodyNameAmbiguous.kind() }));
+    assert_eq!(
+        decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("native IGES")
+            .arenas()["properties"]
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn decode_keeps_unattached_name_property_in_native_records() {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME".into(),
+            status: "00010000",
+            parameters: "406,1,5HPOINT;".into(),
+        },
+    ];
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("point property file decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.name.as_deref() != Some("POINT")));
+    assert_eq!(
+        decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("native IGES")
+            .arenas()["properties"]
+            .len(),
+        1
+    );
+}

@@ -22,6 +22,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
     loss::LossNote,
@@ -131,7 +132,7 @@ const _: () = assert!(
 
 const WRITER_ENTITY_TYPES: &[u32] = &[
     100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
-    194, 196, 198, 314, 502, 504, 508, 510, 514,
+    194, 196, 198, 314, 406, 502, 504, 508, 510, 514,
 ];
 
 pub(crate) mod target;
@@ -182,6 +183,7 @@ struct Synthesis {
 
 struct BodyPresentation {
     label: Option<String>,
+    name: Option<String>,
     color: BodyColor,
     visible: Option<bool>,
 }
@@ -197,6 +199,21 @@ fn body_presentation(
     body: &cadmpeg_ir::topology::Body,
     losses: &mut Vec<LossNote>,
 ) -> BodyPresentation {
+    let name = body.name.as_deref().and_then(|name| {
+        if !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+        {
+            Some(name.to_owned())
+        } else {
+            losses.push(IgesLossCode::WriterBodyNameNotRepresented.note(format!(
+                "IGES body {} name {:?} cannot be encoded as a Type 406 Form 15 name",
+                body.id, name
+            )));
+            None
+        }
+    });
     let label = body.name.as_deref().and_then(|name| {
         if !name.is_empty()
             && name.len() <= 8
@@ -207,10 +224,6 @@ fn body_presentation(
         {
             Some(name.to_owned())
         } else {
-            losses.push(IgesLossCode::WriterBodyNameNotRepresented.note(format!(
-                "IGES body {} name {:?} does not fit an eight-column Directory label",
-                body.id, name
-            )));
             None
         }
     });
@@ -242,6 +255,7 @@ fn body_presentation(
     });
     BodyPresentation {
         label,
+        name,
         color,
         visible: body.visible,
     }
@@ -275,6 +289,60 @@ fn append_color_definitions(
             transform: None,
         });
         presentation.color = BodyColor::Definition(entity_index);
+    }
+    Ok(())
+}
+
+fn append_name_properties(
+    entities: &mut Vec<Entity>,
+    presentations: &BTreeMap<usize, BodyPresentation>,
+) -> Result<(), CodecError> {
+    if presentations
+        .values()
+        .all(|presentation| presentation.name.is_none())
+    {
+        return Ok(());
+    }
+    let expanded_count = entities
+        .iter()
+        .try_fold(0_usize, |count, entity| {
+            count.checked_add(usize::from(entity.transform.is_some()) + 1)
+        })
+        .ok_or_else(|| CodecError::NotImplemented("IGES directory count overflows".into()))?;
+    let mut next_sequence = u32::try_from(expanded_count)
+        .ok()
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| CodecError::NotImplemented("IGES directory sequence overflows".into()))?;
+    for (owner_index, presentation) in presentations {
+        let Some(name) = &presentation.name else {
+            continue;
+        };
+        let owner = entities.get_mut(*owner_index).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES body owner index {owner_index} is missing"
+            ))
+        })?;
+        if !owner.parameter_body.ends_with(b";") {
+            return Err(CodecError::Malformed(
+                "IGES body owner has no Parameter Data terminator".into(),
+            ));
+        }
+        owner.parameter_body.pop();
+        owner
+            .parameter_body
+            .extend_from_slice(format!(",0,1,{next_sequence};").as_bytes());
+        entities.push(Entity {
+            type_code: 406,
+            form: 15,
+            label: "NAME",
+            status: EntityStatus::PhysicallyDependent,
+            parameter_body: format!("1,{}H{name};", name.len()).into_bytes(),
+            transform: None,
+        });
+        next_sequence = next_sequence.checked_add(2).ok_or_else(|| {
+            CodecError::NotImplemented("IGES directory sequence overflows".into())
+        })?;
     }
     Ok(())
 }
@@ -435,6 +503,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     append_color_definitions(&mut entities, &mut body_presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
+    append_name_properties(&mut entities, &body_presentations)?;
     if entities.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer refuses an empty model".into(),
@@ -651,6 +720,7 @@ impl crate::IgesVersion {
                     100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
                     0
                 ) | (104, 0 | 2 | 3)
+                    | (406, 15)
             ),
             crate::IgesVersion::V5_0 => matches!(
                 (entity.type_code, entity.form),
@@ -671,6 +741,7 @@ impl crate::IgesVersion {
                         | 314,
                     0
                 ) | (104, 1..=3)
+                    | (406, 15)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
@@ -679,6 +750,7 @@ impl crate::IgesVersion {
                     104 => matches!(entity.form, 0 | 2 | 3),
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
+                    406 => entity.form == 15,
                     514 => {
                         entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
                     }
@@ -4342,6 +4414,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             144 => "144_trimmed_surface",
             186 => "186_manifold_solid_brep",
             314 => "314_color_definition",
+            406 => "406_name_property",
             502 => "502_vertex_list",
             504 => "504_edge_list",
             508 => "508_loop",
@@ -4444,12 +4517,128 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn represented_name_properties(
+    ir: &CadIr,
+    namespace: &NativeNamespace,
+) -> Option<BTreeSet<String>> {
+    let product_properties = namespace.arenas().get("product_properties");
+    let properties = namespace.arenas().get("properties");
+    if product_properties.is_none_or(Vec::is_empty) && properties.is_none_or(Vec::is_empty) {
+        return Some(BTreeSet::new());
+    }
+    let native_entities = namespace
+        .arenas()
+        .get("entities")
+        .into_iter()
+        .flatten()
+        .map(|record| (record.id(), record))
+        .collect::<BTreeMap<_, _>>();
+    let named_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.name.is_some())
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut product_sources = BTreeSet::new();
+    let mut application_sources = BTreeSet::new();
+    for (records, sources) in [
+        (product_properties, &mut product_sources),
+        (properties, &mut application_sources),
+    ] {
+        for record in records.into_iter().flatten() {
+            if record.field("form").and_then(|value| value.as_i64()) != Some(15) {
+                return None;
+            }
+            let source = record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(str::to_owned));
+            let value = record.field("value");
+            let owners = record.field("owners");
+            let represented = source.as_ref().is_some_and(|source| {
+                native_entities.get(source.as_str()).is_some_and(|entity| {
+                    entity.field("entity_type").and_then(|value| value.as_i64()) == Some(406)
+                        && entity.field("form").and_then(|value| value.as_i64()) == Some(15)
+                })
+            }) && value
+                .as_ref()
+                .and_then(|value| value.as_array())
+                .is_some_and(|bytes| {
+                    !bytes.is_empty()
+                        && bytes.iter().all(|byte| {
+                            byte.as_u64().is_some_and(|byte| {
+                                u8::try_from(byte)
+                                    .is_ok_and(|byte| byte.is_ascii_graphic() || byte == b' ')
+                            })
+                        })
+                })
+                && record
+                    .field("property_kind")
+                    .is_some_and(|value| value.as_str() == Some("name"))
+                && record
+                    .field("declared_value_count")
+                    .is_none_or(|value| value.as_i64() == Some(1))
+                && owners
+                    .as_ref()
+                    .and_then(|value| value.as_array())
+                    .is_some_and(|owners| {
+                        !owners.is_empty()
+                            && owners.iter().all(|owner| {
+                                let Some(owner_id) = owner.as_str() else {
+                                    return false;
+                                };
+                                let Some(sequence) = owner_id
+                                    .strip_prefix("iges:entity:directory#")
+                                    .and_then(|sequence| sequence.parse::<u32>().ok())
+                                else {
+                                    return false;
+                                };
+                                if !native_entities.contains_key(owner_id) {
+                                    return false;
+                                }
+                                let stems = [
+                                    crate::ids::Stem::directory(sequence),
+                                    crate::ids::Stem::word_directory(
+                                        crate::ids::Word::BoundedPlane,
+                                        sequence,
+                                    ),
+                                    crate::ids::Stem::word_directory(
+                                        crate::ids::Word::LegacySingleParent,
+                                        sequence,
+                                    ),
+                                ];
+                                stems
+                                    .iter()
+                                    .any(|stem| named_bodies.contains(&crate::ids::body(stem)))
+                            })
+                    });
+            if !represented {
+                return None;
+            }
+            if let Some(source) = source {
+                sources.insert(source);
+            }
+        }
+    }
+    if product_sources != application_sources {
+        return None;
+    }
+    Some(product_sources)
+}
+
 fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let Some(namespace) = ir.native.namespace("iges") else {
         return Ok(Vec::new());
     };
+    let represented_name_properties = represented_name_properties(ir, namespace);
     if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-        !records.is_empty() && !ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
+        if records.is_empty() || ALLOWED_NATIVE_ARENAS.contains(&arena.as_str()) {
+            return false;
+        }
+        if matches!(arena.as_str(), "product_properties" | "properties") {
+            return represented_name_properties.is_none();
+        }
+        true
     }) {
         return Err(CodecError::NotImplemented(format!(
             "IGES semantic writer cannot preserve native arena {arena}"
@@ -4461,43 +4650,49 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         .into_iter()
         .flatten()
         .find(|record| {
-            !matches!(
-                record.field("entity_type").and_then(|value| value.as_i64()),
-                Some(
-                    100 | 102
-                        | 104
-                        | 106
-                        | 108
-                        | 110
-                        | 112
-                        | 114
-                        | 116
-                        | 118
-                        | 120
-                        | 122
-                        | 123
-                        | 124
-                        | 126
-                        | 128
-                        | 130
-                        | 141
-                        | 142
-                        | 143
-                        | 144
-                        | 140
-                        | 190
-                        | 192
-                        | 194
-                        | 196
-                        | 198
-                        | 186
-                        | 502
-                        | 504
-                        | 508
-                        | 510
-                        | 514,
+            let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
+            let name_property_represented = represented_name_properties
+                .as_ref()
+                .is_some_and(|properties| properties.contains(record.id()));
+            (entity_type == Some(406) && !name_property_represented)
+                || !matches!(
+                    entity_type,
+                    Some(
+                        100 | 102
+                            | 104
+                            | 106
+                            | 108
+                            | 110
+                            | 112
+                            | 114
+                            | 116
+                            | 118
+                            | 120
+                            | 122
+                            | 123
+                            | 124
+                            | 126
+                            | 128
+                            | 130
+                            | 141
+                            | 142
+                            | 143
+                            | 144
+                            | 140
+                            | 190
+                            | 192
+                            | 194
+                            | 196
+                            | 198
+                            | 186
+                            | 406
+                            | 502
+                            | 504
+                            | 508
+                            | 510
+                            | 514,
+                    )
                 )
-            )
         })
     {
         let entity_type = record
@@ -7080,6 +7275,9 @@ fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
 }
 
 fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
+    if entity.type_code == 406 {
+        return Some(0.0);
+    }
     if entity.transform.is_some() {
         return None;
     }

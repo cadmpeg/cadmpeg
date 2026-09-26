@@ -118,7 +118,7 @@ fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
 }
 
 #[test]
-fn synthesized_solid_reports_long_name_and_preserves_color_visibility() {
+fn synthesized_solid_preserves_long_name_color_and_visibility() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_void_solid_file().0),
@@ -132,10 +132,10 @@ fn synthesized_solid_reports_long_name_and_preserves_color_visibility() {
     body.visible = Some(false);
 
     let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
-    assert!(generated.losses.iter().any(|loss| {
+    assert!(!generated.losses.iter().any(|loss| {
         loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
-            && loss.message.contains("Hidden Red Body")
     }));
+    assert_eq!(generated.counts.get("406_name_property"), Some(&1));
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
@@ -146,6 +146,7 @@ fn synthesized_solid_reports_long_name_and_preserves_color_visibility() {
         .first()
         .expect("round-trip body");
     assert_eq!(emitted_label(round_trip.ir(), 186), "SOLID");
+    assert_eq!(body.name.as_deref(), Some("Hidden Red Body"));
     assert_eq!(body.color, ir.model.bodies[0].color);
     assert_eq!(body.visible, Some(false));
 }
@@ -168,6 +169,129 @@ fn synthesized_solid_writes_short_body_name_to_directory() {
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
     assert_eq!(emitted_label(round_trip.ir(), 186), "RED_BODY");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("RED_BODY")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_long_body_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("A LONGER BODY NAME".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(!generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+    }));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("A LONGER BODY NAME")
+    );
+    let rewritten = crate::writer::synthesize(round_trip.ir(), IgesVersion::V5_3)
+        .expect("decoded name writes again");
+    let redecoded = IgesCodec
+        .decode(&mut Cursor::new(rewritten.bytes), &DecodeOptions::default())
+        .expect("rewritten IGES decodes");
+    assert_eq!(
+        redecoded.ir().model.bodies[0].name.as_deref(),
+        Some("A LONGER BODY NAME")
+    );
+}
+
+#[test]
+fn decoded_body_name_edit_writes_updated_property() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("FIRST NAME".into());
+    let first = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("first synthesis");
+    let mut decoded = IgesCodec
+        .decode(&mut Cursor::new(first.bytes), &DecodeOptions::default())
+        .expect("first IGES decodes")
+        .ir()
+        .clone();
+    decoded.model.bodies[0].name = Some("SECOND NAME".into());
+    let updated =
+        crate::writer::synthesize(&decoded, IgesVersion::V5_3).expect("updated synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(updated.bytes), &DecodeOptions::default())
+        .expect("updated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some("SECOND NAME")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_iges_string_sensitive_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some(" A,B;7H@R0@ ".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some(" A,B;7H@R0@ ")
+    );
+}
+
+#[test]
+fn synthesized_solid_round_trips_name_across_parameter_cards() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    let name = "NAME WITH PUNCTUATION,;H".repeat(12);
+    ir.model.bodies[0].name = Some(name.clone());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(
+        round_trip.ir().model.bodies[0].name.as_deref(),
+        Some(name.as_str())
+    );
+}
+
+#[test]
+fn synthesized_solid_reports_unencodable_body_name() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("source solid");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("Café".into());
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(generated.losses.iter().any(|loss| {
+        loss.code == crate::loss::IgesLossCode::WriterBodyNameNotRepresented.kind()
+            && loss.message.contains("Type 406 Form 15")
+    }));
+    assert_eq!(generated.counts.get("406_name_property"), None);
 }
 
 #[test]
@@ -242,6 +366,38 @@ fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
 }
 
 #[test]
+fn synthesized_trimmed_sheet_round_trips_name_in_legacy_versions() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let body = ir
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .expect("sheet body");
+    body.name = Some("LEGACY SHEET NAME".into());
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let generated = crate::writer::synthesize(&ir, version).expect("synthesis");
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+            .expect("generated IGES decodes");
+        let body = round_trip
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.kind == BodyKind::Sheet)
+            .expect("round-trip sheet");
+        assert_eq!(body.name.as_deref(), Some("LEGACY SHEET NAME"));
+    }
+}
+
+#[test]
 fn synthesized_trimmed_sheet_presents_owning_body() {
     let decoded = IgesCodec
         .decode(
@@ -281,6 +437,7 @@ fn synthesized_trimmed_sheet_presents_owning_body() {
             .color
     );
     assert_eq!(body.visible, Some(false));
+    assert_eq!(body.name.as_deref(), Some("SHEET_A"));
 }
 
 #[test]
@@ -313,6 +470,7 @@ fn synthesized_brep_sheet_presents_owning_shell() {
         .iter()
         .find(|body| body.kind == BodyKind::Sheet)
         .expect("round-trip sheet");
+    assert_eq!(body.name.as_deref(), Some("SHELL_A"));
     assert_eq!(
         body.color,
         ir.model
