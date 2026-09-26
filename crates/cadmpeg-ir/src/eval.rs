@@ -22,7 +22,6 @@ use crate::geometry::nurbs::bounds::speed_bound;
 use crate::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs},
-    sampled::PolylineCurve,
     CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     SweepSurfaceLayout,
@@ -42,8 +41,10 @@ use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 mod depth;
+mod polyline;
 mod rational;
 use depth::ModelEvaluationDepthGuard;
+use polyline::{polyline_point, polyline_samples, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};
 
 const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
@@ -1564,13 +1565,13 @@ pub fn nurbs_curve_point_at(
     curve: &NurbsCurve,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let poles = curve.control_points();
+    let poles = curve.pole_rows();
     nurbs_curve_point_evaluation(
         curve.degree(),
         curve.knots(),
-        poles.len(),
-        |index| poles.get(index).copied(),
-        curve.pole_rows().weights().as_deref(),
+        poles.count(),
+        |index| poles.point_at(index),
+        |index| poles.weight_at(index),
         FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
     )
 }
@@ -1587,7 +1588,7 @@ fn nurbs_curve_point_evaluation(
     knots: &[f64],
     count: usize,
     pole: impl Fn(usize) -> Option<FinitePoint3>,
-    weights: Option<&[f64]>,
+    weight: impl Fn(usize) -> Option<f64>,
     t: FiniteReal,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let t = t.get();
@@ -1602,7 +1603,7 @@ fn nurbs_curve_point_evaluation(
         return Err(unreached);
     }
     let poles = local_poles(span, degree, pole).ok_or(no_value)?;
-    let base = homogeneous_curve_sum(&basis, &poles, weights, span - degree).ok_or(no_value)?;
+    let base = homogeneous_curve_sum(&basis, &poles, weight, span - degree).ok_or(no_value)?;
     let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(FinitePoint3::from_coordinates(x, y, z))
@@ -1622,15 +1623,13 @@ fn local_poles(
 fn homogeneous_curve_sum(
     values: &[f64],
     poles: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    weight: impl Fn(usize) -> Option<f64>,
     first: usize,
 ) -> Option<Homogeneous> {
     Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
         Some((
             [basis, 1.0],
-            weights
-                .and_then(|weights| weights.get(first + local).copied())
-                .unwrap_or(1.0),
+            weight(first + local).unwrap_or(1.0),
             *poles.get(local)?,
         ))
     }))
@@ -1716,7 +1715,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            Some(weights.as_ref()),
+            |index| weights.get(index).copied(),
             parameter,
         )
         .ok()?;
@@ -1793,7 +1792,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            Some(weights),
+            |index| weights.get(index).copied(),
             parameter,
         )
         .ok()?;
@@ -2280,7 +2279,14 @@ fn nurbs_pcurve_differential_with(
         return Err(unreached);
     }
     let poles = local_poles(span, degree, pole).ok_or(EvaluationFailure::NoValue)?;
-    let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
+    let sum = |values: &[f64]| {
+        homogeneous_curve_sum(
+            values,
+            &poles,
+            |index| weights.and_then(|weights| weights.get(index).copied()),
+            span - degree,
+        )
+    };
     let base = sum(&basis).ok_or(EvaluationFailure::NoValue)?;
     let point = finite_lanes(base.project(base, &[]).ok_or(EvaluationFailure::NoValue)?)
         .map_err(|[u, v, _]| EvaluationFailure::NonFinite(Point2::new(u, v)))?;
@@ -3532,7 +3538,13 @@ fn nurbs_curve_derivative(
     // A sum is absent only where one of its derivative basis terms is not
     // finite.
     let sum = |values: &[f64]| {
-        homogeneous_curve_sum(values, &poles, weights, span - degree).ok_or(non_finite)
+        homogeneous_curve_sum(
+            values,
+            &poles,
+            |index| weights.and_then(|weights| weights.get(index).copied()),
+            span - degree,
+        )
+        .ok_or(non_finite)
     };
     let base = sum(&basis)?;
     let first_sum = sum(&first_basis)?;
@@ -5241,20 +5253,22 @@ pub fn curve_point_solved(
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter()?).ok_or(EvaluationFailure::NoValue)?;
-            let poles = nurbs.control_points();
+            let poles = nurbs.pole_rows();
             nurbs_curve_point_evaluation(
                 nurbs.degree(),
                 nurbs.knots(),
-                poles.len(),
-                |index| poles.get(index).copied(),
-                nurbs.pole_rows().weights().as_deref(),
+                poles.count(),
+                |index| poles.point_at(index),
+                |index| poles.weight_at(index),
                 parameter,
             )
         }
-        SolvedCurveGeometry::Polyline(polyline) => {
-            let (points, parameters) = polyline_samples(polyline);
-            polyline_point(&points, &parameters, t)
-        }
+        SolvedCurveGeometry::Polyline(polyline) => polyline_point(
+            polyline.point_count(),
+            |index| polyline.point_at(index),
+            |index| polyline.parameter_at(index),
+            t,
+        ),
         SolvedCurveGeometry::Transformed(placed) => {
             placed_point(*placed.transform(), curve_point_solved(placed.basis(), t))
         }
@@ -8990,19 +9004,6 @@ fn offset_surface_jet(
     })
 }
 
-/// The polyline's samples with the parameterization it evaluates on.
-///
-/// A sample row carries its own parameter, so the two lists this returns agree
-/// by construction. An unparameterized polyline evaluates on its sample index.
-fn polyline_samples(polyline: &PolylineCurve) -> (Vec<FinitePoint3>, Vec<FiniteReal>) {
-    let points: Vec<FinitePoint3> = polyline.points().collect();
-    let parameters = polyline.parameters().map_or_else(
-        || (0..points.len()).map(FiniteReal::from_index).collect(),
-        Iterator::collect,
-    );
-    (points, parameters)
-}
-
 /// `(end - start) / (domain_end - domain_start)` over exact differences. An
 /// empty domain has no quotient; a quotient that overflows is non-finite and
 /// carries its signed infinity.
@@ -9024,81 +9025,6 @@ fn difference_quotient(
             .quotient(denominator)
             .map_err(EvaluationFailure::NonFinite)
     })
-}
-
-/// The point of a sampled polyline at `t`, interpolated on the first
-/// segment whose parameters enclose it, at its fraction of that segment. A
-/// parameter outside every segment, and a segment of zero parameter width,
-/// have no value; a coordinate whose interpolation overflows carries its
-/// plain sum.
-fn polyline_point(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    t: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    if points.len() < 2 || points.len() != parameters.len() {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let (segment, fraction) = parameters
-        .windows(2)
-        .enumerate()
-        .find_map(
-            |(segment, window)| match t.segment_position(window[0], window[1]) {
-                SegmentPosition::Outside => None,
-                SegmentPosition::Degenerate => Some(Err(EvaluationFailure::NoValue)),
-                SegmentPosition::Within(fraction) => Some(Ok((segment, fraction.get()))),
-            },
-        )
-        .ok_or(EvaluationFailure::NoValue)??;
-    let start = points[segment].get();
-    let end = points[segment + 1].get();
-    let lerp = |start, end| crate::math::sum::finite_dot([1.0 - fraction, fraction], [start, end]);
-    let [x, y, z] = finite_lanes([
-        lerp(start.x, end.x),
-        lerp(start.y, end.y),
-        lerp(start.z, end.z),
-    ])
-    .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
-    Ok(FinitePoint3::from_coordinates(x, y, z))
-}
-
-/// The tangent of a sampled polyline at `t`: the chord slope of every
-/// segment whose parameters enclose it, which must agree. A parameter outside
-/// every segment, a segment of zero parameter width, and a vertex whose
-/// segments disagree have no tangent; a slope that overflows leaves the
-/// tangent outside the finite range.
-fn polyline_tangent(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    t: f64,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    if points.len() < 2 || points.len() != parameters.len() {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let mut tangent = None;
-    for (segment, window) in parameters.windows(2).enumerate() {
-        if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
-            continue;
-        }
-        let [start_x, start_y, start_z] = points[segment].coordinates();
-        let [end_x, end_y, end_z] = points[segment + 1].coordinates();
-        let slope = |end, start| {
-            difference_quotient(end, start, window[1], window[0])
-                .map_err(|failure| failure.map(|_| ()))
-        };
-        let candidate = FiniteVector3::from_components(
-            slope(end_x, start_x)?,
-            slope(end_y, start_y)?,
-            slope(end_z, start_z)?,
-        );
-        if tangent.is_some_and(|tangent| tangent != candidate) {
-            return Err(EvaluationFailure::NoValue);
-        }
-        tangent = Some(candidate);
-    }
-    tangent.ok_or(EvaluationFailure::NoValue)
 }
 
 fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {

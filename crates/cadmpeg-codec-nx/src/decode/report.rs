@@ -497,13 +497,6 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                     .body_output_family()
                     .filter(|_| {
                         let current_outputs_are_valid = !feature.evaluation.outputs().is_empty()
-                            && feature
-                                .evaluation
-                                .outputs()
-                                .iter()
-                                .collect::<BTreeSet<_>>()
-                                .len()
-                                == feature.evaluation.outputs().len()
                             && feature.evaluation.outputs().iter().all(|output| {
                                 ir.model.bodies.iter().any(|body| body.id == *output)
                             });

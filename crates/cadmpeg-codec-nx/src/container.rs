@@ -548,25 +548,38 @@ impl<'a> Container<'a> {
             .collect()
     }
 
-    /// Decode the counted object-id table from `/Root/FastLoad/RMFastLoad`.
+    /// Borrow the admitted object-id table from `/Root/FastLoad/RMFastLoad`.
     pub(crate) fn rmfastload_object_id_table(
         &self,
-    ) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
+    ) -> Option<(&DirEntry, &RmFastLoadObjectIdTable)> {
+        let (entry_index, table) = self.fastload_table.as_ref()?;
+        Some((self.entries.get(*entry_index)?, table))
+    }
+
+    fn parse_rmfastload_object_id_table(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<(usize, RmFastLoadObjectIdTable)>, CodecError> {
         const REGISTRY_MARKER: &[u8] = b"UGS::Solid::Topol";
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .filter(|entry| entry.file_span().is_some())?;
-        let (offset, size) = entry.file_span()?;
-        let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
-        let bytes = self.data.get(offset..offset.checked_add(size)?)?;
-        let registry_offset = find(bytes, REGISTRY_MARKER)?;
-        let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
+        let Some((entry_index, bytes, registry_offset, search_start)) = (|| {
+            let entry_index = self.entries.iter().position(|entry| {
+                entry.name == "/Root/FastLoad/RMFastLoad" && entry.file_span().is_some()
+            })?;
+            let (offset, size) = self.entries[entry_index].file_span()?;
+            let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+            let bytes = self.data.get(offset..offset.checked_add(size)?)?;
+            let registry_offset = find(bytes, REGISTRY_MARKER)?;
+            let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
+            Some((entry_index, bytes, registry_offset, search_start))
+        })() else {
+            return Ok(None);
+        };
         // Search candidates in byte order and use the first span whose suffix
         // parses as a modern product record.
-        let (count_offset, count, ids_start) = (search_start..bytes.len().saturating_sub(3))
-            .find_map(|count_offset| {
+        let mut candidate = None;
+        for count_offset in search_start..bytes.len().saturating_sub(3) {
+            ctx.charge_work(1, "scan NX FastLoad table candidates")?;
+            let Some((count, ids_start, id_bytes)) = (|| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
@@ -576,23 +589,43 @@ impl<'a> Container<'a> {
                     crate::om::product::ProductRecordForm::Modern,
                 )
                 .is_some()
-                .then_some((count_offset, count, ids_start))
+                .then_some((count, ids_start, id_bytes))
+            })() else {
+                continue;
+            };
+            candidate = Some((count_offset, count, ids_start, id_bytes));
+            break;
+        }
+        let Some((count_offset, count, ids_start, id_bytes)) = candidate else {
+            return Ok(None);
+        };
+        let count_u64 = u64::try_from(count)
+            .map_err(|_| CodecError::NotImplemented("FastLoad ID count exceeds u64".into()))?;
+        let id_bytes_u64 = u64::try_from(id_bytes)
+            .map_err(|_| CodecError::NotImplemented("FastLoad ID bytes exceed u64".into()))?;
+        ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
+        ctx.charge_retained(id_bytes_u64, "retain NX FastLoad object IDs")?;
+        let mut object_ids = Vec::new();
+        object_ids
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad object IDs", 0, count_u64))?;
+        for ordinal in 0..count {
+            let offset = ids_start + ordinal * 4;
+            let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
+                CodecError::Malformed("FastLoad object ID span is inconsistent".into())
             })?;
-        let object_ids = (0..count)
-            .map(|ordinal| {
-                let offset = ids_start + ordinal * 4;
-                View::u32_le_at(bytes, offset)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        let object_ids = ObjectIdMembers::new(object_ids).ok()?;
-        Some((
-            entry,
+            object_ids.push(object_id);
+        }
+        let object_ids = ObjectIdMembers::new(object_ids)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
+        Ok(Some((
+            entry_index,
             RmFastLoadObjectIdTable {
                 registry_offset,
                 count_offset,
                 object_ids,
             },
-        ))
+        )))
     }
 }
 
@@ -816,6 +849,8 @@ pub(crate) struct Container<'a> {
     /// Modern entries from both regions or legacy CFB paths, in serialized
     /// order.
     pub(crate) entries: Vec<DirEntry>,
+    /// Admitted active-object table, shared by selection and native extraction.
+    pub(crate) fastload_table: Option<(usize, RmFastLoadObjectIdTable)>,
     /// Cached source ranges for indexed object-model sections.
     pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
     /// Cached size-framed object-model sections when the container borrows its input.
@@ -969,7 +1004,10 @@ fn u48_le(d: &[u8], at: usize) -> u64 {
 }
 
 /// Parse an SPLMSSTR file image.
-pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, CodecError> {
+pub(crate) fn scan_bytes<'a>(
+    ctx: &DecodeContext<'_>,
+    data: impl Into<Cow<'a, [u8]>>,
+) -> Result<Container<'a>, CodecError> {
     let data = data.into();
     if !data.starts_with(MAGIC) {
         return Err(CodecError::WrongFormat(
@@ -1000,14 +1038,26 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container
         .ok_or_else(|| CodecError::Malformed("truncated FOOTER fingerprint".to_string()))?;
 
     let (mut entries, header_end) = directory_region(
+        ctx,
         &data,
         splmsstr::HEADER_MARKER,
         *b"HEADER",
         Region::Header,
         fo,
     )?;
-    let (footer_entries, footer_end) =
-        directory_region(&data, fo, *b"FOOTER", Region::Footer, footer_directory_end)?;
+    let (footer_entries, footer_end) = directory_region(
+        ctx,
+        &data,
+        fo,
+        *b"FOOTER",
+        Region::Footer,
+        footer_directory_end,
+    )?;
+    let footer_items = u64::try_from(footer_entries.len())
+        .map_err(|_| CodecError::NotImplemented("FOOTER item count exceeds u64".into()))?;
+    entries
+        .try_reserve_exact(footer_entries.len())
+        .map_err(|_| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
     entries.extend(footer_entries);
     if header_end > fo {
         return Err(CodecError::Malformed(
@@ -1043,7 +1093,7 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container
     };
     let physical_size = data.len() as u64;
 
-    Ok(Container {
+    let mut container = Container {
         data,
         physical_size,
         layout: ContainerLayout::Modern {
@@ -1053,9 +1103,12 @@ pub(crate) fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container
             footer_fingerprint,
         },
         entries,
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
-    })
+    };
+    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
+    Ok(container)
 }
 
 /// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
@@ -1126,18 +1179,21 @@ pub(crate) fn scan_legacy<'a>(
         });
     }
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
-    let container = Container {
+    let mut container = Container {
         data: Cow::Borrowed(logical_data.window()),
         physical_size: root.window().len() as u64,
         layout: ContainerLayout::LegacyCfb { version },
         entries,
+        fastload_table: None,
         indexed_section_layouts: OnceLock::new(),
         om_section_cache: OnceLock::new(),
     };
+    container.fastload_table = container.parse_rmfastload_object_id_table(ctx)?;
     Ok((container, part_view))
 }
 
 fn directory_region(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     marker_offset: usize,
     marker: [u8; 6],
@@ -1168,19 +1224,26 @@ fn directory_region(
             "directory entry count exceeds its bounded region".to_string(),
         ));
     }
-    let mut entries = Vec::with_capacity(capacity);
+    ctx.charge_collection_items(u64::from(count), "admit NX directory entries")?;
+    let entry_bytes = capacity
+        .checked_mul(std::mem::size_of::<DirEntry>())
+        .ok_or_else(|| {
+            CodecError::NotImplemented("NX directory entries exceed address space".into())
+        })?;
+    let entry_bytes_u64 = u64::try_from(entry_bytes)
+        .map_err(|_| CodecError::NotImplemented("NX directory entries exceed u64".into()))?;
+    ctx.charge_retained(entry_bytes_u64, "retain NX directory entries")?;
+    let mut entries = Vec::new();
+    entries.try_reserve_exact(capacity).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX directory entries", 0, u64::from(count))
+    })?;
     let mut at = entries_offset;
     for ordinal in 0..count {
-        let Some((entry, next)) = try_entry(data, at, region) else {
+        let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
             return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"
             )));
         };
-        if next > region_end {
-            return Err(CodecError::malformed(format_args!(
-                "directory entry {ordinal} extends beyond its bounded region"
-            )));
-        }
         entries.push(entry);
         at = next;
     }
@@ -1190,19 +1253,44 @@ fn directory_region(
 /// Try to read one directory entry at `o`: `name_len:u32 LE`, then that many bytes
 /// of printable ASCII beginning `/Root`, then a 16-byte payload. Returns the entry
 /// and the offset just past its payload.
-fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
-    let name_len = View::u32_le_at(data, o)? as usize;
+fn try_entry(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    o: usize,
+    region: Region,
+    region_end: usize,
+    ordinal: u32,
+) -> Result<Option<(DirEntry, usize)>, CodecError> {
+    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
     if !(6..=128).contains(&name_len) {
-        return None;
+        return Ok(None);
     }
-    let name_start = o + dir_entry::LEN;
-    let name_end = name_start + name_len;
-    let raw = data.get(name_start..name_end)?;
+    let Some(name_start) = o.checked_add(dir_entry::LEN) else {
+        return Ok(None);
+    };
+    let Some(name_end) = name_start.checked_add(name_len) else {
+        return Ok(None);
+    };
+    let Some(raw) = data.get(name_start..name_end) else {
+        return Ok(None);
+    };
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
-        return None;
+        return Ok(None);
     }
-    let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
+    let Some(next) = payload.checked_add(file_payload::LEN) else {
+        return Ok(None);
+    };
+    if next > region_end {
+        return Err(CodecError::malformed(format_args!(
+            "directory entry {ordinal} extends beyond its bounded region"
+        )));
+    }
+    ctx.charge_retained(name_len as u64, "retain NX directory name")?;
+    let name = String::from_utf8_lossy(raw).into_owned();
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (
         View::u64_le_at(data, payload),
@@ -1220,7 +1308,7 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
         }
         _ => DirEntryBody::Directory,
     };
-    Some((DirEntry { name, region, body }, payload + file_payload::LEN))
+    Ok(Some((DirEntry { name, region, body }, next)))
 }
 
 #[cfg(test)]

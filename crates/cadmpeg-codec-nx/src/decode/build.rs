@@ -160,7 +160,7 @@ pub(super) fn try_decode_geometry(
     let rmfastload_ids = scan
         .container
         .rmfastload_object_id_table()
-        .map(|(_, table)| table.object_ids.into_vec())
+        .map(|(_, table)| table.object_ids.as_slice())
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
@@ -170,7 +170,7 @@ pub(super) fn try_decode_geometry(
             ));
         }
     }
-    let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, &rmfastload_ids);
+    let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, rmfastload_ids);
     let rmfastload_preselection = (body_node_ids.len() > 1
         && !rmfastload_selected.is_empty()
         && rmfastload_selected.len() < body_node_ids.len())
@@ -1188,7 +1188,7 @@ pub(super) fn try_decode_geometry(
             .sum::<usize>();
         apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
     } else {
-        select_active_body(&mut ir, &body_node_ids, &rmfastload_ids)
+        select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);

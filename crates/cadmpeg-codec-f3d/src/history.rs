@@ -838,7 +838,7 @@ pub(crate) fn bind_feature_outputs(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in histories {
         let by_node = history
@@ -903,11 +903,14 @@ pub(crate) fn bind_feature_outputs(
                 outputs
                     .iter()
                     .filter_map(|slot| active.get(slot).cloned())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             bind_base_feature_output_selection(feature);
         }
     }
+    Ok(())
 }
 
 fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
@@ -923,7 +926,7 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
         return;
     };
     let bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: feature.evaluation.outputs().clone(),
+        bodies: feature.evaluation.outputs().iter().cloned().collect(),
         native: native.clone(),
     };
     feature
@@ -1256,7 +1259,7 @@ pub(crate) fn bind_feature_body_selections(
                             *tools = if let [row] = direct_tool_rows.as_slice() {
                                 let (body, native) = row.clone().into_parts();
                                 BodySelection::Resolved {
-                                    bodies: vec![body],
+                                    bodies: std::iter::once(body).collect(),
                                     native,
                                 }
                             } else {
@@ -1917,7 +1920,7 @@ fn bind_direct_body_recipe_body_selection(
                 selected.push(body);
             }
             *selection = BodySelection::Resolved {
-                bodies: selected,
+                bodies: selected.into_iter().collect(),
                 native: group.id.clone(),
             };
             return;

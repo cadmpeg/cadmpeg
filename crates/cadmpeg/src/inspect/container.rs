@@ -59,7 +59,7 @@ pub(super) fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Listing> {
         }
         ContainerKind::Zip => {
             let snapshot =
-                ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+                ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
             Ok(Listing::Zip(snapshot.entries().to_vec()))
         }
     }
@@ -98,7 +98,7 @@ pub(super) fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Resul
         }
         ContainerKind::Zip => {
             let snapshot =
-                ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+                ArchiveSnapshot::new(&ctx, root).context("reading the ZIP central directory")?;
             let entry = snapshot
                 .entry(name)
                 .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;

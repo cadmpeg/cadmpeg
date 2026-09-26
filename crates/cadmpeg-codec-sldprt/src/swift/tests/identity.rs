@@ -81,13 +81,12 @@ fn empty_swift_pattern_uses_one_native_hole_join() {
     };
     let mut projected = project(&root);
     enrich_implicit_nominals_with_context(&root, &[], &mut projected, Some(&context));
-    let PmiDefinition::Dimension {
-        nominal: Some(nominal),
-        ..
-    } = &projected.first().expect("diameter annotation").definition
+    let PmiDefinition::Dimension(relation) =
+        &projected.first().expect("diameter annotation").definition
     else {
         panic!("dimension definition");
     };
+    let nominal = relation.nominal().expect("dimension nominal");
     assert_eq!(*nominal, length(6.1468).expect("finite length"));
 
     let mut ambiguous = features.clone();

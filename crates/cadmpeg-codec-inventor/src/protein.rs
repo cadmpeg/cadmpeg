@@ -99,7 +99,7 @@ fn parse_stream<'a>(
     let payload = source
         .child(source.start() + protein_header::LEN, source.end())
         .ok_or_else(|| CodecError::Malformed("Inventor Protein payload range is invalid".into()))?;
-    let archive = ArchiveSnapshot::new(payload)?;
+    let archive = ArchiveSnapshot::new(ctx, payload)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
     }
@@ -130,23 +130,30 @@ fn decode_instances_from(
     archive: &ArchiveSnapshot<'_>,
     payload: View<'_>,
 ) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
-    if !cadmpeg_protein::has_schemas(payload.window()) {
+    let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
         return Ok(Vec::new());
-    }
+    };
+    let count = archive
+        .entries()
+        .iter()
+        .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
+        .count();
+    ctx.charge_collection_items(count as u64, "admit Inventor Protein instance streams")?;
     let entries = archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .collect::<Vec<_>>();
-    ctx.charge_collection_items(
-        entries.len() as u64,
-        "admit Inventor Protein instance streams",
-    )?;
     entries
         .into_iter()
         .map(|entry| {
             let instance = archive.open(ctx, &entry.name)?;
-            let outcome = cadmpeg_protein::decode_detailed(payload.window(), instance.window())?;
+            let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
+            let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
+            ctx.charge_retained(
+                entry.name.len() as u64,
+                "Inventor Protein instance entry name",
+            )?;
             Ok(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
                 records: outcome.records,
@@ -267,6 +274,45 @@ mod tests {
             assert_eq!(instances[0].records[0].guid, "asset-guid");
             assert!(instances[0].rejected.is_empty());
         });
+    }
+
+    #[test]
+    fn inventor_reuses_one_charged_schema_catalog_across_instance_streams() {
+        let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+        let mut record = Vec::new();
+        for value in ["SimpleSchema", "asset-guid", "Simple", ""] {
+            push_lp(&mut record, value);
+        }
+        push_lp(&mut record, &"x".repeat(160));
+        let instance = paged_instance(&record);
+        let zip = zip_entries(&[
+            ("Schemas/SimpleSchema.xml", schema),
+            ("First/InstanceProperties.bin", &instance),
+            ("Second/InstanceProperties.bin", &instance),
+        ]);
+        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        bytes.extend_from_slice(&zip);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        // Two three-entry ZIP inventories, one schema parse, and one closure.
+        policy.limits.max_work_units = schema.len() as u64 + 10;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("package fits the service input limit");
+        let ParsedProtein::Package {
+            archive, payload, ..
+        } = parse_stream(&ctx, root).expect("package parses")
+        else {
+            panic!("package state")
+        };
+        let instances = decode_instances_from(&ctx, &archive, payload)
+            .expect("one schema parse admits both streams");
+        assert_eq!(instances.len(), 2);
+        assert!(instances.iter().all(|instance| instance.records.len() == 1));
+        assert!(matches!(
+            ctx.charge_work(1, "prove schema parse was charged"),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+        ));
     }
 
     #[test]

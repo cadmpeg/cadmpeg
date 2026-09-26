@@ -103,7 +103,7 @@ pub fn parasolid(data: &[u8]) {
     let Ok((ctx, root)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) else {
         return;
     };
-    let Ok(container) = crate::container::scan_bytes(data.to_vec()) else {
+    let Ok(container) = crate::container::scan_bytes(&ctx, data.to_vec()) else {
         return;
     };
     if let Ok(streams) = crate::parasolid::extract_streams(&ctx, root, &container) {

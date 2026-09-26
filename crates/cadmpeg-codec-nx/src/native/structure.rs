@@ -696,6 +696,7 @@ mod tests {
                 region: Region::Header,
                 body: crate::container::DirEntryBody::File { offset: 0, len },
             }],
+            fastload_table: None,
             indexed_section_layouts: std::sync::OnceLock::new(),
             om_section_cache: std::sync::OnceLock::new(),
         }

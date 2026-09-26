@@ -1660,7 +1660,7 @@ fn coordinate_system_feature_rejects_a_local_system_outside_the_record_tolerance
 
 #[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
-    let feature = |definition, outputs| Feature {
+    let feature = |definition, outputs: Vec<cadmpeg_ir::ids::BodyId>| Feature {
         id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1671,7 +1671,10 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            definition,
+            outputs.try_into().expect("distinct output fixture"),
+        ),
         native_ref: None,
     };
     let mut ir = CadIr::empty();
@@ -1689,11 +1692,11 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ));
     assert!(!preceding_features_establish_body(&ir));
 
-    ir.model.features[0]
-        .evaluation
-        .set_outputs(vec![
-            BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")
-        ]);
+    ir.model.features[0].evaluation.set_outputs(
+        (vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")])
+            .try_into()
+            .expect("distinct output fixture"),
+    );
     assert!(preceding_features_establish_body(&ir));
 
     ir.model.features[0] = feature(

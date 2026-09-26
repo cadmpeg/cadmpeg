@@ -1152,7 +1152,7 @@ impl NativeModel {
         let fields = field_definitions(container);
         let object_records = object_records(container);
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
-            match rmfastload_object_id_table(container) {
+            match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => (vec![table], object_ids),
                 None => (Vec::new(), Vec::new()),
             };
