@@ -229,6 +229,13 @@ impl Length {
     pub const ZERO: Self = Self(0.0);
 }
 
+impl From<FiniteReal> for Length {
+    /// A finite scalar interpreted in canonical millimeters.
+    fn from(value: FiniteReal) -> Self {
+        Self(value.get())
+    }
+}
+
 impl Angle {
     /// One full turn in radians.
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);

@@ -38,7 +38,7 @@ use cadmpeg_ir::{
         SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
         TreeChildren,
     },
-    scalar::Length,
+    scalar::{FiniteReal, Length},
 };
 
 use crate::brep::ShapePayloadRecord;
@@ -1226,14 +1226,14 @@ fn append_operation_parameters(
             ordinal: property.order as u32,
             name: property.name.clone(),
             expression: expression.map_or_else(
-                || scalar_text(property).unwrap_or_else(|| value.to_string()),
+                || scalar_text(property).unwrap_or_else(|| value.get().to_string()),
                 |(_, expression)| expression,
             ),
             display: None,
             value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.to_radians()).map(ParameterValue::Angle)
+                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
             } else {
-                Length::new(value).map(ParameterValue::Length)
+                Some(ParameterValue::Length(Length::from(value)))
             },
             dependencies: DistinctMembers::default(),
             properties: retained,
@@ -4456,7 +4456,7 @@ fn chamfer_definition(
         && program_version.is_some_and(|version| version.starts_with('0'))
         && property(properties, "ChamferType")
             .and_then(scalar_value)
-            .is_some_and(|value| value == 1.0 || value == 2.0);
+            .is_some_and(|value| value.get() == 1.0 || value.get() == 2.0);
     Some(FeatureDefinition::Operation(FeatureOperation::Chamfer {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(
             cadmpeg_ir::features::edge_treatments::ChamferGroup { edges, spec },
@@ -4753,31 +4753,29 @@ fn draft_definition(
 
 fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
     let mode = property(properties, "ChamferType").map_or(Some(0), |property| {
-        scalar_value(property).map(|value| value as i64)
+        scalar_value(property).and_then(|value| match value.get() {
+            value if value > -1.0 && value < 1.0 => Some(0),
+            value if (1.0..2.0).contains(&value) => Some(1),
+            value if (2.0..3.0).contains(&value) => Some(2),
+            _ => None,
+        })
     })?;
     let first = property(properties, "Size")
         .and_then(scalar_value)
-        .filter(|value| value.is_finite() && *value > 0.0);
+        .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get()));
     match (mode, first) {
-        (0, Some(distance)) => Some(ChamferSpec::Distance {
-            distance: cadmpeg_ir::scalar::PositiveLength::new(distance)?,
-        }),
+        (0, Some(distance)) => Some(ChamferSpec::Distance { distance }),
         (1, Some(first)) => property(properties, "Size2")
             .and_then(scalar_value)
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .and_then(|second| {
-                Some(ChamferSpec::TwoDistances {
-                    first: cadmpeg_ir::scalar::PositiveLength::new(first)?,
-                    second: cadmpeg_ir::scalar::PositiveLength::new(second)?,
-                })
-            }),
+            .and_then(|value| cadmpeg_ir::scalar::PositiveLength::new(value.get()))
+            .map(|second| ChamferSpec::TwoDistances { first, second }),
         (2, Some(distance)) => property(properties, "Angle")
             .and_then(scalar_value)
-            .filter(|angle| angle.is_finite() && *angle > 0.0 && *angle < 180.0)
+            .filter(|angle| angle.get() > 0.0 && angle.get() < 180.0)
             .and_then(|angle| {
                 Some(ChamferSpec::DistanceAngle {
-                    distance: cadmpeg_ir::scalar::PositiveLength::new(distance)?,
-                    angle: cadmpeg_ir::scalar::InteriorAngle::new(angle.to_radians())?,
+                    distance,
+                    angle: cadmpeg_ir::scalar::InteriorAngle::new(angle.get().to_radians())?,
                 })
             }),
         _ => None,
@@ -4934,14 +4932,14 @@ fn text_value_tag(type_name: &str) -> Option<&'static str> {
     })
 }
 
-fn scalar_value(property: &PropertyRecord) -> Option<f64> {
+fn scalar_value(property: &PropertyRecord) -> Option<FiniteReal> {
     let tag = scalar_value_tag(&property.type_name)?;
     if tag == "Bool" {
         return None;
     }
     let attributes = direct_root_attributes(property, tag)?;
     let value = attributes.get("value")?.parse::<f64>().ok()?;
-    value.is_finite().then_some(value)
+    FiniteReal::new(value)
 }
 
 fn scalar_text(property: &PropertyRecord) -> Option<String> {
@@ -4963,54 +4961,43 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     let length = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
-            .filter(|value| value.is_finite() && *value >= 0.0)
-            .and_then(Length::new)
+            .map(Length::from)
     };
     let angle = |name: &str| {
         property(properties, name)
             .and_then(scalar_value)
-            .filter(|value| value.is_finite())
-            .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.to_radians()))
-    };
-    let signed_length = |name: &str| {
-        property(properties, name)
-            .and_then(scalar_value)
-            .filter(|value| value.is_finite())
-            .and_then(Length::new)
+            .and_then(|value| cadmpeg_ir::scalar::Angle::new(value.get().to_radians()))
     };
     let solid = if kind.ends_with("Box") {
         PrimitiveSolidKind::Box {
-            length: length("Length").filter(|value| value.get() > 0.0)?,
-            width: length("Width").filter(|value| value.get() > 0.0)?,
-            height: length("Height").filter(|value| value.get() > 0.0)?,
+            length: length("Length")?,
+            width: length("Width")?,
+            height: length("Height")?,
         }
     } else if kind.ends_with("Cylinder") {
         PrimitiveSolidKind::Cylinder {
-            radius: length("Radius").filter(|value| value.get() > 0.0)?,
-            height: length("Height").filter(|value| value.get() > 0.0)?,
+            radius: length("Radius")?,
+            height: length("Height")?,
             angle: angle("Angle")?,
         }
     } else if kind.ends_with("Cone") {
         let radius1 = length("Radius1")?;
         let radius2 = length("Radius2")?;
-        if radius1.get() == 0.0 && radius2.get() == 0.0 {
-            return None;
-        }
         PrimitiveSolidKind::Cone {
             radius1,
             radius2,
-            height: length("Height").filter(|value| value.get() > 0.0)?,
+            height: length("Height")?,
             angle: angle("Angle")?,
         }
     } else if kind.ends_with("Sphere") {
         PrimitiveSolidKind::Sphere {
-            radius: length("Radius").filter(|value| value.get() > 0.0)?,
+            radius: length("Radius")?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
     } else if kind.ends_with("Ellipsoid") {
-        let x_radius = length("Radius2").filter(|value| value.get() > 0.0)?;
+        let x_radius = length("Radius2")?;
         let y_radius = length("Radius3")?;
         PrimitiveSolidKind::Ellipsoid {
             x_radius,
@@ -5019,15 +5006,15 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
             } else {
                 y_radius
             },
-            z_radius: length("Radius1").filter(|value| value.get() > 0.0)?,
+            z_radius: length("Radius1")?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
         }
     } else if kind.ends_with("Torus") {
         PrimitiveSolidKind::Torus {
-            major_radius: length("Radius1").filter(|value| value.get() > 0.0)?,
-            minor_radius: length("Radius2").filter(|value| value.get() > 0.0)?,
+            major_radius: length("Radius1")?,
+            minor_radius: length("Radius2")?,
             latitude1: angle("Angle1")?,
             latitude2: angle("Angle2")?,
             longitude: angle("Angle3")?,
@@ -5035,21 +5022,21 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     } else if kind.ends_with("Prism") {
         PrimitiveSolidKind::Prism {
             sides: u32::try_from(integer_property(properties, "Polygon")?).ok()?,
-            circumradius: length("Circumradius").filter(|value| value.get() > 0.0)?,
-            height: length("Height").filter(|value| value.get() > 0.0)?,
+            circumradius: length("Circumradius")?,
+            height: length("Height")?,
         }
     } else if kind.ends_with("Wedge") {
         PrimitiveSolidKind::Wedge {
-            xmin: signed_length("Xmin")?,
-            ymin: signed_length("Ymin")?,
-            zmin: signed_length("Zmin")?,
-            x2min: signed_length("X2min")?,
-            z2min: signed_length("Z2min")?,
-            xmax: signed_length("Xmax")?,
-            ymax: signed_length("Ymax")?,
-            zmax: signed_length("Zmax")?,
-            x2max: signed_length("X2max")?,
-            z2max: signed_length("Z2max")?,
+            xmin: length("Xmin")?,
+            ymin: length("Ymin")?,
+            zmin: length("Zmin")?,
+            x2min: length("X2min")?,
+            z2min: length("Z2min")?,
+            xmax: length("Xmax")?,
+            ymax: length("Ymax")?,
+            zmax: length("Zmax")?,
+            x2max: length("X2max")?,
+            z2max: length("Z2max")?,
         }
     } else {
         return None;
@@ -6328,7 +6315,9 @@ fn is_link_property_type(type_name: &str) -> bool {
 }
 
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
-    property(properties, name).and_then(scalar_value)
+    property(properties, name)
+        .and_then(scalar_value)
+        .map(FiniteReal::get)
 }
 
 fn string_property_value(property: &PropertyRecord) -> Option<String> {
