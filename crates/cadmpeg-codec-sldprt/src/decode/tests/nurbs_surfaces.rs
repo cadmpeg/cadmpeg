@@ -141,7 +141,9 @@ fn short_compact_surface_knot_array_is_rejected_without_panicking() {
     bytes[header + 1] = 1;
 
     assert!(
-        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
+        !crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+            .expect("surface scan")
+            .contains_key(&180)
     );
 }
 
@@ -325,7 +327,9 @@ fn surface_rejects_nonzero_terminal_multiplicity() {
     let bytes =
         nurbs_surface_carrier_with_v_knot_storage(180, 181, 10, &[2, 2, 1], &[0.0, 1.0, 2.0]);
     assert!(
-        !crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180)
+        !crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+            .expect("surface scan")
+            .contains_key(&180)
     );
 }
 
@@ -358,7 +362,8 @@ fn surface_descriptor_uses_terminal_array_references() {
     bytes.extend(f64_array(0x80, 193, &[0.0, 1.0]));
     bytes.extend(f64_array(0x80, 194, &[0.0, 1.0]));
 
-    let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
+    let carrier = crate::brep::spline::scan_surface_carriers(None, &bytes, &mut Vec::new())
+        .expect("surface scan")
         .remove(&180)
         .expect("surface carrier");
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {

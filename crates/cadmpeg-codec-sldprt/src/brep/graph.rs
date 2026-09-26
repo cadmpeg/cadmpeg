@@ -1158,18 +1158,19 @@ pub(crate) fn decode_bodies(
                     .collect::<HashSet<_>>()
             });
         typed_facts.merge_missing(stream_typed_facts);
-        carriers.merge_missing(scan_carriers(body));
+        carriers.merge_missing(scan_carriers(ctx, body)?);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
             topology::scan_deltas_with_curve_attrs_excluding(
+                ctx,
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
             )
         } else {
-            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
-        };
-        let mut scanned_facts = entity::scan_metadata(body, is_deltas);
+            topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)
+        }?;
+        let mut scanned_facts = entity::scan_metadata(ctx, body, is_deltas)?;
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }
@@ -1217,7 +1218,7 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     admit_brep_scan_candidates(ctx, body)?;
-    let carriers = scan_carriers(body);
+    let carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body, ctx)?;
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
@@ -1231,8 +1232,9 @@ fn decode_body(
                 .map(|face| face.offset)
                 .collect::<HashSet<_>>()
         });
-    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
-    let entity_facts = entity::scan_metadata(body, false);
+    let t =
+        topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
+    let entity_facts = entity::scan_metadata(ctx, body, false)?;
     decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
 }
 

@@ -65,7 +65,19 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex,
 };
 
+mod display_references;
 mod display_tables;
+
+fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurfaceReference> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    persistent_surface_references(&ctx, payload, range).expect("service profile admits references")
+}
 
 fn table() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
@@ -596,71 +608,6 @@ fn framed_surface_reference(text: &str) -> Vec<u8> {
     let mut payload = vec![0xff, 0xfe, 0xff, units.len().try_into().unwrap()];
     payload.extend(units.into_iter().flat_map(u16::to_le_bytes));
     payload
-}
-
-#[test]
-fn overlapping_display_face_tables_narrow_to_an_empty_metadata_range() {
-    // Display-face metadata is narrowed to where the following table starts. Two
-    // overlapping tables put that end below the metadata start; the range then
-    // collapses at its own start instead of inverting and silently reading nothing.
-    assert!(ByteRange::new(64, 32).is_none());
-    let metadata = ByteRange::new(64, 128).expect("ordered range");
-    let overlapped = metadata.truncated(32);
-    assert_eq!((overlapped.start(), overlapped.end()), (64, 64));
-    let mut payload = vec![0; 192];
-    let reference = framed_surface_reference("moPlaneSurfIdRep_c,7,3,");
-    payload[64..64 + reference.len()].copy_from_slice(&reference);
-    assert!(persistent_surface_references(&payload, overlapped).is_empty());
-    let narrowed = metadata.truncated(120);
-    assert_eq!((narrowed.start(), narrowed.end()), (64, 120));
-    assert_eq!(
-        persistent_surface_references(&payload, narrowed).len(),
-        persistent_surface_references(&payload, metadata).len()
-    );
-}
-
-#[test]
-fn persistent_surface_reference_decodes_signed_tail() {
-    let payload = framed_surface_reference("moContent3IntSurfIdRep_c,300,4,-1,0,");
-    let references = persistent_surface_references(
-        &payload,
-        ByteRange::new(0, payload.len()).expect("ordered range"),
-    );
-    assert_eq!(
-        references,
-        vec![PersistentSurfaceReference::Complete(persistent_identity(
-            300,
-            4,
-            &[u32::MAX, 0],
-        ))]
-    );
-}
-
-#[test]
-fn opaque_surface_suffix_remains_source_only() {
-    let payload = framed_surface_reference("moFromSktEntSurfIdRep_c,7,3,opaque");
-    let references = persistent_surface_references(
-        &payload,
-        ByteRange::new(0, payload.len()).expect("ordered range"),
-    );
-    assert_eq!(
-        references,
-        vec![PersistentSurfaceReference::SourceOnly {
-            feature_source_id: 7_u32.try_into().unwrap(),
-            local_surface_id: 3,
-        }]
-    );
-    let face = DisplayFace {
-        mesh: Mesh::default(),
-        table: ByteRange::new(0, 1).expect("ordered range"),
-        metadata: ByteRange::new(1, 2).expect("ordered range"),
-        surface_references: references,
-    };
-    assert_eq!(
-        face.feature_source_id().map(FeatureSourceId::value),
-        Some(7)
-    );
-    assert_eq!(face.persistent_surface_identity(), None);
 }
 
 #[test]
@@ -1944,7 +1891,7 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
 fn persistent_surface_source_sentinels_are_absent() {
     for source in [0, u32::MAX] {
         let payload = framed_surface_reference(&format!("moPlaneSurfIdRep_c,{source},3,"));
-        let references = persistent_surface_references(
+        let references = decoded_references(
             &payload,
             ByteRange::new(0, payload.len()).expect("ordered range"),
         );
@@ -1968,7 +1915,14 @@ fn a_short_normal_lane_refuses_the_display_table() {
     payload.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
     payload.extend(descriptor(1, 8, 4, &[0; 4]));
 
-    let error = parse_table(&payload, 0)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    let error = parse_table(&ctx, &payload, 0)
         .expect_err("a short normal lane is refused")
         .to_string();
     assert!(error.contains("vertex normal(s)"), "{error}");
