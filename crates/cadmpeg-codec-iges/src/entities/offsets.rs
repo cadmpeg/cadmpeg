@@ -52,25 +52,30 @@ fn placed_offset_source(
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(
                     transform.apply_point(line_curve.origin().get())?,
-                    UnitVector3::new(unit_vector(transform.apply_vector(direction)?.get())?)?,
+                    UnitVector3::normalized_by_reciprocal(
+                        transform.apply_vector(direction)?.get(),
+                    )?,
                 ),
             )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let center = transform.apply_point(circle_curve.center().get())?;
-            let frame = OrthonormalFrame3::new(
-                unit_vector(
-                    transform
-                        .apply_vector(*circle_curve.frame().axis().as_raw())?
-                        .get(),
-                )?
-                .scale(orientation),
-                unit_vector(
-                    transform
-                        .apply_vector(*circle_curve.frame().reference().as_raw())?
-                        .get(),
-                )?,
+            let axis = UnitVector3::normalized_by_reciprocal(
+                transform
+                    .apply_vector(*circle_curve.frame().axis().as_raw())?
+                    .get(),
             )?;
+            let axis = if orientation < 0.0 {
+                axis.reversed()
+            } else {
+                axis
+            };
+            let reference = UnitVector3::normalized_by_reciprocal(
+                transform
+                    .apply_vector(*circle_curve.frame().reference().as_raw())?
+                    .get(),
+            )?;
+            let frame = OrthonormalFrame3::from_units(axis, reference)?;
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
                     center,
