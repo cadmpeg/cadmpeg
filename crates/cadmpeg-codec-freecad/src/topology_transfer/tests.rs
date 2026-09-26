@@ -381,13 +381,13 @@ fn edge_representation_selection_follows_family_rules() {
         1 => TextEdgeRepresentation::Curve3d {
             curve: primary,
             location: 0,
-            parameter_range: [0.0, 0.0],
+            parameter_range: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2],
         },
         2 => TextEdgeRepresentation::Pcurve {
             curve: primary,
             surface: 0,
             location: 0,
-            parameter_range: [0.0, 0.0],
+            parameter_range: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2],
             uv_endpoints: None,
         },
         5 => TextEdgeRepresentation::Polygon3d {

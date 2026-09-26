@@ -309,8 +309,10 @@ impl<'a> Builder<'a> {
                         )));
                     continue;
                 };
-                let primary_range =
-                    normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
+                let primary_range = normalize_pcurve_parameter_range(
+                    &primary_geometry,
+                    Some(parameter_range.map(FiniteReal::get)),
+                );
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
@@ -347,7 +349,7 @@ impl<'a> Builder<'a> {
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
                         &secondary_geometry,
-                        Some(parameter_range),
+                        Some(parameter_range.map(FiniteReal::get)),
                     );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
@@ -1154,6 +1156,7 @@ impl<'a> Builder<'a> {
         };
         let param_range = curve_representation
             .and_then(|(_, representation)| representation.parameter_range())
+            .map(|range| range.map(FiniteReal::get))
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
@@ -1565,7 +1568,8 @@ impl<'a> Builder<'a> {
                 )));
             return Ok(None);
         };
-        let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
+        let parameter_range =
+            normalize_pcurve_parameter_range(&geometry, Some(parameter_range.map(FiniteReal::get)));
         Ok(Some((
             self.pcurve_id(edge_use.shape, index, secondary)?,
             bounded_pcurve_range(*degenerated, parameter_range),

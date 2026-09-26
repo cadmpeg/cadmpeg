@@ -987,7 +987,7 @@ pub(crate) enum TextEdgeRepresentation {
         /// Location index, or zero for identity.
         location: usize,
         /// Curve parameter range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
     },
     /// Kind 2: one parameter-space curve on a surface.
     Pcurve {
@@ -998,9 +998,9 @@ pub(crate) enum TextEdgeRepresentation {
         /// Surface location index, or zero for identity.
         location: usize,
         /// Parameter-curve range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         /// Optional V2 cached UV endpoints.
-        uv_endpoints: Option<[Point2; 2]>,
+        uv_endpoints: Option<[FinitePoint2; 2]>,
     },
     /// Kind 3: a pair of parameter-space curves on one surface.
     PcurvePair {
@@ -1013,9 +1013,9 @@ pub(crate) enum TextEdgeRepresentation {
         /// Surface location index, or zero for identity.
         location: usize,
         /// Parameter-curve range.
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         /// Optional V2 cached UV endpoints.
-        uv_endpoints: Option<[Point2; 2]>,
+        uv_endpoints: Option<[FinitePoint2; 2]>,
     },
     /// Kind 4: regularity between two surfaces.
     Regularity {
@@ -1084,7 +1084,7 @@ impl TextEdgeRepresentation {
     }
 
     /// Parameter range when the representation carries one.
-    pub(crate) const fn parameter_range(&self) -> Option<[f64; 2]> {
+    pub(crate) const fn parameter_range(&self) -> Option<[FiniteReal; 2]> {
         match *self {
             Self::Curve3d {
                 parameter_range, ..
@@ -1109,9 +1109,9 @@ struct TextEdgeRepresentationWire {
     second_surface: Option<usize>,
     location: usize,
     second_location: Option<usize>,
-    parameter_range: Option<[f64; 2]>,
+    parameter_range: Option<[FiniteReal; 2]>,
     continuity: Option<String>,
-    uv_endpoints: Option<[Point2; 2]>,
+    uv_endpoints: Option<[FinitePoint2; 2]>,
 }
 
 /// The retained wire shape, borrowed from the representation it states.
@@ -1154,7 +1154,7 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: None,
                 uv_endpoints: None,
             },
@@ -1172,9 +1172,9 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: None,
-                uv_endpoints,
+                uv_endpoints: uv_endpoints.map(|points| points.map(FinitePoint2::get)),
             },
             TextEdgeRepresentation::PcurvePair {
                 curves,
@@ -1191,9 +1191,9 @@ impl<'a> TextEdgeRepresentationOut<'a> {
                 second_surface: None,
                 location,
                 second_location: None,
-                parameter_range: Some(parameter_range),
+                parameter_range: Some(parameter_range.map(FiniteReal::get)),
                 continuity: Some(continuity),
-                uv_endpoints,
+                uv_endpoints: uv_endpoints.map(|points| points.map(FinitePoint2::get)),
             },
             TextEdgeRepresentation::Regularity {
                 ref continuity,
@@ -3174,8 +3174,8 @@ fn parse_binary_edge_representation(
                 "edge curve location",
             )?;
             let parameter_range = [
-                cursor.f64("binary edge curve start")?,
-                cursor.f64("binary edge curve end")?,
+                cursor.finite_f64("binary edge curve start")?,
+                cursor.finite_f64("binary edge curve end")?,
             ];
             Ok(TextEdgeRepresentation::Curve3d {
                 curve,
@@ -3216,13 +3216,13 @@ fn parse_binary_edge_representation(
                 "edge surface location",
             )?;
             let parameter_range = [
-                cursor.f64("binary edge pcurve start")?,
-                cursor.f64("binary edge pcurve end")?,
+                cursor.finite_f64("binary edge pcurve start")?,
+                cursor.finite_f64("binary edge pcurve end")?,
             ];
             let uv_endpoints = if matches!(version, 2 | 3) {
                 Some([
-                    cursor.point2("binary edge first UV endpoint")?,
-                    cursor.point2("binary edge last UV endpoint")?,
+                    cursor.finite_point2("binary edge first UV endpoint")?,
+                    cursor.finite_point2("binary edge last UV endpoint")?,
                 ])
             } else {
                 None
@@ -3942,10 +3942,6 @@ impl<'a> BinaryCursor<'a> {
             self.finite_f64(label)?,
             self.finite_f64(label)?,
         ))
-    }
-
-    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
-        Ok(Point2::new(self.f64(label)?, self.f64(label)?))
     }
 
     fn finite_point3(&mut self, label: &str) -> Result<FinitePoint3, CodecError> {
@@ -4689,8 +4685,8 @@ fn parse_edge_representation(
             let parameter_range = parse_range(cursor, "edge parameter curve")?;
             let uv_endpoints = if topology_version == 2 {
                 Some([
-                    cursor.point2("edge first UV endpoint")?,
-                    cursor.point2("edge last UV endpoint")?,
+                    cursor.finite_point2("edge first UV endpoint")?,
+                    cursor.finite_point2("edge last UV endpoint")?,
                 ])
             } else {
                 None
@@ -4912,10 +4908,10 @@ fn parse_reference_suffix(
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
 
-fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], CodecError> {
+fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[FiniteReal; 2], CodecError> {
     let range = [
-        cursor.real(&format!("{label} first parameter"))?,
-        cursor.real(&format!("{label} last parameter"))?,
+        cursor.finite_real(&format!("{label} first parameter"))?,
+        cursor.finite_real(&format!("{label} last parameter"))?,
     ];
     if range[0] > range[1] {
         return Err(CodecError::malformed(format_args!(
@@ -5585,10 +5581,6 @@ impl<'a> TokenCursor<'a> {
             self.finite_real(label)?,
             self.finite_real(label)?,
         ))
-    }
-
-    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
-        Ok(Point2::new(self.real(label)?, self.real(label)?))
     }
 
     fn vector(&mut self, label: &str) -> Result<Vector3, CodecError> {
@@ -6322,7 +6314,7 @@ pub(crate) mod tests {
                     continuity: "CN".to_owned(),
                     surface: 7,
                     location: 8,
-                    parameter_range: [0.0, 1.0],
+                    parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                     uv_endpoints: None,
                 },
                 serde_json::json!({
@@ -7145,7 +7137,12 @@ pub(crate) mod tests {
         else {
             panic!("expected edge geometry")
         };
-        assert_eq!(representations[0].parameter_range(), Some([0.0, 1.0]));
+        assert_eq!(
+            representations[0]
+                .parameter_range()
+                .map(|range| range.map(FiniteReal::get)),
+            Some([0.0, 1.0])
+        );
         assert_eq!(facts.roots.len(), 1);
         assert_eq!(facts.roots[0].shape, 8);
     }
