@@ -188,11 +188,11 @@ fn drawing_size_accepts_finite_zero_extents() {
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
             Token {
-                value: TokenValue::Real(0.0),
+                value: TokenValue::real(0.0),
                 span: 0..0,
             },
         ],

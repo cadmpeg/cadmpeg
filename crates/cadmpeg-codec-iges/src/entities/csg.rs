@@ -470,7 +470,7 @@ pub(super) fn project(
             continue;
         };
         let point = (2..=4)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index))
             .collect::<Option<Vec<_>>>();
         if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
             losses.push(entity_loss(

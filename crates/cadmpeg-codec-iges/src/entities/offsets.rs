@@ -114,8 +114,8 @@ fn omitted_or_integer_zero(record: &ParameterRecord, index: usize) -> bool {
 fn omitted_or_numeric_zero(record: &ParameterRecord, index: usize) -> bool {
     matches!(
         record.value(index),
-        Some(TokenValue::Omitted | TokenValue::Integer(0) | TokenValue::Real(0.0))
-    )
+        Some(TokenValue::Omitted | TokenValue::Integer(0))
+    ) || matches!(record.value(index), Some(TokenValue::Real(value)) if value.get() == 0.0)
 }
 
 #[derive(Clone, Copy)]

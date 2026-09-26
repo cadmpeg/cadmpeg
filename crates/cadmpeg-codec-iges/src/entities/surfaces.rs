@@ -70,7 +70,7 @@ pub(super) fn type128_parameter_bound_intervals(
     (0..4)
         .map(|offset| {
             let index = range_start.checked_add(offset)?;
-            let value = record.number(index).filter(|value| value.is_finite())?;
+            let value = record.number(index)?;
             Some(DeclaredInterval::around(
                 value,
                 record.number_uncertainty(index, value, precision),

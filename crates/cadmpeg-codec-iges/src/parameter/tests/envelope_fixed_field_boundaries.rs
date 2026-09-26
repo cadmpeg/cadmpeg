@@ -344,7 +344,7 @@ fn type204_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         13,
         vec![
             204.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             5.into(),
             TokenValue::Omitted,
             7.into(),
@@ -449,7 +449,7 @@ fn type206_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         11,
         vec![
             206.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             5.into(),
             0.into(),
             10.into(),
@@ -563,7 +563,7 @@ fn type216_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         11,
         vec![
             216.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             3.into(),
             5.into(),
             0.into(),
@@ -663,7 +663,7 @@ fn type220_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
         13,
         vec![
             220.into(),
-            TokenValue::Real(1.5),
+            TokenValue::real(1.5),
             3.into(),
             5.into(),
             1.into(),
@@ -783,7 +783,7 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
                     11,
                     vec![
                         222.into(),
-                        TokenValue::Real(1.5),
+                        TokenValue::real(1.5),
                         3.into(),
                         10.into(),
                         20.into(),
@@ -808,7 +808,7 @@ fn type222_complete_wrong_fields_keep_boundaries_and_truncated_spans_do_not_reco
                         3.into(),
                         10.into(),
                         20.into(),
-                        TokenValue::Real(5.5),
+                        TokenValue::real(5.5),
                         1.into(),
                         7.into(),
                         1.into(),
