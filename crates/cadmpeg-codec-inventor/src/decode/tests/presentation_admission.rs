@@ -3,7 +3,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
 use cadmpeg_core::CodecError;
 
-use crate::decode::admit_presentation_native_projection;
+use crate::decode::presentation_native_projection;
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::{
     PmAppDefaultStyle, PmAppRenderingStyle, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
@@ -31,7 +31,7 @@ fn presentation_default_native_record_refuses_before_id_creation() {
         &token,
         1,
     );
-    let inventory = PresentationInventory {
+    let mut inventory = PresentationInventory {
         default_styles: vec![style],
         rendering_styles: Vec::new(),
         graphics_faces: Vec::new(),
@@ -46,14 +46,14 @@ fn presentation_default_native_record_refuses_before_id_creation() {
             .expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor default style id"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_presentation_native_projection(&ctx, &inventory).expect("admitted default style");
+    presentation_native_projection::project(&ctx, &mut inventory).expect("admitted default style");
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
         index: 1,
         qualified: false,
     };
-    let inventory = PresentationInventory {
+    let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
             PmAppRenderingStyle {
@@ -152,14 +152,14 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-        match admit_presentation_native_projection(&ctx, &inventory) {
+        match presentation_native_projection::project(&ctx, &mut inventory) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 assert!(limit.used + limit.additional > cap);
                 operations.push(limit.operation);
                 cap = limit.used + limit.additional;
             }
-            Ok(()) => {
+            Ok(_) => {
                 admitted = true;
                 break;
             }
@@ -185,16 +185,15 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "copy Inventor graphics face edge references"
     ));
-    let mut inventory = inventory;
     inventory.graphics_faces.clear();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "copy Inventor graphics style references"
@@ -205,7 +204,7 @@ fn presentation_other_native_records_refuse_before_ids_text_and_reference_copies
 fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     let bytes = [];
     let token = cadmpeg_ir::ids::IdentityKey::encode_segment("segment");
-    let inventory = PresentationInventory {
+    let mut inventory = PresentationInventory {
         default_styles: Vec::new(),
         rendering_styles: vec![Located::new(
             PmAppRenderingStyle {
@@ -242,7 +241,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
         u64::try_from(id_len + token_len + 64 + issue.len() - 1).expect("issue budget fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor rendering conversion issue"
@@ -251,7 +250,7 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "collect Inventor rendering conversion issue"
@@ -260,12 +259,13 @@ fn rendering_conversion_issue_refuses_before_failure_record_creation() {
     policy.limits.max_entities = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_presentation_native_projection(&ctx, &inventory),
+        presentation_native_projection::project(&ctx, &mut inventory),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
                 && limit.operation == "admit Inventor rendering conversion issue"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_presentation_native_projection(&ctx, &inventory).expect("admitted rendering issue");
+    presentation_native_projection::project(&ctx, &mut inventory)
+        .expect("admitted rendering issue");
 }

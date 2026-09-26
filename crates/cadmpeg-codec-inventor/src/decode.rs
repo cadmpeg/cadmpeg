@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod presentation_native_projection;
 mod rse_native_projection;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -39,9 +40,7 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
+    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
     PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
     RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
     StructuralIssueRecord, VersionTupleRecord,
@@ -547,159 +546,13 @@ fn decode_container<'a>(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    admit_presentation_native_projection(ctx, &presentation_inventory)?;
-    let pm_app_default_styles = presentation_inventory
-        .default_styles
-        .iter()
-        .map(|style| {
-            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            PmAppDefaultStyleRecord {
-                id: format!(
-                    "inventor:presentation:default-style#{}-{}",
-                    style.identity.segment_token, style.identity.record_ordinal
-                ),
-                segment_token: style.identity.segment_token.as_str().to_owned(),
-                record_ordinal: style.identity.record_ordinal,
-                segment_version_major: style.segment_version_major,
-                header_value: style.header_value,
-                header_id: style.header_id,
-                material_reference: style.material_reference,
-                rendering_style_reference: style.rendering_style_reference,
-                related_references: style.related_references,
-                state: style.state,
-                terminal_reference: style.terminal_reference,
-                suffix_len,
-                suffix_sha256,
-            }
-        })
-        .collect::<Vec<_>>();
-    let pm_app_rendering_styles = presentation_inventory
-        .rendering_styles
-        .iter()
-        .filter_map(|style| {
-            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            let wire = PmAppRenderingStyleRecordWire {
-                id: format!(
-                    "inventor:presentation:rendering-style#{}-{}",
-                    style.identity.segment_token, style.identity.record_ordinal
-                ),
-                segment_token: style.identity.segment_token.as_str().to_owned(),
-                record_ordinal: style.identity.record_ordinal,
-                segment_version_major: style.segment_version_major,
-                header_value: style.header_value,
-                header_id: style.header_id,
-                state: style.state,
-                flags: style.flags,
-                values: style.values,
-                default_state: style.default_state,
-                value: style.value,
-                name_reference: style.name_reference,
-                name: style.name.clone(),
-                comment: style.comment.clone(),
-                long_name: style.long_name.clone(),
-                style_state: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_state),
-                style_label: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_label.clone()),
-                asset_guid: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.asset_guid.clone()),
-                material_id: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.material_id.clone()),
-                asset_library_id: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.asset_library_id.clone()),
-                style_values: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_values),
-                guid: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.guid.clone()),
-                suffix_len,
-                suffix_sha256: suffix_sha256.into(),
-            };
-            PmAppRenderingStyleRecord::try_from(wire)
-                .inspect_err(|detail| {
-                    presentation_inventory.issues.push(RecordIssue {
-                        family: RecordIssueFamily::Presentation,
-                        segment_token: style.identity.segment_token.as_str().to_owned(),
-                        record_ordinal: style.identity.record_ordinal,
-                        detail: detail.clone(),
-                    });
-                })
-                .ok()
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_faces = presentation_inventory
-        .graphics_faces
-        .iter()
-        .map(|face| PmGraphicsFaceRecord {
-            id: format!(
-                "inventor:presentation:graphics-face#{}-{}",
-                face.identity.segment_token, face.identity.record_ordinal
-            ),
-            segment_token: face.identity.segment_token.as_str().to_owned(),
-            record_ordinal: face.identity.record_ordinal,
-            segment_version_major: face.segment_version_major,
-            header_value: face.header_value,
-            header_id: face.header_id,
-            flags: face.flags,
-            styles: face.styles,
-            surface: face.surface,
-            parent: face.parent,
-            state: face.state,
-            edge_references: face.edge_references.clone(),
-            visibility_state: face.visibility_state,
-            bounds: face.bounds,
-            key: face.key,
-            values: face.values,
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_style_collections = presentation_inventory
-        .graphics_style_collections
-        .iter()
-        .map(|collection| PmGraphicsStyleCollectionRecord {
-            id: format!(
-                "inventor:presentation:graphics-style-collection#{}-{}",
-                collection.identity.segment_token, collection.identity.record_ordinal
-            ),
-            segment_token: collection.identity.segment_token.as_str().to_owned(),
-            record_ordinal: collection.identity.record_ordinal,
-            segment_version_major: collection.segment_version_major,
-            style_references: collection.style_references.clone(),
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_primary_color_styles = presentation_inventory
-        .graphics_primary_color_styles
-        .iter()
-        .map(|style| PmGraphicsPrimaryColorStyleRecord {
-            id: format!(
-                "inventor:presentation:graphics-primary-color#{}-{}",
-                style.identity.segment_token, style.identity.record_ordinal
-            ),
-            segment_token: style.identity.segment_token.as_str().to_owned(),
-            record_ordinal: style.identity.record_ordinal,
-            segment_version_major: style.segment_version_major,
-            header_value: style.header_value,
-            controls: style.controls,
-            color_header: style.color_header,
-            colors: style.colors,
-            color_tail: style.color_tail,
-            state: style.state,
-            values: style.values,
-            terminal_state: style.terminal_state,
-        })
-        .collect::<Vec<_>>();
+    let presentation_native =
+        presentation_native_projection::project(ctx, &mut presentation_inventory)?;
+    let pm_app_default_styles = presentation_native.default_styles;
+    let pm_app_rendering_styles = presentation_native.rendering_styles;
+    let pm_graphics_faces = presentation_native.graphics_faces;
+    let pm_graphics_style_collections = presentation_native.graphics_style_collections;
+    let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
         wire_len(
             ctx,
@@ -1576,18 +1429,6 @@ fn admit_native_format(
     crate::record_issue::admit_formatted(ctx, value, operation)
 }
 
-fn admit_native_digest(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        wire_len(ctx, bytes.len(), "Inventor digest work")?,
-        "hash Inventor native bytes",
-    )
-}
-
 fn admitted_loss(
     ctx: &DecodeContext<'_>,
     code: InventorLossCode,
@@ -1790,137 +1631,6 @@ fn admit_kernel_unknown_fidelity(
                 "retain Inventor unknown provenance stream",
             )?;
         }
-    }
-    Ok(())
-}
-
-fn admit_presentation_native_projection(
-    ctx: &DecodeContext<'_>,
-    inventory: &crate::presentation::PresentationInventory<'_>,
-) -> Result<(), CodecError> {
-    for style in &inventory.default_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:default-style#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor default style id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor default style token")?;
-        admit_native_digest(
-            ctx,
-            style.suffix.window(),
-            "retain Inventor default style suffix digest",
-        )?;
-    }
-    for style in &inventory.rendering_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:rendering-style#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor rendering style id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor rendering style token")?;
-        for value in [&style.name, &style.comment, &style.long_name] {
-            charge_retained_len(ctx, value.len(), "retain Inventor rendering style text")?;
-        }
-        if let Some(extension) = &style.extension {
-            for value in [
-                &extension.style_label,
-                &extension.asset_guid,
-                &extension.material_id,
-                &extension.asset_library_id,
-                &extension.guid,
-            ] {
-                charge_retained_len(ctx, value.len(), "retain Inventor rendering extension text")?;
-            }
-        }
-        admit_native_digest(
-            ctx,
-            style.suffix.window(),
-            "retain Inventor rendering style suffix digest",
-        )?;
-        let issue_detail = if style.extension.is_some() != (style.segment_version_major >= 17) {
-            Some("rendering style extension disagrees with segment_version_major")
-        } else if style.segment_version_major >= 17 && !style.comment.is_empty() {
-            Some("rendering style comment must be empty for segment_version_major >= 17")
-        } else {
-            None
-        };
-        if let Some(detail) = issue_detail {
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor rendering conversion issue",
-            )?;
-            ctx.charge_collection_items(1, "collect Inventor rendering conversion issue")?;
-            ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
-            charge_retained_len(ctx, token.len(), "retain Inventor rendering issue token")?;
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor rendering issue detail copy",
-            )?;
-        }
-    }
-    for face in &inventory.graphics_faces {
-        let token = face.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-face#{token}-{}",
-                face.identity.record_ordinal
-            ),
-            "retain Inventor graphics face id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor graphics face token")?;
-        charge_items(
-            ctx,
-            face.edge_references.references().len(),
-            "copy Inventor graphics face edge references",
-        )?;
-    }
-    for collection in &inventory.graphics_style_collections {
-        let token = collection.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-style-collection#{token}-{}",
-                collection.identity.record_ordinal
-            ),
-            "retain Inventor graphics style collection id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.len(),
-            "retain Inventor graphics style collection token",
-        )?;
-        charge_items(
-            ctx,
-            collection.style_references.references().len(),
-            "copy Inventor graphics style references",
-        )?;
-    }
-    for style in &inventory.graphics_primary_color_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-primary-color#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor primary color style id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.len(),
-            "retain Inventor primary color style token",
-        )?;
     }
     Ok(())
 }

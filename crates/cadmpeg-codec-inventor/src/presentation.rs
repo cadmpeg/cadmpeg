@@ -1180,13 +1180,6 @@ fn hex(bytes: &[u8]) -> String {
     text
 }
 
-pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sha256Hex) {
-    (
-        source.window().len() as u64,
-        crate::native::digest::Sha256Hex::digest(source.window()),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
