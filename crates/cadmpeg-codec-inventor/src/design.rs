@@ -3,7 +3,7 @@
 
 use crate::pmdc::unique_by;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -376,7 +376,10 @@ pub(crate) fn inventory(
     Ok(inventory)
 }
 
-pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignParameter>, usize) {
+pub(crate) fn project_parameters(
+    ctx: &DecodeContext<'_>,
+    inventory: &DesignInventory,
+) -> Result<(Vec<DesignParameter>, usize), CodecError> {
     let expressions = unique_by(&inventory.expressions, |record| {
         (
             record.identity.segment_token.as_str(),
@@ -456,45 +459,75 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
             native_ref: Some(parameter.id()),
         });
     }
-    let (projected, graph_rejections) = close_parameter_graph(projected);
-    (projected, unresolved.saturating_add(graph_rejections))
+    let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
+    Ok((projected, unresolved.saturating_add(graph_rejections)))
 }
 
-fn close_parameter_graph(parameters: Vec<DesignParameter>) -> (Vec<DesignParameter>, usize) {
-    let candidate_ids = parameters
+fn close_parameter_graph(
+    ctx: &DecodeContext<'_>,
+    parameters: Vec<DesignParameter>,
+) -> Result<(Vec<DesignParameter>, usize), CodecError> {
+    let count = parameters.len();
+    let edge_count = parameters.iter().try_fold(0usize, |total, parameter| {
+        total
+            .checked_add(parameter.dependencies.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "Inventor parameter dependency count",
+                    usize::MAX as u64,
+                    u64::MAX,
+                )
+            })
+    })?;
+    ctx.charge_collection_items(count as u64, "index Inventor parameter closure")?;
+    let indices = parameters
         .iter()
-        .map(|parameter| parameter.id.clone())
-        .collect::<HashSet<_>>();
-    let mut closed = HashSet::new();
-    loop {
-        let previous = closed.len();
-        for parameter in &parameters {
-            if candidate_ids.contains(&parameter.id)
-                && parameter
-                    .dependencies
-                    .iter()
-                    .all(|dependency| closed.contains(dependency))
-            {
-                closed.insert(parameter.id.clone());
+        .enumerate()
+        .map(|(index, parameter)| (&parameter.id, index))
+        .collect::<HashMap<_, _>>();
+    let mut remaining = ctx.alloc_filled(count, 0usize, "admit Inventor parameter indegrees")?;
+    let mut dependents = ctx.alloc_filled(
+        count,
+        Vec::<usize>::new(),
+        "admit Inventor parameter adjacency",
+    )?;
+    ctx.charge_collection_items(edge_count as u64, "admit Inventor parameter edges")?;
+    ctx.charge_collection_items(count as u64, "admit Inventor parameter traversal")?;
+    let mut ready = VecDeque::new();
+    for (index, parameter) in parameters.iter().enumerate() {
+        for dependency in &parameter.dependencies {
+            ctx.charge_work(1, "index Inventor parameter edge")?;
+            if let Some(&source) = indices.get(dependency) {
+                remaining[index] += 1;
+                dependents[source].push(index);
+            } else {
+                remaining[index] += 1;
             }
         }
-        if closed.len() == previous {
-            break;
+        if remaining[index] == 0 {
+            ready.push_back(index);
         }
     }
-    let rejected = parameters.len().saturating_sub(
-        parameters
-            .iter()
-            .filter(|parameter| closed.contains(&parameter.id))
-            .count(),
-    );
-    (
+    let mut closed = ctx.alloc_filled(count, false, "admit Inventor parameter closure")?;
+    while let Some(source) = ready.pop_front() {
+        closed[source] = true;
+        for &dependent in &dependents[source] {
+            ctx.charge_work(1, "visit Inventor parameter edge")?;
+            remaining[dependent] -= 1;
+            if remaining[dependent] == 0 {
+                ready.push_back(dependent);
+            }
+        }
+    }
+    let accepted = closed.iter().filter(|&&value| value).count();
+    Ok((
         parameters
             .into_iter()
-            .filter(|parameter| closed.contains(&parameter.id))
+            .zip(closed)
+            .filter_map(|(parameter, is_closed)| is_closed.then_some(parameter))
             .collect(),
-        rejected,
-    )
+        count - accepted,
+    ))
 }
 
 fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
@@ -948,7 +981,8 @@ mod tests {
     use crate::pmdc::{PmDcContentHeader, PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
     use cadmpeg_core::decode::DecodeContext;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
     use cadmpeg_ir::scalar::Length;
     use std::collections::{HashMap, HashSet};
@@ -1304,7 +1338,10 @@ mod tests {
             units: vec![base, unit],
             issues: Vec::new(),
         };
-        let (parameters, unresolved) = project_parameters(&inventory);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let (parameters, unresolved) = project_parameters(&ctx, &inventory).expect("projection");
         assert_eq!(unresolved, 0);
         assert_eq!(parameters[0].expression, "24 in");
         assert_eq!(parameters[1].expression, "width");
@@ -1352,7 +1389,10 @@ mod tests {
             ),
             make("d", Vec::new()),
         ];
-        let (closed, rejected) = close_parameter_graph(parameters);
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
         assert_eq!(rejected, 3);
         assert_eq!(
             closed
@@ -1361,5 +1401,80 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["synthetic:test:id#d"]
         );
+    }
+
+    #[test]
+    fn reverse_ordered_parameter_chain_keeps_source_order_after_topological_closure() {
+        let id = |name: &str| {
+            ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar")
+        };
+        let make = |name: &str, dependency: Option<&str>| DesignParameter {
+            id: id(name),
+            owner: None,
+            ordinal: 0,
+            name: name.into(),
+            expression: name.into(),
+            display: None,
+            value: None,
+            dependencies: dependency
+                .into_iter()
+                .map(id)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("valid dependency fixture"),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let (closed, rejected) = close_parameter_graph(&ctx, parameters).expect("closure");
+        assert_eq!(rejected, 0);
+        assert_eq!(
+            closed
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+            ["c", "b", "a"]
+        );
+    }
+
+    #[test]
+    fn parameter_closure_refuses_work_limit_on_reverse_chain_edge() {
+        let id = |name: &str| {
+            ParameterId::mint(format!("synthetic:test:id#{name}")).expect("identity grammar")
+        };
+        let make = |name: &str, dependency: Option<&str>| DesignParameter {
+            id: id(name),
+            owner: None,
+            ordinal: 0,
+            name: name.into(),
+            expression: name.into(),
+            display: None,
+            value: None,
+            dependencies: dependency
+                .into_iter()
+                .map(id)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("valid dependency fixture"),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let parameters = vec![make("c", Some("b")), make("b", Some("a")), make("a", None)];
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty fixture view");
+        assert!(matches!(
+            close_parameter_graph(&ctx, parameters),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "visit Inventor parameter edge"
+        ));
     }
 }
