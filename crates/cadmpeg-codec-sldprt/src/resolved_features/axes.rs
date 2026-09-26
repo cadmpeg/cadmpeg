@@ -1222,11 +1222,9 @@ fn profile_roster_construction_axis(
     (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
         cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(start)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                delta.x / length,
-                delta.y / length,
-                delta.z / length,
-            ))?,
+            direction: cadmpeg_ir::features::FeatureDirection3::from(
+                UnitVector3::normalized_by_square_sum_division(delta)?,
+            ),
             reference: None,
         },
     )
