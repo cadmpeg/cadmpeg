@@ -43,7 +43,7 @@ use std::num::NonZeroU8;
 use std::sync::Arc;
 
 use crate::printable_string::PrintableString;
-use cadmpeg_core::decode::{alloc_filled, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) mod compact;
@@ -3734,13 +3734,19 @@ fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> 
 /// retained declaration count is not an ordinal bound. The class lane is
 /// instead the unique nonempty prefix whose identities are distinct and all
 /// smaller than every following metadata value.
-pub(crate) fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
-    let values = offset_store_control_values(bytes)?
+pub(crate) fn offset_store_control_class_ordinals(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<Vec<u32>>, cadmpeg_core::CodecError> {
+    let Some(values) = offset_store_control_values(bytes) else {
+        return Ok(None);
+    };
+    let values = values
         .into_iter()
         .map(ControlWord24::value)
         .collect::<Vec<_>>();
     let mut suffix_minima =
-        alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
+        ctx.alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima")?;
     for index in (0..values.len().saturating_sub(1)).rev() {
         suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
     }
@@ -3754,11 +3760,14 @@ pub(crate) fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u3
         }
         maximum_identity = maximum_identity.max(identity);
         if maximum_identity < suffix_minima[index] && boundary.replace(index + 1).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    let boundary = boundary?;
-    Some(values[..boundary].to_vec())
+    let Some(boundary) = boundary else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(boundary as u64, "nx offset-store class ordinals")?;
+    Ok(Some(values[..boundary].to_vec()))
 }
 
 fn joined_control_byte(control: &[u8], first_record: &[u8], offset: usize) -> Option<u8> {

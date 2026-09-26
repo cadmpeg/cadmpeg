@@ -3475,15 +3475,16 @@ pub(super) fn data_block_control_values(container: &Container) -> Vec<DataBlockC
 
 /// Resolve each atomic leading control lane through its store-local class registry.
 pub(super) fn data_block_control_class_references(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockControlClassReference> {
-    container
+) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
+    let rows = container
         .indexed_om_sections()
         .into_iter()
         .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
+        .map(|(section_ordinal, (entry, section))| -> Result<Vec<_>, CodecError> {
             let Some((control, _, records)) = section.as_offset_only() else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if !matches!(
                 crate::om::offset_store_control_form(
@@ -3492,7 +3493,7 @@ pub(super) fn data_block_control_class_references(
                 ),
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let mut registry = BTreeMap::new();
             for definition in container
@@ -3513,14 +3514,14 @@ pub(super) fn data_block_control_class_references(
                 registry.entry(definition.offset).or_insert(definition);
             }
             let registry = registry.into_values().collect::<Vec<_>>();
-            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(control.bytes)
+            let Some(ordinals) = crate::om::offset_store_control_class_ordinals(ctx, control.bytes)?
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let entry_index = entry.index();
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            ordinals
+            Ok(ordinals
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, class_ordinal)| {
@@ -3544,9 +3545,10 @@ pub(super) fn data_block_control_class_references(
                         source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
                     }
                 })
-                .collect()
+                .collect())
         })
-        .collect()
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    Ok(rows.into_iter().flatten().collect())
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
@@ -4402,6 +4404,14 @@ mod tests {
     use crate::test_support::test_prt::prt_with_named_payloads;
     use crate::test_support::test_prt::prt_with_size_framed_om_section;
     use cadmpeg_test_support::EditableDecodeResult;
+    fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test decode context");
+        run(&ctx)
+    }
+
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
         for (value, raw) in [
@@ -5529,7 +5539,9 @@ mod tests {
         assert_eq!(control_values[0].ordinal, 0);
         assert_eq!(control_values[0].value.value(), 0);
         assert_eq!(control_values[1].value.value(), 1);
-        let classes = super::data_block_control_class_references(&container);
+        let classes =
+            with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+                .expect("test OM class ordinals");
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].data_block, blocks[0].id);
         assert_eq!(classes[0].ordinal, 0);
@@ -5673,7 +5685,9 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        let classes = super::data_block_control_class_references(&container);
+        let classes =
+            with_test_ctx(|ctx| super::data_block_control_class_references(ctx, &container))
+                .expect("test OM class ordinals");
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].class_ordinal, 1);
         assert_eq!(

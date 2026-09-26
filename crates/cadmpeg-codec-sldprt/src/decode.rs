@@ -2614,7 +2614,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &native.feature_input_lanes,
     );
-    crate::history::bind::order_features_for_regeneration(&mut ir.model.features);
+    crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, &configuration_bodies)?;
     pmi_losses.extend(
         crate::history::configuration::project_configuration_sketch_states(
@@ -2645,7 +2645,7 @@ fn build_geometry_ir(
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     sync_active_configuration_resolutions(&mut ir)?;
-    crate::history::bind::order_model_features_for_regeneration(&mut ir);
+    crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
     ir.model.pmi = crate::swift::annotations(
         scan,
@@ -3657,7 +3657,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
-    crate::history::bind::order_features_for_regeneration(&mut ir.model.features);
+    crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     pmi_losses.extend(
         crate::history::configuration::project_configuration_sketch_states(
             &mut ir,
@@ -3667,7 +3667,7 @@ fn build_metadata_ir(
         )?,
     );
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
-    crate::history::bind::order_model_features_for_regeneration(&mut ir);
+    crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {

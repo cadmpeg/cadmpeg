@@ -1158,7 +1158,8 @@ impl NativeModel {
             };
         let data_block_control_forms = data_block_control_forms(container);
         let data_block_control_values = data_block_control_values(container);
-        let data_block_control_class_references = data_block_control_class_references(container);
+        let data_block_control_class_references =
+            data_block_control_class_references(ctx, container)?;
         let data_block_control_index_values = data_block_control_index_values(container);
         let data_block_control_references = data_block_control_references(container);
         let data_block_control_handle_pairs =

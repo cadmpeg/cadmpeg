@@ -2200,7 +2200,7 @@ impl<'a> F3dDecodeSession<'a> {
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
-        let mesh_projection = project_mesh_bodies(scan, &mut ir, &mut native, &mut report)?;
+        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
@@ -2309,7 +2309,7 @@ impl<'a> F3dDecodeSession<'a> {
             scan,
             &self.native.design_record_headers,
         )?;
-        extend_related_design_records(scan, &mut self.native)?;
+        extend_related_design_records(self.ctx, scan, &mut self.native)?;
         self.native.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
         self.native.sketch_curve_identities =
@@ -2882,8 +2882,13 @@ impl<'a> F3dDecodeSession<'a> {
             FinalizePath::Bodyless(inputs) => {
                 report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
                 reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
-                let mesh_projection =
-                    project_mesh_bodies(scan, &mut self.ir, &mut self.native, &mut self.report)?;
+                let mesh_projection = project_mesh_bodies(
+                    ctx,
+                    scan,
+                    &mut self.ir,
+                    &mut self.native,
+                    &mut self.report,
+                )?;
                 bind_mesh_feature_definitions(
                     &mut self.ir.model.features,
                     &self.native.design_parameter_scopes,
@@ -3214,6 +3219,7 @@ fn extend_unique_assets(
 /// Returns the number of bodies projected and reports every mesh-geometry
 /// container that no body claimed.
 fn project_mesh_bodies(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     native: &mut F3dNative,
@@ -3325,6 +3331,7 @@ fn project_mesh_bodies(
             CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
         })?;
         let texture_assignments = mesh_texture_assignments(
+            ctx,
             body.texture_ids.as_deref(),
             &texture_table,
             body.triangles.len(),
@@ -3408,6 +3415,7 @@ fn project_mesh_bodies(
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
 /// the triangle untextured.
 fn mesh_texture_assignments(
+    ctx: &DecodeContext<'_>,
     texture_ids: Option<&[u32]>,
     textures: &[(String, cadmpeg_ir::assets::AssetId)],
     triangle_count: usize,
@@ -3420,11 +3428,8 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles = cadmpeg_core::decode::alloc_filled(
-        textures.len(),
-        Vec::new(),
-        "f3d mesh texture assignments",
-    )?;
+    let mut triangles =
+        ctx.alloc_filled(textures.len(), Vec::new(), "f3d mesh texture assignments")?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         if *texture_id == 0 {
             continue;
@@ -4183,6 +4188,7 @@ fn decode_asm_history(
 }
 
 fn extend_related_design_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     native: &mut F3dNative,
 ) -> Result<(), CodecError> {
@@ -4288,6 +4294,7 @@ fn extend_related_design_records(
             &native.design_parameter_scopes,
         )?;
     crate::design::decode::scopes::parameter_scope::admit_history_bound_scope_variants(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.asm_histories,
     )?;
