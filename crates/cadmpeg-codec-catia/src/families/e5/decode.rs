@@ -22,7 +22,7 @@ use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell,
     Vertex,
 };
-use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3};
+use cadmpeg_ir::units::{FinitePoint2, FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -492,7 +492,7 @@ fn append_e5_planes(
         ) else {
             continue;
         };
-        let Some(frame) = OrthonormalFrame3::new(normal, u_axis) else {
+        let Some(frame) = OrthonormalFrame3::from_units(normal, u_axis) else {
             continue;
         };
         let payload = cadmpeg_ir::geometry::analytic::PlaneSurface::new(plane.origin, frame);
@@ -532,7 +532,7 @@ fn solve_e5_plane_frame(
     topology: &crate::families::e5::graph::E5Topology,
     points: &[FinitePoint3],
     expected_normal: Option<Vector3>,
-) -> Option<(Vector3, Vector3, [FiniteReal; 2])> {
+) -> Option<(UnitVector3, UnitVector3, [FiniteReal; 2])> {
     if topology.vertex_refs.len() != points.len() {
         return None;
     }
@@ -668,7 +668,7 @@ fn solve_e5_plane_frame(
         }
     }
 
-    let mut candidates = Vec::new();
+    let mut candidates: Vec<(UnitVector3, UnitVector3)> = Vec::new();
     for ((u_axis, v_axis, residual), pairs) in fitted_axes {
         let Some(u_axis) = unit_vector(u_axis) else {
             continue;
@@ -676,7 +676,7 @@ fn solve_e5_plane_frame(
         let Some(v_axis) = unit_vector(v_axis) else {
             continue;
         };
-        let orthogonality = u_axis.dot(v_axis);
+        let orthogonality = u_axis.as_raw().dot(*v_axis.as_raw());
         if !residual.is_finite()
             || !orthogonality.is_finite()
             || residual > 2e-3
@@ -684,53 +684,53 @@ fn solve_e5_plane_frame(
         {
             continue;
         }
+        let (u, v) = (u_axis.as_raw(), v_axis.as_raw());
         let Some(normal) = unit_vector(Vector3::new(
-            u_axis.y * v_axis.z - u_axis.z * v_axis.y,
-            u_axis.z * v_axis.x - u_axis.x * v_axis.z,
-            u_axis.x * v_axis.y - u_axis.y * v_axis.x,
+            u.y * v.z - u.z * v.y,
+            u.z * v.x - u.x * v.z,
+            u.x * v.y - u.y * v.x,
         )) else {
             continue;
         };
         // The returned chart uses unit axes and derives v from normal x u.
         // Validate that chart, not the unrestricted least-squares fit.
-        let residual =
-            plane_frame_residual(origin.get().into(), &pairs, u_axis, normal.cross(u_axis));
+        let residual = plane_frame_residual(
+            origin.get().into(),
+            &pairs,
+            *u_axis.as_raw(),
+            normal.as_raw().cross(*u_axis.as_raw()),
+        );
         if !residual.is_finite() || residual > E5_ENDPOINT_MATCH_TOLERANCE {
             continue;
         }
         if expected_normal.is_some_and(|expected| {
-            let alignment = normal.dot(expected);
+            let alignment = normal.as_raw().dot(expected);
             !alignment.is_finite() || alignment.abs() < 1.0 - EPS_E5_DECODE_COARSE_GEOMETRY
         }) {
             continue;
         }
-        if !candidates
-            .iter()
-            .any(|(existing_normal, existing_u): &(Vector3, Vector3)| {
-                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
-                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
-            })
-        {
+        if !candidates.iter().any(|(existing_normal, existing_u)| {
+            existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+                && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+        }) {
             candidates.push((normal, u_axis));
         }
     }
-    let mut canonical = Vec::new();
+    let mut canonical: Vec<(UnitVector3, UnitVector3, [FiniteReal; 2])> = Vec::new();
     for (normal, mut u_axis) in candidates {
-        let first = [u_axis.x, u_axis.y, u_axis.z]
+        let first = [u_axis.as_raw().x, u_axis.as_raw().y, u_axis.as_raw().z]
             .into_iter()
             .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)?;
         let uv_scale = if first < 0.0 {
-            u_axis = Vector3::new(-u_axis.x, -u_axis.y, -u_axis.z);
+            u_axis = u_axis.reversed();
             [FiniteReal::ONE.negated(); 2]
         } else {
             [FiniteReal::ONE; 2]
         };
-        if !canonical.iter().any(
-            |(existing_normal, existing_u, _): &(Vector3, Vector3, [FiniteReal; 2])| {
-                existing_normal.dot(normal) > 1.0 - EPS_AXIS_ALIGN
-                    && existing_u.dot(u_axis) > 1.0 - EPS_AXIS_ALIGN
-            },
-        ) {
+        if !canonical.iter().any(|(existing_normal, existing_u, _)| {
+            existing_normal.as_raw().dot(*normal.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+                && existing_u.as_raw().dot(*u_axis.as_raw()) > 1.0 - EPS_AXIS_ALIGN
+        }) {
             canonical.push((normal, u_axis, uv_scale));
         }
     }
@@ -895,20 +895,22 @@ fn fit_rank_one_e5_plane_axes(
         return None;
     }
     let mapped_q = unit_vector(displacement)?;
+    let q_direction = mapped_q.as_raw();
     let mapped_r = unit_vector(Vector3::new(
-        normal.y * mapped_q.z - normal.z * mapped_q.y,
-        normal.z * mapped_q.x - normal.x * mapped_q.z,
-        normal.x * mapped_q.y - normal.y * mapped_q.x,
+        normal.y * q_direction.z - normal.z * q_direction.y,
+        normal.z * q_direction.x - normal.x * q_direction.z,
+        normal.x * q_direction.y - normal.y * q_direction.x,
     ))?;
+    let r_direction = mapped_r.as_raw();
     let u_axis = Vector3::new(
-        q[0] * mapped_q.x - q[1] * mapped_r.x,
-        q[0] * mapped_q.y - q[1] * mapped_r.y,
-        q[0] * mapped_q.z - q[1] * mapped_r.z,
+        q[0] * q_direction.x - q[1] * r_direction.x,
+        q[0] * q_direction.y - q[1] * r_direction.y,
+        q[0] * q_direction.z - q[1] * r_direction.z,
     );
     let v_axis = Vector3::new(
-        q[1] * mapped_q.x + q[0] * mapped_r.x,
-        q[1] * mapped_q.y + q[0] * mapped_r.y,
-        q[1] * mapped_q.z + q[0] * mapped_r.z,
+        q[1] * q_direction.x + q[0] * r_direction.x,
+        q[1] * q_direction.y + q[0] * r_direction.y,
+        q[1] * q_direction.z + q[0] * r_direction.z,
     );
     let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
     residual.is_finite().then_some((u_axis, v_axis, residual))
@@ -3198,8 +3200,8 @@ mod route_tests {
         let (normal, u_axis, uv_scale) =
             solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
                 .expect("17-segment plane frame");
-        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
-        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
+        assert!(normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
+        assert!(u_axis.as_raw().dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert_eq!(uv_scale, finite_pair([1.0, 1.0]));
         assert!(solve_e5_plane_frame(
             100,
@@ -3284,8 +3286,12 @@ mod route_tests {
         let (normal, u_axis, uv_scale) =
             solve_e5_plane_frame(100, point([0.0, 0.0, 0.0]), &topology, &points, None)
                 .expect("negative native chart frame");
-        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
-        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(
+            normal.as_raw().dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY
+        );
+        assert!(
+            u_axis.as_raw().dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY
+        );
         assert_eq!(uv_scale, finite_pair([-1.0, -1.0]));
 
         let surface = E5Surface {
@@ -3294,8 +3300,8 @@ mod route_tests {
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                     Point3::new(0.0, 0.0, 0.0),
-                    normal,
-                    u_axis,
+                    *normal.as_raw(),
+                    *u_axis.as_raw(),
                 )
                 .expect("valid PlaneSurface fixture"),
             )),

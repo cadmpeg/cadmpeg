@@ -130,7 +130,7 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
-    assert!((fields[0].scalar.value() - 38.1).abs() < EPS_SHIFTED_SCALAR_ROUNDING);
+    assert!((fields[0].scalar.value().get() - 38.1).abs() < EPS_SHIFTED_SCALAR_ROUNDING);
 
     let mut malformed = bytes;
     malformed[5] = 1;
@@ -155,7 +155,7 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     assert!(point
         .values
         .iter()
-        .all(|value| (value.scalar.value() - 57.15).abs() < EPS_NAMED_POINT_ROUNDING));
+        .all(|value| (value.scalar.value().get() - 57.15).abs() < EPS_NAMED_POINT_ROUNDING));
     let expected_raw: [[u8; 8]; 2] = [
         first[14..22].try_into().unwrap(),
         second[8..16].try_into().unwrap(),
@@ -262,7 +262,7 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
-    assert_eq!(fields[0].scalar.value(), 25.4);
+    assert_eq!(fields[0].scalar.value().get(), 25.4);
     assert_eq!(fields[0].scalar.raw(), shifted);
 }
 
@@ -284,8 +284,8 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     let label = "SIMPLE HOLE";
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let lane = simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.iter().next().unwrap().scalar.value(), 508.0);
-    assert!((lane.iter().nth(1).unwrap().scalar.value() - 38.1).abs() < 2.0e-12);
+    assert_eq!(lane.iter().next().unwrap().scalar.value().get(), 508.0);
+    assert!((lane.iter().nth(1).unwrap().scalar.value().get() - 38.1).abs() < 2.0e-12);
     assert_eq!(
         lane.iter()
             .map(|token| token.scalar.raw())
@@ -327,7 +327,7 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     let lane = simple_hole_repeated_scalar_lane(record).unwrap();
     assert_eq!(
         lane.iter()
-            .map(|token| token.scalar.value())
+            .map(|token| token.scalar.value().get())
             .collect::<Vec<_>>(),
         [25.4]
     );
@@ -828,7 +828,7 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     assert_eq!(
         lanes[0]
             .iter()
-            .map(|(_, scalar, ())| scalar.value())
+            .map(|(_, scalar, ())| scalar.value().get())
             .collect::<Vec<_>>(),
         [1.0, -1.0]
     );

@@ -2,7 +2,7 @@
 //! Framed Parasolid attribute-value records.
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
-use crate::parasolid::counted_values::{CountedLane, CountedValues};
+use crate::parasolid::counted_values::CountedValues;
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::View;
@@ -28,8 +28,8 @@ pub(crate) struct EntityValueRecords<'a> {
     pub(crate) tags: Vec<ValueRecord<CountedValues<u32>>>,
     pub(crate) directions: Vec<ValueRecord<CountedValues<[f64; 3]>>>,
     pub(crate) unicode: Vec<ValueRecord<UnicodeValue>>,
-    /// Frames that passed their family validation but whose payload did not
-    /// materialize. A record that does not materialize is stated, not dropped.
+    /// Framed Unicode payloads that did not materialize. A record that does
+    /// not materialize is stated, not dropped.
     pub(crate) unmaterialized: Vec<UnmaterializedValueRecord>,
 }
 
@@ -127,20 +127,19 @@ pub(crate) fn entity_value_record_identity_at(
     ))
 }
 
-#[derive(Clone, Copy)]
 enum ValuePayload<'a> {
-    Integers(CountedLane<'a, u32>),
-    Doubles(CountedLane<'a, f64>),
+    Integers(CountedValues<u32>),
+    Doubles(CountedValues<f64>),
     String(PrintableString<&'a str>),
-    Points(CountedLane<'a, [f64; 3]>),
-    Vectors(CountedLane<'a, [f64; 3]>),
-    Axes(CountedLane<'a, [[f64; 3]; 2]>),
-    Tags(CountedLane<'a, u32>),
-    Directions(CountedLane<'a, [f64; 3]>),
+    Points(CountedValues<[f64; 3]>),
+    Vectors(CountedValues<[f64; 3]>),
+    Axes(CountedValues<[[f64; 3]; 2]>),
+    Tags(CountedValues<u32>),
+    Directions(CountedValues<[f64; 3]>),
     Unicode(UnicodeLane<'a>),
 }
 impl ValuePayload<'_> {
-    fn tag(self) -> u8 {
+    fn tag(&self) -> u8 {
         match self {
             Self::Integers(..) => 0x52,
             Self::Doubles(..) => 0x53,
@@ -154,7 +153,6 @@ impl ValuePayload<'_> {
         }
     }
 }
-#[derive(Clone, Copy)]
 struct ValueRecordFrame<'a> {
     offset: usize,
     end: usize,
@@ -162,30 +160,31 @@ struct ValueRecordFrame<'a> {
     payload: ValuePayload<'a>,
 }
 impl ValueRecordFrame<'_> {
-    fn next_offset(self) -> usize {
-        match self.payload {
+    fn next_offset(&self) -> usize {
+        match &self.payload {
             // A string terminator can also start the next two-byte tag.
             ValuePayload::String(_) => self.end - 1,
             _ => self.end,
         }
     }
-    fn retained<T>(self, value: T) -> ValueRecord<T> {
-        ValueRecord {
-            offset: self.offset,
-            byte_len: self.end - self.offset,
-            xmt: self.xmt,
-            value,
-        }
+}
+
+fn retained<T>(offset: usize, end: usize, xmt: NonNullXmt, value: T) -> ValueRecord<T> {
+    ValueRecord {
+        offset,
+        byte_len: end - offset,
+        xmt,
+        value,
     }
 }
 fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
     let tag = *bytes.get(offset.checked_add(1)?)?;
     match tag {
         0x52 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Integers)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Integers)
         }),
         0x53 => frame_at(bytes, offset, tag, 8, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Doubles)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Doubles)
         }),
         0x54 => frame_at(bytes, offset, tag, 1, |raw| {
             PrintableString::new(std::str::from_utf8(raw).ok()?)
@@ -193,19 +192,19 @@ fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame
                 .map(ValuePayload::String)
         }),
         0x55 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Points)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Points)
         }),
         0x56 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Vectors)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Vectors)
         }),
         0x57 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Axes)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Axes)
         }),
         0x58 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Tags)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Tags)
         }),
         0x59 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedLane::new(raw).map(ValuePayload::Directions)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Directions)
         }),
         0x62 => frame_at(bytes, offset, tag, 2, |raw| {
             UnicodeLane::new(raw).map(ValuePayload::Unicode)
@@ -245,45 +244,65 @@ fn frame_at<'a>(
 ///
 /// # Errors
 ///
-/// Names the frame whose payload did not materialize: its family, its entity
-/// tag and its byte offset.
+/// Names a Unicode frame whose payload did not materialize by family, entity
+/// tag and byte offset.
 fn append_value_record<'a>(
     frame: ValueRecordFrame<'a>,
     records: &mut EntityValueRecords<'a>,
 ) -> Result<(), UnmaterializedValueRecord> {
     let offset = frame.offset;
     let xmt = u32::from(frame.xmt);
-    let refused = |family: &'static str| UnmaterializedValueRecord {
-        offset,
-        xmt,
-        family,
-    };
     match frame.payload {
-        ValuePayload::Integers(value) => records
-            .integers
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("integer"))?)),
-        ValuePayload::Doubles(value) => records
-            .doubles
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("double"))?)),
-        ValuePayload::String(value) => records.strings.push(frame.retained(value)),
-        ValuePayload::Points(value) => records
-            .points
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("point"))?)),
-        ValuePayload::Vectors(value) => records
-            .vectors
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("vector"))?)),
-        ValuePayload::Axes(value) => records
-            .axes
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("axis"))?)),
-        ValuePayload::Tags(value) => records
-            .tags
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("tag"))?)),
-        ValuePayload::Directions(value) => records
-            .directions
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("direction"))?)),
-        ValuePayload::Unicode(value) => records
-            .unicode
-            .push(frame.retained(value.materialize().ok_or_else(|| refused("unicode"))?)),
+        ValuePayload::Integers(value) => {
+            records
+                .integers
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Doubles(value) => {
+            records
+                .doubles
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::String(value) => {
+            records
+                .strings
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Points(value) => {
+            records
+                .points
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Vectors(value) => {
+            records
+                .vectors
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Axes(value) => {
+            records
+                .axes
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Tags(value) => {
+            records
+                .tags
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Directions(value) => {
+            records
+                .directions
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
+        }
+        ValuePayload::Unicode(value) => records.unicode.push(retained(
+            frame.offset,
+            frame.end,
+            frame.xmt,
+            value.materialize().ok_or(UnmaterializedValueRecord {
+                offset,
+                xmt,
+                family: "unicode",
+            })?,
+        )),
     }
     Ok(())
 }
@@ -296,7 +315,7 @@ fn entity_52_integer_record_at(
     let ValuePayload::Integers(value) = frame.payload else {
         return None;
     };
-    Some(frame.retained(value.materialize()?))
+    Some(retained(frame.offset, frame.end, frame.xmt, value))
 }
 #[cfg(test)]
 fn entity_53_double_record_at(
@@ -307,7 +326,7 @@ fn entity_53_double_record_at(
     let ValuePayload::Doubles(value) = frame.payload else {
         return None;
     };
-    Some(frame.retained(value.materialize()?))
+    Some(retained(frame.offset, frame.end, frame.xmt, value))
 }
 #[cfg(test)]
 fn entity_54_string_record_at(
@@ -318,7 +337,7 @@ fn entity_54_string_record_at(
     let ValuePayload::String(value) = frame.payload else {
         return None;
     };
-    Some(frame.retained(value))
+    Some(retained(frame.offset, frame.end, frame.xmt, value))
 }
 
 #[cfg(test)]

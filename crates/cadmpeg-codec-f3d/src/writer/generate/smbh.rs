@@ -1716,9 +1716,10 @@ fn native_tolerant_vertex_tail(
     // generation writes 0). A negative tolerance is the
     // unevaluated sentinel, stored verbatim; a non-negative tolerance
     // converts from millimetres to centimetres.
-    let leading = stored
-        .as_ref()
-        .map_or([-1.0; 2], |tail| tail.leading_tolerances);
+    let leading = stored.as_ref().map_or([-1.0; 2], |tail| {
+        tail.leading_tolerances
+            .map(cadmpeg_ir::scalar::FiniteReal::get)
+    });
     let trailing = stored
         .as_ref()
         .map_or(Some(0), |tail| tail.evaluated_slot.trailing());

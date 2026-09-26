@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::native::{
@@ -146,32 +148,22 @@ pub(crate) fn transfer_neutral(
         };
         let scale = parameter("Scale")?
             .map(|value| {
-                cadmpeg_ir::scalar::PositiveReal::new(value).ok_or_else(|| {
+                PositiveReal::from_finite(value).ok_or_else(|| {
                     CodecError::malformed("drawing scale must be positive and finite")
                 })
             })
             .transpose()?;
-        let rotation_degrees = parameter("Rotation")?
-            .map(|value| {
-                cadmpeg_ir::scalar::FiniteReal::new(value)
-                    .ok_or_else(|| CodecError::malformed("drawing rotation must be finite"))
-            })
-            .transpose()?;
+        let rotation_degrees = parameter("Rotation")?;
         let direction = if record.parameters.contains_key("Direction") {
             let value = vector_property(&owned, "Direction")?
                 .ok_or_else(|| CodecError::malformed("drawing direction is absent"))?;
-            Some(cadmpeg_ir::units::NonzeroVector::new(value).ok_or_else(|| {
+            Some(NonzeroVector::from_finite(value).ok_or_else(|| {
                 CodecError::malformed("drawing direction must be finite and nonzero")
             })?)
         } else {
             None
         };
-        let position = position
-            .map(|value| {
-                cadmpeg_ir::units::FiniteVector::new(value)
-                    .ok_or_else(|| CodecError::malformed("drawing position must be finite"))
-            })
-            .transpose()?;
+        let position = position.map(FiniteVector::from);
         let relationships = record
             .relationships
             .iter()
@@ -308,7 +300,10 @@ fn registered_drawing_kind(runtime_type: &str) -> Option<DrawingKind> {
     }
 }
 
-fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<f64>, CodecError> {
+fn scalar_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<FiniteReal>, CodecError> {
     let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(None);
     };
@@ -329,7 +324,7 @@ fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<
 fn vector_property(
     properties: &[&PropertyRecord],
     name: &str,
-) -> Result<Option<[f64; 3]>, CodecError> {
+) -> Result<Option<FiniteVector<3>>, CodecError> {
     let Some(property) = sole_named_property("drawing", properties, name)? else {
         return Ok(None);
     };
@@ -634,37 +629,33 @@ fn root_value<'a>(
     }
 }
 
-fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<f64> {
+fn scalar_value(name: &str, type_name: &str, value: &ValueRecord) -> Option<FiniteReal> {
     let allowed_attributes: &[&str] =
         if name == "Scale" && type_name == "App::PropertyFloatConstraint" {
             &["value", "min", "max", "step"]
         } else {
             &["value"]
         };
-    if value
-        .attributes
-        .iter()
-        .any(|(name, value)| !allowed_attributes.contains(&name.as_str()) || !is_finite(value))
-    {
-        return None;
+    let mut scalar = None;
+    for (attribute, text) in &value.attributes {
+        if !allowed_attributes.contains(&attribute.as_str()) {
+            return None;
+        }
+        let admitted = FiniteReal::new(text.parse().ok()?)?;
+        if attribute == "value" {
+            scalar = Some(admitted);
+        }
     }
-    value.attributes.get("value")?.parse().ok()
+    scalar
 }
 
-fn is_finite(value: &str) -> bool {
-    value.parse::<f64>().is_ok_and(f64::is_finite)
-}
-
-fn vector_value(value: &ValueRecord) -> Option<[f64; 3]> {
+fn vector_value(value: &ValueRecord) -> Option<FiniteVector<3>> {
     let vector = [
         value.attributes.get("valueX")?.parse().ok()?,
         value.attributes.get("valueY")?.parse().ok()?,
         value.attributes.get("valueZ")?.parse().ok()?,
     ];
-    vector
-        .iter()
-        .all(|component: &f64| component.is_finite())
-        .then_some(vector)
+    FiniteVector::new(vector)
 }
 
 #[cfg(test)]

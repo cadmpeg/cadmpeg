@@ -61,8 +61,9 @@ const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
     let node = Point3::new(0.0, 0.0, 0.0);
-    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), 0.0).is_err());
-    let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), 0.0).unwrap();
+    let deflection = cadmpeg_ir::scalar::NonNegativeReal::new(0.0).expect("zero deflection");
+    assert!(IndexedPolygon::try_new(vec![node], Some(vec![]), deflection).is_err());
+    let polygon = IndexedPolygon::try_new(vec![node], Some(vec![2.0]), deflection).unwrap();
     assert_eq!(
         polygon.samples,
         cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized {
@@ -74,7 +75,7 @@ fn indexed_polygon_admits_only_aligned_parameters() {
             .expect("nonempty polyline fixture")
         }
     );
-    assert!(IndexedPolygon::try_new(vec![node], None, 0.0).is_ok());
+    assert!(IndexedPolygon::try_new(vec![node], None, deflection).is_ok());
 }
 
 #[test]
@@ -1500,7 +1501,7 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
         assert!(super::uniform_scale(shear).is_err());
         let similarity =
             Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
-        assert_eq!(super::uniform_scale(similarity).unwrap(), a);
+        assert_eq!(super::uniform_scale(similarity).unwrap().get(), a);
         assert_eq!(
             super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.)),
             Some(Vector3::new(1., 0., 0.))

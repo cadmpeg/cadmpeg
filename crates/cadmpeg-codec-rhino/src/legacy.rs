@@ -2866,7 +2866,7 @@ fn legacy_mesh(
         CodecError::NotImplemented("Rhino V1 mesh triangle count exceeds address space".to_string())
     })?;
     admit_v1_values::<[u32; 3]>(ctx, triangle_count, "Rhino V1 mesh triangles")?;
-    let triangles = crate::mesh::triangulate_faces(&faces, &vertices);
+    let triangles = crate::mesh::triangulate_faces(&faces, &vertices, |point| point);
     Tessellation::new(
         id,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,

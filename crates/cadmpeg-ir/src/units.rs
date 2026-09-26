@@ -4,9 +4,11 @@
 //! Stored lengths and coordinates use millimeters. Angular quantities use
 //! radians.
 
+use crate::features::FiniteVector3;
 use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength, PositiveReal};
+use crate::transform::Transform;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -121,13 +123,19 @@ pub struct NonzeroVector<const N: usize>([f64; N]);
 impl<const N: usize> NonzeroVector<N> {
     /// Construct finite coordinates with a nonzero accepted norm.
     pub fn new(value: [f64; N]) -> Option<Self> {
-        (value.iter().all(|component| component.is_finite())
-            && value
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>()
-                > f64::EPSILON)
-            .then_some(Self(value))
+        FiniteVector::new(value).and_then(Self::from_finite)
+    }
+
+    /// Admit finite coordinates whose squared norm exceeds machine epsilon.
+    #[must_use]
+    pub fn from_finite(value: FiniteVector<N>) -> Option<Self> {
+        (value
+            .as_raw()
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            > f64::EPSILON)
+            .then_some(Self(value.get()))
     }
 }
 
@@ -311,6 +319,36 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Normalize a finite nonzero vector with the arithmetic of
+    /// [`FiniteVector3::unit_nonzero`].
+    ///
+    /// The charted length is finite and nonzero. Division gives a unit
+    /// vector to rounding, so the result keeps the unit tolerance.
+    #[must_use]
+    pub fn normalized_finite_nonzero(value: FiniteVector3) -> Option<Self> {
+        value.unit_nonzero().map(Self)
+    }
+    /// Reverse an admitted unit direction. Negation preserves its length.
+    #[must_use]
+    pub fn negated(self) -> Self {
+        Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
+    }
+    /// Divide each component by the Euclidean length computed with
+    /// [`Vector3::norm`]. A positive finite length can still produce a
+    /// non-unit rounded quotient for subnormal components; admit the
+    /// quotient only when it satisfies the unit tolerance.
+    #[must_use]
+    pub fn normalized_by_hypot_division(value: Vector3) -> Option<Self> {
+        let length = value.norm();
+        if !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Self::new(Vector3::new(
+            value.x / length,
+            value.y / length,
+            value.z / length,
+        ))
+    }
     /// Divide each component by the finite nonzero `hypot` length and return
     /// that length. This keeps the arithmetic of callers that need both the
     /// unit direction and the original magnitude.
@@ -351,6 +389,20 @@ impl UnitVector3 {
         }
         let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
         (largest != 0.0).then(|| Self(divided_by_largest_component(value, largest)))
+    }
+    /// Apply the largest-component chart again to an admitted unit direction.
+    /// This preserves the chart's component-division order without another admission.
+    #[must_use]
+    pub fn recharted_by_largest_component(self) -> Self {
+        let value = self.0;
+        let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+        Self(divided_by_largest_component(value, largest))
+    }
+    /// Normalize a finite nonzero displacement with the binade chart used by
+    /// [`crate::features::FiniteVector3::unit_nonzero`].
+    #[must_use]
+    pub fn normalized_nonzero(value: crate::features::FiniteVector3) -> Option<Self> {
+        value.unit_nonzero().map(Self)
     }
     /// Normalize three exact sums, each rescaled into the frame of the largest
     /// exponent, and reverse them when `reversed` is set.
@@ -487,6 +539,58 @@ impl TryFrom<Vector3> for UnitVector3 {
 impl From<UnitVector3> for Vector3 {
     fn from(value: UnitVector3) -> Self {
         value.0
+    }
+}
+
+/// A finite direction whose Euclidean length exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct DirectionAboveEpsilon(FiniteVector3);
+
+impl DirectionAboveEpsilon {
+    /// Admit a finite direction with length above machine epsilon.
+    pub fn new(value: Vector3) -> Option<Self> {
+        let value = FiniteVector3::new(value)?;
+        (value.as_raw().norm() > f64::EPSILON).then_some(Self(value))
+    }
+
+    /// Borrow the finite vector used by length-bearing constructions.
+    pub const fn finite(&self) -> &FiniteVector3 {
+        &self.0
+    }
+
+    /// Return the direction components.
+    pub const fn get(self) -> Vector3 {
+        self.0.get()
+    }
+
+    /// Return the Euclidean length, which can overflow for finite components.
+    pub fn norm(self) -> f64 {
+        self.0.as_raw().norm()
+    }
+
+    /// Divide by the Euclidean length, using the largest component when that length overflows.
+    ///
+    /// The admitted length is nonzero. Both division routes produce finite
+    /// components with unit length to rounding.
+    #[must_use]
+    pub fn normalized(self) -> UnitVector3 {
+        let value = self.get();
+        let length = self.norm();
+        let unit = if length.is_infinite() {
+            let largest = value.x.abs().max(value.y.abs()).max(value.z.abs());
+            divided_by_largest_component(value, largest)
+        } else {
+            Vector3::new(value.x / length, value.y / length, value.z / length)
+        };
+        UnitVector3(unit)
+    }
+}
+
+impl From<UnitVector3> for DirectionAboveEpsilon {
+    /// Carry an admitted unit direction above machine epsilon.
+    fn from(value: UnitVector3) -> Self {
+        Self(FiniteVector3::from(value))
     }
 }
 
@@ -809,6 +913,24 @@ impl OrthonormalFrame3 {
     }
 }
 
+impl Transform {
+    /// Project a proper rigid transform's admitted +Z and +X columns as a frame.
+    ///
+    /// A proper rigid transform bounds each column's squared-length error and
+    /// pairwise dot product by `1e-9`. Its length error is below the unit
+    /// tolerance, and the selected columns meet the frame tolerance.
+    pub fn proper_rigid_frame(self) -> Option<OrthonormalFrame3> {
+        if !self.is_proper_rigid() {
+            return None;
+        }
+        let rows = self.rows();
+        Some(OrthonormalFrame3 {
+            axis: UnitVector3(Vector3::new(rows[0][2], rows[1][2], rows[2][2])),
+            reference: UnitVector3(Vector3::new(rows[0][0], rows[1][0], rows[2][0])),
+        })
+    }
+}
+
 /// A parameter-space point with finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -930,10 +1052,74 @@ impl FiniteVector<2> {
 
 #[cfg(test)]
 mod tests {
-    use super::{FiniteVector, NonzeroVector, Tolerances, UnitVector3};
+    use super::{DirectionAboveEpsilon, FiniteVector, NonzeroVector, Tolerances, UnitVector3};
     use crate::math::Vector3;
     use crate::scalar::PositiveReal;
     use crate::scalar::{FiniteReal, NonNegativeReal};
+
+    #[test]
+    fn direction_above_epsilon_refuses_zero_and_normalizes_overflow() {
+        assert!(DirectionAboveEpsilon::new(Vector3::new(0.0, 0.0, 0.0)).is_none());
+        assert!(DirectionAboveEpsilon::new(Vector3::new(f64::NAN, 0.0, 1.0)).is_none());
+        let large = Vector3::new(1.3e308, 1.3e308, 0.0);
+        let admitted = DirectionAboveEpsilon::new(large).expect("finite nonzero vector");
+        let largest = large.x.abs().max(large.y.abs()).max(large.z.abs());
+        let reduced = Vector3::new(large.x / largest, large.y / largest, 0.0);
+        let length = reduced.norm();
+        let expected = Vector3::new(reduced.x / length, reduced.y / length, 0.0);
+        let actual = *admitted.normalized().as_raw();
+        assert_eq!(actual.x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.z.to_bits(), expected.z.to_bits());
+        assert_eq!(
+            UnitVector3::Z_AXIS.reversed().as_raw().z.to_bits(),
+            (-1.0f64).to_bits()
+        );
+    }
+
+    #[test]
+    fn normalized_finite_nonzero_keeps_asm_reader_bits() {
+        let source = crate::features::FiniteVector3::new(Vector3::new(
+            f64::MIN_POSITIVE,
+            f64::MIN_POSITIVE / 2.0,
+            0.0,
+        ))
+        .expect("finite source direction");
+        let expected = source.unit_nonzero().expect("nonzero source direction");
+        let actual = *UnitVector3::normalized_finite_nonzero(source)
+            .expect("nonzero source direction")
+            .as_raw();
+        assert_eq!(actual.x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.z.to_bits(), expected.z.to_bits());
+        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+            .expect("finite zero vector");
+        assert!(UnitVector3::normalized_finite_nonzero(zero).is_none());
+    }
+
+    #[test]
+    fn proper_rigid_transform_projects_checked_frame_columns() {
+        use crate::transform::Transform;
+
+        let rotation = Transform::affine([
+            [0.0, -1.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+        ])
+        .unwrap();
+        let frame = rotation
+            .proper_rigid_frame()
+            .expect("proper rigid transform");
+        assert_eq!(*frame.axis().as_raw(), Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(*frame.reference().as_raw(), Vector3::new(0.0, 1.0, 0.0));
+        let shear = Transform::affine([
+            [1.0, 0.25, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .unwrap();
+        assert!(shear.proper_rigid_frame().is_none());
+    }
 
     #[test]
     fn finite_scalars_carry_into_finite_coordinates_unchanged() {
@@ -1032,6 +1218,31 @@ mod tests {
     }
 
     #[test]
+    fn hypot_division_keeps_the_reader_quotient_bits() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e300, -1.0e300, 1.0e300),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let actual = UnitVector3::normalized_by_hypot_division(value)
+                .expect("finite nonzero hypot direction");
+            assert_eq!(
+                [actual.as_raw().x, actual.as_raw().y, actual.as_raw().z].map(f64::to_bits),
+                [expected.x, expected.y, expected.z].map(f64::to_bits)
+            );
+            assert_eq!(UnitVector3::new(*actual.as_raw()), Some(actual));
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::MAX, f64::MAX, 0.0),
+            Vector3::new(f64::from_bits(1), f64::from_bits(2), 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_by_hypot_division(value), None);
+        }
+    }
+
+    #[test]
     fn normalized_with_length_keeps_component_division_bits() {
         let input = Vector3::new(3.0, -4.0, 12.0);
         let (direction, length) = UnitVector3::normalized_with_length(input).unwrap();
@@ -1109,6 +1320,11 @@ mod tests {
         assert!(serde_json::from_str::<NonzeroVector<3>>("[0,0,0]").is_err());
         let coordinates = [2.0, -3.0, 4.0];
         let value = NonzeroVector::new(coordinates).expect("nonzero");
+        assert_eq!(
+            NonzeroVector::from_finite(FiniteVector::new(coordinates).expect("finite")),
+            Some(value)
+        );
+        assert!(NonzeroVector::from_finite(FiniteVector::new([0.0; 3]).expect("finite")).is_none());
         assert_eq!(value.0, coordinates);
         let wire = serde_json::to_string(&value).expect("serialize");
         assert_eq!(wire, "[2.0,-3.0,4.0]");
@@ -1452,6 +1668,10 @@ mod tests {
                 .expect("finite nonzero direction");
             assert_eq!(*unit.as_raw(), divided(value));
             assert_eq!(UnitVector3::new(*unit.as_raw()), Some(unit));
+            assert_eq!(
+                *unit.recharted_by_largest_component().as_raw(),
+                divided(*unit.as_raw())
+            );
         }
         for value in [
             Vector3::new(0.0, 0.0, 0.0),
@@ -1481,6 +1701,45 @@ mod tests {
         ] {
             assert_eq!(UnitVector3::normalized_by_reciprocal(value), None);
         }
+    }
+
+    #[test]
+    fn norm_division_normalization_preserves_component_bits_and_refusals() {
+        for value in [
+            Vector3::new(3.0, 4.0, 0.0),
+            Vector3::new(1.0e-300, -2.0e-300, 0.0),
+        ] {
+            let length = value.norm();
+            let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
+            let (actual, _) = UnitVector3::normalized_with_length(value).expect("finite direction");
+            assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+            assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+            assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+        }
+        for value in [
+            Vector3::new(0.0, 0.0, 0.0),
+            Vector3::new(f64::INFINITY, 1.0, 0.0),
+            Vector3::new(f64::NAN, 1.0, 0.0),
+            // The norm of two smallest subnormals rounds to one of them, so the
+            // quotients are (1, 1, 0), which is not a unit vector.
+            Vector3::new(f64::from_bits(1), f64::from_bits(1), 0.0),
+        ] {
+            assert_eq!(UnitVector3::normalized_with_length(value), None);
+        }
+    }
+
+    #[test]
+    fn nonzero_finite_vector_normalization_preserves_binade_components() {
+        let value = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0e-310))
+            .expect("finite vector");
+        let expected = value.unit_nonzero().expect("nonzero vector");
+        let actual = UnitVector3::normalized_nonzero(value).expect("nonzero vector");
+        assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
+        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+            .expect("finite vector");
+        assert_eq!(UnitVector3::normalized_nonzero(zero), None);
     }
 
     #[test]
