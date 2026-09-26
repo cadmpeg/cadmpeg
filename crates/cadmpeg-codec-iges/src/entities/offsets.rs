@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    admit, declared_unit_vector, entity_loss, resolve_transform, source_object, unit_vector,
+    admit, declared_unit_vector, entity_loss, resolve_transform, source_object,
     WireProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
@@ -34,11 +34,13 @@ fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<
 }
 
 fn placed_offset_normal(
-    normal: Vector3,
+    normal: UnitVector3,
     transform: cadmpeg_ir::transform::Transform,
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     let orientation = transform_orientation(transform)?;
-    unit_vector(transform.apply_vector(normal)?.scale(orientation))
+    UnitVector3::normalized_by_reciprocal(
+        transform.apply_vector(*normal.as_raw())?.scale(orientation),
+    )
 }
 
 fn placed_offset_source(
@@ -288,11 +290,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };
-        let Some(mut normal) = ({
-            let v = Vector3::new(x, y, z);
-            let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
-        }) else {
+        let Some(mut normal) = UnitVector3::normalized_by_reciprocal(Vector3::new(x, y, z)) else {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is zero or non-finite",
@@ -426,6 +424,7 @@ pub(super) fn project(
             };
             offset_source_geometry = placed_solved.clone();
         }
+        let normal_direction = *normal.as_raw();
         let start = parameter_map.to_neutral(native_interval.lower());
         let end = parameter_map.to_neutral(native_interval.upper());
         let parameter_origin = parameter_map.to_neutral(0.0);
@@ -458,20 +457,22 @@ pub(super) fn project(
                     SolvedCurveGeometry::Line(line_curve)
                         if {
                             let direction = *line_curve.direction().as_raw();
-                            normal.dot(direction).abs() <= EPS_OFFSET_FRAME
+                            normal_direction.dot(direction).abs() <= EPS_OFFSET_FRAME
                         } =>
                     {
                         let origin = line_curve.origin().get();
                         let direction = *line_curve.direction().as_raw();
                         let Some(payload) = admit(
-                            FinitePoint3::new(origin.translated(normal.cross(direction), distance))
-                                .ok_or("LineCurve.origin must be finite")
-                                .map(|origin| {
-                                    cadmpeg_ir::geometry::analytic::LineCurve::new(
-                                        origin,
-                                        line_curve.direction(),
-                                    )
-                                }),
+                            FinitePoint3::new(
+                                origin.translated(normal_direction.cross(direction), distance),
+                            )
+                            .ok_or("LineCurve.origin must be finite")
+                            .map(|origin| {
+                                cadmpeg_ir::geometry::analytic::LineCurve::new(
+                                    origin,
+                                    line_curve.direction(),
+                                )
+                            }),
                             entry,
                             &mut losses,
                         ) else {
@@ -482,12 +483,13 @@ pub(super) fn project(
                     SolvedCurveGeometry::Circle(circle_curve)
                         if {
                             let axis = circle_curve.frame().axis().as_raw();
-                            normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
+                            normal_direction.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME
                         } =>
                     {
                         let axis = circle_curve.frame().axis().as_raw();
                         let radius = circle_curve.radius().get();
-                        let offset_radius = radius - distance * normal.dot(*axis).signum();
+                        let offset_radius =
+                            radius - distance * normal_direction.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
                                 entry,
@@ -593,7 +595,7 @@ pub(super) fn project(
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
-                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
+                if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -628,7 +630,7 @@ pub(super) fn project(
                             .map_or(ordinary, cadmpeg_ir::scalar::FiniteReal::get)
                     }
                 };
-                let offset_direction = normal.cross(direction);
+                let offset_direction = normal_direction.cross(direction);
                 let Ok(source_start) = cadmpeg_ir::eval::curve_point(
                     &CurveGeometry::Solved(offset_source_geometry.clone()),
                     start,
@@ -744,7 +746,7 @@ pub(super) fn project(
                     continue;
                 };
                 let direction = *line_curve.direction().as_raw();
-                if normal.dot(direction).abs() > EPS_OFFSET_FRAME {
+                if normal_direction.dot(direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -789,7 +791,7 @@ pub(super) fn project(
                     CurveOffsetLawBasis::ArcLength => start + independent,
                     CurveOffsetLawBasis::Parameter => independent,
                 };
-                let offset_direction = normal.cross(direction);
+                let offset_direction = normal_direction.cross(direction);
                 let mut controls = Vec::with_capacity(function_nurbs.control_points().len());
                 for (index, function_control) in
                     function_nurbs.control_points().iter().copied().enumerate()
@@ -917,10 +919,10 @@ pub(super) fn project(
                 None => cadmpeg_ir::geometry::CurveOffsetRange::uniform([start, end]),
             })
             .and_then(|range| {
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
                     offset_source_id.clone(),
                     distance,
-                    cadmpeg_ir::geometry::OffsetSide::PlaneNormal { normal },
+                    normal,
                     Some(range),
                 )
             })
