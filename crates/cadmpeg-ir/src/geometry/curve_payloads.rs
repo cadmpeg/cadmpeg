@@ -362,6 +362,29 @@ struct OffsetCurveConstructionWire {
 }
 
 impl OffsetCurveConstruction {
+    /// Build a uniform directional offset from admitted finite source parts.
+    /// Only the destination's nonzero direction condition remains to check.
+    pub fn from_admitted_direction(
+        source: CurveId,
+        distance: FiniteReal,
+        direction: FiniteVector3,
+    ) -> Result<Self, ProceduralGeometryError> {
+        if direction.get().norm() <= 0.0 {
+            return Err(ProceduralGeometryError::Payload(
+                crate::geometry::INVALID_CURVE_OFFSET,
+            ));
+        }
+        Ok(Self {
+            source,
+            distance,
+            side: OffsetSide::Direction {
+                direction,
+                support: None,
+            },
+            range: None,
+        })
+    }
+
     /// Build a uniform offset along an explicit direction from admitted
     /// parts. The distance type states finiteness, a unit direction is finite
     /// and nonzero, which is the whole side condition of [`Self::try_new`],
@@ -514,6 +537,22 @@ struct SpatialOffsetCurveConstructionWire {
 }
 
 impl SpatialOffsetCurveConstruction {
+    /// Admit an offset distance with an admitted reference direction.
+    pub fn try_from_parts(
+        source: CurveId,
+        distance: f64,
+        reference_direction: UnitVector3,
+        self_intersect: Option<bool>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self {
+            source,
+            distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
+                "SpatialOffset.distance is not finite",
+            ))?,
+            reference_direction,
+            self_intersect,
+        })
+    }
     /// Admit the construction parameters.
     pub fn try_new(
         source: CurveId,
@@ -525,14 +564,7 @@ impl SpatialOffsetCurveConstruction {
             ProceduralGeometryError::Payload("invalid spatial curve offset"),
         )?;
 
-        Ok(Self {
-            source,
-            distance: FiniteReal::new(distance).ok_or(ProceduralGeometryError::Payload(
-                "SpatialOffset.distance is not finite",
-            ))?,
-            reference_direction,
-            self_intersect,
-        })
+        Self::try_from_parts(source, distance, reference_direction, self_intersect)
     }
     /// Return the source.
     pub fn source(&self) -> &CurveId {
@@ -771,6 +803,22 @@ struct SubsetCurveConstructionWire {
 }
 
 impl SubsetCurveConstruction {
+    /// Build from finite source endpoints, checking only their order.
+    pub fn from_finite_parts(
+        source: CurveId,
+        parameter_range: [crate::scalar::FiniteReal; 2],
+        sense: bool,
+        cache: Option<LegacyCache>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Ok(Self {
+            cache,
+            source,
+            parameter_range: ParameterInterval::from_finite_endpoints(parameter_range.into())
+                .map_err(ProceduralGeometryError::Payload)?,
+            sense,
+        })
+    }
+
     /// Admit the construction parameters.
     pub fn try_new(
         source: CurveId,

@@ -14,6 +14,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
 
 use crate::ids;
@@ -1277,7 +1278,7 @@ fn find_color(
             Some(ColorResolution::Candidate(candidate)) => {
                 candidate.color = candidate
                     .color
-                    .with_alpha((1.0 - transparency) as f32)
+                    .with_alpha((1.0 - transparency.get()) as f32)
                     .unwrap_or(candidate.color);
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
@@ -1294,7 +1295,7 @@ fn surface_transparency(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-) -> Option<f64> {
+) -> Option<Fraction> {
     let candidates = record
         .partials
         .iter()
@@ -1308,11 +1309,8 @@ fn surface_transparency(
                 .find(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
                 .and_then(|partial| partial.parameters.first())
                 .and_then(ValueExt::number)?;
-            transparency
-                .is_finite()
-                .then_some((property_id, transparency))
+            Fraction::new(transparency).map(|transparency| (property_id, transparency))
         })
-        .filter(|(_, transparency)| (0.0..=1.0).contains(transparency))
         .collect::<Vec<_>>();
     match candidates.as_slice() {
         [] => None,
@@ -1320,7 +1318,7 @@ fn surface_transparency(
         _ => {
             let details = candidates
                 .iter()
-                .map(|(property_id, transparency)| format!("#{property_id}={transparency}"))
+                .map(|(property_id, transparency)| format!("#{property_id}={}", transparency.get()))
                 .collect::<Vec<_>>()
                 .join(", ");
             losses.push(StepLossCode::SurfaceTransparencyConflict.note(format!(

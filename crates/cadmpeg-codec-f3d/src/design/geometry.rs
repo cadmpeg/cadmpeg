@@ -1184,11 +1184,9 @@ fn sketch_geometry_speed_bound(
         }
         SketchGeometryDefinition::Circle { radius, .. }
         | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
-        SketchGeometryDefinition::Ellipse {
-            major_radius,
-            minor_radius,
-            ..
-        } => Some(major_radius.get().max(minor_radius.get())),
+        SketchGeometryDefinition::Ellipse { radii, .. } => {
+            Some(radii.major().get().max(radii.minor().get()))
+        }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => nurbs_speed_bound(curve),
         _ if range[0] == range[1] => None,
         _ => None,
@@ -1214,17 +1212,16 @@ fn sketch_geometry_point(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             ..
         } => {
             let (axis_sine, axis_cosine) = major_angle.get().sin_cos();
             Some(Point2::new(
-                center.u + major_radius.get() * parameter.cos() * axis_cosine
-                    - minor_radius.get() * parameter.sin() * axis_sine,
+                center.u + radii.major().get() * parameter.cos() * axis_cosine
+                    - radii.minor().get() * parameter.sin() * axis_sine,
                 center.v
-                    + major_radius.get() * parameter.cos() * axis_sine
-                    + minor_radius.get() * parameter.sin() * axis_cosine,
+                    + radii.major().get() * parameter.cos() * axis_sine
+                    + radii.minor().get() * parameter.sin() * axis_cosine,
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
@@ -2556,8 +2553,7 @@ pub(super) fn point_on_sketch_entity(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
             let du = point.u - center.u;
@@ -2566,13 +2562,13 @@ pub(super) fn point_on_sketch_entity(
             let sine = major_angle.get().sin();
             let local_u = du * cosine + dv * sine;
             let local_v = -du * sine + dv * cosine;
-            let parameter = (local_v / minor_radius.get()).atan2(local_u / major_radius.get());
+            let parameter = (local_v / radii.minor().get()).atan2(local_u / radii.major().get());
             let boundary = Point2::new(
-                center.u + major_radius.get() * parameter.cos() * cosine
-                    - minor_radius.get() * parameter.sin() * sine,
+                center.u + radii.major().get() * parameter.cos() * cosine
+                    - radii.minor().get() * parameter.sin() * sine,
                 center.v
-                    + major_radius.get() * parameter.cos() * sine
-                    + minor_radius.get() * parameter.sin() * cosine,
+                    + radii.major().get() * parameter.cos() * sine
+                    + radii.minor().get() * parameter.sin() * cosine,
             );
             if point_distance(point, boundary) > tolerance {
                 return false;
@@ -2583,7 +2579,7 @@ pub(super) fn point_on_sketch_entity(
                     parameter,
                     start.get(),
                     end.get(),
-                    tolerance / major_radius.get().min(minor_radius.get()),
+                    tolerance / radii.major().get().min(radii.minor().get()),
                 ),
             }
         }
@@ -3130,13 +3126,12 @@ pub(super) fn sketch_entity_endpoints(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds: Some([start_angle, end_angle]),
         } => {
             let point_at = |parameter: f64| {
-                let x = major_radius.get() * parameter.cos();
-                let y = minor_radius.get() * parameter.sin();
+                let x = radii.major().get() * parameter.cos();
+                let y = radii.minor().get() * parameter.sin();
                 Point2::new(
                     center.u + x * major_angle.get().cos() - y * major_angle.get().sin(),
                     center.v + x * major_angle.get().sin() + y * major_angle.get().cos(),

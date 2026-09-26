@@ -4195,14 +4195,14 @@ pub(super) fn emit_edges(
             // x 100 + header revision) is at least 2250003. All forms are
             // retained verbatim.
             let tolerant_tail = match (r.head(), r.chunk(11), r.chunk(12)) {
-                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision)))
-                    if tolerance.is_finite() && *tolerance >= 0.0 =>
-                {
-                    let trailing = match r.chunk(13) {
-                        Some(Token::Long(second)) => Some(*second),
-                        _ => None,
-                    };
-                    Some((*tolerance, *revision, trailing))
+                ("tedge", Some(Token::Double(tolerance)), Some(Token::Long(revision))) => {
+                    cadmpeg_ir::scalar::NonNegativeReal::new(*tolerance).map(|tolerance| {
+                        let trailing = match r.chunk(13) {
+                            Some(Token::Long(second)) => Some(*second),
+                            _ => None,
+                        };
+                        (tolerance, *revision, trailing)
+                    })
                 }
                 _ => None,
             };
@@ -4214,13 +4214,12 @@ pub(super) fn emit_edges(
                 end: VertexId::from(id(format, end)),
                 tolerance: tolerant_tail
                     .map(|(tolerance, _, _)| {
-                        cadmpeg_ir::scalar::PositiveReal::new(tolerance * LEN_TO_MM).ok_or_else(
-                            || {
+                        cadmpeg_ir::scalar::PositiveReal::new(tolerance.get() * LEN_TO_MM)
+                            .ok_or_else(|| {
                                 cadmpeg_core::CodecError::malformed(
                                     "edge tolerance must be positive and finite",
                                 )
-                            },
-                        )
+                            })
                     })
                     .transpose()?,
             });

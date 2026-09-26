@@ -893,8 +893,8 @@ pub(in super::super) fn transfer_sketches(
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
-        ir.model.sketch_entities.extend(entities);
-        ir.model.sketch_constraints.extend(constraints);
+        source_carriers.admit_sketch_entities(ir, entities)?;
+        source_carriers.admit_sketch_constraints(ir, constraints)?;
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
@@ -909,15 +909,18 @@ pub(in super::super) fn transfer_sketches(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model sketches")?;
-        ir.model.sketches.push(Sketch {
-            id: sketch_id.clone(),
-            name: None,
-            configuration: None,
-            visible: None,
-            placement,
-            profiles,
-            native_ref: Some(sketch_native_ref(&sketch_id)),
-        });
+        source_carriers.admit_sketch(
+            ir,
+            Sketch {
+                id: sketch_id.clone(),
+                name: None,
+                configuration: None,
+                visible: None,
+                placement,
+                profiles,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+            },
+        )?;
         if owned_section_feature_id(scan, definition.identity.id()).is_none() {
             let Some(feature_id) = sketch_feature_id(&sketch_id) else {
                 continue;
@@ -931,7 +934,7 @@ pub(in super::super) fn transfer_sketches(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model features")?;
-            ir.model.features.push(Feature {
+            let feature = Feature {
                 id: feature_id,
                 ordinal: ir.model.features.len() as u64,
                 name: None,
@@ -950,7 +953,8 @@ pub(in super::super) fn transfer_sketches(
                     }),
                 ),
                 native_ref: Some(sketch_native_ref(&sketch_id)),
-            });
+            };
+            source_carriers.admit_feature(ir, feature)?;
         }
     }
     Ok(coverage)

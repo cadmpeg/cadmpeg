@@ -24,6 +24,7 @@ use crate::kernel_header::KernelHeader;
 use crate::sab::{Record, Token};
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
 /// The stream branch, from the terminator line ([`asm.md` §7]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,14 +52,30 @@ pub struct TextHeader {
     /// Save date string.
     pub save_date: String,
     /// Length unit of the stream, in millimetres per unit.
-    pub scale: f64,
+    scale: PositiveReal,
     /// Absolute distance tolerance in stream length units.
-    pub resabs: f64,
+    resabs: NonNegativeReal,
     /// Normal tolerance.
-    pub resnor: f64,
+    resnor: NonNegativeReal,
+    normalized_resabs_cm: NonNegativeReal,
 }
 
 impl TextHeader {
+    /// Length unit of the stream, in millimetres per unit.
+    pub const fn scale(&self) -> PositiveReal {
+        self.scale
+    }
+
+    /// Absolute distance tolerance in stream length units.
+    pub const fn resabs(&self) -> NonNegativeReal {
+        self.resabs
+    }
+
+    /// Normal tolerance.
+    pub const fn resnor(&self) -> NonNegativeReal {
+        self.resnor
+    }
+
     /// The header as a [`KernelHeader`] for the shared decode path.
     ///
     /// `scale` is reported as `10.0`: [`parse`] converts length-bearing values
@@ -73,18 +90,18 @@ impl TextHeader {
             product_version: Some(self.product_version.clone()),
             save_date: Some(self.save_date.clone()),
             scale: Some(10.0),
-            linear: Some(resabs_cm(self.scale, self.resabs)),
-            angular: Some(self.resnor),
+            linear: Some(self.normalized_resabs_cm.get()),
+            angular: Some(self.resnor.get()),
         }
     }
 }
 
 /// Convert a text length tolerance to the binary stream's centimetre unit.
 /// The second product keeps a positive result when `scale / 10` rounds to zero.
-fn resabs_cm(scale: f64, resabs: f64) -> f64 {
-    let converted = resabs * (scale / 10.0);
-    if converted == 0.0 && resabs > 0.0 {
-        (resabs / 10.0) * scale
+fn resabs_cm(scale: PositiveReal, resabs: NonNegativeReal) -> f64 {
+    let converted = resabs.get() * (scale.get() / 10.0);
+    if converted == 0.0 && resabs.get() > 0.0 {
+        (resabs.get() / 10.0) * scale.get()
     } else {
         converted
     }
@@ -371,27 +388,26 @@ fn parse_header(
                 reason: format!("header line has no {what} field"),
             })
     };
-    let scale = float(line3[0], "scale")?;
-    if !scale.is_finite() || scale <= 0.0 {
-        return Err(StreamError {
-            format: StreamFormat::Text,
-            offset: at,
-            reason: "header scale must be finite and positive".to_string(),
-        }
-        .into());
-    }
-    let resabs = float(line3[1], "resabs")?;
-    let resnor = float(line3[2], "resnor")?;
-    if !resabs.is_finite() || resabs < 0.0 || !resnor.is_finite() || resnor < 0.0 {
+    let scale = PositiveReal::new(float(line3[0], "scale")?).ok_or_else(|| StreamError {
+        format: StreamFormat::Text,
+        offset: at,
+        reason: "header scale must be finite and positive".to_string(),
+    })?;
+    let raw_resabs = float(line3[1], "resabs")?;
+    let raw_resnor = float(line3[2], "resnor")?;
+    let (Some(resabs), Some(resnor)) = (
+        NonNegativeReal::new(raw_resabs),
+        NonNegativeReal::new(raw_resnor),
+    ) else {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
             reason: "header tolerances must be finite and nonnegative".to_string(),
         }
         .into());
-    }
+    };
     let normalized_resabs = resabs_cm(scale, resabs);
-    if resabs > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
+    if resabs.get() > 0.0 && (!normalized_resabs.is_finite() || normalized_resabs == 0.0) {
         return Err(StreamError {
             format: StreamFormat::Text,
             offset: at,
@@ -399,6 +415,12 @@ fn parse_header(
         }
         .into());
     }
+    let normalized_resabs_cm =
+        NonNegativeReal::new(normalized_resabs).ok_or_else(|| StreamError {
+            format: StreamFormat::Text,
+            offset: at,
+            reason: "header resabs cannot be represented in centimetres".to_string(),
+        })?;
     Ok(TextHeader {
         save_format_version,
         entity_count,
@@ -409,6 +431,7 @@ fn parse_header(
         scale,
         resabs,
         resnor,
+        normalized_resabs_cm,
     })
 }
 
@@ -422,7 +445,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
     let header = parse_header(ctx, bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let scale = header.scale;
+    let scale = header.scale().get();
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
@@ -1686,6 +1709,7 @@ mod tests {
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::scalar::{NonNegativeReal, PositiveReal};
 
     #[test]
     fn sat_framing_refuses_each_resource_before_record_materialization() {
@@ -1771,9 +1795,9 @@ mod tests {
         assert_eq!(asm.header.product_family, "Autodesk Neutron");
         assert_eq!(asm.header.product_version, "ASM 232.4.0.65535 OSX");
         assert_eq!(asm.header.save_date, "Fri Jul 17 14:46:47 2026");
-        assert!(approx(asm.header.scale, 1.0));
-        assert!(approx(asm.header.resabs, 1.0e-6));
-        assert!(approx(asm.header.resnor, 1.0e-10));
+        assert!(approx(asm.header.scale().get(), 1.0));
+        assert!(approx(asm.header.resabs().get(), 1.0e-6));
+        assert!(approx(asm.header.resnor().get(), 1.0e-10));
         assert_eq!(asm.records.len(), 1);
         assert_eq!(asm.records[0].name, "asmheader");
         assert_eq!(
@@ -1791,7 +1815,7 @@ mod tests {
         let acis = parse(text.as_bytes()).expect("acis stream");
         assert_eq!(acis.terminator, Terminator::Acis);
         assert_eq!(acis.header.save_format_version, 700);
-        assert!(approx(acis.header.scale, 25.4));
+        assert!(approx(acis.header.scale().get(), 25.4));
         // No asmheader record: the first record is `body` at index 0.
         assert_eq!(acis.records[0].head(), "body");
         assert_eq!(acis.records[0].index, 0);
@@ -1825,7 +1849,7 @@ mod tests {
         assert_eq!(header.flags, Some(2));
         // The token values were converted; the reported unit is centimetres.
         assert_eq!(header.scale, Some(10.0));
-        let expected_resabs_cm = stream.header.resabs / 10.0;
+        let expected_resabs_cm = stream.header.resabs().get() / 10.0;
         assert_eq!(header.linear, Some(expected_resabs_cm));
     }
 
@@ -1836,8 +1860,24 @@ mod tests {
         let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
         let stream = parse(source.as_bytes()).expect("inch-scale stream");
         let actual = stream.header.as_kernel_header().linear.expect("resabs");
-        let expected_resabs_cm = stream.header.resabs * 2.54;
+        let expected_resabs_cm = stream.header.resabs().get() * 2.54;
         assert!((actual / expected_resabs_cm - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn text_header_retains_admitted_tolerances_and_conversion_bits() {
+        let source = String::from_utf8(asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n"))
+            .expect("ASCII stream");
+        let source = source.replacen("1 1e-06 1.0e-10", "25.4 1e-06 1.0e-10", 1);
+        let stream = parse(source.as_bytes()).expect("positive scale and nonnegative tolerances");
+        let scale: PositiveReal = stream.header.scale();
+        let resabs: NonNegativeReal = stream.header.resabs();
+        let resnor: NonNegativeReal = stream.header.resnor();
+        assert_eq!(scale.get(), 25.4);
+        assert_eq!(resabs.get(), 1.0e-6);
+        assert_eq!(resnor.get(), 1.0e-10);
+        let expected = resabs.get() * (scale.get() / 10.0);
+        assert_eq!(stream.header.as_kernel_header().linear, Some(expected));
     }
 
     #[test]
@@ -2182,7 +2222,7 @@ mod tests {
             .expect("ASCII stream")
             .replacen("1 1e-06 1.0e-10", "5e-324 0 0", 1);
         let stream = parse(source.as_bytes()).expect("representable subnormal coordinate");
-        assert_eq!(stream.header.scale, f64::from_bits(1));
+        assert_eq!(stream.header.scale().get(), f64::from_bits(1));
         assert_eq!(
             stream.records[0].tokens[3],
             Token::Position([f64::from_bits(1), 0.0, 0.0])

@@ -1786,21 +1786,24 @@ pub(in super::super) fn transfer_native_brep(
             shell_ids.push(shell_id);
         }
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind: if !wire_curves.is_empty() {
-                BodyKind::General
-            } else if closed {
-                BodyKind::Solid
-            } else {
-                BodyKind::Sheet
+        source_carriers.admit_body(
+            ir,
+            Body {
+                id: body_id.clone(),
+                kind: if !wire_curves.is_empty() {
+                    BodyKind::General
+                } else if closed {
+                    BodyKind::Solid
+                } else {
+                    BodyKind::Sheet
+                },
+                regions: vec![region_id.clone()],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
             },
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        )?;
         ctx.charge_entities(1, "admit Creo model regions")?;
         ir.model.regions.push(Region {
             id: region_id.clone(),

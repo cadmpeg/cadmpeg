@@ -20,7 +20,12 @@ fn numerical_0922_interior_trim_is_preserved() {
             .unwrap(),
         };
         let range = [0.1 * domain, 0.9 * domain];
-        let result = normalize_pcurve_parameter_range(&g, Some(range)).unwrap();
+        let result = normalize_pcurve_parameter_range(
+            &g,
+            Some(range.map(|value| FiniteReal::new(value).expect("finite test endpoint"))),
+        )
+        .unwrap()
+        .map(FiniteReal::get);
         println!("FreeCAD domain {domain:e}, input {range:?} => {result:?}");
         assert_eq!(result, range);
     }

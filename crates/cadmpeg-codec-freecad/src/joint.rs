@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointId, JointLimits, JointOperand, Occurrence, PairedJointKind,
 };
+use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -151,24 +152,41 @@ pub(crate) fn transfer_neutral(
             let scalar = |name: &str| parameters.scalar_value(name);
             let enabled_limits =
                 |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
+                    let scaled_bound = |value: FiniteReal| {
+                        if scale == 1.0 {
+                            Ok(value)
+                        } else {
+                            FiniteReal::new(value.get() * scale).ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "joint limits minimum/maximum must be finite and ordered"
+                                        .into(),
+                                )
+                            })
+                        }
+                    };
                     let minimum = bool_value(enable_min)
                         .is_some_and(|enabled| enabled)
                         .then(|| scalar(minimum))
                         .flatten()
-                        .map(|value: f64| value * scale);
+                        .map(scaled_bound)
+                        .transpose()?;
                     let maximum = bool_value(enable_max)
                         .is_some_and(|enabled| enabled)
                         .then(|| scalar(maximum))
                         .flatten()
-                        .map(|value: f64| value * scale);
+                        .map(scaled_bound)
+                        .transpose()?;
                     if minimum.is_none() && maximum.is_none() {
                         Ok(None)
                     } else {
-                        JointLimits::new(minimum, maximum).map(Some).ok_or_else(|| {
-                            CodecError::Malformed(
-                                "joint limits minimum/maximum must be finite and ordered".into(),
-                            )
-                        })
+                        JointLimits::from_parts(minimum, maximum)
+                            .map(Some)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "joint limits minimum/maximum must be finite and ordered"
+                                        .into(),
+                                )
+                            })
                     }
                 };
             let operand = |reference: &LinkTarget| {
@@ -206,7 +224,7 @@ pub(crate) fn transfer_neutral(
                 &cadmpeg_ir::identity_namespace!("fcstd", "model", "joint"),
                 key,
             );
-            let angle = scalar("Angle").map(f64::to_radians);
+            let angle = scalar("Angle").map(|value| value.get().to_radians());
             let distance = scalar("Distance");
             let distance2 = scalar("Distance2");
             let angular_limits = enabled_limits(
@@ -285,18 +303,16 @@ pub(crate) fn transfer_neutral(
 fn joint_kind(
     kind: &PairedJointFamily,
     angle: Option<f64>,
-    distance: Option<f64>,
-    distance2: Option<f64>,
+    distance: Option<FiniteReal>,
+    distance2: Option<FiniteReal>,
     angular_limits: Option<JointLimits>,
     linear_limits: Option<JointLimits>,
 ) -> Result<PairedJointKind, CodecError> {
-    let finite = |value: f64| {
-        cadmpeg_ir::scalar::FiniteReal::new(value)
+    let finite_angle = |value: f64| {
+        FiniteReal::new(value)
             .ok_or_else(|| CodecError::Malformed("joint scalar must be finite".into()))
     };
-    let angle = angle.map(finite).transpose()?;
-    let distance = distance.map(finite).transpose()?;
-    let distance2 = distance2.map(finite).transpose()?;
+    let angle = angle.map(finite_angle).transpose()?;
     Ok(match kind.as_str().to_ascii_lowercase().as_str() {
         "fixed" => PairedJointKind::Fixed {
             angle,

@@ -463,8 +463,10 @@ fn midpoint_and_fixed_angle_constraints_refuse_an_entity_of_another_kind() {
     let ellipse = |bounds| SketchGeometryDefinition::Ellipse {
         center: Point2::new(0.0, 0.0),
         major_angle: Angle::ZERO,
-        major_radius: Length::new(2.0).unwrap(),
-        minor_radius: Length::new(1.0).unwrap(),
+        radii: crate::sketches::EllipseRadii {
+            major_radius: Length::new(2.0).unwrap(),
+            minor_radius: Length::new(1.0).unwrap(),
+        },
         bounds,
     };
     for (name, definition) in [

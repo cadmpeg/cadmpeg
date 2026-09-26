@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::analytic::CylinderSurface;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
@@ -122,7 +123,11 @@ pub(in crate::decode) fn counterbore_dimension_tuple_matches_radius(
 ) -> bool {
     [0.5 * bore_diameter, 0.5 * counterbore_diameter]
         .into_iter()
-        .any(|expected| approximately_equal(radius, expected))
+        .any(|expected| {
+            (FiniteReal::new(radius))
+                .zip(FiniteReal::new(expected))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+        })
 }
 
 pub(in crate::decode) fn counterbore_dimension_values<'a>(
@@ -165,7 +170,9 @@ pub(in crate::decode) fn counterbore_dimension_values<'a>(
         {
             continue;
         }
-        candidates.push((2.0 * bore_radius, 2.0 * counterbore_radius, depth.abs()));
+        let bore_diameter = PositiveLength::new(2.0 * bore_radius)?;
+        let counterbore_diameter = PositiveLength::new(2.0 * counterbore_radius)?;
+        candidates.push((bore_diameter.get(), counterbore_diameter.get(), depth.abs()));
     }
     let first = *candidates.first()?;
     candidates
@@ -192,10 +199,11 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
     let cylinder_diameter_matches = |diameter: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
         (0..3)
             .filter(|axis| {
-                spans[*axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span.get(), diameter))
+                spans[*axis].into_iter().flatten().any(|span| {
+                    (FiniteReal::new(span.get()))
+                        .zip(FiniteReal::new(diameter))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
             })
             .count()
             == 2
@@ -204,10 +212,11 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
         |diameter: f64, depth: f64, spans: [[Option<PositiveLength>; 2]; 3]| {
             let diameter_axes = (0..3)
                 .filter(|axis| {
-                    spans[*axis]
-                        .into_iter()
-                        .flatten()
-                        .any(|span| approximately_equal(span.get(), diameter))
+                    spans[*axis].into_iter().flatten().any(|span| {
+                        (FiniteReal::new(span.get()))
+                            .zip(FiniteReal::new(diameter))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    })
                 })
                 .collect::<Vec<_>>();
             let [first_axis, second_axis] = diameter_axes.as_slice() else {
@@ -216,10 +225,11 @@ pub(in crate::decode) fn counterbore_envelope_dimension_values<'a>(
             (0..3)
                 .find(|axis| axis != first_axis && axis != second_axis)
                 .is_some_and(|axis| {
-                    spans[axis]
-                        .into_iter()
-                        .flatten()
-                        .any(|span| approximately_equal(span.get(), depth))
+                    spans[axis].into_iter().flatten().any(|span| {
+                        (FiniteReal::new(span.get()))
+                            .zip(FiniteReal::new(depth))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    })
                 })
         };
     let candidates = tables
@@ -299,8 +309,8 @@ fn counterbore_envelope_dimension_tuple(
     (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
         .then_some(())?;
     Some((
-        2.0 * bore_radius,
-        2.0 * counterbore_radius,
+        PositiveLength::new(2.0 * bore_radius)?.get(),
+        PositiveLength::new(2.0 * counterbore_radius)?.get(),
         signed_counterbore_depth.abs(),
     ))
 }
@@ -313,7 +323,11 @@ fn unique_counterbore_dimension_tuple(candidates: &[(f64, f64, f64)]) -> Option<
             [candidate.0, candidate.1, candidate.2]
                 .into_iter()
                 .zip([first.0, first.1, first.2])
-                .all(|(candidate, first)| approximately_equal(candidate, first))
+                .all(|(candidate, first)| {
+                    (FiniteReal::new(candidate))
+                        .zip(FiniteReal::new(first))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
         })
         .then_some(first)
 }
