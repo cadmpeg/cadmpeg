@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::holes::HoleForm;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
@@ -760,8 +761,12 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
     let first = intervals(first);
     let second = intervals(second);
     let spans = std::array::from_fn::<_, 3, _>(|axis| {
-        let common_lower = approximately_equal(first[axis][0], second[axis][0]);
-        let common_upper = approximately_equal(first[axis][1], second[axis][1]);
+        let common_lower = (FiniteReal::new(first[axis][0]))
+            .zip(FiniteReal::new(second[axis][0]))
+            .is_some_and(|(first, second)| approximately_equal(first, second));
+        let common_upper = (FiniteReal::new(first[axis][1]))
+            .zip(FiniteReal::new(second[axis][1]))
+            .is_some_and(|(first, second)| approximately_equal(first, second));
         let shared = common_lower && common_upper;
         let shared_span = shared.then(|| {
             f64::midpoint(
@@ -770,8 +775,12 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
             )
         });
         let shared_span = shared_span.and_then(PositiveLength::new);
-        let adjacent = approximately_equal(first[axis][1], second[axis][0])
-            || approximately_equal(second[axis][1], first[axis][0]);
+        let adjacent = (FiniteReal::new(first[axis][1]))
+            .zip(FiniteReal::new(second[axis][0]))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
+            || (FiniteReal::new(second[axis][1]))
+                .zip(FiniteReal::new(first[axis][0]))
+                .is_some_and(|(first, second)| approximately_equal(first, second));
         let adjacent_span = adjacent
             .then(|| first[axis][1].max(second[axis][1]) - first[axis][0].min(second[axis][0]));
         let one_sided_span = (common_lower != common_upper).then(|| {
@@ -873,7 +882,11 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
             [candidate.0, candidate.1, candidate.2]
                 .into_iter()
                 .zip([first.0, first.1, first.2])
-                .all(|(candidate, first)| approximately_equal(candidate, first))
+                .all(|(candidate, first)| {
+                    (FiniteReal::new(candidate))
+                        .zip(FiniteReal::new(first))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
         })
         .then_some(first)
 }
@@ -886,14 +899,16 @@ pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
     for diameter_axis in 0..3 {
         for depth_axis in 0..3 {
             if diameter_axis != depth_axis
-                && spans[diameter_axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span.get(), bore_diameter))
-                && spans[depth_axis]
-                    .into_iter()
-                    .flatten()
-                    .any(|span| approximately_equal(span.get(), blind_depth))
+                && spans[diameter_axis].into_iter().flatten().any(|span| {
+                    (FiniteReal::new(span.get()))
+                        .zip(FiniteReal::new(bore_diameter))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
+                && spans[depth_axis].into_iter().flatten().any(|span| {
+                    (FiniteReal::new(span.get()))
+                        .zip(FiniteReal::new(blind_depth))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                })
             {
                 return true;
             }
