@@ -28,7 +28,7 @@ use cadmpeg_ir::scalar::{
 };
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -455,8 +455,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 {
                     directions.insert(id, direction);
                     typed.insert(id);
-                } else if let Some(direction) =
-                    vector2(named_parameter(record, "DIRECTION", 1)).and_then(normalize2)
+                } else if let Some(direction) = direction2(named_parameter(record, "DIRECTION", 1))
                 {
                     directions2.insert(id, direction);
                     typed.insert(id);
@@ -569,7 +568,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .and_then(|direction| directions2.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
                 .map(|(direction, magnitude)| {
-                    Point2::new(direction.u * magnitude, direction.v * magnitude)
+                    let [u, v] = direction.get();
+                    Point2::new(u * magnitude, v * magnitude)
                 });
             if let Some(value) = value {
                 vectors.insert(id, value);
@@ -662,10 +662,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .and_then(|origin| {
                 let x_axis = match named_parameter(record, "AXIS2_PLACEMENT_2D", 2) {
                     Some(Value::Reference(direction)) => directions2.get(direction).copied()?,
-                    Some(Value::Omitted) | None => Point2::new(1.0, 0.0),
+                    Some(Value::Omitted) | None => HypotDirection2::X_AXIS,
                     _ => return None,
                 };
-                Some((origin, x_axis, Point2::new(-x_axis.v, x_axis.u)))
+                Some((origin, x_axis, x_axis.quarter_turn()))
             });
         if let Some(placement) = placement {
             placements2.insert(id, placement);
@@ -4143,17 +4143,13 @@ fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Po
     Some(Point2::new(values[0].number()?, values[1].number()?))
 }
 
-fn vector2(value: Option<&Value>) -> Option<Point2> {
+fn direction2(value: Option<&Value>) -> Option<HypotDirection2> {
     let values = value?.list()?;
     if values.len() != 2 {
         return None;
     }
-    Some(Point2::new(values[0].number()?, values[1].number()?))
-}
-
-fn normalize2(vector: Point2) -> Option<Point2> {
-    let length = vector.u.hypot(vector.v);
-    (length.is_finite() && length > 0.0).then(|| Point2::new(vector.u / length, vector.v / length))
+    HypotDirection2::normalized_with_length([values[0].number()?, values[1].number()?])
+        .map(|(direction, _)| direction)
 }
 
 fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
@@ -4361,7 +4357,7 @@ fn decode_pcurve_geometry(
     exchange: &Exchange,
     points: &BTreeMap<u64, Point2>,
     vectors: &BTreeMap<u64, Point2>,
-    placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
+    placements: &BTreeMap<u64, (Point2, HypotDirection2, HypotDirection2)>,
     transformations: &BTreeMap<u64, Transform2>,
     angle_scale: f64,
     losses: &mut Vec<LossNote>,
@@ -4421,7 +4417,7 @@ fn decode_pcurve_geometry(
                     let radius = named_parameter(record, "CIRCLE", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Circle(
-                        cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::CirclePcurve::try_from_parts(
                             center, x_axis, y_axis, radius,
                         )
                         .ok()?,
@@ -4436,7 +4432,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Ellipse(
-                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::EllipsePcurve::try_from_parts(
                             center,
                             x_axis,
                             y_axis,
@@ -4453,7 +4449,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "PARABOLA", 2).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Parabola(
-                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::ParabolaPcurve::try_from_parts(
                             vertex,
                             x_axis,
                             y_axis,
@@ -4471,7 +4467,7 @@ fn decode_pcurve_geometry(
                         named_parameter(record, "HYPERBOLA", 3).and_then(Value::number)?;
                     records.insert(placement);
                     PcurveGeometry::Hyperbola(
-                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::HyperbolaPcurve::try_from_parts(
                             center,
                             x_axis,
                             y_axis,
@@ -5375,7 +5371,7 @@ fn cartesian_transformation_operator(
 fn cartesian_transformation_operator_2d(
     record: &RawRecord,
     points: &BTreeMap<u64, Point2>,
-    directions: &BTreeMap<u64, Point2>,
+    directions: &BTreeMap<u64, HypotDirection2>,
 ) -> Option<Transform2> {
     let axis1 = transformation_direction(
         record,
@@ -5402,30 +5398,36 @@ fn cartesian_transformation_operator_2d(
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
+    let [axis1_u, axis1_v] = axis1.get();
+    let [axis2_u, axis2_v] = axis2.get();
     Transform2::affine([
-        [axis1.u * scale, axis2.u * scale, origin.u],
-        [axis1.v * scale, axis2.v * scale, origin.v],
+        [axis1_u * scale, axis2_u * scale, origin.u],
+        [axis1_v * scale, axis2_v * scale, origin.v],
     ])
 }
 
-fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {
+fn base_axis_2d(
+    axis1: Option<HypotDirection2>,
+    axis2: Option<HypotDirection2>,
+) -> Option<(HypotDirection2, HypotDirection2)> {
     match (axis1, axis2) {
         (Some(axis1), axis2) => {
-            let axis1 = normalize2(axis1)?;
-            let mut perpendicular = Point2::new(-axis1.v, axis1.u);
+            let axis1 = axis1.recharted_by_hypot();
+            let mut perpendicular = axis1.quarter_turn();
             if let Some(axis2) = axis2 {
-                let axis2 = normalize2(axis2)?;
-                if axis2.u * perpendicular.u + axis2.v * perpendicular.v < 0.0 {
-                    perpendicular = Point2::new(-perpendicular.u, -perpendicular.v);
+                let [axis2_u, axis2_v] = axis2.recharted_by_hypot().get();
+                let [perpendicular_u, perpendicular_v] = perpendicular.get();
+                if axis2_u * perpendicular_u + axis2_v * perpendicular_v < 0.0 {
+                    perpendicular = axis1.reverse_quarter_turn();
                 }
             }
             Some((axis1, perpendicular))
         }
         (None, Some(axis2)) => {
-            let axis2 = normalize2(axis2)?;
-            Some((Point2::new(axis2.v, -axis2.u), axis2))
+            let axis2 = axis2.recharted_by_hypot();
+            Some((axis2.reverse_quarter_turn(), axis2))
         }
-        (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
+        (None, None) => Some((HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS)),
     }
 }
 

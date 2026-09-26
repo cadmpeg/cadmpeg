@@ -686,6 +686,11 @@ impl UnitVector2 {
 pub struct HypotDirection2(FiniteVector<2>);
 
 impl HypotDirection2 {
+    /// Positive first parameter axis.
+    pub const X_AXIS: Self = Self(FiniteVector([1.0, 0.0]));
+    /// Positive second parameter axis.
+    pub const Y_AXIS: Self = Self(FiniteVector([0.0, 1.0]));
+
     /// Divide by the finite nonzero length, preserving the quotient bits.
     #[must_use]
     pub fn normalized_with_length(value: [f64; 2]) -> Option<(Self, PositiveReal)> {
@@ -697,6 +702,29 @@ impl HypotDirection2 {
     /// Return the stored quotient.
     pub const fn get(self) -> [f64; 2] {
         self.0.get()
+    }
+
+    /// Apply the same `hypot` quotient to an admitted direction again.
+    /// The quotient is finite and nonzero, so it keeps this admission.
+    #[must_use]
+    pub fn recharted_by_hypot(self) -> Self {
+        let value = self.get();
+        let length = value[0].hypot(value[1]);
+        Self(FiniteVector([value[0] / length, value[1] / length]))
+    }
+
+    /// Rotate the admitted direction by a quarter turn.
+    #[must_use]
+    pub const fn quarter_turn(self) -> Self {
+        let [u, v] = self.get();
+        Self(FiniteVector([-v, u]))
+    }
+
+    /// Rotate the admitted direction by a reverse quarter turn.
+    #[must_use]
+    pub const fn reverse_quarter_turn(self) -> Self {
+        let [u, v] = self.get();
+        Self(FiniteVector([v, -u]))
     }
 }
 
@@ -1035,6 +1063,13 @@ impl TryFrom<Point2> for FinitePoint2 {
 impl From<FinitePoint2> for Point2 {
     fn from(value: FinitePoint2) -> Self {
         value.0
+    }
+}
+impl From<HypotDirection2> for FinitePoint2 {
+    /// Keep the finite coordinates of an admitted planar direction.
+    fn from(value: HypotDirection2) -> Self {
+        let [u, v] = value.get();
+        Self(Point2::new(u, v))
     }
 }
 impl From<FinitePoint2> for FiniteVector<2> {
