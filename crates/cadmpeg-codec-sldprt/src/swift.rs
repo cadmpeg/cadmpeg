@@ -12,6 +12,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
 use crate::container::ContainerScan;
@@ -791,10 +792,10 @@ fn project_tolerance(
     datum_ids: &BTreeMap<&str, PmiId>,
 ) -> Option<ProjectedTolerance> {
     let kind = tolerance_kind(short_class(&entity.class))?;
-    let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
+    let magnitude = NonNegativeReal::new(entity.doubles.get("Tolerance").copied()?)?;
     Some(ProjectedTolerance {
         kind,
-        magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
+        magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
         references: datum_references(entity, datum_ids).try_into().ok()?,
     })
 }
@@ -805,7 +806,7 @@ fn project_lower_profile_tier(
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Option<PmiAnnotation> {
-    let magnitude = finite_nonnegative(entity.doubles.get("ToleranceLowerTier").copied()?)?;
+    let magnitude = NonNegativeReal::new(entity.doubles.get("ToleranceLowerTier").copied()?)?;
     Some(PmiAnnotation {
         id: PmiId::from(
             cadmpeg_ir::ids::Identity::from(pmi_id(&reference.id)?).with_key_tail(
@@ -818,7 +819,7 @@ fn project_lower_profile_tier(
         targets: targets(entity, feature_index, topology)?,
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
-            magnitude: cadmpeg_ir::pmi::PmiMagnitude::new(length(magnitude)?)?,
+            magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
             defined_unit: None,
             defined_area_unit: None,
             defined_area_second_unit: None,
