@@ -33,13 +33,25 @@ type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
+fn charge_collection_items(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
+}
+
 fn prune_incidence_choices(
+    ctx: &DecodeContext<'_>,
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     prune_incidence_choices_with_explicit_support(
+        ctx,
         choices,
         edge_faces,
         face_count,
@@ -54,12 +66,14 @@ fn prune_incidence_choices(
 /// not present in the explicit candidate set. The mesh-aware caller checks
 /// those deferred supports after it has prepared the coordinate-root domains.
 fn prune_incidence_choices_with_deferred_support(
+    ctx: &DecodeContext<'_>,
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     prune_incidence_choices_with_explicit_support(
+        ctx,
         choices,
         edge_faces,
         face_count,
@@ -69,12 +83,13 @@ fn prune_incidence_choices_with_deferred_support(
 }
 
 fn prune_incidence_choices_with_explicit_support(
+    ctx: &DecodeContext<'_>,
     choices: &mut [Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
     explicit_support_complete: bool,
-) -> Option<()> {
+) -> Result<Option<()>, CodecError> {
     fn unique_faces(faces: [usize; 2]) -> impl Iterator<Item = usize> {
         faces
             .into_iter()
@@ -118,27 +133,38 @@ fn prune_incidence_choices_with_explicit_support(
     }
 
     fn remove_edge_support(
+        ctx: &DecodeContext<'_>,
         supports: &mut [BTreeMap<usize, u32>],
         edge_supports: &mut [HashSet<usize>],
         edge_faces: &[[usize; 2]],
         edge: usize,
         retained: HashSet<usize>,
-    ) -> Option<()> {
+    ) -> Result<Option<()>, CodecError> {
+        charge_collection_items(
+            ctx,
+            edge_supports[edge].difference(&retained).count(),
+            "catia incidence removed support points",
+        )?;
         let removed = edge_supports[edge]
             .difference(&retained)
             .copied()
             .collect::<Vec<_>>();
         for face in unique_faces(edge_faces[edge]) {
             for &point in &removed {
-                let count = supports[face].get_mut(&point)?;
-                *count = count.checked_sub(1)?;
+                let Some(count) = supports[face].get_mut(&point) else {
+                    return Ok(None);
+                };
+                let Some(next) = count.checked_sub(1) else {
+                    return Ok(None);
+                };
+                *count = next;
                 if *count == 0 {
                     supports[face].remove(&point);
                 }
             }
         }
         edge_supports[edge] = retained;
-        Some(())
+        Ok(Some(()))
     }
 
     fn sole_supporting_edge(
@@ -153,8 +179,18 @@ fn prune_incidence_choices_with_explicit_support(
             .find(|&edge| edge_supports[edge].contains(&point))
     }
 
-    fn choice_points(choices: &[[usize; 2]]) -> HashSet<usize> {
-        choices.iter().flatten().copied().collect::<HashSet<_>>()
+    fn choice_points(
+        ctx: &DecodeContext<'_>,
+        choices: &[[usize; 2]],
+    ) -> Result<HashSet<usize>, CodecError> {
+        let mut points = HashSet::new();
+        for point in choices.iter().flatten().copied() {
+            if !points.contains(&point) {
+                charge_collection_items(ctx, 1, "catia incidence choice points")?;
+                points.insert(point);
+            }
+        }
+        Ok(points)
     }
 
     fn degree_one_points(
@@ -175,36 +211,42 @@ fn prune_incidence_choices_with_explicit_support(
             .flatten()
             .any(|point| *point >= point_count)
     {
-        return None;
+        return Ok(None);
     }
-    let mut face_edges = alloc_filled(face_count, Vec::new(), "catia_incidence_face_edges").ok()?;
+    let mut face_edges = ctx.alloc_filled(face_count, Vec::new(), "catia_incidence_face_edges")?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in unique_faces(faces) {
+            charge_collection_items(ctx, 1, "catia incidence face edge lists")?;
             face_edges[face].push(edge);
         }
     }
-    let mut fixed = alloc_filled(choices.len(), false, "catia_incidence_fixed_edges").ok()?;
-    let mut degrees = alloc_filled(
+    let mut fixed = ctx.alloc_filled(choices.len(), false, "catia_incidence_fixed_edges")?;
+    let mut degrees = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u8>::new(),
         "catia_incidence_degrees",
-    )
-    .ok()?;
+    )?;
+    charge_collection_items(ctx, choices.len(), "catia incidence edge supports")?;
     let mut edge_supports = choices
         .iter()
-        .map(|pairs| choice_points(pairs))
-        .collect::<Vec<_>>();
-    let mut supports = alloc_filled(
+        .map(|pairs| choice_points(ctx, pairs))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut supports = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u32>::new(),
         "catia_incidence_supports",
-    )
-    .ok()?;
+    )?;
     for (edge, points) in edge_supports.iter().enumerate() {
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
+                if !supports[face].contains_key(&point) {
+                    charge_collection_items(ctx, 1, "catia incidence point support counts")?;
+                }
                 let count = supports[face].entry(point).or_default();
-                *count = count.checked_add(1)?;
+                let Some(next) = count.checked_add(1) else {
+                    return Ok(None);
+                };
+                *count = next;
             }
         }
     }
@@ -215,50 +257,67 @@ fn prune_incidence_choices_with_explicit_support(
                 continue;
             }
             let before = choices[edge].len();
-            let retained = choices[edge]
-                .iter()
-                .copied()
-                .filter(|pair| {
-                    fits(&degrees, edge_faces, edge, *pair)
-                        && (!explicit_support_complete
-                            || preserves_new_degree_support(
-                                &supports,
-                                &edge_supports,
-                                &degrees,
-                                edge_faces,
-                                edge,
-                                *pair,
-                            ))
-                })
-                .collect::<Vec<_>>();
+            let mut retained = Vec::new();
+            for pair in choices[edge].iter().copied() {
+                if fits(&degrees, edge_faces, edge, pair)
+                    && (!explicit_support_complete
+                        || preserves_new_degree_support(
+                            &supports,
+                            &edge_supports,
+                            &degrees,
+                            edge_faces,
+                            edge,
+                            pair,
+                        ))
+                {
+                    charge_collection_items(ctx, 1, "catia incidence retained choices")?;
+                    retained.push(pair);
+                }
+            }
             choices[edge] = retained;
             changed |= choices[edge].len() != before;
-            remove_edge_support(
+            if remove_edge_support(
+                ctx,
                 &mut supports,
                 &mut edge_supports,
                 edge_faces,
                 edge,
-                choice_points(&choices[edge]),
-            )?;
+                choice_points(ctx, &choices[edge])?,
+            )?
+            .is_none()
+            {
+                return Ok(None);
+            }
             let [pair] = choices[edge].as_slice() else {
                 if choices[edge].is_empty() {
-                    return None;
+                    return Ok(None);
                 }
                 continue;
             };
             for face in unique_faces(edge_faces[edge]) {
                 for point in pair {
+                    if !degrees[face].contains_key(point) {
+                        charge_collection_items(ctx, 1, "catia incidence endpoint degrees")?;
+                    }
                     let degree = degrees[face].entry(*point).or_default();
-                    *degree = degree.checked_add(1)?;
+                    let Some(next) = degree.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    *degree = next;
                 }
             }
-            remove_edge_support(
+            if remove_edge_support(
+                ctx,
                 &mut supports,
                 &mut edge_supports,
                 edge_faces,
                 edge,
                 HashSet::new(),
-            )?;
+            )?
+            .is_none()
+            {
+                return Ok(None);
+            }
             fixed[edge] = true;
             changed = true;
         }
@@ -266,23 +325,31 @@ fn prune_incidence_choices_with_explicit_support(
             for face in 0..face_count {
                 for point in degree_one_points(&degrees, face) {
                     match supports[face].get(&point).copied().unwrap_or(0) {
-                        0 => return None,
+                        0 => return Ok(None),
                         1 => {
-                            let edge =
-                                sole_supporting_edge(&face_edges, &edge_supports, face, point)?;
+                            let Some(edge) =
+                                sole_supporting_edge(&face_edges, &edge_supports, face, point)
+                            else {
+                                return Ok(None);
+                            };
                             let before = choices[edge].len();
                             choices[edge].retain(|pair| pair.contains(&point));
                             if choices[edge].is_empty() {
-                                return None;
+                                return Ok(None);
                             }
                             changed |= choices[edge].len() != before;
-                            remove_edge_support(
+                            if remove_edge_support(
+                                ctx,
                                 &mut supports,
                                 &mut edge_supports,
                                 edge_faces,
                                 edge,
-                                choice_points(&choices[edge]),
-                            )?;
+                                choice_points(ctx, &choices[edge])?,
+                            )?
+                            .is_none()
+                            {
+                                return Ok(None);
+                            }
                         }
                         _ => {}
                     }
@@ -290,7 +357,7 @@ fn prune_incidence_choices_with_explicit_support(
             }
         }
         if !changed {
-            return Some(());
+            return Ok(Some(()));
         }
     }
 }
@@ -4503,47 +4570,49 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
-    let Some(choices) = (|| {
-        let mut choices = edge_candidates.to_vec();
-        for candidates in &mut choices {
-            for pair in candidates.iter_mut() {
-                pair.sort_unstable();
-            }
-            candidates.sort_unstable();
-            candidates.dedup();
+    charge_collection_items(ctx, edge_candidates.len(), "catia incidence choice rows")?;
+    for candidates in edge_candidates {
+        charge_collection_items(ctx, candidates.len(), "catia incidence choice pairs")?;
+    }
+    let mut choices = edge_candidates.to_vec();
+    for candidates in &mut choices {
+        for pair in candidates.iter_mut() {
+            pair.sort_unstable();
         }
-        if choices.iter().any(Vec::is_empty) {
-            if mesh_quotient.is_none()
-                || choices.len() != edge_faces.len()
-                || edge_faces.iter().flatten().any(|face| *face >= face_count)
-                || choices
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .any(|point| *point >= vertex_points.len())
-            {
-                return None;
-            }
-        } else {
-            // Mesh boundary domains may leave an endpoint implicit. Their
-            // complete support is checked after coordinate-root preparation;
-            // only the explicit-candidate path can use degree-one support as
-            // a rejection here.
-            if mesh_assignments.is_some() {
-                prune_incidence_choices_with_deferred_support(
-                    &mut choices,
-                    edge_faces,
-                    face_count,
-                    vertex_points.len(),
-                )?;
-            } else {
-                prune_incidence_choices(&mut choices, edge_faces, face_count, vertex_points.len())?;
-            }
-        }
-        Some(choices)
-    })() else {
-        return Ok(IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning));
+        candidates.sort_unstable();
+        candidates.dedup();
+    }
+    let valid = if choices.iter().any(Vec::is_empty) {
+        mesh_quotient.is_some()
+            && choices.len() == edge_faces.len()
+            && !edge_faces.iter().flatten().any(|face| *face >= face_count)
+            && !choices
+                .iter()
+                .flatten()
+                .flatten()
+                .any(|point| *point >= vertex_points.len())
+    } else if mesh_assignments.is_some() {
+        prune_incidence_choices_with_deferred_support(
+            ctx,
+            &mut choices,
+            edge_faces,
+            face_count,
+            vertex_points.len(),
+        )?
+        .is_some()
+    } else {
+        prune_incidence_choices(
+            ctx,
+            &mut choices,
+            edge_faces,
+            face_count,
+            vertex_points.len(),
+        )?
+        .is_some()
     };
+    if !valid {
+        return Ok(IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning));
+    }
     let complete_valid = |points: &[[usize; 2]]| {
         if complete_solution_budget.is_some_and(|budget| !budget.charge_by(edge_rows.len())) {
             return true;
