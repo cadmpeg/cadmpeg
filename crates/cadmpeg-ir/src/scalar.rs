@@ -287,6 +287,9 @@ impl PositiveReal {
 }
 
 impl NonNegativeReal {
+    /// Zero dimensionless scalar.
+    pub const ZERO: Self = Self(0.0);
+
     /// The value times `scale`.
     ///
     /// A positive scale keeps the sign of a nonnegative value: zero stays
