@@ -2026,17 +2026,15 @@ fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
     let value = direct_root_attributes(property, "Float")?
         .remove("value")?
         .parse::<f64>()
-        .ok()?;
-    if !value.is_finite() {
-        return None;
-    }
-    Some(if value < 0.0 {
-        FuzzyTolerance::Automatic
-    } else if value == 0.0 {
-        FuzzyTolerance::KernelDefault
-    } else {
-        FuzzyTolerance::Explicit(cadmpeg_ir::scalar::PositiveLength::new(value)?)
-    })
+        .ok()
+        .and_then(FiniteReal::new)?;
+    Some(
+        match cadmpeg_ir::scalar::PositiveLength::from_assigned_real(value) {
+            Some(explicit) => FuzzyTolerance::Explicit(explicit),
+            None if value.get() < 0.0 => FuzzyTolerance::Automatic,
+            None => FuzzyTolerance::KernelDefault,
+        },
+    )
 }
 
 fn parse_constraints(
