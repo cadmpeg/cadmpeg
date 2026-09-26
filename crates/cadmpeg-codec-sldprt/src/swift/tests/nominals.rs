@@ -1,12 +1,12 @@
 use super::dimension_nominal;
 use super::entity;
+use super::length;
+use super::pmi_value;
 use super::reference;
 use super::semantic_root;
 use crate::swift::approximately_equal;
 use crate::swift::enrich_implicit_nominals;
-use crate::swift::length;
 use crate::swift::pmi_id;
-use crate::swift::pmi_value;
 use crate::swift::project;
 use crate::swift::rendered_dimensions;
 use crate::swift::rendered_nominal;
@@ -522,7 +522,7 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
 fn conflicting_rendered_units_do_not_resolve_a_nominal() {
     assert_eq!(
         rendered_nominal(
-            5.0,
+            cadmpeg_ir::scalar::PositiveReal::new(5.0).unwrap(),
             1,
             RenderedDimensionKind::Diameter,
             &[
