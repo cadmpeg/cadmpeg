@@ -7,7 +7,9 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle, PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{
+    FiniteReal, NonNegativeReal, PositiveAngle, PositiveLength, PositiveReal,
+};
 use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
 
@@ -700,11 +702,42 @@ pub(crate) struct LayerPerViewportSettings {
     /// Per-viewport plot color, if effective.
     pub(crate) plot_color: Option<[u8; 4]>,
     /// Per-viewport plot weight in millimeters, if effective.
-    pub(crate) plot_weight_mm: Option<FiniteReal>,
+    pub(crate) plot_weight_mm: Option<LayerPlotWeight>,
     /// Source visibility override.
     pub(crate) visible: Option<LayerVisibility>,
     /// Source persistent-visibility override for child layers.
     pub(crate) persistent_visibility: Option<LayerVisibility>,
+}
+
+/// A nonnegative per-viewport plot weight or the source's exact unset sentinel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LayerPlotWeight {
+    Unset,
+    Millimeters(NonNegativeReal),
+}
+
+impl LayerPlotWeight {
+    fn new(value: f64) -> Option<Self> {
+        let value = FiniteReal::new(value)?;
+        if value.get() == -1.0 {
+            Some(Self::Unset)
+        } else {
+            NonNegativeReal::from_finite(value).map(Self::Millimeters)
+        }
+    }
+
+    fn get(self) -> f64 {
+        match self {
+            Self::Unset => -1.0,
+            Self::Millimeters(value) => value.get(),
+        }
+    }
+}
+
+impl Serialize for LayerPlotWeight {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(self.get())
+    }
 }
 
 /// Effective visibility values, ordered by their source encoding.
@@ -1019,13 +1052,9 @@ fn parse_layer_extensions(
         let plot_weight_mm = if bits & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0 {
             let offset = entry_reader.position();
             let value = entry_reader.f64()?;
-            Some(
-                FiniteReal::new(value)
-                    .filter(|weight| weight.get() >= 0.0 || weight.get() == -1.0)
-                    .ok_or_else(|| {
-                        FramingError::structural(offset, "invalid layer per-viewport plot weight")
-                    })?,
-            )
+            Some(LayerPlotWeight::new(value).ok_or_else(|| {
+                FramingError::structural(offset, "invalid layer per-viewport plot weight")
+            })?)
         } else {
             None
         };
