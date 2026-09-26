@@ -77,8 +77,13 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
 ) -> Result<BTreeSet<CurveId>, cadmpeg_core::CodecError> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir, source_carriers);
-    let solved_vertices =
-        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
+    let solved_vertices = solved_topological_vertices(
+        scan,
+        ir,
+        &carriers,
+        nurbs_endpoint_witnesses,
+        source_carriers,
+    );
     let endpoint_evidence = pcurve_edge_endpoint_evidence(scan, ir, source_carriers);
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
