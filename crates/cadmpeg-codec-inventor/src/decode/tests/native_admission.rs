@@ -8,16 +8,17 @@ use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
+use crate::decode::rse_native_projection;
 use crate::decode::{
     admit_assembly_placement, admit_coverage_entries, admit_kernel_annotation,
-    admit_kernel_unknown_fidelity, admit_native_record_items, admit_rse_segment_projection,
-    admit_untransferred_carrier, admitted_kernel_attribute, admitted_loss, clone_product_body_ids,
-    collect_body_ids, decode_container, index_asm_face_keys, index_face_colors,
-    index_projected_colors, insert_source_attribute, project_preview_asset,
-    project_property_set_issue, project_protein_records, project_protein_state,
-    project_root_product, project_ufrx_embedded_reference, project_ufrx_external_reference,
-    project_ufrx_model_state, project_ufrx_occurrence, project_ufrx_representation,
-    project_ufrx_state, property_set_name, structural_issue,
+    admit_kernel_unknown_fidelity, admit_native_record_items, admit_untransferred_carrier,
+    admitted_kernel_attribute, admitted_loss, clone_product_body_ids, collect_body_ids,
+    decode_container, index_asm_face_keys, index_face_colors, index_projected_colors,
+    insert_source_attribute, project_preview_asset, project_property_set_issue,
+    project_protein_records, project_protein_state, project_root_product,
+    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
+    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
+    structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -89,14 +90,14 @@ fn rse_segment_native_projection_refuses_before_pair_id_creation() {
     policy.limits.max_retained_bytes = u64::try_from(id_len - 1).expect("id length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     assert!(matches!(
-        admit_rse_segment_projection(&ctx, &container),
+        rse_native_projection::project(&ctx, &container),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor segment pair id"
     ));
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("service context");
-    admit_rse_segment_projection(&ctx, &container).expect("admitted RSe projection");
+    rse_native_projection::project(&ctx, &container).expect("admitted RSe projection");
 }
 
 #[test]
@@ -215,14 +216,14 @@ fn rse_retained_refusal_operations(
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], arena, &policy).expect("limited context");
-        match admit_rse_segment_projection(&ctx, container) {
+        match rse_native_projection::project(&ctx, container) {
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
                 assert!(limit.used + limit.additional > cap);
                 operations.push(limit.operation);
                 cap = limit.used + limit.additional;
             }
-            Ok(()) => {
+            Ok(_) => {
                 admitted = true;
                 break;
             }

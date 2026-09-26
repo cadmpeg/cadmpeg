@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod rse_native_projection;
+
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, HashMap};
 
@@ -37,14 +39,12 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
-    PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
+    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord,
+    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -516,221 +516,17 @@ fn decode_container<'a>(
     if let ParsedState::Unavailable(detail) = &container.rse.revisions {
         structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
     }
-    admit_rse_segment_projection(ctx, container)?;
-    structural_issues.extend(container.rse.segments.iter().flat_map(|segment| {
-        segment
-            .identity_issues
-            .iter()
-            .enumerate()
-            .map(move |(ordinal, detail)| StructuralIssueRecord {
-                id: format!(
-                    "inventor:rse:structural-issue#segment-{}-{ordinal}",
-                    segment.pair.token.as_str()
-                ),
-                scope: format!("segment:{}", segment.pair.token.as_str()),
-                detail: detail.clone(),
-            })
-    }));
-    let segment_pairs = container
-        .rse
-        .segments
-        .iter()
-        .map(|segment| SegmentPairRecord {
-            id: format!("inventor:rse:segment#{}", segment.pair.token.as_str()),
-            token: segment.pair.token.as_str().into(),
-            metadata_directory_id: segment.pair.metadata.directory_id(),
-            bulk_directory_id: segment.pair.bulk.directory_id(),
-        })
-        .collect::<Vec<_>>();
-    let segment_meta = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return None;
-            };
-            Some(SegmentMetaRecord {
-                id: format!("inventor:rse:segment-meta#{}", segment.pair.token.as_str()),
-                token: segment.pair.token.as_str().into(),
-                version: meta.declared.version,
-                kind: segment.kind.label().into(),
-                display_name: meta.display_name.clone(),
-                segment_id: hex(&meta.segment_id),
-                header_values: meta.header_values,
-                state_words: meta.state_words,
-                created: meta.created.clone(),
-                modified: meta.modified.clone(),
-                body_form: meta.body_form,
-                expanded_body_len: meta.body.window().len() as u64,
-                expanded_body_sha256: sha256_hex(meta.body.window()),
-                table_prefix: meta.tables.prefix,
-                block_count: meta.tables.blocks.len() as u64,
-                type_count: meta.tables.types.len() as u64,
-                terminal_id: hex(&meta.tables.terminal_id),
-            })
-        })
-        .collect::<Vec<_>>();
-    let meta_sections = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return Vec::new();
-            };
-            meta.tables
-                .sections
-                .iter()
-                .map(|section| MetaSectionRecord {
-                    id: format!(
-                        "inventor:rse:meta-section#{}-{}",
-                        segment.pair.token.as_str(),
-                        section.number
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    number: section.number,
-                    discriminator: section.discriminator,
-                    payload_len: section.payload.window().len() as u64,
-                    payload_sha256: sha256_hex(section.payload.window()),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let meta_types = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return Vec::new();
-            };
-            meta.tables
-                .types
-                .iter()
-                .map(|descriptor| MetaTypeRecord {
-                    id: format!(
-                        "inventor:rse:meta-type#{}-{}",
-                        segment.pair.token.as_str(),
-                        descriptor.index
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    index: descriptor.index,
-                    type_id: hex(&descriptor.id),
-                    fields: descriptor.fields,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let segment_meta_issues = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let detail = match &segment.meta {
-                SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Malformed { detail, .. } => detail.clone(),
-            };
-            Some(SegmentMetaIssueRecord {
-                id: format!(
-                    "inventor:rse:segment-meta-issue#{}",
-                    segment.pair.token.as_str()
-                ),
-                token: segment.pair.token.as_str().into(),
-                detail,
-            })
-        })
-        .collect::<Vec<_>>();
-    let rse_records = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-                return Vec::new();
-            };
-            let RecordFrameState::Framed(table) = &bulk.records else {
-                return Vec::new();
-            };
-            table
-                .records
-                .iter()
-                .map(|record| RseRecordRecord::from_frame(segment.pair.token.as_str(), record))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let segment_bulk = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-                return None;
-            };
-            let records = match &bulk.records {
-                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
-                    record_count: table.records.len() as u64,
-                    stream_trailer_len: table.stream_trailer.window().len() as u64,
-                    stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
-                },
-                RecordFrameState::Unavailable(detail) => {
-                    crate::native::SegmentBulkFrame::Unavailable {
-                        detail: detail.clone(),
-                    }
-                }
-            };
-            Some(SegmentBulkRecord {
-                id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
-                token: segment.pair.token.as_str().into(),
-                prefix: hex(&bulk.prefix),
-                form: bulk.form.value(),
-                compressed_len: bulk.compressed.window().len() as u64,
-                compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: bulk.expanded.window().len() as u64,
-                expanded_sha256: sha256_hex(bulk.expanded.window()),
-                records,
-            })
-        })
-        .collect::<Vec<_>>();
-    let segment_bulk_issues = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentBulkState::Malformed(detail) = &segment.bulk else {
-                return None;
-            };
-            Some(SegmentBulkIssueRecord {
-                id: format!(
-                    "inventor:rse:segment-bulk-issue#{}",
-                    segment.pair.token.as_str()
-                ),
-                token: segment.pair.token.as_str().into(),
-                detail: detail.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
-    let unpaired_segments = container
-        .rse
-        .unpaired_metadata
-        .iter()
-        .map(|token| UnpairedSegmentRecord {
-            id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
-            token: token.as_str().into(),
-            missing_member: UnpairedMember::Bulk,
-        })
-        .chain(
-            container
-                .rse
-                .unpaired_bulk
-                .iter()
-                .map(|token| UnpairedSegmentRecord {
-                    id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),
-                    token: token.as_str().into(),
-                    missing_member: UnpairedMember::Metadata,
-                }),
-        )
-        .collect::<Vec<_>>();
+    let projection = rse_native_projection::project(ctx, container)?;
+    structural_issues.extend(projection.identity_issues);
+    let segment_pairs = projection.segment_pairs;
+    let segment_meta = projection.segment_meta;
+    let meta_sections = projection.meta_sections;
+    let meta_types = projection.meta_types;
+    let segment_meta_issues = projection.segment_meta_issues;
+    let rse_records = projection.rse_records;
+    let segment_bulk = projection.segment_bulk;
+    let segment_bulk_issues = projection.segment_bulk_issues;
+    let unpaired_segments = projection.unpaired_segments;
     let active_carrier = ActiveCarrierRecord::from_state(ctx, &container.rse.active_carrier)?;
     let assembly_occurrences = assembly_inventory
         .occurrences
@@ -1780,21 +1576,6 @@ fn admit_native_format(
     crate::record_issue::admit_formatted(ctx, value, operation)
 }
 
-fn admit_native_hex(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let length = bytes.len().checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("Inventor hexadecimal length", u64::MAX - 1, u64::MAX)
-    })?;
-    charge_retained_len(ctx, length, operation)?;
-    ctx.charge_work(
-        wire_len(ctx, bytes.len(), "Inventor hexadecimal work")?,
-        "encode Inventor hexadecimal bytes",
-    )
-}
-
 fn admit_native_digest(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -2009,201 +1790,6 @@ fn admit_kernel_unknown_fidelity(
                 "retain Inventor unknown provenance stream",
             )?;
         }
-    }
-    Ok(())
-}
-
-fn admit_rse_segment_projection(
-    ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-) -> Result<(), CodecError> {
-    for segment in &container.rse.segments {
-        let token = segment.pair.token.as_str();
-        for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
-            admit_native_format(
-                ctx,
-                format_args!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
-                "retain Inventor segment identity issue id",
-            )?;
-            admit_native_format(
-                ctx,
-                format_args!("segment:{token}"),
-                "retain Inventor segment identity issue scope",
-            )?;
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor segment identity issue detail",
-            )?;
-        }
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:segment#{token}"),
-            "retain Inventor segment pair id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor segment pair token")?;
-        match &segment.meta {
-            SegmentMetaState::Parsed(meta) => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-meta#{token}"),
-                    "retain Inventor segment metadata id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor segment metadata token")?;
-                charge_retained_len(
-                    ctx,
-                    segment.kind.label().len(),
-                    "retain Inventor segment kind",
-                )?;
-                charge_retained_len(
-                    ctx,
-                    meta.display_name.len(),
-                    "retain Inventor segment display name",
-                )?;
-                admit_native_hex(ctx, &meta.segment_id, "retain Inventor segment GUID")?;
-                charge_retained_len(
-                    ctx,
-                    meta.created.len(),
-                    "retain Inventor segment creation text",
-                )?;
-                charge_retained_len(
-                    ctx,
-                    meta.modified.len(),
-                    "retain Inventor segment modification text",
-                )?;
-                admit_native_digest(
-                    ctx,
-                    meta.body.window(),
-                    "retain Inventor segment body digest",
-                )?;
-                admit_native_hex(
-                    ctx,
-                    &meta.tables.terminal_id,
-                    "retain Inventor segment terminal GUID",
-                )?;
-                for section in &meta.tables.sections {
-                    admit_native_format(
-                        ctx,
-                        format_args!("inventor:rse:meta-section#{token}-{}", section.number),
-                        "retain Inventor metadata section id",
-                    )?;
-                    charge_retained_len(
-                        ctx,
-                        token.len(),
-                        "retain Inventor metadata section token",
-                    )?;
-                    admit_native_digest(
-                        ctx,
-                        section.payload.window(),
-                        "retain Inventor metadata section digest",
-                    )?;
-                }
-                for descriptor in &meta.tables.types {
-                    admit_native_format(
-                        ctx,
-                        format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
-                        "retain Inventor metadata type id",
-                    )?;
-                    charge_retained_len(ctx, token.len(), "retain Inventor metadata type token")?;
-                    admit_native_hex(ctx, &descriptor.id, "retain Inventor metadata type GUID")?;
-                }
-            }
-            SegmentMetaState::Malformed { detail, .. } => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-meta-issue#{token}"),
-                    "retain Inventor metadata issue id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor metadata issue token")?;
-                charge_retained_len(ctx, detail.len(), "retain Inventor metadata issue detail")?;
-            }
-        }
-        match &segment.bulk {
-            SegmentBulkState::Framed(bulk) => {
-                if let RecordFrameState::Framed(table) = &bulk.records {
-                    for record in &table.records {
-                        admit_native_format(
-                            ctx,
-                            format_args!("inventor:rse:record#{token}-{}", record.ordinal),
-                            "retain Inventor RSe record id",
-                        )?;
-                        charge_retained_len(ctx, token.len(), "retain Inventor RSe record token")?;
-                        admit_native_hex(
-                            ctx,
-                            &record.type_id,
-                            "retain Inventor RSe record type GUID",
-                        )?;
-                        admit_native_digest(
-                            ctx,
-                            record.payload.window(),
-                            "retain Inventor RSe payload digest",
-                        )?;
-                        admit_native_digest(
-                            ctx,
-                            record.trailer.window(),
-                            "retain Inventor RSe trailer digest",
-                        )?;
-                    }
-                    admit_native_digest(
-                        ctx,
-                        table.stream_trailer.window(),
-                        "retain Inventor RSe stream trailer digest",
-                    )?;
-                } else if let RecordFrameState::Unavailable(detail) = &bulk.records {
-                    charge_retained_len(ctx, detail.len(), "retain Inventor RSe frame issue")?;
-                }
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-bulk#{token}"),
-                    "retain Inventor segment bulk id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor segment bulk token")?;
-                admit_native_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?;
-                admit_native_digest(
-                    ctx,
-                    bulk.compressed.window(),
-                    "retain Inventor compressed bulk digest",
-                )?;
-                admit_native_digest(
-                    ctx,
-                    bulk.expanded.window(),
-                    "retain Inventor expanded bulk digest",
-                )?;
-            }
-            SegmentBulkState::Malformed(detail) => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-bulk-issue#{token}"),
-                    "retain Inventor bulk issue id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor bulk issue token")?;
-                charge_retained_len(ctx, detail.len(), "retain Inventor bulk issue detail")?;
-            }
-        }
-    }
-    for token in &container.rse.unpaired_metadata {
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
-            "retain Inventor unpaired metadata id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.as_str().len(),
-            "retain Inventor unpaired metadata token",
-        )?;
-    }
-    for token in &container.rse.unpaired_bulk {
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
-            "retain Inventor unpaired bulk id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.as_str().len(),
-            "retain Inventor unpaired bulk token",
-        )?;
     }
     Ok(())
 }
