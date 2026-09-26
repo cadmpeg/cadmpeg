@@ -185,7 +185,16 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
+            Err(error) => {
+                if !matches!(error, CodecError::ResourceLimit(_)) {
+                    crate::record_issue::admit_issue_detail(
+                        ctx,
+                        &error,
+                        "retain Inventor malformed property-set detail",
+                    )?;
+                }
+                PropertySetState::Malformed(crate::issue_detail(error)?)
+            }
         };
         ctx.charge_collection_items(1, "admit Inventor property-set streams")?;
         charge_retained_len(
@@ -1020,6 +1029,7 @@ impl<'a> Cursor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use crate::test_support::truncation::located_truncation;
@@ -1030,6 +1040,41 @@ mod tests {
     };
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn malformed_property_set_detail_refuses_retained_limit_before_copy() {
+        let mut bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0xfe, 0xff]);
+        let entry_start = 512 + 3 * 128;
+        let name = "ZProperty";
+        bytes[entry_start..entry_start + 64].fill(0);
+        for (index, unit) in name.encode_utf16().enumerate() {
+            let offset = entry_start + index * 2;
+            bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        let name_len = ((name.encode_utf16().count() + 1) * 2) as u16;
+        bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("compound input fits service policy");
+        let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            super::inventory(&limited, &snapshot),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor malformed property-set detail"
+        ));
+        let inventory = super::inventory(&setup, &snapshot)
+            .expect("malformed property set remains an inventory entry");
+        assert!(matches!(
+            inventory.first().map(|entry| &entry.state),
+            Some(super::PropertySetState::Malformed(_))
+        ));
+    }
 
     #[test]
     fn dictionary_name_copies_refuse_retained_limit_before_allocation() {
