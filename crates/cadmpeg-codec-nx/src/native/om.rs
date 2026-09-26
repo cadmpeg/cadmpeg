@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::om::control_leading_value::ControlLeadingValue;
@@ -3164,51 +3165,158 @@ pub(super) fn object_records(container: &Container) -> Vec<ObjectRecord> {
 
 /// Retain the complete counted `RMFastLoad` active-object membership table.
 pub(super) fn rmfastload_object_id_table(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Option<(RmFastLoadObjectIdTable, Vec<RmFastLoadObjectId>)> {
-    let (entry, table) = container.rmfastload_object_id_table()?;
-    let entry_offset = entry.file_span()?.0;
-    let table_id = "nx:rmfastload:object-id-table#0".to_string();
-    let mut object_ids = table
-        .object_ids
-        .as_slice()
-        .iter()
-        .enumerate()
-        .map(|(ordinal, object_id)| RmFastLoadObjectId {
+) -> Result<Option<(RmFastLoadObjectIdTable, Vec<RmFastLoadObjectId>)>, CodecError> {
+    let Some((entry, table)) = container.rmfastload_object_id_table() else {
+        return Ok(None);
+    };
+    let entry_offset = entry
+        .file_span()
+        .ok_or_else(|| CodecError::Malformed("FastLoad table has no owning file span".into()))?
+        .0;
+    let values = table.object_ids.as_slice();
+    let count = values.len();
+    let count_u64 = u64::try_from(count)
+        .map_err(|_| CodecError::NotImplemented("FastLoad object ID count exceeds u64".into()))?;
+    let table_id_text = "nx:rmfastload:object-id-table#0";
+    let member_id_len = "nx:rmfastload:object-id#".len() + 10;
+
+    ctx.charge_collection_items(count_u64, "admit NX FastLoad identity counts")?;
+    let map_entry_bytes = std::mem::size_of::<(u32, usize)>()
+        .checked_add(4 * std::mem::size_of::<usize>())
+        .ok_or_else(|| {
+            CodecError::NotImplemented("FastLoad map entry exceeds address space".into())
+        })?;
+    let map_bytes = count.checked_mul(map_entry_bytes).ok_or_else(|| {
+        CodecError::NotImplemented("FastLoad identity map exceeds address space".into())
+    })?;
+    let _map_reservation = ctx.reserve_scoped(
+        u64::try_from(map_bytes)
+            .map_err(|_| CodecError::NotImplemented("FastLoad identity map exceeds u64".into()))?,
+        "count NX FastLoad identities",
+    )?;
+    ctx.charge_work(
+        count_u64.checked_mul(2).ok_or_else(|| {
+            CodecError::NotImplemented("FastLoad identity work exceeds u64".into())
+        })?,
+        "count NX FastLoad identities",
+    )?;
+    let mut counts = HashMap::<u32, usize>::new();
+    counts
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad identity map", 0, count_u64))?;
+    for value in values {
+        *counts.entry(*value).or_default() += 1;
+    }
+    let mut stable_bytes = 0_u64;
+    for value in values {
+        if counts.get(value) == Some(&1) {
+            let digits = if *value == 0 { 1 } else { value.ilog10() + 1 };
+            stable_bytes = stable_bytes
+                .checked_add(
+                    u64::try_from(table_id_text.len() + ":value#".len()).map_err(|_| {
+                        CodecError::NotImplemented("FastLoad identity exceeds u64".into())
+                    })? + u64::from(digits),
+                )
+                .ok_or_else(|| {
+                    CodecError::NotImplemented("FastLoad identities exceed u64".into())
+                })?;
+        }
+    }
+
+    let native_items = count_u64
+        .checked_mul(2)
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| {
+            CodecError::NotImplemented("FastLoad native item count exceeds u64".into())
+        })?;
+    ctx.charge_collection_items(native_items, "admit NX FastLoad native collections")?;
+    ctx.charge_entities(count_u64 + 1, "admit NX FastLoad native entities")?;
+    let retained_bytes = count_u64
+        .checked_mul(
+            u64::try_from(
+                std::mem::size_of::<RmFastLoadObjectId>()
+                    + std::mem::size_of::<String>()
+                    + 2 * member_id_len
+                    + table_id_text.len(),
+            )
+            .map_err(|_| CodecError::NotImplemented("FastLoad native item exceeds u64".into()))?,
+        )
+        .and_then(|bytes| {
+            bytes.checked_add(
+                u64::try_from(
+                    std::mem::size_of::<RmFastLoadObjectIdTable>()
+                        + table_id_text.len()
+                        + entry.name.len(),
+                )
+                .ok()?,
+            )
+        })
+        .and_then(|bytes| bytes.checked_add(stable_bytes))
+        .ok_or_else(|| CodecError::NotImplemented("FastLoad native copies exceed u64".into()))?;
+    ctx.charge_retained(retained_bytes, "retain NX FastLoad native copies")?;
+
+    let table_id = table_id_text.to_string();
+    let mut object_ids = Vec::new();
+    object_ids
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad native records", 0, count_u64))?;
+    for (ordinal, value) in values.iter().enumerate() {
+        let source_offset = entry_offset
+            .checked_add(u64::try_from(table.member_offset(ordinal)).map_err(|_| {
+                CodecError::NotImplemented("FastLoad member offset exceeds u64".into())
+            })?)
+            .ok_or_else(|| {
+                CodecError::Malformed("FastLoad member source offset overflows".into())
+            })?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            CodecError::NotImplemented("FastLoad native ordinal exceeds u32".into())
+        })?;
+        object_ids.push(RmFastLoadObjectId {
             id: format!("nx:rmfastload:object-id#{ordinal:010}"),
             table: table_id.clone(),
-            ordinal: ordinal as u32,
-            value: *object_id,
+            ordinal,
+            value: *value,
             stable_identity: None,
-            source_offset: entry_offset + table.member_offset(ordinal) as u64,
-        })
-        .collect::<Vec<_>>();
-    assign_rmfastload_object_id_identities(&mut object_ids);
+            source_offset,
+        });
+    }
+    assign_rmfastload_object_id_identities(&mut object_ids, &counts);
+    let mut member_ids = Vec::new();
+    member_ids
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad member links", 0, count_u64))?;
+    member_ids.extend(object_ids.iter().map(|object_id| object_id.id.clone()));
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
-        members: ObjectIdMembers::new(
-            object_ids
-                .iter()
-                .map(|object_id| object_id.id.clone())
-                .collect(),
-        )
-        .ok()?,
+        members: ObjectIdMembers::new(member_ids)
+            .map_err(|message| CodecError::Malformed(message.into()))?,
         source_entry: entry.name.clone(),
-        registry_source_offset: entry_offset + table.registry_offset as u64,
-        source_offset: entry_offset + table.count_offset as u64,
+        registry_source_offset: entry_offset
+            .checked_add(u64::try_from(table.registry_offset).map_err(|_| {
+                CodecError::NotImplemented("FastLoad registry offset exceeds u64".into())
+            })?)
+            .ok_or_else(|| {
+                CodecError::Malformed("FastLoad registry source offset overflows".into())
+            })?,
+        source_offset: entry_offset
+            .checked_add(u64::try_from(table.count_offset).map_err(|_| {
+                CodecError::NotImplemented("FastLoad count offset exceeds u64".into())
+            })?)
+            .ok_or_else(|| {
+                CodecError::Malformed("FastLoad count source offset overflows".into())
+            })?,
     };
-    Some((native_table, object_ids))
+    Ok(Some((native_table, object_ids)))
 }
 
-/// Assign value-backed witnesses only when an active membership value is
-/// unique in its owning table. The ordinal identity remains authoritative for
-/// table-indexed references such as display targets.
-fn assign_rmfastload_object_id_identities(entries: &mut [RmFastLoadObjectId]) {
-    let mut counts = BTreeMap::<u32, usize>::new();
-    for entry in entries.iter() {
-        *counts.entry(entry.value).or_default() += 1;
-    }
-    for entry in entries.iter_mut() {
+/// Give a value-backed identity only to a unique member of its table.
+fn assign_rmfastload_object_id_identities(
+    entries: &mut [RmFastLoadObjectId],
+    counts: &HashMap<u32, usize>,
+) {
+    for entry in entries {
         entry.stable_identity = (counts.get(&entry.value) == Some(&1))
             .then(|| format!("{}:value#{}", entry.table, entry.value));
     }
