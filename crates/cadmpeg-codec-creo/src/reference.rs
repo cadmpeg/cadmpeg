@@ -7,7 +7,7 @@ use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::units::UnitVector3;
 
 /// Bounds the stored lengths and the normalized dot product of a conic local system's two
@@ -63,8 +63,8 @@ pub(crate) struct ReferenceCircle {
     pub(crate) center: [f64; 3],
     /// Whether the center is stored explicitly rather than derived as a midpoint.
     pub(crate) center_stored: bool,
-    /// Circle radius.
-    pub(crate) radius: PositiveLength,
+    /// Circle radius in source units.
+    pub(crate) radius: PositiveReal,
     /// Unit circle-plane normal.
     pub(crate) axis: UnitVector3,
     /// First stored endpoint.
@@ -144,10 +144,10 @@ pub(crate) struct ReferenceEllipse {
     pub(crate) axis: UnitVector3,
     /// Unit direction of the semi-major axis.
     pub(crate) major_direction: UnitVector3,
-    /// Semi-major radius.
-    pub(crate) major_radius: PositiveLength,
-    /// Semi-minor radius.
-    pub(crate) minor_radius: PositiveLength,
+    /// Semi-major radius in source units.
+    pub(crate) major_radius: PositiveReal,
+    /// Semi-minor radius in source units.
+    pub(crate) minor_radius: PositiveReal,
     /// Source conic byte offset.
     pub(crate) offset: usize,
 }
@@ -196,8 +196,8 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         };
         let axis: [f64; 3] = (*axis_unit.as_raw()).into();
         let (Some(first_coefficient), Some(second_coefficient)) = (
-            PositiveLength::new(conic.coefficient_1.abs()),
-            PositiveLength::new(conic.coefficient_2.abs()),
+            PositiveReal::new(conic.coefficient_1.abs()),
+            PositiveReal::new(conic.coefficient_2.abs()),
         ) else {
             continue;
         };
@@ -1015,7 +1015,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         Some(values)
     }
     let explicit_axis =
-        |center: [f64; 3], radius: PositiveLength, first: [f64; 3], second: [f64; 3]| {
+        |center: [f64; 3], radius: PositiveReal, first: [f64; 3], second: [f64; 3]| {
             let radius = radius.get();
             let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
             let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
@@ -1053,7 +1053,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
     let explicit = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<10>(body, start, cache)?;
         let center = [values[0], values[1], values[2]];
-        let radius = PositiveLength::new(values[3].abs())?;
+        let radius = PositiveReal::new(values[3].abs())?;
         let first = [values[4], values[5], values[6]];
         let second = [values[7], values[8], values[9]];
         let (axis, first, second) = explicit_axis(center, radius, first, second)?;
@@ -1070,7 +1070,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
     });
     let diametric = (0..body.len()).filter_map(|start| {
         let values = scalar_run::<7>(body, start, cache)?;
-        let radius = PositiveLength::new(values[0].abs())?;
+        let radius = PositiveReal::new(values[0].abs())?;
         let first = [values[1], values[2], values[3]];
         let second = [values[4], values[5], values[6]];
         let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);

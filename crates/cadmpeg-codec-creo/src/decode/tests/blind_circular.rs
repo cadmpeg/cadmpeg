@@ -1124,7 +1124,7 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
             entity_id,
             center: [0.0; 3],
             center_stored: true,
-            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+            radius: cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
             axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
                 .expect("unit axis"),
             start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
@@ -1168,7 +1168,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         entity_id,
         center,
         center_stored: true,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
+        radius: cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
         axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
             .expect("unit axis"),
         start: cadmpeg_ir::features::FinitePoint3::new(start.into()).expect("finite start"),
@@ -1194,7 +1194,7 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
     assert!(reference_circle_pair_cylinder_frame(&[&first]).is_none());
 
     let mut unequal_radius = second.clone();
-    unequal_radius.radius = cadmpeg_ir::scalar::PositiveLength::new(1.0).expect("positive radius");
+    unequal_radius.radius = cadmpeg_ir::scalar::PositiveReal::new(1.0).expect("positive radius");
     assert!(reference_circle_pair_cylinder_frame(&[&first, &unequal_radius]).is_none());
 
     let displaced = circle(43, [3.5, 5.0, 4.0], [0.0, 0.0, 1.0], [3.5, 7.0, 4.0]);
