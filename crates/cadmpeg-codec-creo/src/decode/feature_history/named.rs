@@ -167,7 +167,11 @@ fn name_only_feature_definition(
             preceding_features_establish_body(ir),
         );
         return Some(revolve_feature_definition_with_profile(
-            scan, ir, feature_id, op,
+            scan,
+            ir,
+            source_carriers,
+            feature_id,
+            op,
         ));
     }
     None
@@ -252,6 +256,7 @@ pub(super) fn extrude_feature_definition_with_profile(
 fn revolve_feature_definition_with_profile(
     scan: &ContainerScan,
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     op: BooleanOp,
 ) -> IrFeatureDefinition {
@@ -259,7 +264,13 @@ fn revolve_feature_definition_with_profile(
     let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
     let profile = unique_feature_profile_ref(scan, ir, feature_id)
         .and_then(|profile| profile.planar().cloned());
-    let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
+    let axis = feature_revolution_axis_for_transfer(
+        scan,
+        ir,
+        source_carriers,
+        feature_id,
+        extent.as_ref(),
+    );
     let solid = sweep_solid(output_kind);
     IrFeatureDefinition::Operation(IrFeatureOperation::Revolve {
         construction: match (profile, axis, extent) {
