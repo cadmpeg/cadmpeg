@@ -399,6 +399,33 @@ impl OffsetCurveConstruction {
             }
             OffsetSide::Direction { direction, .. } => direction.norm() > 0.0,
         });
+        Self::with_admitted_side(source, distance, side, range)
+    }
+
+    /// Build a plane-normal offset from a computed unit normal. The distance
+    /// and any variable distance law remain subject to construction admission.
+    pub fn with_unit_plane_normal(
+        source: CurveId,
+        distance: f64,
+        normal: crate::units::UnitVector3,
+        range: Option<CurveOffsetRange>,
+    ) -> Result<Self, ProceduralGeometryError> {
+        Self::with_admitted_side(
+            source,
+            distance,
+            Some(OffsetSide::PlaneNormal {
+                normal: FiniteVector3::from(normal),
+            }),
+            range,
+        )
+    }
+
+    fn with_admitted_side(
+        source: CurveId,
+        distance: f64,
+        side: Option<OffsetSide<FiniteVector3>>,
+        range: Option<CurveOffsetRange>,
+    ) -> Result<Self, ProceduralGeometryError> {
         let range = match range {
             None => Some(None),
             Some(range) => range
@@ -810,6 +837,22 @@ struct SilhouetteCurveConstructionWire {
 }
 
 impl SilhouetteCurveConstruction {
+    /// Build a silhouette from a unit light direction without checking it again.
+    #[must_use]
+    pub fn from_unit_direction(
+        context: IntcurveSupportContext,
+        silhouette: SilhouetteKind,
+        cast_surface: SurfaceId,
+        light_direction: crate::units::UnitVector3,
+    ) -> Self {
+        Self {
+            context,
+            silhouette,
+            cast_surface,
+            light_direction: light_direction.into(),
+        }
+    }
+
     /// Admit the construction parameters.
     pub fn try_new(
         context: IntcurveSupportContext,

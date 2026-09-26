@@ -410,6 +410,18 @@ impl<P, N> TessellationMesh<P, N> {
     }
 }
 
+impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// Pair admitted position and normal lanes into triangle-list rows.
+    /// Only the lane lengths are checked.
+    pub fn from_admitted_list_lanes(
+        positions: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        Self::pair_list_lanes(positions, triangles, normals)
+    }
+}
+
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
     /// Vertex positions in mesh order.
     #[must_use]
@@ -1332,6 +1344,16 @@ impl Tessellation {
     ) -> Result<Self, TessellationError> {
         self.set_chordal_deflection(chordal_deflection)?;
         Ok(self)
+    }
+
+    /// Set a source chordal deflection that was admitted before this call.
+    #[must_use]
+    pub fn with_admitted_chordal_deflection(
+        mut self,
+        chordal_deflection: Option<NonNegativeReal>,
+    ) -> Self {
+        self.chordal_deflection = chordal_deflection;
+        self
     }
 
     /// Set the native source-object identity.

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length, angle, vector, and parameter-literal parse/format helpers.
 
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
     features::{
         edge_treatments::ChamferSpec, patterns::PatternTransform, BooleanOp, DimensionDisplay,
-        FaceMotion, FeatureDefinition, FeatureOperation, ParameterValue,
+        FaceMotion, FeatureDefinition, FeatureOperation, FinitePoint3, FiniteVector3,
+        ParameterValue,
     },
-    scalar::{Angle, FiniteReal, Length},
+    scalar::{Angle, FiniteReal, InteriorAngle, Length, PositiveAngle, PositiveLength},
 };
 
 const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
@@ -29,7 +30,7 @@ pub(super) fn valid_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > f64::EPSILON
 }
 
-pub(super) fn parse_length_mm(value: &str) -> Option<f64> {
+pub(super) fn parse_length_mm(value: &str) -> Option<Length> {
     let value = value.trim();
     let (value, display_length) = value
         .strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}'])
@@ -54,38 +55,31 @@ pub(super) fn parse_length_mm(value: &str) -> Option<f64> {
                 .trim()
                 .parse::<f64>()
                 .ok()
-                .map(|value| value * scale)
-                .filter(|value| value.is_finite());
+                .and_then(|value| Length::new(value * scale));
         }
     }
     display_length
         .then(|| value.parse::<f64>().ok())
         .flatten()
-        .filter(|value| value.is_finite())
+        .and_then(Length::new)
 }
 
-pub(super) fn parse_positive_length_mm(value: &str) -> Option<f64> {
-    parse_length_mm(value).filter(|value| *value > 0.0)
+pub(super) fn parse_positive_length_mm(value: &str) -> Option<PositiveLength> {
+    parse_length_mm(value).and_then(|value| PositiveLength::try_from(value).ok())
 }
 
-pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
+pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<PositiveLength> {
     parse_positive_length_mm(value).or_else(|| {
         value
             .trim()
             .parse::<f64>()
             .ok()
-            .filter(|value| value.is_finite() && *value > 0.0)
+            .and_then(PositiveLength::new)
     })
 }
 
-pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<f64> {
-    parse_length_mm(value).or_else(|| {
-        value
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|value| value.is_finite())
-    })
+pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<Length> {
+    parse_length_mm(value).or_else(|| value.trim().parse::<f64>().ok().and_then(Length::new))
 }
 
 pub(crate) fn format_length_mm(value: Length) -> String {
@@ -97,7 +91,7 @@ pub(crate) fn format_length_number(value: Length) -> String {
     finite_literal(value.get())
 }
 
-pub(crate) fn parse_angle_rad(value: &str) -> Option<f64> {
+pub(crate) fn parse_angle_rad(value: &str) -> Option<Angle> {
     let value = value.trim();
     if let Some(number) = value
         .strip_suffix("deg")
@@ -108,20 +102,20 @@ pub(crate) fn parse_angle_rad(value: &str) -> Option<f64> {
             .parse::<f64>()
             .ok()
             .map(f64::to_radians)
-            .filter(|value| value.is_finite());
+            .and_then(Angle::new);
     }
     value
         .strip_suffix("rad")
         .and_then(|number| number.trim().parse::<f64>().ok())
-        .filter(|value| value.is_finite())
+        .and_then(Angle::new)
 }
 
-pub(crate) fn parse_positive_angle_rad(value: &str) -> Option<f64> {
-    parse_angle_rad(value).filter(|value| *value > 0.0)
+pub(crate) fn parse_positive_angle_rad(value: &str) -> Option<PositiveAngle> {
+    parse_angle_rad(value).and_then(|value| PositiveAngle::try_from(value).ok())
 }
 
-pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
-    parse_positive_angle_rad(value).filter(|value| *value < std::f64::consts::PI)
+pub(crate) fn parse_bounded_angle_rad(value: &str) -> Option<InteriorAngle> {
+    parse_positive_angle_rad(value).and_then(|value| InteriorAngle::try_from(value).ok())
 }
 
 pub(crate) fn format_angle_rad(value: Angle) -> String {
@@ -143,12 +137,31 @@ fn finite_literal(value: f64) -> String {
     }
 }
 
-pub(crate) fn parse_point3_mm(value: &str) -> Option<Point3> {
-    let values = value
+pub(crate) fn parse_point3_mm(value: &str) -> Option<FinitePoint3> {
+    let [x, y, z] = parse_length_components_mm(value)?;
+    Some(FinitePoint3::from_coordinates(
+        x.magnitude(),
+        y.magnitude(),
+        z.magnitude(),
+    ))
+}
+
+pub(super) fn parse_vector3_mm(value: &str) -> Option<FiniteVector3> {
+    let [x, y, z] = parse_length_components_mm(value)?;
+    Some(FiniteVector3::from_components(
+        x.magnitude(),
+        y.magnitude(),
+        z.magnitude(),
+    ))
+}
+
+fn parse_length_components_mm(value: &str) -> Option<[Length; 3]> {
+    value
         .split(',')
         .map(|component| parse_length_mm(component.trim()))
-        .collect::<Option<Vec<_>>>()?;
-    (values.len() == 3).then(|| Point3::new(values[0], values[1], values[2]))
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
 }
 
 pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
@@ -159,8 +172,12 @@ pub(crate) fn parse_vector3(value: &str) -> Option<Vector3> {
     (values.len() == 3).then(|| Vector3::new(values[0], values[1], values[2]))
 }
 
-pub(super) fn parse_valid_direction(value: &str) -> Option<Vector3> {
-    parse_vector3(value).filter(|value| valid_direction(*value))
+pub(super) fn parse_valid_direction(
+    value: &str,
+) -> Option<cadmpeg_ir::features::FeatureDirection3> {
+    parse_vector3(value)
+        .filter(|value| valid_direction(*value))
+        .and_then(cadmpeg_ir::features::FeatureDirection3::new)
 }
 
 pub(super) fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
@@ -183,9 +200,7 @@ pub(super) fn parse_bool(value: &str) -> Option<bool> {
 
 pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
     if dimension_display(expression).is_some() {
-        return parse_dimension_display_length(expression)
-            .and_then(Length::new)
-            .map(ParameterValue::Length);
+        return parse_dimension_display_length(expression).map(ParameterValue::Length);
     }
     let expression = expression.trim();
     if expression.eq_ignore_ascii_case("true") {
@@ -195,10 +210,10 @@ pub(super) fn parse_parameter_literal(expression: &str) -> Option<ParameterValue
         return Some(ParameterValue::Boolean(false));
     }
     if let Some(value) = parse_length_mm(expression) {
-        return Some(ParameterValue::Length(Length::new(value)?));
+        return Some(ParameterValue::Length(value));
     }
     if let Some(value) = parse_angle_rad(expression) {
-        return Some(ParameterValue::Angle(Angle::new(value)?));
+        return Some(ParameterValue::Angle(value));
     }
     if let Ok(value) = expression.trim().parse::<i64>() {
         return Some(ParameterValue::Integer(value));
@@ -226,7 +241,7 @@ pub(super) fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     }
 }
 
-pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<f64> {
+pub(crate) fn parse_dimension_display_length(expression: &str) -> Option<Length> {
     let expression = strip_dimension_count(expression.trim());
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))
@@ -316,7 +331,7 @@ pub(super) fn parse_neutral_parameter_literal(
     };
     if positional_length {
         return parse_positive_dimension_length_mm(expression)
-            .and_then(Length::new)
+            .map(Length::from)
             .map(ParameterValue::Length);
     }
     parse_parameter_literal(expression)
@@ -330,5 +345,23 @@ pub(super) fn format_parameter_value(value: &ParameterValue) -> String {
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
         ParameterValue::String(value) => value.clone(),
+    }
+}
+
+#[cfg(test)]
+mod direction_tests {
+    use super::parse_valid_direction;
+    use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn parsed_direction_retains_codec_threshold_and_components() {
+        assert_eq!(
+            parse_valid_direction("2,0,-3").map(cadmpeg_ir::features::FeatureDirection3::get),
+            Some(Vector3::new(2.0, 0.0, -3.0))
+        );
+        assert!(parse_valid_direction("0,0,0").is_none());
+        assert!(parse_valid_direction("NaN,0,0").is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON)).is_none());
+        assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON * 2.0)).is_some());
     }
 }

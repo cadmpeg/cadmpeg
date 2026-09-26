@@ -34,7 +34,7 @@ pub(super) fn tolerant_coedge_range(
     index
         .tolerant_coedges
         .get(coedge.as_str())
-        .map(|parameters| parameters.parameter_range)
+        .map(|parameters| parameters.parameter_range.get())
 }
 
 pub(super) fn native_tolerant_coedge_extension(
@@ -96,7 +96,8 @@ pub(super) fn native_tolerant_coedge_extension(
             records.push(0x0f);
             native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
-            if let Some([start, end]) = *parameter_range {
+            if let Some(range) = *parameter_range {
+                let [start, end] = range.get();
                 records.push(0x0a);
                 native_f64(records, start);
                 records.push(0x0a);

@@ -10,13 +10,15 @@ use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::topology::{Edge, IncreasingParameterInterval, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -158,11 +160,14 @@ fn add_edge(
     ir: &mut CadIr,
     entry: &DirectoryEntry,
     nurbs: NurbsCurve,
-    parameter_range: [f64; 2],
+    parameter_range: [FiniteReal; 2],
     sequences: &mut super::geometry::SourceSequences,
 ) -> Option<EdgeId> {
-    let start = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]).ok()?;
-    let end = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]).ok()?;
+    let parameter_range =
+        IncreasingParameterInterval::between(parameter_range[0], parameter_range[1])?;
+    let [lower, upper] = parameter_range.endpoints();
+    let start = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, lower).ok()?;
+    let end = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, upper).ok()?;
     let stem = crate::ids::Stem::directory(entry.sequence);
     let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
     sequences.record_point(&start_point, &stem);
@@ -196,7 +201,7 @@ fn add_edge(
     });
     ir.model.edges.push(Edge {
         id: edge.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range)).ok()?,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
         start: start_vertex,
         end: end_vertex,
         tolerance: None,
@@ -275,7 +280,7 @@ pub(super) fn project(
             continue;
         };
         let Some(breakpoints) = (5..5 + breakpoint_count)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -284,7 +289,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        if breakpoints.windows(2).any(|pair| pair[0] >= pair[1]) {
+        if breakpoints
+            .windows(2)
+            .any(|pair| pair[0].get() >= pair[1].get())
+        {
             losses.push(entity_loss(
                 entry,
                 "breakpoints are not strictly increasing",
@@ -297,7 +305,7 @@ pub(super) fn project(
             continue;
         };
         let Some(coefficients) = (coefficient_start..coefficient_start + coefficient_count)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -325,19 +333,24 @@ pub(super) fn project(
         let mut continuous = true;
         let precision = global.real_precision();
         let resolution = global.minimum_resolution_mm();
-        let mut previous_terminal_point = None;
+        let mut previous_terminal_point: Option<FinitePoint3> = None;
         let mut previous_terminal_tangent = None;
         let mut previous_terminal_curvature = None;
-        for (segment, values) in coefficients.chunks_exact(12).enumerate() {
-            let width = breakpoints[segment + 1] - breakpoints[segment];
-            let width_interval =
-                declared_interval(record, 5 + segment + 1, breakpoints[segment + 1], precision)
-                    .subtract(declared_interval(
-                        record,
-                        5 + segment,
-                        breakpoints[segment],
-                        precision,
-                    ));
+        for (segment, admitted_values) in coefficients.chunks_exact(12).enumerate() {
+            let values: [f64; 12] = std::array::from_fn(|index| admitted_values[index].get());
+            let width = breakpoints[segment + 1].get() - breakpoints[segment].get();
+            let width_interval = declared_interval(
+                record,
+                5 + segment + 1,
+                breakpoints[segment + 1].get(),
+                precision,
+            )
+            .subtract(declared_interval(
+                record,
+                5 + segment,
+                breakpoints[segment].get(),
+                precision,
+            ));
             let segment_start = coefficient_start + segment * 12;
             let intervals = [
                 terminal_intervals(
@@ -398,23 +411,21 @@ pub(super) fn project(
             let x = coordinate(0);
             let y = coordinate(4);
             let z = coordinate(8);
-            let Some(start_point) = transform
-                .apply_point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor))
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+            let Some(start_point) =
+                transform.apply_point(Point3::new(x[0] * factor, y[0] * factor, z[0] * factor))
             else {
                 continuous = false;
                 break;
             };
-            let Some(end_point) = transform
-                .apply_point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor))
-                .map(cadmpeg_ir::features::FinitePoint3::get)
+            let Some(end_point) =
+                transform.apply_point(Point3::new(x[3] * factor, y[3] * factor, z[3] * factor))
             else {
                 continuous = false;
                 break;
             };
             // GE-03: IGES §2.2.4.3.19 supplies the positional comparison only.
             if previous_terminal_point.is_some_and(|previous| {
-                !points_within_resolution(previous, start_point, resolution)
+                !points_within_resolution(previous.get(), start_point.get(), resolution)
             }) {
                 continuous = false;
                 break;
@@ -484,13 +495,11 @@ pub(super) fn project(
             }
             let Some(bezier) = (0..4)
                 .map(|index| {
-                    transform
-                        .apply_point(Point3::new(
-                            x[index] * factor,
-                            y[index] * factor,
-                            z[index] * factor,
-                        ))
-                        .map(cadmpeg_ir::features::FinitePoint3::get)
+                    transform.apply_point(Point3::new(
+                        x[index] * factor,
+                        y[index] * factor,
+                        z[index] * factor,
+                    ))
                 })
                 .collect::<Option<Vec<_>>>()
             else {
@@ -513,7 +522,7 @@ pub(super) fn project(
         }
         let tail_start = coefficient_start + coefficient_count;
         let Some(tail) = (tail_start..tail_start + 12)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(entry, "terminal derivative block is missing"));
@@ -521,18 +530,19 @@ pub(super) fn project(
         };
         // GE-03: §4.14 calls this block redundant. CADIR keeps the
         // coefficient-defined carrier when a present block disagrees.
-        let last_values = &coefficients[coefficients.len() - 12..];
+        let last_values: [f64; 12] =
+            std::array::from_fn(|index| coefficients[coefficients.len() - 12 + index].get());
         let last_segment_start = coefficient_start + (segment_count - 1) * 12;
         let last_width = declared_interval(
             record,
             5 + segment_count,
-            breakpoints[segment_count],
+            breakpoints[segment_count].get(),
             precision,
         )
         .subtract(declared_interval(
             record,
             5 + segment_count - 1,
-            breakpoints[segment_count - 1],
+            breakpoints[segment_count - 1].get(),
             precision,
         ));
         let expected_tail = [0, 4, 8].map(|offset| {
@@ -545,7 +555,7 @@ pub(super) fn project(
             )
         });
         if tail.iter().enumerate().any(|(offset, actual)| {
-            !declared_interval(record, tail_start + offset, *actual, precision)
+            !declared_interval(record, tail_start + offset, actual.get(), precision)
                 .overlaps(expected_tail[offset / 4][offset % 4])
         }) {
             losses.push(entity_loss(
@@ -558,7 +568,10 @@ pub(super) fn project(
             knots.extend([*breakpoint; 3]);
         }
         knots.extend([breakpoints[segment_count]; 4]);
-        let nurbs = match NurbsCurve::from_lanes(3, knots, control_points, None, false) {
+        let nurbs = match KnotVector::from_finite_lanes(knots).and_then(|knots| {
+            NurbsPoles3::from_checked_lanes(control_points, None)
+                .and_then(|poles| NurbsCurve::new(3, knots, poles, false))
+        }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 losses.push(entity_loss(
@@ -693,7 +706,7 @@ pub(super) fn project(
             continue;
         };
         let Some(u_breakpoints) = (5..5 + u_breakpoint_count)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -704,7 +717,7 @@ pub(super) fn project(
         };
         let v_breakpoint_start = 5 + u_breakpoint_count;
         let Some(v_breakpoints) = (v_breakpoint_start..v_breakpoint_start + v_breakpoint_count)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(
@@ -713,8 +726,12 @@ pub(super) fn project(
             ));
             continue;
         };
-        if u_breakpoints.windows(2).any(|pair| pair[0] >= pair[1])
-            || v_breakpoints.windows(2).any(|pair| pair[0] >= pair[1])
+        if u_breakpoints
+            .windows(2)
+            .any(|pair| pair[0].get() >= pair[1].get())
+            || v_breakpoints
+                .windows(2)
+                .any(|pair| pair[0].get() >= pair[1].get())
         {
             losses.push(entity_loss(
                 entry,
@@ -791,14 +808,15 @@ pub(super) fn project(
                     break 'patches;
                 };
                 let Some(values) = (block_start..block_start + 48)
-                    .map(|index| record.number(index).filter(|value| value.is_finite()))
+                    .map(|index| record.number(index).and_then(FiniteReal::new))
                     .collect::<Option<Vec<_>>>()
                 else {
                     valid = false;
                     break 'patches;
                 };
-                let u_width = u_breakpoints[u_patch + 1] - u_breakpoints[u_patch];
-                let v_width = v_breakpoints[v_patch + 1] - v_breakpoints[v_patch];
+                let u_width = u_breakpoints[u_patch + 1].get() - u_breakpoints[u_patch].get();
+                let v_width = v_breakpoints[v_patch + 1].get() - v_breakpoints[v_patch].get();
+                let values: [f64; 48] = std::array::from_fn(|index| values[index].get());
                 let coordinates = [
                     patch_bezier(&values[0..16], u_width, v_width),
                     patch_bezier(&values[16..32], u_width, v_width),
@@ -806,22 +824,20 @@ pub(super) fn project(
                 ];
                 for (u_local, x_row) in coordinates[0].iter().enumerate() {
                     for (v_local, x) in x_row.iter().enumerate() {
-                        let Some(point) = transform
-                            .apply_point(Point3::new(
-                                *x * factor,
-                                coordinates[1][u_local][v_local] * factor,
-                                coordinates[2][u_local][v_local] * factor,
-                            ))
-                            .map(cadmpeg_ir::features::FinitePoint3::get)
-                        else {
+                        let Some(point) = transform.apply_point(Point3::new(
+                            *x * factor,
+                            coordinates[1][u_local][v_local] * factor,
+                            coordinates[2][u_local][v_local] * factor,
+                        )) else {
                             valid = false;
                             break 'patches;
                         };
                         let u_index = u_patch * 3 + u_local;
                         let v_index = v_patch * 3 + v_local;
                         let index = u_index * v_count + v_index;
-                        if grid[index].is_some_and(|existing| !surface_point_close(existing, point))
-                        {
+                        if grid[index].is_some_and(|existing: FinitePoint3| {
+                            !surface_point_close(existing.get(), point.get())
+                        }) {
                             valid = false;
                             break 'patches;
                         }
@@ -861,18 +877,25 @@ pub(super) fn project(
             ));
             continue;
         };
-        let nurbs = match NurbsSurface::from_lanes(
-            NurbsSurfaceAxis::new(3, u_knots, false),
-            NurbsSurfaceAxis::new(3, v_knots, false),
-            NurbsSurfaceLanes::new(
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                None,
-            ),
-            false,
-        ) {
+        let nurbs = match KnotVector::from_finite_lanes(u_knots).and_then(|u_knots| {
+            KnotVector::from_finite_lanes(v_knots).and_then(|v_knots| {
+                NurbsPoleGrid::from_checked_lanes(
+                    control_points
+                        .chunks(v_count as usize)
+                        .map(<[_]>::to_vec)
+                        .collect(),
+                    None,
+                )
+                .and_then(|poles| {
+                    NurbsSurface::new(
+                        NurbsSurfaceAxis::new(3, u_knots, false),
+                        NurbsSurfaceAxis::new(3, v_knots, false),
+                        poles,
+                        false,
+                    )
+                })
+            })
+        }) {
             Ok(nurbs) => nurbs,
             Err(error) => {
                 losses.push(entity_loss(

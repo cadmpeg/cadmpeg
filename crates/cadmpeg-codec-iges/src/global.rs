@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 
 #[derive(Debug, Clone, PartialEq)]
 enum Value {
@@ -120,8 +121,8 @@ impl NumericDeclarations {
 
 enum SuppliedReal {
     Absent,
-    Value(f64),
-    Recovered(f64),
+    Value(FiniteReal),
+    Recovered(FiniteReal),
     Malformed,
 }
 
@@ -161,10 +162,10 @@ impl GlobalTable {
         matches!(self, Self::Legacy | Self::V5Later)
     }
 
-    const fn default_model_scale(self) -> Option<f64> {
+    const fn default_model_scale(self) -> Option<PositiveReal> {
         match self {
             Self::V4_0 => None,
-            Self::Legacy | Self::V5_0 | Self::V5Later => Some(1.0),
+            Self::Legacy | Self::V5_0 | Self::V5Later => Some(PositiveReal::ONE),
         }
     }
 
@@ -239,8 +240,8 @@ pub(crate) struct ResolvedGlobal {
     native_file_name: Option<String>,
     units_name: Option<String>,
     numeric: NumericDeclarations,
-    minimum_resolution: f64,
-    length_factor_mm: Option<f64>,
+    minimum_resolution: NonNegativeReal,
+    length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
     declaration: VersionDeclaration,
 }
@@ -248,7 +249,7 @@ pub(crate) struct ResolvedGlobal {
 /// Length-valued Global view. It exists only when the millimetre factor resolved.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProjectedGlobal {
-    length_factor_mm: f64,
+    length_factor_mm: PositiveReal,
     minimum_resolution_mm: f64,
     precision: RealPrecision,
     line_weight_scale: Option<LineWeightScale>,
@@ -263,7 +264,7 @@ struct LineWeightScale {
 
 #[derive(Debug, Clone, Copy)]
 enum LineWeightMode {
-    Absolute { maximum_width: f64 },
+    Absolute { maximum_width: PositiveReal },
     Relative,
 }
 
@@ -340,7 +341,6 @@ const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
 ];
 
 const FALLBACK_SIGNIFICANCE: u32 = 17;
-const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
 const METADATA_CONSEQUENCE: &str = "its value was not transferred";
 const SIGNIFICANCE_CONSEQUENCE: &str =
     "the decoder substituted 17 significant decimal digits from its own specification";
@@ -860,14 +860,14 @@ fn numeric_text(bytes: &[u8]) -> Option<&str> {
         .flatten()
 }
 
-fn parse_real_text(text: &str) -> Option<f64> {
+fn parse_real_text(text: &str) -> Option<FiniteReal> {
     text.replace(['D', 'd'], "E")
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite())
+        .and_then(FiniteReal::new)
 }
 
-fn recovered_real_text(text: &str) -> Option<f64> {
+fn recovered_real_text(text: &str) -> Option<FiniteReal> {
     let prefix = text.strip_suffix('.')?;
     if !prefix
         .bytes()
@@ -1079,9 +1079,9 @@ impl Resolution {
                 );
             }
             SuppliedReal::Absent => {}
-            SuppliedReal::Value(value) if value >= 0.0 => {}
-            SuppliedReal::Recovered(value) if value >= 0.0 => {
-                self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value);
+            SuppliedReal::Value(value) if value.get() >= 0.0 => {}
+            SuppliedReal::Recovered(value) if value.get() >= 0.0 => {
+                self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value.get());
             }
             SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
                 self.charge(
@@ -1115,7 +1115,7 @@ impl Resolution {
         }
     }
 
-    fn minimum_resolution(&mut self, global_table: GlobalTable) -> f64 {
+    fn minimum_resolution(&mut self, global_table: GlobalTable) -> NonNegativeReal {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
             SuppliedReal::Absent if global_table.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
@@ -1124,22 +1124,44 @@ impl Resolution {
                     Defect::Absent,
                     RESOLUTION_CONSEQUENCE,
                 );
-                FALLBACK_MINIMUM_RESOLUTION
+                NonNegativeReal::ZERO
             }
-            SuppliedReal::Absent => FALLBACK_MINIMUM_RESOLUTION,
-            SuppliedReal::Value(value) if value >= 0.0 => value,
-            SuppliedReal::Recovered(value) if value >= 0.0 => {
-                self.charge_recovered_real(FIELD_MINIMUM_RESOLUTION, value);
-                value
-            }
-            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
+            SuppliedReal::Absent => NonNegativeReal::ZERO,
+            SuppliedReal::Value(value) => match NonNegativeReal::try_from(value) {
+                Ok(value) => value,
+                Err(_) => {
+                    self.charge(
+                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        FIELD_MINIMUM_RESOLUTION,
+                        Defect::Malformed,
+                        RESOLUTION_CONSEQUENCE,
+                    );
+                    NonNegativeReal::ZERO
+                }
+            },
+            SuppliedReal::Recovered(value) => match NonNegativeReal::try_from(value) {
+                Ok(admitted) => {
+                    self.charge_recovered_real(FIELD_MINIMUM_RESOLUTION, value.get());
+                    admitted
+                }
+                Err(_) => {
+                    self.charge(
+                        IgesLossCode::GlobalSemanticContextSubstituted,
+                        FIELD_MINIMUM_RESOLUTION,
+                        Defect::Malformed,
+                        RESOLUTION_CONSEQUENCE,
+                    );
+                    NonNegativeReal::ZERO
+                }
+            },
+            SuppliedReal::Malformed => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
                     FIELD_MINIMUM_RESOLUTION,
                     Defect::Malformed,
                     RESOLUTION_CONSEQUENCE,
                 );
-                FALLBACK_MINIMUM_RESOLUTION
+                NonNegativeReal::ZERO
             }
         }
     }
@@ -1165,32 +1187,30 @@ impl Resolution {
             {
                 (None, None)
             }
-            SuppliedReal::Value(0.0) if global_table == GlobalTable::V5_0 => {
+            SuppliedReal::Value(value)
+                if value.get() == 0.0 && global_table == GlobalTable::V5_0 =>
+            {
                 (Some(LineWeightMode::Relative), None)
             }
-            SuppliedReal::Recovered(0.0) if global_table == GlobalTable::V5_0 => {
+            SuppliedReal::Recovered(value)
+                if value.get() == 0.0 && global_table == GlobalTable::V5_0 =>
+            {
                 self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, 0.0);
                 (Some(LineWeightMode::Relative), None)
             }
-            SuppliedReal::Value(value) if value > 0.0 => (
-                Some(LineWeightMode::Absolute {
-                    maximum_width: value,
-                }),
-                None,
-            ),
-            SuppliedReal::Recovered(value) if value > 0.0 => {
-                self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, value);
-                (
-                    Some(LineWeightMode::Absolute {
-                        maximum_width: value,
-                    }),
-                    None,
-                )
-            }
+            SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
+                Ok(maximum_width) => (Some(LineWeightMode::Absolute { maximum_width }), None),
+                Err(_) => (None, Some(Defect::Malformed)),
+            },
+            SuppliedReal::Recovered(value) => match PositiveReal::try_from(value) {
+                Ok(maximum_width) => {
+                    self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, value.get());
+                    (Some(LineWeightMode::Absolute { maximum_width }), None)
+                }
+                Err(_) => (None, Some(Defect::Malformed)),
+            },
             SuppliedReal::Absent => (None, Some(Defect::Absent)),
-            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
-                (None, Some(Defect::Malformed))
-            }
+            SuppliedReal::Malformed => (None, Some(Defect::Malformed)),
         };
         if let Some((index, defect)) = [
             (FIELD_LINE_WEIGHT_GRADATIONS, gradations_defect),
@@ -1215,17 +1235,21 @@ impl Resolution {
     fn length_unit(
         &mut self,
         global_table: GlobalTable,
-    ) -> (Option<i64>, Option<String>, Option<f64>) {
+    ) -> (Option<i64>, Option<String>, Option<PositiveReal>) {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
             SuppliedReal::Absent => (global_table.default_model_scale(), None),
-            SuppliedReal::Value(value) if value > 0.0 => (Some(value), None),
-            SuppliedReal::Recovered(value) if value > 0.0 => {
-                self.charge_recovered_real(FIELD_MODEL_SCALE, value);
-                (Some(value), None)
-            }
-            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
-                (None, Some(Defect::Malformed))
-            }
+            SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
+                Ok(scale) => (Some(scale), None),
+                Err(_) => (None, Some(Defect::Malformed)),
+            },
+            SuppliedReal::Recovered(value) => match PositiveReal::try_from(value) {
+                Ok(scale) => {
+                    self.charge_recovered_real(FIELD_MODEL_SCALE, value.get());
+                    (Some(scale), None)
+                }
+                Err(_) => (None, Some(Defect::Malformed)),
+            },
+            SuppliedReal::Malformed => (None, Some(Defect::Malformed)),
         };
         let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
             Supplied::Absent => (global_table.default_units_flag(), None),
@@ -1270,9 +1294,7 @@ impl Resolution {
             (name, units_flag.and_then(enumerated_unit_factor_mm), None)
         };
         let length_factor_mm = match (unit_mm, scale) {
-            (Some(unit), Some(scale)) => {
-                Some(unit / scale).filter(|factor| factor.is_finite() && *factor > 0.0)
-            }
+            (Some(unit), Some(scale)) => PositiveReal::new(unit / scale.get()),
             _ => None,
         };
         if length_factor_mm.is_none() {
@@ -1432,7 +1454,7 @@ impl ResolvedGlobal {
         let length_factor_mm = self.length_factor_mm?;
         Some(ProjectedGlobal {
             length_factor_mm,
-            minimum_resolution_mm: self.minimum_resolution * length_factor_mm,
+            minimum_resolution_mm: self.minimum_resolution.get() * length_factor_mm.get(),
             precision: self.real_precision(),
             line_weight_scale: self.line_weight_scale,
             global_table: self.global_table(),
@@ -1576,7 +1598,7 @@ impl ProjectedGlobal {
     }
 
     pub(crate) fn length_factor_mm(&self) -> f64 {
-        self.length_factor_mm
+        self.length_factor_mm.get()
     }
 
     pub(crate) fn minimum_resolution_mm(&self) -> f64 {
@@ -1599,7 +1621,10 @@ impl ProjectedGlobal {
         let LineWeightMode::Absolute { maximum_width } = scale.mode else {
             return None;
         };
-        Some(number as f64 * maximum_width * self.length_factor_mm / scale.gradations as f64)
+        Some(
+            number as f64 * maximum_width.get() * self.length_factor_mm.get()
+                / scale.gradations as f64,
+        )
     }
 
     pub(crate) fn line_weight_number_is_valid(&self, number: i64) -> bool {

@@ -322,6 +322,13 @@ impl Length {
     pub const ZERO: Self = Self(0.0);
 }
 
+impl From<FiniteReal> for Length {
+    /// A finite scalar interpreted in canonical millimeters.
+    fn from(value: FiniteReal) -> Self {
+        Self(value.get())
+    }
+}
+
 impl Angle {
     /// One full turn in radians.
     pub const FULL_TURN: Self = Self(std::f64::consts::TAU);
@@ -377,9 +384,29 @@ impl NonNegativeLength {
 impl PositiveReal {
     /// Unit scalar value.
     pub const ONE: Self = Self(1.0);
+
+    /// Assign a positive length to a dimensionless positive value.
+    /// The caller supplies the quantity meaning; both domains admit the same bits.
+    #[must_use]
+    pub const fn from_assigned_length(value: PositiveLength) -> Self {
+        Self(value.0)
+    }
+
+    /// Admit a finite scalar as positive. Only its sign remains to check.
+    #[must_use]
+    pub const fn from_finite(value: FiniteReal) -> Option<Self> {
+        if value.get() > 0.0 {
+            Some(Self(value.get()))
+        } else {
+            None
+        }
+    }
 }
 
 impl NonNegativeReal {
+    /// Zero dimensionless scalar.
+    pub const ZERO: Self = Self(0.0);
+
     /// The value times `scale`.
     ///
     /// A positive scale keeps the sign of a nonnegative value: zero stays
@@ -539,6 +566,16 @@ impl PositiveLength {
 }
 
 impl NonZeroLength {
+    /// Assign a finite scalar to the length family if it is nonzero.
+    #[must_use]
+    pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
+        if value.get() == 0.0 {
+            None
+        } else {
+            Some(Self(value.get()))
+        }
+    }
+
     /// The magnitude. The magnitude of a finite nonzero value is finite and
     /// positive.
     #[must_use]

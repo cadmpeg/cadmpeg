@@ -10,6 +10,27 @@ const EPS_SPATIAL_LINE_BOUNDARY: f64 = 1.0e-12;
 const EPS_SPATIAL_FRAME_BOUNDARY: f64 = 1.0e-9;
 
 #[test]
+fn admitted_spatial_line_checks_only_endpoint_separation() {
+    use crate::features::FinitePoint3;
+    use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
+
+    let start = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite start");
+    let end = FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).expect("finite end");
+    let from_parts = SpatialSketchGeometry::try_line_from_parts(start, end)
+        .expect("separated admitted endpoints");
+    let from_raw = SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+        start: start.get(),
+        end: end.get(),
+    })
+    .expect("separated raw endpoints");
+    assert_eq!(from_parts, from_raw);
+    assert_eq!(
+        SpatialSketchGeometry::try_line_from_parts(start, start),
+        Err("spatial sketch line endpoints must be finite and separated")
+    );
+}
+
+#[test]
 fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         OffsetParameter, SketchConstraintId, SpatialSketch, SpatialSketchConstraint,

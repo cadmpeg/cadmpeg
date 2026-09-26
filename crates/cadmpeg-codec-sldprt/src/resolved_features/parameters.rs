@@ -135,7 +135,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     candidates
                         .entry((history_index, feature_index, name.to_string()))
                         .or_default()
-                        .push((scalar.value, unit));
+                        .push((scalar.value.get(), unit));
                 }
             }
         }
@@ -369,8 +369,11 @@ pub(crate) fn sync_changed_feature_scalars(
                         scalar.id
                     ))
                 })?;
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("SLDPRT scalar update is non-finite")
+            })?;
             bytes.copy_from_slice(&value.to_le_bytes());
-            scalar.value = value;
+            scalar.value = checked;
         }
     }
     Ok(())

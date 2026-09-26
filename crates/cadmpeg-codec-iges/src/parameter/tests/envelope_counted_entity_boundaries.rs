@@ -744,7 +744,7 @@ fn type180_malformed_length_or_terms_do_not_enable_generic_recovery() {
     }
 
     let mut record = integer_parameter_record(1, &[180, 5, -3, -5, 1, 7, 0]);
-    record.tokens[1].value = TokenValue::Real(5.0);
+    record.tokens[1].value = TokenValue::real(5.0);
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),

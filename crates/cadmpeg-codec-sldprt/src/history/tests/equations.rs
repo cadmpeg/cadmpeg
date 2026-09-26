@@ -872,7 +872,7 @@ fn configuration_local_modeling_edits_without_brep_are_refused() {
             .find(|lane| lane.configuration.as_deref() == Some("1"))
             .unwrap();
         let scalar = &mut lane.scalars[0];
-        scalar.value = 0.060;
+        scalar.value = cadmpeg_ir::scalar::FiniteReal::new(0.060).expect("finite test scalar");
         let offset = usize::try_from(scalar.offset).unwrap();
         lane.native_payload[offset..offset + 8].copy_from_slice(&0.060f64.to_le_bytes());
     });

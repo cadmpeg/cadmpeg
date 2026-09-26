@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::NonNegativeReal;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,7 +20,7 @@ impl<T> PerNode<T> {
 #[serde(try_from = "TextTriangulationWire")]
 pub(crate) struct TextTriangulation {
     /// Chordal deflection.
-    pub(crate) deflection: f64,
+    pub(crate) deflection: NonNegativeReal,
     nodes: Vec<Point3>,
     uv_nodes: Option<PerNode<Point2>>,
     triangles: Vec<[u32; 3]>,
@@ -52,6 +53,8 @@ impl TextTriangulation {
         let normals = normals
             .map(|values| PerNode::try_new(values, nodes.len(), "normals"))
             .transpose()?;
+        let deflection = NonNegativeReal::new(deflection)
+            .ok_or_else(|| "chordal_deflection must be finite and non-negative".to_owned())?;
         Ok(Self {
             deflection,
             nodes,
@@ -123,7 +126,7 @@ impl Serialize for OneBasedTriangles<'_> {
 impl Serialize for TextTriangulation {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         TextTriangulationOut {
-            deflection: self.deflection,
+            deflection: self.deflection.get(),
             nodes: &self.nodes,
             uv_nodes: self.uv_nodes.as_ref().map(|values| values.0.as_slice()),
             triangles: OneBasedTriangles(&self.triangles),
@@ -164,6 +167,26 @@ mod tests {
             };
             assert!(TextTriangulation::try_from(wire).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_negative_and_nonfinite_triangulation_deflection() {
+        let nodes = vec![Point3::new(0.0, 0.0, 0.0)];
+        for deflection in [-1.0, f64::INFINITY] {
+            let error =
+                TextTriangulation::try_new(deflection, nodes.clone(), None, Vec::new(), None)
+                    .unwrap_err();
+            assert!(error.contains("chordal_deflection must be finite and non-negative"));
+        }
+        let mut json = serde_json::json!({
+            "deflection": 0.5,
+            "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
+            "uv_nodes": null,
+            "triangles": [],
+            "normals": null,
+        });
+        json["deflection"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<TextTriangulation>(json).is_err());
     }
 
     #[test]

@@ -3,8 +3,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface},
+    nurbs::{knots_nondecreasing, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Point3;
@@ -631,23 +632,57 @@ fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Opti
     Some(())
 }
 
-fn homogeneous_poles(points: &[Point3], weights: Option<&[f64]>, scale: f64) -> Option<Vec<f64>> {
-    if weights.is_some_and(|values| values.len() != points.len()) {
+fn append_homogeneous_pole(
+    out: &mut Vec<f64>,
+    point: FinitePoint3,
+    weight: Option<f64>,
+    scale: f64,
+) -> Option<()> {
+    let point = point.get();
+    let factor = weight.unwrap_or(1.0);
+    if factor.abs() <= f64::EPSILON {
         return None;
     }
-    let mut out = Vec::with_capacity(points.len() * if weights.is_some() { 4 } else { 3 });
-    for (index, point) in points.iter().enumerate() {
-        let weight = weights.map_or(1.0, |values| values[index]);
-        if weight.abs() <= f64::EPSILON {
-            return None;
+    let homogeneous = [point.x, point.y, point.z].map(|value| value * scale * factor);
+    if !homogeneous.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    out.extend(homogeneous);
+    if let Some(weight) = weight {
+        out.push(weight);
+    }
+    Some(())
+}
+
+fn homogeneous_poles(poles: &NurbsPoles3<FinitePoint3>, scale: f64) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    match poles {
+        NurbsPoles3::Polynomial { points } => {
+            for point in points {
+                append_homogeneous_pole(&mut out, *point, None, scale)?;
+            }
         }
-        let homogeneous = [point.x, point.y, point.z].map(|value| value * scale * weight);
-        if !homogeneous.iter().all(|value| value.is_finite()) {
-            return None;
+        NurbsPoles3::Rational { points } => {
+            for pole in points {
+                append_homogeneous_pole(&mut out, pole.point, Some(pole.weight.get()), scale)?;
+            }
         }
-        out.extend(homogeneous);
-        if weights.is_some() {
-            out.push(weight);
+    }
+    Some(out)
+}
+
+fn homogeneous_grid_poles(poles: &NurbsPoleGrid<FinitePoint3>, scale: f64) -> Option<Vec<f64>> {
+    let mut out = Vec::new();
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => {
+            for point in rows.iter().flatten() {
+                append_homogeneous_pole(&mut out, *point, None, scale)?;
+            }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            for pole in rows.iter().flatten() {
+                append_homogeneous_pole(&mut out, pole.point, Some(pole.weight.get()), scale)?;
+            }
         }
     }
     Some(out)
@@ -685,9 +720,7 @@ pub(crate) fn patch_nurbs_curve(
     {
         return None;
     }
-    let control_points = new.pole_rows().raw_points();
-    let weights = new.pole_rows().weights();
-    let poles = homogeneous_poles(&control_points, weights.as_deref(), scale)?;
+    let poles = homogeneous_poles(new.pole_rows(), scale)?;
     patch_f64_array(bytes, 0x2d, descriptor.control_attr, &poles)?;
     patch_f64_array(bytes, 0x80, descriptor.knot_attr, &new_unique)
 }
@@ -746,12 +779,8 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let old_points = old.pole_grid().raw_points().concat();
-    let old_weights = old.pole_grid().weights().map(|rows| rows.concat());
-    let old_poles = homogeneous_poles(&old_points, old_weights.as_deref(), scale)?;
-    let points = new.pole_grid().raw_points().concat();
-    let weights = new.pole_grid().weights().map(|rows| rows.concat());
-    let poles = homogeneous_poles(&points, weights.as_deref(), scale)?;
+    let old_poles = homogeneous_grid_poles(old.pole_grid(), scale)?;
+    let poles = homogeneous_grid_poles(new.pole_grid(), scale)?;
     let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
     let u_knot_span = unique_surface_knot_span(
         bytes,
@@ -1211,6 +1240,8 @@ mod tests {
         unique_surface_knot_span, Arrays,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::NurbsPoles3;
 
     #[test]
     fn parasolid_scalar_array_values_refuse_collection_limit_before_allocation() {
@@ -1595,13 +1626,29 @@ mod tests {
     /// infinity.
     #[test]
     fn a_pole_whose_weighted_coordinate_overflows_declines_the_patch() {
-        let point = cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0);
+        let point = FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0)).unwrap();
         assert_eq!(
-            super::homogeneous_poles(&[point], Some(&[1.0e300]), 0.001),
+            super::homogeneous_poles(
+                &NurbsPoles3::Rational {
+                    points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                        point,
+                        weight: cadmpeg_ir::scalar::NonZeroReal::new(1.0e300).unwrap()
+                    }]
+                },
+                0.001
+            ),
             None
         );
         assert_eq!(
-            super::homogeneous_poles(&[point], Some(&[2.0]), 0.001),
+            super::homogeneous_poles(
+                &NurbsPoles3::Rational {
+                    points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                        point,
+                        weight: cadmpeg_ir::scalar::NonZeroReal::new(2.0).unwrap()
+                    }]
+                },
+                0.001
+            ),
             Some(vec![1.0e300 * 0.001 * 2.0, 0.0, 0.0, 2.0])
         );
     }
