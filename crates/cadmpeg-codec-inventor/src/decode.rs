@@ -329,7 +329,16 @@ fn decode_container<'a>(
     let (protein_instances, protein_semantic_issue) = match &container.protein {
         ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
             Ok(instances) => (instances, None),
-            Err(error) => (Vec::new(), Some(crate::issue_detail(error)?)),
+            Err(error) => {
+                if !matches!(error, CodecError::ResourceLimit(_)) {
+                    crate::record_issue::admit_issue_detail(
+                        ctx,
+                        &error,
+                        "retain Inventor Protein semantic issue",
+                    )?;
+                }
+                (Vec::new(), Some(crate::issue_detail(error)?))
+            }
         },
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
             (Vec::new(), None)
