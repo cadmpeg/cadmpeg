@@ -311,19 +311,6 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
-    /// Normalize with the Euclidean norm and divide each component by that
-    /// norm. This keeps the source's component division order.
-    #[must_use]
-    pub fn normalized_by_norm(value: Vector3) -> Option<Self> {
-        let length = value.norm();
-        (length.is_finite() && length > 0.0).then(|| {
-            Self(Vector3::new(
-                value.x / length,
-                value.y / length,
-                value.z / length,
-            ))
-        })
-    }
     /// Divide each component by the finite nonzero `hypot` length and return
     /// that length. This keeps the arithmetic of callers that need both the
     /// unit direction and the original magnitude.
@@ -1522,7 +1509,7 @@ mod tests {
         ] {
             let length = value.norm();
             let expected = Vector3::new(value.x / length, value.y / length, value.z / length);
-            let actual = UnitVector3::normalized_by_norm(value).expect("finite direction");
+            let (actual, _) = UnitVector3::normalized_with_length(value).expect("finite direction");
             assert_eq!(actual.as_raw().x.to_bits(), expected.x.to_bits());
             assert_eq!(actual.as_raw().y.to_bits(), expected.y.to_bits());
             assert_eq!(actual.as_raw().z.to_bits(), expected.z.to_bits());
@@ -1531,8 +1518,11 @@ mod tests {
             Vector3::new(0.0, 0.0, 0.0),
             Vector3::new(f64::INFINITY, 1.0, 0.0),
             Vector3::new(f64::NAN, 1.0, 0.0),
+            // The norm of two smallest subnormals rounds to one of them, so the
+            // quotients are (1, 1, 0), which is not a unit vector.
+            Vector3::new(f64::from_bits(1), f64::from_bits(1), 0.0),
         ] {
-            assert_eq!(UnitVector3::normalized_by_norm(value), None);
+            assert_eq!(UnitVector3::normalized_with_length(value), None);
         }
     }
 

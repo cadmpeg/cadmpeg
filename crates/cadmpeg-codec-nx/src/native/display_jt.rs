@@ -4504,7 +4504,7 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
         (0..3).map(|index| normal[index] * inverse[1][index]).sum(),
         (0..3).map(|index| normal[index] * inverse[2][index]).sum(),
     );
-    UnitVector3::normalized_by_norm(transformed)
+    UnitVector3::normalized_with_length(transformed).map(|(direction, _)| direction)
 }
 
 /// Every Display-JT tessellation the shape graph states.
