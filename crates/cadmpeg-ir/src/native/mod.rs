@@ -2,9 +2,12 @@
 //! Source-format namespaces retained outside the format-neutral model.
 #![deny(clippy::disallowed_methods)]
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::num::NonZeroUsize;
 
+use cadmpeg_core::decode::DecodeContext;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
@@ -13,6 +16,14 @@ use serde_json::{Map, Value};
 mod canon;
 pub mod catalogue;
 mod replay;
+
+#[cfg(test)]
+pub(crate) fn test_ctx() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    DecodeContext::from_root_bytes(&[], arena, &cadmpeg_core::decode::DecodePolicy::default())
+        .expect("empty test input fits the service policy")
+        .0
+}
 
 /// Deepest container chain one native record field may hold.
 ///
@@ -86,6 +97,9 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
+    /// The caller's decode budget refused native record storage.
+    #[error(transparent)]
+    Resource(#[from] cadmpeg_core::CodecError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,
@@ -157,7 +171,80 @@ pub enum NativeConvertError {
 
 impl From<NativeConvertError> for cadmpeg_core::CodecError {
     fn from(error: NativeConvertError) -> Self {
-        Self::Malformed(error.to_string())
+        if let Some(limit) = error.resource_limit() {
+            Self::ResourceLimit(limit)
+        } else {
+            Self::Malformed(error.to_string())
+        }
+    }
+}
+
+impl NativeConvertError {
+    fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+        match self {
+            Self::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) => Some(*limit),
+            Self::WriteRecord { source, .. } | Self::Arena { source, .. } => {
+                source.resource_limit()
+            }
+            _ => None,
+        }
+    }
+}
+
+/// Holds one typed record's JSON and charges each write before its buffer grows.
+struct ChargingJsonWriter<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    bytes: Vec<u8>,
+    refusal: Option<cadmpeg_core::CodecError>,
+}
+
+impl Write for ChargingJsonWriter<'_, '_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let needed = self.bytes.len().checked_add(bytes.len()).ok_or_else(|| {
+            self.refusal = Some(self.ctx.refuse_codec_limit(
+                "serialize native record length",
+                u64::MAX - 1,
+                u64::MAX,
+            ));
+            std::io::Error::other("native record JSON length exceeds usize")
+        })?;
+        let current_capacity = self.bytes.capacity();
+        if needed > current_capacity {
+            let next_capacity = current_capacity
+                .checked_mul(2)
+                .map_or(needed, |double| needed.max(double));
+            let additional = next_capacity - current_capacity;
+            let amount = u64::try_from(additional).map_err(|_| {
+                self.refusal = Some(self.ctx.refuse_codec_limit(
+                    "serialize native record capacity",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
+                std::io::Error::other("native record JSON capacity exceeds u64")
+            })?;
+            if let Err(error) = self.ctx.charge_retained(amount, "serialize native record") {
+                self.refusal = Some(error);
+                return Err(std::io::Error::other("native record resource limit"));
+            }
+            if self
+                .bytes
+                .try_reserve_exact(next_capacity - self.bytes.len())
+                .is_err()
+            {
+                self.refusal = Some(self.ctx.refuse_codec_limit(
+                    "serialize native record allocation",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
+                return Err(std::io::Error::other("native record allocation failed"));
+            }
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -269,9 +356,16 @@ impl NativeRecord {
     /// not: a NaN or infinite number is refused by its member path, object
     /// keys must be distinct, and a `RawValue` payload is read through
     /// one-container replay rather than a recursion-limited parse.
-    fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
+    pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
+        Self::from_typed_with_sink(record, None)
+    }
+
+    fn from_typed_with_sink<T: Serialize>(
+        record: &T,
+        sink: Option<&dyn canon::ByteSink>,
+    ) -> Result<Self, NativeConvertError> {
         let serialized = record
-            .serialize(canon::CanonValue::for_record())
+            .serialize(canon::CanonValue::for_record_with_sink(sink))
             .map_err(|error| match error {
                 canon::CanonError::NonFinite(steps) => NativeConvertError::NonFiniteNumber {
                     field: canon::CanonError::field_path(&steps),
@@ -379,8 +473,11 @@ impl JsonSchema for NativeRecord {
 /// The arena is returned rather than stored, so a caller that only needs the
 /// canonical records never has to read them back out of a namespace. Each
 /// record is converted before the next is read, and a record the source could
-/// not state stops the walk with that record's own error.
-pub fn arena_from<T, E, I>(records: I) -> Result<Vec<NativeRecord>, E>
+/// not state stops the walk with that record's own error. Equal identities can
+/// occur before document validation, so ordering must preserve their input
+/// order. The stable sort's possible scratch is reserved against the caller's
+/// temporary-byte budget before sorting.
+pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
     E: From<NativeConvertError>,
@@ -391,14 +488,43 @@ where
         .enumerate()
         .map(|(ordinal, record)| {
             let record = record?;
-            NativeRecord::from_typed(&record).map_err(|source| {
-                E::from(NativeConvertError::WriteRecord {
-                    ordinal,
-                    source: Box::new(source),
-                })
-            })
+            ctx.charge_collection_items(1, "store native record")
+                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+            let writer = RefCell::new(ChargingJsonWriter {
+                ctx,
+                bytes: Vec::new(),
+                refusal: None,
+            });
+            let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
+            let result = NativeRecord::from_typed_with_sink(&record, Some(&sink));
+            let source = match result {
+                Ok(record) => return Ok(record),
+                Err(error) => writer
+                    .borrow_mut()
+                    .refusal
+                    .take()
+                    .map_or(error, NativeConvertError::Resource),
+            };
+            Err(E::from(NativeConvertError::WriteRecord {
+                ordinal,
+                source: Box::new(source),
+            }))
         })
         .collect::<Result<Vec<_>, E>>()?;
+    let scratch_bytes = converted
+        .len()
+        .checked_mul(std::mem::size_of::<NativeRecord>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| {
+            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+                "sort native records scratch size",
+                u64::MAX - 1,
+                u64::MAX,
+            )))
+        })?;
+    let _sort_scratch = ctx
+        .reserve_scoped(scratch_bytes, "sort native records")
+        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
     converted.sort_by(|left, right| left.id().cmp(right.id()));
     Ok(converted)
 }
@@ -436,10 +562,11 @@ impl NativeNamespace {
     /// Replace an arena by serializing codec-owned typed records.
     pub fn set_arena<T: Serialize>(
         &mut self,
-        name: impl Into<String>,
+        ctx: &DecodeContext<'_>,
+        name: impl AsRef<str>,
         records: &[T],
     ) -> Result<(), NativeConvertError> {
-        self.set_arena_from(name, records.iter())
+        self.set_arena_from(ctx, name, records.iter())
     }
 
     /// Replace an arena by serializing codec-owned typed records one at a time.
@@ -449,17 +576,29 @@ impl NativeNamespace {
     /// second copy of the population first.
     pub fn set_arena_from<T: Serialize, I: IntoIterator<Item = T>>(
         &mut self,
-        name: impl Into<String>,
+        ctx: &DecodeContext<'_>,
+        name: impl AsRef<str>,
         records: I,
     ) -> Result<(), NativeConvertError> {
-        let name = name.into();
-        let converted =
-            arena_from(records.into_iter().map(Ok::<T, NativeConvertError>)).map_err(|source| {
-                NativeConvertError::Arena {
-                    arena: name.clone(),
+        let name = name.as_ref();
+        ctx.charge_retained(
+            u64::try_from(name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("native arena name length", u64::MAX - 1, u64::MAX)
+            })?,
+            "retain native arena name",
+        )?;
+        ctx.charge_collection_items(1, "store native arena")?;
+        let name = name.to_owned();
+        let converted = match arena_from(ctx, records.into_iter().map(Ok::<T, NativeConvertError>))
+        {
+            Ok(converted) => converted,
+            Err(source) => {
+                return Err(NativeConvertError::Arena {
+                    arena: name,
                     source: Box::new(source),
-                }
-            })?;
+                });
+            }
+        };
         self.arenas.insert(name, converted);
         Ok(())
     }

@@ -51,11 +51,46 @@ struct NativeCard<'a> {
     line: &'a ScannedLine,
 }
 
+struct CardId(usize);
+
+impl std::fmt::Display for CardId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "iges:physical:card#{}", self.0)
+    }
+}
+
+impl Serialize for CardId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+struct QuarantinedId {
+    section: &'static str,
+    sequence: u32,
+}
+
+impl std::fmt::Display for QuarantinedId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "iges:quarantine:{}#{}",
+            self.section, self.sequence
+        )
+    }
+}
+
+impl Serialize for QuarantinedId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 impl Serialize for NativeCard<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            id: String,
+            id: CardId,
             offset: u64,
             payload: &'a [u8],
             line_ending: &'a [u8],
@@ -70,7 +105,11 @@ impl Serialize for NativeCard<'_> {
         };
         let line = self.line.physical();
         Wire {
-            id: format!("iges:physical:card#{}", self.index + 1),
+            id: CardId(
+                self.index
+                    .checked_add(1)
+                    .ok_or_else(|| serde::ser::Error::custom("IGES card index exceeds usize"))?,
+            ),
             offset: line.offset,
             payload: &line.payload,
             line_ending: line.line_ending(),
@@ -90,7 +129,7 @@ impl Serialize for NativeQuarantinedRecord<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a, D: Serialize> {
-            id: String,
+            id: QuarantinedId,
             section: &'static str,
             sequence: u32,
             source_offset: u64,
@@ -100,7 +139,10 @@ impl Serialize for NativeQuarantinedRecord<'_> {
         }
         match self {
             Self::Directory(record) => Wire {
-                id: record.identity(),
+                id: QuarantinedId {
+                    section: "directory",
+                    sequence: record.sequence,
+                },
                 section: "directory-entry",
                 sequence: record.sequence,
                 source_offset: record.source_offset,
@@ -110,7 +152,10 @@ impl Serialize for NativeQuarantinedRecord<'_> {
             }
             .serialize(serializer),
             Self::Parameter(record) => Wire {
-                id: record.identity(),
+                id: QuarantinedId {
+                    section: "parameter",
+                    sequence: record.sequence,
+                },
                 section: "parameter-data",
                 sequence: record.sequence,
                 source_offset: record.source_offset(),
@@ -2083,10 +2128,8 @@ impl OccurrenceExpansion<'_, '_> {
     }
 }
 
-fn charge_native_entities(ctx: Option<&DecodeContext<'_>>, count: u64) -> Result<(), CodecError> {
-    ctx.map_or(Ok(()), |ctx| {
-        ctx.charge_entities(count, "iges_native_entities")
-    })
+fn charge_native_entities(ctx: &DecodeContext<'_>, count: u64) -> Result<(), CodecError> {
+    ctx.charge_entities(count, "iges_native_entities")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2103,7 +2146,7 @@ pub(crate) fn store(
     references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &ResolvedGlobal,
     limits: ProductOccurrenceLimits,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<NativeStoreResult, CodecError> {
     charge_native_entities(ctx, scan.lines.len() as u64)?;
     let quarantined_directory_records = quarantine
@@ -5254,7 +5297,7 @@ pub(crate) fn store(
         &mut overdeclared_counts,
         global.global_table(),
     );
-    let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
+    let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, Some(ctx))?;
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
     let occurrence_length_factor = global
@@ -5301,7 +5344,7 @@ pub(crate) fn store(
                         length_factor,
                         global.real_precision(),
                         &mut BTreeSet::new(),
-                        ctx,
+                        Some(ctx),
                     ) {
                         Ok(transform) => transform,
                         Err(_) => {
@@ -5405,7 +5448,7 @@ pub(crate) fn store(
             precision: global.real_precision(),
             output_limit: limits.output,
             depth_limit: limits.depth,
-            ctx,
+            ctx: Some(ctx),
         };
         if malformed_definition_sequences.is_empty() {
             for root in directory.iter().filter(|entry| {
@@ -5553,66 +5596,74 @@ pub(crate) fn store(
     ]
     .into_iter()
     .fold(0_u64, |total, count| total.saturating_add(count as u64));
-    if let Some(ctx) = ctx {
-        ctx.charge_entities(native_entity_count, "iges_native_entities")?;
-    }
+    ctx.charge_entities(native_entity_count, "iges_native_entities")?;
     let namespace = ir.native.namespace_mut("iges");
-    namespace.set_arena_from("cards", cards)?;
-    namespace.set_arena_from("entities", entities)?;
-    namespace.set_arena_from("directions", directions)?;
-    namespace.set_arena_from("flashes", flashes)?;
-    namespace.set_arena_from("transformations", transforms)?;
-    namespace.set_arena_from("copious_data", copious_data)?;
-    namespace.set_arena_from("colors", colors)?;
-    namespace.set_arena_from("display_attributes", display_attributes)?;
-    namespace.set_arena_from("line_fonts", line_fonts)?;
-    namespace.set_arena_from("text_templates", text_templates)?;
-    namespace.set_arena_from("text_fonts", text_fonts)?;
-    namespace.set_arena_from("definition_levels", definition_levels)?;
-    namespace.set_arena_from("primitive_solids", primitive_solids)?;
-    namespace.set_arena_from("procedural_solids", procedural_solids)?;
-    namespace.set_arena_from("boolean_trees", boolean_trees)?;
-    namespace.set_arena_from("selected_components", selected_components)?;
-    namespace.set_arena_from("solid_assemblies", solid_assemblies)?;
-    namespace.set_arena_from("manifold_solids", manifold_solids)?;
-    namespace.set_arena_from("solid_instances", solid_instances)?;
-    namespace.set_arena_from("subfigure_definitions", subfigure_definitions)?;
-    namespace.set_arena_from("subfigure_instances", subfigure_instances)?;
-    namespace.set_arena_from("network_definitions", network_definitions)?;
-    namespace.set_arena_from("network_instances", network_instances)?;
-    namespace.set_arena_from("connect_points", connect_points)?;
-    namespace.set_arena_from("rectangular_arrays", rectangular_arrays)?;
-    namespace.set_arena_from("circular_arrays", circular_arrays)?;
-    namespace.set_arena_from("external_references", external_references)?;
-    namespace.set_arena_from("groups", groups)?;
-    namespace.set_arena_from("associativities", associativities)?;
-    namespace.set_arena_from("attribute_table_definitions", attribute_table_definitions)?;
-    namespace.set_arena_from("attribute_table_instances", attribute_table_instances)?;
-    namespace.set_arena_from("product_properties", product_properties)?;
-    namespace.set_arena_from("properties", properties)?;
-    namespace.set_arena_from("units_data", units_data)?;
-    namespace.set_arena_from("views", views)?;
-    namespace.set_arena_from("view_visibility", view_visibility)?;
-    namespace.set_arena_from("segmented_visibility", segmented_visibility)?;
-    namespace.set_arena_from("drawings", drawings)?;
-    namespace.set_arena_from("annotations", annotations)?;
-    namespace.set_arena_from("fem_entities", fem_entities)?;
+    namespace.set_arena_from(ctx, "cards", cards)?;
+    namespace.set_arena_from(ctx, "entities", entities)?;
+    namespace.set_arena_from(ctx, "directions", directions)?;
+    namespace.set_arena_from(ctx, "flashes", flashes)?;
+    namespace.set_arena_from(ctx, "transformations", transforms)?;
+    namespace.set_arena_from(ctx, "copious_data", copious_data)?;
+    namespace.set_arena_from(ctx, "colors", colors)?;
+    namespace.set_arena_from(ctx, "display_attributes", display_attributes)?;
+    namespace.set_arena_from(ctx, "line_fonts", line_fonts)?;
+    namespace.set_arena_from(ctx, "text_templates", text_templates)?;
+    namespace.set_arena_from(ctx, "text_fonts", text_fonts)?;
+    namespace.set_arena_from(ctx, "definition_levels", definition_levels)?;
+    namespace.set_arena_from(ctx, "primitive_solids", primitive_solids)?;
+    namespace.set_arena_from(ctx, "procedural_solids", procedural_solids)?;
+    namespace.set_arena_from(ctx, "boolean_trees", boolean_trees)?;
+    namespace.set_arena_from(ctx, "selected_components", selected_components)?;
+    namespace.set_arena_from(ctx, "solid_assemblies", solid_assemblies)?;
+    namespace.set_arena_from(ctx, "manifold_solids", manifold_solids)?;
+    namespace.set_arena_from(ctx, "solid_instances", solid_instances)?;
+    namespace.set_arena_from(ctx, "subfigure_definitions", subfigure_definitions)?;
+    namespace.set_arena_from(ctx, "subfigure_instances", subfigure_instances)?;
+    namespace.set_arena_from(ctx, "network_definitions", network_definitions)?;
+    namespace.set_arena_from(ctx, "network_instances", network_instances)?;
+    namespace.set_arena_from(ctx, "connect_points", connect_points)?;
+    namespace.set_arena_from(ctx, "rectangular_arrays", rectangular_arrays)?;
+    namespace.set_arena_from(ctx, "circular_arrays", circular_arrays)?;
+    namespace.set_arena_from(ctx, "external_references", external_references)?;
+    namespace.set_arena_from(ctx, "groups", groups)?;
+    namespace.set_arena_from(ctx, "associativities", associativities)?;
+    namespace.set_arena_from(
+        ctx,
+        "attribute_table_definitions",
+        attribute_table_definitions,
+    )?;
+    namespace.set_arena_from(ctx, "attribute_table_instances", attribute_table_instances)?;
+    namespace.set_arena_from(ctx, "product_properties", product_properties)?;
+    namespace.set_arena_from(ctx, "properties", properties)?;
+    namespace.set_arena_from(ctx, "units_data", units_data)?;
+    namespace.set_arena_from(ctx, "views", views)?;
+    namespace.set_arena_from(ctx, "view_visibility", view_visibility)?;
+    namespace.set_arena_from(ctx, "segmented_visibility", segmented_visibility)?;
+    namespace.set_arena_from(ctx, "drawings", drawings)?;
+    namespace.set_arena_from(ctx, "annotations", annotations)?;
+    namespace.set_arena_from(ctx, "fem_entities", fem_entities)?;
     if !boundary_vertex_sewing.is_empty() {
-        namespace.set_arena_from("boundary_vertex_sewing", boundary_vertex_sewing)?;
+        namespace.set_arena_from(ctx, "boundary_vertex_sewing", boundary_vertex_sewing)?;
     }
-    namespace.set_arena_from("product_occurrences", product_occurrences)?;
-    namespace.set_arena_from("product_occurrence_expansion", product_occurrence_expansion)?;
+    namespace.set_arena_from(ctx, "product_occurrences", product_occurrences)?;
+    namespace.set_arena_from(
+        ctx,
+        "product_occurrence_expansion",
+        product_occurrence_expansion,
+    )?;
     if !macro_definitions.is_empty() {
-        namespace.set_arena_from("macro_definitions", macro_definitions)?;
+        namespace.set_arena_from(ctx, "macro_definitions", macro_definitions)?;
     }
     if !macro_instances.is_empty() {
-        namespace.set_arena_from("macro_instances", macro_instances)?;
+        namespace.set_arena_from(ctx, "macro_instances", macro_instances)?;
     }
     namespace.set_arena_from(
+        ctx,
         "quarantined_directory_records",
         quarantined_directory_records,
     )?;
     namespace.set_arena_from(
+        ctx,
         "quarantined_parameter_records",
         quarantined_parameter_records,
     )?;

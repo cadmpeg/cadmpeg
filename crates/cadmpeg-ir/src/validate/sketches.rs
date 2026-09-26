@@ -1644,22 +1644,21 @@ fn oriented_endpoints(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds: Some([start, end]),
         } => (
             ellipse_point(
                 center.get(),
                 major_angle.get(),
-                major_radius.get(),
-                minor_radius.get(),
+                radii.major().get(),
+                radii.minor().get(),
                 start.get(),
             ),
             ellipse_point(
                 center.get(),
                 major_angle.get(),
-                major_radius.get(),
-                minor_radius.get(),
+                radii.major().get(),
+                radii.minor().get(),
                 end.get(),
             ),
         ),

@@ -508,7 +508,9 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
+        for (profile_index, vertices) in
+            connected_sketch_profile_vertices(ir, source_carriers, &sketch_id)
+        {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
                     continue;
@@ -606,7 +608,9 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         let Some(sketch_id) = model_sketch_id(scan, definition) else {
             continue;
         };
-        for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
+        for (profile_index, vertices) in
+            connected_sketch_profile_vertices(ir, source_carriers, &sketch_id)
+        {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;

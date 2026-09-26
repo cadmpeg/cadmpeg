@@ -774,7 +774,13 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
         let mut rows: Vec<serde_json::Value> = namespace.arena_as("alias_rows").unwrap();
         assert_ne!(rows[0][field], replacement);
         rows[0][field] = replacement;
-        namespace.set_arena("alias_rows", &rows).unwrap();
+        namespace
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "alias_rows",
+                &rows,
+            )
+            .unwrap();
         let error = crate::native::CatiaNative::load(&namespace)
             .expect_err("alias-row view disagreeing with its source bytes");
         assert!(error.to_string().contains(field), "{error}");

@@ -153,14 +153,9 @@ impl SketchGeometry {
                     "sketch circular geometry requires finite center and positive finite radius",
                 ))?;
             }
-            Definition::Ellipse {
-                center,
-                major_radius,
-                minor_radius,
-                ..
-            } => {
-                let major_product = length_product(major_radius.major(), scale)?;
-                let minor_product = length_product(*minor_radius, scale)?;
+            Definition::Ellipse { center, radii, .. } => {
+                let major_product = length_product(radii.major(), scale)?;
+                let minor_product = length_product(radii.minor(), scale)?;
                 let radii_message = "sketch ellipse radii must be positive and finite";
                 *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
                     "sketch ellipse center and major_angle must be finite",
@@ -169,9 +164,8 @@ impl SketchGeometry {
                     .ok_or(SketchLengthScaleError::Field(radii_message))?;
                 let minor = PositiveLength::new(minor_product)
                     .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                *major_radius = OrderedMajorRadius::new(major, minor)
+                *radii = OrderedMajorRadius::new(major, minor)
                     .ok_or(SketchLengthScaleError::Field(radii_message))?;
-                *minor_radius = minor;
             }
             Definition::Hyperbola {
                 center,

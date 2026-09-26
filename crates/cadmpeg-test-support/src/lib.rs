@@ -16,10 +16,25 @@ pub mod bytes;
 pub mod compound;
 pub mod edit;
 pub mod golden;
+pub mod native_serialization;
 pub mod refusal;
 pub mod roundtrip;
 pub mod unknown_keys;
 pub mod wire;
+
+/// A service-policy decode context for a test that creates native records
+/// without reading a source file.
+#[must_use]
+pub fn service_decode_context() -> cadmpeg_core::decode::DecodeContext<'static> {
+    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
+    cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty test input fits the service policy")
+    .0
+}
 
 /// Editable parts of a consumed decode result for writer tests.
 ///

@@ -338,7 +338,11 @@ fn retains_every_reference_to_a_shared_side_entry() {
     corrupted
         .native
         .namespace_mut("fcstd")
-        .set_arena("entries", &corrupted_entries)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "entries",
+            &corrupted_entries,
+        )
         .expect("replace entries");
     assert!(crate::validate_native(&corrupted)
         .iter()

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! High-level Inventor structural decode.
 
+mod presentation_native_projection;
+mod rse_native_projection;
+
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, HashMap};
 
@@ -30,28 +33,24 @@ use crate::native::protein::{
     ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
-    EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
-    ExternalReferenceRecordWire, UfrxModelStateParameterRecord, UfrxModelStateRecord,
-    UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord,
-    UfrxRepresentationRecord, UfrxRepresentationRecordWire,
+    byte_document_id_present, embedded_reference_issue, external_reference_issue,
+    model_state_issue, occurrence_issue, representation_issue, EmbeddedReferenceRecord,
+    EmbeddedReferenceRecordWire, ExternalReferenceRecord, ExternalReferenceRecordWire,
+    UfrxModelStateParameterRecord, UfrxModelStateRecord, UfrxModelStateRecordWire,
+    UfrxOccurrenceRecord, UfrxOccurrenceRecordWire, UfrxRecord, UfrxRepresentationRecord,
+    UfrxRepresentationRecordWire,
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
-    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, MetaSectionRecord,
-    MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
-    PmAppRenderingStyleRecordWire, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
+    AssemblyPlacementRecordWire, DatabaseIssueRecord, DatabaseRecord, PropertyRecord,
+    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
+    RevisionPayloadForm, RevisionRecord, SegmentRegistryRecord, StorageBandRecord,
+    StructuralIssueRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
-use crate::rse::{
-    DatabaseState, DocumentKind, ParsedState, RecordFrameState, SegmentBulkState, SegmentMetaState,
-};
+use crate::rse::{DatabaseState, DocumentKind, ParsedState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     decode_container(ctx, &InventorContainer::open(ctx, root)?)
@@ -72,15 +71,6 @@ fn decode_container<'a>(
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
-    admit_native_record_items(
-        ctx,
-        container,
-        &assembly_inventory,
-        &presentation_inventory,
-        &design_inventory,
-        &sketch_inventory,
-        &feature_inventory,
-    )?;
     let mut ir = CadIr::empty();
     let mut admitted_entities = 0_u64;
     let (design_parameters, unresolved_design_parameters) =
@@ -134,6 +124,7 @@ fn decode_container<'a>(
     for descriptor in &container.property_sets {
         match &descriptor.state {
             PropertySetState::Malformed(detail) => {
+                admit_native_items(ctx, 1)?;
                 property_set_issues.push(project_property_set_issue(
                     ctx,
                     descriptor.stream.directory_id(),
@@ -142,6 +133,7 @@ fn decode_container<'a>(
                 )?);
             }
             PropertySetState::Parsed(property_set) => {
+                admit_native_items(ctx, 1)?;
                 let id = retained_format(
                     ctx,
                     format_args!("inventor:property:set#{}", descriptor.stream.directory_id()),
@@ -197,6 +189,7 @@ fn decode_container<'a>(
                             detail: "embedded property-set name does not match its FMTID".into(),
                         });
                     }
+                    admit_native_items(ctx, 1)?;
                     let section_id = retained_format(
                         ctx,
                         format_args!(
@@ -233,6 +226,7 @@ fn decode_container<'a>(
                         )?,
                     });
                     for property in &section.properties {
+                        admit_native_items(ctx, 1)?;
                         if let Some(name) = &property.name {
                             charge_retained_len(ctx, name.len(), "retain Inventor property name")?;
                         } else if identity_matches {
@@ -328,10 +322,9 @@ fn decode_container<'a>(
     }
     let protein = project_protein_state(ctx, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
-        ProteinState::Package(package) => match crate::protein::decode_instances(ctx, package) {
-            Ok(instances) => (instances, None),
-            Err(error) => (Vec::new(), Some(crate::issue_detail(error)?)),
-        },
+        ProteinState::Package(package) => {
+            crate::protein::decode_instances_with_issue(ctx, package)?
+        }
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
             (Vec::new(), None)
         }
@@ -387,6 +380,7 @@ fn decode_container<'a>(
         .databases
         .iter()
         .map(|database| -> Result<_, CodecError> {
+            admit_native_items(ctx, 1)?;
             Ok(StorageBandRecord {
                 id: retained_format(
                     ctx,
@@ -409,6 +403,7 @@ fn decode_container<'a>(
             Some((descriptor, database))
         })
         .map(|(descriptor, database)| -> Result<_, CodecError> {
+            admit_native_items(ctx, 1)?;
             Ok(DatabaseRecord {
                 id: retained_format(
                     ctx,
@@ -429,6 +424,7 @@ fn decode_container<'a>(
     let mut database_issues = Vec::new();
     for descriptor in &container.rse.databases {
         if let Some(detail) = descriptor.issue_detail(ctx)? {
+            admit_native_items(ctx, 1)?;
             database_issues.push(DatabaseIssueRecord {
                 id: retained_format(
                     ctx,
@@ -446,6 +442,7 @@ fn decode_container<'a>(
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                admit_native_items(ctx, 1)?;
                 Ok(SegmentRegistryRecord {
                     id: retained_format(
                         ctx,
@@ -490,6 +487,7 @@ fn decode_container<'a>(
             .iter()
             .enumerate()
             .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                admit_native_items(ctx, 1)?;
                 Ok(RevisionRecord {
                     id: retained_format(
                         ctx,
@@ -516,300 +514,32 @@ fn decode_container<'a>(
     if let ParsedState::Unavailable(detail) = &container.rse.revisions {
         structural_issues.push(structural_issue(ctx, "revision_table", detail)?);
     }
-    admit_rse_segment_projection(ctx, container)?;
-    structural_issues.extend(container.rse.segments.iter().flat_map(|segment| {
-        segment
-            .identity_issues
-            .iter()
-            .enumerate()
-            .map(move |(ordinal, detail)| StructuralIssueRecord {
-                id: format!(
-                    "inventor:rse:structural-issue#segment-{}-{ordinal}",
-                    segment.pair.token.as_str()
-                ),
-                scope: format!("segment:{}", segment.pair.token.as_str()),
-                detail: detail.clone(),
-            })
-    }));
-    let segment_pairs = container
-        .rse
-        .segments
-        .iter()
-        .map(|segment| SegmentPairRecord {
-            id: format!("inventor:rse:segment#{}", segment.pair.token.as_str()),
-            token: segment.pair.token.as_str().into(),
-            metadata_directory_id: segment.pair.metadata.directory_id(),
-            bulk_directory_id: segment.pair.bulk.directory_id(),
-        })
-        .collect::<Vec<_>>();
-    let segment_meta = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return None;
-            };
-            Some(SegmentMetaRecord {
-                id: format!("inventor:rse:segment-meta#{}", segment.pair.token.as_str()),
-                token: segment.pair.token.as_str().into(),
-                version: meta.declared.version,
-                kind: segment.kind.label().into(),
-                display_name: meta.display_name.clone(),
-                segment_id: hex(&meta.segment_id),
-                header_values: meta.header_values,
-                state_words: meta.state_words,
-                created: meta.created.clone(),
-                modified: meta.modified.clone(),
-                body_form: meta.body_form,
-                expanded_body_len: meta.body.window().len() as u64,
-                expanded_body_sha256: sha256_hex(meta.body.window()),
-                table_prefix: meta.tables.prefix,
-                block_count: meta.tables.blocks.len() as u64,
-                type_count: meta.tables.types.len() as u64,
-                terminal_id: hex(&meta.tables.terminal_id),
-            })
-        })
-        .collect::<Vec<_>>();
-    let meta_sections = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return Vec::new();
-            };
-            meta.tables
-                .sections
-                .iter()
-                .map(|section| MetaSectionRecord {
-                    id: format!(
-                        "inventor:rse:meta-section#{}-{}",
-                        segment.pair.token.as_str(),
-                        section.number
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    number: section.number,
-                    discriminator: section.discriminator,
-                    payload_len: section.payload.window().len() as u64,
-                    payload_sha256: sha256_hex(section.payload.window()),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let meta_types = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                return Vec::new();
-            };
-            meta.tables
-                .types
-                .iter()
-                .map(|descriptor| MetaTypeRecord {
-                    id: format!(
-                        "inventor:rse:meta-type#{}-{}",
-                        segment.pair.token.as_str(),
-                        descriptor.index
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    index: descriptor.index,
-                    type_id: hex(&descriptor.id),
-                    fields: descriptor.fields,
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let segment_meta_issues = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let detail = match &segment.meta {
-                SegmentMetaState::Parsed(_) => return None,
-                SegmentMetaState::Malformed { detail, .. } => detail.clone(),
-            };
-            Some(SegmentMetaIssueRecord {
-                id: format!(
-                    "inventor:rse:segment-meta-issue#{}",
-                    segment.pair.token.as_str()
-                ),
-                token: segment.pair.token.as_str().into(),
-                detail,
-            })
-        })
-        .collect::<Vec<_>>();
-    let rse_records = container
-        .rse
-        .segments
-        .iter()
-        .flat_map(|segment| {
-            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-                return Vec::new();
-            };
-            let RecordFrameState::Framed(table) = &bulk.records else {
-                return Vec::new();
-            };
-            table
-                .records
-                .iter()
-                .map(|record| RseRecordRecord::from_frame(segment.pair.token.as_str(), record))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let segment_bulk = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
-                return None;
-            };
-            let records = match &bulk.records {
-                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
-                    record_count: table.records.len() as u64,
-                    stream_trailer_len: table.stream_trailer.window().len() as u64,
-                    stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
-                },
-                RecordFrameState::Unavailable(detail) => {
-                    crate::native::SegmentBulkFrame::Unavailable {
-                        detail: detail.clone(),
-                    }
-                }
-            };
-            Some(SegmentBulkRecord {
-                id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
-                token: segment.pair.token.as_str().into(),
-                prefix: hex(&bulk.prefix),
-                form: bulk.form.value(),
-                compressed_len: bulk.compressed.window().len() as u64,
-                compressed_sha256: sha256_hex(bulk.compressed.window()),
-                expanded_len: bulk.expanded.window().len() as u64,
-                expanded_sha256: sha256_hex(bulk.expanded.window()),
-                records,
-            })
-        })
-        .collect::<Vec<_>>();
-    let segment_bulk_issues = container
-        .rse
-        .segments
-        .iter()
-        .filter_map(|segment| {
-            let SegmentBulkState::Malformed(detail) = &segment.bulk else {
-                return None;
-            };
-            Some(SegmentBulkIssueRecord {
-                id: format!(
-                    "inventor:rse:segment-bulk-issue#{}",
-                    segment.pair.token.as_str()
-                ),
-                token: segment.pair.token.as_str().into(),
-                detail: detail.clone(),
-            })
-        })
-        .collect::<Vec<_>>();
-    let unpaired_segments = container
-        .rse
-        .unpaired_metadata
-        .iter()
-        .map(|token| UnpairedSegmentRecord {
-            id: format!("inventor:rse:unpaired-metadata#{}", token.as_str()),
-            token: token.as_str().into(),
-            missing_member: UnpairedMember::Bulk,
-        })
-        .chain(
-            container
-                .rse
-                .unpaired_bulk
-                .iter()
-                .map(|token| UnpairedSegmentRecord {
-                    id: format!("inventor:rse:unpaired-bulk#{}", token.as_str()),
-                    token: token.as_str().into(),
-                    missing_member: UnpairedMember::Metadata,
-                }),
-        )
-        .collect::<Vec<_>>();
-    admit_active_carrier_projection(ctx, &container.rse.active_carrier)?;
-    let active_carrier = match &container.rse.active_carrier {
-        ActiveCarrierState::NotApplicable => ActiveCarrierRecord::NotApplicable {
-            id: "inventor:kernel:active-carrier#root".into(),
-        },
-        ActiveCarrierState::Unavailable(detail) => ActiveCarrierRecord::Unavailable {
-            id: "inventor:kernel:active-carrier#root".into(),
-            detail: detail.clone(),
-        },
-        ActiveCarrierState::Selected(carrier) => ActiveCarrierRecord::Selected {
-            id: "inventor:kernel:active-carrier#root".into(),
-            segment_token: carrier.segment_token.as_str().to_owned(),
-            record_ordinal: carrier.record_ordinal,
-            segment_version_major: carrier.segment_version_major,
-            family: carrier.family,
-            header_state: carrier.header_state,
-            header_kind: carrier.header_kind,
-            header_value: carrier.header_value,
-            schema: carrier.schema,
-            carrier_len: carrier.carrier_len,
-            carrier_offset: carrier.carrier_offset,
-            carrier_sha256: sha256_hex(carrier.bytes.window()),
-            selected_key: carrier.selected_key,
-            enabled: carrier.enabled,
-            delta_state: carrier.delta_state,
-            history_reference: carrier.history_reference,
-        },
-    };
-    admit_assembly_native_projection(ctx, &assembly_inventory)?;
+    let projection = rse_native_projection::project(ctx, container)?;
+    structural_issues.extend(projection.identity_issues);
+    let segment_pairs = projection.segment_pairs;
+    let segment_meta = projection.segment_meta;
+    let meta_sections = projection.meta_sections;
+    let meta_types = projection.meta_types;
+    let segment_meta_issues = projection.segment_meta_issues;
+    let rse_records = projection.rse_records;
+    let segment_bulk = projection.segment_bulk;
+    let segment_bulk_issues = projection.segment_bulk_issues;
+    let unpaired_segments = projection.unpaired_segments;
+    admit_native_items(ctx, 1)?;
+    let active_carrier = ActiveCarrierRecord::from_state(ctx, &container.rse.active_carrier)?;
     let assembly_occurrences = assembly_inventory
         .occurrences
         .iter()
-        .map(|occurrence| AssemblyOccurrenceRecord {
-            id: format!(
-                "inventor:assembly:occurrence#{}-{}",
-                occurrence.segment_token, occurrence.record_ordinal
-            ),
-            segment_token: occurrence.segment_token.clone(),
-            record_ordinal: occurrence.record_ordinal,
-            header_value: occurrence.header_value,
-            header_id: occurrence.header_id,
-            next_reference: occurrence.next_reference,
-            flags: occurrence.flags,
-            owner_reference: occurrence.owner_reference,
-            node_index: occurrence.node_index,
-            state: occurrence.state,
-            ordinal_key: occurrence.ordinal_key,
-            related_references: occurrence.related_references.clone(),
-            child_reference: occurrence.child_reference,
-            occurrence_id: occurrence.occurrence_id,
-        })
-        .collect::<Vec<_>>();
+        .map(|occurrence| AssemblyOccurrenceRecord::from_occurrence(ctx, occurrence))
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let assembly_placements = assembly_inventory
         .placements
         .iter()
         .map(|placement| {
+            ctx.charge_collection_items(1, "collect Inventor placement conversion result")?;
             admit_assembly_placement(
                 ctx,
-                AssemblyPlacementRecordWire {
-                    id: format!(
-                        "inventor:assembly:placement#{}-{}",
-                        placement.segment_token, placement.record_ordinal
-                    ),
-                    segment_token: placement.segment_token.clone(),
-                    record_ordinal: placement.record_ordinal,
-                    header_id: placement.header_id,
-                    owner_reference: placement.owner_reference,
-                    attribute_reference: placement.attribute_reference,
-                    state: placement.state,
-                    transform_prefix: placement.transform_prefix,
-                    transform: placement.transform,
-                    branch: placement.branch,
-                    graphics_state: placement.graphics_state,
-                    occurrence_id: placement.occurrence_id,
-                    graphics_index: placement.graphics_index,
-                    object_reference: placement.object_reference,
-                    suffix_len: placement.suffix.window().len() as u64,
-                    suffix_sha256: sha256_hex(placement.suffix.window()),
-                },
+                AssemblyPlacementRecordWire::from_placement(ctx, placement)?,
                 &mut assembly_inventory.issues,
             )
         })
@@ -817,159 +547,13 @@ fn decode_container<'a>(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    admit_presentation_native_projection(ctx, &presentation_inventory)?;
-    let pm_app_default_styles = presentation_inventory
-        .default_styles
-        .iter()
-        .map(|style| {
-            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            PmAppDefaultStyleRecord {
-                id: format!(
-                    "inventor:presentation:default-style#{}-{}",
-                    style.identity.segment_token, style.identity.record_ordinal
-                ),
-                segment_token: style.identity.segment_token.as_str().to_owned(),
-                record_ordinal: style.identity.record_ordinal,
-                segment_version_major: style.segment_version_major,
-                header_value: style.header_value,
-                header_id: style.header_id,
-                material_reference: style.material_reference,
-                rendering_style_reference: style.rendering_style_reference,
-                related_references: style.related_references,
-                state: style.state,
-                terminal_reference: style.terminal_reference,
-                suffix_len,
-                suffix_sha256,
-            }
-        })
-        .collect::<Vec<_>>();
-    let pm_app_rendering_styles = presentation_inventory
-        .rendering_styles
-        .iter()
-        .filter_map(|style| {
-            let (suffix_len, suffix_sha256) = crate::presentation::suffix_fields(style.suffix);
-            let wire = PmAppRenderingStyleRecordWire {
-                id: format!(
-                    "inventor:presentation:rendering-style#{}-{}",
-                    style.identity.segment_token, style.identity.record_ordinal
-                ),
-                segment_token: style.identity.segment_token.as_str().to_owned(),
-                record_ordinal: style.identity.record_ordinal,
-                segment_version_major: style.segment_version_major,
-                header_value: style.header_value,
-                header_id: style.header_id,
-                state: style.state,
-                flags: style.flags,
-                values: style.values,
-                default_state: style.default_state,
-                value: style.value,
-                name_reference: style.name_reference,
-                name: style.name.clone(),
-                comment: style.comment.clone(),
-                long_name: style.long_name.clone(),
-                style_state: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_state),
-                style_label: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_label.clone()),
-                asset_guid: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.asset_guid.clone()),
-                material_id: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.material_id.clone()),
-                asset_library_id: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.asset_library_id.clone()),
-                style_values: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.style_values),
-                guid: style
-                    .extension
-                    .as_ref()
-                    .map(|extension| extension.guid.clone()),
-                suffix_len,
-                suffix_sha256: suffix_sha256.into(),
-            };
-            PmAppRenderingStyleRecord::try_from(wire)
-                .inspect_err(|detail| {
-                    presentation_inventory.issues.push(RecordIssue {
-                        family: RecordIssueFamily::Presentation,
-                        segment_token: style.identity.segment_token.as_str().to_owned(),
-                        record_ordinal: style.identity.record_ordinal,
-                        detail: detail.clone(),
-                    });
-                })
-                .ok()
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_faces = presentation_inventory
-        .graphics_faces
-        .iter()
-        .map(|face| PmGraphicsFaceRecord {
-            id: format!(
-                "inventor:presentation:graphics-face#{}-{}",
-                face.identity.segment_token, face.identity.record_ordinal
-            ),
-            segment_token: face.identity.segment_token.as_str().to_owned(),
-            record_ordinal: face.identity.record_ordinal,
-            segment_version_major: face.segment_version_major,
-            header_value: face.header_value,
-            header_id: face.header_id,
-            flags: face.flags,
-            styles: face.styles,
-            surface: face.surface,
-            parent: face.parent,
-            state: face.state,
-            edge_references: face.edge_references.clone(),
-            visibility_state: face.visibility_state,
-            bounds: face.bounds,
-            key: face.key,
-            values: face.values,
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_style_collections = presentation_inventory
-        .graphics_style_collections
-        .iter()
-        .map(|collection| PmGraphicsStyleCollectionRecord {
-            id: format!(
-                "inventor:presentation:graphics-style-collection#{}-{}",
-                collection.identity.segment_token, collection.identity.record_ordinal
-            ),
-            segment_token: collection.identity.segment_token.as_str().to_owned(),
-            record_ordinal: collection.identity.record_ordinal,
-            segment_version_major: collection.segment_version_major,
-            style_references: collection.style_references.clone(),
-        })
-        .collect::<Vec<_>>();
-    let pm_graphics_primary_color_styles = presentation_inventory
-        .graphics_primary_color_styles
-        .iter()
-        .map(|style| PmGraphicsPrimaryColorStyleRecord {
-            id: format!(
-                "inventor:presentation:graphics-primary-color#{}-{}",
-                style.identity.segment_token, style.identity.record_ordinal
-            ),
-            segment_token: style.identity.segment_token.as_str().to_owned(),
-            record_ordinal: style.identity.record_ordinal,
-            segment_version_major: style.segment_version_major,
-            header_value: style.header_value,
-            controls: style.controls,
-            color_header: style.color_header,
-            colors: style.colors,
-            color_tail: style.color_tail,
-            state: style.state,
-            values: style.values,
-            terminal_state: style.terminal_state,
-        })
-        .collect::<Vec<_>>();
+    let presentation_native =
+        presentation_native_projection::project(ctx, &mut presentation_inventory)?;
+    let pm_app_default_styles = presentation_native.default_styles;
+    let pm_app_rendering_styles = presentation_native.rendering_styles;
+    let pm_graphics_faces = presentation_native.graphics_faces;
+    let pm_graphics_style_collections = presentation_native.graphics_style_collections;
+    let pm_graphics_primary_color_styles = presentation_native.graphics_primary_color_styles;
     ctx.admit_entities(
         wire_len(
             ctx,
@@ -988,68 +572,88 @@ fn decode_container<'a>(
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
     let namespace = ir.native.namespace_mut("inventor");
-    namespace.set_arena("storage_bands", &storage_bands)?;
-    namespace.set_arena("databases", &databases)?;
-    namespace.set_arena("database_issues", &database_issues)?;
-    namespace.set_arena("segment_registry", &segment_registry)?;
-    namespace.set_arena("revisions", &revisions)?;
-    namespace.set_arena("structural_issues", &structural_issues)?;
-    namespace.set_arena("property_sets", &property_sets)?;
-    namespace.set_arena("property_sections", &property_sections)?;
-    namespace.set_arena("properties", &properties)?;
-    namespace.set_arena("property_set_issues", &property_set_issues)?;
-    protein.install(namespace)?;
-    namespace.set_arena("protein_assets", &protein_assets)?;
-    namespace.set_arena("protein_rejections", &protein_rejections)?;
-    ufrx.install(namespace)?;
-    namespace.set_arena("assembly_occurrences", &assembly_occurrences)?;
-    namespace.set_arena("assembly_placements", &assembly_placements)?;
-    namespace.set_arena("assembly_record_issues", &assembly_inventory.issues)?;
-    namespace.set_arena("pm_app_default_styles", &pm_app_default_styles)?;
-    namespace.set_arena("pm_app_rendering_styles", &pm_app_rendering_styles)?;
-    namespace.set_arena("pm_graphics_faces", &pm_graphics_faces)?;
+    namespace.set_arena(ctx, "storage_bands", &storage_bands)?;
+    namespace.set_arena(ctx, "databases", &databases)?;
+    namespace.set_arena(ctx, "database_issues", &database_issues)?;
+    namespace.set_arena(ctx, "segment_registry", &segment_registry)?;
+    namespace.set_arena(ctx, "revisions", &revisions)?;
+    namespace.set_arena(ctx, "structural_issues", &structural_issues)?;
+    namespace.set_arena(ctx, "property_sets", &property_sets)?;
+    namespace.set_arena(ctx, "property_sections", &property_sections)?;
+    namespace.set_arena(ctx, "properties", &properties)?;
+    namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
+    protein.install(ctx, namespace)?;
+    namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
+    namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
+    ufrx.install(ctx, namespace)?;
+    namespace.set_arena(ctx, "assembly_occurrences", &assembly_occurrences)?;
+    namespace.set_arena(ctx, "assembly_placements", &assembly_placements)?;
+    namespace.set_arena(ctx, "assembly_record_issues", &assembly_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_app_default_styles", &pm_app_default_styles)?;
+    namespace.set_arena(ctx, "pm_app_rendering_styles", &pm_app_rendering_styles)?;
+    namespace.set_arena(ctx, "pm_graphics_faces", &pm_graphics_faces)?;
     namespace.set_arena(
+        ctx,
         "pm_graphics_style_collections",
         &pm_graphics_style_collections,
     )?;
     namespace.set_arena(
+        ctx,
         "pm_graphics_primary_color_styles",
         &pm_graphics_primary_color_styles,
     )?;
-    namespace.set_arena("presentation_record_issues", &presentation_inventory.issues)?;
-    namespace.set_arena("pm_dc_parameters", &design_inventory.parameters)?;
-    namespace.set_arena("pm_dc_expressions", &design_inventory.expressions)?;
-    namespace.set_arena("pm_dc_units", &design_inventory.units)?;
-    namespace.set_arena("design_record_issues", &design_inventory.issues)?;
-    namespace.set_arena("pm_dc_sketches", &sketch_inventory.sketches)?;
-    namespace.set_arena("pm_dc_sketch_entities", &sketch_inventory.entities)?;
-    namespace.set_arena("pm_dc_transforms", &sketch_inventory.transforms)?;
-    namespace.set_arena("pm_dc_directions", &sketch_inventory.directions)?;
-    namespace.set_arena("pm_dc_sketch_constraints", &sketch_inventory.constraints)?;
-    namespace.set_arena("sketch_record_issues", &sketch_inventory.issues)?;
-    namespace.set_arena("pm_dc_features", &feature_inventory.features)?;
     namespace.set_arena(
+        ctx,
+        "presentation_record_issues",
+        &presentation_inventory.issues,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_parameters", &design_inventory.parameters)?;
+    namespace.set_arena(ctx, "pm_dc_expressions", &design_inventory.expressions)?;
+    namespace.set_arena(ctx, "pm_dc_units", &design_inventory.units)?;
+    namespace.set_arena(ctx, "design_record_issues", &design_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_dc_sketches", &sketch_inventory.sketches)?;
+    namespace.set_arena(ctx, "pm_dc_sketch_entities", &sketch_inventory.entities)?;
+    namespace.set_arena(ctx, "pm_dc_transforms", &sketch_inventory.transforms)?;
+    namespace.set_arena(ctx, "pm_dc_directions", &sketch_inventory.directions)?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_sketch_constraints",
+        &sketch_inventory.constraints,
+    )?;
+    namespace.set_arena(ctx, "sketch_record_issues", &sketch_inventory.issues)?;
+    namespace.set_arena(ctx, "pm_dc_features", &feature_inventory.features)?;
+    namespace.set_arena(
+        ctx,
         "pm_dc_pattern_features",
         &feature_inventory.pattern_features,
     )?;
-    namespace.set_arena("pm_dc_feature_terminators", &feature_inventory.terminators)?;
-    namespace.set_arena("pm_dc_feature_properties", &feature_inventory.properties)?;
-    namespace.set_arena("pm_dc_feature_labels", &feature_inventory.labels)?;
     namespace.set_arena(
+        ctx,
+        "pm_dc_feature_terminators",
+        &feature_inventory.terminators,
+    )?;
+    namespace.set_arena(
+        ctx,
+        "pm_dc_feature_properties",
+        &feature_inventory.properties,
+    )?;
+    namespace.set_arena(ctx, "pm_dc_feature_labels", &feature_inventory.labels)?;
+    namespace.set_arena(
+        ctx,
         "pm_dc_entity_style_links",
         &feature_inventory.entity_style_links,
     )?;
-    namespace.set_arena("feature_record_issues", &feature_inventory.issues)?;
-    namespace.set_arena("segment_pairs", &segment_pairs)?;
-    namespace.set_arena("segment_meta", &segment_meta)?;
-    namespace.set_arena("meta_sections", &meta_sections)?;
-    namespace.set_arena("meta_types", &meta_types)?;
-    namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
-    namespace.set_arena("segment_bulk", &segment_bulk)?;
-    namespace.set_arena("rse_records", &rse_records)?;
-    namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
-    namespace.set_arena("unpaired_segments", &unpaired_segments)?;
-    namespace.set_arena("active_carrier", std::slice::from_ref(&active_carrier))?;
+    namespace.set_arena(ctx, "feature_record_issues", &feature_inventory.issues)?;
+    namespace.set_arena(ctx, "segment_pairs", &segment_pairs)?;
+    namespace.set_arena(ctx, "segment_meta", &segment_meta)?;
+    namespace.set_arena(ctx, "meta_sections", &meta_sections)?;
+    namespace.set_arena(ctx, "meta_types", &meta_types)?;
+    namespace.set_arena(ctx, "segment_meta_issues", &segment_meta_issues)?;
+    namespace.set_arena(ctx, "segment_bulk", &segment_bulk)?;
+    namespace.set_arena(ctx, "rse_records", &rse_records)?;
+    namespace.set_arena(ctx, "segment_bulk_issues", &segment_bulk_issues)?;
+    namespace.set_arena(ctx, "unpaired_segments", &unpaired_segments)?;
+    namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     let mut geometry_failure = None;
     let kernel_brep = match &container.rse.active_carrier {
@@ -1846,33 +1450,6 @@ fn admit_native_format(
     crate::record_issue::admit_formatted(ctx, value, operation)
 }
 
-fn admit_native_hex(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let length = bytes.len().checked_mul(2).ok_or_else(|| {
-        ctx.refuse_codec_limit("Inventor hexadecimal length", u64::MAX - 1, u64::MAX)
-    })?;
-    charge_retained_len(ctx, length, operation)?;
-    ctx.charge_work(
-        wire_len(ctx, bytes.len(), "Inventor hexadecimal work")?,
-        "encode Inventor hexadecimal bytes",
-    )
-}
-
-fn admit_native_digest(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_retained(64, operation)?;
-    ctx.charge_work(
-        wire_len(ctx, bytes.len(), "Inventor digest work")?,
-        "hash Inventor native bytes",
-    )
-}
-
 fn admitted_loss(
     ctx: &DecodeContext<'_>,
     code: InventorLossCode,
@@ -2079,404 +1656,6 @@ fn admit_kernel_unknown_fidelity(
     Ok(())
 }
 
-fn admit_rse_segment_projection(
-    ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-) -> Result<(), CodecError> {
-    for segment in &container.rse.segments {
-        let token = segment.pair.token.as_str();
-        for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
-            admit_native_format(
-                ctx,
-                format_args!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
-                "retain Inventor segment identity issue id",
-            )?;
-            admit_native_format(
-                ctx,
-                format_args!("segment:{token}"),
-                "retain Inventor segment identity issue scope",
-            )?;
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor segment identity issue detail",
-            )?;
-        }
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:segment#{token}"),
-            "retain Inventor segment pair id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor segment pair token")?;
-        match &segment.meta {
-            SegmentMetaState::Parsed(meta) => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-meta#{token}"),
-                    "retain Inventor segment metadata id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor segment metadata token")?;
-                charge_retained_len(
-                    ctx,
-                    segment.kind.label().len(),
-                    "retain Inventor segment kind",
-                )?;
-                charge_retained_len(
-                    ctx,
-                    meta.display_name.len(),
-                    "retain Inventor segment display name",
-                )?;
-                admit_native_hex(ctx, &meta.segment_id, "retain Inventor segment GUID")?;
-                charge_retained_len(
-                    ctx,
-                    meta.created.len(),
-                    "retain Inventor segment creation text",
-                )?;
-                charge_retained_len(
-                    ctx,
-                    meta.modified.len(),
-                    "retain Inventor segment modification text",
-                )?;
-                admit_native_digest(
-                    ctx,
-                    meta.body.window(),
-                    "retain Inventor segment body digest",
-                )?;
-                admit_native_hex(
-                    ctx,
-                    &meta.tables.terminal_id,
-                    "retain Inventor segment terminal GUID",
-                )?;
-                for section in &meta.tables.sections {
-                    admit_native_format(
-                        ctx,
-                        format_args!("inventor:rse:meta-section#{token}-{}", section.number),
-                        "retain Inventor metadata section id",
-                    )?;
-                    charge_retained_len(
-                        ctx,
-                        token.len(),
-                        "retain Inventor metadata section token",
-                    )?;
-                    admit_native_digest(
-                        ctx,
-                        section.payload.window(),
-                        "retain Inventor metadata section digest",
-                    )?;
-                }
-                for descriptor in &meta.tables.types {
-                    admit_native_format(
-                        ctx,
-                        format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
-                        "retain Inventor metadata type id",
-                    )?;
-                    charge_retained_len(ctx, token.len(), "retain Inventor metadata type token")?;
-                    admit_native_hex(ctx, &descriptor.id, "retain Inventor metadata type GUID")?;
-                }
-            }
-            SegmentMetaState::Malformed { detail, .. } => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-meta-issue#{token}"),
-                    "retain Inventor metadata issue id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor metadata issue token")?;
-                charge_retained_len(ctx, detail.len(), "retain Inventor metadata issue detail")?;
-            }
-        }
-        match &segment.bulk {
-            SegmentBulkState::Framed(bulk) => {
-                if let RecordFrameState::Framed(table) = &bulk.records {
-                    for record in &table.records {
-                        admit_native_format(
-                            ctx,
-                            format_args!("inventor:rse:record#{token}-{}", record.ordinal),
-                            "retain Inventor RSe record id",
-                        )?;
-                        charge_retained_len(ctx, token.len(), "retain Inventor RSe record token")?;
-                        admit_native_hex(
-                            ctx,
-                            &record.type_id,
-                            "retain Inventor RSe record type GUID",
-                        )?;
-                        admit_native_digest(
-                            ctx,
-                            record.payload.window(),
-                            "retain Inventor RSe payload digest",
-                        )?;
-                        admit_native_digest(
-                            ctx,
-                            record.trailer.window(),
-                            "retain Inventor RSe trailer digest",
-                        )?;
-                    }
-                    admit_native_digest(
-                        ctx,
-                        table.stream_trailer.window(),
-                        "retain Inventor RSe stream trailer digest",
-                    )?;
-                } else if let RecordFrameState::Unavailable(detail) = &bulk.records {
-                    charge_retained_len(ctx, detail.len(), "retain Inventor RSe frame issue")?;
-                }
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-bulk#{token}"),
-                    "retain Inventor segment bulk id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor segment bulk token")?;
-                admit_native_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?;
-                admit_native_digest(
-                    ctx,
-                    bulk.compressed.window(),
-                    "retain Inventor compressed bulk digest",
-                )?;
-                admit_native_digest(
-                    ctx,
-                    bulk.expanded.window(),
-                    "retain Inventor expanded bulk digest",
-                )?;
-            }
-            SegmentBulkState::Malformed(detail) => {
-                admit_native_format(
-                    ctx,
-                    format_args!("inventor:rse:segment-bulk-issue#{token}"),
-                    "retain Inventor bulk issue id",
-                )?;
-                charge_retained_len(ctx, token.len(), "retain Inventor bulk issue token")?;
-                charge_retained_len(ctx, detail.len(), "retain Inventor bulk issue detail")?;
-            }
-        }
-    }
-    for token in &container.rse.unpaired_metadata {
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
-            "retain Inventor unpaired metadata id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.as_str().len(),
-            "retain Inventor unpaired metadata token",
-        )?;
-    }
-    for token in &container.rse.unpaired_bulk {
-        admit_native_format(
-            ctx,
-            format_args!("inventor:rse:unpaired-bulk#{}", token.as_str()),
-            "retain Inventor unpaired bulk id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.as_str().len(),
-            "retain Inventor unpaired bulk token",
-        )?;
-    }
-    Ok(())
-}
-
-fn admit_active_carrier_projection(
-    ctx: &DecodeContext<'_>,
-    state: &ActiveCarrierState<'_>,
-) -> Result<(), CodecError> {
-    charge_retained_len(
-        ctx,
-        "inventor:kernel:active-carrier#root".len(),
-        "retain Inventor active carrier id",
-    )?;
-    match state {
-        ActiveCarrierState::NotApplicable => {}
-        ActiveCarrierState::Unavailable(detail) => {
-            charge_retained_len(ctx, detail.len(), "retain Inventor active carrier issue")?;
-        }
-        ActiveCarrierState::Selected(carrier) => {
-            charge_retained_len(
-                ctx,
-                carrier.segment_token.as_str().len(),
-                "retain Inventor active carrier segment token",
-            )?;
-            admit_native_digest(
-                ctx,
-                carrier.bytes.window(),
-                "retain Inventor active carrier digest",
-            )?;
-        }
-    }
-    Ok(())
-}
-
-fn admit_assembly_native_projection(
-    ctx: &DecodeContext<'_>,
-    inventory: &crate::assembly::AssemblyInventory<'_>,
-) -> Result<(), CodecError> {
-    for occurrence in &inventory.occurrences {
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:assembly:occurrence#{}-{}",
-                occurrence.segment_token, occurrence.record_ordinal
-            ),
-            "retain Inventor assembly occurrence id",
-        )?;
-        charge_retained_len(
-            ctx,
-            occurrence.segment_token.len(),
-            "retain Inventor assembly occurrence token",
-        )?;
-    }
-    for placement in &inventory.placements {
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:assembly:placement#{}-{}",
-                placement.segment_token, placement.record_ordinal
-            ),
-            "retain Inventor assembly placement id",
-        )?;
-        charge_retained_len(
-            ctx,
-            placement.segment_token.len(),
-            "retain Inventor assembly placement token",
-        )?;
-        admit_native_digest(
-            ctx,
-            placement.suffix.window(),
-            "retain Inventor assembly placement suffix digest",
-        )?;
-    }
-    Ok(())
-}
-
-fn admit_presentation_native_projection(
-    ctx: &DecodeContext<'_>,
-    inventory: &crate::presentation::PresentationInventory<'_>,
-) -> Result<(), CodecError> {
-    for style in &inventory.default_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:default-style#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor default style id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor default style token")?;
-        admit_native_digest(
-            ctx,
-            style.suffix.window(),
-            "retain Inventor default style suffix digest",
-        )?;
-    }
-    for style in &inventory.rendering_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:rendering-style#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor rendering style id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor rendering style token")?;
-        for value in [&style.name, &style.comment, &style.long_name] {
-            charge_retained_len(ctx, value.len(), "retain Inventor rendering style text")?;
-        }
-        if let Some(extension) = &style.extension {
-            for value in [
-                &extension.style_label,
-                &extension.asset_guid,
-                &extension.material_id,
-                &extension.asset_library_id,
-                &extension.guid,
-            ] {
-                charge_retained_len(ctx, value.len(), "retain Inventor rendering extension text")?;
-            }
-        }
-        admit_native_digest(
-            ctx,
-            style.suffix.window(),
-            "retain Inventor rendering style suffix digest",
-        )?;
-        let issue_detail = if style.extension.is_some() != (style.segment_version_major >= 17) {
-            Some("rendering style extension disagrees with segment_version_major")
-        } else if style.segment_version_major >= 17 && !style.comment.is_empty() {
-            Some("rendering style comment must be empty for segment_version_major >= 17")
-        } else {
-            None
-        };
-        if let Some(detail) = issue_detail {
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor rendering conversion issue",
-            )?;
-            ctx.charge_collection_items(1, "collect Inventor rendering conversion issue")?;
-            ctx.charge_entities(1, "admit Inventor rendering conversion issue")?;
-            charge_retained_len(ctx, token.len(), "retain Inventor rendering issue token")?;
-            charge_retained_len(
-                ctx,
-                detail.len(),
-                "retain Inventor rendering issue detail copy",
-            )?;
-        }
-    }
-    for face in &inventory.graphics_faces {
-        let token = face.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-face#{token}-{}",
-                face.identity.record_ordinal
-            ),
-            "retain Inventor graphics face id",
-        )?;
-        charge_retained_len(ctx, token.len(), "retain Inventor graphics face token")?;
-        charge_items(
-            ctx,
-            face.edge_references.references().len(),
-            "copy Inventor graphics face edge references",
-        )?;
-    }
-    for collection in &inventory.graphics_style_collections {
-        let token = collection.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-style-collection#{token}-{}",
-                collection.identity.record_ordinal
-            ),
-            "retain Inventor graphics style collection id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.len(),
-            "retain Inventor graphics style collection token",
-        )?;
-        charge_items(
-            ctx,
-            collection.style_references.references().len(),
-            "copy Inventor graphics style references",
-        )?;
-    }
-    for style in &inventory.graphics_primary_color_styles {
-        let token = style.identity.segment_token.as_str();
-        admit_native_format(
-            ctx,
-            format_args!(
-                "inventor:presentation:graphics-primary-color#{token}-{}",
-                style.identity.record_ordinal
-            ),
-            "retain Inventor primary color style id",
-        )?;
-        charge_retained_len(
-            ctx,
-            token.len(),
-            "retain Inventor primary color style token",
-        )?;
-    }
-    Ok(())
-}
-
 fn project_property_set_issue(
     ctx: &DecodeContext<'_>,
     directory_id: u32,
@@ -2561,6 +1740,7 @@ fn project_protein_state(
     ctx: &DecodeContext<'_>,
     state: &ProteinState<'_>,
 ) -> Result<ProteinRecord, CodecError> {
+    admit_native_items(ctx, 1)?;
     let id = retained_clone(
         ctx,
         "inventor:protein:state#root",
@@ -2584,6 +1764,7 @@ fn project_protein_state(
                 .iter()
                 .enumerate()
                 .map(|(ordinal, entry)| -> Result<_, CodecError> {
+                    admit_native_items(ctx, 1)?;
                     Ok(ProteinEntryRecord {
                         id: retained_format(
                             ctx,
@@ -2623,10 +1804,6 @@ fn project_protein_records(
     ctx: &DecodeContext<'_>,
     instances: Vec<crate::protein::ProteinInstanceRecords>,
 ) -> Result<ProteinNativeRecords, CodecError> {
-    for instance in &instances {
-        admit_native_items(ctx, instance.records.len())?;
-        admit_native_items(ctx, instance.rejected.len())?;
-    }
     let mut assets = Vec::new();
     let mut rejections = Vec::new();
     let mut issues = Vec::new();
@@ -2698,6 +1875,7 @@ fn project_ufrx_state(
     state: &UfrxState<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<UfrxRecord, CodecError> {
+    admit_native_items(ctx, 1)?;
     Ok(match state {
         UfrxState::Absent => UfrxRecord::Absent {
             id: retained_clone(
@@ -2832,13 +2010,14 @@ fn project_ufrx_model_state(
     state: &crate::external_reference::UfrxModelState<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxModelStateRecord>, CodecError> {
-    let issue_detail = if state.suffix.window().len() != 77 {
-        Some("suffix_len must be 77")
-    } else if state.name.chars().all(char::is_whitespace) {
-        Some("name must not be empty")
-    } else {
-        None
-    };
+    let issue_detail = model_state_issue(
+        wire_len(
+            ctx,
+            state.suffix.window().len(),
+            "Inventor UFRx model-state suffix length",
+        )?,
+        &state.name,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -2846,15 +2025,12 @@ fn project_ufrx_model_state(
             "retain Inventor UFRx model-state conversion issue",
         )?;
     }
-    charge_items(
-        ctx,
-        state.parameters.len(),
-        "copy Inventor UFRx state parameters",
-    )?;
     let parameters = state
         .parameters
         .iter()
         .map(|parameter| -> Result<_, CodecError> {
+            ctx.charge_collection_items(1, "copy Inventor UFRx state parameters")?;
+            ctx.charge_entities(1, "admit Inventor UFRx state parameter")?;
             Ok(UfrxModelStateParameterRecord {
                 name: retained_clone(ctx, &parameter.name, "retain Inventor UFRx parameter name")?,
                 tag: parameter.tag,
@@ -2910,8 +2086,11 @@ fn project_ufrx_external_reference(
     reference: &crate::external_reference::InventorExternalReference,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<ExternalReferenceRecord>, CodecError> {
-    if reference.path.chars().all(char::is_whitespace)
-        && reference.document_id.iter().all(|byte| *byte == 0)
+    if external_reference_issue(
+        &reference.path,
+        byte_document_id_present(&reference.document_id),
+    )
+    .is_some()
     {
         charge_retained_len(
             ctx,
@@ -2978,7 +2157,13 @@ fn project_ufrx_embedded_reference(
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
-    if reference.source.window().is_empty() {
+    if embedded_reference_issue(wire_len(
+        ctx,
+        reference.source.window().len(),
+        "Inventor UFRx embedded length",
+    )?)
+    .is_some()
+    {
         charge_retained_len(
             ctx,
             "record_len must not be zero".len(),
@@ -3040,13 +2225,14 @@ fn project_ufrx_occurrence(
     occurrence: &crate::external_reference::UfrxOccurrence<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxOccurrenceRecord>, CodecError> {
-    let issue_detail = if occurrence.header_padding_words > 8 {
-        Some("header_padding_words must not exceed 8")
-    } else if occurrence.source.window().is_empty() {
-        Some("record_len must not be zero")
-    } else {
-        None
-    };
+    let issue_detail = occurrence_issue(
+        occurrence.header_padding_words,
+        wire_len(
+            ctx,
+            occurrence.source.window().len(),
+            "Inventor UFRx occurrence length",
+        )?,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -3099,24 +2285,17 @@ fn project_ufrx_representation(
     state: &crate::external_reference::UfrxRepresentationState,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<UfrxRepresentationRecord>, CodecError> {
-    let issue_detail = if let Some((name, kind)) = &state.active_representation {
-        if name.chars().all(char::is_whitespace) {
-            Some("active_representation must not be empty")
-        } else if kind.chars().all(char::is_whitespace) {
-            Some("active_representation_kind must not be empty")
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let issue_detail = issue_detail.or_else(|| {
+    let issue_detail = representation_issue(
         state
-            .active_model_state
-            .chars()
-            .all(char::is_whitespace)
-            .then_some("active_model_state must not be empty")
-    });
+            .active_representation
+            .as_ref()
+            .map(|(name, _)| name.as_str()),
+        state
+            .active_representation
+            .as_ref()
+            .map(|(_, kind)| kind.as_str()),
+        &state.active_model_state,
+    );
     if let Some(detail) = issue_detail {
         charge_retained_len(
             ctx,
@@ -3166,130 +2345,6 @@ fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), Codec
     })?;
     ctx.charge_collection_items(count, "retain Inventor native structural records")?;
     ctx.charge_entities(count, "admit Inventor native structural records")
-}
-
-fn admit_native_record_items(
-    ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-    assembly: &crate::assembly::AssemblyInventory<'_>,
-    presentation: &crate::presentation::PresentationInventory<'_>,
-    design: &crate::design::DesignInventory,
-    sketch: &crate::sketch::SketchInventory,
-    feature: &crate::feature::FeatureInventory,
-) -> Result<(), CodecError> {
-    admit_native_items(ctx, 3)?;
-    for descriptor in &container.property_sets {
-        admit_native_items(ctx, 1)?;
-        if let PropertySetState::Parsed(property_set) = &descriptor.state {
-            for section in &property_set.sections {
-                ctx.charge_work(1, "count Inventor native property sections")?;
-                admit_native_items(ctx, 1)?;
-                admit_native_items(ctx, section.properties.len())?;
-            }
-        }
-    }
-    if let ProteinState::Package(package) = &container.protein {
-        admit_native_items(ctx, package.archive.entries().len())?;
-    }
-    if let UfrxState::Parsed(document) = &container.ufrx {
-        for state in &document.model_states {
-            ctx.charge_work(1, "count Inventor native UFRx states")?;
-            admit_native_items(ctx, state.parameters.len())?;
-        }
-        for reference in &document.references {
-            ctx.charge_work(1, "count Inventor native UFRx references")?;
-            charge_items(
-                ctx,
-                reference.state_groups.len(),
-                "retain Inventor native UFRx state groups",
-            )?;
-        }
-        for count in [
-            document.model_states.len(),
-            document.references.len(),
-            document.embedded_references.len(),
-            document.occurrences.len(),
-        ] {
-            admit_native_items(ctx, count)?;
-        }
-    }
-    if let UfrxState::Unsupported {
-        section_versions, ..
-    } = &container.ufrx
-    {
-        charge_items(
-            ctx,
-            section_versions.len(),
-            "retain Inventor native UFRx section versions",
-        )?;
-    }
-    admit_native_items(ctx, container.rse.databases.len())?;
-    admit_native_items(ctx, container.rse.databases.len())?;
-    match &container.rse.registry {
-        ParsedState::Parsed(registry) => admit_native_items(ctx, registry.entries.len())?,
-        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
-        ParsedState::Absent => {}
-    }
-    match &container.rse.revisions {
-        ParsedState::Parsed(table) => admit_native_items(ctx, table.entries.len())?,
-        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
-        ParsedState::Absent => {}
-    }
-    for segment in &container.rse.segments {
-        ctx.charge_work(1, "count Inventor native segment records")?;
-        admit_native_items(ctx, 3)?;
-        admit_native_items(ctx, segment.identity_issues.len())?;
-        if let SegmentMetaState::Parsed(meta) = &segment.meta {
-            admit_native_items(ctx, meta.tables.sections.len())?;
-            admit_native_items(ctx, meta.tables.types.len())?;
-        }
-        if let SegmentBulkState::Framed(bulk) = &segment.bulk {
-            if let RecordFrameState::Framed(table) = &bulk.records {
-                admit_native_items(ctx, table.records.len())?;
-            }
-        }
-    }
-    for count in [
-        container.rse.unpaired_metadata.len(),
-        container.rse.unpaired_bulk.len(),
-        assembly.occurrences.len(),
-        assembly.placements.len(),
-        assembly.issues.len(),
-        presentation.default_styles.len(),
-        presentation.rendering_styles.len(),
-        presentation.graphics_faces.len(),
-        presentation.graphics_style_collections.len(),
-        presentation.graphics_primary_color_styles.len(),
-        presentation.issues.len(),
-        design.parameters.len(),
-        design.expressions.len(),
-        design.units.len(),
-        design.issues.len(),
-        sketch.sketches.len(),
-        sketch.entities.len(),
-        sketch.transforms.len(),
-        sketch.directions.len(),
-        sketch.constraints.len(),
-        sketch.issues.len(),
-        feature.features.len(),
-        feature.pattern_features.len(),
-        feature.terminators.len(),
-        feature.properties.len(),
-        feature.labels.len(),
-        feature.entity_style_links.len(),
-        feature.issues.len(),
-    ] {
-        admit_native_items(ctx, count)?;
-    }
-    for occurrence in &assembly.occurrences {
-        ctx.charge_work(1, "count Inventor native occurrence references")?;
-        charge_items(
-            ctx,
-            occurrence.related_references.len(),
-            "retain Inventor native occurrence references",
-        )?;
-    }
-    Ok(())
 }
 
 fn collect_body_ids<'b>(
@@ -3460,7 +2515,10 @@ fn admit_ufrx_record<T>(
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<T>, CodecError> {
     match admitted {
-        Ok(record) => Ok(Some(record)),
+        Ok(record) => {
+            admit_native_items(ctx, 1)?;
+            Ok(Some(record))
+        }
         Err(detail) => {
             issues.push(structural_issue(ctx, scope, &detail)?);
             Ok(None)
@@ -3567,7 +2625,11 @@ fn admit_assembly_placement(
     let segment_token = wire.segment_token.clone();
     let record_ordinal = wire.record_ordinal;
     match AssemblyPlacementRecord::try_from(wire) {
-        Ok(record) => Ok(Some(record)),
+        Ok(record) => {
+            ctx.charge_collection_items(1, "collect Inventor native assembly placement")?;
+            ctx.charge_entities(1, "admit Inventor native assembly placement")?;
+            Ok(Some(record))
+        }
         Err(detail) => {
             ctx.charge_collection_items(1, "collect Inventor placement conversion issue")?;
             ctx.charge_entities(1, "admit Inventor placement conversion issue")?;

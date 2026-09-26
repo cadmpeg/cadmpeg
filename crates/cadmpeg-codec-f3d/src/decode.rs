@@ -2046,7 +2046,7 @@ fn try_decode_text_model(
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
         let mut header = stream.header.as_kernel_header();
-        header.scale = Some(stream.header.scale);
+        header.scale = Some(stream.header.scale().get());
         parts.push((
             BrepFacts {
                 name: name.clone(),
@@ -2895,7 +2895,8 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
-                self.native.store(self.ir.native.namespace_mut("f3d"))?;
+                self.native
+                    .store(ctx, self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
                     populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns)?;
                 let source_image = preserve_source_image(scan);
@@ -2945,7 +2946,8 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
-        self.native.store(self.ir.native.namespace_mut("f3d"))?;
+        self.native
+            .store(ctx, self.ir.native.namespace_mut("f3d"))?;
         let annotations = populate_annotations(
             &self.ir,
             scan,

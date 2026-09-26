@@ -289,11 +289,11 @@ fn rational_surface_patches_with_budget(
             if !values.iter().all(|weight| weight.get() > 0.0) {
                 return None;
             }
-            values.into_iter().map(NonZeroReal::get).collect()
+            Some(values.into_iter().map(NonZeroReal::get).collect::<Vec<_>>())
         }
-        None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
+        None => None,
     };
-    let homogeneous_controls = positive_controls(&surface.poles(), &weights)?;
+    let homogeneous_controls = positive_controls(&surface.poles(), weights.as_deref())?;
     // The Bezier spans of every row and column share the knots, so their
     // domains are the intervals between consecutive distinct active knots.
     let u_domains = surface.u_knots().active_spans(u_degree, u_count)?;
@@ -1321,22 +1321,22 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 }
 
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
+/// Scratch contains `degree + 1` values, at most the admitted control count.
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Vec<f64>> {
     let finite_t = FiniteReal::new(t);
-    let mut values = vec![1.0];
-    let mut left = alloc_filled(degree.checked_add(1)?, None, "IR B-spline basis left").ok()?;
-    let mut right = alloc_filled(degree.checked_add(1)?, None, "IR B-spline basis right").ok()?;
+    let mut values = alloc_filled(degree.checked_add(1)?, 0.0, "IR B-spline basis").ok()?;
+    values[0] = 1.0;
     for j in 1..=degree {
-        // Each knot distance is admitted where it is formed.
-        left[j] = FiniteReal::new(t - knots[span + 1 - j]);
-        right[j] = FiniteReal::new(knots[span + j] - t);
         let mut saved = 0.0;
-        let mut next = alloc_filled(j.checked_add(1)?, 0.0, "IR B-spline basis level").ok()?;
-        for (r, &value) in values.iter().enumerate().take(j) {
+        for r in 0..j {
+            let value = values[r];
+            // Each knot distance is admitted where it is formed.
+            let right = FiniteReal::new(knots[span + r + 1] - t);
+            let left = FiniteReal::new(t - knots[span + 1 - j + r]);
             // Two finite distances with a finite sum form the scaled ratio. A
             // distance or a sum outside the finite range takes the exact knot
             // differences instead.
-            let ratio_terms = right[r + 1].zip(left[j - r]).and_then(|(right, left)| {
+            let ratio_terms = right.zip(left).and_then(|(right, left)| {
                 Some((right, left, FiniteReal::new(right.get() + left.get())?))
             });
             let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
@@ -1357,11 +1357,10 @@ fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Option<Ve
                             .get(),
                 ]
             };
-            next[r] = saved + right_term;
+            values[r] = saved + right_term;
             saved = left_term;
         }
-        next[j] = saved;
-        values = next;
+        values[j] = saved;
     }
     Some(values)
 }
@@ -1420,23 +1419,22 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
         .into()
 }
 
+/// The owned basis has `degree + 1` values, at most the admitted control count.
 fn bspline_basis_second_derivative(
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
-) -> Option<Vec<f64>> {
-    if degree < 2 {
-        return alloc_filled(
-            degree.checked_add(1)?,
-            0.0,
-            "IR B-spline second-derivative basis",
-        )
-        .ok();
+) -> Option<Cow<'static, [f64]>> {
+    if degree == 0 {
+        return Some(Cow::Borrowed(&[0.0]));
+    }
+    if degree == 1 {
+        return Some(Cow::Borrowed(&[0.0, 0.0]));
     }
     let lower = bspline_basis_derivative(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    (0..=degree)
+    let basis = (0..=degree)
         .map(|local| {
             let index = span - degree + local;
             let lower_at = |global: usize| {
@@ -1480,8 +1478,8 @@ fn bspline_basis_second_derivative(
             };
             left - right
         })
-        .collect::<Vec<_>>()
-        .into()
+        .collect::<Vec<_>>();
+    Some(Cow::Owned(basis))
 }
 
 /// Basis derivatives with respect to a local coordinate whose unit is the
@@ -1707,7 +1705,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         return None;
     }
     let weights = validated_nurbs_curve_weights(curve)?;
-    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?.get();
+    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.values(), point)?.get();
     let poles = curve.control_points();
     let distance = |parameter: FiniteReal| {
         let position = nurbs_curve_point_evaluation(
@@ -1715,7 +1713,11 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            |index| weights.get(index).copied(),
+            |index| {
+                weights
+                    .values()
+                    .and_then(|weights| weights.get(index).copied())
+            },
             parameter,
         )
         .ok()?;
@@ -1732,7 +1734,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     }
     if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
         curve,
-        weights.as_ref(),
+        weights.values(),
         point,
         tolerance,
         seed,
@@ -1777,7 +1779,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
 
 fn nurbs_curve_parameter_near_point_newton(
     curve: &NurbsCurve,
-    weights: &[f64],
+    weights: Option<&[f64]>,
     point: Point3,
     tolerance: f64,
     seed: FiniteReal,
@@ -1792,7 +1794,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            |index| weights.get(index).copied(),
+            |index| weights.and_then(|weights| weights.get(index).copied()),
             parameter,
         )
         .ok()?;
@@ -1808,7 +1810,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.degree(),
             curve.knots(),
             &poles,
-            Some(weights),
+            weights,
             parameter,
             CurveDerivative::First,
         )
@@ -1832,27 +1834,40 @@ fn nurbs_curve_parameter_near_point_newton(
 /// curve over its effective knot domain.
 pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<FiniteReal> {
     let weights = validated_nurbs_curve_weights(curve)?;
-    nurbs_curve_speed_bound_about(curve, weights.as_ref(), Point3::new(0.0, 0.0, 0.0))
+    nurbs_curve_speed_bound_about(curve, weights.values(), Point3::new(0.0, 0.0, 0.0))
 }
 
-fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'static, [f64]>> {
+enum ValidatedNurbsWeights {
+    Unit,
+    Rational(Vec<f64>),
+}
+
+impl ValidatedNurbsWeights {
+    fn values(&self) -> Option<&[f64]> {
+        match self {
+            Self::Unit => None,
+            Self::Rational(values) => Some(values),
+        }
+    }
+}
+
+fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<ValidatedNurbsWeights> {
     nurbs_curve_parameter_domain(curve)?;
-    let count = curve.pole_count();
-    let weights: Cow<'static, [f64]> = match curve.weights() {
+    let weights = match curve.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
                 return None;
             }
-            Cow::Owned(weights.into_iter().map(NonZeroReal::get).collect())
+            ValidatedNurbsWeights::Rational(weights.into_iter().map(NonZeroReal::get).collect())
         }
-        None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
+        None => ValidatedNurbsWeights::Unit,
     };
     Some(weights)
 }
 
 fn nurbs_curve_speed_bound_about(
     curve: &NurbsCurve,
-    weights: &[f64],
+    weights: Option<&[f64]>,
     origin: Point3,
 ) -> Option<FiniteReal> {
     let points = curve
@@ -2353,7 +2368,7 @@ fn nurbs_pcurve_differential_with(
             return Ok(point_only(unreached));
         };
         first_basis = scaled.0;
-        second_basis = Some(scaled.1);
+        second_basis = Some(Cow::Owned(scaled.1));
         scale
     };
     let first_sum = sum(&first_basis);
@@ -2429,20 +2444,15 @@ pub fn nurbs_pcurve_contains_point(
     {
         return None;
     }
-    let owned_weights;
     let weights = match weights {
-        Some(weights) if weights.len() == count => weights,
+        Some(weights) if weights.len() == count => Some(weights),
         Some(_) => return None,
-        None => {
-            owned_weights = alloc_filled(count, 1.0, "ir_nurbs_pcurve_weights").ok()?;
-            &owned_weights
-        }
+        None => None,
     };
-    if control_points
-        .iter()
-        .zip(weights)
-        .any(|(control, weight)| !control.is_finite() || !weight.is_finite() || *weight <= 0.0)
-        || knots.iter().any(|knot| !knot.is_finite())
+    if control_points.iter().enumerate().any(|(index, control)| {
+        !control.is_finite()
+            || weights.is_some_and(|weights| !weights[index].is_finite() || weights[index] <= 0.0)
+    }) || knots.iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(knots)
     {
         return None;
@@ -2469,9 +2479,8 @@ pub fn nurbs_pcurve_contains_point(
             return None;
         }
         let middle = start.midpoint(end);
-        let curve_uv = Point2::from(
-            nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle).ok()?,
-        );
+        let curve_uv =
+            Point2::from(nurbs_pcurve_uv(degree, knots, control_points, weights, middle).ok()?);
         let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
@@ -3502,11 +3511,11 @@ fn nurbs_curve_derivative(
     let mut second_basis = if second {
         bspline_basis_second_derivative(knots, degree, span, t).ok_or(non_finite)?
     } else {
-        Vec::new()
+        Cow::Borrowed(&[][..])
     };
     let scale = if first_basis
         .iter()
-        .chain(&second_basis)
+        .chain(second_basis.iter())
         .all(|value| value.is_finite())
     {
         PositiveReal::ONE
@@ -3529,7 +3538,7 @@ fn nurbs_curve_derivative(
             bspline_basis_scaled_derivatives(knots, degree, span, t, scale).ok_or(non_finite)?;
         first_basis = scaled.0;
         if second {
-            second_basis = scaled.1;
+            second_basis = Cow::Owned(scaled.1);
         }
         scale
     };

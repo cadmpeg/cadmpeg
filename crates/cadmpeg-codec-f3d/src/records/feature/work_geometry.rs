@@ -907,10 +907,16 @@ pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
 }
 
 /// Construction rule whose input arity and decoded carrier roles agree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DesignWorkPointRuleForm", into = "DesignWorkPointRuleForm")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DesignWorkPointRuleForm")]
 pub(crate) struct DesignWorkPointRule {
     form: DesignWorkPointRuleForm,
+}
+
+impl Serialize for DesignWorkPointRule {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.form.serialize(serializer)
+    }
 }
 
 impl DesignWorkPointRule {
@@ -1001,12 +1007,6 @@ impl DesignWorkPointRule {
                 _ => None,
             }
         })
-    }
-}
-
-impl From<DesignWorkPointRule> for DesignWorkPointRuleForm {
-    fn from(value: DesignWorkPointRule) -> Self {
-        value.form
     }
 }
 

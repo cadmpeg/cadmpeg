@@ -2,7 +2,7 @@
 use crate::math::{Point2, Point3, Vector3};
 use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 use crate::sketches::{
-    SketchGeometry, SketchGeometryDefinition, SpatialSketchConstraintDefinition,
+    EllipseRadii, SketchGeometry, SketchGeometryDefinition, SpatialSketchConstraintDefinition,
     SpatialSketchConstraintDefinitionInput, SpatialSketchEntityId, SpatialSketchEntityUse,
     SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchProfile, TextPlacement,
 };
@@ -13,33 +13,70 @@ fn length(value: f64) -> Length {
 }
 
 #[test]
+fn sketch_ellipse_serialization_keeps_its_wire_fields() {
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+        center: Point2::new(1.0, 2.0),
+        major_angle: Angle::new(0.5).unwrap(),
+        radii: EllipseRadii {
+            major_radius: length(3.0),
+            minor_radius: length(2.0),
+        },
+        bounds: None,
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&geometry).unwrap(),
+        r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"minor_radius":2.0}"#
+    );
+}
+
+#[test]
+fn sketch_ellipse_rejects_unknown_and_duplicate_wire_fields() {
+    for (wire, expected) in [
+        (
+            r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"minor_radius":2.0,"zz_bogus":1}"#,
+            "zz_bogus",
+        ),
+        (
+            r#"{"kind":"ellipse","center":{"u":1.0,"v":2.0},"major_angle":0.5,"major_radius":3.0,"major_radius":4.0,"minor_radius":2.0}"#,
+            "duplicate field `major_radius`",
+        ),
+    ] {
+        let error = serde_json::from_str::<SketchGeometry>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(expected), "{error}");
+    }
+}
+
+#[test]
 fn a_sketch_geometry_holds_its_admitted_definition_and_takes_admitted_parts() {
     let ellipse = SketchGeometryDefinition::Ellipse {
         center: Point2::new(1.0, 2.0),
         major_angle: Angle::new(0.5).unwrap(),
-        major_radius: length(3.0),
-        minor_radius: length(2.0),
+        radii: EllipseRadii {
+            major_radius: length(3.0),
+            minor_radius: length(2.0),
+        },
         bounds: None,
     };
     let geometry = SketchGeometry::try_from(ellipse.clone()).unwrap();
-    let SketchGeometryDefinition::Ellipse {
-        center,
-        major_radius,
-        ..
-    } = geometry.definition()
-    else {
+    let SketchGeometryDefinition::Ellipse { center, radii, .. } = geometry.definition() else {
         panic!("ellipse")
     };
     assert_eq!(*center, FinitePoint2::new(Point2::new(1.0, 2.0)).unwrap());
-    assert_eq!(major_radius.major(), PositiveLength::new(3.0).unwrap());
+    assert_eq!(radii.major(), PositiveLength::new(3.0).unwrap());
+    assert_eq!(radii.minor(), PositiveLength::new(2.0).unwrap());
     assert_eq!(geometry.definition().to_raw(), ellipse);
 
     // The typed route tests only the conditions between fields.
     let admitted = |major: f64, minor: f64| SketchGeometryDefinition::Ellipse {
         center: FinitePoint2::new(Point2::new(0.0, 0.0)).unwrap(),
         major_angle: Angle::new(0.0).unwrap(),
-        major_radius: PositiveLength::new(major).unwrap(),
-        minor_radius: PositiveLength::new(minor).unwrap(),
+        radii: EllipseRadii {
+            major_radius: PositiveLength::new(major).unwrap(),
+            minor_radius: PositiveLength::new(minor).unwrap(),
+        },
         bounds: None,
     };
     assert!(SketchGeometry::from_parts(admitted(3.0, 2.0)).is_ok());

@@ -388,9 +388,17 @@ fn decode_propagates_spline_grid_collection_limit() {
     ));
 
     options.policy.limits.max_collection_items = 6;
-    CreoCodec
+    let exact = exact_collection_limit_for_decode(&data, &mut options);
+    assert!(exact > 6, "native arena storage adds collection items");
+    options.policy.limits.max_collection_items = exact - 1;
+    let error = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact grid item limit admits the fixture");
+        .expect_err("one fewer item than the exact fixture need refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
 }
 
 #[test]
@@ -416,9 +424,39 @@ fn decode_propagates_counted_scalar_array_collection_limit() {
     ));
 
     options.policy.limits.max_collection_items = 4;
-    CreoCodec
+    let exact = exact_collection_limit_for_decode(&data, &mut options);
+    assert!(exact > 4, "native arena storage adds collection items");
+    options.policy.limits.max_collection_items = exact - 1;
+    let error = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact counted scalar item limit admits the fixture");
+        .expect_err("one fewer item than the exact fixture need refuses");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+fn exact_collection_limit_for_decode(data: &[u8], options: &mut DecodeOptions) -> u64 {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    for _ in 0..256 {
+        match CreoCodec.decode(&mut Cursor::new(data), options) {
+            Ok(_) => return options.policy.limits.max_collection_items,
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == ResourceDimension::CollectionItems => {
+                let next = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("fixture item need fits u64");
+                assert!(next > options.policy.limits.max_collection_items);
+                options.policy.limits.max_collection_items = next;
+            }
+            Err(error) => panic!("expected collection admission: {error:?}"),
+        }
+    }
+    panic!("fixture did not reach its exact collection limit");
 }
 
 #[test]

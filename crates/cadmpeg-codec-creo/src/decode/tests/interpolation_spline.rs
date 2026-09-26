@@ -125,7 +125,13 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
 
-    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("spline profile");
+    let profiles = resolved_sketch_profiles(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id,
+        1,
+    )
+    .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
     assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
     let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");

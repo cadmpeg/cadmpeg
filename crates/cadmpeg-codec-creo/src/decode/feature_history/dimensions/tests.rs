@@ -93,7 +93,13 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     }
 
     let (transferred, _) = crate::decode::with_test_decode_ctx(|ctx| {
-        transfer_feature_dimensions(ctx, &scan, &mut ir, &mut AnnotationBuilder::new())
+        transfer_feature_dimensions(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
     })
     .expect("valid test fixture");
 

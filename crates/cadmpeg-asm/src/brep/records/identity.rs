@@ -43,6 +43,13 @@ mod tests {
         kind: &str,
         mut wire: serde_json::Value,
     ) {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("empty test input fits the service policy");
         for namespace in [
             "f3d:asm",
             "sat:asm",
@@ -58,7 +65,7 @@ mod tests {
             document
                 .native
                 .namespace_mut("f3d")
-                .set_arena("namespace_probe", &[typed])
+                .set_arena(&ctx, "namespace_probe", &[typed])
                 .unwrap();
             let document: cadmpeg_ir::CadIr =
                 serde_json::from_value(serde_json::to_value(document).unwrap()).unwrap();

@@ -389,7 +389,7 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
             cadmpeg_core::decode::alloc_filled(count, 1.0, "iges_surface_closure_weights").ok()?
         }
     };
-    let controls = positive_controls(&curve.control_points(), &weights)?;
+    let controls = positive_controls(&curve.control_points(), Some(&weights))?;
     homogeneous_spans(degree, curve.knots(), controls)
 }
 

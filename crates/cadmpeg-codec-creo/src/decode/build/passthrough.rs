@@ -117,6 +117,7 @@ fn legacy_source_stream<'a>(scan: &'a ContainerScan<'_>, offset: usize) -> &'a s
 }
 
 fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -127,7 +128,7 @@ fn emit_legacy_value_arena<K: crate::legacy::LegacyCode>(
 where
     K::Payload: Serialize,
 {
-    emit_arena(ir, annotations, key, records, |annotations, record| {
+    emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,
             record.id(),
@@ -140,6 +141,7 @@ where
 }
 
 pub(super) fn emit_legacy_arenas(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -148,6 +150,7 @@ pub(super) fn emit_legacy_arenas(
         return Ok(());
     };
     emit_arena(
+        ctx,
         ir,
         annotations,
         "legacy_objects",
@@ -164,6 +167,7 @@ pub(super) fn emit_legacy_arenas(
         },
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -172,6 +176,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_1_integer",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -180,6 +185,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_2_real",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -188,6 +194,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_3_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -196,6 +203,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_4_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -204,6 +212,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_10_string",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -212,6 +221,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_5_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -220,6 +230,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_6_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -228,6 +239,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_7_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -236,6 +248,7 @@ pub(super) fn emit_legacy_arenas(
         "legacy_type_9_value",
     )?;
     emit_legacy_value_arena(
+        ctx,
         scan,
         ir,
         annotations,
@@ -245,6 +258,7 @@ pub(super) fn emit_legacy_arenas(
     )?;
     if let Some(table) = &scan.framing.legacy_family_table {
         emit_arena(
+            ctx,
             ir,
             annotations,
             "configuration_driver_tables",

@@ -678,8 +678,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             .map(|ctx| ctx.reserve_scoped(u64_from_index(digit_count), "step_binary_lexeme_temp"))
             .transpose()
             .map_err(|error| Self::resource_error(start, error))?;
-        let mut raw = alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
-            .map_err(|error| Self::resource_error(start, error))?;
+        let mut raw = if let Some(ctx) = self.budget {
+            ctx.alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
+        } else {
+            alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
+        }
+        .map_err(|error| Self::resource_error(start, error))?;
         let mut cursor = content;
         let mut written = 0usize;
         while cursor < self.at {
@@ -737,8 +741,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             }
             None
         };
-        let mut data = alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
-            .map_err(|error| Self::resource_error(start, error))?;
+        let mut data = if let Some(ctx) = self.budget {
+            ctx.alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
+        } else {
+            alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
+        }
+        .map_err(|error| Self::resource_error(start, error))?;
         let mut output = 0usize;
         let mut pairs = digits.chunks_exact(2);
         for pair in &mut pairs {
@@ -790,8 +798,12 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                     .map_err(|error| Self::resource_error(start, error))?;
             }
         }
-        let mut value = alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-            .map_err(|error| Self::resource_error(start, error))?;
+        let mut value = if let Some(ctx) = self.budget {
+            ctx.alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
+        } else {
+            alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
+        }
+        .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
         for &byte in &self.input[content..self.at] {
             if !byte.is_ascii_control() {

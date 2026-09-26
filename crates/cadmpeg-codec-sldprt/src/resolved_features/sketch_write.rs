@@ -458,10 +458,11 @@ fn generated_sketch_curve(
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds,
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let point = |parameter: f64| {
                 Point2::new(
                     center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
@@ -477,8 +478,15 @@ fn generated_sketch_curve(
                     [start.get(), end.get()]
                 });
             let full = bounds.is_none();
+            let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+                normal,
+                vector(major_angle.get().cos(), major_angle.get().sin()),
+            )
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.axis/major_direction must form an orthonormal frame"))?;
+            let center_3d = cadmpeg_ir::features::FinitePoint3::new(lift(center.get()))
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
             Ok(GeneratedSketchCurve {
-                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(lift(center.get()), normal, vector(major_angle.get().cos(), major_angle.get().sin()), major_radius.get(), minor_radius.get()).map_err(cadmpeg_core::CodecError::malformed)?)),
+                curve: CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, *radii))),
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
                 param_range: [start, end],
@@ -714,10 +722,11 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
         SketchGeometryDefinition::Ellipse {
             center,
             major_angle,
-            major_radius,
-            minor_radius,
+            radii,
             bounds: Some([start, end]),
         } => {
+            let major_radius = radii.major();
+            let minor_radius = radii.minor();
             let point = |parameter: f64| {
                 Point2::new(
                     center.u + major_angle.get().cos() * major_radius.get() * parameter.cos()
@@ -758,8 +767,7 @@ enum PatchCurve {
 struct PatchEllipse {
     center: FinitePoint2,
     major_angle: Angle,
-    major_radius: cadmpeg_ir::sketches::OrderedMajorRadius,
-    minor_radius: PositiveLength,
+    radii: cadmpeg_ir::sketches::OrderedMajorRadius,
     bounds: Option<[Angle; 2]>,
 }
 
@@ -786,14 +794,12 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
             SketchGeometryDefinition::Ellipse {
                 center,
                 major_angle,
-                major_radius,
-                minor_radius,
+                radii,
                 bounds,
             } => Ok(Self::Ellipse(PatchEllipse {
                 center: *center,
                 major_angle: *major_angle,
-                major_radius: *major_radius,
-                minor_radius: *minor_radius,
+                radii: *radii,
                 bounds: *bounds,
             })),
             SketchGeometryDefinition::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
@@ -1056,8 +1062,7 @@ fn patch_direct_ellipse(
     let PatchEllipse {
         center,
         major_angle,
-        major_radius,
-        minor_radius,
+        radii,
         bounds,
     } = *ellipse;
     let center_3d = lift_point(
@@ -1085,13 +1090,7 @@ fn patch_direct_ellipse(
     let center_3d = cadmpeg_ir::features::FinitePoint3::new(center_3d)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("EllipseCurve.center must be finite"))?;
     let curve = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
-            center_3d,
-            frame,
-            major_radius.major(),
-            minor_radius,
-        )
-        .map_err(cadmpeg_core::CodecError::malformed)?,
+        cadmpeg_ir::geometry::analytic::EllipseCurve::new(center_3d, frame, radii),
     ));
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
     if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
@@ -1101,8 +1100,8 @@ fn patch_direct_ellipse(
     }
     let parameters = bounds.map_or([0.0, 0.0], |bounds| bounds.map(Angle::get));
     let center = center.get();
-    let major_radius = major_radius.get();
-    let minor_radius = minor_radius.get();
+    let major_radius = radii.major().get();
+    let minor_radius = radii.minor().get();
     for (attr, parameter) in [request.start_attr, request.end_attr]
         .into_iter()
         .zip(parameters)

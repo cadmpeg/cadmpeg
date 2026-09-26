@@ -55,7 +55,11 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
         "geometry fixture must contain a child-map descriptor"
     );
     namespace
-        .set_arena("element_maps", &maps)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "element_maps",
+            &maps,
+        )
         .expect("mutated element-map arena");
     let json = serde_json::to_string(&ir).expect("serialize mutated CADIR");
     let reparsed =
@@ -115,7 +119,11 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
             .namespace_mut("fcstd")
-            .set_arena("element_maps", &[record])
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "element_maps",
+                &[record],
+            )
             .unwrap();
         let roundtrip: cadmpeg_ir::CadIr =
             serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();

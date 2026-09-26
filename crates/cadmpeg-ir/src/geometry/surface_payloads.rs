@@ -402,6 +402,16 @@ pub fn admit_revolution_axis(
     ))
 }
 
+/// Admit a revolution axis from a source point and direction whose
+/// coordinates are already finite. Only unit length remains to check.
+pub fn admit_revolution_axis_from_parts(
+    origin: FinitePoint3,
+    direction: FiniteVector3,
+) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
+    let direction = UnitVector3::new(direction.get()).ok_or(INVALID_REVOLUTION_AXIS)?;
+    Ok((origin, direction))
+}
+
 fn admit_revolution_interval(
     range: [f64; 2],
     message: &'static str,
@@ -867,24 +877,42 @@ impl SubsetSurfaceConstruction {
         v_sense: Option<bool>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        Ok(Self {
-            cache,
+        let parameter_ranges = [
+            DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+            DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+        ];
+        Ok(Self::from_parts(
             support,
-            parameter_ranges: [
-                DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-                DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-            ],
+            parameter_ranges,
             u_sense,
             v_sense,
-        })
+            cache,
+        ))
+    }
+
+    /// Build a subset from admitted directed ranges.
+    pub fn from_parts(
+        support: SurfaceId,
+        parameter_ranges: [DirectedParameterRange; 2],
+        u_sense: Option<bool>,
+        v_sense: Option<bool>,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            support,
+            parameter_ranges,
+            u_sense,
+            v_sense,
+            cache,
+        }
     }
     /// Return the support.
     pub fn support(&self) -> &SurfaceId {
@@ -1069,6 +1097,18 @@ struct AxisRevolutionSurfaceConstructionWire {
 }
 
 impl AxisRevolutionSurfaceConstruction {
+    /// Build a construction from an admitted axis point and unit direction.
+    pub fn from_parts(
+        directrix: CurveId,
+        axis_origin: FinitePoint3,
+        axis_direction: UnitVector3,
+    ) -> Self {
+        Self {
+            directrix,
+            axis_origin,
+            axis_direction,
+        }
+    }
     /// Admit the construction parameters.
     pub fn try_new(
         directrix: CurveId,
@@ -1076,11 +1116,7 @@ impl AxisRevolutionSurfaceConstruction {
         axis_direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
         let (axis_origin, axis_direction) = admit_revolution_axis(axis_origin, axis_direction)?;
-        Ok(Self {
-            directrix,
-            axis_origin,
-            axis_direction,
-        })
+        Ok(Self::from_parts(directrix, axis_origin, axis_direction))
     }
     /// Return the directrix.
     pub fn directrix(&self) -> &CurveId {

@@ -332,6 +332,7 @@ fn failed_existing_native_admission_leaves_both_destinations_unchanged() {
     ir.native
         .namespace_mut("synthetic")
         .set_arena(
+            &crate::native::test_ctx(),
             "unknowns",
             &[serde_json::json!({"id": id("bad"), "links": [1]})],
         )

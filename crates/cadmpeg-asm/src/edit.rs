@@ -10,7 +10,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
-use cadmpeg_ir::topology::Sense;
+use cadmpeg_ir::topology::{ParameterInterval, Sense};
 use cadmpeg_ir::transform::Transform;
 
 use crate::asm_header;
@@ -149,7 +149,13 @@ impl AsmEditSet {
 
     /// Frame the solved record partition without changing the input bytes.
     pub fn frame(bytes: &[u8]) -> Result<Self, CodecError> {
-        let header = asm_header::parse(bytes)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        )?;
+        let header = asm_header::parse(&ctx, bytes)?
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let start = asm_header::record_stream_start_with_header(bytes, &header)
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -679,12 +685,6 @@ impl AsmEditSet {
             ProceduralCurveDefinition::SurfaceOffset(definition_payload) => {
                 let context = definition_payload.context();
                 let discontinuity_flag = definition_payload.discontinuity_flag();
-                let base_u_range = definition_payload.base_u_range().endpoints();
-                let base_v_range = definition_payload.base_v_range().endpoints();
-                let base_range = definition_payload.base_range().endpoints();
-                let distance = definition_payload.distance().get();
-                let shift = definition_payload.shift().get();
-                let scale = definition_payload.scale().get();
                 patch_surface_offset_definition(
                     bytes,
                     self.ref_width,
@@ -692,12 +692,12 @@ impl AsmEditSet {
                     SurfaceOffsetFields {
                         context,
                         discontinuity_flag,
-                        base_u_range: &base_u_range,
-                        base_v_range: &base_v_range,
-                        base_range: &base_range,
-                        distance: &distance,
-                        shift: &shift,
-                        scale: &scale,
+                        base_u_range: definition_payload.base_u_range(),
+                        base_v_range: definition_payload.base_v_range(),
+                        base_range: definition_payload.base_range(),
+                        distance: definition_payload.distance(),
+                        shift: definition_payload.shift(),
+                        scale: definition_payload.scale(),
                     },
                 )
             }
@@ -1225,12 +1225,12 @@ fn patch_two_sided_offset_definition(
 struct SurfaceOffsetFields<'a> {
     context: &'a IntcurveSupportContext,
     discontinuity_flag: &'a bool,
-    base_u_range: &'a [f64; 2],
-    base_v_range: &'a [f64; 2],
-    base_range: &'a [f64; 2],
-    distance: &'a f64,
-    shift: &'a f64,
-    scale: &'a f64,
+    base_u_range: &'a ParameterInterval,
+    base_v_range: &'a ParameterInterval,
+    base_range: &'a ParameterInterval,
+    distance: FiniteReal,
+    shift: FiniteReal,
+    scale: FiniteReal,
 }
 
 fn patch_intcurve_context(
@@ -1290,20 +1290,9 @@ fn patch_surface_offset_definition(
         scale,
     } = fields;
 
-    if !distance.is_finite() || !shift.is_finite() || !scale.is_finite() {
-        return Err(CodecError::Malformed(
-            "surface-offset scalars must be finite".into(),
-        ));
-    }
-    if [base_u_range, base_v_range, base_range]
-        .into_iter()
-        .flatten()
-        .any(|value| !value.is_finite())
-    {
-        return Err(CodecError::Malformed(
-            "surface-offset ranges must be finite".into(),
-        ));
-    }
+    let base_u_range = base_u_range.endpoints();
+    let base_v_range = base_v_range.endpoints();
+    let base_range = base_range.endpoints();
     let record_bytes = record_slice(bytes, record, "surface-offset")?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
@@ -1331,9 +1320,9 @@ fn patch_surface_offset_definition(
                     .copied()
                     .chain(base_v_range.iter().copied())
                     .chain(base_range.iter().copied().chain([
-                        distance / LEN_TO_MM,
-                        *shift,
-                        *scale,
+                        distance.get() / LEN_TO_MM,
+                        shift.get(),
+                        scale.get(),
                     ])),
             ),
     )?;

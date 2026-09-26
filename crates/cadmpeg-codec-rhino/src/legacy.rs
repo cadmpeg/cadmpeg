@@ -3392,7 +3392,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     if !direct_records.is_empty() {
         let namespace = ir.native.namespace_mut("rhino");
         namespace
-            .set_arena("legacy_v1_records", &direct_records)
+            .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
     ir.model.finalize();

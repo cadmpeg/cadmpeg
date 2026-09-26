@@ -11,7 +11,10 @@ use crate::om::datum_plane_header::{
     self, DatumPlaneBranch, DatumPlaneFrame, DoubleForm, SingleForm,
 };
 use crate::om::reference_index::PayloadIndexToken;
-use serde::{Deserialize, Serialize};
+use serde::{
+    ser::{SerializeSeq, SerializeStruct},
+    Deserialize, Serialize,
+};
 use std::collections::BTreeSet;
 
 /// A retained common header with an optional decoded construction branch.
@@ -134,7 +137,7 @@ pub(in crate::native) fn feature_datum_plane_headers(
     headers
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct HeaderWire {
     /// Globally unique header identity.
     id: String,
@@ -174,66 +177,188 @@ struct HeaderWire {
     source_offset: u64,
 }
 
-impl Serialize for FeatureDatumPlaneHeader {
+#[derive(Clone, Copy)]
+struct Column<'a> {
+    value: u32,
+    raw: &'a [u8],
+    block: Option<&'a str>,
+    source_offset: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColumnField {
+    Value,
+    Raw,
+    Block,
+    SourceOffset,
+}
+
+struct ColumnList<'a> {
+    columns: &'a [Option<Column<'a>>],
+    field: ColumnField,
+}
+
+impl Serialize for ColumnList<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (declared_count, branch_tag, source_offset) = match &self.construction {
-            Construction::HeaderOnly {
-                declared_count,
-                branch_tag,
-                source_offset,
-            } => (*declared_count, *branch_tag, *source_offset),
-            Construction::Unresolved(branch) => {
-                let (count, tag) = branch.header();
-                (count, tag, branch.origin())
+        let len = self
+            .columns
+            .iter()
+            .flatten()
+            .filter(|column| self.field != ColumnField::Block || column.block.is_some())
+            .count();
+        let mut items = serializer.serialize_seq(Some(len))?;
+        for column in self.columns.iter().flatten() {
+            match self.field {
+                ColumnField::Value => items.serialize_element(&column.value)?,
+                ColumnField::Raw => items.serialize_element(column.raw)?,
+                ColumnField::Block => {
+                    if let Some(block) = column.block {
+                        items.serialize_element(block)?;
+                    }
+                }
+                ColumnField::SourceOffset => items.serialize_element(&column.source_offset)?,
             }
-            Construction::Resolved(branch) => {
-                let (count, tag) = branch.header();
-                (count, tag, branch.origin())
-            }
-        };
-        let mut wire = HeaderWire {
-            id: self.id.clone(),
-            operation_label: self.operation_label.clone(),
-            control: self.control,
-            declared_count,
-            branch_tag,
-            descriptor_indices: Vec::new(),
-            raw_descriptor_indices: Vec::new(),
-            object_indices: Vec::new(),
-            raw_object_indices: Vec::new(),
-            descriptor_data_blocks: Vec::new(),
-            object_data_blocks: Vec::new(),
-            descriptor_source_offsets: Vec::new(),
-            object_source_offsets: Vec::new(),
-            source_offset,
-        };
-        match &self.construction {
-            Construction::Unresolved(branch) => write_frame(branch, &mut wire, |()| None),
-            Construction::Resolved(branch) => {
-                write_frame(branch, &mut wire, |block| Some(block.clone()));
-            }
-            Construction::HeaderOnly { .. } => {}
         }
-        wire.serialize(serializer)
+        items.end()
     }
 }
 
-fn write_frame<B>(
-    frame: &DatumPlaneFrame<B>,
-    wire: &mut HeaderWire,
-    block: impl Fn(&B) -> Option<String>,
-) {
-    if let Some((token, data, offset)) = frame.descriptor() {
-        wire.descriptor_indices.push(token.value());
-        wire.raw_descriptor_indices.push(token.raw().to_vec());
-        wire.descriptor_source_offsets.push(offset);
-        wire.descriptor_data_blocks.extend(block(data));
-    }
-    for (token, data, offset) in frame.objects() {
-        wire.object_indices.push(token.value());
-        wire.raw_object_indices.push(token.raw().to_vec());
-        wire.object_source_offsets.push(offset);
-        wire.object_data_blocks.extend(block(data));
+impl Serialize for FeatureDatumPlaneHeader {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (declared_count, branch_tag, source_offset, descriptor, objects) =
+            match &self.construction {
+                Construction::HeaderOnly {
+                    declared_count,
+                    branch_tag,
+                    source_offset,
+                } => (
+                    *declared_count,
+                    *branch_tag,
+                    *source_offset,
+                    None,
+                    [None, None],
+                ),
+                Construction::Unresolved(branch) => {
+                    let (count, tag) = branch.header();
+                    let descriptor = branch.descriptor().map(|(token, (), offset)| Column {
+                        value: token.value(),
+                        raw: token.raw(),
+                        block: None,
+                        source_offset: offset,
+                    });
+                    let mut source = branch.objects();
+                    let objects = [source.next(), source.next()].map(|item| {
+                        item.map(|(token, (), offset)| Column {
+                            value: token.value(),
+                            raw: token.raw(),
+                            block: None,
+                            source_offset: offset,
+                        })
+                    });
+                    (count, tag, branch.origin(), descriptor, objects)
+                }
+                Construction::Resolved(branch) => {
+                    let (count, tag) = branch.header();
+                    let descriptor = branch.descriptor().map(|(token, block, offset)| Column {
+                        value: token.value(),
+                        raw: token.raw(),
+                        block: Some(block.as_str()),
+                        source_offset: offset,
+                    });
+                    let mut source = branch.objects();
+                    let objects = [source.next(), source.next()].map(|item| {
+                        item.map(|(token, block, offset)| Column {
+                            value: token.value(),
+                            raw: token.raw(),
+                            block: Some(block.as_str()),
+                            source_offset: offset,
+                        })
+                    });
+                    (count, tag, branch.origin(), descriptor, objects)
+                }
+            };
+        let descriptor_columns = [descriptor];
+        let has_objects = objects.iter().any(Option::is_some);
+        let mut fields = serializer.serialize_struct("HeaderWire", 14)?;
+        fields.serialize_field("id", &self.id)?;
+        fields.serialize_field("operation_label", &self.operation_label)?;
+        fields.serialize_field("control", &self.control)?;
+        fields.serialize_field("declared_count", &declared_count)?;
+        fields.serialize_field("branch_tag", &branch_tag)?;
+        if descriptor.is_some() {
+            fields.serialize_field(
+                "descriptor_indices",
+                &ColumnList {
+                    columns: &descriptor_columns,
+                    field: ColumnField::Value,
+                },
+            )?;
+            fields.serialize_field(
+                "raw_descriptor_indices",
+                &ColumnList {
+                    columns: &descriptor_columns,
+                    field: ColumnField::Raw,
+                },
+            )?;
+        }
+        if has_objects {
+            fields.serialize_field(
+                "object_indices",
+                &ColumnList {
+                    columns: &objects,
+                    field: ColumnField::Value,
+                },
+            )?;
+            fields.serialize_field(
+                "raw_object_indices",
+                &ColumnList {
+                    columns: &objects,
+                    field: ColumnField::Raw,
+                },
+            )?;
+        }
+        if descriptor.is_some_and(|column| column.block.is_some()) {
+            fields.serialize_field(
+                "descriptor_data_blocks",
+                &ColumnList {
+                    columns: &descriptor_columns,
+                    field: ColumnField::Block,
+                },
+            )?;
+        }
+        if objects
+            .iter()
+            .flatten()
+            .any(|column| column.block.is_some())
+        {
+            fields.serialize_field(
+                "object_data_blocks",
+                &ColumnList {
+                    columns: &objects,
+                    field: ColumnField::Block,
+                },
+            )?;
+        }
+        if descriptor.is_some() {
+            fields.serialize_field(
+                "descriptor_source_offsets",
+                &ColumnList {
+                    columns: &descriptor_columns,
+                    field: ColumnField::SourceOffset,
+                },
+            )?;
+        }
+        if has_objects {
+            fields.serialize_field(
+                "object_source_offsets",
+                &ColumnList {
+                    columns: &objects,
+                    field: ColumnField::SourceOffset,
+                },
+            )?;
+        }
+        fields.serialize_field("source_offset", &source_offset)?;
+        fields.end()
     }
 }
 
@@ -374,6 +499,23 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
 #[cfg(test)]
 mod tests {
     use super::FeatureDatumPlaneHeader;
+
+    #[test]
+    fn datum_plane_columns_stream_once_with_native_retained_limit() {
+        let expected = serde_json::json!({
+            "id": "nx:feature-history:datum-plane-header#1",
+            "operation_label": "operation", "control": 1,
+            "declared_count": 2, "branch_tag": 27,
+            "descriptor_indices": [3], "raw_descriptor_indices": [[3]],
+            "object_indices": [4], "raw_object_indices": [[240,4]],
+            "descriptor_data_blocks": ["descriptor"],
+            "object_data_blocks": ["object"],
+            "descriptor_source_offsets": [20], "object_source_offsets": [22],
+            "source_offset": 10
+        });
+        let record: FeatureDatumPlaneHeader = serde_json::from_value(expected.clone()).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&record, expected);
+    }
 
     #[test]
     fn header_only_and_resolved_branches_preserve_column_wire() {

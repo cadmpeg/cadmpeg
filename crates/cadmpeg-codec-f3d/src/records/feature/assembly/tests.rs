@@ -689,6 +689,45 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
 }
 
 #[test]
+fn assembly_alignment_native_writer_refuses_retained_limit_before_record_completion() {
+    use crate::records::feature::assembly::DesignAssemblyAlignment;
+    use crate::records::identity::Located;
+
+    #[derive(serde::Serialize)]
+    struct Record<'a> {
+        id: &'static str,
+        alignment: &'a DesignAssemblyAlignment,
+    }
+
+    let alignment = DesignAssemblyAlignment::try_new(
+        1.0,
+        [0.0; 3],
+        vec![Located {
+            value: 7,
+            offset: 9,
+        }],
+        None,
+    )
+    .unwrap();
+    let record = Record {
+        id: "f3d:design:alignment#1",
+        alignment: &alignment,
+    };
+    cadmpeg_test_support::native_serialization::assert_native_limit(
+        &record,
+        serde_json::json!({
+            "id": record.id,
+            "alignment": {
+                "angle": 1.0,
+                "offset": [0.0, 0.0, 0.0],
+                "owner_record_indices": [7],
+                "value_offsets": [9],
+            }
+        }),
+    );
+}
+
+#[test]
 fn assembly_path_admission_checks_class_arity_and_guid_order() {
     use crate::records::feature::assembly::{
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,

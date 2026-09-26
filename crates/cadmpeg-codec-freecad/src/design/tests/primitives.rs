@@ -4,7 +4,7 @@
 const EPS_SCALAR_ROUND_TRIP: f64 = 1.0e-12;
 
 use crate::design::tests::{definition, extrusion_definition};
-use crate::test_support::test_archive::{archive, assert_valid_document};
+use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_ir::features::{
     AngularTermination, BooleanOp, FeatureDefinition, FeatureOperation, RevolveExtent,
@@ -14,6 +14,65 @@ use std::io::Cursor;
 
 const EPS_REVOLUTION_HALF_TURN: f64 = 1.0e-12;
 const EPS_REVOLUTION_TWO_SIDED_ANGLES: f64 = 1.0e-12;
+
+#[test]
+fn part_fillet_and_chamfer_edge_values_admit_positive_lengths_once() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="Part::Feature" name="Base" id="1"/>
+ <Object type="Part::Fillet" name="Fillet" id="2"/>
+ <Object type="Part::Chamfer" name="Chamfer" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Base"><Properties Count="0"/></Object>
+ <Object name="Fillet"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLink"><Link value="Base"/></Property>
+  <Property name="Edges" type="Part::PropertyFilletEdges"><FilletEdges file="FilletEdges"/></Property>
+ </Properties></Object>
+ <Object name="Chamfer"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLink"><Link value="Base"/></Property>
+  <Property name="Edges" type="Part::PropertyFilletEdges"><FilletEdges file="ChamferEdges"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let edge_values = |first: f64, second: f64| {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        bytes.extend_from_slice(&first.to_le_bytes());
+        bytes.extend_from_slice(&second.to_le_bytes());
+        bytes
+    };
+    for (first, second, constructed) in [(2.0, 3.0, true), (-1.0, 3.0, false)] {
+        let fillet = edge_values(first, first);
+        let chamfer = edge_values(first, second);
+        let result = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("FilletEdges", &fillet),
+                    ("ChamferEdges", &chamfer),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect("Part dress-up entries");
+        let fillet = definition(&result, "Fillet");
+        let chamfer = definition(&result, "Chamfer");
+        assert_eq!(
+            matches!(
+                fillet,
+                FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+            ),
+            constructed
+        );
+        assert_eq!(
+            matches!(
+                chamfer,
+                FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+            ),
+            constructed
+        );
+    }
+}
 
 #[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {

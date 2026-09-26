@@ -69,8 +69,10 @@ fn encoder_writes_source_less_curved_sketches() {
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(0.0, 8.0),
             major_angle: Angle::new(0.4).unwrap(),
-            major_radius: Length::new(3.0).unwrap(),
-            minor_radius: Length::new(1.5).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(3.0).unwrap(),
+                minor_radius: Length::new(1.5).unwrap(),
+            },
             bounds: None,
         })
         .unwrap(),
@@ -188,8 +190,10 @@ fn encoder_writes_source_less_curved_sketches() {
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
             center: Point2::new(60.0, 0.0),
             major_angle: Angle::new(0.0).unwrap(),
-            major_radius: Length::new(3.0).unwrap(),
-            minor_radius: Length::new(1.5).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(3.0).unwrap(),
+                minor_radius: Length::new(1.5).unwrap(),
+            },
             bounds: Some([
                 Angle::new(0.0).unwrap(),
                 Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
