@@ -17,7 +17,13 @@ pub fn b5_parse(data: &[u8]) {
 
 /// Exercise `e5 0d 03` topology parsing and orientation solving.
 pub fn e5_topology(data: &[u8]) {
-    let _probe = crate::families::e5::graph::parse_topology(data);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+    else {
+        return;
+    };
+    let _probe = crate::families::e5::graph::parse_topology(&ctx, data);
 }
 
 /// Exercise standard-family vertex-record scanning.

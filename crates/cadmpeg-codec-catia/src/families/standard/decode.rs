@@ -4318,9 +4318,12 @@ fn attach_standard_topology(
         .as_ref()
         .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
         .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
-    if let Some(e5_topology) = crate::container::e5_record_stream(source)
-        .and_then(|range| crate::families::e5::graph::parse_topology(&source[range]))
-    {
+    let e5_topology = match crate::container::e5_record_stream(source) {
+        Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
+            .map_err(StandardTopologyError::Resource)?,
+        None => None,
+    };
+    if let Some(e5_topology) = e5_topology {
         let e5_edges = e5_topology
             .edges
             .into_iter()
