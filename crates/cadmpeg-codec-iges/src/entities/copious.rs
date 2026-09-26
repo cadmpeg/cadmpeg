@@ -8,10 +8,14 @@ use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::{
+    nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
+    Curve, CurveGeometry, SolvedCurveGeometry,
+};
 use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -270,7 +274,7 @@ pub(super) fn project(
         };
         let (tuple_start, tuple_width, common_z) = match interpretation {
             1 => {
-                let Some(z) = record.number(3).filter(|value| value.is_finite()) else {
+                let Some(z) = record.number(3).and_then(FiniteReal::new) else {
                     losses.push(entity_loss(entry, "common z coordinate is invalid"));
                     continue;
                 };
@@ -292,7 +296,7 @@ pub(super) fn project(
             continue;
         };
         let Some(values) = (tuple_start..tuple_end)
-            .map(|index| record.number(index).filter(|value| value.is_finite()))
+            .map(|index| record.number(index).and_then(FiniteReal::new))
             .collect::<Option<Vec<_>>>()
         else {
             losses.push(entity_loss(entry, "tuple array is truncated or non-finite"));
@@ -305,7 +309,11 @@ pub(super) fn project(
                     Some(z) => z,
                     None => tuple[2],
                 };
-                Point3::new(tuple[0] * factor, tuple[1] * factor, z * factor)
+                Point3::new(
+                    tuple[0].get() * factor,
+                    tuple[1].get() * factor,
+                    z.get() * factor,
+                )
             })
             .collect::<Vec<_>>();
         let Some(positions) = definition_points
@@ -430,13 +438,20 @@ pub(super) fn project(
             });
         }
         sequences.record_curve(&curve, entry.sequence);
+        let knots = knots
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| CodecError::malformed("copious-data curve: knots must be finite"))?;
+        let nurbs = KnotVector::from_finite_lanes(knots).and_then(|knots| {
+            NurbsPoles3::from_checked_lanes(positions, None)
+                .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
+        });
         ir.model.curves.push(Curve {
             id: curve.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                NurbsCurve::from_lanes(1, knots, points, None, false).map_err(|error| {
-                    CodecError::malformed(format_args!("copious-data curve: {error}"))
-                })?,
-            )),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
+                |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
+            )?)),
             source_object: Some(source_object(entry)?),
         });
         ir.model.edges.push(Edge {

@@ -888,14 +888,8 @@ pub(super) fn validate_source_less_design_links(
                         parameters.id()
                     )));
                 }
-                let effective_range = parameter_range.unwrap_or(
-                    parameters
-                        .parameter_range
-                        .map(cadmpeg_ir::scalar::FiniteReal::get),
-                );
-                if effective_range.iter().any(|value| !value.is_finite())
-                    || use_curve.parameter_range.endpoints() != effective_range
-                {
+                let effective_range = parameter_range.unwrap_or(parameters.parameter_range);
+                if use_curve.parameter_range.endpoints() != effective_range.get() {
                     return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
                         parameters.id()
@@ -1307,8 +1301,8 @@ mod tests {
                 record_index: 0,
                 vertex: target.model.vertices[0].id.clone(),
                 leading_tolerances: [
-                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite"),
-                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite"),
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
+                    cadmpeg_ir::scalar::FiniteReal::new(-1.0).unwrap(),
                 ],
                 evaluated_slot: EvaluatedToleranceSlot::Unset { trailing: Some(0) },
             }],

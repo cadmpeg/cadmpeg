@@ -9,6 +9,7 @@ use crate::records::{
     FeatureInputScalar,
 };
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
@@ -24,14 +25,12 @@ pub(crate) fn named_scalars(
         .filter_map(|name| {
             let name_offset = usize::try_from(name.offset).ok()?;
             let value_offset = scalar_value_offset(payload, name_offset)?;
-            let value = View::f64_le_at(payload, value_offset)?;
+            let value = FiniteReal::new(View::f64_le_at(payload, value_offset)?)?;
             let trailer_offset = value_offset.checked_add(8)?;
             let object_id = View::u32_le_at(payload, trailer_offset + 3)?;
             let role = scalar_role(payload, trailer_offset);
             let operands = scalar_operands(payload, trailer_offset, parent);
-            value
-                .is_finite()
-                .then_some((name, value_offset, object_id, value, role, operands))
+            Some((name, value_offset, object_id, value, role, operands))
         })
         .enumerate()
         .map(
@@ -98,7 +97,7 @@ pub(crate) fn scalar_indices_match(
                 && actual.offset == expected.offset
                 && actual.object_id == expected.object_id
                 && actual.name == expected.name
-                && ulp_distance(actual.value, expected.value) <= 4
+                && ulp_distance(actual.value.get(), expected.value.get()) <= 4
                 && actual.role == expected.role
                 && actual.operands == expected.operands
         })

@@ -673,12 +673,7 @@ pub(super) fn validate_tolerant_coedge_edits(
             )));
         }
         if after.parameter_range != before.parameter_range {
-            edits.insert(
-                after.record_index as usize,
-                after
-                    .parameter_range
-                    .map(cadmpeg_ir::scalar::FiniteReal::get),
-            );
+            edits.insert(after.record_index as usize, after.parameter_range.get());
         }
     }
     Ok(edits)

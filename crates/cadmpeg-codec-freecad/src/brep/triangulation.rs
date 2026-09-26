@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::units::FinitePoint2;
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ impl<T> PerNode<T> {
 #[serde(try_from = "TextTriangulationWire")]
 pub(crate) struct TextTriangulation {
     /// Chordal deflection.
-    pub(crate) deflection: FiniteReal,
+    pub(crate) deflection: NonNegativeReal,
     nodes: Vec<FinitePoint3>,
     uv_nodes: Option<PerNode<FinitePoint2>>,
     triangles: Vec<[u32; 3]>,
@@ -54,6 +54,8 @@ impl TextTriangulation {
         let normals = normals
             .map(|values| PerNode::try_new(values, nodes.len(), "normals"))
             .transpose()?;
+        let deflection = NonNegativeReal::new(deflection.get())
+            .ok_or_else(|| "chordal_deflection must be finite and non-negative".to_owned())?;
         Ok(Self {
             deflection,
             nodes,
@@ -181,6 +183,30 @@ mod tests {
             };
             assert!(TextTriangulation::try_from(wire).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_negative_and_nonfinite_triangulation_deflection() {
+        let negative = FiniteReal::new(-1.0).expect("finite negative deflection");
+        let error = TextTriangulation::try_new(
+            negative,
+            vec![point3(0.0, 0.0, 0.0)],
+            None,
+            Vec::new(),
+            None,
+        )
+        .unwrap_err();
+        assert!(error.contains("chordal_deflection must be finite and non-negative"));
+        assert!(FiniteReal::new(f64::INFINITY).is_none());
+        let mut json = serde_json::json!({
+            "deflection": 0.5,
+            "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
+            "uv_nodes": null,
+            "triangles": [],
+            "normals": null,
+        });
+        json["deflection"] = serde_json::json!(-1.0);
+        assert!(serde_json::from_value::<TextTriangulation>(json).is_err());
     }
 
     #[test]

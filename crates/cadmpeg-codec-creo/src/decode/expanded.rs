@@ -75,7 +75,7 @@ pub(super) fn attach_expanded_sections(
             field: array.field.as_str().to_owned(),
             expanded_offset: array.offset,
             count: array.values.len(),
-            values: array.values.clone(),
+            values: array.values.iter().map(|value| value.get()).collect(),
         })
         .collect::<Vec<_>>();
     store_arena(ir, "primitive_scalar_arrays", &primitive_arrays)?;

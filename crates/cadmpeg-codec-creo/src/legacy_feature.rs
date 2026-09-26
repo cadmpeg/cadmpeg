@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence};
+use cadmpeg_ir::scalar::PositiveReal;
 
 const ROUND_SCHEMA_CLASS: i32 = 913;
 const DIMENSION_TYPE: i32 = 8;
@@ -17,7 +18,7 @@ pub(crate) enum LegacyRoundRadius {
     /// The complete dimension table has no radius row for this feature.
     NotPresent,
     /// All feature-owned radius rows carry the same positive value.
-    Constant(f64),
+    Constant(PositiveReal),
     /// A matching radius row is malformed, non-positive, or disagrees with
     /// another matching row.
     Ambiguous,
@@ -238,9 +239,9 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
         let Some(value) = index.unique_real_scalar(dimension_data.offset, "value") else {
             return LegacyRoundRadius::Ambiguous;
         };
-        if !value.is_finite() || value <= 0.0 {
+        let Some(value) = PositiveReal::new(value) else {
             return LegacyRoundRadius::Ambiguous;
-        }
+        };
         values.push(value);
     }
     if !found {
@@ -251,7 +252,7 @@ fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> L
     };
     if values
         .iter()
-        .all(|value| value.to_bits() == first.to_bits())
+        .all(|value| value.get().to_bits() == first.get().to_bits())
     {
         LegacyRoundRadius::Constant(first)
     } else {
@@ -397,7 +398,12 @@ mod tests {
         let result = scan(&persistence(&[2.0, 2.0]), &[topology(7), topology(8)]);
         assert_eq!(result.rounds.len(), 1);
         assert_eq!(result.rounds[0].feature_id, 139);
-        assert_eq!(result.rounds[0].radius, LegacyRoundRadius::Constant(2.0));
+        assert_eq!(
+            result.rounds[0].radius,
+            LegacyRoundRadius::Constant(
+                cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius")
+            )
+        );
         assert_eq!(result.rounds[0].edge_ids, Some(vec![7, 8]));
     }
 

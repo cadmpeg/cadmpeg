@@ -1,6 +1,7 @@
 //! Tests for the current four-link profile-point carrier.
 
 use super::super::super::SKETCH_MARKER;
+use super::{raw2, raw_link};
 use crate::records::{SketchInputEntity, SketchInputKind};
 use crate::resolved_features::markers::current_reverse_incidence_endpoint_offsets;
 use crate::resolved_features::markers::linked_profile_point;
@@ -81,12 +82,12 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     payload[long_end..].copy_from_slice(SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&payload, first),
+        raw_link(linked_profile_point(&payload, first)),
         Some(([1.0, 2.0], [(0x815a, 20), (0x815a, 20)]))
     );
-    assert_eq!(marker_coordinates(&payload, first), Some([1.0, 2.0]));
+    assert_eq!(raw2(marker_coordinates(&payload, first)), Some([1.0, 2.0]));
     assert_eq!(
-        linked_profile_point(&payload, long),
+        raw_link(linked_profile_point(&payload, long)),
         Some(([5.0, 6.0], [(0x815a, 20), (0x815a, 20)]))
     );
     let entities = sketch_input_entities(&payload, "lane");
@@ -95,7 +96,12 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
         .find(|entity| entity.offset() == first as u64)
         .expect("first linked profile point");
     assert_eq!(first_entity.kind(), SketchInputKind::Point);
-    assert_eq!(first_entity.coordinates_m, Some([1.0, 2.0]));
+    assert_eq!(
+        first_entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.0, 2.0])
+    );
     assert_eq!(first_entity.local_id(), Some(32));
 
     let curve = {
@@ -138,5 +144,5 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     );
 
     payload[first + 76..first + 78].copy_from_slice(&5u16.to_le_bytes());
-    assert!(linked_profile_point(&payload, first).is_none());
+    assert!(raw_link(linked_profile_point(&payload, first)).is_none());
 }

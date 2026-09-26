@@ -267,10 +267,8 @@ pub(super) fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedg
                 .collect();
             let parameter_range = match suffix.as_slice() {
                 [Token::False, Token::False, Token::Long(0)] => None,
-                [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)]
-                    if start.is_finite() && end.is_finite() =>
-                {
-                    Some([*start, *end])
+                [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)] => {
+                    Some(cadmpeg_ir::units::FiniteVector::new([*start, *end])?)
                 }
                 _ => return None,
             };

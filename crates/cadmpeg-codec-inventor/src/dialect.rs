@@ -513,6 +513,12 @@ impl DialectRecovery {
             "retain Inventor joined dialect reasons",
         )?;
         let joined_reasons = reasons.join("; ");
+        ctx.charge_collection_items(1, "collect Inventor dialect loss")?;
+        ctx.charge_retained(8, "retain Inventor dialect loss namespace")?;
+        ctx.charge_retained(
+            u64_len(ctx, InventorLossCode::SourceDialectUnverified.code().len())?,
+            "retain Inventor dialect loss code",
+        )?;
         Ok(
             InventorLossCode::SourceDialectUnverified.note(retained_format(
                 ctx,
@@ -553,14 +559,48 @@ pub(crate) fn dialect_loss(
 
 /// The `acis:` kernel-layer match for one parsed active carrier.
 fn kernel_layer(
+    ctx: &DecodeContext<'_>,
     family: KernelFamily,
     header: &cadmpeg_asm::kernel_header::BinaryHeader,
-) -> DialectMatch {
+) -> Result<DialectMatch, CodecError> {
+    ctx.charge_work(1, "classify Inventor kernel dialect")?;
+    if let Some(major) = header.metadata.save_format_major() {
+        ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
+        admit_formatted(
+            ctx,
+            format_args!("{major}"),
+            "retain Inventor kernel save major",
+        )?;
+    }
+    if let Some(minor) = header.metadata.save_format_minor() {
+        ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
+        admit_formatted(
+            ctx,
+            format_args!("{minor}"),
+            "retain Inventor kernel save minor",
+        )?;
+    }
+    ctx.charge_collection_items(1, "collect Inventor kernel declaration")?;
+    ctx.charge_retained(1, "retain Inventor kernel reference width")?;
+    if matches!(family, KernelFamily::Acis)
+        && !cadmpeg_asm::dialect::acis_band_verified(header.metadata.save_format_major())
+    {
+        let recovery =
+            cadmpeg_asm::dialect::nearest_verified_acis(header.metadata.save_format_major());
+        let grammar = recovery
+            .as_str()
+            .split_once(':')
+            .map_or(recovery.as_str(), |(_, grammar)| grammar);
+        ctx.charge_retained(
+            u64_len(ctx, grammar.len())?,
+            "retain Inventor kernel recovery grammar",
+        )?;
+    }
     let header = match family {
         KernelFamily::Asm => cadmpeg_asm::dialect::KernelHeaderRef::Asm(header),
         KernelFamily::Acis => cadmpeg_asm::dialect::KernelHeaderRef::Acis(header),
     };
-    cadmpeg_asm::dialect::classify(header)
+    Ok(cadmpeg_asm::dialect::classify(header))
 }
 
 /// The total kernel-layer row when the active carrier header does not parse.
@@ -577,24 +617,51 @@ fn unknown_kernel_layer() -> DialectMatch {
 /// manufacturing `acis:unknown` for it would turn missing carrier evidence
 /// into a false kernel identity. Inspection and decode both call this
 /// function and therefore make the same distinction.
-fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch> {
+fn kernel_layer_for_state(
+    ctx: &DecodeContext<'_>,
+    state: &ActiveCarrierState<'_>,
+) -> Result<Option<DialectMatch>, CodecError> {
     match state {
-        ActiveCarrierState::Selected(carrier) => Some(carrier.header.as_ref().map_or_else(
-            |_| unknown_kernel_layer(),
-            |header| kernel_layer(carrier.family, header),
-        )),
-        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
+        ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
+            Ok(header) => Ok(Some(kernel_layer(ctx, carrier.family, header)?)),
+            Err(_) => Ok(Some(unknown_kernel_layer())),
+        },
+        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => Ok(None),
     }
 }
 
 /// The complete host and optional kernel identity reported by both inspection
 /// and decode.
 pub(crate) fn layers(
-    primary: DialectMatch,
+    ctx: &DecodeContext<'_>,
+    primary: &DialectMatch,
     carrier: &ActiveCarrierState<'_>,
 ) -> Result<DialectLayers, CodecError> {
-    let mut layers = DialectLayers::of(primary);
-    if let Some(kernel) = kernel_layer_for_state(carrier) {
+    ctx.charge_collection_items(
+        u64_len(ctx, primary.declared().len())?,
+        "copy Inventor primary dialect declarations",
+    )?;
+    for value in primary.declared().values() {
+        ctx.charge_retained(
+            u64_len(ctx, value.len())?,
+            "copy Inventor primary dialect value",
+        )?;
+    }
+    if let Some(instance) = primary.instance() {
+        ctx.charge_retained(
+            u64_len(ctx, instance.len())?,
+            "copy Inventor primary dialect instance",
+        )?;
+    }
+    if let cadmpeg_core::dialect::Admission::Unverified { using } = primary.admission() {
+        ctx.charge_retained(
+            u64_len(ctx, using.as_str().len())?,
+            "copy Inventor primary dialect grammar",
+        )?;
+    }
+    let mut layers = DialectLayers::of(primary.clone());
+    if let Some(kernel) = kernel_layer_for_state(ctx, carrier)? {
+        ctx.charge_collection_items(1, "collect Inventor kernel dialect layer")?;
         layers.insert(kernel).map_err(|rejected| {
             CodecError::malformed(format_args!(
                 "duplicate Inventor dialect layer: {rejected:?}"
@@ -605,17 +672,74 @@ pub(crate) fn layers(
 }
 
 /// The recovery loss the kernel layer charges, if it recovered.
-pub(crate) fn kernel_dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn kernel_dialect_loss(
+    ctx: &DecodeContext<'_>,
+    matched: &DialectMatch,
+) -> Result<Option<LossNote>, CodecError> {
     match matched.admission() {
         cadmpeg_core::dialect::Admission::Refused
             if matched.format() == cadmpeg_asm::dialect::FORMAT =>
         {
-            Some(InventorLossCode::KernelCarrierUnparseable.note(
+            ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
+            ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
+            ctx.charge_retained(
+                u64_len(ctx, InventorLossCode::KernelCarrierUnparseable.code().len())?,
+                "retain Inventor kernel loss code",
+            )?;
+            ctx.charge_retained(
+                u64_len(ctx, "the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained".len())?,
+                "retain Inventor kernel unparseable loss message",
+            )?;
+            Ok(Some(InventorLossCode::KernelCarrierUnparseable.note(
                 "the selected kernel carrier did not expose a parseable ACIS or ASM header; its native records remain retained",
+            )))
+        }
+        cadmpeg_core::dialect::Admission::Unverified { .. }
+        | cadmpeg_core::dialect::Admission::Residual
+            if matched.format() == cadmpeg_asm::dialect::FORMAT =>
+        {
+            ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
+            ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
+            ctx.charge_retained(
+                u64_len(ctx, InventorLossCode::KernelDialectUnverified.code().len())?,
+                "retain Inventor kernel loss code",
+            )?;
+            let declared = match (
+                matched.declared().get("save_format_major"),
+                matched.declared().get("save_format_minor"),
+            ) {
+                (Some(major), Some(minor)) => retained_format(
+                    ctx,
+                    format_args!("save format {major}.{minor}"),
+                    "retain Inventor kernel declared save format",
+                )?,
+                (Some(major), None) => retained_format(
+                    ctx,
+                    format_args!("save format major {major}"),
+                    "retain Inventor kernel declared save format",
+                )?,
+                (None, _) => {
+                    ctx.charge_retained(14, "retain Inventor kernel declared save format")?;
+                    "no save format".to_owned()
+                }
+            };
+            let message = match matched.using() {
+                Some(using) => retained_format(
+                    ctx,
+                    format_args!("the active kernel carrier declares {declared}, which no verified Spatial ACIS band declares; its records were read with the grammar `{using}` declares, and what they decoded is reported as it decoded"),
+                    "retain Inventor kernel dialect loss message",
+                )?,
+                None => retained_format(
+                    ctx,
+                    format_args!("the active kernel carrier declares {declared}; its recovery names no declared save-band grammar as a substitute"),
+                    "retain Inventor kernel dialect loss message",
+                )?,
+            };
+            Ok(Some(
+                InventorLossCode::KernelDialectUnverified.note(message),
             ))
         }
-        _ => cadmpeg_asm::dialect::unverified_message("the active kernel carrier", matched)
-            .map(|message| InventorLossCode::KernelDialectUnverified.note(message)),
+        _ => Ok(None),
     }
 }
 

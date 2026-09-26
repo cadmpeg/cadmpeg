@@ -35,7 +35,7 @@ pub(crate) enum FreecadLossCode {
     SketchNativeConstraint,
     /// Topology color values were retained because their count did not match mapped topology.
     AppearanceTopologyColorCountMismatch,
-    /// A negative primitive size cannot enter a neutral appearance property.
+    /// A primitive style size could not enter the neutral appearance.
     AppearancePrimitiveSizeNotTransferred,
     /// The declared persistence schema names no dialect this codec has a strategy for.
     SourceDialectUnverified,

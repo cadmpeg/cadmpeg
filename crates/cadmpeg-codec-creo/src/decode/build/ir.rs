@@ -448,16 +448,10 @@ fn transfer_display_tessellations(
             .iter()
             .copied()
             .map(|position| {
-                let position = Point3::from(position);
+                let position = Point3::from(position.get());
                 let Some(scale) = length_scale else {
                     return Ok(position);
                 };
-                if !position.is_finite() {
-                    return Err(CodecError::malformed(format_args!(
-                        "SolidPrimdata display triangle strip at byte {}: vertices contain a non-finite coordinate",
-                        strip.offset
-                    )));
-                }
                 let position = Point3::new(
                     position.x * scale.get(),
                     position.y * scale.get(),
@@ -480,10 +474,12 @@ fn transfer_display_tessellations(
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
-                    strip
-                        .normals
-                        .as_ref()
-                        .map(|normals| normals.iter().copied().map(Vector3::from).collect()),
+                    strip.normals.as_ref().map(|normals| {
+                        normals
+                            .iter()
+                            .map(|normal| Vector3::from(normal.get()))
+                            .collect()
+                    }),
                     &strip.strip_lengths,
                 )
                 .map_err(|error| {
@@ -563,6 +559,14 @@ fn transfer_placed_plane_surfaces_into_ir(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    for frame in &scan.planes.local_systems {
+        if frame.frame().cross_overflow {
+            return Err(CodecError::NotImplemented(format!(
+                "Creo plane local system at byte {} has a cross product outside the representable range",
+                frame.offset
+            )));
+        }
+    }
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {

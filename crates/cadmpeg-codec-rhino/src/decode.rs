@@ -1024,10 +1024,13 @@ impl<'a> DecodeContext<'a> {
             .collect::<Vec<_>>();
         let mut parameters = BTreeMap::from([
             ("pattern_index".to_string(), hatch.pattern_index.to_string()),
-            ("pattern_scale".to_string(), hatch.pattern_scale.to_string()),
+            (
+                "pattern_scale".to_string(),
+                hatch.pattern_scale.get().to_string(),
+            ),
             (
                 "pattern_rotation".to_string(),
-                hatch.pattern_rotation.to_string(),
+                hatch.pattern_rotation.get().to_string(),
             ),
             (
                 "basepoint".to_string(),

@@ -45,7 +45,13 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::FinitePoint3>,
+        Option<Vec<cadmpeg_ir::scalar::NonZeroReal>>,
+    ),
+    GeometryError,
+> {
     with_test_context(|ctx| super::read_poles(ctx, reader, count, rational, dimension, scale))
 }
 
@@ -1366,10 +1372,13 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
             panic!("expected revolution fields");
         };
         assert_eq!(children.len(), 1);
-        assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
-        assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
-        assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
-        assert_eq!(*axis_direction.as_raw(), Vector3::new(0.0, 0.0, 1.0));
+        assert!((axis_origin.get().x - 25.4).abs() < 1.0e-12);
+        assert!((axis_origin.get().y - 50.8).abs() < 1.0e-12);
+        assert!((axis_origin.get().z - 76.2).abs() < 1.0e-12);
+        assert_eq!(
+            axis_direction.map(|direction| *direction.as_raw()),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
         assert_eq!(angular_interval, [0.25, 1.25]);
         assert!(!transposed);
         assert_eq!(
@@ -1388,6 +1397,49 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         assert_eq!(child.control_points()[0].x, 2.0 * 25.4);
         assert_eq!(geometry.u_knots()[2], parameter_interval[0]);
     }
+}
+
+#[test]
+fn revolution_subnormal_axis_defers_unit_refusal_to_payload_admission() {
+    let mut bytes = valid_revolution_payload(0x20);
+    let smallest = f64::from_bits(1);
+    for (index, value) in [0.0, 0.0, 0.0, 2.0 * smallest, smallest, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = 1 + index * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("revolution frame");
+    let decoded = read_revolution(
+        &bytes,
+        &mut reader,
+        MillimeterScale::IDENTITY,
+        ArchiveVersion::V5,
+        0,
+    )
+    .expect("finite nonzero source axis");
+    let DecodedSurface::Procedural { definition, .. } = decoded else {
+        panic!("expected procedural revolution");
+    };
+    let super::DecodedProceduralSurface::Revolution { axis_direction, .. } = &definition else {
+        panic!("expected revolution fields");
+    };
+    assert!(axis_direction.is_none());
+    let error = definition
+        .into_definition(
+            |_, _, _| {
+                Ok::<_, String>(
+                    cadmpeg_ir::ids::CurveId::mint("rhino:test:curve#subnormal-axis")
+                        .expect("identity grammar"),
+                )
+            },
+            |error| error.to_string(),
+        )
+        .expect_err("unit axis required by procedural payload");
+    assert!(error.contains(
+        "revolution axis_origin and axis_direction must be finite, with unit axis_direction"
+    ));
 }
 
 #[test]
@@ -1514,7 +1566,13 @@ fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
     )
     .unwrap();
     assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
-    assert_eq!(weights, Some(vec![1e-10]));
+    assert_eq!(
+        weights.map(|values| values
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>()),
+        Some(vec![1e-10])
+    );
 }
 
 #[test]

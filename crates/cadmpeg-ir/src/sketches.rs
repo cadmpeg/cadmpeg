@@ -1884,6 +1884,22 @@ impl SpatialSketchGeometry {
     ) -> &SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> {
         &self.0
     }
+
+    /// Build a line from admitted endpoints. Only their separation is checked.
+    pub fn try_line_from_parts(
+        start: FinitePoint3,
+        end: FinitePoint3,
+    ) -> Result<Self, &'static str> {
+        let start_point = start.get();
+        let end_point = end.get();
+        let distance = (end_point.x - start_point.x)
+            .hypot(end_point.y - start_point.y)
+            .hypot(end_point.z - start_point.z);
+        if distance <= EPS_SPATIAL_LINE_LENGTH {
+            return Err("spatial sketch line endpoints must be finite and separated");
+        }
+        Ok(Self(SpatialSketchGeometryDefinition::Line { start, end }))
+    }
 }
 
 /// An admitted circular frame: center, radius, unit normal and unit

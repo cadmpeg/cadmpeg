@@ -575,7 +575,17 @@ impl TryFrom<SubdVertexWire> for SubdVertex {
 }
 
 impl SubdVertex {
-    /// Construct a control vertex from an admitted finite position.
+    /// Construct a control vertex with a finite position.
+    pub fn new(
+        point: Point3,
+        tag: SubdVertexTag,
+        secondary_grips: Option<SubdVertexGripLayout>,
+    ) -> Result<Self, SubdError> {
+        let point = require_finite_point("point", point)?;
+        Ok(Self::from_parts(point, tag, secondary_grips))
+    }
+
+    /// Construct a control vertex from its admitted finite position.
     #[must_use]
     pub fn from_parts(
         point: FinitePoint3,
@@ -587,20 +597,6 @@ impl SubdVertex {
             tag,
             secondary_grips,
         }
-    }
-
-    /// Construct a control vertex with a finite position.
-    pub fn new(
-        point: Point3,
-        tag: SubdVertexTag,
-        secondary_grips: Option<SubdVertexGripLayout>,
-    ) -> Result<Self, SubdError> {
-        let point = require_finite_point("point", point)?;
-        Ok(Self {
-            point,
-            tag,
-            secondary_grips,
-        })
     }
 
     /// Vertex position in document units.
@@ -843,8 +839,9 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
-    /// Construct an edge from admitted numeric controls.
-    pub fn from_checked_parts(
+    /// Construct an edge from admitted numeric controls. Only distinct
+    /// endpoints remain to be checked.
+    pub fn from_admitted(
         vertices: [u32; 2],
         sharpness: [NonNegativeReal; 2],
         tag: SubdEdgeTag,

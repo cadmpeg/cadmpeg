@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{DirectionAboveEpsilon, UnitVector3};
 
 use crate::writer::{refs, Emitter, Ref};
 
@@ -43,7 +43,7 @@ pub(crate) fn surface_is_supported(surface: &SolvedSurfaceGeometry) -> bool {
     let (placements, basis) = placed_surface(surface);
     placements
         .iter()
-        .all(|transform| similarity_transform(transform))
+        .all(|transform| similarity_transform(transform).is_some())
         && match basis {
             SolvedSurfaceGeometry::Plane(_)
             | SolvedSurfaceGeometry::Cylinder(_)
@@ -92,7 +92,7 @@ fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
     let (placements, basis) = placed_curve(curve);
     placements
         .iter()
-        .all(|transform| similarity_transform(transform))
+        .all(|transform| similarity_transform(transform).is_some())
         && match basis {
             SolvedCurveGeometry::Line(_)
             | SolvedCurveGeometry::Circle(_)
@@ -110,7 +110,12 @@ fn leaf_curve_is_supported(curve: &SolvedCurveGeometry) -> bool {
         }
 }
 
-fn similarity_transform(transform: &Transform) -> bool {
+struct SimilarityColumns {
+    directions: [DirectionAboveEpsilon; 3],
+    scale: f64,
+}
+
+fn similarity_transform(transform: &Transform) -> Option<SimilarityColumns> {
     let columns = [
         Vector3::new(
             transform.rows()[0][0],
@@ -128,17 +133,25 @@ fn similarity_transform(transform: &Transform) -> bool {
             transform.rows()[2][2],
         ),
     ];
-    let scale = columns[0].norm();
+    let [Some(x), Some(y), Some(z)] = columns.map(DirectionAboveEpsilon::new) else {
+        return None;
+    };
+    let directions = [x, y, z];
+    let scale = x.norm();
     if !scale.is_finite() || scale <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12 {
-        return false;
+        return None;
     }
-    let columns = columns.map(|v| Vector3::new(v.x / scale, v.y / scale, v.z / scale));
-    columns
+    let columns = directions.map(|direction| {
+        let v = direction.get();
+        Vector3::new(v.x / scale, v.y / scale, v.z / scale)
+    });
+    (columns
         .iter()
         .all(|v| (v.norm() - 1.0).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10)
         && columns[0].dot(columns[1]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
         && columns[0].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
-        && columns[1].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10
+        && columns[1].dot(columns[2]).abs() <= EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10)
+        .then_some(SimilarityColumns { directions, scale })
 }
 
 /// Emit or reuse a `CARTESIAN_POINT`.
@@ -356,43 +369,10 @@ pub(crate) fn pcurve_on_reversed_cone(e: &mut Emitter, geometry: &PcurveGeometry
     Some(e.emit("CURVE_REPLICA", &format!("'',{basis},{operator}")))
 }
 
-/// A finite nonzero direction admitted before STEP emission.
-#[derive(Clone, Copy)]
-pub(crate) struct NonzeroDirection(Vector3);
-
-impl NonzeroDirection {
-    /// Carry a unit direction without another admission.
-    pub(crate) fn from_unit(direction: UnitVector3) -> Self {
-        Self(*direction.as_raw())
-    }
-
-    /// Carry the sweep vector admitted by its construction.
-    pub(crate) fn from_sweep(
-        construction: &cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction,
-    ) -> Self {
-        Self(construction.direction().get())
-    }
-
-    /// Admit a finite nonzero transform column.
-    pub(crate) fn new(value: Vector3) -> Option<Self> {
-        (value.is_finite() && (value.x != 0.0 || value.y != 0.0 || value.z != 0.0))
-            .then_some(Self(value))
-    }
-}
-
 /// Emit or reuse a unit-length `DIRECTION` from an admitted nonzero vector.
-/// A finite vector whose length overflows uses its largest component as a chart.
-pub(crate) fn direction(e: &mut Emitter, direction: NonzeroDirection) -> Ref {
-    let v = direction.0;
-    let n = v.norm();
-    let u = if n.is_infinite() {
-        let largest = v.x.abs().max(v.y.abs()).max(v.z.abs());
-        let reduced = Vector3::new(v.x / largest, v.y / largest, v.z / largest);
-        let length = reduced.norm();
-        Vector3::new(reduced.x / length, reduced.y / length, reduced.z / length)
-    } else {
-        Vector3::new(v.x / n, v.y / n, v.z / n)
-    };
+pub(crate) fn direction(e: &mut Emitter, v: DirectionAboveEpsilon) -> Ref {
+    let normalized = v.normalized();
+    let u = normalized.as_raw();
     let params = format!("'',({},{},{})", e.real(u.x), e.real(u.y), e.real(u.z));
     e.emit_interned("DIRECTION", &params)
 }
@@ -404,33 +384,29 @@ pub(crate) fn direction(e: &mut Emitter, direction: NonzeroDirection) -> Ref {
 pub(crate) fn placement(
     e: &mut Emitter,
     origin: Point3,
-    axis: NonzeroDirection,
-    ref_dir: NonzeroDirection,
+    axis: UnitVector3,
+    ref_dir: UnitVector3,
 ) -> Ref {
     let o = point(e, origin);
-    let a = direction(e, axis);
-    let r = direction(e, ref_dir);
+    let a = direction(e, axis.into());
+    let r = direction(e, ref_dir.into());
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
-}
-
-/// Emit the placement of a transform already admitted as proper rigid.
-pub(crate) fn rigid_placement(e: &mut Emitter, transform: Transform) -> Option<Ref> {
-    let rows = transform.rows();
-    let origin = Point3::new(rows[0][3], rows[1][3], rows[2][3]);
-    let axis = NonzeroDirection::new(Vector3::new(rows[0][2], rows[1][2], rows[2][2]))?;
-    let reference = NonzeroDirection::new(Vector3::new(rows[0][0], rows[1][0], rows[2][0]))?;
-    Some(placement(e, origin, axis, reference))
 }
 
 /// Emit a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`, which states three axis
 /// directions, an origin and one scale: a similarity. Any other transform,
 /// including one with a zero column, is refused through
 /// [`Emitter::refuse_operator`], and the section is not written.
-pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Option<Ref> {
-    if !similarity_transform(&transform) {
+pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+    let Some(SimilarityColumns {
+        directions: [x, y, z],
+        scale,
+    }) = similarity_transform(&transform)
+    else {
         e.refuse_operator(transform);
-        return None;
-    }
+        // The emitter refuses the whole DATA section, so no operator reference is written.
+        return Ref(0);
+    };
     let origin = point(
         e,
         Point3::new(
@@ -439,29 +415,13 @@ pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> 
             transform.rows()[2][3],
         ),
     );
-    let x = Vector3::new(
-        transform.rows()[0][0],
-        transform.rows()[1][0],
-        transform.rows()[2][0],
-    );
-    let y = Vector3::new(
-        transform.rows()[0][1],
-        transform.rows()[1][1],
-        transform.rows()[2][1],
-    );
-    let z = Vector3::new(
-        transform.rows()[0][2],
-        transform.rows()[1][2],
-        transform.rows()[2][2],
-    );
-    let scale = x.norm();
-    let x = direction(e, NonzeroDirection::new(x)?);
-    let y = direction(e, NonzeroDirection::new(y)?);
-    let z = direction(e, NonzeroDirection::new(z)?);
-    Some(e.emit(
+    let x = direction(e, x);
+    let y = direction(e, y);
+    let z = direction(e, z);
+    e.emit(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
         &format!("'',{x},{y},{origin},{},{z}", e.real(scale)),
-    ))
+    )
 }
 
 /// The carrier whose values [`surface`] writes into the file for `g`.
@@ -481,7 +441,7 @@ pub(crate) fn surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref>
     // The chain is emitted from the basis outwards, so each `SURFACE_REPLICA`
     // references the record written for the placement inside it.
     for transform in placements.iter().rev() {
-        let operator = transformation_operator(e, **transform)?;
+        let operator = transformation_operator(e, **transform);
         reference = e.emit("SURFACE_REPLICA", &format!("'',{reference},{operator}"));
     }
     Some(reference)
@@ -492,27 +452,17 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     Some(match g {
         SolvedSurfaceGeometry::Plane(plane_surface) => {
             let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis();
-            let u_axis = plane_surface.frame().reference();
-            let pl = placement(
-                e,
-                origin,
-                NonzeroDirection::from_unit(*normal),
-                NonzeroDirection::from_unit(*u_axis),
-            );
+            let normal = *plane_surface.frame().axis();
+            let u_axis = *plane_surface.frame().reference();
+            let pl = placement(e, origin, normal, u_axis);
             e.emit("PLANE", &format!("'',{pl}"))
         }
         SolvedSurfaceGeometry::Cylinder(cylinder_surface) => {
             let origin = cylinder_surface.origin().get();
-            let axis = cylinder_surface.frame().axis();
-            let ref_direction = cylinder_surface.frame().reference();
+            let axis = *cylinder_surface.frame().axis();
+            let ref_direction = *cylinder_surface.frame().reference();
             let radius = cylinder_surface.radius().get();
-            let pl = placement(
-                e,
-                origin,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*ref_direction),
-            );
+            let pl = placement(e, origin, axis, ref_direction);
             e.emit(
                 "CYLINDRICAL_SURFACE",
                 &format!("'',{pl},{}", e.real(radius)),
@@ -523,21 +473,16 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         // the parameter change `(u, v) -> (-u, -v)`.
         SolvedSurfaceGeometry::Cone(cone_surface) => {
             let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis();
-            let ref_direction = cone_surface.frame().reference();
+            let axis = *cone_surface.frame().axis();
+            let ref_direction = *cone_surface.frame().reference();
             let radius = cone_surface.radius().get();
             let half_angle = cone_surface.half_angle().get();
             let written_axis = if half_angle < 0.0 {
                 axis.reversed()
             } else {
-                *axis
+                axis
             };
-            let pl = placement(
-                e,
-                origin,
-                NonzeroDirection::from_unit(written_axis),
-                NonzeroDirection::from_unit(*ref_direction),
-            );
+            let pl = placement(e, origin, written_axis, ref_direction);
             e.emit(
                 "CONICAL_SURFACE",
                 &format!("'',{pl},{},{}", e.real(radius), e.real(half_angle.abs())),
@@ -545,15 +490,10 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         }
         SolvedSurfaceGeometry::Sphere(sphere_surface) => {
             let center = sphere_surface.center().get();
-            let axis = sphere_surface.frame().axis();
-            let ref_direction = sphere_surface.frame().reference();
+            let axis = *sphere_surface.frame().axis();
+            let ref_direction = *sphere_surface.frame().reference();
             let radius = sphere_surface.radius().get();
-            let pl = placement(
-                e,
-                center,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*ref_direction),
-            );
+            let pl = placement(e, center, axis, ref_direction);
             e.emit(
                 "SPHERICAL_SURFACE",
                 &format!("'',{pl},{}", e.real(radius.abs())),
@@ -561,16 +501,11 @@ fn basis_surface(e: &mut Emitter, g: &SolvedSurfaceGeometry) -> Option<Ref> {
         }
         SolvedSurfaceGeometry::Torus(torus_surface) => {
             let center = torus_surface.center().get();
-            let axis = torus_surface.frame().axis();
-            let ref_direction = torus_surface.frame().reference();
+            let axis = *torus_surface.frame().axis();
+            let ref_direction = *torus_surface.frame().reference();
             let major_radius = torus_surface.major_radius().get();
             let minor_radius = torus_surface.minor_radius().get();
-            let pl = placement(
-                e,
-                center,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*ref_direction),
-            );
+            let pl = placement(e, center, axis, ref_direction);
             e.emit(
                 "TOROIDAL_SURFACE",
                 &format!(
@@ -598,7 +533,7 @@ pub(crate) fn curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
     // The chain is emitted from the basis outwards, so each `CURVE_REPLICA`
     // references the record written for the placement inside it.
     for transform in placements.iter().rev() {
-        let operator = transformation_operator(e, **transform)?;
+        let operator = transformation_operator(e, **transform);
         reference = e.emit("CURVE_REPLICA", &format!("'',{reference},{operator}"));
     }
     Some(reference)
@@ -612,35 +547,25 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
             let d = line_curve.direction();
             let p = point(e, origin);
             // A LINE's VECTOR carries the direction; unit magnitude is conventional.
-            let dir = direction(e, NonzeroDirection::from_unit(d));
+            let dir = direction(e, d.into());
             let vec = e.emit("VECTOR", &format!("'',{dir},{}", e.real(1.0)));
             e.emit("LINE", &format!("'',{p},{vec}"))
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
             let center = circle_curve.center().get();
-            let axis = circle_curve.frame().axis();
-            let ref_direction = circle_curve.frame().reference();
+            let axis = *circle_curve.frame().axis();
+            let ref_direction = *circle_curve.frame().reference();
             let radius = circle_curve.radius().get();
-            let pl = placement(
-                e,
-                center,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*ref_direction),
-            );
+            let pl = placement(e, center, axis, ref_direction);
             e.emit("CIRCLE", &format!("'',{pl},{}", e.real(radius)))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
             let center = ellipse_curve.center().get();
-            let axis = ellipse_curve.frame().axis();
-            let major_direction = ellipse_curve.frame().reference();
+            let axis = *ellipse_curve.frame().axis();
+            let major_direction = *ellipse_curve.frame().reference();
             let major_radius = ellipse_curve.major_radius().get();
             let minor_radius = ellipse_curve.minor_radius().get();
-            let pl = placement(
-                e,
-                center,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*major_direction),
-            );
+            let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "ELLIPSE",
                 &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),
@@ -648,29 +573,19 @@ fn basis_curve(e: &mut Emitter, g: &SolvedCurveGeometry) -> Option<Ref> {
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
             let vertex = parabola_curve.vertex().get();
-            let axis = parabola_curve.frame().axis();
-            let major_direction = parabola_curve.frame().reference();
+            let axis = *parabola_curve.frame().axis();
+            let major_direction = *parabola_curve.frame().reference();
             let focal_distance = parabola_curve.focal_distance().get();
-            let pl = placement(
-                e,
-                vertex,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*major_direction),
-            );
+            let pl = placement(e, vertex, axis, major_direction);
             e.emit("PARABOLA", &format!("'',{pl},{}", e.real(focal_distance)))
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
             let center = hyperbola_curve.center().get();
-            let axis = hyperbola_curve.frame().axis();
-            let major_direction = hyperbola_curve.frame().reference();
+            let axis = *hyperbola_curve.frame().axis();
+            let major_direction = *hyperbola_curve.frame().reference();
             let major_radius = hyperbola_curve.major_radius().get();
             let minor_radius = hyperbola_curve.minor_radius().get();
-            let pl = placement(
-                e,
-                center,
-                NonzeroDirection::from_unit(*axis),
-                NonzeroDirection::from_unit(*major_direction),
-            );
+            let pl = placement(e, center, axis, major_direction);
             e.emit(
                 "HYPERBOLA",
                 &format!("'',{pl},{},{}", e.real(major_radius), e.real(minor_radius)),

@@ -181,7 +181,7 @@ pub(crate) struct CurveCarrier {
     offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
-    parameter_range: Option<[f64; 2]>,
+    parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
 }
 
 #[derive(Debug, Clone)]

@@ -15,7 +15,7 @@ use crate::ids::{CurveId, SurfaceId};
 use crate::math::{Point3, Vector3};
 use crate::scalar::FiniteReal;
 use crate::topology::IncreasingParameterInterval;
-use crate::units::{FiniteVector, UnitVector3};
+use crate::units::{DirectionAboveEpsilon, FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -396,14 +396,6 @@ pub fn admit_revolution_axis(
     direction: Vector3,
 ) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
     let direction = UnitVector3::new(direction).ok_or(INVALID_REVOLUTION_AXIS)?;
-    admit_revolution_axis_parts(origin, direction)
-}
-
-/// Admit an axis origin beside a unit direction already admitted by its reader.
-pub fn admit_revolution_axis_parts(
-    origin: Point3,
-    direction: UnitVector3,
-) -> Result<(FinitePoint3, UnitVector3), ProceduralGeometryError> {
     Ok((
         FinitePoint3::new(origin).ok_or(INVALID_REVOLUTION_AXIS)?,
         direction,
@@ -991,17 +983,6 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     }
 }
 
-/// A finite sweep vector whose norm exceeds machine epsilon.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-struct SweepDirectionAboveEpsilon(FiniteVector3);
-
-impl SweepDirectionAboveEpsilon {
-    fn new(direction: Vector3) -> Option<Self> {
-        let direction = FiniteVector3::new(direction)?;
-        (direction.as_raw().norm() > f64::EPSILON).then_some(Self(direction))
-    }
-}
-
 /// Admitted unbounded linear sweep parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1014,7 +995,7 @@ pub struct LinearSweepSurfaceConstruction {
     /// Curve swept along `direction`.
     directrix: CurveId,
     /// Length-bearing sweep vector.
-    direction: SweepDirectionAboveEpsilon,
+    direction: DirectionAboveEpsilon,
 }
 
 #[derive(Deserialize)]
@@ -1033,7 +1014,7 @@ impl LinearSweepSurfaceConstruction {
         directrix: CurveId,
         direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction = SweepDirectionAboveEpsilon::new(direction).ok_or(
+        let direction = DirectionAboveEpsilon::new(direction).ok_or(
             ProceduralGeometryError::Payload("invalid linear-sweep direction"),
         )?;
         Ok(Self {
@@ -1046,8 +1027,8 @@ impl LinearSweepSurfaceConstruction {
         &self.directrix
     }
     /// Return the direction.
-    pub fn direction(&self) -> &FiniteVector3 {
-        &self.direction.0
+    pub fn direction(&self) -> &DirectionAboveEpsilon {
+        &self.direction
     }
 }
 
@@ -1252,6 +1233,23 @@ impl ExactSurfacePayload {
                 "exact spline surface parameter fields are invalid",
             ))?;
         Ok(Self { spline })
+    }
+
+    /// Build a legacy construction from admitted U and V parameter intervals.
+    #[must_use]
+    pub fn from_legacy_intervals(
+        u: IncreasingParameterInterval,
+        v: IncreasingParameterInterval,
+        extension: i64,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            spline: ExactSpline::Legacy {
+                ranges: [u.finite_endpoints(), v.finite_endpoints()],
+                extension,
+                cache,
+            },
+        }
     }
     /// Return the spline.
     pub fn spline(&self) -> &ExactSpline<FiniteReal> {

@@ -12,6 +12,87 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle) {
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex = VertexId::mint("fcstd:test:vertex#0").expect("vertex id");
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        point: PointId::mint("fcstd:test:point#0").expect("point id"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::mint("fcstd:test:edge#0").expect("edge id"),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    super::transfer_primitive_appearance(
+        &ir,
+        &mut plan,
+        &mut losses,
+        super::PrimitiveAppearanceSource {
+            provider_name: "Model",
+            object_id: "fcstd:object#Model",
+            packed_color: 0xff00_00ff,
+            style,
+            payload_prefixes: &[String::new()],
+            provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                17,
+            ),
+        },
+    );
+    assert_eq!(plan.appearances.len(), 1);
+    assert!(plan.appearances[0].properties.is_empty());
+    assert!(!plan.bindings.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "appearance.primitive-size-not-transferred"
+    );
+    assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Warning);
+    assert_eq!(
+        losses[0].provenance.as_ref().map(|source| source.offset),
+        Some(17)
+    );
+}
+
+#[test]
+fn a_negative_line_width_records_an_appearance_loss() {
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite width"),
+        ),
+    ));
+}
+
+#[test]
+fn a_negative_point_size_records_an_appearance_loss() {
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Point(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite size"),
+        ),
+    ));
+}
+
+#[test]
+fn a_nonfinite_line_width_records_an_appearance_loss() {
+    assert!(matches!(
+        super::PrimitiveSize::from_source(Some("not a number")),
+        super::PrimitiveSize::Absent
+    ));
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::from_source(Some("NaN")),
+    ));
+}
+
 #[test]
 fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
     use cadmpeg_ir::ids::{EdgeId, VertexId};
@@ -45,23 +126,25 @@ fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
     let mut losses = Vec::new();
     let prefixes = [String::from("shape:")];
     for style in [
-        super::PrimitiveStyle::Line {
-            color: 0x1122_3344,
-            width: Some(FiniteReal::ONE.negated()),
-        },
-        super::PrimitiveStyle::Point {
-            color: 0x1122_3344,
-            size: Some(FiniteReal::ONE.negated()),
-        },
+        super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
+        super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
     ] {
         super::transfer_primitive_appearance(
             &ir,
             &mut plan,
-            "Model",
-            "shape",
-            style,
-            &prefixes,
             &mut losses,
+            super::PrimitiveAppearanceSource {
+                provider_name: "Model",
+                object_id: "shape",
+                packed_color: 0x1122_3344,
+                style,
+                payload_prefixes: &prefixes,
+                provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                    "fcstd",
+                    cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                    17,
+                ),
+            },
         );
     }
     assert_eq!(plan.appearances.len(), 2);

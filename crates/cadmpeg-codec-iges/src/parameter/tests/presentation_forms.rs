@@ -56,7 +56,7 @@ fn type406_form32_malformed_np_or_span_does_not_enable_generic_recovery() {
     for values in [
         vec![
             TokenValue::Integer(406),
-            TokenValue::Real(3.0),
+            TokenValue::real(3.0),
             TokenValue::String(b"JANE".to_vec()),
             TokenValue::String(b"ENG".to_vec()),
             TokenValue::String(b"20260714.123456".to_vec()),
@@ -225,7 +225,7 @@ fn type406_form33_malformed_np_or_span_does_not_enable_generic_recovery() {
     for values in [
         vec![
             TokenValue::Integer(406),
-            TokenValue::Real(2.0),
+            TokenValue::real(2.0),
             TokenValue::Integer(2),
             TokenValue::String(b"C".to_vec()),
             TokenValue::Integer(1),
@@ -359,7 +359,7 @@ fn type406_form2_malformed_np_or_span_does_not_enable_generic_recovery() {
     }
 
     let mut record = integer_parameter_record(1, &[406, 3, 0, 1, 2, 1, 3, 0]);
-    record.tokens[1].value = TokenValue::Real(3.0);
+    record.tokens[1].value = TokenValue::real(3.0);
     let analysis = analyze_trailing_pointer_groups(&record, &directory);
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
@@ -786,7 +786,7 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(2),
-                TokenValue::Real(2.5),
+                TokenValue::real(2.5),
                 TokenValue::String(b"AWG".to_vec()),
                 TokenValue::Integer(1),
                 TokenValue::Integer(3),
@@ -799,7 +799,7 @@ fn type406_form13_entity_table_boundary_follows_conditional_values() {
             vec![
                 TokenValue::Integer(406),
                 TokenValue::Integer(3),
-                TokenValue::Real(2.5),
+                TokenValue::real(2.5),
                 TokenValue::String(b"AWG".to_vec()),
                 TokenValue::String(b"ANSI123".to_vec()),
                 TokenValue::Integer(1),
@@ -850,7 +850,7 @@ fn type406_form13_table_boundary_precedes_generic_candidate() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(2),
-            TokenValue::Real(2.5),
+            TokenValue::real(2.5),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
             TokenValue::Integer(0),
@@ -858,7 +858,7 @@ fn type406_form13_table_boundary_precedes_generic_candidate() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::Real(2.5),
+            TokenValue::real(2.5),
             TokenValue::String(b"AWG".to_vec()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -900,7 +900,7 @@ fn type406_form13_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(4),
-            TokenValue::Real(2.5),
+            TokenValue::real(2.5),
             TokenValue::String(b"AWG".to_vec()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -909,7 +909,7 @@ fn type406_form13_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::Real(2.5),
+            TokenValue::real(2.5),
             TokenValue::String(b"AWG".to_vec()),
         ],
     ] {
@@ -1049,7 +1049,7 @@ fn type406_form14_malformed_count_or_span_does_not_enable_generic_recovery() {
     for values in [
         vec![
             TokenValue::Integer(406),
-            TokenValue::Real(1.0),
+            TokenValue::real(1.0),
             TokenValue::String(b"FLOW".to_vec()),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -1541,8 +1541,8 @@ fn type406_form26_entity_table_boundary_follows_fixed_values() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::Real(0.8),
-            TokenValue::Real(0.7),
+            TokenValue::real(0.8),
+            TokenValue::real(0.7),
             TokenValue::Integer(5),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -1552,7 +1552,7 @@ fn type406_form26_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(406),
             TokenValue::Integer(3),
             TokenValue::String(b"BAD".to_vec()),
-            TokenValue::Real(0.7),
+            TokenValue::real(0.7),
             TokenValue::Integer(6),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -1585,8 +1585,8 @@ fn type406_form26_table_boundary_precedes_generic_candidate() {
     let values = vec![
         TokenValue::Integer(406),
         TokenValue::Integer(3),
-        TokenValue::Real(0.8),
-        TokenValue::Real(0.7),
+        TokenValue::real(0.8),
+        TokenValue::real(0.7),
         TokenValue::Integer(1),
         TokenValue::Integer(3),
         TokenValue::Integer(0),
@@ -1617,8 +1617,8 @@ fn type406_form26_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(4),
-            TokenValue::Real(0.8),
-            TokenValue::Real(0.7),
+            TokenValue::real(0.8),
+            TokenValue::real(0.7),
             TokenValue::Integer(5),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -1627,8 +1627,8 @@ fn type406_form26_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Omitted,
-            TokenValue::Real(0.8),
-            TokenValue::Real(0.7),
+            TokenValue::real(0.8),
+            TokenValue::real(0.7),
             TokenValue::Integer(5),
             TokenValue::Integer(1),
             TokenValue::Integer(3),
@@ -1637,8 +1637,8 @@ fn type406_form26_malformed_np_or_span_does_not_enable_generic_recovery() {
         vec![
             TokenValue::Integer(406),
             TokenValue::Integer(3),
-            TokenValue::Real(0.8),
-            TokenValue::Real(0.7),
+            TokenValue::real(0.8),
+            TokenValue::real(0.7),
         ],
     ] {
         let generic_count =
@@ -1829,8 +1829,8 @@ fn type406_form29_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
             TokenValue::Integer(2),
             TokenValue::Integer(2),
-            TokenValue::Real(0.1),
-            TokenValue::Real(-0.1),
+            TokenValue::real(0.1),
+            TokenValue::real(-0.1),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(3),
@@ -1844,8 +1844,8 @@ fn type406_form29_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
             TokenValue::Integer(2),
             TokenValue::Omitted,
-            TokenValue::Real(0.1),
-            TokenValue::Real(-0.1),
+            TokenValue::real(0.1),
+            TokenValue::real(-0.1),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(3),
@@ -1859,8 +1859,8 @@ fn type406_form29_entity_table_boundary_follows_fixed_values() {
             TokenValue::Integer(0),
             TokenValue::String(b"2".to_vec()),
             TokenValue::Integer(2),
-            TokenValue::Real(0.1),
-            TokenValue::Real(-0.1),
+            TokenValue::real(0.1),
+            TokenValue::real(-0.1),
             TokenValue::Integer(0),
             TokenValue::Integer(0),
             TokenValue::Integer(3),

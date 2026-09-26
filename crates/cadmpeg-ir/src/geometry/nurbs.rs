@@ -8,7 +8,7 @@ pub mod bounds;
 
 use crate::features::FinitePoint3;
 use crate::math::Point3;
-use crate::scalar::NonZeroReal;
+use crate::scalar::{FiniteReal, NonZeroReal};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,15 @@ impl KnotVector {
     /// Refuses a non-finite knot, then a decreasing pair.
     pub(crate) fn new(knots: Vec<f64>) -> Result<Self, NurbsError> {
         require_nondecreasing_knots(&knots)?;
+        Ok(Self(knots))
+    }
+
+    /// Build a knot vector from finite values. Only their order is checked.
+    pub fn from_finite_lanes(knots: Vec<FiniteReal>) -> Result<Self, NurbsError> {
+        let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+        if !knots_nondecreasing(&knots) {
+            return Err(NurbsError::Structure("knots must be non-decreasing".into()));
+        }
         Ok(Self(knots))
     }
 
@@ -1060,15 +1069,17 @@ impl NurbsSurface {
         Self::new(u, v, poles, normal_reversed)
     }
 
-    /// Build a NURBS surface from admitted knot axes, a pole grid and an admitted weight grid.
+    /// Build a NURBS surface from knot axes, a pole grid and an admitted weight grid.
+    /// Admitted knot vectors are kept; raw knots are admitted by [`Self::new`].
     ///
     /// # Errors
     ///
     /// Refuses a weight grid that does not cover its pole grid, invalid
-    /// cardinalities, or a non-finite raw pole coordinate.
-    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
-        u: NurbsSurfaceAxis<KnotVector>,
-        v: NurbsSurfaceAxis<KnotVector>,
+    /// cardinalities, a non-finite raw pole coordinate, or a non-finite or
+    /// decreasing raw knot.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue>(
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
         lanes: NurbsSurfaceLanes<P, NonZeroReal>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
@@ -1312,15 +1323,16 @@ impl NurbsCurve {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a NURBS curve from admitted knots, a pole lane and an admitted weight lane.
+    /// Build a NURBS curve from knots, a pole lane and an admitted weight lane.
+    /// An admitted knot vector is kept; raw knots are admitted by [`Self::new`].
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles or a pole count
-    /// inconsistent with the degree.
-    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
+    /// Refuses a weight lane that does not cover the poles, a pole count
+    /// inconsistent with the degree, or a non-finite or decreasing raw knot.
+    pub fn from_checked_lanes<P: PoleValue<FinitePoint3>, K: KnotValue>(
         degree: u32,
-        knots: KnotVector,
+        knots: K,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,

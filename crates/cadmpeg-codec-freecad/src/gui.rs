@@ -499,17 +499,19 @@ fn transfer_schema_one(
         {
             let width = values
                 .get("LineWidth")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok())
-                .and_then(cadmpeg_ir::scalar::FiniteReal::new);
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                PrimitiveStyle::Line { color, width },
-                &payload_prefixes,
                 &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -541,17 +543,19 @@ fn transfer_schema_one(
         {
             let size = values
                 .get("PointSize")
-                .and_then(|value| value.attribute("value"))
-                .and_then(|value| value.parse::<f64>().ok())
-                .and_then(cadmpeg_ir::scalar::FiniteReal::new);
+                .and_then(|value| value.attribute("value"));
             transfer_primitive_appearance(
                 ir,
                 &mut plan,
-                name,
-                object_id,
-                PrimitiveStyle::Point { color, size },
-                &payload_prefixes,
                 &mut losses,
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -941,27 +945,53 @@ fn camera_field<const N: usize>(
 
 #[derive(Clone, Copy)]
 enum PrimitiveStyle {
-    Line {
-        color: u32,
-        width: Option<cadmpeg_ir::scalar::FiniteReal>,
-    },
-    Point {
-        color: u32,
-        size: Option<cadmpeg_ir::scalar::FiniteReal>,
-    },
+    Line(PrimitiveSize),
+    Point(PrimitiveSize),
+}
+
+#[derive(Clone, Copy)]
+enum PrimitiveSize {
+    Absent,
+    Admitted(cadmpeg_ir::scalar::FiniteReal),
+    NonFinite,
+}
+
+impl PrimitiveSize {
+    fn from_source(value: Option<&str>) -> Self {
+        match value.and_then(|text| text.parse::<f64>().ok()) {
+            None => Self::Absent,
+            Some(value) => {
+                cadmpeg_ir::scalar::FiniteReal::new(value).map_or(Self::NonFinite, Self::Admitted)
+            }
+        }
+    }
+}
+
+struct PrimitiveAppearanceSource<'a> {
+    provider_name: &'a str,
+    object_id: &'a str,
+    packed_color: u32,
+    style: PrimitiveStyle,
+    payload_prefixes: &'a [String],
+    provenance: SourceProvenance,
 }
 
 fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,
-    provider_name: &str,
-    object_id: &str,
-    style: PrimitiveStyle,
-    payload_prefixes: &[String],
     losses: &mut Vec<LossNote>,
+    source: PrimitiveAppearanceSource<'_>,
 ) {
+    let PrimitiveAppearanceSource {
+        provider_name,
+        object_id,
+        packed_color,
+        style,
+        payload_prefixes,
+        provenance,
+    } = source;
     let targets = match style {
-        PrimitiveStyle::Line { .. } => ir
+        PrimitiveStyle::Line(_) => ir
             .model
             .edges
             .iter()
@@ -972,7 +1002,7 @@ fn transfer_primitive_appearance(
             })
             .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
             .collect::<Vec<_>>(),
-        PrimitiveStyle::Point { .. } => ir
+        PrimitiveStyle::Point(_) => ir
             .model
             .vertices
             .iter()
@@ -988,39 +1018,41 @@ fn transfer_primitive_appearance(
         return;
     }
     let provider_key = provider_identity_key(provider_name);
-    let (appearance_id, label, property, size, binding_key, object_type, precedence, packed_color) =
-        match style {
-            PrimitiveStyle::Line { color, width } => (
-                edge_appearance_id(&provider_key),
-                "line",
-                cadmpeg_core::nonblank_literal!("line_width"),
-                width,
-                cadmpeg_ir::identity_key!("edge"),
-                "ViewProvider Edge",
-                "edge_over_object",
-                color,
-            ),
-            PrimitiveStyle::Point { color, size } => (
-                vertex_appearance_id(&provider_key),
-                "point",
-                cadmpeg_core::nonblank_literal!("point_size"),
-                size,
-                cadmpeg_ir::identity_key!("vertex"),
-                "ViewProvider Vertex",
-                "vertex_over_object",
-                color,
-            ),
-        };
-    let size = match size {
-        Some(value) if value.get() < 0.0 => {
-            losses.push(FreecadLossCode::AppearancePrimitiveSizeNotTransferred.note(format!(
-                "FCStd provider {provider_name} {label} size {} is negative; native value retained and neutral appearance size omitted",
-                value.get()
-            )));
-            None
-        }
-        other => other,
+    let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
+        PrimitiveStyle::Line(width) => (
+            edge_appearance_id(&provider_key),
+            "line",
+            cadmpeg_core::nonblank_literal!("line_width"),
+            width,
+            cadmpeg_ir::identity_key!("edge"),
+            "ViewProvider Edge",
+            "edge_over_object",
+        ),
+        PrimitiveStyle::Point(size) => (
+            vertex_appearance_id(&provider_key),
+            "point",
+            cadmpeg_core::nonblank_literal!("point_size"),
+            size,
+            cadmpeg_ir::identity_key!("vertex"),
+            "ViewProvider Vertex",
+            "vertex_over_object",
+        ),
     };
+    let admitted_size = match size {
+        PrimitiveSize::Admitted(value) if value.get() >= 0.0 => Some(value),
+        PrimitiveSize::Absent | PrimitiveSize::Admitted(_) | PrimitiveSize::NonFinite => None,
+    };
+    if matches!(size, PrimitiveSize::NonFinite | PrimitiveSize::Admitted(_))
+        && admitted_size.is_none()
+    {
+        losses.push(
+            FreecadLossCode::AppearancePrimitiveSizeNotTransferred
+                .note(format!(
+                    "FCStd provider {provider_name} {label} size cannot enter the neutral appearance"
+                ))
+                .with_provenance(provenance),
+        );
+    }
     plan.appearances.push(Appearance {
         id: appearance_id.clone(),
         name: Some(format!("{provider_name} {label} appearance")),
@@ -1037,7 +1069,7 @@ fn transfer_primitive_appearance(
             packed_color as u8,
         )),
         textures: Vec::new(),
-        properties: size
+        properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
     });
