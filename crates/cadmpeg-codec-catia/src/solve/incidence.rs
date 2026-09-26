@@ -850,41 +850,42 @@ struct PreparedFaceFactors {
     active: Option<Vec<Vec<u64>>>,
 }
 
-fn full_configuration_mask(len: usize) -> Option<Vec<u64>> {
-    let mut mask = alloc_filled(
+fn full_configuration_mask(ctx: &DecodeContext<'_>, len: usize) -> Result<Vec<u64>, CodecError> {
+    let mut mask = ctx.alloc_filled(
         len.div_ceil(u64::BITS as usize),
         u64::MAX,
         "catia_face_config_full_mask",
-    )
-    .ok()?;
+    )?;
     if let Some(last) = mask.last_mut() {
         let remainder = len % u64::BITS as usize;
         if remainder != 0 {
             *last = (1 << remainder) - 1;
         }
     }
-    Some(mask)
+    Ok(mask)
 }
 
 fn set_mask_bit<K: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
     map: &mut HashMap<K, Vec<u64>>,
     key: K,
     word: usize,
     bit: u64,
     word_count: usize,
     operation: &'static str,
-) -> Option<()> {
+) -> Result<(), CodecError> {
     match map.entry(key) {
         std::collections::hash_map::Entry::Occupied(mut occupied) => {
             occupied.get_mut()[word] |= bit;
         }
         std::collections::hash_map::Entry::Vacant(vacant) => {
-            let mut mask = alloc_filled(word_count, 0u64, operation).ok()?;
+            let mut mask = ctx.alloc_filled(word_count, 0u64, operation)?;
             mask[word] |= bit;
+            charge_collection_items(ctx, 1, "catia face configuration mask keys")?;
             vacant.insert(mask);
         }
     }
-    Some(())
+    Ok(())
 }
 
 fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
@@ -894,19 +895,23 @@ fn configuration_mask_contains(mask: &[u64], index: usize) -> bool {
 
 impl FaceFactorGraph {
     fn compile(
+        ctx: &DecodeContext<'_>,
         domains: &[MeshFaceEndpointConfigurations],
         budget: &WorkBudget<'_>,
-    ) -> Option<Self> {
-        let edge_sets = domains
-            .iter()
-            .map(|domain| {
-                domain
-                    .iter()
-                    .flatten()
-                    .map(|(edge, _)| *edge)
-                    .collect::<HashSet<_>>()
-            })
-            .collect::<Vec<_>>();
+    ) -> Result<Option<Self>, CodecError> {
+        charge_collection_items(ctx, domains.len(), "catia face factor edge sets")?;
+        let mut edge_sets = Vec::new();
+        for domain in domains {
+            let mut edges = HashSet::new();
+            for &(edge, _) in domain.iter().flatten() {
+                if !edges.contains(&edge) {
+                    charge_collection_items(ctx, 1, "catia face factor edges")?;
+                    edges.insert(edge);
+                }
+            }
+            edge_sets.push(edges);
+        }
+        charge_collection_items(ctx, domains.len(), "catia face factor right indexes")?;
         let mut right_indexes = Vec::with_capacity(domains.len());
         for domain in domains {
             let word_count = domain.len().div_ceil(u64::BITS as usize);
@@ -914,12 +919,13 @@ impl FaceFactorGraph {
             let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
             for (configuration, candidate) in domain.iter().enumerate() {
                 if !budget.charge_by(work_units(candidate.len())) {
-                    return None;
+                    return Ok(None);
                 }
                 let word = configuration / u64::BITS as usize;
                 let bit = 1 << (configuration % u64::BITS as usize);
                 for &(edge, pair) in candidate {
                     set_mask_bit(
+                        ctx,
                         &mut present,
                         edge,
                         word,
@@ -928,6 +934,7 @@ impl FaceFactorGraph {
                         "catia_face_config_present",
                     )?;
                     set_mask_bit(
+                        ctx,
                         &mut matching,
                         (edge, pair),
                         word,
@@ -941,7 +948,7 @@ impl FaceFactorGraph {
         }
         let mut arcs = Vec::new();
         let mut incoming =
-            alloc_filled(domains.len(), Vec::new(), "catia_face_factor_incoming").ok()?;
+            ctx.alloc_filled(domains.len(), Vec::new(), "catia_face_factor_incoming")?;
         for left in 0..domains.len() {
             for right in 0..domains.len() {
                 if left == right || edge_sets[left].is_disjoint(&edge_sets[right]) {
@@ -949,12 +956,17 @@ impl FaceFactorGraph {
                 }
                 let word_count = domains[right].len().div_ceil(u64::BITS as usize);
                 let (present, matching) = &right_indexes[right];
+                charge_collection_items(
+                    ctx,
+                    domains[left].len(),
+                    "catia face factor support rows",
+                )?;
                 let mut supports = Vec::with_capacity(domains[left].len());
                 for candidate in &domains[left] {
                     if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
-                        return None;
+                        return Ok(None);
                     }
-                    let mut compatible = full_configuration_mask(domains[right].len())?;
+                    let mut compatible = full_configuration_mask(ctx, domains[right].len())?;
                     for &(edge, pair) in candidate {
                         let Some(edge_present) = present.get(&edge) else {
                             continue;
@@ -968,35 +980,48 @@ impl FaceFactorGraph {
                     supports.push(compatible);
                 }
                 let arc = arcs.len();
+                charge_collection_items(ctx, 1, "catia face factor arcs")?;
                 arcs.push(FaceFactorArc {
                     left,
                     right,
                     supports,
                 });
+                charge_collection_items(ctx, 1, "catia face factor incoming arcs")?;
                 incoming[right].push(arc);
             }
         }
-        Some(Self {
+        charge_collection_items(ctx, domains.len(), "catia face factor domain lengths")?;
+        Ok(Some(Self {
             arcs,
             incoming,
             domain_lengths: domains.iter().map(Vec::len).collect(),
-        })
+        }))
     }
 
-    fn full_state(&self) -> Option<Vec<Vec<u64>>> {
+    fn full_state(&self, ctx: &DecodeContext<'_>) -> Result<Vec<Vec<u64>>, CodecError> {
+        charge_collection_items(
+            ctx,
+            self.domain_lengths.len(),
+            "catia face factor active rows",
+        )?;
         self.domain_lengths
             .iter()
-            .map(|length| full_configuration_mask(*length))
+            .map(|length| full_configuration_mask(ctx, *length))
             .collect()
     }
 
     fn propagate(
         &self,
+        ctx: &DecodeContext<'_>,
         active: &mut [Vec<u64>],
         initial: impl IntoIterator<Item = usize>,
         budget: &WorkBudget<'_>,
-    ) -> Option<bool> {
-        let mut queue = initial.into_iter().collect::<VecDeque<_>>();
+    ) -> Result<Option<bool>, CodecError> {
+        let mut queue = VecDeque::new();
+        for arc in initial {
+            charge_collection_items(ctx, 1, "catia face factor propagation queue")?;
+            queue.push_back(arc);
+        }
         while let Some(arc_index) = queue.pop_front() {
             let arc = &self.arcs[arc_index];
             let mut changed = false;
@@ -1005,7 +1030,7 @@ impl FaceFactorGraph {
                     continue;
                 }
                 if !budget.charge_by(work_units(supports.len())) {
-                    return None;
+                    return Ok(None);
                 }
                 if supports
                     .iter()
@@ -1022,24 +1047,33 @@ impl FaceFactorGraph {
                 continue;
             }
             if active[arc.left].iter().all(|word| *word == 0) {
-                return Some(false);
+                return Ok(Some(false));
             }
-            queue.extend(self.incoming[arc.left].iter().copied());
+            for &incoming in &self.incoming[arc.left] {
+                charge_collection_items(ctx, 1, "catia face factor propagation queue")?;
+                queue.push_back(incoming);
+            }
         }
-        Some(true)
+        Ok(Some(true))
     }
 
-    fn propagate_all(&self, active: &mut [Vec<u64>], budget: &WorkBudget<'_>) -> Option<bool> {
-        self.propagate(active, 0..self.arcs.len(), budget)
+    fn propagate_all(
+        &self,
+        ctx: &DecodeContext<'_>,
+        active: &mut [Vec<u64>],
+        budget: &WorkBudget<'_>,
+    ) -> Result<Option<bool>, CodecError> {
+        self.propagate(ctx, active, 0..self.arcs.len(), budget)
     }
 
     fn propagate_from(
         &self,
+        ctx: &DecodeContext<'_>,
         domain: usize,
         active: &mut [Vec<u64>],
         budget: &WorkBudget<'_>,
-    ) -> Option<bool> {
-        self.propagate(active, self.incoming[domain].iter().copied(), budget)
+    ) -> Result<Option<bool>, CodecError> {
+        self.propagate(ctx, active, self.incoming[domain].iter().copied(), budget)
     }
 }
 
@@ -1143,28 +1177,31 @@ fn retain_configuration_masks(domains: &mut [MeshFaceEndpointConfigurations], ac
 }
 
 fn prune_face_configuration_support(
+    ctx: &DecodeContext<'_>,
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &WorkBudget<'_>,
-) -> bool {
-    let edge_sets = domains
-        .iter()
-        .map(|domain| {
-            domain
-                .iter()
-                .flatten()
-                .map(|(edge, _)| *edge)
-                .collect::<HashSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let Ok(mut neighbors) = alloc_filled(domains.len(), Vec::new(), "catia_face_config_neighbors")
-    else {
-        return true;
-    };
+) -> Result<bool, CodecError> {
+    charge_collection_items(ctx, domains.len(), "catia face configuration edge sets")?;
+    let mut edge_sets = Vec::new();
+    for domain in domains.iter() {
+        let mut edges = HashSet::new();
+        for &(edge, _) in domain.iter().flatten() {
+            if !edges.contains(&edge) {
+                charge_collection_items(ctx, 1, "catia face configuration edges")?;
+                edges.insert(edge);
+            }
+        }
+        edge_sets.push(edges);
+    }
+    let mut neighbors =
+        ctx.alloc_filled(domains.len(), Vec::new(), "catia_face_config_neighbors")?;
     let mut queue = VecDeque::new();
     for left in 0..domains.len() {
         for right in 0..domains.len() {
             if left != right && !edge_sets[left].is_disjoint(&edge_sets[right]) {
+                charge_collection_items(ctx, 1, "catia face configuration neighbors")?;
                 neighbors[left].push(right);
+                charge_collection_items(ctx, 1, "catia face configuration queue")?;
                 queue.push_back((left, right));
             }
         }
@@ -1175,43 +1212,42 @@ fn prune_face_configuration_support(
         let mut matching = HashMap::<(usize, [usize; 2]), Vec<u64>>::new();
         for (configuration, candidate) in domains[right].iter().enumerate() {
             if !budget.charge_by(work_units(candidate.len())) {
-                return true;
+                return Ok(true);
             }
             let word = configuration / u64::BITS as usize;
             let bit = 1 << (configuration % u64::BITS as usize);
             for &(edge, pair) in candidate {
-                if set_mask_bit(
+                set_mask_bit(
+                    ctx,
                     &mut present,
                     edge,
                     word,
                     bit,
                     word_count,
                     "catia_face_config_present",
-                )
-                .is_none()
-                    || set_mask_bit(
-                        &mut matching,
-                        (edge, pair),
-                        word,
-                        bit,
-                        word_count,
-                        "catia_face_config_matching",
-                    )
-                    .is_none()
-                {
-                    return true;
-                }
+                )?;
+                set_mask_bit(
+                    ctx,
+                    &mut matching,
+                    (edge, pair),
+                    word,
+                    bit,
+                    word_count,
+                    "catia_face_config_matching",
+                )?;
             }
         }
+        charge_collection_items(
+            ctx,
+            domains[left].len(),
+            "catia face configuration keep marks",
+        )?;
         let mut keep = Vec::with_capacity(domains[left].len());
         for candidate in &domains[left] {
             if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
-                return true;
+                return Ok(true);
             }
-            let Ok(mut viable) = alloc_filled(word_count, u64::MAX, "catia_face_config_viable")
-            else {
-                return true;
-            };
+            let mut viable = ctx.alloc_filled(word_count, u64::MAX, "catia_face_config_viable")?;
             if let Some(last) = viable.last_mut() {
                 let remainder = domains[right].len() % u64::BITS as usize;
                 if remainder != 0 {
@@ -1234,7 +1270,7 @@ fn prune_face_configuration_support(
             keep.push(viable.iter().any(|word| *word != 0));
         }
         if keep.iter().all(|supported| !supported) {
-            return false;
+            return Ok(false);
         }
         if keep.iter().any(|supported| !supported) {
             let mut index = 0;
@@ -1245,32 +1281,37 @@ fn prune_face_configuration_support(
             });
             for &neighbor in &neighbors[left] {
                 if neighbor != right {
+                    charge_collection_items(ctx, 1, "catia face configuration queue")?;
                     queue.push_back((neighbor, left));
                 }
             }
         }
     }
-    true
+    Ok(true)
 }
 
 fn prune_face_configuration_singleton_support(
+    ctx: &DecodeContext<'_>,
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &WorkBudget<'_>,
-) -> bool {
-    let Some(graph) = FaceFactorGraph::compile(domains, budget) else {
-        return true;
+) -> Result<bool, CodecError> {
+    let Some(graph) = FaceFactorGraph::compile(ctx, domains, budget)? else {
+        return Ok(true);
     };
-    let Some(mut active) = graph.full_state() else {
-        return true;
-    };
+    let mut active = graph.full_state(ctx)?;
     let active_clone_work = work_units(active.iter().map(Vec::len).sum::<usize>());
-    match graph.propagate_all(&mut active, budget) {
+    match graph.propagate_all(ctx, &mut active, budget)? {
         Some(true) => {}
-        Some(false) => return false,
-        None => return true,
+        Some(false) => return Ok(false),
+        None => return Ok(true),
     }
     loop {
         let mut changed = false;
+        charge_collection_items(
+            ctx,
+            domains.len(),
+            "catia face configuration singleton order",
+        )?;
         let mut order = (0..domains.len()).collect::<Vec<_>>();
         order.sort_unstable_by_key(|domain| {
             active[*domain]
@@ -1293,13 +1334,21 @@ fn prune_face_configuration_singleton_support(
                 }
                 if !budget.charge_by(active_clone_work) {
                     retain_configuration_masks(domains, &active);
-                    return true;
+                    return Ok(true);
+                }
+                charge_collection_items(ctx, active.len(), "catia face configuration trial rows")?;
+                for mask in &active {
+                    charge_collection_items(
+                        ctx,
+                        mask.len(),
+                        "catia face configuration trial masks",
+                    )?;
                 }
                 let mut trial = active.clone();
                 trial[domain].fill(0);
                 trial[domain][configuration / u64::BITS as usize] =
                     1 << (configuration % u64::BITS as usize);
-                match graph.propagate_from(domain, &mut trial, budget) {
+                match graph.propagate_from(ctx, domain, &mut trial, budget)? {
                     Some(true) => {}
                     Some(false) => {
                         active[domain][configuration / u64::BITS as usize] &=
@@ -1309,27 +1358,27 @@ fn prune_face_configuration_singleton_support(
                     }
                     None => {
                         retain_configuration_masks(domains, &active);
-                        return true;
+                        return Ok(true);
                     }
                 }
             }
             if active[domain].iter().all(|word| *word == 0) {
-                return false;
+                return Ok(false);
             }
             if domain_changed {
-                match graph.propagate_from(domain, &mut active, budget) {
+                match graph.propagate_from(ctx, domain, &mut active, budget)? {
                     Some(true) => {}
-                    Some(false) => return false,
+                    Some(false) => return Ok(false),
                     None => {
                         retain_configuration_masks(domains, &active);
-                        return true;
+                        return Ok(true);
                     }
                 }
             }
         }
         if !changed {
             retain_configuration_masks(domains, &active);
-            return true;
+            return Ok(true);
         }
     }
 }
@@ -1511,17 +1560,26 @@ pub(super) fn prune_implicit_ordered_face_endpoint_support(
 }
 
 fn prepare_face_configuration_domains(
+    ctx: &DecodeContext<'_>,
     assignments: Option<&[MeshFaceBoundaryDomain]>,
     choices: &[Vec<[usize; 2]>],
     selected: &[Option<[usize; 2]>],
     active: &[bool],
-) -> Option<PreparedFaceFactors> {
-    let assignments = assignments?;
-    let mut domains = alloc_filled(assignments.len(), None, "catia_face_factor_domains").ok()?;
+) -> Result<Option<PreparedFaceFactors>, CodecError> {
+    let Some(assignments) = assignments else {
+        return Ok(None);
+    };
+    let mut domains = ctx.alloc_filled(assignments.len(), None, "catia_face_factor_domains")?;
     for (face, domain) in assignments.iter().enumerate() {
         let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
             continue;
         };
+        let use_count = assignments
+            .iter()
+            .flat_map(|assignment| assignment.boundaries.iter())
+            .try_fold(0usize, |count, boundary| count.checked_add(boundary.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("catia face factor edges", u64::MAX, u64::MAX))?;
+        charge_collection_items(ctx, use_count, "catia face factor edges")?;
         let mut edges = assignments
             .iter()
             .flat_map(|assignment| assignment.boundaries.iter().flatten())
@@ -1546,11 +1604,17 @@ fn prepare_face_configuration_domains(
         };
         domains[face] = Some(configurations);
     }
+    charge_collection_items(ctx, domains.len(), "catia face factor retained faces")?;
     let retained_faces = domains
         .iter()
         .enumerate()
         .filter_map(|(face, domain)| domain.as_ref().map(|_| face))
         .collect::<Vec<_>>();
+    charge_collection_items(
+        ctx,
+        retained_faces.len(),
+        "catia face factor configurations",
+    )?;
     let mut configurations = retained_faces
         .iter()
         .map(|face| {
@@ -1561,24 +1625,40 @@ fn prepare_face_configuration_domains(
         })
         .collect::<Vec<_>>();
     let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let viable = prune_face_configuration_support(&mut configurations, &arc_budget);
+    let viable = prune_face_configuration_support(ctx, &mut configurations, &arc_budget)?;
     let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     if !viable
         || (!arc_budget.exhausted()
-            && !prune_face_configuration_singleton_support(&mut configurations, &singleton_budget))
+            && !prune_face_configuration_singleton_support(
+                ctx,
+                &mut configurations,
+                &singleton_budget,
+            )?)
     {
         if let Some(domain) = configurations.first_mut() {
             domain.clear();
         }
     }
     let graph_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let graph = FaceFactorGraph::compile(&configurations, &graph_budget);
-    let active = graph.as_ref().and_then(FaceFactorGraph::full_state);
-    let mut factor_by_face = alloc_filled(domains.len(), None, "catia_face_factor_by_face").ok()?;
+    let graph = FaceFactorGraph::compile(ctx, &configurations, &graph_budget)?;
+    let active = graph
+        .as_ref()
+        .map(|graph| graph.full_state(ctx))
+        .transpose()?;
+    let mut factor_by_face = ctx.alloc_filled(domains.len(), None, "catia_face_factor_by_face")?;
     let mut factors_by_edge =
-        alloc_filled(choices.len(), Vec::new(), "catia_face_factors_by_edge").ok()?;
+        ctx.alloc_filled(choices.len(), Vec::new(), "catia_face_factors_by_edge")?;
     for (factor, &face) in retained_faces.iter().enumerate() {
         factor_by_face[face] = Some(factor);
+        let indexed_edges = configurations[factor]
+            .iter()
+            .try_fold(0usize, |count, candidate| {
+                count.checked_add(candidate.len())
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia face factor indexed edges", u64::MAX, u64::MAX)
+            })?;
+        charge_collection_items(ctx, indexed_edges, "catia face factor indexed edges")?;
         let mut edges = configurations[factor]
             .iter()
             .flatten()
@@ -1588,6 +1668,7 @@ fn prepare_face_configuration_domains(
         edges.dedup();
         for edge in edges {
             if let Some(factors) = factors_by_edge.get_mut(edge) {
+                charge_collection_items(ctx, 1, "catia face factors by edge entries")?;
                 factors.push(factor);
             }
         }
@@ -1597,13 +1678,13 @@ fn prepare_face_configuration_domains(
             *domain = configurations;
         }
     }
-    Some(PreparedFaceFactors {
+    Ok(Some(PreparedFaceFactors {
         domains,
         factor_faces: retained_faces,
         factor_by_face,
         factors_by_edge,
         active,
-    })
+    }))
 }
 
 impl Iterator for IncidenceCandidatePairs {
@@ -2667,19 +2748,28 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     #[cfg(test)]
-    fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
+    fn face_configuration_options(
+        &self,
+    ) -> Result<Option<MeshFaceEndpointConfigurations>, CodecError> {
         self.face_configuration_options_for(&self.component_faces())
     }
 
     fn face_configuration_options_for(
         &self,
         component_faces: &[usize],
-    ) -> Option<MeshFaceEndpointConfigurations> {
-        let mesh_assignments = self.mesh_assignments?;
+    ) -> Result<Option<MeshFaceEndpointConfigurations>, CodecError> {
+        let Some(mesh_assignments) = self.mesh_assignments else {
+            return Ok(None);
+        };
         let factor_state = self
             .face_configuration_domains
             .as_ref()
             .and_then(|factors| factors.active.as_ref());
+        charge_collection_items(
+            self.ctx,
+            component_faces.len(),
+            "catia face option candidates",
+        )?;
         let mut faces = component_faces
             .iter()
             .copied()
@@ -2773,12 +2863,13 @@ impl IncidenceComponentSearch<'_, '_> {
                 .collect::<Vec<_>>();
             projected.sort_unstable();
             if projected.is_empty() {
-                return Some(Vec::new());
+                return Ok(Some(Vec::new()));
             }
             if projected.iter().all(Vec::is_empty) {
                 continue;
             }
             let forced = projected.len() == 1;
+            charge_collection_items(self.ctx, 1, "catia face option domains")?;
             domains.push(FaceConfigurationDomain {
                 width,
                 face,
@@ -2789,7 +2880,7 @@ impl IncidenceComponentSearch<'_, '_> {
             }
         }
         if domains.is_empty() {
-            return None;
+            return Ok(None);
         }
         if domains
             .iter()
@@ -2800,20 +2891,21 @@ impl IncidenceComponentSearch<'_, '_> {
                 .map(|domain| std::mem::take(&mut domain.configurations))
                 .collect::<Vec<_>>();
             let viable = prune_face_configuration_support(
+                self.ctx,
                 &mut configuration_domains,
                 self.boundary_propagation_budget,
-            );
+            )?;
             for (domain, configurations) in domains.iter_mut().zip(configuration_domains) {
                 domain.configurations = configurations;
             }
             if !viable {
-                return Some(Vec::new());
+                return Ok(Some(Vec::new()));
             }
         }
-        domains
+        Ok(domains
             .into_iter()
             .min_by_key(|domain| (domain.configurations.len(), domain.width, domain.face))
-            .map(|domain| domain.configurations)
+            .map(|domain| domain.configurations))
     }
 
     fn search_face_configurations(
@@ -2966,7 +3058,7 @@ impl IncidenceComponentSearch<'_, '_> {
             assigned.extend(applied.assigned);
             states = next_states;
             domains = applied.coordinate_domains;
-            let face_options = self.face_configuration_options_for(component_faces);
+            let face_options = self.face_configuration_options_for(component_faces)?;
             if self.budget.exhausted() {
                 self.state = IncidenceSearchState::Exhausted;
                 break;
@@ -3064,7 +3156,7 @@ impl IncidenceComponentSearch<'_, '_> {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
         }
-        let face_options = self.face_configuration_options_for(component_faces);
+        let face_options = self.face_configuration_options_for(component_faces)?;
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
             return Ok(());
@@ -3842,8 +3934,13 @@ where
                 supports
             })
             .collect();
-        let face_configuration_domains =
-            prepare_face_configuration_domains(mesh_assignments, choices, assignment, &active);
+        let face_configuration_domains = prepare_face_configuration_domains(
+            ctx,
+            mesh_assignments,
+            choices,
+            assignment,
+            &active,
+        )?;
         let filter = |solution: &[MeshEndpointPair]| {
             let mut completed = assignment.to_vec();
             for &(edge, pair) in solution {

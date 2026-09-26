@@ -897,7 +897,12 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         state: IncidenceSearchState::Open,
     };
 
-    assert_eq!(search.face_configuration_options(), None);
+    assert_eq!(
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
+        None
+    );
     assert!(!budget.exhausted());
 }
 
@@ -1008,7 +1013,9 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
     };
 
     assert_eq!(
-        search.face_configuration_options(),
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
         Some(vec![vec![(0, [0, 0])]])
     );
     assert!(!budget.exhausted());
@@ -1069,7 +1076,9 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
     };
 
     assert_eq!(
-        search.face_configuration_options(),
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
         Some(vec![vec![(1, [10, 11]), (2, [10, 11])]])
     );
 }
@@ -1093,9 +1102,15 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     ])];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(2);
-    let prepared =
-        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
-            .expect("compiled face factors");
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &choices,
+        &[None; 2],
+        &[true; 2],
+    )
+    .expect("service resource budget")
+    .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
         choices: &choices,
@@ -1125,7 +1140,9 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     };
 
     assert_eq!(
-        search.face_configuration_options(),
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
         Some(vec![
             vec![(0, [0, 0]), (1, [0, 0])],
             vec![(0, [1, 1]), (1, [1, 1])]
@@ -1133,7 +1150,9 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
     );
     search.assignment[0] = Some([1, 1]);
     assert_eq!(
-        search.face_configuration_options(),
+        search
+            .face_configuration_options()
+            .expect("service resource budget"),
         Some(vec![vec![(1, [1, 1])]])
     );
     assert!(!propagation_budget.exhausted());
@@ -1159,9 +1178,15 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
     let face_edges = vec![vec![0, 1]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let prepared =
-        prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
-            .expect("compiled face factors");
+    let prepared = prepare_face_configuration_domains(
+        &ctx,
+        Some(&assignments),
+        &choices,
+        &[None; 2],
+        &[true; 2],
+    )
+    .expect("service resource budget")
+    .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         ctx: &ctx,
         choices: &choices,
@@ -1203,6 +1228,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
 
 #[test]
 fn persistent_face_configuration_preparation_retains_global_contradictions() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -1220,11 +1246,13 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
     let choices = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 2]]];
     let selected = vec![Some([0, 1]), None, Some([0, 2])];
     let prepared = prepare_face_configuration_domains(
+        &ctx,
         Some(&assignments),
         &choices,
         &selected,
         &[false, true, false],
     )
+    .expect("service resource budget")
     .expect("ordered face factors");
 
     assert!(prepared.domains().iter().flatten().any(Vec::is_empty));
@@ -1232,11 +1260,13 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
     let compatible = vec![vec![[0, 1]], vec![[0, 1], [0, 2]], vec![[0, 1]]];
     let selected = vec![Some([0, 1]), None, Some([0, 1])];
     let prepared = prepare_face_configuration_domains(
+        &ctx,
         Some(&assignments),
         &compatible,
         &selected,
         &[false, true, false],
     )
+    .expect("service resource budget")
     .expect("compatible ordered face factors");
     assert!(prepared
         .domains()
@@ -1246,7 +1276,77 @@ fn persistent_face_configuration_preparation_retains_global_contradictions() {
 }
 
 #[test]
+fn incidence_face_factor_allocations_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge = MeshBoundaryEdgeCandidate {
+        edge: 0,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    };
+    let assignments = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge.clone()]],
+        }]),
+        MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![edge]],
+        }]),
+    ];
+    let choices = vec![vec![[0, 0], [1, 1]]];
+    catia_test_context!(service_ctx);
+    assert!(prepare_face_configuration_domains(
+        &service_ctx,
+        Some(&assignments),
+        &choices,
+        &[None],
+        &[true],
+    )
+    .expect("service resource budget")
+    .is_some());
+
+    let mut refused = HashSet::new();
+    for limit in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        match prepare_face_configuration_domains(
+            &ctx,
+            Some(&assignments),
+            &choices,
+            &[None],
+            &[true],
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                refused.insert(error.operation.to_owned());
+            }
+            Ok(Some(_)) => break,
+            Ok(None) => panic!("ordered face factors must be available"),
+            Err(error) => panic!("unexpected refusal: {error}"),
+        }
+    }
+    for operation in [
+        "catia_face_factor_domains",
+        "catia_face_config_neighbors",
+        "catia_face_config_present",
+        "catia_face_config_matching",
+        "catia_face_config_viable",
+        "catia_face_factor_incoming",
+        "catia_face_config_full_mask",
+        "catia_face_factor_by_face",
+        "catia_face_factors_by_edge",
+    ] {
+        assert!(refused.contains(operation), "no refusal at {operation}");
+    }
+}
+
+#[test]
 fn incidence_face_configuration_support_retains_shared_edge_correlations() {
+    catia_test_context!(ctx);
     let correlated = vec![
         vec![(0, [0, 1]), (1, [2, 3])],
         vec![(0, [4, 5]), (1, [6, 7])],
@@ -1254,25 +1354,32 @@ fn incidence_face_configuration_support_retains_shared_edge_correlations() {
     let mut domains = vec![correlated.clone(), vec![vec![(0, [0, 1]), (1, [2, 3])]]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert!(
+        prune_face_configuration_support(&ctx, &mut domains, &budget)
+            .expect("service resource budget")
+    );
     assert_eq!(domains[0], vec![correlated[0].clone()]);
 
     let mut incompatible = vec![correlated, vec![vec![(0, [0, 1]), (1, [6, 7])]]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    assert!(!prune_face_configuration_support(
-        &mut incompatible,
-        &budget
-    ));
+    assert!(
+        !prune_face_configuration_support(&ctx, &mut incompatible, &budget)
+            .expect("service resource budget")
+    );
 
     let preserved = incompatible.clone();
     let budget = WorkBudget::new(0);
-    assert!(prune_face_configuration_support(&mut incompatible, &budget));
+    assert!(
+        prune_face_configuration_support(&ctx, &mut incompatible, &budget)
+            .expect("service resource budget")
+    );
     assert_eq!(incompatible, preserved);
     assert!(budget.exhausted());
 }
 
 #[test]
 fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
+    catia_test_context!(ctx);
     let mut domains = vec![
         vec![vec![(0, [0, 1])], vec![(0, [0, 2])]],
         vec![
@@ -1283,7 +1390,10 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    assert!(prune_face_configuration_support(&mut domains, &budget));
+    assert!(
+        prune_face_configuration_support(&ctx, &mut domains, &budget)
+            .expect("service resource budget")
+    );
     assert_eq!(
         domains,
         vec![
@@ -1295,12 +1405,16 @@ fn incidence_face_configuration_support_propagates_across_a_factor_chain() {
 
     let mut optional = vec![vec![vec![(0, [0, 1])]], vec![vec![], vec![(0, [0, 2])]]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    assert!(prune_face_configuration_support(&mut optional, &budget));
+    assert!(
+        prune_face_configuration_support(&ctx, &mut optional, &budget)
+            .expect("service resource budget")
+    );
     assert_eq!(optional[0], vec![vec![(0, [0, 1])]]);
 }
 
 #[test]
 fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
+    catia_test_context!(ctx);
     let equal = |left, right| {
         vec![
             vec![(left, [0, 0]), (right, [0, 0])],
@@ -1314,48 +1428,51 @@ fn incidence_face_singleton_support_rejects_an_inconsistent_factor_cycle() {
     let mut inconsistent = vec![equal(0, 1), equal(1, 2), different];
     let arc_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    assert!(prune_face_configuration_support(
-        &mut inconsistent,
-        &arc_budget
-    ));
+    assert!(
+        prune_face_configuration_support(&ctx, &mut inconsistent, &arc_budget)
+            .expect("service resource budget")
+    );
     assert!(inconsistent.iter().all(|domain| domain.len() == 2));
 
     let singleton_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     assert!(!prune_face_configuration_singleton_support(
+        &ctx,
         &mut inconsistent,
         &singleton_budget,
-    ));
+    )
+    .expect("service resource budget"));
 
     let mut consistent = vec![equal(0, 1), equal(1, 2), equal(2, 0)];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    assert!(prune_face_configuration_singleton_support(
-        &mut consistent,
-        &budget,
-    ));
+    assert!(
+        prune_face_configuration_singleton_support(&ctx, &mut consistent, &budget,)
+            .expect("service resource budget")
+    );
     assert!(consistent.iter().all(|domain| domain.len() == 2));
 
     let preserved = consistent.clone();
     let exhausted = WorkBudget::new(0);
-    assert!(prune_face_configuration_singleton_support(
-        &mut consistent,
-        &exhausted,
-    ));
+    assert!(
+        prune_face_configuration_singleton_support(&ctx, &mut consistent, &exhausted,)
+            .expect("service resource budget")
+    );
     assert_eq!(consistent, preserved);
     assert!(exhausted.exhausted());
 }
 
 #[test]
 fn incidence_face_singleton_support_tracks_multiword_configuration_masks() {
+    catia_test_context!(ctx);
     let wide = (0..130)
         .map(|point| vec![(0, [point, point])])
         .collect::<Vec<_>>();
     let mut domains = vec![wide, vec![vec![(0, [129, 129])]]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    assert!(prune_face_configuration_singleton_support(
-        &mut domains,
-        &budget,
-    ));
+    assert!(
+        prune_face_configuration_singleton_support(&ctx, &mut domains, &budget,)
+            .expect("service resource budget")
+    );
     assert_eq!(domains[0], vec![vec![(0, [129, 129])]]);
     assert_eq!(domains[1], vec![vec![(0, [129, 129])]]);
 }
