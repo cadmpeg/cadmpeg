@@ -5734,10 +5734,11 @@ fn resolve_endpoint_configuration_relation_streaming(
                 let candidate = (topology, assignment);
                 if let Some(previous) = &resolved {
                     let equivalent = mesh_candidates_equivalent_with_context(
+                        ctx,
                         previous,
                         &candidate,
                         candidate_gauge,
-                    );
+                    )?;
                     if !equivalent {
                         ambiguous = true;
                         return Ok(true);
@@ -6469,9 +6470,17 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
             match resolved {
                 MeshSolve::Solved((topology, assignment)) => {
                     let candidate = (topology, assignment);
-                    outcome.record_solved(candidate, |previous, next| {
-                        mesh_candidates_equivalent_with_context(previous, next, candidate_gauge)
-                    });
+                    let equivalent = if let SearchOutcome::Solved(previous) = &*outcome {
+                        mesh_candidates_equivalent_with_context(
+                            ctx,
+                            previous,
+                            &candidate,
+                            candidate_gauge,
+                        )?
+                    } else {
+                        false
+                    };
+                    outcome.record_solved(candidate, |_, _| equivalent);
                 }
                 MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
                 MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => outcome.mark_ambiguous(),
@@ -7407,10 +7416,15 @@ impl MeshSelectionSearch<'_, '_> {
                 MeshSolve::Solved((topology, assignment)) => {
                     let candidate = (topology, assignment);
                     let gauge = self.candidate_gauge;
-                    self.outcome.record_solved(candidate, |previous, next| {
-                        previous == next
-                            || mesh_candidates_equivalent_with_context(previous, next, gauge)
-                    });
+                    let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
+                        previous == &candidate
+                            || mesh_candidates_equivalent_with_context(
+                                self.ctx, previous, &candidate, gauge,
+                            )?
+                    } else {
+                        false
+                    };
+                    self.outcome.record_solved(candidate, |_, _| equivalent);
                 }
                 MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                     self.outcome.mark_ambiguous();
@@ -7684,12 +7698,16 @@ impl MeshSelectionSearch<'_, '_> {
                             MeshSolve::Solved((topology, assignment)) => {
                                 let candidate = (topology, assignment);
                                 let gauge = self.candidate_gauge;
-                                self.outcome.record_solved(candidate, |previous, next| {
-                                    previous == next
-                                        || mesh_candidates_equivalent_with_context(
-                                            previous, next, gauge,
-                                        )
-                                });
+                                let equivalent =
+                                    if let SearchOutcome::Solved(previous) = &self.outcome {
+                                        previous == &candidate
+                                            || mesh_candidates_equivalent_with_context(
+                                                self.ctx, previous, &candidate, gauge,
+                                            )?
+                                    } else {
+                                        false
+                                    };
+                                self.outcome.record_solved(candidate, |_, _| equivalent);
                             }
                             MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                                 self.outcome.mark_ambiguous();
@@ -7797,10 +7815,15 @@ impl MeshSelectionSearch<'_, '_> {
             };
             if let Some(candidate) = candidate {
                 let gauge = self.candidate_gauge;
-                self.outcome.record_solved(candidate, |previous, next| {
-                    previous == next
-                        || mesh_candidates_equivalent_with_context(previous, next, gauge)
-                });
+                let equivalent = if let SearchOutcome::Solved(previous) = &self.outcome {
+                    previous == &candidate
+                        || mesh_candidates_equivalent_with_context(
+                            self.ctx, previous, &candidate, gauge,
+                        )?
+                } else {
+                    false
+                };
+                self.outcome.record_solved(candidate, |_, _| equivalent);
             }
             return Ok(());
         };
@@ -8541,7 +8564,7 @@ fn resolve_singleton_mesh_selection(
         let Some(alternate) = materialize(&alternate)? else {
             continue;
         };
-        if !mesh_candidates_equivalent_with_context(&first, &alternate, candidate_gauge) {
+        if !mesh_candidates_equivalent_with_context(ctx, &first, &alternate, candidate_gauge)? {
             return Ok(Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))));
         }
     }
@@ -9132,21 +9155,23 @@ where
                 }
             };
             match &incidence_solution {
-                Some(stored)
+                Some(stored) => {
                     if !mesh_candidates_equivalent_with_context(
+                        ctx,
                         stored,
                         &candidate,
                         candidate_gauge,
-                    ) =>
-                {
-                    incidence_ambiguity = Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
-                    Ok(ControlFlow::Break(()))
+                    )? {
+                        incidence_ambiguity =
+                            Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
+                        return Ok(ControlFlow::Break(()));
+                    }
+                    Ok(ControlFlow::Continue(()))
                 }
                 None => {
                     incidence_solution = Some(candidate);
                     Ok(ControlFlow::Continue(()))
                 }
-                Some(_) => Ok(ControlFlow::Continue(())),
             }
         },
     )?;
@@ -9188,7 +9213,7 @@ where
     if let Some((topology, assignment)) = incidence_solution {
         // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
         let (topology, assignment) =
-            canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
+            canonicalize_mesh_candidate_for_output(ctx, &topology, &assignment, candidate_gauge)?
                 .unwrap_or((topology, assignment));
         return Ok(MeshSolve::Solved((topology, assignment)));
     }
@@ -9224,9 +9249,13 @@ where
     Ok(match fallback {
         Some(MeshSolve::Solved((topology, assignment))) => {
             // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
-            let (topology, assignment) =
-                canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
-                    .unwrap_or((topology, assignment));
+            let (topology, assignment) = canonicalize_mesh_candidate_for_output(
+                ctx,
+                &topology,
+                &assignment,
+                candidate_gauge,
+            )?
+            .unwrap_or((topology, assignment));
             MeshSolve::Solved((topology, assignment))
         }
         Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))) => MeshSolve::Failed(

@@ -239,6 +239,10 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
 
 #[test]
 fn coordinate_rows_canonicalize_logical_vertex_labels() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let topology = |start_vertex, end_vertex| StandardTopology {
         faces: vec![FaceTopology {
             boundaries: vec![Boundary::new(vec![CoedgeUse {
@@ -261,25 +265,33 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
     let left_candidate = (topology(0, 1), vec![1, 0]);
     let right_candidate = (topology(1, 0), vec![0, 1]);
     assert_ne!(left_candidate, right_candidate);
-    assert!(mesh_candidates_equivalent(
-        &left_candidate,
-        &right_candidate
-    ));
-    let left = canonicalize_mesh_vertex_labels(&left_candidate.0, &left_candidate.1);
-    let right = canonicalize_mesh_vertex_labels(&right_candidate.0, &right_candidate.1);
+    assert!(
+        mesh_candidates_equivalent(&ctx, &left_candidate, &right_candidate)
+            .expect("service resource budget")
+    );
+    let left = canonicalize_mesh_vertex_labels(&ctx, &left_candidate.0, &left_candidate.1)
+        .expect("service resource budget");
+    let right = canonicalize_mesh_vertex_labels(&ctx, &right_candidate.0, &right_candidate.1)
+        .expect("service resource budget");
 
     assert_eq!(left, right);
     assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
 
-    let forward = canonicalize_mesh_vertex_labels(&topology(0, 1), &[0, 1]);
+    let forward = canonicalize_mesh_vertex_labels(&ctx, &topology(0, 1), &[0, 1])
+        .expect("service resource budget");
     let mut reversed = topology(0, 1);
     reversed.faces[0].boundaries[0].coedges[0].reversed = true;
-    let reversed = canonicalize_mesh_vertex_labels(&reversed, &[0, 1]);
+    let reversed =
+        canonicalize_mesh_vertex_labels(&ctx, &reversed, &[0, 1]).expect("service resource budget");
     assert_eq!(forward, reversed);
 }
 
 #[test]
 fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let mut topology = StandardTopology {
         faces: vec![FaceTopology {
             boundaries: vec![Boundary::new(vec![
@@ -318,11 +330,15 @@ fn mesh_candidate_comparison_ignores_boundary_cycle_start() {
     let right = (topology, vec![0, 1]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let boundary = |edges: &[(usize, usize, usize)]| {
         Boundary::new(
             edges
@@ -373,11 +389,15 @@ fn mesh_candidate_comparison_ignores_boundary_direction_and_order() {
     let right = (right_topology, vec![0, 1, 2, 3]);
 
     assert_ne!(left, right);
-    assert!(mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let edge_rows = vec![
         EdgeRow {
             kind: 2,
@@ -416,11 +436,15 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
     let left = (topology(false), vec![0, 1, 2]);
     let right = (topology(true), vec![0, 1, 2]);
 
-    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let edge_rows = vec![
         EdgeRow {
             kind: 2,
@@ -478,18 +502,24 @@ fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
     let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
     let edge_identity_evidence = [false, false];
 
-    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(!mesh_candidates_equivalent(&ctx, &left, &right).expect("service resource budget"));
     assert!(mesh_candidates_equivalent_with_gauge(
+        &ctx,
         &left,
         &right,
         &edge_geometry,
         &edge_candidates,
         &edge_identity_evidence,
-    ));
+    )
+    .expect("service resource budget"));
 }
 
 #[test]
 fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
     let invalid = (
         StandardTopology {
             faces: Vec::new(),
@@ -500,7 +530,7 @@ fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
         vec![0],
     );
 
-    assert!(!mesh_candidates_equivalent(&invalid, &invalid));
+    assert!(!mesh_candidates_equivalent(&ctx, &invalid, &invalid).expect("service resource budget"));
 }
 
 #[test]
