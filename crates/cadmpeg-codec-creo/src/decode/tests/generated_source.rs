@@ -1532,13 +1532,17 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         ProfileEntity::new(line, true).expect("valid profile entity"),
     ];
     assert!(
-        (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
+        (extrusion_profile_signed_area(&counterclockwise)
+            .expect("positive area")
+            .get()
             - std::f64::consts::FRAC_PI_2)
             .abs()
             < 1.0e-12
     );
     assert!(
-        (extrusion_profile_signed_area(&clockwise).expect("negative area")
+        (extrusion_profile_signed_area(&clockwise)
+            .expect("negative area")
+            .get()
             + std::f64::consts::FRAC_PI_2)
             .abs()
             < 1.0e-12

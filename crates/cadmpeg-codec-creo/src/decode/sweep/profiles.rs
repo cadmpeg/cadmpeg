@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 
 const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
@@ -312,7 +313,9 @@ pub(in super::super) fn extrusion_side_uvs(
     ]
 }
 
-pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity]) -> Option<f64> {
+pub(in super::super) fn extrusion_profile_signed_area(
+    profile: &[ProfileEntity],
+) -> Option<FiniteReal> {
     let mut area_twice = 0.0;
     for ProfileEntity {
         geometry,
@@ -362,7 +365,9 @@ pub(in super::super) fn extrusion_profile_signed_area(profile: &[ProfileEntity])
         .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    (area_twice.abs() > EPS_AREA * scale * scale).then_some(0.5 * area_twice)
+    (area_twice.abs() > EPS_AREA * scale * scale)
+        .then_some(0.5 * area_twice)
+        .and_then(FiniteReal::new)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -473,7 +478,7 @@ impl ProfileEntity {
 #[derive(Debug, Clone, PartialEq)]
 pub(in super::super) struct ValidatedProfile {
     entities: ExtrusionProfile,
-    area: f64,
+    area: FiniteReal,
 }
 
 impl ValidatedProfile {
@@ -486,7 +491,7 @@ impl ValidatedProfile {
         &self.entities
     }
     pub(in super::super) fn area(&self) -> f64 {
-        self.area
+        self.area.get()
     }
 }
 

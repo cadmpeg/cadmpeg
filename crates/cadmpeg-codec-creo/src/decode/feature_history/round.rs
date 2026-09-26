@@ -17,7 +17,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1.0e-8;
@@ -414,7 +414,7 @@ pub(in super::super) fn round_constant_radius(
         {
             return Ok(None);
         }
-        return Ok(Some(radius));
+        return Ok(Some(radius.get()));
     }
     let generated_rows = scan
         .surfaces
@@ -459,7 +459,7 @@ pub(in super::super) fn round_constant_radius(
     {
         if let Some(radii) = mixed_round_radius_samples(scan, ir, source_carriers, &generated_rows)?
         {
-            return Ok(unique_positive_length(&radii));
+            return Ok(unique_positive_length(&radii).map(PositiveLength::get));
         }
     }
     let cylinder_radii = round_placed_cylinder_radii(scan, ir, source_carriers, feature_id);
@@ -480,7 +480,7 @@ pub(in super::super) fn round_constant_radius(
         )
     });
     if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
-        return Ok(unique_positive_length(&cylinder_radii));
+        return Ok(unique_positive_length(&cylinder_radii).map(PositiveLength::get));
     }
     Ok(round_support_radius(scan, ir, source_carriers, feature_id))
 }
@@ -498,7 +498,7 @@ fn round_replay_radius(
         source_carriers,
         feature_id,
     ));
-    let radius = unique_positive_length(&samples)?;
+    let radius = unique_positive_length(&samples)?.get();
     let scale = radius.abs().max(1.0);
     scan.features
         .round_replay_scalars
@@ -957,22 +957,20 @@ pub(in super::super) fn differing_positive_lengths(values: &[f64]) -> bool {
         .any(|value| (*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale)
 }
 
-pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<f64> {
-    let value = *values.first()?;
-    if !value.is_finite() || value <= 0.0 {
-        return None;
-    }
+pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<PositiveLength> {
+    let value = PositiveLength::new(*values.first()?)?;
+    let value_raw = value.get();
     let scale = values
         .iter()
         .copied()
         .map(f64::abs)
-        .fold(value.abs().max(1.0), f64::max);
+        .fold(value_raw.abs().max(1.0), f64::max);
     values
         .iter()
         .all(|candidate| {
             candidate.is_finite()
                 && *candidate > 0.0
-                && (*candidate - value).abs() <= EPS_GEOMETRY_AGREEMENT * scale
+                && (*candidate - value_raw).abs() <= EPS_GEOMETRY_AGREEMENT * scale
         })
         .then_some(value)
 }
@@ -1007,7 +1005,7 @@ fn equal_distance_chamfer_setback(
                 .min_by(f64::total_cmp)
         })
         .collect::<Option<Vec<_>>>()?;
-    unique_positive_length(&setbacks)
+    unique_positive_length(&setbacks).map(PositiveLength::get)
 }
 
 fn chamfer_cone_equation(
