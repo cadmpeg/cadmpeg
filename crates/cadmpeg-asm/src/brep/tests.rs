@@ -1162,6 +1162,67 @@ fn carrierless_edge_retains_raw_parameter_range_without_a_domain() {
 }
 
 #[test]
+fn tolerant_edge_tail_admits_only_nonnegative_finite_source_tolerance() {
+    for (source_tolerance, expected_tolerance, expected_tails) in [
+        (0.5, Some(0.5 * crate::nurbs::reader::LEN_TO_MM), 1),
+        (-1.0, None, 0),
+        (f64::NAN, None, 0),
+    ] {
+        let edge = Record {
+            index: 1,
+            name: "tedge".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Double(1.0),
+                Token::Ref(3),
+                Token::Double(0.0),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::False,
+                Token::False,
+                Token::Double(source_tolerance),
+                Token::Long(2250003),
+                Token::Long(7),
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        };
+        let records = [edge];
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect::<HashMap<_, _>>();
+        let reach = Reachable {
+            edges: HashSet::from([1]),
+            vertices: HashSet::from([2, 3]),
+            ..Reachable::default()
+        };
+        let mut brep = AsmBrep::default();
+        emit_edges(
+            &mut brep,
+            &records,
+            &by_index,
+            &reach,
+            &HashSet::new(),
+            &HashSet::new(),
+            FORMAT,
+        )
+        .expect("edge emission");
+        assert_eq!(
+            brep.edges[0]
+                .tolerance
+                .map(cadmpeg_ir::scalar::PositiveReal::get),
+            expected_tolerance
+        );
+        assert_eq!(brep.tolerant_edge_tails.len(), expected_tails);
+    }
+}
+
+#[test]
 fn append_preserves_body_ordinals_within_each_source_brep() {
     let key = |source: &str| BodyNativeKey {
         source_namespace: records::identity::NativeRecordNamespace::new(FORMAT),
