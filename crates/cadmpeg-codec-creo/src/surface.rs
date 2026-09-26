@@ -556,7 +556,7 @@ fn take_spline_scalars(
             cache,
         )?;
         let value = value?;
-        (next > *cursor && value.is_finite()).then_some(())?;
+        (next > *cursor).then_some(())?;
         values.push(value);
         *cursor = next;
     }
@@ -917,7 +917,7 @@ impl PositionalTorusFrame {
     }
 }
 
-/// Six-slot outline frame in a positional torus-or-sphere body.
+/// Six finite outline coordinates in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TorusOutlineFrame {
     /// Ordered outline coordinates.
@@ -928,7 +928,7 @@ pub(crate) struct TorusOutlineFrame {
     pub(crate) offset: usize,
 }
 
-/// Five-coordinate endpoint envelope in an untagged type-26 body.
+/// Five finite endpoint coordinates in an untagged type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type26FiveCoordinateEnvelope {
     /// Final five coordinates after the leading body-local scalar.
@@ -937,7 +937,7 @@ pub(crate) struct Type26FiveCoordinateEnvelope {
     pub(crate) offset: usize,
 }
 
-/// Four coordinates separated by a body-local control payload in a type-26 body.
+/// Four finite coordinates separated by a body-local control payload in a type-26 body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type26SplitCoordinateEnvelope {
     /// Two coordinates before and two coordinates after the control payload.
@@ -946,7 +946,8 @@ pub(crate) struct Type26SplitCoordinateEnvelope {
     pub(crate) offset: usize,
 }
 
-/// Tagged radius overrides in a positional torus-or-sphere body.
+/// Finite nonnegative major and positive minor radius overrides in a positional
+/// torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct TorusRadiusOverrides {
     /// Major torus radius, or zero for a sphere.
@@ -1001,7 +1002,7 @@ pub(crate) struct Type24RoundEnvelope {
     pub(crate) extent_endpoints: [[f64; 3]; 2],
 }
 
-/// Axial parameters and model-space endpoint samples from a generated
+/// Finite axial parameters and model-space endpoint samples from a generated
 /// type-24 round edge.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Type24RoundEdgeEnvelope {
@@ -1069,8 +1070,8 @@ impl serde::Serialize for SurfaceParameterOpaqueSpan {
 /// One scalar token located within a positional surface parameter body.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SurfaceParameterScalar {
-    /// Decoded scalar value, or `None` for a structurally framed token whose
-    /// numeric mapping is not defined.
+    /// Raw decoded scalar value, which can be nonfinite, or `None` for a
+    /// structurally framed token whose numeric mapping is not defined.
     pub(crate) value: Option<f64>,
     /// Exact source bytes occupied by the token.
     pub(crate) raw: Vec<u8>,
@@ -1090,7 +1091,8 @@ impl serde::Serialize for SurfaceParameterScalar {
     }
 }
 
-/// Complete positional construction for a line-generated extrusion surface.
+/// Complete finite positional construction for a line-generated extrusion
+/// surface, with nonparallel sweep and directrix directions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LineExtrusionFrame {
     /// Stored model-space sweep direction.
@@ -2248,9 +2250,9 @@ impl SurfaceParameterRecord {
                 [start_x.value?, start_y.value?, start_z.value?],
                 [end_x.value?, end_y.value?, end_z.value?],
             ];
-            direction_values
+            directrix_points
+                .as_flattened()
                 .iter()
-                .chain(directrix_points.as_flattened())
                 .all(|value| value.is_finite())
                 .then_some(())?;
             let first_gap = self.opaque_spans.first()?;
@@ -4397,8 +4399,7 @@ fn decode_inline_selector_cylinder_envelope(
     cursor = selector_end(next)?;
     let (second_axial, next) = decode_coordinate(cursor)?;
     cursor = next;
-    (first_axial.is_finite() && second_axial.is_finite() && first_axial != second_axial)
-        .then_some(())?;
+    (first_axial != second_axial).then_some(())?;
 
     let mut corners = [[None; 3]; 2];
     for coordinate in corners.iter_mut().flatten() {

@@ -1195,8 +1195,7 @@ fn decode_signed_radial_envelope_cylinder_frame(
     } else {
         (values[0], leading, false)
     };
-    (signed_length.is_finite()
-        && signed_length != 0.0
+    (signed_length != 0.0
         && reversed == signed_length.is_sign_negative()
         && auxiliary.abs() < signed_length.abs())
     .then_some(())?;
@@ -1265,7 +1264,7 @@ fn decode_precise_center_edge_cylinder_frame(
     (body.get(cursor..) == Some(&[0xf7, 0x19])).then_some(())?;
 
     let signed_length = values[0];
-    (signed_length.is_finite() && signed_length != 0.0).then_some(())?;
+    (signed_length != 0.0).then_some(())?;
     let first = [values[1], values[2], values[3]];
     let second = [values[4], values[5], values[6]];
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
