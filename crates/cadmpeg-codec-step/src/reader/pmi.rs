@@ -7,11 +7,12 @@ use std::num::NonZeroU32;
 
 use super::{named_parameter, record_values, references, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    LimitsAndFits, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -42,14 +43,14 @@ pub(super) fn decode(
     topology: &TopologyData,
     ir: &mut CadIr,
     ctx: Option<&DecodeContext<'_>>,
-) -> StageOutcome<()> {
+) -> Result<StageOutcome<()>, CodecError> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
-        return StageOutcome {
+        return Ok(StageOutcome {
             value: (),
             claims: HashSet::new(),
             losses: Vec::new(),
             notes: Vec::new(),
-        };
+        });
     }
     let base_aspects = exchange
         .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
@@ -265,6 +266,8 @@ pub(super) fn decode(
             };
         }
         let nominal = characteristic_values.get(&id).copied();
+        let definition = PmiDimension::new(kind, nominal, None)
+            .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
         let aspect_ids = record
             .partials
             .iter()
@@ -277,11 +280,7 @@ pub(super) fn decode(
             name,
             targets(aspect_ids),
             None,
-            PmiDefinition::Dimension {
-                dimension: kind,
-                nominal,
-                tolerance: None,
-            },
+            PmiDefinition::Dimension(definition),
         );
         typed.insert(id);
     }
@@ -377,7 +376,10 @@ pub(super) fn decode(
                 if set_dimension_tolerance(
                     &mut ir.model.pmi[index.get()].definition,
                     DimensionTolerance::PlusMinus { lower, upper },
-                ) {
+                )
+                .map_err(|error| {
+                    CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
+                })? {
                     typed.insert(id);
                     typed.extend(refs);
                 } else {
@@ -394,7 +396,10 @@ pub(super) fn decode(
             if set_dimension_tolerance(
                 &mut ir.model.pmi[index.get()].definition,
                 DimensionTolerance::Fit { fit },
-            ) {
+            )
+            .map_err(|error| {
+                CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
+            })? {
                 typed.extend([id, fit_id]);
             } else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -702,31 +707,33 @@ pub(super) fn decode(
         .collect::<BTreeSet<u64>>();
     typed.extend(shape_aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
-    StageOutcome {
+    Ok(StageOutcome {
         value: (),
         claims: typed,
         losses,
         notes: Vec::new(),
-    }
+    })
 }
 
-fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionTolerance) -> bool {
-    let PmiDefinition::Dimension { tolerance, .. } = definition else {
-        return false;
+fn set_dimension_tolerance(
+    definition: &mut PmiDefinition,
+    value: DimensionTolerance,
+) -> Result<bool, String> {
+    let PmiDefinition::Dimension(dimension) = definition else {
+        return Ok(false);
     };
-    let merged = match (tolerance.take(), value) {
+    let merged = match (dimension.tolerance().cloned(), value) {
         (None, value) => value,
         (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit { fit })
         | (Some(DimensionTolerance::Fit { fit }), DimensionTolerance::PlusMinus { lower, upper }) => {
             DimensionTolerance::PlusMinusFit { lower, upper, fit }
         }
-        (Some(existing), _) => {
-            *tolerance = Some(existing);
-            return false;
+        (Some(_), _) => {
+            return Ok(false);
         }
     };
-    *tolerance = Some(merged);
-    true
+    dimension.set_tolerance(Some(merged))?;
+    Ok(true)
 }
 
 fn mark_characteristic_representations(
