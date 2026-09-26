@@ -32,7 +32,7 @@ pub(crate) struct PmiDimension {
     /// Native PMI dimension subtype.
     pub(crate) subtype: String,
     /// Stored dimension value.
-    pub(crate) value: f64,
+    pub(crate) value: FiniteReal,
     /// Byte offset of the big-endian `f64` value.
     pub(crate) value_offset: u64,
     /// Display precision.
