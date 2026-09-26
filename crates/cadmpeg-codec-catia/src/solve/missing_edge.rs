@@ -12,7 +12,7 @@ use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTo
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
@@ -1094,9 +1094,9 @@ pub(super) fn unique_duplicate_face_assignment<F>(
     allowed_faces: &[Vec<usize>],
     face_count: usize,
     mut valid: F,
-) -> Option<Vec<[usize; 2]>>
+) -> Result<Option<Vec<[usize; 2]>>, CodecError>
 where
-    F: FnMut(&[[usize; 2]]) -> bool,
+    F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
 {
     const MAX_STATES: usize = 4_096;
 
@@ -1108,21 +1108,22 @@ where
         exhausted: &mut bool,
         solutions: &mut Vec<Vec<[usize; 2]>>,
         valid: &mut F,
-    ) where
-        F: FnMut(&[[usize; 2]]) -> bool,
+    ) -> Result<(), CodecError>
+    where
+        F: FnMut(&[[usize; 2]]) -> Result<bool, CodecError>,
     {
         if *exhausted || solutions.len() > 1 {
-            return;
+            return Ok(());
         }
         if at == branches.len() {
-            if valid(assignment) && !solutions.iter().any(|solution| solution == assignment) {
+            if valid(assignment)? && !solutions.iter().any(|solution| solution == assignment) {
                 solutions.push(assignment.to_vec());
             }
-            return;
+            return Ok(());
         }
         if *states >= MAX_STATES {
             *exhausted = true;
-            return;
+            return Ok(());
         }
         *states += 1;
         let (edge, options) = &branches[at];
@@ -1136,11 +1137,12 @@ where
                 exhausted,
                 solutions,
                 valid,
-            );
+            )?;
             if *exhausted || solutions.len() > 1 {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     if serialized.len() != allowed_faces.len()
@@ -1150,7 +1152,7 @@ where
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
     let unresolved = serialized
         .iter()
@@ -1158,7 +1160,7 @@ where
         .filter_map(|(edge, faces)| (faces[0] == faces[1]).then_some(edge))
         .collect::<Vec<_>>();
     if unresolved.is_empty() {
-        return Some(serialized.to_vec());
+        return Ok(Some(serialized.to_vec()));
     }
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::new();
@@ -1183,11 +1185,11 @@ where
         &mut exhausted,
         &mut solutions,
         &mut valid,
-    );
-    (!exhausted)
+    )?;
+    Ok((!exhausted)
         .then(|| <[Vec<[usize; 2]>; 1]>::try_from(solutions).ok())
         .flatten()
-        .map(|[solution]| solution)
+        .map(|[solution]| solution))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1295,23 +1297,25 @@ where
 /// Complete repeated standard edge-face slots when carrier incidence and a
 /// complete trim-boundary partition select one common assignment.
 pub(crate) fn resolve_standard_duplicate_edge_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
-) -> Option<Vec<[usize; 2]>> {
-    let face_count = selected_standard_run(bytes)?.face_count();
-    let context = StandardMeshBoundaryContext::parse(bytes, serialized);
+) -> Result<Option<Vec<[usize; 2]>>, CodecError> {
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
+    let face_count = face_run.face_count();
+    let context = StandardMeshBoundaryContext::parse(ctx, bytes, serialized)?;
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
-        context.as_ref().map_or_else(
-            || standard_mesh_boundary_assignments(bytes, assignment, None).is_some(),
-            |base| {
-                base.with_edge_faces(assignment)
-                    .and_then(|context| {
-                        standard_mesh_boundary_assignments_from_context(&context, None)
-                    })
-                    .is_some()
-            },
-        )
+        if let Some(base) = context.as_ref() {
+            let Some(context) = base.with_edge_faces(ctx, assignment)? else {
+                return Ok(false);
+            };
+            Ok(standard_mesh_boundary_assignments_from_context(ctx, &context, None)?.is_some())
+        } else {
+            Ok(standard_mesh_boundary_assignments(ctx, bytes, assignment, None)?.is_some())
+        }
     })
 }
 
@@ -1393,46 +1397,66 @@ pub(super) struct StandardMeshBoundaryContext {
 }
 
 impl StandardMeshBoundaryContext {
-    fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
-        Self::parse_ports(bytes, edge_faces, false)
+    fn parse(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        edge_faces: &[[usize; 2]],
+    ) -> Result<Option<Self>, CodecError> {
+        Self::parse_ports(ctx, bytes, edge_faces, false)
     }
 
     pub(super) fn parse_ports(
+        ctx: &DecodeContext<'_>,
         bytes: &[u8],
         edge_faces: &[[usize; 2]],
         global_handle_ports: bool,
-    ) -> Option<Self> {
-        let analysis = Arc::new(standard_mesh_analysis(bytes)?);
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(analysis) = standard_mesh_analysis(bytes) else {
+            return Ok(None);
+        };
+        let analysis = Arc::new(analysis);
         if analysis.edge_rows.len() != edge_faces.len() {
-            return None;
+            return Ok(None);
         }
-        let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = solver_ports(bytes, global_handle_ports)?;
-        let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
+        let Some(coverage) = mesh_face_coverage(ctx, &analysis, edge_faces)? else {
+            return Ok(None);
+        };
+        let Some(local_ports) = solver_ports(bytes, global_handle_ports) else {
+            return Ok(None);
+        };
+        let Some(edge_ports) = mesh_edge_ports(&analysis, &local_ports) else {
+            return Ok(None);
+        };
         let edge_runs = mesh_edge_runs(&analysis);
         let cycle_lengths = analysis
             .cycles
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
-        Some(Self {
+        Ok(Some(Self {
             analysis,
             coverage,
             edge_ports,
             edge_runs,
             cycle_lengths,
-        })
+        }))
     }
 
-    fn with_edge_faces(&self, edge_faces: &[[usize; 2]]) -> Option<Self> {
-        let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
-        Some(Self {
+    fn with_edge_faces(
+        &self,
+        ctx: &DecodeContext<'_>,
+        edge_faces: &[[usize; 2]],
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(coverage) = mesh_face_coverage(ctx, &self.analysis, edge_faces)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
             analysis: Arc::clone(&self.analysis),
             coverage,
             edge_ports: self.edge_ports.clone(),
             edge_runs: self.edge_runs.clone(),
             cycle_lengths: self.cycle_lengths.clone(),
-        })
+        }))
     }
 }
 
@@ -1516,61 +1540,67 @@ pub(crate) struct MeshFaceBoundaryAssignment {
 #[must_use]
 #[cfg(test)]
 fn standard_mesh_face_coverage(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<MeshFaceCoverage>> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    mesh_face_coverage(&analysis, edge_faces)
+) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
+    let Some(analysis) = standard_mesh_analysis(bytes) else {
+        return Ok(None);
+    };
+    mesh_face_coverage(ctx, &analysis, edge_faces)
 }
 
 fn mesh_face_coverage(
+    ctx: &DecodeContext<'_>,
     analysis: &StandardMeshAnalysis,
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<MeshFaceCoverage>> {
+) -> Result<Option<Vec<MeshFaceCoverage>>, CodecError> {
     let edge_rows = &analysis.edge_rows;
     let cycles = &analysis.cycles;
     let occurrences = &analysis.occurrences;
     if edge_rows.len() != edge_faces.len() {
-        return None;
+        return Ok(None);
     }
     if occurrences.iter().enumerate().any(|(edge, values)| {
         values
             .iter()
             .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
     }) {
-        return None;
+        return Ok(None);
     }
     let mut occurrences_by_cycle = cycles
         .iter()
         .map(|face_cycles| {
-            alloc_filled(
+            ctx.alloc_filled(
                 face_cycles.len(),
                 Vec::<MeshEdgeRun>::new(),
                 "catia_mesh_cycle_occurrences",
             )
-            .ok()
         })
-        .collect::<Option<Vec<_>>>()?;
-    let mut present_edges_by_face = alloc_filled(
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut present_edges_by_face = ctx.alloc_filled(
         cycles.len(),
         HashSet::<usize>::new(),
         "catia_mesh_face_edges",
-    )
-    .ok()?;
+    )?;
     for values in occurrences {
         for &occurrence in values {
-            let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
-            let cycle_occurrences = face_cycles.get_mut(occurrence.cycle)?;
+            let Some(face_cycles) = occurrences_by_cycle.get_mut(occurrence.face) else {
+                return Ok(None);
+            };
+            let Some(cycle_occurrences) = face_cycles.get_mut(occurrence.cycle) else {
+                return Ok(None);
+            };
             cycle_occurrences.push(occurrence);
             present_edges_by_face[occurrence.face].insert(occurrence.edge);
         }
     }
     let mut edges_by_face =
-        alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face").ok()?;
+        ctx.alloc_filled(cycles.len(), Vec::new(), "catia_mesh_edges_by_face")?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for face in faces {
             if face >= cycles.len() {
-                return None;
+                return Ok(None);
             }
         }
         edges_by_face[faces[0]].push(edge);
@@ -1582,14 +1612,14 @@ fn mesh_face_coverage(
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-            let mut covered = alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage").ok()?;
+            let mut covered = ctx.alloc_filled(cycle.len(), false, "catia_mesh_cycle_coverage")?;
             for occurrence in &occurrences_by_cycle[face][cycle_index] {
                 let start = occurrence.start;
                 let segment_count = occurrence.segment_count;
                 for offset in 0..segment_count {
                     let slot = &mut covered[(start + offset) % cycle.len()];
                     if *slot {
-                        return None;
+                        return Ok(None);
                     }
                     *slot = true;
                 }
@@ -1626,7 +1656,7 @@ fn mesh_face_coverage(
             missing_edges,
         });
     }
-    Some(coverage)
+    Ok(Some(coverage))
 }
 
 pub(crate) fn bounded_oriented_trail_orders(
@@ -2515,26 +2545,32 @@ fn standard_mesh_missing_edge_assignment_domains(
 }
 
 fn standard_mesh_missing_edge_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
-    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
-    standard_mesh_missing_edge_assignment_domains(
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>>, CodecError> {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+        return Ok(None);
+    };
+    Ok(standard_mesh_missing_edge_assignment_domains(
         &context,
         edge_candidates,
         canonicalize_spans,
         false,
-    )?
-    .0
-    .into_iter()
-    .map(|domain| match domain {
-        MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
-        MeshFaceAssignmentDomain::UnorderedFullCycle(_)
-        | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
-    })
-    .collect()
+    )
+    .map(|(domains, _)| domains)
+    .and_then(|domains| {
+        domains
+            .into_iter()
+            .map(|domain| match domain {
+                MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
+                MeshFaceAssignmentDomain::UnorderedFullCycle(_)
+                | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
+            })
+            .collect()
+    }))
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
@@ -2544,164 +2580,186 @@ fn standard_mesh_missing_edge_assignments(
 #[cfg(test)]
 #[must_use]
 fn standard_mesh_missing_edge_placements(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
-    standard_mesh_missing_edge_assignments(bytes, edge_faces, None, false).map(|faces| {
-        faces
-            .into_iter()
-            .map(|assignments| {
-                let mut placements = assignments
-                    .into_iter()
-                    .flatten()
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                placements.sort_unstable();
-                placements
-            })
-            .collect()
-    })
+) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
+    Ok(
+        standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, false)?.map(|faces| {
+            faces
+                .into_iter()
+                .map(|assignments| {
+                    let mut placements = assignments
+                        .into_iter()
+                        .flatten()
+                        .collect::<HashSet<_>>()
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    placements.sort_unstable();
+                    placements
+                })
+                .collect()
+        }),
+    )
 }
 
 pub(crate) fn standard_mesh_boundary_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
-) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    let context = StandardMeshBoundaryContext::parse(bytes, edge_faces)?;
-    standard_mesh_boundary_assignments_from_context(&context, edge_candidates)
+) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
+    let Some(context) = StandardMeshBoundaryContext::parse(ctx, bytes, edge_faces)? else {
+        return Ok(None);
+    };
+    standard_mesh_boundary_assignments_from_context(ctx, &context, edge_candidates)
 }
 
 fn standard_mesh_boundary_assignments_from_context(
+    ctx: &DecodeContext<'_>,
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
-) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    standard_mesh_boundary_domains_from_context(context, edge_candidates, false)?
+) -> Result<Option<Vec<Vec<MeshFaceBoundaryAssignment>>>, CodecError> {
+    let Some(domains) =
+        standard_mesh_boundary_domains_from_context(ctx, context, edge_candidates, false)?
+    else {
+        return Ok(None);
+    };
+    Ok(domains
         .into_iter()
         .map(|domain| match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
             MeshFaceBoundaryDomain::UnorderedFullCycle(_)
             | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
         })
-        .collect()
+        .collect())
 }
 
 pub(super) fn standard_mesh_boundary_domains_from_context(
+    ctx: &DecodeContext<'_>,
     context: &StandardMeshBoundaryContext,
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     defer_validation: bool,
-) -> Option<Vec<MeshFaceBoundaryDomain>> {
-    let (domains, runs) = standard_mesh_missing_edge_assignment_domains(
+) -> Result<Option<Vec<MeshFaceBoundaryDomain>>, CodecError> {
+    let Some((domains, runs)) = standard_mesh_missing_edge_assignment_domains(
         context,
         edge_candidates,
         true,
         defer_validation,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let cycle_lengths = &context.cycle_lengths;
-    domains
-        .into_iter()
-        .enumerate()
-        .map(|(face, domain)| match domain {
-            MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
-                Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges))
-            }
-            MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
-                let mut cycles = cycle_lengths[face]
-                    .iter()
-                    .copied()
-                    .map(|length| MeshDeferredBoundaryCycle {
-                        length,
-                        exact_uses: Vec::new(),
-                    })
-                    .collect::<Vec<_>>();
-                for run in runs.iter().filter(|run| run.face == face) {
-                    let length = cycles[run.cycle].length;
-                    let fixed_direction = edge_candidates.is_none()
-                        || context.analysis.edge_rows[run.edge].boundary_layout
-                            == EdgeBoundaryLayout::CompleteBoundaryRun;
-                    cycles[run.cycle].exact_uses.push((
-                        MeshBoundaryEdgeCandidate {
-                            edge: run.edge,
-                            start: run.start,
-                            end: run.end(length),
-                            reversed: fixed_direction.then_some(run.reversed),
-                        },
-                        run.segment_count,
-                    ));
+    let mut resolved = Vec::new();
+    for (face, domain) in domains.into_iter().enumerate() {
+        let Some(domain) = (|| -> Result<Option<MeshFaceBoundaryDomain>, CodecError> {
+            match domain {
+                MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
+                    Ok(Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges)))
                 }
-                for cycle in &mut cycles {
-                    cycle
-                        .exact_uses
-                        .sort_unstable_by_key(|(use_, _)| use_.start);
-                }
-                Some(MeshFaceBoundaryDomain::DeferredValidation(
-                    MeshDeferredFaceBoundary {
-                        cycles,
-                        missing_edges: coverage.missing_edges,
-                    },
-                ))
-            }
-            MeshFaceAssignmentDomain::Ordered(assignments) => assignments
-                .into_iter()
-                .map(|assignment| {
-                    let mut boundaries = alloc_filled(
-                        cycle_lengths[face].len(),
-                        Vec::new(),
-                        "catia_mesh_ordered_boundaries",
-                    )
-                    .ok()?;
+                MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
+                    let mut cycles = cycle_lengths[face]
+                        .iter()
+                        .copied()
+                        .map(|length| MeshDeferredBoundaryCycle {
+                            length,
+                            exact_uses: Vec::new(),
+                        })
+                        .collect::<Vec<_>>();
                     for run in runs.iter().filter(|run| run.face == face) {
+                        let length = cycles[run.cycle].length;
                         let fixed_direction = edge_candidates.is_none()
                             || context.analysis.edge_rows[run.edge].boundary_layout
                                 == EdgeBoundaryLayout::CompleteBoundaryRun;
-                        boundaries[run.cycle].push((
+                        cycles[run.cycle].exact_uses.push((
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
-                                end: run.end(cycle_lengths[face][run.cycle]),
+                                end: run.end(length),
                                 reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
                         ));
                     }
-                    for placement in assignment {
-                        boundaries[placement.cycle].push((
-                            MeshBoundaryEdgeCandidate {
-                                edge: placement.edge,
-                                start: placement.start,
-                                end: placement.end(cycle_lengths[face][placement.cycle]),
-                                reversed: None,
-                            },
-                            placement.segment_count,
-                        ));
+                    for cycle in &mut cycles {
+                        cycle
+                            .exact_uses
+                            .sort_unstable_by_key(|(use_, _)| use_.start);
                     }
-                    let boundaries = boundaries
-                        .into_iter()
-                        .enumerate()
-                        .map(|(cycle, mut uses)| {
+                    Ok(Some(MeshFaceBoundaryDomain::DeferredValidation(
+                        MeshDeferredFaceBoundary {
+                            cycles,
+                            missing_edges: coverage.missing_edges,
+                        },
+                    )))
+                }
+                MeshFaceAssignmentDomain::Ordered(assignments) => {
+                    let mut ordered = Vec::new();
+                    for assignment in assignments {
+                        let mut boundaries = ctx.alloc_filled(
+                            cycle_lengths[face].len(),
+                            Vec::new(),
+                            "catia_mesh_ordered_boundaries",
+                        )?;
+                        for run in runs.iter().filter(|run| run.face == face) {
+                            let fixed_direction = edge_candidates.is_none()
+                                || context.analysis.edge_rows[run.edge].boundary_layout
+                                    == EdgeBoundaryLayout::CompleteBoundaryRun;
+                            boundaries[run.cycle].push((
+                                MeshBoundaryEdgeCandidate {
+                                    edge: run.edge,
+                                    start: run.start,
+                                    end: run.end(cycle_lengths[face][run.cycle]),
+                                    reversed: fixed_direction.then_some(run.reversed),
+                                },
+                                run.segment_count,
+                            ));
+                        }
+                        for placement in assignment {
+                            boundaries[placement.cycle].push((
+                                MeshBoundaryEdgeCandidate {
+                                    edge: placement.edge,
+                                    start: placement.start,
+                                    end: placement.end(cycle_lengths[face][placement.cycle]),
+                                    reversed: None,
+                                },
+                                placement.segment_count,
+                            ));
+                        }
+                        let mut completed = Vec::new();
+                        for (cycle, mut uses) in boundaries.into_iter().enumerate() {
                             uses.sort_unstable_by_key(|(edge, _)| edge.start);
                             let length = cycle_lengths[face][cycle];
                             let mut coverage =
-                                alloc_filled(length, 0u8, "catia_mesh_boundary_coverage").ok()?;
+                                ctx.alloc_filled(length, 0u8, "catia_mesh_boundary_coverage")?;
                             for (edge, segment_count) in &uses {
                                 for offset in 0..*segment_count {
                                     let covered = &mut coverage[(edge.start + offset) % length];
-                                    *covered = covered.checked_add(1)?;
+                                    let Some(count) = covered.checked_add(1) else {
+                                        return Ok(None);
+                                    };
+                                    *covered = count;
                                 }
                             }
-                            coverage
-                                .iter()
-                                .all(|count| *count == 1)
-                                .then(|| uses.into_iter().map(|(edge, _)| edge).collect::<Vec<_>>())
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    Some(MeshFaceBoundaryAssignment { boundaries })
-                })
-                .collect::<Option<Vec<_>>>()
-                .map(MeshFaceBoundaryDomain::Ordered),
-        })
-        .collect()
+                            if coverage.iter().any(|count| *count != 1) {
+                                return Ok(None);
+                            }
+                            completed.push(uses.into_iter().map(|(edge, _)| edge).collect());
+                        }
+                        ordered.push(MeshFaceBoundaryAssignment {
+                            boundaries: completed,
+                        });
+                    }
+                    Ok(Some(MeshFaceBoundaryDomain::Ordered(ordered)))
+                }
+            }
+        })()?
+        else {
+            return Ok(None);
+        };
+        resolved.push(domain);
+    }
+    Ok(Some(resolved))
 }
 
 /// Materialize one complete face-assignment selection and one direction for
@@ -2709,26 +2767,44 @@ pub(super) fn standard_mesh_boundary_domains_from_context(
 #[cfg(test)]
 #[must_use]
 fn parse_standard_mesh_selection(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     selected_assignments: &[usize],
     edge_directions: &[Vec<Vec<bool>>],
-) -> Option<StandardTopology> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<StandardTopology>, CodecError> {
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let assignments = standard_mesh_boundary_assignments(bytes, edge_faces, None)?;
+    let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+        return Ok(None);
+    };
+    let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+        return Ok(None);
+    };
+    let Some(assignments) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)?
+    else {
+        return Ok(None);
+    };
     if selected_assignments.len() != face_count || edge_directions.len() != face_count {
-        return None;
+        return Ok(None);
     }
     let selected = assignments
         .iter()
         .zip(selected_assignments)
         .map(|(face, &assignment)| face.get(assignment).cloned())
-        .collect::<Option<Vec<_>>>()?;
-    reconstruct_mesh_selection(edge_rows, vertex_points, &selected, edge_directions)
+        .collect::<Option<Vec<_>>>();
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
+    Ok(reconstruct_mesh_selection(
+        edge_rows,
+        vertex_points,
+        &selected,
+        edge_directions,
+    ))
 }
 
 fn boundary_endpoint_support(
@@ -2906,7 +2982,7 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
             }
         })
         .collect::<Vec<_>>();
-    let Some(mut faces) = standard_mesh_boundary_assignments(bytes, edge_faces, None) else {
+    let Some(mut faces) = standard_mesh_boundary_assignments(ctx, bytes, edge_faces, None)? else {
         return Ok(None);
     };
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -3001,94 +3077,106 @@ type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
 // The tuple carries one coupled result; a separate alias would add no invariant.
 #[allow(clippy::type_complexity)]
 fn standard_mesh_assignment_corner_points(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<(
-    Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
-    MeshCornerPoints,
-    Vec<Vec<usize>>,
-)> {
-    let analysis = standard_mesh_analysis(bytes)?;
-    let edge_rows = &analysis.edge_rows;
-    if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
-        return None;
-    }
-    let runs = mesh_edge_runs(&analysis);
-    let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let cycle_lengths = analysis
-        .cycles
-        .iter()
-        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    let mut corner_points = MeshCornerPoints::new();
-    let mut run_constraints = Vec::new();
-    for run in runs {
-        let Some(pair) = edge_points[run.edge] else {
-            continue;
-        };
-        let candidates = HashSet::from(pair);
-        let positions = [
-            (run.face, run.cycle, run.start),
-            (
-                run.face,
-                run.cycle,
-                run.end(cycle_lengths[run.face][run.cycle]),
-            ),
-        ];
-        for position in positions {
-            if let Some(stored) = corner_points.get_mut(&position) {
-                stored.retain(|point| candidates.contains(point));
-                if stored.is_empty() {
+) -> Result<
+    Option<(
+        Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
+        MeshCornerPoints,
+        Vec<Vec<usize>>,
+    )>,
+    CodecError,
+> {
+    (|| -> Option<Result<_, CodecError>> {
+        let analysis = standard_mesh_analysis(bytes)?;
+        let edge_rows = &analysis.edge_rows;
+        if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
+            return None;
+        }
+        let runs = mesh_edge_runs(&analysis);
+        let assignments =
+            match standard_mesh_missing_edge_assignments(ctx, bytes, edge_faces, None, true) {
+                Ok(Some(assignments)) => assignments,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        let cycle_lengths = analysis
+            .cycles
+            .iter()
+            .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+        let mut corner_points = MeshCornerPoints::new();
+        let mut run_constraints = Vec::new();
+        for run in runs {
+            let Some(pair) = edge_points[run.edge] else {
+                continue;
+            };
+            let candidates = HashSet::from(pair);
+            let positions = [
+                (run.face, run.cycle, run.start),
+                (
+                    run.face,
+                    run.cycle,
+                    run.end(cycle_lengths[run.face][run.cycle]),
+                ),
+            ];
+            for position in positions {
+                if let Some(stored) = corner_points.get_mut(&position) {
+                    stored.retain(|point| candidates.contains(point));
+                    if stored.is_empty() {
+                        return None;
+                    }
+                } else {
+                    corner_points.insert(position, candidates.clone());
+                }
+            }
+            run_constraints.push((positions[0], positions[1], pair));
+        }
+        loop {
+            let before = corner_points.values().map(HashSet::len).sum::<usize>();
+            for &(left, right, pair) in &run_constraints {
+                let left_single = <[usize; 1]>::try_from(
+                    corner_points
+                        .get(&left)?
+                        .iter()
+                        .copied()
+                        .collect::<Vec<_>>(),
+                )
+                .ok()
+                .map(|[point]| point);
+                let right_single = <[usize; 1]>::try_from(
+                    corner_points
+                        .get(&right)?
+                        .iter()
+                        .copied()
+                        .collect::<Vec<_>>(),
+                )
+                .ok()
+                .map(|[point]| point);
+                if let Some(point) = left_single {
+                    corner_points
+                        .get_mut(&right)?
+                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                }
+                if let Some(point) = right_single {
+                    corner_points
+                        .get_mut(&left)?
+                        .retain(|candidate| *candidate != point && pair.contains(candidate));
+                }
+                if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
                     return None;
                 }
-            } else {
-                corner_points.insert(position, candidates.clone());
+            }
+            let after = corner_points.values().map(HashSet::len).sum::<usize>();
+            if after == before {
+                break;
             }
         }
-        run_constraints.push((positions[0], positions[1], pair));
-    }
-    loop {
-        let before = corner_points.values().map(HashSet::len).sum::<usize>();
-        for &(left, right, pair) in &run_constraints {
-            let left_single = <[usize; 1]>::try_from(
-                corner_points
-                    .get(&left)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>(),
-            )
-            .ok()
-            .map(|[point]| point);
-            let right_single = <[usize; 1]>::try_from(
-                corner_points
-                    .get(&right)?
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>(),
-            )
-            .ok()
-            .map(|[point]| point);
-            if let Some(point) = left_single {
-                corner_points
-                    .get_mut(&right)?
-                    .retain(|candidate| *candidate != point && pair.contains(candidate));
-            }
-            if let Some(point) = right_single {
-                corner_points
-                    .get_mut(&left)?
-                    .retain(|candidate| *candidate != point && pair.contains(candidate));
-            }
-            if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
-                return None;
-            }
-        }
-        let after = corner_points.values().map(HashSet::len).sum::<usize>();
-        if after == before {
-            break;
-        }
-    }
-    Some((assignments, corner_points, cycle_lengths))
+        Some(Ok((assignments, corner_points, cycle_lengths)))
+    })()
+    .transpose()
 }
 
 /// Retain endpoint constraints on each placement inside each complete face
@@ -3096,13 +3184,17 @@ fn standard_mesh_assignment_corner_points(
 /// face and edge order.
 #[must_use]
 fn standard_mesh_missing_edge_endpoint_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
-    let (assignments, corner_points, cycle_lengths) =
-        standard_mesh_assignment_corner_points(bytes, edge_faces, edge_points)?;
-    Some(
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    let Some((assignments, corner_points, cycle_lengths)) =
+        standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
         assignments
             .into_iter()
             .map(|face| {
@@ -3148,7 +3240,7 @@ fn standard_mesh_missing_edge_endpoint_assignments(
                     .collect()
             })
             .collect(),
-    )
+    ))
 }
 
 /// Enforce resolved edge endpoint pairs and complete opposite-face placement
@@ -3156,12 +3248,16 @@ fn standard_mesh_missing_edge_endpoint_assignments(
 /// a unit when any of its placements has no compatible endpoint pair.
 #[must_use]
 fn standard_mesh_pruned_missing_edge_endpoint_assignments(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
-    let mut faces =
-        standard_mesh_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
+) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
+    let Some(mut faces) =
+        standard_mesh_missing_edge_endpoint_assignments(ctx, bytes, edge_faces, edge_points)?
+    else {
+        return Ok(None);
+    };
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
@@ -3233,7 +3329,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
                 })
             });
             if assignments.is_empty() {
-                return None;
+                return Ok(None);
             }
         }
         let after = (
@@ -3249,7 +3345,7 @@ fn standard_mesh_pruned_missing_edge_endpoint_assignments(
             break;
         }
     }
-    Some(faces)
+    Ok(Some(faces))
 }
 
 /// Derive endpoint-pair domains for unmatched rows whose candidate placement
@@ -3269,8 +3365,12 @@ pub(crate) fn standard_mesh_placement_endpoint_pairs(
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return Ok(None);
     }
-    let Some(assignments) =
-        standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)
+    let Some(assignments) = standard_mesh_pruned_missing_edge_endpoint_assignments(
+        ctx,
+        bytes,
+        edge_faces,
+        edge_points,
+    )?
     else {
         return Ok(None);
     };

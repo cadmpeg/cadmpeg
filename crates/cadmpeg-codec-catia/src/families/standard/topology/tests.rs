@@ -1,6 +1,125 @@
 use super::{incidence_cycles, solve_boundary_orientation_constraints, StandardTopology};
 use std::collections::HashMap;
 
+fn standard_collection_limit_operation(
+    max_collection_items: u64,
+    run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<(), cadmpeg_core::CodecError>,
+) -> &'static str {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = run(&ctx).expect_err("standard topology allocation exceeds the collection limit");
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            limit.operation
+        }
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+fn duplicate_face_slot_operation(max_collection_items: u64) -> &'static str {
+    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+
+    standard_collection_limit_operation(max_collection_items, |ctx| {
+        let rows = (0..3)
+            .map(|handle| EdgeRow {
+                kind: 0,
+                handles: vec![handle],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            })
+            .collect::<Vec<_>>();
+        complete_duplicate_face_slots(
+            ctx,
+            &rows,
+            &[[0, 1], [0, 1], [0, 0]],
+            &[[0, 1], [1, 2], [2, 0]],
+            2,
+            None,
+            None,
+        )?;
+        Ok(())
+    })
+}
+
+#[test]
+fn standard_endpoint_degrees_propagate_collection_refusal() {
+    assert_eq!(
+        duplicate_face_slot_operation(0),
+        "catia standard endpoint degrees"
+    );
+}
+
+#[test]
+fn standard_unresolved_assignment_propagates_collection_refusal() {
+    assert_eq!(
+        duplicate_face_slot_operation(2),
+        "catia standard unresolved edge assignment"
+    );
+}
+
+#[test]
+fn standard_unresolved_marks_propagate_collection_refusal() {
+    assert_eq!(
+        duplicate_face_slot_operation(3),
+        "catia standard unresolved edge marks"
+    );
+}
+
+#[test]
+fn standard_duplicate_assignment_marks_propagate_collection_refusal() {
+    use super::{complete_duplicate_face_slots, EdgeBoundaryLayout, EdgeRow};
+
+    let operation = standard_collection_limit_operation(7, |ctx| {
+        let rows = (0..4)
+            .map(|handle| EdgeRow {
+                kind: 0,
+                handles: vec![handle],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            })
+            .collect::<Vec<_>>();
+        complete_duplicate_face_slots(
+            ctx,
+            &rows,
+            &[[0, 1], [0, 1], [2, 2], [2, 2]],
+            &[[0, 1], [1, 2], [2, 0], [0, 2]],
+            3,
+            Some(&[0, 1, 2, 2]),
+            None,
+        )?;
+        Ok(())
+    });
+    assert_eq!(operation, "catia standard duplicate assignment marks");
+}
+
+#[test]
+fn standard_face_edges_propagate_collection_refusal() {
+    use super::{reconstruct_incidence, EdgeBoundaryLayout, EdgeRow};
+
+    let operation = standard_collection_limit_operation(0, |ctx| {
+        reconstruct_incidence(
+            ctx,
+            vec![EdgeRow {
+                kind: 0,
+                handles: vec![7, 7],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            }],
+            vec![[1.0, 0.0, 0.0]],
+            &[[0, 1]],
+            &[[0, 0]],
+            2,
+        )?;
+        Ok(())
+    });
+    assert_eq!(operation, "catia standard face edges");
+}
+
 #[test]
 fn standard_edge_vertices_propagate_collection_refusal() {
     use super::{Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology};

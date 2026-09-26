@@ -845,7 +845,9 @@ fn quotient_retains_diagonal_pairs_until_ports_are_merged() {
 
 #[test]
 fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
+    catia_test_context!(ctx);
     let topology = reconstruct_incidence(
+        &ctx,
         vec![EdgeRow {
             kind: 0,
             handles: vec![7, 7],
@@ -856,6 +858,7 @@ fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
         &[[0, 0]],
         2,
     )
+    .expect("service resource budget")
     .expect("closed radial edge");
     assert!(topology
         .faces()
@@ -1327,18 +1330,24 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
     let serialized = [[0, 0], [0, 1], [1, 1]];
     let allowed = [vec![1, 2], Vec::new(), vec![0, 2]];
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 3, |faces| {
-        faces == [[0, 2], [0, 1], [1, 0]]
+        Ok(faces == [[0, 2], [0, 1], [1, 0]])
     })
+    .expect("service resource budget")
     .expect("one complete assignment");
     assert_eq!(resolved, [[0, 2], [0, 1], [1, 0]]);
 
-    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| true).is_none());
+    assert!(
+        unique_duplicate_face_assignment(&serialized, &allowed, 3, |_| Ok(true))
+            .expect("service resource budget")
+            .is_none()
+    );
     assert!(unique_duplicate_face_assignment(
         &serialized,
         &[vec![3], Vec::new(), vec![0]],
         3,
-        |_| true,
+        |_| Ok(true),
     )
+    .expect("service resource budget")
     .is_none());
 }
 
@@ -1348,8 +1357,9 @@ fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
     let allowed = [Vec::new(), vec![1]];
 
     let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
-        faces == [[0, 0], [0, 1]]
+        Ok(faces == [[0, 0], [0, 1]])
     })
+    .expect("service resource budget")
     .expect("the unresolved same-face slot remains in the joint assignment");
 
     assert_eq!(resolved, [[0, 0], [0, 1]]);
@@ -1400,7 +1410,11 @@ fn one_admitted_alternate_does_not_force_a_second_face() {
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
-    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true).is_none());
+    assert!(
+        unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| Ok(true))
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]

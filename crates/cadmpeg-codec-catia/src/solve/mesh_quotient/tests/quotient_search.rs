@@ -476,7 +476,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
         None,
         Some(&quotient),
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget");
 
