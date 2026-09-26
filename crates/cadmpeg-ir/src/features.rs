@@ -1602,6 +1602,7 @@ pub(crate) struct FeatureRowWire {
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
     outputs: DistinctMembers<BodyId>,
     definition: FeatureDefinition,
     #[serde(default, deserialize_with = "deserialize_native_ref")]
@@ -1657,6 +1658,7 @@ struct FeatureReadWire {
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
     outputs: DistinctMembers<BodyId>,
     definition: FeatureDefinition,
     #[serde(default, deserialize_with = "deserialize_native_ref")]
