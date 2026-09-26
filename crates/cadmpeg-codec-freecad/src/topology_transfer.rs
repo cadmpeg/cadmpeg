@@ -91,7 +91,7 @@ impl IndexedPolygon {
         })
     }
 }
-type FacePcurve = (PcurveId, Option<[f64; 2]>);
+type FacePcurve = (PcurveId, Option<[FiniteReal; 2]>);
 
 pub(crate) struct TopologyOccurrence {
     pub(crate) property: String,
@@ -309,24 +309,12 @@ impl<'a> Builder<'a> {
                         )));
                     continue;
                 };
-                let primary_range = normalize_pcurve_parameter_range(
-                    &primary_geometry,
-                    Some(parameter_range.map(FiniteReal::get)),
-                );
+                let primary_range =
+                    normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
                 ir.model.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
-                    metadata: PcurveMetadata::general(
-                        None,
-                        primary_range
-                            .map(|range| {
-                                cadmpeg_ir::units::FiniteVector::new(range)
-                                    .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
-                            })
-                            .transpose()
-                            .map_err(cadmpeg_core::CodecError::malformed)?,
-                        None,
-                    ),
+                    metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
                 });
                 if let Some(secondary) = secondary {
                     let secondary_read = match pcurve_geometry(&self.tables.curve2ds[secondary - 1])
@@ -349,20 +337,14 @@ impl<'a> Builder<'a> {
                     };
                     let secondary_range = normalize_pcurve_parameter_range(
                         &secondary_geometry,
-                        Some(parameter_range.map(FiniteReal::get)),
+                        Some(parameter_range),
                     );
                     ir.model.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
                         metadata: PcurveMetadata::general(
                             None,
-                            secondary_range
-                                .map(|range| {
-                                    cadmpeg_ir::units::FiniteVector::new(range)
-                                        .ok_or(PcurveMetadata::NON_FINITE_PARAMETER_RANGE)
-                                })
-                                .transpose()
-                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            secondary_range.map(Into::into),
                             None,
                         ),
                     });
@@ -1031,7 +1013,7 @@ impl<'a> Builder<'a> {
                                 pcurve,
                                 isoparametric: None,
                                 parameter_range: (parameter_range)
-                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::new)
+                                    .map(cadmpeg_ir::geometry::DirectedParameterRange::from_finite_endpoints)
                                     .transpose()
                                     .map_err(CodecError::malformed)?,
                             })
@@ -1156,13 +1138,10 @@ impl<'a> Builder<'a> {
         };
         let param_range = curve_representation
             .and_then(|(_, representation)| representation.parameter_range())
-            .map(|range| range.map(FiniteReal::get))
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
-                        .and_then(|parameters| {
-                            Some([parameters.first()?.get(), parameters.last()?.get()])
-                        })
+                        .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
         let param_range = curve
@@ -1173,7 +1152,7 @@ impl<'a> Builder<'a> {
             });
         ir.model.edges.push(Edge {
             id: id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
+            carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
             start,
             end,
@@ -1568,8 +1547,7 @@ impl<'a> Builder<'a> {
                 )));
             return Ok(None);
         };
-        let parameter_range =
-            normalize_pcurve_parameter_range(&geometry, Some(parameter_range.map(FiniteReal::get)));
+        let parameter_range = normalize_pcurve_parameter_range(&geometry, Some(parameter_range));
         Ok(Some((
             self.pcurve_id(edge_use.shape, index, secondary)?,
             bounded_pcurve_range(*degenerated, parameter_range),
@@ -1593,7 +1571,10 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f64; 2]> {
+fn bounded_pcurve_range(
+    degenerated: bool,
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     (!degenerated)
         .then_some(range)
         .flatten()
@@ -1602,8 +1583,8 @@ fn bounded_pcurve_range(degenerated: bool, range: Option<[f64; 2]>) -> Option<[f
 
 fn normalize_pcurve_parameter_range(
     geometry: &PcurveGeometry,
-    range: Option<[f64; 2]>,
-) -> Option<[f64; 2]> {
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     let mut range = range?;
     let domain = match geometry {
         PcurveGeometry::Nurbs { nurbs } => {
@@ -1630,21 +1611,22 @@ fn normalize_pcurve_parameter_range(
     };
     let scale = range
         .into_iter()
+        .map(FiniteReal::get)
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
     // Snap neighborhoods must not overlap, even on a small or translated domain.
     let tolerance =
         (scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY).min((0.25 * domain[1] - 0.25 * domain[0]).abs());
     for value in &mut range {
-        if (domain[0]..=domain[1]).contains(value) {
+        if (domain[0]..=domain[1]).contains(&value.get()) {
             continue;
         }
-        let lower_distance = (*value - domain[0]).abs();
-        let upper_distance = (*value - domain[1]).abs();
+        let lower_distance = (value.get() - domain[0]).abs();
+        let upper_distance = (value.get() - domain[1]).abs();
         if lower_distance < upper_distance && lower_distance <= tolerance {
-            *value = domain[0];
+            *value = FiniteReal::new(domain[0])?;
         } else if upper_distance < lower_distance && upper_distance <= tolerance {
-            *value = domain[1];
+            *value = FiniteReal::new(domain[1])?;
         }
     }
     Some(range)
@@ -2218,46 +2200,34 @@ fn unique_fallback_polygon_representation(
 
 pub(crate) fn normalize_occt_curve_range(
     geometry: &SolvedCurveGeometry,
-    range: Option<[f64; 2]>,
-) -> Option<[f64; 2]> {
+    range: Option<[FiniteReal; 2]>,
+) -> Option<[FiniteReal; 2]> {
     match geometry {
         SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
             let [start, end] = range?;
-            let sweep = end - start;
+            let sweep = end.get() - start.get();
             let tau = std::f64::consts::TAU;
-            if !start.is_finite()
-                || !end.is_finite()
-                || !sweep.is_finite()
-                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY
-            {
+            if !sweep.is_finite() || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY {
                 return Some([start, end]);
             }
-            let canonical_start = start.rem_euclid(tau);
+            let canonical_start = start.get().rem_euclid(tau);
             let canonical_start =
                 if (tau - canonical_start).abs() <= EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY {
                     0.0
                 } else {
                     canonical_start
                 };
-            Some([canonical_start, canonical_start + sweep])
+            Some([
+                FiniteReal::new(canonical_start)?,
+                FiniteReal::new(canonical_start + sweep)?,
+            ])
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
-            use cadmpeg_ir::scalar::FiniteReal;
             let focal_distance = parabola_curve.focal_distance().magnitude();
             let [start, end] = range?;
             Some([
-                cadmpeg_ir::math::multiply_divide(
-                    FiniteReal::new(start)?,
-                    FiniteReal::HALF,
-                    focal_distance,
-                )?
-                .get(),
-                cadmpeg_ir::math::multiply_divide(
-                    FiniteReal::new(end)?,
-                    FiniteReal::HALF,
-                    focal_distance,
-                )?
-                .get(),
+                cadmpeg_ir::math::multiply_divide(start, FiniteReal::HALF, focal_distance)?,
+                cadmpeg_ir::math::multiply_divide(end, FiniteReal::HALF, focal_distance)?,
             ])
         }
         SolvedCurveGeometry::Transformed(placed) => {
