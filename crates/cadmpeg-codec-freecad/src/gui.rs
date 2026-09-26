@@ -505,12 +505,14 @@ fn transfer_schema_one(
                 ir,
                 &mut plan,
                 &mut losses,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Line(width),
-                &payload_prefixes,
-                property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Line(width),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -548,12 +550,14 @@ fn transfer_schema_one(
                 ir,
                 &mut plan,
                 &mut losses,
-                name,
-                object_id,
-                color,
-                PrimitiveStyle::Point(size),
-                &payload_prefixes,
-                property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                PrimitiveAppearanceSource {
+                    provider_name: name,
+                    object_id,
+                    packed_color: color,
+                    style: PrimitiveStyle::Point(size),
+                    payload_prefixes: &payload_prefixes,
+                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                },
             );
         }
         if let Some(file) = values
@@ -947,17 +951,29 @@ enum PrimitiveStyle {
     Point(Option<f64>),
 }
 
+struct PrimitiveAppearanceSource<'a> {
+    provider_name: &'a str,
+    object_id: &'a str,
+    packed_color: u32,
+    style: PrimitiveStyle,
+    payload_prefixes: &'a [String],
+    provenance: SourceProvenance,
+}
+
 fn transfer_primitive_appearance(
     ir: &CadIr,
     plan: &mut AppearancePlan,
     losses: &mut Vec<LossNote>,
-    provider_name: &str,
-    object_id: &str,
-    packed_color: u32,
-    style: PrimitiveStyle,
-    payload_prefixes: &[String],
-    provenance: SourceProvenance,
+    source: PrimitiveAppearanceSource<'_>,
 ) {
+    let PrimitiveAppearanceSource {
+        provider_name,
+        object_id,
+        packed_color,
+        style,
+        payload_prefixes,
+        provenance,
+    } = source;
     let targets = match style {
         PrimitiveStyle::Line(_) => ir
             .model

@@ -6099,11 +6099,7 @@ fn pattern_locations(
             }
             (0..count as usize - 1)
                 .map(|index| {
-                    let explicit = spacings
-                        .get(index)
-                        .copied()
-                        .map(FiniteReal::get)
-                        .unwrap_or(-1.0);
+                    let explicit = spacings.get(index).copied().map_or(-1.0, FiniteReal::get);
                     if explicit != -1.0 {
                         explicit
                     } else if pattern.len() > 1 {
