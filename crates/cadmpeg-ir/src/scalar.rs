@@ -458,10 +458,10 @@ impl NonZeroLength {
     /// Assign a finite scalar to the length family if it is nonzero.
     #[must_use]
     pub const fn from_assigned_real(value: FiniteReal) -> Option<Self> {
-        if value.get() != 0.0 {
-            Some(Self(value.get()))
-        } else {
+        if value.get() == 0.0 {
             None
+        } else {
+            Some(Self(value.get()))
         }
     }
 
