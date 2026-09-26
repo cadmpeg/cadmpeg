@@ -65,13 +65,32 @@ pub(super) fn transfer_and_record_scanned_geometry(
     transfer_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<BrepTransferDiagnostics, CodecError> {
-    let cross_section_plane_count = transfer_cross_section_planes(ctx, scan, ir, annotations)?;
-    let first_instance_prototype_surface_count =
-        transfer_first_instance_prototype_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
-    let positional_spline_replay_count =
-        transfer_positional_spline_replays(ctx, scan, ir, annotations, transfer_losses)?;
-    let legacy_ascii_surface_carrier_count =
-        transfer_legacy_ascii_surface_carriers(ctx, scan, ir, annotations, transfer_losses)?;
+    let cross_section_plane_count =
+        transfer_cross_section_planes(ctx, scan, ir, annotations, source_carriers)?;
+    let first_instance_prototype_surface_count = transfer_first_instance_prototype_surfaces(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let positional_spline_replay_count = transfer_positional_spline_replays(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
+    let legacy_ascii_surface_carrier_count = transfer_legacy_ascii_surface_carriers(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        transfer_losses,
+        source_carriers,
+    )?;
     let legacy_torus_sphere_carrier_count = scan
         .surfaces
         .legacy_carriers
@@ -104,20 +123,23 @@ pub(super) fn transfer_and_record_scanned_geometry(
         transfer_feature_extrusion_surfaces(ctx, scan, ir, annotations, transfer_losses)?;
     let feature_extrusion_vertex_orbit_curve_count =
         transfer_resolved_extrusion_vertex_orbit_curves(ctx, scan, ir, annotations)?;
-    let active_datum_cylinder_count = transfer_active_datum_cylinders(ctx, scan, ir, annotations)?;
+    let active_datum_cylinder_count =
+        transfer_active_datum_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let circular_sweep_cylinder_count =
-        transfer_circular_sweep_cylinders(ctx, scan, ir, annotations)?;
-    let positional_cylinders = transfer_positional_cylinders(ctx, scan, ir, annotations)?;
-    let positional_cone_count = transfer_positional_cones(ctx, scan, ir, annotations)?;
+        transfer_circular_sweep_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cylinders =
+        transfer_positional_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let positional_cone_count =
+        transfer_positional_cones(ctx, scan, ir, annotations, source_carriers)?;
     let split_outline_cylinder_count =
-        transfer_split_outline_cylinders(ctx, scan, ir, annotations)?;
-    let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations)?;
+        transfer_split_outline_cylinders(ctx, scan, ir, annotations, source_carriers)?;
+    let hole_cylinder_count = transfer_hole_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let constrained_slot_fillet_cylinder_count =
-        transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations)?;
+        transfer_constrained_slot_fillet_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let rowless_round_cylinder_count =
-        transfer_rowless_round_cylinders(ctx, scan, ir, annotations)?;
+        transfer_rowless_round_cylinders(ctx, scan, ir, annotations, source_carriers)?;
     let support_apex_cone_branch_count =
-        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
+        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carriers =
         transfer_analytic_pcurve_carriers(ctx, scan, ir, annotations, source_carriers)?;
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();

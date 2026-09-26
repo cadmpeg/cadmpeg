@@ -288,6 +288,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -308,6 +309,37 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
 }
 
 #[test]
+fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
+    let mut scan = slot_fillet_scan();
+    scan.framing.principal_unit = Some(crate::legacy::PrincipalUnitSystem::InchPoundMassSecond);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_constrained_slot_fillet_cylinders(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut source_carriers,
+        )
+        .expect("constrained slot cylinder transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("transferred cylinder");
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
+        panic!("transferred surface changed family");
+    };
+    assert_eq!(cylinder.radius().get(), 25.4);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(source_cylinder)) =
+        source_carriers.surface_geometry(surface)
+    else {
+        panic!("source carrier changed family");
+    };
+    assert_eq!(source_cylinder.radius().get(), 1.0);
+}
+
+#[test]
 fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
     let scan = split_outline_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -318,6 +350,7 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         2
@@ -348,6 +381,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0
@@ -408,6 +442,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -481,6 +516,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -542,6 +578,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -608,6 +645,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -832,6 +870,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -856,6 +895,7 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity")
         .transferred,
@@ -889,6 +929,7 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
                 &scan,
                 &mut ir,
                 &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity"),
@@ -911,6 +952,7 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
                 &scan,
                 &mut ir,
                 &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
             )
         })
         .expect("valid source object identity"),
@@ -974,6 +1016,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0
@@ -1062,6 +1105,7 @@ fn split_outline_rejects_conflicting_model_plane_carrier() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         ))
         .expect("valid source object identity"),
         0

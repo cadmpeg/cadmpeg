@@ -126,6 +126,7 @@ fn map_two_chart_endpoint_sets(
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> TwoChartMapping {
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
         return TwoChartMapping::NoSamples;
@@ -148,7 +149,7 @@ fn map_two_chart_endpoint_sets(
                 .iter()
                 .map(|sample| {
                     match cadmpeg_ir::eval::surface_point(
-                        &surface.geometry,
+                        source_carriers.surface_geometry(surface),
                         sample[face_index][0],
                         sample[face_index][1],
                     ) {
@@ -201,8 +202,9 @@ pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<TwoChartEndpointSets> {
-    match map_two_chart_endpoint_sets(scan, ir, pcurve) {
+    match map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers) {
         TwoChartMapping::Mapped {
             endpoint_sets,
             surface_mismatch: false,
@@ -225,6 +227,7 @@ pub(in crate::decode) fn mapped_pcurve_endpoints(
     let mapped = map_pcurve_paths(
         ir,
         faces.into_iter().map(NonZeroU32::new).zip(endpoint_sets),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
     );
     pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false).map(|evidence| evidence.points)
 }
@@ -445,6 +448,7 @@ fn pcurve_path_carrier_status(
     faces: [Option<NonZeroU32>; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> PcurveCarrierStatus {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
@@ -458,7 +462,12 @@ fn pcurve_path_carrier_status(
     let Some(other_carrier) = other_id.and_then(|id| carriers.get(&id.get())).copied() else {
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
-    pcurve_plane_carrier_status(&surface.geometry, face_carrier, other_carrier, endpoints)
+    pcurve_plane_carrier_status(
+        source_carriers.surface_geometry(surface),
+        face_carrier,
+        other_carrier,
+        endpoints,
+    )
 }
 
 fn pcurve_endpoint_carrier_status(
@@ -467,6 +476,7 @@ fn pcurve_endpoint_carrier_status(
     faces: [Option<NonZeroU32>; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> PcurveCarrierStatus {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
@@ -481,7 +491,11 @@ fn pcurve_endpoint_carrier_status(
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
     let valid = endpoints.into_iter().all(|uv| {
-        let Ok(point) = cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) else {
+        let Ok(point) = cadmpeg_ir::eval::surface_point(
+            source_carriers.surface_geometry(surface),
+            uv[0],
+            uv[1],
+        ) else {
             return false;
         };
         let point = [point.x, point.y, point.z];
@@ -596,10 +610,11 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
+) -> Result<usize, cadmpeg_core::CodecError> {
     let planes = super::planes::placed_planes(scan);
     if planes.is_empty() {
-        return 0;
+        return Ok(0);
     }
     let mut witnesses = BTreeMap::<u32, Vec<SupportConePlaneWitness>>::new();
     for pcurve in &scan.curves.pcurves {
@@ -632,7 +647,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
-        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
+        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers);
         let TwoChartMapping::Mapped {
             endpoint_sets: Some(endpoint_sets),
             ..
@@ -648,11 +663,12 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, face_id) else {
             continue;
         };
-        let Some(mirrored) = mirrored_support_apex_cone(&surface.geometry) else {
+        let source_geometry = source_carriers.surface_geometry(surface).clone();
+        let Some(mirrored) = mirrored_support_apex_cone(&source_geometry) else {
             continue;
         };
         let current_matches = face_witnesses.iter().all(|(endpoints, plane)| {
-            support_cone_witness_matches(&surface.geometry, *endpoints, *plane)
+            support_cone_witness_matches(&source_geometry, *endpoints, *plane)
         });
         let mirrored_matches = face_witnesses
             .iter()
@@ -660,7 +676,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
         if current_matches || !mirrored_matches {
             continue;
         }
-        surface.geometry = mirrored;
+        source_carriers.replace_surface_geometry(surface, mirrored)?;
         reconciled += 1;
         if let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, face_id) {
             annotate(
@@ -673,12 +689,13 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
             );
         }
     }
-    reconciled
+    Ok(reconciled)
 }
 
 fn map_pcurve_paths(
     ir: &CadIr,
     paths: impl IntoIterator<Item = (Option<NonZeroU32>, [[f64; 2]; 2])>,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> MappedPcurvePaths {
     let mut result = MappedPcurvePaths {
         mapped: Vec::new(),
@@ -698,7 +715,11 @@ fn map_pcurve_paths(
         // A non-finite endpoint is a mapped endpoint; the path comparisons
         // read it as a mismatch.
         let [first, second] = endpoints.map(|uv| {
-            let point = match cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) {
+            let point = match cadmpeg_ir::eval::surface_point(
+                source_carriers.surface_geometry(surface),
+                uv[0],
+                uv[1],
+            ) {
                 Ok(point) => point.get(),
                 Err(failure) => failure.non_finite()?,
             };
@@ -805,13 +826,14 @@ fn pcurve_edge_endpoint_evidence_with_diagnostics(
     PcurveEndpointDiagnostics,
 ) {
     let carriers = placed_carriers(scan, ir, source_carriers);
-    pcurve_edge_endpoint_evidence_with_carriers(scan, ir, &carriers)
+    pcurve_edge_endpoint_evidence_with_carriers(scan, ir, &carriers, source_carriers)
 }
 
 pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> (
     BTreeMap<u32, PcurveEndpointEvidence>,
     PcurveEndpointDiagnostics,
@@ -830,15 +852,29 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let mut carrier_mapped_paths = Vec::new();
         let mut carrier_proof_available = false;
         for (face_index, (face_id, endpoints)) in paths {
-            let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
+            let mapped = map_pcurve_paths(ir, [(face_id, endpoints)], source_carriers);
             diagnostics.missing_surfaces += mapped.missing_surfaces;
             diagnostics.unevaluable_paths += mapped.unevaluable_paths;
             diagnostics.mapped_paths += mapped.mapped.len();
             mapped_paths.extend(mapped.mapped.iter().copied());
             let carrier_status = if endpoint_carrier_proof {
-                pcurve_endpoint_carrier_status(ir, carriers, faces, face_index, endpoints)
+                pcurve_endpoint_carrier_status(
+                    ir,
+                    carriers,
+                    faces,
+                    face_index,
+                    endpoints,
+                    source_carriers,
+                )
             } else {
-                pcurve_path_carrier_status(ir, carriers, faces, face_index, endpoints)
+                pcurve_path_carrier_status(
+                    ir,
+                    carriers,
+                    faces,
+                    face_index,
+                    endpoints,
+                    source_carriers,
+                )
             };
             match carrier_status {
                 PcurveCarrierStatus::Validated => {
@@ -945,7 +981,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
-        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
+        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers);
         let (endpoint_sets, surface_mismatch) = match mapping {
             TwoChartMapping::NoSamples => {
                 diagnostics.two_chart_no_sample_records += 1;
@@ -1386,7 +1422,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         }
         for pcurve in &scan.curves.two_chart_pcurves {
             let faces = pcurve.faces.map(NonZeroU32::new);
-            let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
+            let Some(endpoint_sets) =
+                mapped_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers)
+            else {
                 continue;
             };
             for (face_id, endpoints) in faces.into_iter().zip(endpoint_sets.paths()) {
@@ -1988,6 +2026,46 @@ mod tests {
     }
 
     #[test]
+    fn placed_plane_pcurve_mapping_uses_source_origin() {
+        let id = SurfaceId::mint("creo:visibgeom:surface#7").expect("identity grammar");
+        let plane = |x| {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(x, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("valid PlaneSurface fixture"),
+            ))
+        };
+        let mut source_carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        source_carriers.record_surface(&Surface {
+            id: id.clone(),
+            geometry: plane(1.0),
+            source_object: None,
+        });
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: plane(25.4),
+            source_object: None,
+        });
+
+        let mapped = super::map_pcurve_paths(
+            &ir,
+            [(std::num::NonZeroU32::new(7), [[0.0, 0.0], [1.0, 0.0]])],
+            &source_carriers,
+        );
+        assert_eq!(mapped.missing_surfaces, 0);
+        assert_eq!(mapped.unevaluable_paths, 0);
+        assert_eq!(mapped.mapped.len(), 1);
+        assert_eq!(
+            mapped.mapped[0].endpoints,
+            [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+        );
+    }
+
+    #[test]
     fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
         let scan = crate::container::scan_bytes_ok(Vec::new());
         let mut ir = CadIr::empty();
@@ -2046,7 +2124,12 @@ mod tests {
         };
 
         assert_eq!(
-            mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            mapped_two_chart_endpoint_sets(
+                &scan,
+                &ir,
+                &pcurve,
+                &crate::decode::source_carriers::SourceUnitCarriers::default()
+            ),
             Some(TwoChartEndpointSets::Both([
                 [[-0.01, 0.25], [1.01, 0.75]],
                 [[-0.01, 0.25], [1.01, 0.75]],
@@ -2054,7 +2137,12 @@ mod tests {
         );
 
         pcurve.samples[1][1][0] = 0.6;
-        let mapping = map_two_chart_endpoint_sets(&scan, &ir, &pcurve);
+        let mapping = map_two_chart_endpoint_sets(
+            &scan,
+            &ir,
+            &pcurve,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
         assert!(matches!(
             mapping,
             TwoChartMapping::Mapped {
@@ -2063,7 +2151,13 @@ mod tests {
                 ..
             }
         ));
-        assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
+        assert!(mapped_two_chart_endpoint_sets(
+            &scan,
+            &ir,
+            &pcurve,
+            &crate::decode::source_carriers::SourceUnitCarriers::default()
+        )
+        .is_none());
 
         pcurve.samples[1][1][0] = 0.5;
     }
@@ -2139,8 +2233,12 @@ mod tests {
                 }),
             ),
         ]);
-        let (evidence, diagnostics) =
-            pcurve_edge_endpoint_evidence_with_carriers(&scan, &ir, &carriers);
+        let (evidence, diagnostics) = pcurve_edge_endpoint_evidence_with_carriers(
+            &scan,
+            &ir,
+            &carriers,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
 
         assert_eq!(diagnostics.two_chart_surface_mismatch_records, 1);
         assert_eq!(diagnostics.carrier_validated_paths, 2);
@@ -2625,7 +2723,12 @@ mod tests {
             offset: 0,
         };
         assert!(matches!(
-            map_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            map_two_chart_endpoint_sets(
+                &scan,
+                &ir,
+                &pcurve,
+                &crate::decode::source_carriers::SourceUnitCarriers::default()
+            ),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -2645,6 +2748,7 @@ mod tests {
                 std::num::NonZeroU32::new(7),
                 [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
             )],
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);
@@ -2800,7 +2904,12 @@ mod tests {
             offset: 0,
         };
         assert!(matches!(
-            map_two_chart_endpoint_sets(&scan, &ir, &pcurve),
+            map_two_chart_endpoint_sets(
+                &scan,
+                &ir,
+                &pcurve,
+                &crate::decode::source_carriers::SourceUnitCarriers::default()
+            ),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -2820,6 +2929,7 @@ mod tests {
                 std::num::NonZeroU32::new(7),
                 [[f64::MAX, 0.0], [-f64::MAX, 5.0]],
             )],
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
         );
         assert_eq!(mapped.unevaluable_paths, 0);
         assert_eq!(mapped.mapped.len(), 1);

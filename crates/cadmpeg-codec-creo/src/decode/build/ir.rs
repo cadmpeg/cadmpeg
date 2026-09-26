@@ -507,6 +507,7 @@ fn transfer_datum_plane_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
@@ -520,36 +521,39 @@ fn transfer_datum_plane_surfaces(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(
-                        normal[0] * plane.plane.offset,
-                        normal[1] * plane.plane.offset,
-                        normal[2] * plane.plane.offset,
-                    ),
-                    Vector3::from(normal),
-                    cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
-                )
-                .map_err(CodecError::malformed)?,
-            )),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "ActDatums:{}",
-                    plane.id
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::new(
+                            normal[0] * plane.plane.offset,
+                            normal[1] * plane.plane.offset,
+                            normal[2] * plane.plane.offset,
+                        ),
+                        Vector3::from(normal),
+                        cadmpeg_ir::geometry::derive_reference_direction(Vector3::from(normal)),
+                    )
+                    .map_err(CodecError::malformed)?,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "ActDatums:{}",
+                        plane.id
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -560,7 +564,6 @@ fn transfer_placed_plane_surfaces_into_ir(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
-    length_scale_mm: Option<cadmpeg_ir::scalar::PositiveReal>,
 ) -> Result<(), CodecError> {
     for frame in &scan.planes.local_systems {
         if frame.frame().cross_overflow {
@@ -601,39 +604,34 @@ fn transfer_placed_plane_surfaces_into_ir(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model surfaces")?;
-        let mut surface = Surface {
-            id,
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::from(plane.origin),
-                    Vector3::from(plane.normal),
-                    Vector3::from(u_axis),
-                )
-                .map_err(CodecError::malformed)?,
-            )),
-            source_object: Some(SourceObjectAssociation {
-                format: cadmpeg_ir::CodecFormat::Creo,
-                object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                    "VisibGeom:{surface_id}"
-                ))
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed("source object_id must not be empty")
-                })?,
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        };
-        let source_surface = surface.clone();
-        if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
-            (length_scale_mm, &mut surface.geometry)
-        {
-            super::units::scale_surface_geometry(geometry, scale)?;
-        }
-        source_carriers.record_surface(&source_surface);
-        ir.model.surfaces.push(surface);
+        source_carriers.admit_surface(
+            ir,
+            Surface {
+                id,
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        Point3::from(plane.origin),
+                        Vector3::from(plane.normal),
+                        Vector3::from(u_axis),
+                    )
+                    .map_err(CodecError::malformed)?,
+                )),
+                source_object: Some(SourceObjectAssociation {
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
+                        "VisibGeom:{surface_id}"
+                    ))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("source object_id must not be empty")
+                    })?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            },
+        )?;
     }
     Ok(())
 }
@@ -648,11 +646,11 @@ pub(in super::super) fn build_ir(
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
     let mut transfer_losses = Vec::new();
-    let mut source_carriers = SourceUnitCarriers::default();
     let length_scale_mm = scan
         .framing
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
+    let mut source_carriers = SourceUnitCarriers::new(length_scale_mm);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
     emit_reference_arenas(scan, &mut ir, &mut annotations)?;
@@ -660,14 +658,13 @@ pub(in super::super) fn build_ir(
     transfer_reference_circles(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations)?;
     transfer_display_tessellations(ctx, scan, &mut ir, &mut annotations)?;
-    transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations)?;
+    transfer_datum_plane_surfaces(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_placed_plane_surfaces_into_ir(
         ctx,
         scan,
         &mut ir,
         &mut annotations,
         &mut source_carriers,
-        length_scale_mm,
     )?;
     let brep_diagnostics = transfer_and_record_scanned_geometry(
         ctx,

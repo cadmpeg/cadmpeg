@@ -1142,7 +1142,7 @@ fn scale_pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages + Clone
     Ok(())
 }
 
-pub(super) fn scale_surface_geometry(
+pub(in crate::decode) fn scale_surface_geometry(
     geometry: &mut SolvedSurfaceGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {

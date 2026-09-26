@@ -1057,8 +1057,13 @@ pub(in super::super) fn transfer_native_brep(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertex_result =
-        solve_topological_vertices(scan, ir, &carriers, curve_evidence.nurbs_endpoints);
+    let solved_vertex_result = solve_topological_vertices(
+        scan,
+        ir,
+        &carriers,
+        curve_evidence.nurbs_endpoints,
+        source_carriers,
+    );
     let solved_vertices = &solved_vertex_result.points;
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
@@ -1106,9 +1111,12 @@ pub(in super::super) fn transfer_native_brep(
         }
     }
     for pcurve in &scan.curves.two_chart_pcurves {
-        let Some(endpoint_sets) =
-            crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(scan, ir, pcurve)
-        else {
+        let Some(endpoint_sets) = crate::decode::analytic::pcurves::mapped_two_chart_endpoint_sets(
+            scan,
+            ir,
+            pcurve,
+            source_carriers,
+        ) else {
             continue;
         };
         for (face_id, endpoints) in pcurve.faces.into_iter().zip(endpoint_sets.paths()) {

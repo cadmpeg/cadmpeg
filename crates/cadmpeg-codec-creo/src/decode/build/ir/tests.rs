@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{transfer_display_tessellations, transfer_placed_plane_surfaces_into_ir};
+use super::{
+    transfer_datum_plane_surfaces, transfer_display_tessellations,
+    transfer_placed_plane_surfaces_into_ir,
+};
 use crate::container::{scan_bytes_ok, ContainerScan};
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::legacy::PrincipalUnitSystem;
@@ -103,7 +106,6 @@ fn positional_plane_cross_overflow_refuses_at_ir_transfer() {
             &mut ir,
             &mut annotations,
             &mut SourceUnitCarriers::default(),
-            None,
         )
         .expect_err("finite plane support cross overflows the frame");
         assert!(matches!(error, CodecError::NotImplemented(_)));
@@ -134,7 +136,6 @@ fn positional_plane_missing_slots_remain_unplaced() {
             &mut ir,
             &mut annotations,
             &mut SourceUnitCarriers::default(),
-            None,
         )
         .expect("a missing support slot does not define a frame");
         assert!(ir.model.surfaces.is_empty());
@@ -160,8 +161,8 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    let mut source_carriers = SourceUnitCarriers::default();
     let scale = PositiveReal::new(25.4).expect("inch scale");
+    let mut source_carriers = SourceUnitCarriers::new(Some(scale));
     crate::decode::with_test_decode_ctx(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
@@ -169,7 +170,6 @@ fn placed_plane_origin_is_in_millimeters_at_ir_admission() {
             &mut ir,
             &mut annotations,
             &mut source_carriers,
-            Some(scale),
         )
         .expect("placed plane transfer");
     });
@@ -217,7 +217,7 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
     scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
     let mut ir = CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    let mut source_carriers = SourceUnitCarriers::default();
+    let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
     crate::decode::with_test_decode_ctx(|ctx| {
         transfer_placed_plane_surfaces_into_ir(
             ctx,
@@ -225,7 +225,6 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
             &mut ir,
             &mut annotations,
             &mut source_carriers,
-            PositiveReal::new(25.4),
         )
         .expect("placed plane transfer");
     });
@@ -235,4 +234,122 @@ fn placed_plane_stays_available_to_source_unit_carrier_analysis() {
         panic!("placed plane was lost before native topology transfer");
     };
     assert_eq!(plane.origin, [1.0, 0.0, 0.0]);
+}
+
+#[test]
+fn placed_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("plane", &[]));
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 18,
+        body: Vec::new(),
+        slots: [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            f64::MAX,
+            0.0,
+            0.0,
+        ]
+        .map(Some),
+        layout: Some(PlaneSupportFrameLayout::SupportTriples),
+        classification: LocalSystemClassification::Simple,
+        row_offset: 0,
+        offset: 0,
+    });
+    scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = transfer_placed_plane_surfaces_into_ir(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut source_carriers,
+        )
+        .expect_err("the millimeter plane origin is not representable");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+    });
+    assert!(ir.model.surfaces.is_empty());
+}
+
+fn inch_datum_plane(offset: f64) -> ContainerScan<'static> {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("datum", &[]));
+    scan.framing.principal_unit = Some(PrincipalUnitSystem::InchPoundMassSecond);
+    scan.planes.datums.push(crate::datum::DatumPlaneRecord {
+        id: 5,
+        feature_id: 1,
+        plane: crate::datum::DatumPlane {
+            axis: crate::datum::Axis::X,
+            offset,
+        },
+        opposite_offset: offset,
+        in_plane_corners: [[Some(0.0); 2]; 2],
+        offset_in_payload: 0,
+    });
+    scan
+}
+
+#[test]
+fn datum_plane_origin_is_in_millimeters_at_ir_admission() {
+    let scan = inch_datum_plane(1.0);
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let scale = PositiveReal::new(25.4).expect("inch scale");
+    let mut source_carriers = SourceUnitCarriers::new(Some(scale));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        transfer_datum_plane_surfaces(ctx, &scan, &mut ir, &mut annotations, &mut source_carriers)
+            .expect("datum plane transfer");
+    });
+    let surface = ir.model.surfaces.first().expect("datum surface");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+    ) = &surface.geometry
+    else {
+        panic!("datum plane changed family");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(source_plane),
+    ) = source_carriers.surface_geometry(surface)
+    else {
+        panic!("source datum plane changed family");
+    };
+    assert_eq!(source_plane.origin().get(), Point3::new(1.0, 0.0, 0.0));
+    super::super::units::normalize_model_lengths(&mut ir, scale, &source_carriers)
+        .expect("remaining unit normalization");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane),
+    ) = &ir.model.surfaces[0].geometry
+    else {
+        panic!("datum plane changed family");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(25.4, 0.0, 0.0));
+}
+
+#[test]
+fn datum_plane_scaled_origin_overflow_refuses_unrepresentable_ir() {
+    let scan = inch_datum_plane(f64::MAX);
+    let mut ir = CadIr::empty();
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = transfer_datum_plane_surfaces(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut annotations,
+            &mut source_carriers,
+        )
+        .expect_err("millimeter datum origin cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+    });
+    assert!(ir.model.surfaces.is_empty());
 }
