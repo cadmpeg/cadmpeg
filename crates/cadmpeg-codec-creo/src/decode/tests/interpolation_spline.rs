@@ -1414,8 +1414,8 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 6,
         origin: [0.0, 1.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 1,
     });
 

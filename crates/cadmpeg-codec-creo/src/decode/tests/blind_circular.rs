@@ -83,8 +83,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 46,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 46,
     });
     scan.planes
@@ -141,8 +141,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 143,
         origin: [0.0, 16.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 143,
     });
     scan.planes
@@ -218,15 +218,15 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         .push(crate::surface::OutlinePlane {
             surface_id: 828,
             origin: [0.0, 4.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 828,
         });
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 831,
         origin: [0.0, -4.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 831,
     });
     scan.planes
@@ -1546,8 +1546,8 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 31,
         origin: [0.0, 5.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [1.0, 0.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
         offset: 31,
     });
     let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);

@@ -480,17 +480,17 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let outline = OutlinePlane {
         surface_id: 52,
         origin: [0.0, -4.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        u_axis: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         offset: 15,
     };
     let candidate = frame_bound_outline_plane_candidate(&frame, &outline).expect("composite chart");
     assert_eq!(candidate.equation.origin, outline.origin);
-    assert_eq!(candidate.equation.normal, outline.normal);
+    assert_eq!(candidate.equation.normal, outline.normal());
     assert_eq!(candidate.chart.expect("chart").origin, [-9.0, -4.0, 0.0]);
 
     let mut conflicting = outline;
-    conflicting.u_axis = [1.0, 0.0, 0.0];
+    conflicting.u_axis = cadmpeg_ir::units::UnitVector3::X_AXIS;
     assert!(frame_bound_outline_plane_candidate(&frame, &conflicting).is_none());
 }
 
@@ -630,15 +630,15 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);
@@ -719,15 +719,15 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);
@@ -806,15 +806,15 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 10,
         },
         OutlinePlane {
             surface_id: 2,
             origin: [0.0, 38.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 20,
         },
     ]);

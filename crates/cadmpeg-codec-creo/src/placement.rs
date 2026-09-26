@@ -321,7 +321,7 @@ fn generated_planar_section_transform(
             return matches
                 .next()
                 .is_none()
-                .then_some((plane.normal, dot(plane.normal, plane.origin)));
+                .then_some((plane.normal(), dot(plane.normal(), plane.origin)));
         }
         let mut envelopes = sources
             .plane_envelopes
@@ -554,7 +554,7 @@ fn plane_equation(
         [plane] => {
             let frame = plane.frame();
             frame
-                .normal
+                .normal()
                 .zip(frame.origin)
                 .map(|(normal, origin)| SignedPlaneEquation {
                     normal,
@@ -569,8 +569,8 @@ fn plane_equation(
         .collect::<Vec<_>>();
     let outline_equation = match outline_planes.as_slice() {
         [plane] => Some(SignedPlaneEquation {
-            normal: plane.normal,
-            offset: dot(plane.normal, plane.origin),
+            normal: plane.normal(),
+            offset: dot(plane.normal(), plane.origin),
         }),
         _ => None,
     };
