@@ -2,7 +2,7 @@
 //! High-level Inventor structural decode.
 
 use cadmpeg_ir::annotations::StreamHandle;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
@@ -12,9 +12,10 @@ use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
+use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId, ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, UnknownRecord};
 
@@ -63,8 +64,8 @@ fn decode_container<'a>(
     // One predicate, read once from the parsed declarations: it decides the
     // admission in `primary` and the dialect-unverified loss below, and neither
     // recomputes the other.
-    let recovery = DialectRecovery::of(container);
-    let matched = recovery.classify();
+    let recovery = DialectRecovery::of(ctx, container)?;
+    let matched = recovery.classify(ctx)?;
     let dialects = crate::dialect::layers(matched.clone(), &container.rse.active_carrier)?;
     // The kernel layer, classified from the carrier's own header. Non-primary:
     // its format is `acis`, the embedded layer `cadmpeg-asm` owns.
@@ -77,6 +78,15 @@ fn decode_container<'a>(
     let design_inventory = crate::design::inventory(ctx, &container.rse)?;
     let sketch_inventory = crate::sketch::inventory(ctx, &container.rse)?;
     let feature_inventory = crate::feature::inventory(ctx, &container.rse)?;
+    admit_native_record_items(
+        ctx,
+        container,
+        &assembly_inventory,
+        &presentation_inventory,
+        &design_inventory,
+        &sketch_inventory,
+        &feature_inventory,
+    )?;
     let mut ir = CadIr::empty();
     let mut admitted_entities = 0_u64;
     let (design_parameters, unresolved_design_parameters) =
@@ -145,12 +155,13 @@ fn decode_container<'a>(
                     section_count: property_set.sections.len() as u64,
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
-                    let set_name = property_set_name(section);
+                    let set_name = property_set_name(ctx, section)?;
                     let identity_matches = set_name
                         .as_deref()
                         .and_then(known_property_set_fmtid)
                         .is_none_or(|expected| expected == section.fmtid);
                     if !identity_matches {
+                        admit_native_items(ctx, 1)?;
                         property_set_issues.push(PropertySetIssueRecord {
                             id: format!(
                                 "inventor:property:set-identity#{}-{section_ordinal}",
@@ -187,15 +198,16 @@ fn decode_container<'a>(
                             descriptor.stream.directory_id(),
                             property.id
                         );
-                        let scalar_value = property.value.scalar_text();
+                        let scalar_value = property.value.scalar_text(ctx)?;
                         metadata.consider(
+                            ctx,
                             &section.fmtid,
                             property.id,
                             property_name.as_deref(),
                             scalar_value.as_deref(),
                             &native_id,
-                        );
-                        if is_preview(&section.fmtid, property.id, property_name.as_deref()) {
+                        )?;
+                        if is_preview(ctx, &section.fmtid, property.id, property_name.as_deref())? {
                             if let Some((bytes, media_type)) = preview_bytes(&property.value) {
                                 let data =
                                     ctx.copy_retained(bytes, "retain Inventor preview asset")?;
@@ -291,6 +303,10 @@ fn decode_container<'a>(
     };
     let material_catalog =
         crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
+    for instance in &protein_instances {
+        admit_native_items(ctx, instance.records.len())?;
+        admit_native_items(ctx, instance.rejected.len())?;
+    }
     let mut protein_issues = Vec::new();
     let mut ufrx_issues = Vec::new();
     let protein_assets = protein_instances
@@ -520,7 +536,7 @@ fn decode_container<'a>(
         }
     }
     attributes.insert("document_kind".into(), document_kind.label().into());
-    metadata.apply_attributes(&mut attributes);
+    metadata.apply_attributes(ctx, &mut attributes)?;
     ir.source = Some(SourceMeta::classified(
         dialects,
         cadmpeg_core::text::named_entries("the inventor document", attributes)?,
@@ -579,18 +595,16 @@ fn decode_container<'a>(
             })
         })
         .collect::<Vec<_>>();
-    let database_issues = container
-        .rse
-        .databases
-        .iter()
-        .filter_map(|descriptor| {
-            Some(DatabaseIssueRecord {
+    let mut database_issues = Vec::new();
+    for descriptor in &container.rse.databases {
+        if let Some(detail) = descriptor.issue_detail(ctx)? {
+            database_issues.push(DatabaseIssueRecord {
                 id: format!("inventor:rse:database-issue#v{}", descriptor.band.value()),
                 band: descriptor.band.value(),
-                detail: descriptor.issue_detail()?,
-            })
-        })
-        .collect::<Vec<_>>();
+                detail,
+            });
+        }
+    }
     let segment_registry = match &container.rse.registry {
         ParsedState::Parsed(registry) => registry
             .entries
@@ -1094,62 +1108,6 @@ fn decode_container<'a>(
         &assembly_placements,
     )?;
     ir.model.occurrences = assembly_projection.occurrences;
-    ctx.charge_collection_items(
-        storage_bands
-            .len()
-            .saturating_add(segment_pairs.len())
-            .saturating_add(databases.len())
-            .saturating_add(database_issues.len())
-            .saturating_add(segment_registry.len())
-            .saturating_add(revisions.len())
-            .saturating_add(structural_issues.len())
-            .saturating_add(segment_meta.len())
-            .saturating_add(meta_sections.len())
-            .saturating_add(meta_types.len())
-            .saturating_add(segment_meta_issues.len())
-            .saturating_add(segment_bulk.len())
-            .saturating_add(rse_records.len())
-            .saturating_add(segment_bulk_issues.len())
-            .saturating_add(property_sets.len())
-            .saturating_add(property_sections.len())
-            .saturating_add(properties.len())
-            .saturating_add(property_set_issues.len())
-            .saturating_add(1)
-            .saturating_add(protein.entries().len())
-            .saturating_add(protein_assets.len())
-            .saturating_add(protein_rejections.len())
-            .saturating_add(1)
-            .saturating_add(ufrx_model_states.len())
-            .saturating_add(embedded_references.len())
-            .saturating_add(ufrx_occurrences.len())
-            .saturating_add(external_references.len())
-            .saturating_add(assembly_occurrences.len())
-            .saturating_add(assembly_placements.len())
-            .saturating_add(assembly_inventory.issues.len())
-            .saturating_add(pm_app_default_styles.len())
-            .saturating_add(pm_app_rendering_styles.len())
-            .saturating_add(pm_graphics_faces.len())
-            .saturating_add(pm_graphics_style_collections.len())
-            .saturating_add(pm_graphics_primary_color_styles.len())
-            .saturating_add(presentation_inventory.issues.len())
-            .saturating_add(design_inventory.parameters.len())
-            .saturating_add(design_inventory.expressions.len())
-            .saturating_add(design_inventory.units.len())
-            .saturating_add(design_inventory.issues.len())
-            .saturating_add(sketch_inventory.sketches.len())
-            .saturating_add(sketch_inventory.entities.len())
-            .saturating_add(sketch_inventory.transforms.len())
-            .saturating_add(sketch_inventory.directions.len())
-            .saturating_add(sketch_inventory.constraints.len())
-            .saturating_add(sketch_inventory.issues.len())
-            .saturating_add(feature_inventory.features.len())
-            .saturating_add(feature_inventory.pattern_features.len())
-            .saturating_add(feature_inventory.terminators.len())
-            .saturating_add(feature_inventory.issues.len())
-            .saturating_add(unpaired_segments.len())
-            .saturating_add(1) as u64,
-        "retain Inventor native structural records",
-    )?;
     let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena("storage_bands", &storage_bands)?;
     namespace.set_arena("databases", &databases)?;
@@ -1248,14 +1206,17 @@ fn decode_container<'a>(
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());
+    let body_ids = collect_body_ids(ctx, ir.model.bodies.iter().map(|body| &body.id))?;
     if geometry_transferred {
-        let body_ids = ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>();
         for product in &mut ir.model.product_definitions {
+            charge_items(ctx, body_ids.len(), "collect Inventor product body ids")?;
+            for body_id in &body_ids {
+                charge_retained_len(
+                    ctx,
+                    body_id.as_str().len(),
+                    "retain Inventor product body id",
+                )?;
+            }
             product.bodies.clone_from(&body_ids);
         }
     } else if matches!(
@@ -1266,12 +1227,6 @@ fn decode_container<'a>(
         geometry_failure =
             Some("the active kernel carrier decoded no surfaces, points, or faces".into());
     }
-    let body_ids = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
     let presentation_projection = crate::presentation::project_bindings(
         ctx,
         &presentation_inventory,
@@ -1280,27 +1235,30 @@ fn decode_container<'a>(
         &face_keys,
     )?;
     let face_color_appearance_count = presentation_projection.appearances.len();
-    let projected_colors = presentation_projection
-        .appearances
-        .iter()
-        .filter_map(|appearance| Some((appearance.id.clone(), appearance.base_color?)))
-        .collect::<std::collections::HashMap<_, _>>();
+    let projected_colors = index_projected_colors(
+        ctx,
+        presentation_projection
+            .appearances
+            .iter()
+            .filter_map(|appearance| Some((&appearance.id, appearance.base_color?))),
+    )?;
     ir.model
         .appearances
         .extend(presentation_projection.appearances);
     ir.model.appearance_bindings = presentation_projection.bindings;
-    let face_colors = ir
-        .model
-        .appearance_bindings
-        .iter()
-        .filter_map(|binding| match &binding.target {
-            cadmpeg_ir::appearance::AppearanceTarget::Face(face) => projected_colors
-                .get(&binding.appearance)
-                .copied()
-                .map(|color| (face.clone(), color)),
-            _ => None,
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let face_colors = index_face_colors(
+        ctx,
+        ir.model.appearance_bindings.iter().filter_map(|binding| {
+            if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) = &binding.target {
+                projected_colors
+                    .get(&binding.appearance)
+                    .copied()
+                    .map(|color| (face, color))
+            } else {
+                None
+            }
+        }),
+    )?;
     for face in &mut ir.model.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied();
@@ -1314,7 +1272,7 @@ fn decode_container<'a>(
             "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
         )));
     }
-    losses.extend(dialect_loss(&matched, &recovery));
+    losses.extend(dialect_loss(ctx, &matched, &recovery)?);
     losses.extend(kernel_match.as_ref().and_then(kernel_dialect_loss));
     if !ctx.container_only()
         && !matches!(document_kind, DocumentKind::Assembly)
@@ -1793,6 +1751,207 @@ fn decode_container<'a>(
     })
 }
 
+fn charge_items(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "Inventor native collection item count",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })?;
+    ctx.charge_collection_items(count, operation)
+}
+
+fn charge_retained_len(
+    ctx: &DecodeContext<'_>,
+    bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let bytes = u64::try_from(bytes).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor retained byte count", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(bytes, operation)
+}
+
+fn admit_native_items(ctx: &DecodeContext<'_>, count: usize) -> Result<(), CodecError> {
+    let count = u64::try_from(count).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor native record count", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_collection_items(count, "retain Inventor native structural records")?;
+    ctx.charge_entities(count, "admit Inventor native structural records")
+}
+
+fn admit_native_record_items(
+    ctx: &DecodeContext<'_>,
+    container: &InventorContainer<'_>,
+    assembly: &crate::assembly::AssemblyInventory<'_>,
+    presentation: &crate::presentation::PresentationInventory<'_>,
+    design: &crate::design::DesignInventory,
+    sketch: &crate::sketch::SketchInventory,
+    feature: &crate::feature::FeatureInventory,
+) -> Result<(), CodecError> {
+    admit_native_items(ctx, 3)?;
+    for descriptor in &container.property_sets {
+        admit_native_items(ctx, 1)?;
+        if let PropertySetState::Parsed(property_set) = &descriptor.state {
+            for section in &property_set.sections {
+                ctx.charge_work(1, "count Inventor native property sections")?;
+                admit_native_items(ctx, 1)?;
+                admit_native_items(ctx, section.properties.len())?;
+            }
+        }
+    }
+    if let ProteinState::Package(package) = &container.protein {
+        admit_native_items(ctx, package.archive.entries().len())?;
+    }
+    if let UfrxState::Parsed(document) = &container.ufrx {
+        for state in &document.model_states {
+            ctx.charge_work(1, "count Inventor native UFRx states")?;
+            admit_native_items(ctx, state.parameters.len())?;
+        }
+        for reference in &document.references {
+            ctx.charge_work(1, "count Inventor native UFRx references")?;
+            charge_items(
+                ctx,
+                reference.state_groups.len(),
+                "retain Inventor native UFRx state groups",
+            )?;
+        }
+        for count in [
+            document.model_states.len(),
+            document.references.len(),
+            document.embedded_references.len(),
+            document.occurrences.len(),
+        ] {
+            admit_native_items(ctx, count)?;
+        }
+    }
+    if let UfrxState::Unsupported {
+        section_versions, ..
+    } = &container.ufrx
+    {
+        charge_items(
+            ctx,
+            section_versions.len(),
+            "retain Inventor native UFRx section versions",
+        )?;
+    }
+    admit_native_items(ctx, container.rse.databases.len())?;
+    admit_native_items(ctx, container.rse.databases.len())?;
+    match &container.rse.registry {
+        ParsedState::Parsed(registry) => admit_native_items(ctx, registry.entries.len())?,
+        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
+        ParsedState::Absent => {}
+    }
+    match &container.rse.revisions {
+        ParsedState::Parsed(table) => admit_native_items(ctx, table.entries.len())?,
+        ParsedState::Unavailable(_) => admit_native_items(ctx, 1)?,
+        ParsedState::Absent => {}
+    }
+    for segment in &container.rse.segments {
+        ctx.charge_work(1, "count Inventor native segment records")?;
+        admit_native_items(ctx, 3)?;
+        admit_native_items(ctx, segment.identity_issues.len())?;
+        if let SegmentMetaState::Parsed(meta) = &segment.meta {
+            admit_native_items(ctx, meta.tables.sections.len())?;
+            admit_native_items(ctx, meta.tables.types.len())?;
+        }
+        if let SegmentBulkState::Framed(bulk) = &segment.bulk {
+            if let RecordFrameState::Framed(table) = &bulk.records {
+                admit_native_items(ctx, table.records.len())?;
+            }
+        }
+    }
+    for count in [
+        container.rse.unpaired_metadata.len(),
+        container.rse.unpaired_bulk.len(),
+        assembly.occurrences.len(),
+        assembly.placements.len(),
+        assembly.issues.len(),
+        presentation.default_styles.len(),
+        presentation.rendering_styles.len(),
+        presentation.graphics_faces.len(),
+        presentation.graphics_style_collections.len(),
+        presentation.graphics_primary_color_styles.len(),
+        presentation.issues.len(),
+        design.parameters.len(),
+        design.expressions.len(),
+        design.units.len(),
+        design.issues.len(),
+        sketch.sketches.len(),
+        sketch.entities.len(),
+        sketch.transforms.len(),
+        sketch.directions.len(),
+        sketch.constraints.len(),
+        sketch.issues.len(),
+        feature.features.len(),
+        feature.pattern_features.len(),
+        feature.terminators.len(),
+        feature.properties.len(),
+        feature.labels.len(),
+        feature.entity_style_links.len(),
+        feature.issues.len(),
+    ] {
+        admit_native_items(ctx, count)?;
+    }
+    for occurrence in &assembly.occurrences {
+        ctx.charge_work(1, "count Inventor native occurrence references")?;
+        charge_items(
+            ctx,
+            occurrence.related_references.len(),
+            "retain Inventor native occurrence references",
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_body_ids<'b>(
+    ctx: &DecodeContext<'_>,
+    ids: impl IntoIterator<Item = &'b BodyId>,
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut output = Vec::new();
+    for id in ids {
+        ctx.charge_collection_items(1, "collect Inventor projected body ids")?;
+        charge_retained_len(ctx, id.as_str().len(), "retain Inventor projected body id")?;
+        output.push(id.clone());
+    }
+    Ok(output)
+}
+
+fn index_projected_colors<'b>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (&'b AppearanceId, Color)>,
+) -> Result<HashMap<AppearanceId, Color>, CodecError> {
+    let mut output = HashMap::new();
+    for (id, color) in entries {
+        ctx.charge_collection_items(1, "index Inventor projected appearance colors")?;
+        charge_retained_len(
+            ctx,
+            id.as_str().len(),
+            "retain Inventor projected appearance color id",
+        )?;
+        output.insert(id.clone(), color);
+    }
+    Ok(output)
+}
+
+fn index_face_colors<'b>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (&'b FaceId, Color)>,
+) -> Result<HashMap<FaceId, Color>, CodecError> {
+    let mut output = HashMap::new();
+    for (id, color) in entries {
+        ctx.charge_collection_items(1, "index Inventor face colors")?;
+        charge_retained_len(ctx, id.as_str().len(), "retain Inventor face color id")?;
+        output.insert(id.clone(), color);
+    }
+    Ok(output)
+}
+
 fn version_record(version: VersionTuple) -> VersionTupleRecord {
     VersionTupleRecord {
         revision: version.revision,
@@ -1924,20 +2083,23 @@ struct MetadataProjection {
 impl MetadataProjection {
     fn consider(
         &mut self,
+        ctx: &DecodeContext<'_>,
         fmtid: &[u8; 16],
         property_id: u32,
         name: Option<&str>,
         value: Option<&str>,
         native_id: &str,
-    ) {
+    ) -> Result<(), CodecError> {
         let Some(value) = value.filter(|value| !value.is_empty()) else {
-            return;
+            return Ok(());
         };
-        let normalized = name.map(normalize_property_name);
+        let normalized = name
+            .map(|name| normalize_property_name(ctx, name))
+            .transpose()?;
         if matches!(normalized.as_deref(), Some("documentkind" | "documenttype")) {
             self.document_kind = DocumentKind::parse_property(value);
             if self.document_kind.is_some() {
-                return;
+                return Ok(());
             }
         }
         let target = if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 2
@@ -1959,20 +2121,32 @@ impl MetadataProjection {
         };
         if let Some(target) = target {
             if target.is_none() {
+                charge_retained_len(ctx, value.len(), "retain Inventor metadata value")?;
                 *target = Some(value.into());
             } else if target.as_deref() != Some(value) {
+                charge_items(ctx, 1, "collect Inventor BOM property")?;
+                charge_retained_len(ctx, native_id.len(), "retain Inventor BOM property key")?;
+                charge_retained_len(ctx, value.len(), "retain Inventor BOM property value")?;
                 self.bom_properties.insert(native_id.into(), value.into());
             }
-            return;
+            return Ok(());
         }
         if let Some(name) = name {
+            charge_items(ctx, 1, "collect Inventor BOM property")?;
+            charge_retained_len(ctx, name.len(), "retain Inventor BOM property key")?;
+            charge_retained_len(ctx, value.len(), "retain Inventor BOM property value")?;
             self.bom_properties.insert(name.into(), value.into());
         } else {
             self.unmapped += 1;
         }
+        Ok(())
     }
 
-    fn apply_attributes(&self, attributes: &mut BTreeMap<String, String>) {
+    fn apply_attributes(
+        &self,
+        ctx: &DecodeContext<'_>,
+        attributes: &mut BTreeMap<String, String>,
+    ) -> Result<(), CodecError> {
         for (name, value) in [
             ("title", &self.title),
             ("author", &self.author),
@@ -1980,25 +2154,61 @@ impl MetadataProjection {
             ("part_number", &self.part_number),
         ] {
             if let Some(value) = value {
+                charge_items(ctx, 1, "collect Inventor metadata attribute")?;
+                charge_retained_len(ctx, name.len(), "retain Inventor metadata attribute key")?;
+                charge_retained_len(ctx, value.len(), "retain Inventor metadata attribute value")?;
                 attributes.insert(name.into(), value.clone());
             }
         }
+        Ok(())
     }
 }
 
-fn normalize_property_name(name: &str) -> String {
-    name.chars()
+fn normalize_property_name(ctx: &DecodeContext<'_>, name: &str) -> Result<String, CodecError> {
+    ctx.charge_work(
+        u64::try_from(name.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor property name length", u64::MAX - 1, u64::MAX)
+        })?,
+        "normalize Inventor property name",
+    )?;
+    let normalized_len = name
+        .chars()
         .filter(|character| character.is_alphanumeric())
         .flat_map(char::to_lowercase)
-        .collect()
+        .try_fold(0_usize, |len, character| {
+            len.checked_add(character.len_utf8())
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "Inventor normalized property name length",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    charge_retained_len(
+        ctx,
+        normalized_len,
+        "retain Inventor normalized property name",
+    )?;
+    Ok(name
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect())
 }
 
-fn property_set_name(section: &PropertySection<'_>) -> Option<String> {
-    section
+fn property_set_name(
+    ctx: &DecodeContext<'_>,
+    section: &PropertySection<'_>,
+) -> Result<Option<String>, CodecError> {
+    match section
         .properties
         .iter()
         .find(|property| property.id == 255)
-        .and_then(|property| property.value.scalar_text())
+    {
+        Some(property) => property.value.scalar_text(ctx),
+        None => Ok(None),
+    }
 }
 
 fn known_property_set_fmtid(set_name: &str) -> Option<[u8; 16]> {
@@ -2175,14 +2385,22 @@ fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     }
 }
 
-fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
-    fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 17
-        || name.is_some_and(|name| {
-            matches!(
-                normalize_property_name(name).as_str(),
-                "thumbnail" | "preview" | "previewimage"
-            )
-        })
+fn is_preview(
+    ctx: &DecodeContext<'_>,
+    fmtid: &[u8; 16],
+    property_id: u32,
+    name: Option<&str>,
+) -> Result<bool, CodecError> {
+    if fmtid == &FMTID_SUMMARY_INFORMATION && property_id == 17 {
+        return Ok(true);
+    }
+    match name {
+        Some(name) => Ok(matches!(
+            normalize_property_name(ctx, name)?.as_str(),
+            "thumbnail" | "preview" | "previewimage"
+        )),
+        None => Ok(false),
+    }
 }
 
 fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
