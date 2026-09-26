@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The fixed numeric tail of a class-`0x62` consolidated owner packet.
 
+use cadmpeg_ir::scalar::FiniteBinary32;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +15,7 @@ pub(crate) struct CatiaOwnerNumericTail {
     header: [u8; 5],
     /// The binary64 box as one increasing interval per axis.
     axes: [IncreasingParameterInterval; 2],
-    bounds: [[f32; 2]; 3],
+    bounds: [[FiniteBinary32; 2]; 3],
 }
 
 impl CatiaOwnerNumericTail {
@@ -33,14 +34,19 @@ impl CatiaOwnerNumericTail {
         let [Some(first), Some(second)] = axes else {
             return None;
         };
-        bounds
-            .iter()
-            .all(|bound| bound[0].is_finite() && bound[1].is_finite() && bound[0] < bound[1])
-            .then_some(Self {
-                header,
-                axes: [first, second],
-                bounds,
-            })
+        let bounds = bounds.map(|[lower, upper]| {
+            let lower = FiniteBinary32::new(lower)?;
+            let upper = FiniteBinary32::new(upper)?;
+            (lower < upper).then_some([lower, upper])
+        });
+        let [Some(x), Some(y), Some(z)] = bounds else {
+            return None;
+        };
+        Some(Self {
+            header,
+            axes: [first, second],
+            bounds: [x, y, z],
+        })
     }
 
     /// Returns the five-byte class-specific header.
@@ -62,7 +68,7 @@ impl CatiaOwnerNumericTail {
     /// Returns the three binary32 bounds in serialization order. In an
     /// all-compact owner these are the model-space X, Y, and Z bounds.
     pub(crate) fn bounds(&self) -> [[f32; 2]; 3] {
-        self.bounds
+        self.bounds.map(|pair| pair.map(FiniteBinary32::get))
     }
 }
 
@@ -80,7 +86,7 @@ impl From<CatiaOwnerNumericTail> for CatiaOwnerNumericTailWire {
             header: value.header,
             lower: value.lower(),
             upper: value.upper(),
-            bounds: value.bounds,
+            bounds: value.bounds(),
         }
     }
 }
