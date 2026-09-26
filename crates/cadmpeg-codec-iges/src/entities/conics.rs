@@ -13,8 +13,9 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::EdgeId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -182,9 +183,10 @@ pub(super) fn project(
         let Some((basis_x, scale_x)) = transform
             .apply_vector(Vector3::new(1.0, 0.0, 0.0))
             .and_then(|v| {
-                let n = v.norm();
+                let raw = v.get();
+                let n = raw.norm();
                 n.is_finite().then_some(())?;
-                Some((v.unit_nonzero()?, n))
+                Some((UnitVector3::normalized_nonzero(raw)?, n))
             })
         else {
             losses.push(entity_loss(entry, "conic placement collapses the x axis"));
@@ -193,32 +195,32 @@ pub(super) fn project(
         let Some((basis_y, scale_y)) = transform
             .apply_vector(Vector3::new(0.0, 1.0, 0.0))
             .and_then(|v| {
-                let n = v.norm();
+                let raw = v.get();
+                let n = raw.norm();
                 n.is_finite().then_some(())?;
-                Some((v.unit_nonzero()?, n))
+                Some((UnitVector3::normalized_nonzero(raw)?, n))
             })
         else {
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
-        if basis_x.dot(basis_y).abs() > EPS_CONIC_DEGENERATE {
+        if basis_x.as_raw().dot(*basis_y.as_raw()).abs() > EPS_CONIC_DEGENERATE {
             losses.push(entity_loss(
                 entry,
                 "conic placement produces non-orthogonal principal axes",
             ));
             continue;
         }
-        let Some((mut axis, _)) = ({
-            let v = basis_x.cross(basis_y);
+        let Some((mut axis, mut axis_raw)) = ({
+            let v = basis_x.as_raw().cross(*basis_y.as_raw());
             let n = v.norm();
-            (n.is_finite() && n > 0.0).then(|| (v.scale(1.0 / n), n))
+            (n.is_finite() && n > 0.0)
+                .then(|| (UnitVector3::normalized_by_reciprocal(v), v.scale(1.0 / n)))
         }) else {
             losses.push(entity_loss(entry, "conic placement collapses its plane"));
             continue;
         };
-        let Some(plane_origin) = transform
-            .apply_point(Point3::new(0.0, 0.0, plane_z * factor))
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+        let Some(plane_origin) = transform.apply_point(Point3::new(0.0, 0.0, plane_z * factor))
         else {
             losses.push(entity_loss(entry, "placement produces a non-finite point"));
             continue;
@@ -264,14 +266,14 @@ pub(super) fn project(
                 let radius_y = radius_y * factor * scale_y;
                 let (major_direction, minor_direction, major_radius, minor_radius) =
                     if radius_x < radius_y {
-                        (basis_y, basis_x.scale(-1.0), radius_y, radius_x)
+                        (basis_y, basis_x.reversed(), radius_y, radius_x)
                     } else {
                         (basis_x, basis_y, radius_x, radius_y)
                     };
                 let parameter = |point: Point3| {
-                    let delta = point.vector_from(plane_origin);
-                    (delta.dot(minor_direction) / minor_radius)
-                        .atan2(delta.dot(major_direction) / major_radius)
+                    let delta = point.vector_from(plane_origin.get());
+                    (delta.dot(*minor_direction.as_raw()) / minor_radius)
+                        .atan2(delta.dot(*major_direction.as_raw()) / major_radius)
                         .rem_euclid(std::f64::consts::TAU)
                 };
                 let raw_start_parameter = parameter(start);
@@ -288,13 +290,20 @@ pub(super) fn project(
                     raw_start_parameter
                 };
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
-                        plane_origin,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    ),
+                    axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
+                        .ok_or("EllipseCurve.axis/major_direction must form an orthonormal frame")
+                        .and_then(|frame| {
+                            let major_radius = PositiveLength::new(major_radius)
+                                .ok_or("EllipseCurve.major_radius must be positive and finite")?;
+                            let minor_radius = PositiveLength::new(minor_radius)
+                                .ok_or("EllipseCurve.minor_radius must be positive and finite")?;
+                            cadmpeg_ir::geometry::analytic::EllipseCurve::try_from_parts(
+                                plane_origin,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            )
+                        }),
                     entry,
                     &mut losses,
                 ) else {
@@ -314,7 +323,7 @@ pub(super) fn project(
                 if coeff_f.is_sign_positive() == coeff_a.is_sign_positive() {
                     (
                         basis_y,
-                        basis_x.scale(-1.0),
+                        basis_x.reversed(),
                         coeff_f.abs().sqrt() / coeff_c.abs().sqrt(),
                         coeff_f.abs().sqrt() / coeff_a.abs().sqrt(),
                     )
@@ -329,43 +338,56 @@ pub(super) fn project(
             if major_radius <= 0.0 || minor_radius <= 0.0 {
                 None
             } else {
-                let major_scale = if major.dot(basis_x).abs() > 0.5 {
+                let major_scale = if major.as_raw().dot(*basis_x.as_raw()).abs() > 0.5 {
                     scale_x
                 } else {
                     scale_y
                 };
-                let minor_scale = if minor.dot(basis_x).abs() > 0.5 {
+                let minor_scale = if minor.as_raw().dot(*basis_x.as_raw()).abs() > 0.5 {
                     scale_x
                 } else {
                     scale_y
                 };
                 let major_radius = major_radius * factor * major_scale;
                 let minor_radius = minor_radius * factor * minor_scale;
-                let branch = if start.vector_from(plane_origin).dot(major) < 0.0 {
+                let branch = if start.vector_from(plane_origin.get()).dot(*major.as_raw()) < 0.0 {
                     -1.0
                 } else {
                     1.0
                 };
-                let major_direction = major.scale(branch);
-                let parameter = |point: Point3, axis: Vector3| {
-                    let minor_direction = axis.cross(major_direction);
-                    (point.vector_from(plane_origin).dot(minor_direction) / minor_radius).asinh()
+                let major_direction = if branch < 0.0 {
+                    major.reversed()
+                } else {
+                    major
                 };
-                let mut start_parameter = parameter(start, axis);
-                let mut end_parameter = parameter(end, axis);
+                let parameter = |point: Point3, axis: Vector3| {
+                    let minor_direction = axis.cross(*major_direction.as_raw());
+                    (point.vector_from(plane_origin.get()).dot(minor_direction) / minor_radius)
+                        .asinh()
+                };
+                let mut start_parameter = parameter(start, axis_raw);
+                let mut end_parameter = parameter(end, axis_raw);
                 if end_parameter < start_parameter {
-                    axis = axis.scale(-1.0);
-                    start_parameter = parameter(start, axis);
-                    end_parameter = parameter(end, axis);
+                    axis = axis.map(UnitVector3::reversed);
+                    axis_raw = axis_raw.scale(-1.0);
+                    start_parameter = parameter(start, axis_raw);
+                    end_parameter = parameter(end, axis_raw);
                 }
                 let Some(payload) = admit(
-                    cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
-                        plane_origin,
-                        axis,
-                        major_direction,
-                        major_radius,
-                        minor_radius,
-                    ),
+                    axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
+                        .ok_or("HyperbolaCurve.axis/major_direction must form an orthonormal frame")
+                        .and_then(|frame| {
+                            let major_radius = PositiveLength::new(major_radius)
+                                .ok_or("HyperbolaCurve.major_radius must be positive and finite")?;
+                            let minor_radius = PositiveLength::new(minor_radius)
+                                .ok_or("HyperbolaCurve.minor_radius must be positive and finite")?;
+                            Ok(cadmpeg_ir::geometry::analytic::HyperbolaCurve::new(
+                                plane_origin,
+                                frame,
+                                major_radius,
+                                minor_radius,
+                            ))
+                        }),
                     entry,
                     &mut losses,
                 ) else {
@@ -378,7 +400,11 @@ pub(super) fn project(
             }
         } else if zero(coeff_c) && zero(coeff_f) && !zero(coeff_a) && !zero(coeff_e) {
             let opening = if -coeff_a / coeff_e >= 0.0 { 1.0 } else { -1.0 };
-            let major_direction = basis_y.scale(opening);
+            let major_direction = if opening < 0.0 {
+                basis_y.reversed()
+            } else {
+                basis_y
+            };
             let Some(focal) = cadmpeg_ir::math::product_quotient(
                 [coeff_e, factor, scale_x, scale_x],
                 [4.0, coeff_a, scale_y],
@@ -395,8 +421,8 @@ pub(super) fn project(
                 cadmpeg_ir::math::multiply_divide(
                     cadmpeg_ir::scalar::FiniteReal::new(
                         point
-                            .vector_from(plane_origin)
-                            .dot(axis.cross(major_direction)),
+                            .vector_from(plane_origin.get())
+                            .dot(axis.cross(*major_direction.as_raw())),
                     )?,
                     cadmpeg_ir::scalar::FiniteReal::HALF,
                     focal,
@@ -404,7 +430,7 @@ pub(super) fn project(
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
             let (Some(mut start_parameter), Some(mut end_parameter)) =
-                (parameter(start, axis), parameter(end, axis))
+                (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
                 losses.push(entity_loss(
                     entry,
@@ -413,17 +439,22 @@ pub(super) fn project(
                 continue;
             };
             if end_parameter < start_parameter {
-                axis = axis.scale(-1.0);
+                axis = axis.map(UnitVector3::reversed);
                 start_parameter = -start_parameter;
                 end_parameter = -end_parameter;
             }
             let Some(payload) = admit(
-                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                    plane_origin,
-                    axis,
-                    major_direction,
-                    focal_distance,
-                ),
+                axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
+                    .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")
+                    .and_then(|frame| {
+                        let focal_distance = PositiveLength::new(focal_distance)
+                            .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
+                        Ok(cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                            plane_origin,
+                            frame,
+                            focal_distance,
+                        ))
+                    }),
                 entry,
                 &mut losses,
             ) else {
@@ -435,7 +466,11 @@ pub(super) fn project(
             ))
         } else if zero(coeff_a) && zero(coeff_f) && !zero(coeff_c) && !zero(coeff_d) {
             let opening = if -coeff_c / coeff_d >= 0.0 { 1.0 } else { -1.0 };
-            let major_direction = basis_x.scale(opening);
+            let major_direction = if opening < 0.0 {
+                basis_x.reversed()
+            } else {
+                basis_x
+            };
             let Some(focal) = cadmpeg_ir::math::product_quotient(
                 [coeff_d, factor, scale_y, scale_y],
                 [4.0, coeff_c, scale_x],
@@ -452,8 +487,8 @@ pub(super) fn project(
                 cadmpeg_ir::math::multiply_divide(
                     cadmpeg_ir::scalar::FiniteReal::new(
                         point
-                            .vector_from(plane_origin)
-                            .dot(axis.cross(major_direction)),
+                            .vector_from(plane_origin.get())
+                            .dot(axis.cross(*major_direction.as_raw())),
                     )?,
                     cadmpeg_ir::scalar::FiniteReal::HALF,
                     focal,
@@ -461,7 +496,7 @@ pub(super) fn project(
                 .map(cadmpeg_ir::scalar::FiniteReal::get)
             };
             let (Some(mut start_parameter), Some(mut end_parameter)) =
-                (parameter(start, axis), parameter(end, axis))
+                (parameter(start, axis_raw), parameter(end, axis_raw))
             else {
                 losses.push(entity_loss(
                     entry,
@@ -470,17 +505,22 @@ pub(super) fn project(
                 continue;
             };
             if end_parameter < start_parameter {
-                axis = axis.scale(-1.0);
+                axis = axis.map(UnitVector3::reversed);
                 start_parameter = -start_parameter;
                 end_parameter = -end_parameter;
             }
             let Some(payload) = admit(
-                cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
-                    plane_origin,
-                    axis,
-                    major_direction,
-                    focal_distance,
-                ),
+                axis.and_then(|axis| OrthonormalFrame3::from_units(axis, major_direction))
+                    .ok_or("ParabolaCurve.axis/major_direction must form an orthonormal frame")
+                    .and_then(|frame| {
+                        let focal_distance = PositiveLength::new(focal_distance)
+                            .ok_or("ParabolaCurve.focal_distance must be positive and finite")?;
+                        Ok(cadmpeg_ir::geometry::analytic::ParabolaCurve::new(
+                            plane_origin,
+                            frame,
+                            focal_distance,
+                        ))
+                    }),
                 entry,
                 &mut losses,
             ) else {
