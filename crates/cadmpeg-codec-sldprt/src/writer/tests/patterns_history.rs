@@ -479,7 +479,9 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
         Some(&ParameterValue::Integer(12))
     );
     assert_eq!(
-        sldprt_native(regenerated.ir()).pmi_dimensions[0].value,
+        sldprt_native(regenerated.ir()).pmi_dimensions[0]
+            .value
+            .get(),
         12.0
     );
 }
