@@ -51,7 +51,10 @@ fn classify(container: &Container<'_>) -> DialectMatch {
 fn extracted_parasolid_schema_emits_a_kernel_layer() {
     let bytes = single_part_prt();
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes.clone()).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes.clone())
+        })
+        .unwrap(),
         streams: extract_streams(&bytes),
     };
     let (layers, losses) = classify_layers(&scan).into_report_parts();
@@ -86,7 +89,10 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
             .expect("the fixture text is a schema token"),
     );
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes)
+        })
+        .unwrap(),
         streams,
     };
     let (layers, losses) = classify_layers(&scan).into_report_parts();
@@ -108,7 +114,10 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let mut streams = extract_streams(&bytes);
     streams.push(streams[0].clone());
     let scan = crate::decode::Scan {
-        container: crate::container::scan_bytes(bytes).unwrap(),
+        container: crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, bytes)
+        })
+        .unwrap(),
         streams,
     };
 
@@ -196,7 +205,10 @@ fn the_legacy_arm_declares_the_ugii_payload_version_as_canonical_decimal() {
 #[test]
 fn splmsstr_version_byte_is_checked_before_container_construction() {
     let valid = single_part_prt();
-    let container = crate::container::scan_bytes(valid.clone()).expect("version 0x06 scans");
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, valid.clone())
+    })
+    .expect("version 0x06 scans");
     let matched = classify(&container);
     assert_eq!(matched.dialect().as_str(), "nx:splmsstr");
     assert_eq!(matched.declared()[DECLARED_SPLMSSTR_VERSION], "6");
@@ -206,7 +218,7 @@ fn splmsstr_version_byte_is_checked_before_container_construction() {
         let mut invalid = valid.clone();
         invalid[crate::layout::splmsstr_header::VERSION_TAG] = version;
         assert!(matches!(
-            crate::container::scan_bytes(invalid),
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, invalid)),
             Err(CodecError::Malformed(message)) if message.contains("version byte must be 0x06")
         ));
     }
@@ -226,9 +238,14 @@ fn a_header_too_short_to_declare_a_version_never_scans() {
     let file = single_part_prt();
     for truncated_len in MAGIC.len()..=crate::layout::splmsstr_header::HEADER_MARKER {
         assert!(
-            crate::container::scan_bytes(&file[..truncated_len]).is_err(),
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(
+                ctx,
+                &file[..truncated_len]
+            ))
+            .is_err(),
             "an image of {truncated_len} bytes must not scan"
         );
     }
-    crate::container::scan_bytes(file).expect("the whole image scans");
+    crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+        .expect("the whole image scans");
 }
