@@ -18,6 +18,13 @@ use crate::test_support::test_fixtures::{
 };
 use crate::InventorCodec;
 
+fn validation_findings(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("validation context");
+    crate::validate::validate_native(&ctx, ir).expect("validation fits service policy")
+}
+
 #[test]
 fn built_in_properties_are_selected_by_embedded_set_identity() {
     assert_eq!(
@@ -98,7 +105,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
-    let native_findings = crate::validate::validate_native(decoded.ir());
+    let native_findings = validation_findings(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
     // grammar is applied to it regardless of what the `RSeDb` streams declared,
@@ -261,7 +268,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         active[0],
         crate::native::ActiveCarrierRecord::Selected { .. }
     ));
-    assert!(crate::validate::validate_native(decoded.ir()).is_empty());
+    assert!(validation_findings(decoded.ir()).is_empty());
 }
 
 /// The `acis:` kernel layer one decode reported, with the losses beside it.
