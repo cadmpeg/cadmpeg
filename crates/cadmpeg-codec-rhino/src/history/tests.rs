@@ -426,6 +426,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
+            refusal: None,
         };
         crate::decode::with_expand_bytes(&geometry_value, |expand| {
             structured_value_properties(
@@ -444,6 +445,55 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         assert_eq!(sink.untyped, 1);
         assert!(properties.contains_key("value_7.0.geometry"));
     }
+}
+
+#[test]
+fn embedded_history_point_cloud_refuses_collection_limit_without_omission() {
+    let payload =
+        crate::test_support::test_archive::point_cloud_payload(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+    let geometry = EmbeddedGeometry {
+        class_id: Uuid::from_wire(crate::test_support::test_archive::POINT_CLOUD_CLASS),
+        class_data_range: 0..payload.len(),
+        userdata: Vec::new(),
+    };
+    let mut source = record(3, 4, &[], &[]);
+    source.values[0].value = Value::Geometries(vec![geometry]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("history geometry fits input limit");
+    let expand = crate::mesh::MeshExpand::new(&ctx, root);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut warnings = Diagnostics::new();
+    let refusal = project(
+        &[source.clone()],
+        Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
+        &mut ir,
+        &mut warnings,
+    )
+    .expect_err("two points exceed the one-item limit");
+    assert!(
+        matches!(refusal, super::ProjectionError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+    assert!(ir.model.features.is_empty());
+    assert!(warnings.is_empty());
+    crate::decode::with_expand_bytes(&payload, |expand| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        assert_eq!(
+            project(
+                &[source],
+                Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
+                &mut ir,
+                &mut Diagnostics::new(),
+            )
+            .expect("service profile admits embedded point cloud"),
+            (1, 0, 0, 0)
+        );
+        assert_eq!(ir.model.features.len(), 1);
+    });
 }
 
 #[test]
@@ -468,6 +518,7 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
+            refusal: None,
         };
         structured_value_properties("value_7", &parsed.value, None, &mut properties, &mut sink);
         (sink.untyped, sink.failed)
@@ -510,6 +561,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
+        refusal: None,
     };
     crate::decode::with_expand_bytes(&geometry_value, |expand| {
         structured_value_properties(
@@ -670,6 +722,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             None,
             crate::test_support::millimeter_scale(10.0),
             &mut Diagnostics::new(),
+            &mut None,
         )
     })
     .expect("cage semantics");
@@ -695,6 +748,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             None,
             MillimeterScale::IDENTITY,
             &mut Diagnostics::new(),
+            &mut None,
         )
     })
     .expect("empty SubD semantics");
@@ -717,6 +771,7 @@ fn embedded_cage_projects_exact_construction_semantics() {
             None,
             crate::test_support::millimeter_scale(10.0),
             &mut Diagnostics::new(),
+            &mut None,
         )
     })
     .expect("Brep topology semantics");
@@ -954,6 +1009,7 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
+            refusal: None,
         };
         structured_value_properties(
             "value_7",
@@ -1005,6 +1061,7 @@ fn scaled_hatch_semantics(offset: usize, value: f64, warnings: &mut Diagnostics)
             None,
             crate::test_support::millimeter_scale(10.0),
             warnings,
+            &mut None,
         )
     })
 }
@@ -1094,6 +1151,7 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
             None,
             MillimeterScale::IDENTITY,
             &mut warnings,
+            &mut None,
         )
     })
     .expect("hatch geometry survives malformed gradient");

@@ -5,7 +5,8 @@ use crate::loss::Diagnostics;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -158,6 +159,8 @@ pub(crate) enum GeometryError {
     UnsupportedVersion { offset: usize, message: String },
     /// A bounded payload is malformed.
     Malformed(FramingError),
+    /// A codec-level refusal that must leave geometry fallback.
+    Codec(CodecError),
 }
 
 impl GeometryError {
@@ -176,6 +179,10 @@ impl GeometryError {
             message: message.into(),
         }
     }
+
+    pub(crate) fn not_implemented(message: impl Into<String>) -> Self {
+        Self::Codec(CodecError::NotImplemented(message.into()))
+    }
 }
 
 impl std::fmt::Display for GeometryError {
@@ -185,13 +192,36 @@ impl std::fmt::Display for GeometryError {
                 write!(formatter, "unsupported version at {offset}: {message}")
             }
             Self::Malformed(error) => error.fmt(formatter),
+            Self::Codec(error) => error.fmt(formatter),
         }
     }
 }
 
+impl From<CodecError> for GeometryError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
+pub(crate) fn allocation_failed(operation: &'static str, bytes: u64) -> GeometryError {
+    GeometryError::Codec(CodecError::ResourceLimit(
+        cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: bytes,
+            operation,
+        },
+    ))
+}
+
 impl From<FramingError> for GeometryError {
     fn from(error: FramingError) -> Self {
-        Self::Malformed(error)
+        match error {
+            FramingError::Resource(limit) => Self::Codec(CodecError::ResourceLimit(limit)),
+            other => Self::Malformed(other),
+        }
     }
 }
 
@@ -279,12 +309,23 @@ pub(crate) fn surface_class(uuid: Uuid) -> bool {
 #[cfg(test)]
 mod alias_tests {
     use super::{
-        curve_class, read_cloud, supported_class, surface_class, NURBS_CURVE_LEGACY,
-        NURBS_CURVE_TL, NURBS_SURFACE_LEGACY, NURBS_SURFACE_TL, POLYCURVE_LEGACY,
+        curve_class, supported_class, surface_class, NURBS_CURVE_LEGACY, NURBS_CURVE_TL,
+        NURBS_SURFACE_LEGACY, NURBS_SURFACE_TL, POLYCURVE_LEGACY,
     };
     use crate::chunks::BoundedReader;
     use crate::settings::MillimeterScale;
     use cadmpeg_ir::math::Point3;
+
+    fn read_cloud(
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+    ) -> Result<super::PointCloud, super::GeometryError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test input fits service profile");
+        super::read_cloud(&ctx, reader, scale)
+    }
 
     #[test]
     fn registered_aliases_keep_their_base_and_dispatch_families() {
@@ -367,26 +408,29 @@ mod alias_tests {
 
 /// Decode one top-level class-data payload.
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
     scale: MillimeterScale,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
-    decode_inner(data, class_uuid, range, scale, archive, 0)
+    decode_inner(ctx, data, class_uuid, range, scale, archive, 0)
 }
 
 /// Decodes a Brep C2 curve in surface parameter space.
 pub(crate) fn decode_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<DecodedGeometry, GeometryError> {
-    decode_inner_2d(data, class_uuid, range, archive, 0)
+    decode_inner_2d(ctx, data, class_uuid, range, archive, 0)
 }
 
 pub(crate) fn decode_inner(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
@@ -394,6 +438,7 @@ pub(crate) fn decode_inner(
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
         return Err(GeometryError::malformed(
             range.start,
@@ -401,7 +446,8 @@ pub(crate) fn decode_inner(
         ));
     }
     if class_uuid == CURVE_ON_SURFACE {
-        let construction = crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
+        let construction =
+            crate::curve_on_surface::decode(ctx, data, range, scale, archive, depth + 1)?;
         let Some(mut curve) = construction.model_curve else {
             return Err(GeometryError::unsupported(
                 construction.source_range.start,
@@ -423,7 +469,7 @@ pub(crate) fn decode_inner(
             | SUM_SURFACE
     ) {
         return Ok(DecodedGeometry::Surface {
-            surface: crate::surfaces::decode(data, class_uuid, range, scale, archive, depth)?,
+            surface: crate::surfaces::decode(ctx, data, class_uuid, range, scale, archive, depth)?,
         });
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
@@ -435,7 +481,7 @@ pub(crate) fn decode_inner(
                 scaled: scale != MillimeterScale::IDENTITY,
             }
         }
-        POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
+        POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(ctx, &mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(read_line(
@@ -463,13 +509,13 @@ pub(crate) fn decode_inner(
             ),
         },
         POLYCURVE | POLYCURVE_LEGACY => {
-            let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
+            let curve = read_polycurve(ctx, data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::surfaces::read_nurbs_curve(&mut reader, scale)?,
+                    crate::surfaces::read_nurbs_curve(ctx, &mut reader, scale)?,
                 )),
                 Diagnostics::new(),
             ),
@@ -487,6 +533,7 @@ pub(crate) fn decode_inner(
 
 /// Reads one bounded polymorphic child and requires it to be a curve.
 pub(crate) fn decode_embedded_curve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -525,6 +572,7 @@ pub(crate) fn decode_embedded_curve(
         ));
     }
     let decoded = decode_inner(
+        ctx,
         data,
         class.class_uuid,
         class.class_data_range,
@@ -544,6 +592,7 @@ pub(crate) fn decode_embedded_curve(
 
 /// Reads one bounded polymorphic plane-space curve and applies length scaling.
 pub(crate) fn decode_embedded_curve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -574,6 +623,7 @@ pub(crate) fn decode_embedded_curve_2d(
         ));
     }
     let decoded = decode_inner_2d(
+        ctx,
         data,
         class.class_uuid,
         class.class_data_range,
@@ -992,13 +1042,11 @@ fn elevate_to_degree(
         ));
         output_weights.push(weight);
     }
-    NurbsCurve::from_checked_lanes(
-        target as u32,
-        elevated_knots,
+    cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
         control_points,
         rational.then_some(output_weights),
-        false,
     )
+    .and_then(|poles| NurbsCurve::new(target as u32, elevated_knots, poles, false))
     .map_err(|error| GeometryError::malformed(offset, error.to_string()))
 }
 
@@ -1151,19 +1199,25 @@ pub(crate) fn join_nurbs_segments(
         );
     }
     Ok(NurbsJoin {
-        curve: NurbsCurve::from_checked_lanes(degree, knots, control_points, weights, false)
-            .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
+        curve: cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
+            control_points,
+            weights,
+        )
+        .and_then(|poles| NurbsCurve::new(degree, knots, poles, false))
+        .map_err(|error| GeometryError::malformed(offset, error.to_string()))?,
         warnings,
     })
 }
 
 pub(crate) fn decode_inner_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
     archive: ArchiveVersion,
     depth: usize,
 ) -> Result<DecodedGeometry, GeometryError> {
+    let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
         return Err(GeometryError::malformed(
             range.start,
@@ -1175,7 +1229,7 @@ pub(crate) fn decode_inner_2d(
         NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve::leaf(
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                    crate::surfaces::read_nurbs_curve_2d(&mut reader)?,
+                    crate::surfaces::read_nurbs_curve_2d(ctx, &mut reader)?,
                 )),
                 Diagnostics::new(),
             ),
@@ -1208,7 +1262,7 @@ pub(crate) fn decode_inner_2d(
             }
         }
         POLYCURVE | POLYCURVE_LEGACY => {
-            let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
+            let curve = read_polycurve_2d(ctx, data, &mut reader, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
         _ => {
@@ -1223,6 +1277,7 @@ pub(crate) fn decode_inner_2d(
 }
 
 fn read_polycurve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1260,6 +1315,7 @@ fn read_polycurve_2d(
         )?;
         reader.skip(wrapper.next_offset() - start)?;
         let child = decode_inner_2d(
+            ctx,
             data,
             class.class_uuid,
             class.class_data_range,
@@ -1284,13 +1340,14 @@ fn read_polycurve_2d(
 
 /// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
 pub(crate) fn consume_legacy_polycurve_2d(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
     // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
-    let _ = read_polycurve_2d(data, reader, archive, 0)?;
+    let _ = read_polycurve_2d(ctx, data, reader, archive, 0)?;
     Ok(start..reader.position())
 }
 
@@ -1306,6 +1363,7 @@ fn read_point(
 }
 
 fn read_cloud(
+    ctx: &DecodeContext<'_>,
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<PointCloud, GeometryError> {
@@ -1313,7 +1371,23 @@ fn read_cloud(
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
     let point_count = crate::wire::element_count(reader, 24)?;
-    let mut points = Vec::with_capacity(point_count);
+    let point_count_u64 = u64::try_from(point_count)
+        .map_err(|_| GeometryError::not_implemented("point-cloud count exceeds address space"))?;
+    ctx.charge_collection_items(point_count_u64, "Rhino point-cloud points")?;
+    let point_bytes = point_count_u64
+        .checked_mul(
+            u64::try_from(std::mem::size_of::<FinitePoint3>()).map_err(|_| {
+                GeometryError::not_implemented("point-cloud storage exceeds address space")
+            })?,
+        )
+        .ok_or_else(|| {
+            GeometryError::not_implemented("point-cloud storage exceeds address space")
+        })?;
+    ctx.charge_retained(point_bytes, "Rhino point-cloud points")?;
+    let mut points = Vec::new();
+    points
+        .try_reserve_exact(point_count)
+        .map_err(|_| allocation_failed("Rhino point-cloud points", point_bytes))?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
@@ -1574,6 +1648,7 @@ fn read_circle(
 }
 
 fn read_polycurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -1618,6 +1693,7 @@ fn read_polycurve(
             ));
         }
         let child = decode_inner(
+            ctx,
             data,
             class.class_uuid,
             class.class_data_range,
@@ -1643,6 +1719,7 @@ fn read_polycurve(
 
 /// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
 pub(crate) fn consume_legacy_polycurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -1650,7 +1727,7 @@ pub(crate) fn consume_legacy_polycurve(
 ) -> Result<Range<usize>, GeometryError> {
     let start = reader.position();
     // discarded-value: the payload is consumed for the byte range the caller returns; the decoded curve has no reader
-    let _ = read_polycurve(data, reader, scale, archive, 0)?;
+    let _ = read_polycurve(ctx, data, reader, scale, archive, 0)?;
     Ok(start..reader.position())
 }
 
@@ -1911,10 +1988,9 @@ mod tests {
     }
 
     use super::{
-        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, decode_inner,
-        exact_nurbs, join_nurbs_segments, read_cloud, read_line, read_polycurve, read_polycurve_2d,
-        read_polyline, scale_decoded_curve, Circle, DecodedCurve, GeometryError, CURVE_ON_SURFACE,
-        MAX_CURVE_DEPTH,
+        arc_nurbs, canonical_circle, checked_polycurve_parameter, circle_point, exact_nurbs,
+        join_nurbs_segments, read_line, read_polyline, scale_decoded_curve, Circle, DecodedCurve,
+        GeometryError, CURVE_ON_SURFACE, MAX_CURVE_DEPTH,
     };
     use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
     use crate::loss::Diagnostics;
@@ -1924,6 +2000,51 @@ mod tests {
     use cadmpeg_ir::scalar::FiniteReal;
 
     const EPS_EXACT_ARC: f64 = 1.0e-12;
+
+    fn with_test_context<R>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("test context input fits service profile");
+        f(&ctx)
+    }
+
+    fn read_cloud(
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+    ) -> Result<super::PointCloud, GeometryError> {
+        with_test_context(|ctx| super::read_cloud(ctx, reader, scale))
+    }
+
+    fn decode_inner(
+        data: &[u8],
+        class: crate::wire::Uuid,
+        range: std::ops::Range<usize>,
+        scale: MillimeterScale,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<super::DecodedGeometry, GeometryError> {
+        with_test_context(|ctx| super::decode_inner(ctx, data, class, range, scale, archive, depth))
+    }
+
+    fn read_polycurve(
+        data: &[u8],
+        reader: &mut BoundedReader<'_>,
+        scale: MillimeterScale,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<DecodedCurve, GeometryError> {
+        with_test_context(|ctx| super::read_polycurve(ctx, data, reader, scale, archive, depth))
+    }
+
+    fn read_polycurve_2d(
+        data: &[u8],
+        reader: &mut BoundedReader<'_>,
+        archive: ArchiveVersion,
+        depth: usize,
+    ) -> Result<DecodedCurve, GeometryError> {
+        with_test_context(|ctx| super::read_polycurve_2d(ctx, data, reader, archive, depth))
+    }
 
     /// A point cloud whose optional channels disagree with the point count.
     fn mismatched_point_cloud_payload() -> Vec<u8> {
@@ -1952,6 +2073,29 @@ mod tests {
         payload.extend(1_i32.to_le_bytes());
         payload.extend(0.5_f64.to_le_bytes());
         payload
+    }
+
+    #[test]
+    fn point_cloud_points_refuse_collection_limit_before_reserve() {
+        let payload = mismatched_point_cloud_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("point-cloud input fits service profile");
+        let mut reader =
+            BoundedReader::new(&payload, 0, payload.len()).expect("point-cloud bounds");
+        let refusal = super::read_cloud(&ctx, &mut reader, MillimeterScale::IDENTITY)
+            .expect_err("two points exceed one collection item");
+        assert!(
+            matches!(refusal, GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "Rhino point-cloud points")
+        );
+        let mut reader =
+            BoundedReader::new(&payload, 0, payload.len()).expect("point-cloud bounds");
+        assert!(read_cloud(&mut reader, MillimeterScale::IDENTITY).is_ok());
     }
 
     /// A refused scalar names its own first byte, not the byte after it.

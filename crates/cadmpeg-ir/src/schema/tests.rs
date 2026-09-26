@@ -194,3 +194,63 @@ fn schema_generation_produces_definitions() {
         .expect("schema has a $defs object");
     assert!(!defs.is_empty());
 }
+
+#[cfg(feature = "schema")]
+#[test]
+fn model_feature_schema_describes_serialized_regeneration_parent() {
+    use crate::document::Model;
+    use crate::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation, FeatureTreeNodeRole, TreeChildren,
+    };
+
+    let parent = FeatureId::mint("test:model:feature#parent").unwrap();
+    let child = FeatureId::mint("test:model:feature#child").unwrap();
+    let mut model = Model::default();
+    model.features.push(Feature {
+        id: parent.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::SolidBodies,
+                children: TreeChildren::default(),
+            },
+        )),
+        native_ref: None,
+    });
+    let mut child_feature = model.features[0].clone();
+    child_feature.id = child.clone();
+    child_feature.ordinal = 1;
+    child_feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::StoredGeometry {},
+        ));
+    model.features.push(child_feature);
+    model
+        .set_feature_regeneration_parent(child, parent.clone())
+        .unwrap();
+    let wire = serde_json::to_value(&model).unwrap();
+    assert_eq!(wire["features"][1]["regeneration_parent"], parent.as_str());
+
+    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let row = schema
+        .pointer("/$defs/Model/properties/features/items/$ref")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|reference| reference.strip_prefix('#'))
+        .and_then(|path| schema.pointer(path))
+        .unwrap();
+    assert!(row.pointer("/properties/regeneration_parent").is_some());
+
+    let standalone = serde_json::to_value(schemars::schema_for!(Feature)).unwrap();
+    assert!(standalone
+        .pointer("/properties/regeneration_parent")
+        .is_none());
+}

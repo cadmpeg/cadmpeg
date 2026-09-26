@@ -298,7 +298,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             1,
-            curve.knots().to_vec(),
+            curve.knots().clone(),
             curve.control_points(),
             curve.weights(),
             true,
@@ -309,7 +309,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             1,
-            curve.knots().to_vec(),
+            curve.knots().clone(),
             curve.control_points(),
             Some(vec![weight]),
             true,
@@ -325,13 +325,19 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite.clone(), None, false)
             .unwrap_err();
     assert_eq!(
-        NurbsCurve::from_checked_lanes(1, vec![0.0, 0.0, 1.0, 1.0], non_finite, None, false),
+        NurbsCurve::from_checked_lanes(
+            1,
+            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
+            non_finite,
+            None,
+            false,
+        ),
         Err(raw_refusal)
     );
     assert_eq!(
         NurbsCurve::from_checked_lanes(
             4,
-            vec![0.0, 0.0, 1.0, 1.0],
+            super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).unwrap(),
             vec![Point3::new(f64::NAN, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
@@ -369,8 +375,8 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     );
     assert_eq!(
         crate::geometry::nurbs::NurbsSurface::from_checked_lanes(
-            u(),
-            v(),
+            NurbsSurfaceAxis::new(1, surface.u_knots().clone(), true),
+            NurbsSurfaceAxis::new(1, surface.v_knots().clone(), false),
             NurbsSurfaceLanes::new(surface.control_grid(), surface.weights()),
             true,
         ),
@@ -406,7 +412,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         PcurveNurbs::from_checked_lanes(
             1,
-            pcurve.knots().to_vec(),
+            pcurve.knots().clone(),
             pcurve.control_points(),
             pcurve.weights(),
             true,
@@ -440,7 +446,7 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
     assert_eq!(
         PolarPcurveNurbs::from_checked_lanes(
             1,
-            polar.knots().to_vec(),
+            polar.knots().clone(),
             polar.poles(),
             polar.weights(),
             true,

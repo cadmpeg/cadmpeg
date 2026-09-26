@@ -2945,7 +2945,7 @@ impl<'a> Builder<'a> {
                 {
                     let source = self.emit_curve(source.as_str())?;
                     let direction =
-                        geometry::direction(&mut self.emitter, reference_direction.get());
+                        geometry::direction(&mut self.emitter, *reference_direction.as_raw());
                     let self_intersect = match self_intersect {
                         Some(true) => ".T.",
                         Some(false) => ".F.",
@@ -3263,11 +3263,10 @@ impl<'a> Builder<'a> {
         }
         for annotation in &annotations {
             match &annotation.definition {
-                PmiDefinition::Dimension {
-                    dimension,
-                    nominal,
-                    tolerance,
-                } => {
+                PmiDefinition::Dimension(relation) => {
+                    let dimension = relation.kind();
+                    let nominal = relation.nominal();
+                    let tolerance = relation.tolerance();
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
                     let (entity, kind_exact) = match dimension {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Detail-view boundary carrier decoding.
 
+use cadmpeg_core::decode::DecodeContext;
 use std::ops::Range;
 
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
@@ -49,6 +50,7 @@ fn anonymous<'a>(
 }
 
 pub(crate) fn decode(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -75,6 +77,7 @@ pub(crate) fn decode(
         "detail boundary",
     )?;
     let geometry = crate::surfaces::read_nurbs_curve(
+        ctx,
         &mut boundary,
         crate::settings::MillimeterScale::IDENTITY,
     )?;
@@ -101,10 +104,22 @@ pub(crate) fn decode(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode, ANONYMOUS};
+    use super::ANONYMOUS;
     use crate::chunks::ArchiveVersion;
     use crate::test_support::test_dump::crc_chunk;
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    fn decode(
+        data: &[u8],
+        range: std::ops::Range<usize>,
+        archive: ArchiveVersion,
+    ) -> Result<super::Detail, crate::curves::GeometryError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+            .expect("test input fits service profile");
+        super::decode(&ctx, data, range, archive)
+    }
 
     fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
         let mut body = 1_i32.to_le_bytes().to_vec();

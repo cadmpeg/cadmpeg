@@ -16,7 +16,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsError, NurbsSurface},
     pcurve::{Pcurve, PcurveGeometry},
-    sampled::GeometryLayoutError,
+    sampled::{GeometryLayoutError, PolylineCurve},
     CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
@@ -3669,7 +3669,7 @@ fn oriented_curve_entity(
             )?
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {
-            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
+            let values = polyline_parameters(polyline)?;
             let original = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),
@@ -6169,7 +6169,7 @@ fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError>
         SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
         SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs).map(FiniteReal::raw_array),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
+            let values = polyline_parameters(polyline)?;
             Ok([values.first, values.last])
         }
         SolvedCurveGeometry::Line(_) => Err(CodecError::NotImplemented(
@@ -6439,7 +6439,7 @@ fn curve_entity(
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
+            let values = polyline_parameters(polyline)?;
             let nurbs = NurbsCurve::from_lanes(
                 1,
                 polyline_knots(&values),
@@ -6931,16 +6931,9 @@ struct PolylineParameters {
     last: f64,
 }
 
-fn polyline_parameters(
-    count: usize,
-    parameters: Option<impl Iterator<Item = cadmpeg_ir::scalar::FiniteReal>>,
-) -> Result<PolylineParameters, CodecError> {
-    if count < 2 {
-        return Err(CodecError::NotImplemented(
-            "IGES semantic writer requires at least two polyline points".into(),
-        ));
-    }
-    let values: Vec<f64> = parameters.map_or_else(
+fn polyline_parameters(polyline: &PolylineCurve) -> Result<PolylineParameters, CodecError> {
+    let count = polyline.point_count();
+    let values: Vec<f64> = polyline.parameters().map_or_else(
         || (0..count).map(|value| value as f64).collect(),
         |parameters| {
             parameters
@@ -6948,20 +6941,16 @@ fn polyline_parameters(
                 .collect()
         },
     );
-    match values.as_slice() {
-        [first, interior @ .., last]
-            if values.len() == count && values.windows(2).all(|pair| pair[0] < pair[1]) =>
-        {
-            Ok(PolylineParameters {
-                first: *first,
-                interior: interior.to_vec(),
-                last: *last,
-            })
-        }
-        _ => Err(CodecError::NotImplemented(
+    if !values.windows(2).all(|pair| pair[0] < pair[1]) {
+        return Err(CodecError::NotImplemented(
             "IGES polyline parameters must be finite and strictly increasing".into(),
-        )),
+        ));
     }
+    Ok(PolylineParameters {
+        first: values[0],
+        interior: values[1..count - 1].to_vec(),
+        last: values[count - 1],
+    })
 }
 
 fn polyline_knots(parameters: &PolylineParameters) -> Vec<f64> {

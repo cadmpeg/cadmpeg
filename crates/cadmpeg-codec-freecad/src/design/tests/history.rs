@@ -583,9 +583,9 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     assert!(width_position < height_position);
     let sheet = result.ir().model.spreadsheets.first().expect("sheet state");
     assert_eq!(sheet.feature.as_str(), "fcstd:design:feature#Sheet");
-    assert_eq!(sheet.cells.len(), 2);
+    assert_eq!(sheet.cells().len(), 2);
     assert_eq!(
-        sheet.column_widths,
+        sheet.column_widths(),
         [
             cadmpeg_ir::SpreadsheetDimension {
                 index: std::num::NonZeroU32::new(1).expect("nonzero index"),
@@ -598,14 +598,14 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         ]
     );
     assert_eq!(
-        sheet.row_heights,
+        sheet.row_heights(),
         [cadmpeg_ir::SpreadsheetDimension {
             index: std::num::NonZeroU32::new(2).expect("nonzero index"),
             pixels: 45,
         }]
     );
     assert_eq!(
-        sheet.merged_ranges,
+        sheet.merged_ranges(),
         [cadmpeg_ir::SpreadsheetRange::new(
             cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
             cadmpeg_ir::CellAddress::parse("B1").expect("B1"),
@@ -613,18 +613,14 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("A1:B1")]
     );
     assert_valid_document(result.ir());
-    let mut corrupted = result.ir().clone();
-    corrupted.model.spreadsheets[0].merged_ranges.push(
-        cadmpeg_ir::SpreadsheetRange::new(
-            cadmpeg_ir::CellAddress::parse("A1").expect("A1"),
-            cadmpeg_ir::CellAddress::parse("A2").expect("A2"),
-        )
-        .expect("A1:A2"),
-    );
-    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.message.contains("merged ranges overlap")));
+    let mut corrupted = serde_json::to_value(sheet).expect("serialize sheet");
+    corrupted["merged_ranges"]
+        .as_array_mut()
+        .expect("merged ranges")
+        .push(serde_json::json!({"start": "A1", "end": "A2"}));
+    let error = serde_json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
+        .expect_err("overlapping merge ranges");
+    assert!(error.to_string().contains("merged ranges overlap"));
 }
 
 #[test]

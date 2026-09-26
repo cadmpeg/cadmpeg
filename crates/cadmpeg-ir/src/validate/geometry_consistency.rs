@@ -214,16 +214,10 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             crate::geometry::ProceduralCurveDefinition::SurfaceCurve { family } => {
                 (std::borrow::Cow::Borrowed(family.context()), None)
             }
-            crate::geometry::ProceduralCurveDefinition::Spring(definition_payload) => {
-                let layout = definition_payload.layout();
-                (
-                    match layout.support_context() {
-                        Ok(context) => context,
-                        Err(_) => continue,
-                    },
-                    None,
-                )
-            }
+            crate::geometry::ProceduralCurveDefinition::Spring(definition_payload) => (
+                std::borrow::Cow::Borrowed(definition_payload.support_context()),
+                None,
+            ),
             crate::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection(
                 definition_payload,
             ) => {

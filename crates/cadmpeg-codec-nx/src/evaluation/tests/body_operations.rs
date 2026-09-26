@@ -42,13 +42,17 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
     let target = ir.model.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(tool.clone());
+        outputs.insert(tool.clone());
     });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -57,8 +61,8 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
-                BodySelection::Bodies(vec![tool]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -82,13 +86,17 @@ fn combine_preserves_tools_when_requested() {
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(tool.clone());
+        outputs.insert(tool.clone());
     });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -97,8 +105,8 @@ fn combine_preserves_tools_when_requested() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
-                BodySelection::Bodies(vec![tool.clone()]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool.clone()].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -125,7 +133,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
                 BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
                     .unwrap(),
             )
@@ -181,14 +189,20 @@ fn trim_bodies_preserves_all_targets_and_tools() {
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(second.as_str()));
     ir.model.bodies.push(model_body(tool.as_str()));
-    ir.model.features[0]
-        .evaluation
-        .set_outputs(vec![first.clone(), second.clone(), tool.clone()]);
+    ir.model.features[0].evaluation.set_outputs(
+        (vec![first.clone(), second.clone(), tool.clone()])
+            .try_into()
+            .unwrap(),
+    );
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let mut trim = body_neutral_feature(
@@ -196,8 +210,12 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         1,
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![first.clone(), second.clone()]),
-                BodySelection::Bodies(vec![tool.clone()]),
+                BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
+                BodySelection::Bodies(vec![tool.clone()].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -205,7 +223,7 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         }),
     );
     trim.evaluation
-        .set_outputs(vec![first.clone(), second.clone()]);
+        .set_outputs((vec![first.clone(), second.clone()]).try_into().unwrap());
     ir.model.features.push(trim);
 
     assert_eq!(
@@ -223,13 +241,17 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(tool.clone());
+        outputs.insert(tool.clone());
     });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -238,8 +260,8 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         tool.clone(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![target]),
-                BodySelection::Bodies(vec![tool]),
+                BodySelection::Bodies(vec![target].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -272,10 +294,13 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![target]),
-                BodySelection::Bodies(vec![
-                    BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar")
-                ]),
+                BodySelection::Bodies(vec![target].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(
+                    vec![BodyId::mint("test:model:entity#tool".to_string())
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
+                ),
             )
             .unwrap(),
 
@@ -342,12 +367,16 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
     ir.model.bodies[0] = model_body(sewn.as_str());
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![first.clone(), second.clone()]);
+        .set_outputs((vec![first.clone(), second.clone()]).try_into().unwrap());
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let mut feature = body_preserving_feature(
@@ -355,13 +384,17 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
         1,
         sewn.clone(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: (BodySelection::Bodies(vec![first, second]))
-                .try_into()
-                .unwrap(),
+            bodies: (BodySelection::Bodies(
+                vec![first, second].try_into().expect("distinct bodies"),
+            ))
+            .try_into()
+            .unwrap(),
             gap_tolerance: None,
         }),
     );
-    feature.evaluation.set_outputs(vec![sewn.clone()]);
+    feature
+        .evaluation
+        .set_outputs((vec![sewn.clone()]).try_into().unwrap());
     ir.model.features.push(feature);
 
     assert_eq!(
@@ -399,7 +432,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
                 .unwrap(),
                 gap_tolerance: None,
             }),
-            vec![output.clone()],
+            (vec![output.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -422,9 +455,13 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
         body.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![body]),
-                BodySelection::Bodies(vec![BodyId::mint("test:model:entity#missing".to_string())
-                    .expect("identity grammar")]),
+                BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(
+                    vec![BodyId::mint("test:model:entity#missing".to_string())
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
+                ),
             )
             .unwrap(),
 
@@ -456,20 +493,20 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
     let unrelated =
         BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
     ir.model.bodies = vec![model_body(unrelated.as_str())];
-    ir.model.features[0].evaluation.set_outputs(vec![
-        first.clone(),
-        second.clone(),
-        unrelated.clone(),
-    ]);
+    ir.model.features[0].evaluation.set_outputs(
+        (vec![first.clone(), second.clone(), unrelated.clone()])
+            .try_into()
+            .unwrap(),
+    );
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![
-                    first.clone(),
-                    second.clone(),
-                    unrelated.clone(),
-                ]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone(), unrelated.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -477,9 +514,11 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         1,
         unrelated,
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: (BodySelection::Bodies(vec![first, second]))
-                .try_into()
-                .unwrap(),
+            bodies: (BodySelection::Bodies(
+                vec![first, second].try_into().expect("distinct bodies"),
+            ))
+            .try_into()
+            .unwrap(),
             gap_tolerance: None,
         }),
     ));
@@ -676,13 +715,17 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     ir.model.bodies.push(model_body(second.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
-        outputs.push(second.clone());
+        outputs.insert(second.clone());
     });
     ir.model.features[0]
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let faces = FaceSelection::Faces(vec![
@@ -701,7 +744,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         }),
     );
     trim.evaluation
-        .set_outputs(vec![first.clone(), second.clone()]);
+        .set_outputs((vec![first.clone(), second.clone()]).try_into().unwrap());
     let mut extend = body_neutral_feature(
         "extend-surface",
         2,
@@ -713,7 +756,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
     );
     extend
         .evaluation
-        .set_outputs(vec![first.clone(), second.clone()]);
+        .set_outputs((vec![first.clone(), second.clone()]).try_into().unwrap());
     ir.model.features.extend([trim, extend]);
 
     assert_eq!(
@@ -839,7 +882,8 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
             keep: TrimRegion::Outside,
         }),
     );
-    trim.evaluation.set_outputs(vec![missing]);
+    trim.evaluation
+        .set_outputs((vec![missing]).try_into().unwrap());
     ir.model.features.push(trim);
 
     assert_eq!(

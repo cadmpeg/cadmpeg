@@ -1233,7 +1233,9 @@ fn apply_complete_body_pattern(
 
 fn explicit_body_selection(selection: &BodySelection) -> Option<Vec<BodyId>> {
     let bodies = match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.clone(),
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            bodies.as_slice().to_vec()
+        }
         BodySelection::ResolvedSet { members } => members.bodies().cloned().collect(),
         BodySelection::Unresolved
         | BodySelection::Historical { .. }

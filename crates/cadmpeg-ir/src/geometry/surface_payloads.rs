@@ -983,6 +983,17 @@ impl TryFrom<ParallelOffsetSurfaceConstructionWire> for ParallelOffsetSurfaceCon
     }
 }
 
+/// A finite sweep vector whose norm exceeds machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+struct SweepDirectionAboveEpsilon(FiniteVector3);
+
+impl SweepDirectionAboveEpsilon {
+    fn new(direction: Vector3) -> Option<Self> {
+        let direction = FiniteVector3::new(direction)?;
+        (direction.as_raw().norm() > f64::EPSILON).then_some(Self(direction))
+    }
+}
+
 /// Admitted unbounded linear sweep parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -995,7 +1006,7 @@ pub struct LinearSweepSurfaceConstruction {
     /// Curve swept along `direction`.
     directrix: CurveId,
     /// Length-bearing sweep vector.
-    direction: FiniteVector3,
+    direction: SweepDirectionAboveEpsilon,
 }
 
 #[derive(Deserialize)]
@@ -1014,14 +1025,9 @@ impl LinearSweepSurfaceConstruction {
         directrix: CurveId,
         direction: Vector3,
     ) -> Result<Self, ProceduralGeometryError> {
-        let direction = FiniteVector3::new(direction).ok_or(ProceduralGeometryError::Payload(
-            "invalid linear-sweep direction",
-        ))?;
-        if direction.as_raw().norm() <= f64::EPSILON {
-            return Err(ProceduralGeometryError::Payload(
-                "invalid linear-sweep direction",
-            ));
-        }
+        let direction = SweepDirectionAboveEpsilon::new(direction).ok_or(
+            ProceduralGeometryError::Payload("invalid linear-sweep direction"),
+        )?;
         Ok(Self {
             directrix,
             direction,
@@ -1033,7 +1039,7 @@ impl LinearSweepSurfaceConstruction {
     }
     /// Return the direction.
     pub fn direction(&self) -> &FiniteVector3 {
-        &self.direction
+        &self.direction.0
     }
 }
 
@@ -1876,6 +1882,8 @@ impl TryFrom<G2BlendSurfacePayloadWire> for G2BlendSurfacePayload {
 #[serde(try_from = "VariableBlendSurfacePayloadWire")]
 pub struct VariableBlendSurfacePayload {
     construction: Box<VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3>>,
+    #[serde(skip)]
+    slice_range: OrderedOptionalRange,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1889,25 +1897,25 @@ impl VariableBlendSurfacePayload {
     pub fn try_new(
         construction: Box<VariableBlendConstruction>,
     ) -> Result<Self, ProceduralGeometryError> {
+        const INVALID: &str = "variable blend construction payload is invalid";
         let construction = (*construction)
             .admit()
-            .filter(|construction| {
-                ordered(&construction.u_range)
-                    && [&construction.post_range, &construction.slice_range]
-                        .into_iter()
-                        .chain(
-                            construction
-                                .secondary_curve
-                                .as_ref()
-                                .map(|curve| &curve.parameter_range),
-                        )
-                        .all(optional_ordered)
-            })
-            .ok_or(ProceduralGeometryError::Payload(
-                "variable blend construction payload is invalid",
-            ))?;
+            .ok_or(ProceduralGeometryError::Payload(INVALID))?;
+        if !ordered(&construction.u_range) || !optional_ordered(&construction.post_range) {
+            return Err(ProceduralGeometryError::Payload(INVALID));
+        }
+        let slice_range = OrderedOptionalRange::new(construction.slice_range)
+            .ok_or(ProceduralGeometryError::Payload(INVALID))?;
+        if construction
+            .secondary_curve
+            .as_ref()
+            .is_some_and(|curve| !optional_ordered(&curve.parameter_range))
+        {
+            return Err(ProceduralGeometryError::Payload(INVALID));
+        }
         Ok(Self {
             construction: Box::new(construction),
+            slice_range,
         })
     }
     /// Return the construction.
@@ -1915,6 +1923,11 @@ impl VariableBlendSurfacePayload {
         &self,
     ) -> &VariableBlendConstruction<FiniteReal, FiniteVector3, FinitePoint3> {
         &self.construction
+    }
+
+    /// Return the admitted slice interval.
+    pub(crate) fn slice_range(&self) -> OrderedOptionalRange {
+        self.slice_range
     }
 }
 impl TryFrom<VariableBlendSurfacePayloadWire> for VariableBlendSurfacePayload {
@@ -1980,6 +1993,20 @@ impl TryFrom<VertexBlendSurfacePayloadWire> for VertexBlendSurfacePayload {
     }
 }
 
+/// Optional finite interval endpoints, ordered when both are present.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OrderedOptionalRange([Option<FiniteReal>; 2]);
+
+impl OrderedOptionalRange {
+    fn new(endpoints: [Option<FiniteReal>; 2]) -> Option<Self> {
+        optional_ordered(&endpoints).then_some(Self(endpoints))
+    }
+
+    pub(crate) fn endpoints(self) -> [Option<FiniteReal>; 2] {
+        self.0
+    }
+}
+
 /// Admitted blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2003,6 +2030,9 @@ pub struct BlendSurfacePayload {
     /// own cache form, or the legacy solved-cache tolerance stated instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<Box<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
+
+    #[serde(skip)]
+    native_ranges: Option<[OrderedOptionalRange; 2]>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2039,15 +2069,15 @@ impl BlendSurfacePayload {
         cross_section: BlendCrossSection,
         cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
+        let mut native_ranges = None;
         let cache = cache
             .admit_form(|construction| {
-                (*construction)
-                    .admit()
-                    .filter(|construction| {
-                        optional_ordered(&construction.u_range)
-                            && optional_ordered(&construction.v_range)
-                    })
-                    .map(Box::new)
+                let construction = (*construction).admit()?;
+                native_ranges = Some([
+                    OrderedOptionalRange::new(construction.u_range)?,
+                    OrderedOptionalRange::new(construction.v_range)?,
+                ]);
+                Some(Box::new(construction))
             })
             .ok_or(ProceduralGeometryError::Payload(
                 "rolling-ball blend construction payload is invalid",
@@ -2058,6 +2088,7 @@ impl BlendSurfacePayload {
             radius,
             cross_section,
             cache,
+            native_ranges,
         })
     }
     /// Return the supports.
@@ -2081,6 +2112,11 @@ impl BlendSurfacePayload {
         &self,
     ) -> Option<&RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>> {
         self.cache.form().map(Box::as_ref)
+    }
+
+    /// Return the admitted U and V ranges of the native construction.
+    pub(crate) fn native_ranges(&self) -> Option<[OrderedOptionalRange; 2]> {
+        self.native_ranges
     }
 }
 impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {

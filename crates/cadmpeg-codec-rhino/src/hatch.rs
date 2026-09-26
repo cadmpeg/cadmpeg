@@ -261,8 +261,13 @@ pub(crate) fn decode(
         )?;
         body.skip(wrapper.next_offset() - wrapper_offset)
             .ok_or_else(|| GeometryError::malformed(body.position(), "hatch loop overruns body"))?;
-        let decoded =
-            crate::curves::decode_2d(data, class.class_uuid, class.class_data_range, archive)?;
+        let decoded = crate::curves::decode_2d(
+            expand.ctx(),
+            data,
+            class.class_uuid,
+            class.class_data_range,
+            archive,
+        )?;
         let DecodedGeometry::Curve { curve } = decoded else {
             return Err(GeometryError::malformed(
                 wrapper_offset,
