@@ -4498,9 +4498,11 @@ fn attach_standard_topology(
     }
     if let Some(options) = &mut endpoint_options {
         let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
+            ctx,
             spine,
             &serialized_edge_faces,
-        );
+        )
+        .map_err(StandardTopologyError::Resource)?;
         let mut allowed_faces = supports
             .iter()
             .enumerate()

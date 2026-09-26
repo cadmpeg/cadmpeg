@@ -12,7 +12,8 @@ use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTo
 use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::{SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS};
 use crate::solve::union_find::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, View, WorkBudget};
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
@@ -563,17 +564,18 @@ pub(crate) fn resolve_standard_edge_faces(
 }
 
 fn repeated_edge_face_handle_candidates_from_sets(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     face_handles: &[HashSet<u32>],
     serialized: &[[usize; 2]],
-) -> Option<Vec<Vec<usize>>> {
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
     if edge_rows.len() != serialized.len()
         || serialized
             .iter()
             .flatten()
             .any(|face| *face >= face_handles.len())
     {
-        return None;
+        return Ok(None);
     }
     for (row, faces) in edge_rows.iter().zip(serialized) {
         if !row
@@ -581,20 +583,27 @@ fn repeated_edge_face_handle_candidates_from_sets(
             .iter()
             .all(|handle| face_handles[faces[0]].contains(handle))
         {
-            return None;
+            return Ok(None);
         }
     }
-    let mut candidates = alloc_filled(
+    let mut candidates = ctx.alloc_filled(
         edge_rows.len(),
         Vec::new(),
         "catia_repeated_edge_handle_face_candidates",
-    )
-    .ok()?;
+    )?;
     for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
         if faces[0] != faces[1] || row.handles.len() < 2 {
             continue;
         }
+        let handle_count = u64::try_from(row.handles.len()).map_err(|_| {
+            ctx.refuse_codec_limit("catia repeated edge unique handles", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_collection_items(handle_count, "catia repeated edge unique handles")?;
         let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
+        let face_count = u64::try_from(face_handles.len()).map_err(|_| {
+            ctx.refuse_codec_limit("catia repeated edge matching faces", u64::MAX, u64::MAX)
+        })?;
+        ctx.charge_collection_items(face_count, "catia repeated edge matching faces")?;
         let mut matching = face_handles
             .iter()
             .enumerate()
@@ -617,26 +626,44 @@ fn repeated_edge_face_handle_candidates_from_sets(
         }
         candidates[edge] = matching;
     }
-    Some(candidates)
+    Ok(Some(candidates))
 }
 
 /// Return positive second-face candidates from the global trim-handle
 /// namespace. The relation abstains for the complete file unless every edge
 /// row is contained by its first serialized face packet.
 pub(crate) fn standard_repeated_edge_face_handle_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     serialized: &[[usize; 2]],
-) -> Option<Vec<Vec<usize>>> {
-    let face_run = selected_standard_run(bytes)?;
+) -> Result<Option<Vec<Vec<usize>>>, CodecError> {
+    let Some(face_run) = selected_standard_run(bytes) else {
+        return Ok(None);
+    };
     let face_start = face_run.face_start();
     let face_count = face_run.face_count();
     let after_faces = face_run.after_faces();
-    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
+    let Some((edge_rows, handle_width)) = parse_standard_edge_tables_with_width(bytes, after_faces)
         .map(|(rows, _, width)| (rows, width))
         .or_else(|| {
             parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
+        })
+    else {
+        return Ok(None);
+    };
+    let Some(trims) = parse_trim_chain(bytes, face_start, face_count, handle_width) else {
+        return Ok(None);
+    };
+    let trim_count = u64::try_from(trims.len()).map_err(|_| {
+        ctx.refuse_codec_limit("catia repeated edge face handles", u64::MAX, u64::MAX)
+    })?;
+    ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
+    for trim in &trims {
+        let handle_count = u64::try_from(trim.packet.handles().len()).map_err(|_| {
+            ctx.refuse_codec_limit("catia repeated edge face handle set", u64::MAX, u64::MAX)
         })?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+        ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
+    }
     let face_handles = trims
         .into_iter()
         .map(|trim| {
@@ -647,7 +674,7 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
                 .collect::<HashSet<_>>()
         })
         .collect::<Vec<_>>();
-    repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
+    repeated_edge_face_handle_candidates_from_sets(ctx, &edge_rows, &face_handles, serialized)
 }
 
 /// Refine unresolved repeated-face domains with positive trim-handle evidence.
