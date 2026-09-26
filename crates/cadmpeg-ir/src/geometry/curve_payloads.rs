@@ -104,12 +104,10 @@ struct SurfaceOffsetCurveConstructionWire {
 impl SurfaceOffsetCurveConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
         super::write_revision_form_tolerance(
             self.cache.form_mut().map(|form| &mut form.cache),
-            value,
             write,
         )
     }
@@ -251,10 +249,9 @@ struct DeformableCurveConstructionWire {
 impl DeformableCurveConstruction {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
-        super::write_revision_form_tolerance(Some(&mut self.cache_first.cache), value, write)
+        super::write_revision_form_tolerance(Some(&mut self.cache_first.cache), write)
     }
 
     /// Admit the construction parameters.
@@ -1094,10 +1091,9 @@ impl TryFrom<ProjectionCurvePayloadWire> for ProjectionCurvePayload {
 impl SpringCurvePayload {
     pub(super) fn write_revision_fit_tolerance(
         &mut self,
-        value: super::FitTolerance,
         write: super::ToleranceWrite,
     ) -> super::RevisionCacheWrite {
-        self.layout.write_revision_fit_tolerance(value, write)
+        self.layout.write_revision_fit_tolerance(write)
     }
 }
 
