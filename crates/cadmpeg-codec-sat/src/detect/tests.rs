@@ -8,6 +8,34 @@ use crate::test_support::test_streams::text_sphere_stream;
 use crate::SatCodec;
 
 #[test]
+fn binary_classification_propagates_header_string_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut bytes = b"ASM BinaryFile4".to_vec();
+    bytes.resize(31, 0);
+    bytes.extend_from_slice(&[7, 3]);
+    bytes.extend_from_slice(b"ASM");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (limited, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+    assert!(matches!(
+        super::classify(&limited, &bytes),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain kernel header product string"
+    ));
+    let (service, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("service context");
+    assert!(matches!(
+        super::classify(&service, &bytes).expect("header admitted"),
+        Some(super::StreamKind::AsmBinary(_))
+    ));
+}
+
+#[test]
 fn detection_is_content_based() {
     assert_eq!(SatCodec.detect(b"ASM BinaryFile8\x00"), Confidence::High);
     assert_eq!(SatCodec.detect(b"ACIS BinaryFile\x00"), Confidence::High);

@@ -87,12 +87,45 @@ impl PolygonalSurface {
         })
     }
 
+    /// Build from admitted vertices, source deflection and placement scale.
+    /// Only triangle relationships and scaled deflection remain to check.
+    pub fn from_admitted_scaled_deflection(
+        vertices: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        chordal_deflection: NonNegativeReal,
+        scale: crate::scalar::PositiveReal,
+    ) -> Result<Self, GeometryLayoutError> {
+        Self::check_layout(vertices.len(), &triangles)?;
+        let chordal_deflection = chordal_deflection.scaled(scale).ok_or_else(|| {
+            geometry_layout_error("chordal_deflection must be finite and non-negative")
+        })?;
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection,
+        })
+    }
+
     fn build(
         vertices: Vec<Point3>,
         triangles: Vec<[u32; 3]>,
         deflection: impl FnOnce() -> Result<NonNegativeReal, GeometryLayoutError>,
     ) -> Result<Self, GeometryLayoutError> {
-        if vertices.len() < 3 {
+        Self::check_layout(vertices.len(), &triangles)?;
+        let vertices = admit_finite_vertices(vertices)?;
+        let chordal_deflection = deflection()?;
+        Ok(Self {
+            vertices,
+            triangles,
+            chordal_deflection,
+        })
+    }
+
+    fn check_layout(
+        vertex_count: usize,
+        triangles: &[[u32; 3]],
+    ) -> Result<(), GeometryLayoutError> {
+        if vertex_count < 3 {
             return Err(geometry_layout_error(
                 "polygonal surface must contain at least three vertices",
             ));
@@ -105,19 +138,13 @@ impl PolygonalSurface {
         if triangles
             .iter()
             .flatten()
-            .any(|index| *index as usize >= vertices.len())
+            .any(|index| usize::try_from(*index).map_or(true, |index| index >= vertex_count))
         {
             return Err(geometry_layout_error(
                 "polygonal surface contains an out-of-range triangle index",
             ));
         }
-        let vertices = admit_finite_vertices(vertices)?;
-        let chordal_deflection = deflection()?;
-        Ok(Self {
-            vertices,
-            triangles,
-            chordal_deflection,
-        })
+        Ok(())
     }
 
     /// Edit finite vertices transactionally.
@@ -374,19 +401,53 @@ impl PolylineSamples<f64, FinitePoint3> {
                         point: vertex.point,
                     })
                 })?;
-                (vertices
-                    .windows(2)
-                    .all(|pair| pair[0].parameter < pair[1].parameter)
-                    || vertices
-                        .windows(2)
-                        .all(|pair| pair[0].parameter > pair[1].parameter))
-                .then_some(PolylineSamples::Parameterized { vertices })
+                let samples = PolylineSamples::Parameterized { vertices };
+                samples
+                    .has_strictly_monotonic_parameters()
+                    .then_some(samples)
             }
         }
     }
 }
 
 impl PolylineSamples<FiniteReal, FinitePoint3> {
+    fn has_strictly_monotonic_parameters(&self) -> bool {
+        match self {
+            Self::Unparameterized { .. } => true,
+            Self::Parameterized { vertices } => {
+                vertices
+                    .windows(2)
+                    .all(|pair| pair[0].parameter < pair[1].parameter)
+                    || vertices
+                        .windows(2)
+                        .all(|pair| pair[0].parameter > pair[1].parameter)
+            }
+        }
+    }
+
+    /// Edit admitted points transactionally. The edit supplies an admitted
+    /// point, so no coordinate needs another admission.
+    pub fn edit_admitted_points(
+        &mut self,
+        mut edit: impl FnMut(FinitePoint3) -> Result<FinitePoint3, GeometryLayoutError>,
+    ) -> Result<(), GeometryLayoutError> {
+        let mut candidate = self.clone();
+        match &mut candidate {
+            Self::Unparameterized { points } => {
+                for point in points.iter_mut() {
+                    *point = edit(*point)?;
+                }
+            }
+            Self::Parameterized { vertices } => {
+                for vertex in vertices.iter_mut() {
+                    vertex.point = edit(vertex.point)?;
+                }
+            }
+        }
+        *self = candidate;
+        Ok(())
+    }
+
     /// The samples with raw parameters and points.
     #[must_use]
     pub fn to_raw(&self) -> PolylineSamples {

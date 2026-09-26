@@ -515,7 +515,11 @@ fn render_userdata(
 ///
 /// The returned records are complete settings records whose payload was not
 /// admitted by a registered owner.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<NativeInstall, CodecError> {
     let properties = &scan.metadata.properties;
     let revisions = properties
         .revision_history
@@ -703,15 +707,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<NativeInstall, 
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("revisions", &revisions)?;
-    namespace.set_arena("document_notes", &notes)?;
-    namespace.set_arena("applications", &applications)?;
-    namespace.set_arena("document_settings", &document_settings)?;
-    namespace.set_arena("previews", &previews)?;
-    namespace.set_arena("setting_records", &setting_records)?;
-    namespace.set_arena("annotation_settings", &annotations)?;
-    namespace.set_arena("grid_defaults", &grids)?;
-    namespace.set_arena("render_settings", &renders)?;
+    namespace.set_arena(ctx, "revisions", &revisions)?;
+    namespace.set_arena(ctx, "document_notes", &notes)?;
+    namespace.set_arena(ctx, "applications", &applications)?;
+    namespace.set_arena(ctx, "document_settings", &document_settings)?;
+    namespace.set_arena(ctx, "previews", &previews)?;
+    namespace.set_arena(ctx, "setting_records", &setting_records)?;
+    namespace.set_arena(ctx, "annotation_settings", &annotations)?;
+    namespace.set_arena(ctx, "grid_defaults", &grids)?;
+    namespace.set_arena(ctx, "render_settings", &renders)?;
     Ok(NativeInstall {
         losses,
         opaque_records,

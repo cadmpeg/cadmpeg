@@ -268,7 +268,11 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     let (mut ir, _, _) = decoded.into_parts();
     ir.native
         .namespace_mut("fcstd")
-        .set_arena("document", &[] as &[DocumentFacts])
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "document",
+            &[] as &[DocumentFacts],
+        )
         .expect("drop the document record");
 
     let error = inherit(&ir).expect_err("a schema-2 source with no baseline is refused");

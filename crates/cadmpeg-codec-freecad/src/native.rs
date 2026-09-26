@@ -153,7 +153,11 @@ mod tests {
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.native
             .namespace_mut("fcstd")
-            .set_arena("string_tables", &[wire])
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                &[wire],
+            )
             .unwrap();
         let roundtrip: cadmpeg_ir::CadIr =
             serde_json::from_value(serde_json::to_value(&ir).unwrap()).unwrap();
@@ -172,7 +176,13 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-        namespace.set_arena("string_tables", &records).unwrap();
+        namespace
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                &records,
+            )
+            .unwrap();
         assert_eq!(
             namespace.arenas()["string_tables"][2].id(),
             "fcstd:native:string-table#10"
@@ -188,7 +198,11 @@ mod tests {
         );
         let mut rewritten = cadmpeg_ir::native::NativeNamespace::default();
         rewritten
-            .set_arena("string_tables", tables.as_slice())
+            .set_arena(
+                &cadmpeg_test_support::service_decode_context(),
+                "string_tables",
+                tables.as_slice(),
+            )
             .unwrap();
         assert_eq!(rewritten, namespace);
         let wire = serde_json::to_value(&tables).unwrap();
@@ -213,7 +227,13 @@ mod tests {
             let wire = serde_json::to_value(&records).unwrap();
             assert!(serde_json::from_value::<super::StringTables>(wire).is_err());
             let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
-            namespace.set_arena("string_tables", &records).unwrap();
+            namespace
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "string_tables",
+                    &records,
+                )
+                .unwrap();
             assert!(namespace
                 .arena_as_collection::<super::StringTableRecord, super::StringTables>(
                     "string_tables"

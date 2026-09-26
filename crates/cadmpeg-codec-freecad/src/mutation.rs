@@ -25,7 +25,13 @@ pub(crate) fn set_value_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     valid_xml_name(attribute, "attribute")?;
-    mutate_property(ir, owner, property_name, |property| {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    mutate_property(&ctx, ir, owner, property_name, |property| {
         let property_id = property.id.clone();
         if !matches!(
             property.family,
@@ -88,11 +94,16 @@ pub(crate) fn replace_entry(
         .find(|candidate| candidate.name == entry_name)
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
     entry.data = bytes;
-    namespace.set_arena("entries", &entries)?;
+    namespace.set_arena(
+        &cadmpeg_test_support::service_decode_context(),
+        "entries",
+        &entries,
+    )?;
     Ok(())
 }
 
 fn mutate_property(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     owner: FcstdPropertyOwner<'_>,
     property_name: &str,
@@ -118,7 +129,7 @@ fn mutate_property(
         ))
     })?;
     mutation(property)?;
-    namespace.set_arena("properties", &properties)?;
+    namespace.set_arena(ctx, "properties", &properties)?;
     Ok(())
 }
 

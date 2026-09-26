@@ -271,7 +271,11 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         .attributes
         .insert("value".into(), "Missing".into());
     namespace
-        .set_arena("properties", &properties)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "properties",
+            &properties,
+        )
         .expect("replace properties");
 
     let error = FcstdCodec
@@ -325,7 +329,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("objects");
     objects[0].type_name = "App::FeaturePython".into();
     namespace
-        .set_arena("objects", &objects)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "objects",
+            &objects,
+        )
         .expect("replace objects");
     let error = FcstdCodec
         .plan(
@@ -349,7 +357,11 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("entry bytes")
         .push(serde_json::json!(0));
     namespace
-        .set_arena("entries", &entries)
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "entries",
+            &entries,
+        )
         .expect("replace entries");
     let error = FcstdCodec
         .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)

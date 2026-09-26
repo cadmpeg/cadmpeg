@@ -3,6 +3,7 @@
 
 use super::frame::FiniteFrame;
 use super::LinkTarget;
+use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -28,7 +29,7 @@ impl PairedJointFamily {
 /// A checked joint parameter value that retains its source spelling.
 #[derive(Debug, Clone, PartialEq)]
 enum JointParameter {
-    Scalar { raw: String, value: f64 },
+    Scalar { raw: String, value: FiniteReal },
     Boolean { raw: String, value: bool },
     Native { raw: String },
 }
@@ -41,11 +42,9 @@ impl JointParameter {
                 let value = raw
                     .parse::<f64>()
                     .map_err(|_| format!("joint parameter {name} has an invalid value {raw:?}"))?;
-                if !value.is_finite() {
-                    return Err(format!(
-                        "joint parameter {name} has an invalid value {raw:?}"
-                    ));
-                }
+                let value = FiniteReal::new(value).ok_or_else(|| {
+                    format!("joint parameter {name} has an invalid value {raw:?}")
+                })?;
                 Ok(Self::Scalar { raw, value })
             }
             "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax"
@@ -93,7 +92,7 @@ impl JointParameters {
         }
     }
 
-    pub(crate) fn scalar_value(&self, name: &str) -> Option<f64> {
+    pub(crate) fn scalar_value(&self, name: &str) -> Option<FiniteReal> {
         match self.0.get(name) {
             Some(JointParameter::Scalar { value, .. }) => Some(*value),
             _ => None,
@@ -379,6 +378,8 @@ impl TryFrom<JointRecordWire> for JointRecord {
 mod tests {
     use std::collections::BTreeMap;
 
+    use cadmpeg_ir::scalar::FiniteReal;
+
     use super::{JointBody, JointConnectorRecord, JointRecord, JointRecordWire, PairedJointFamily};
 
     #[test]
@@ -532,7 +533,10 @@ mod tests {
             let record = serde_json::from_value::<JointRecord>(wire.clone())
                 .expect("valid known parameter values remain admissible");
             if name == "Angle" {
-                assert_eq!(record.parameters().scalar_value(name), Some(15.5));
+                assert_eq!(
+                    record.parameters().scalar_value(name).map(FiniteReal::get),
+                    Some(15.5)
+                );
             }
             assert_eq!(serde_json::to_value(record).unwrap(), wire);
         }

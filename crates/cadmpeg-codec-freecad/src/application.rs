@@ -10,12 +10,17 @@ use crate::native::{EntryRecord, LinkTarget, ObjectRecord, PropertyFamily, Prope
 
 /// Write the legacy census from authoritative object, property, and entry records.
 pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     namespace: &mut NativeNamespace,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
 ) -> Result<(), NativeConvertError> {
-    namespace.set_arena("applications", &wire_records(objects, properties, entries))
+    namespace.set_arena(
+        ctx,
+        "applications",
+        &wire_records(objects, properties, entries),
+    )
 }
 
 /// Check the persisted census against the same authoritative records used for writing.
