@@ -1014,8 +1014,14 @@ fn cap_boundary(points: &[Point3]) -> crate::extrusion::ExtrusionBoundary {
         end_nurbs: end.clone(),
         start_pcurve: pcurve.clone(),
         end_pcurve: pcurve,
-        lateral: crate::surfaces::extrusion_nurbs(&start, &end, [0.0, 5.0], false, 0)
-            .expect("valid cap lateral"),
+        lateral: crate::surfaces::extrusion_nurbs(
+            &start,
+            &end,
+            cadmpeg_ir::units::FiniteVector::new([0.0, 5.0]).expect("finite path domain"),
+            false,
+            0,
+        )
+        .expect("valid cap lateral"),
     }
 }
 

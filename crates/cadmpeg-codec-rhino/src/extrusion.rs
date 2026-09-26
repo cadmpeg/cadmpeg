@@ -869,8 +869,7 @@ fn increasing_interval(
     value: FiniteVector<2>,
     offset: usize,
     name: &str,
-) -> Result<[f64; 2], GeometryError> {
-    let value = value.get();
+) -> Result<FiniteVector<2>, GeometryError> {
     if value[0] < value[1] {
         Ok(value)
     } else {

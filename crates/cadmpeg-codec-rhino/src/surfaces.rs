@@ -1004,7 +1004,7 @@ fn admit_nurbs_pole_conversion(
 pub(crate) fn extrusion_nurbs(
     start: &NurbsCurve,
     end: &NurbsCurve,
-    path_domain: [f64; 2],
+    path_domain: FiniteVector<2>,
     transposed: bool,
     offset: usize,
 ) -> Result<NurbsSurface, GeometryError> {
@@ -1013,7 +1013,6 @@ pub(crate) fn extrusion_nurbs(
         || start.control_points().len() != end.control_points().len()
         || start.weights() != end.weights()
         || start.periodic() != end.periodic()
-        || !path_domain.iter().all(|value| value.is_finite())
         || path_domain[0] >= path_domain[1]
     {
         return Err(error(offset, "extrusion tensor inputs are incompatible"));
@@ -1042,18 +1041,12 @@ pub(crate) fn extrusion_nurbs(
         weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
     .and_then(|poles| {
+        let [path_start, path_end] = path_domain.finite_components();
+        let path_knots =
+            KnotVector::from_finite_lanes(vec![path_start, path_start, path_end, path_end])?;
         NurbsSurface::new(
             NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),
-            NurbsSurfaceAxis::new(
-                1,
-                vec![
-                    path_domain[0],
-                    path_domain[0],
-                    path_domain[1],
-                    path_domain[1],
-                ],
-                false,
-            ),
+            NurbsSurfaceAxis::new(1, path_knots, false),
             poles,
             false,
         )
