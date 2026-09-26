@@ -426,6 +426,27 @@ fn finite_pcurve_parts_match_raw_analytic_admission() {
 }
 
 #[test]
+fn finite_pcurve_wrapper_parts_match_raw_admission() {
+    use crate::geometry::pcurve::{LinePcurve, OffsetPcurve, PcurveGeometry, TrimmedPcurve};
+    use crate::scalar::FiniteReal;
+
+    let basis = || Box::new(PcurveGeometry::Line(LinePcurve::U_AXIS));
+    let finite = |value| FiniteReal::new(value).unwrap();
+    assert_eq!(
+        TrimmedPcurve::from_finite_parts([finite(0.0), finite(1.0)], true, basis()),
+        TrimmedPcurve::try_new([0.0, 1.0], true, basis()),
+    );
+    assert_eq!(
+        TrimmedPcurve::from_finite_parts([finite(1.0), finite(0.0)], true, basis()),
+        TrimmedPcurve::try_new([1.0, 0.0], true, basis()),
+    );
+    assert_eq!(
+        OffsetPcurve::from_finite_parts(finite(-0.25), basis()),
+        OffsetPcurve::try_new(-0.25, basis()),
+    );
+}
+
+#[test]
 fn a_line_pcurve_from_admitted_parts_matches_its_raw_admission() {
     use crate::units::{FinitePoint2, NonzeroPoint2};
 

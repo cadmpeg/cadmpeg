@@ -1243,13 +1243,13 @@ struct TrimmedPcurveWire {
 }
 
 impl TrimmedPcurve {
-    /// Admit finite parameters that satisfy the carrier's numeric contract.
-    pub fn try_new(
-        parameter_range: [f64; 2],
+    /// Build from finite endpoints, checking their order and the basis depth.
+    pub fn from_finite_parts(
+        parameter_range: [FiniteReal; 2],
         same_sense: bool,
         basis: Box<PcurveGeometry>,
     ) -> Result<Self, &'static str> {
-        let parameter_range = ParameterInterval::new(parameter_range)
+        let parameter_range = ParameterInterval::from_finite_endpoints(parameter_range.into())
             .map_err(|_| "TrimmedPcurve.parameter_range must be finite and ordered")?;
         let depth = nesting_depth_over(&basis)
             .ok_or("TrimmedPcurve.basis nests past the admitted inline basis depth")?;
@@ -1259,6 +1259,19 @@ impl TrimmedPcurve {
             basis,
             depth,
         })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(
+        parameter_range: [f64; 2],
+        same_sense: bool,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
+        let first = FiniteReal::new(parameter_range[0])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        let last = FiniteReal::new(parameter_range[1])
+            .ok_or("TrimmedPcurve.parameter_range must be finite and ordered")?;
+        Self::from_finite_parts([first, last], same_sense, basis)
     }
 
     /// Return the parameter range.
@@ -1309,9 +1322,11 @@ struct OffsetPcurveWire {
 }
 
 impl OffsetPcurve {
-    /// Admit finite parameters that satisfy the carrier's numeric contract.
-    pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
-        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+    /// Build from a finite distance, checking only the basis depth.
+    pub fn from_finite_parts(
+        distance: FiniteReal,
+        basis: Box<PcurveGeometry>,
+    ) -> Result<Self, &'static str> {
         let depth = nesting_depth_over(&basis)
             .ok_or("OffsetPcurve.basis nests past the admitted inline basis depth")?;
         Ok(Self {
@@ -1319,6 +1334,12 @@ impl OffsetPcurve {
             basis,
             depth,
         })
+    }
+
+    /// Admit finite parameters that satisfy the carrier's numeric contract.
+    pub fn try_new(distance: f64, basis: Box<PcurveGeometry>) -> Result<Self, &'static str> {
+        let distance = FiniteReal::new(distance).ok_or("OffsetPcurve.distance must be finite")?;
+        Self::from_finite_parts(distance, basis)
     }
 
     /// Return the distance.
