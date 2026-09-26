@@ -90,8 +90,8 @@ struct AnnotationRecord {
     plane_equation: crate::settings::PlaneLane<4>,
     dimstyle_uuid: Option<String>,
     annotation_type: i32,
-    text_rectangle_width: f64,
-    text_rotation_radians: f64,
+    text_rectangle_width: FiniteReal,
+    text_rotation_radians: FiniteReal,
     horizontal_alignment: i32,
     vertical_alignment: i32,
     wrapped: bool,
@@ -337,11 +337,10 @@ fn decode_annotation(
     let mut outer = anonymous(data, range.clone(), archive, i32::from(leader))?;
     let mut annotation = crate::dimensions::annotation(data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
-    annotation.text_rectangle_width = scaled_coordinate(annotation.text_rectangle_width, scale)
-        .ok_or_else(|| {
+    annotation.text_rectangle_width =
+        scaled_coordinate(annotation.text_rectangle_width.get(), scale).ok_or_else(|| {
             FramingError::structural(range.start, "scaled text rectangle width is invalid")
-        })?
-        .get();
+        })?;
     let mut points = Vec::new();
     if leader {
         let count = outer.i32()?;
@@ -762,8 +761,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     plane_equation: value.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.kind,
-                    text_rectangle_width: 0.0,
-                    text_rotation_radians: 0.0,
+                    text_rectangle_width: FiniteReal::ZERO,
+                    text_rotation_radians: FiniteReal::ZERO,
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
@@ -833,8 +832,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
                     plane_equation: value.base.plane.equation,
                     dimstyle_uuid: None,
                     annotation_type: value.base.kind,
-                    text_rectangle_width: 0.0,
-                    text_rotation_radians: 0.0,
+                    text_rectangle_width: FiniteReal::ZERO,
+                    text_rotation_radians: FiniteReal::ZERO,
                     horizontal_alignment: 0,
                     vertical_alignment: 0,
                     wrapped: false,
@@ -1595,6 +1594,8 @@ mod tests {
         )
         .expect("modern text class-data suffix is bounded");
         assert_eq!(text.rich_text, "rich");
+        assert_eq!(text.text_rectangle_width.get(), 1.0);
+        assert_eq!(text.text_rotation_radians.get(), 0.25);
         assert!(points.is_empty());
 
         let leader = modern_annotation(true);
@@ -1608,6 +1609,29 @@ mod tests {
         .expect("modern leader class-data suffix is bounded");
         assert_eq!(leader.rich_text, "rich");
         assert_eq!(points, [[1.0, 2.0], [3.0, 4.0]]);
+    }
+
+    #[test]
+    fn modern_text_layout_refuses_nonfinite_rotation_at_source() {
+        let mut text = modern_annotation(false);
+        let rotation = 0.25_f64.to_le_bytes();
+        let offset = text
+            .windows(rotation.len())
+            .position(|window| window == rotation)
+            .expect("text rotation in source bytes");
+        text[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        let result = decode_annotation(
+            &text,
+            0..text.len(),
+            ArchiveVersion::V8,
+            crate::settings::MillimeterScale::IDENTITY,
+            false,
+        );
+        assert!(matches!(
+            result,
+            Err(crate::chunks::FramingError::Structural { offset: failed, message })
+                if failed == offset - 8 && message == "text layout contains a nonfinite value"
+        ));
     }
 
     #[test]

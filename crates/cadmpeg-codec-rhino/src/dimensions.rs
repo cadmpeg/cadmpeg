@@ -153,8 +153,8 @@ pub(crate) struct Dimension {
 
 pub(crate) struct Annotation {
     pub(crate) rich_text: String,
-    pub(crate) text_rectangle_width: f64,
-    pub(crate) text_rotation_radians: f64,
+    pub(crate) text_rectangle_width: FiniteReal,
+    pub(crate) text_rotation_radians: FiniteReal,
     pub(crate) horizontal_alignment: i32,
     pub(crate) vertical_alignment: i32,
     pub(crate) wrapped: bool,
@@ -168,8 +168,8 @@ pub(crate) struct Annotation {
 
 struct TextContent {
     rich_text: String,
-    rectangle_width: f64,
-    rotation_radians: f64,
+    rectangle_width: FiniteReal,
+    rotation_radians: FiniteReal,
     horizontal_alignment: i32,
     vertical_alignment: i32,
     wrapped: bool,
@@ -263,12 +263,15 @@ fn text_content(
     plane(&mut text)?;
     let rectangle_width = text.f64()?;
     let rotation_radians = text.f64()?;
-    if !rectangle_width.is_finite() || !rotation_radians.is_finite() {
+    let (Some(rectangle_width), Some(rotation_radians)) = (
+        FiniteReal::new(rectangle_width),
+        FiniteReal::new(rotation_radians),
+    ) else {
         return Err(FramingError::structural(
             text.position() - 16,
             "text layout contains a nonfinite value",
         ));
-    }
+    };
     let horizontal_alignment = text.i32()?;
     let vertical_alignment = text.i32()?;
     if !text.f64()?.is_finite() {
