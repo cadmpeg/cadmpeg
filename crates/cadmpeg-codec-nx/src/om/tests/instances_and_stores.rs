@@ -32,6 +32,14 @@ use crate::test_support::test_om::indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use cadmpeg_core::decode::View;
 
+fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    run(&ctx)
+}
+
 fn fixed_indexed_section_with_embedded_section(adjust_outer_bounds: bool) -> Vec<u8> {
     let outer = indexed_om_section();
     let inner = indexed_om_section();
@@ -1744,14 +1752,47 @@ fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
             .collect::<Vec<_>>()
     };
     assert_eq!(
-        offset_store_control_class_ordinals(&encode(&[2, 0, 4, 8, 3])),
+        with_test_ctx(|ctx| offset_store_control_class_ordinals(ctx, &encode(&[2, 0, 4, 8, 3])))
+            .expect("test OM class ordinals"),
         Some(vec![2, 0])
     );
-    assert!(offset_store_control_class_ordinals(&encode(&[2, 2, 4])).is_none());
-    assert!(offset_store_control_class_ordinals(&encode(&[2, 4, 1])).is_none());
+    assert!(
+        with_test_ctx(|ctx| offset_store_control_class_ordinals(ctx, &encode(&[2, 2, 4])))
+            .expect("test OM class ordinals")
+            .is_none()
+    );
+    assert!(
+        with_test_ctx(|ctx| offset_store_control_class_ordinals(ctx, &encode(&[2, 4, 1])))
+            .expect("test OM class ordinals")
+            .is_none()
+    );
     assert_eq!(
-        offset_store_control_class_ordinals(&encode(&[4, 8])),
+        with_test_ctx(|ctx| offset_store_control_class_ordinals(ctx, &encode(&[4, 8])))
+            .expect("test OM class ordinals"),
         Some(vec![4])
+    );
+}
+
+#[test]
+fn om_offset_store_class_lane_reports_collection_limit() {
+    let bytes = [2_u32, 0, 4, 8, 3]
+        .into_iter()
+        .flat_map(|value| {
+            let bytes = value.to_le_bytes();
+            [0, bytes[0], bytes[1], bytes[2]]
+        })
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 4;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test decode context");
+    let error = offset_store_control_class_ordinals(&ctx, &bytes)
+        .expect_err("five suffix minima exceed the collection limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "nx offset-store suffix minima")
     );
 }
 
