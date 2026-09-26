@@ -1272,8 +1272,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         && (dot(center_direction, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY)
         .then_some(())?;
     let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
-        let vector: [f64; 3] =
-            std::array::from_fn(|index| circle.start[index] - circle.center[index]);
+        let start: [f64; 3] = circle.start.get().into();
+        let vector: [f64; 3] = std::array::from_fn(|index| start[index] - circle.center[index]);
         let length = dot(vector, vector).sqrt();
         ((length - radius).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale
             && dot(axis, vector).abs() <= EPS_CYLINDER_GEOMETRY * radius_scale)
@@ -1342,10 +1342,10 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                             component.abs() <= EPS_CYLINDER_GEOMETRY
                         }
                     })
-                    && ((point_matches(circle.start, first_corner)
-                        && point_matches(circle.end, second_corner))
-                        || (point_matches(circle.end, first_corner)
-                            && point_matches(circle.start, second_corner)))
+                    && ((point_matches(circle.start.get().into(), first_corner)
+                        && point_matches(circle.end.get().into(), second_corner))
+                        || (point_matches(circle.end.get().into(), first_corner)
+                            && point_matches(circle.start.get().into(), second_corner)))
             })
         };
         if ![false, true].into_iter().any(|crossed| {

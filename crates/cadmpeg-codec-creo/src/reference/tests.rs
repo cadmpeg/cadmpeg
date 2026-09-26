@@ -61,8 +61,8 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
     assert_eq!(conic.entity_id, 42);
     assert_eq!(conic.type_id, ConicType::Ellipse);
     assert_eq!(conic.flip, 1);
-    assert_eq!(conic.start, [1.0, 0.0, 0.0]);
-    assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
     assert_eq!(conic.parameter_start, Some(0.0));
     assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
     assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
@@ -170,8 +170,8 @@ fn decodes_positional_conic_with_an_opposite_endpoint_parameter() {
     };
     assert_eq!(conic.entity_id, 43);
     assert_eq!(conic.type_id, ConicType::Ellipse);
-    assert_eq!(conic.start, [1.0, 0.0, 0.0]);
-    assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.start.get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(conic.end.get()), [-1.0, 0.0, 0.0]);
     assert_eq!(conic.parameter_start, Some(0.0));
     assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
     assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
@@ -222,8 +222,9 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         entity_id: 7,
         type_id: ConicType::Ellipse,
         flip: 1,
-        start: [-3.0, 2.0, 4.0],
-        end: [2.0, 4.0, 4.0],
+        start: cadmpeg_ir::features::FinitePoint3::new([-3.0, 2.0, 4.0].into())
+            .expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::new([2.0, 4.0, 4.0].into()).expect("finite end"),
         parameter_start: None,
         parameter_end: None,
         coefficient_1: -5.0,
@@ -262,8 +263,10 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         local_system: cadmpeg_ir::units::FiniteVector::new([
             1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
         ]),
-        start: [diagonal, diagonal, 0.0],
-        end: [-diagonal, -diagonal, 0.0],
+        start: cadmpeg_ir::features::FinitePoint3::new([diagonal, diagonal, 0.0].into())
+            .expect("finite start"),
+        end: cadmpeg_ir::features::FinitePoint3::new([-diagonal, -diagonal, 0.0].into())
+            .expect("finite end"),
         ..conic
     };
     assert!(ellipse_carriers(&[ambiguous]).is_empty());
@@ -382,8 +385,8 @@ fn decodes_arc_z_diameter_rows() {
     assert_eq!(circle.entity_id, 7);
     assert_eq!(circle.center, [0.0; 3]);
     assert_eq!(circle.radius.get(), 1.0);
-    assert_eq!(circle.start, [1.0, 0.0, 0.0]);
-    assert_eq!(circle.end, [-1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.start.get()), [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end.get()), [-1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -394,8 +397,8 @@ fn decodes_arc_z_explicit_center_rows() {
     let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
     assert_eq!(circle.center, [3.5, 10.0, -4.0]);
     assert_eq!(circle.radius.get(), 2.0);
-    assert_eq!(circle.start, [5.5, 10.0, -4.0]);
-    assert_eq!(circle.end, [3.5, 8.0, -4.0]);
+    assert_eq!(<[f64; 3]>::from(circle.start.get()), [5.5, 10.0, -4.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end.get()), [3.5, 8.0, -4.0]);
 }
 
 #[test]
@@ -408,8 +411,8 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
     let cache = ScalarCache::from_section(body);
     let circle = arc_z_fields(body, &cache, 9).expect("general arc");
     assert_eq!(circle.center[0], -30.0);
-    assert_eq!(circle.start[0], -30.0);
-    assert_eq!(circle.end[0], -30.0);
+    assert_eq!(circle.start.get().x, -30.0);
+    assert_eq!(circle.end.get().x, -30.0);
     assert!((circle.axis.as_raw().x.abs() - 1.0).abs() < 1.0e-12);
 }
 
@@ -434,8 +437,8 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
     let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
         .expect("tabulated-cylinder first-coordinate lane circle");
     assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
-    assert_eq!(circle.start, [-3.0, 0.0, 0.0]);
-    assert_eq!(circle.end, [-2.0, 1.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.start.get()), [-3.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(circle.end.get()), [-2.0, 1.0, 0.0]);
     assert_eq!(
         *circle.axis.as_raw(),
         cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)

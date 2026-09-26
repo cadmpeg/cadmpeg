@@ -280,7 +280,8 @@ fn transfer_reference_circles(
                 counts
             });
     for circle in &scan.references.circles {
-        let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
+        let start: [f64; 3] = circle.start.get().into();
+        let radial = std::array::from_fn(|axis| start[axis] - circle.center[axis]);
         let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
         };
