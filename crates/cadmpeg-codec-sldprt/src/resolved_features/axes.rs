@@ -29,8 +29,6 @@ use cadmpeg_ir::{
 };
 use std::collections::{HashMap, HashSet};
 
-const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
-const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
 const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
@@ -434,7 +432,7 @@ fn revolution_line_reference_inputs(
     object_start: usize,
     object_end: usize,
     profile_sources: &HashSet<u32>,
-) -> Option<(u32, Point3, Vector3)> {
+) -> Option<(u32, cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -461,10 +459,13 @@ fn revolution_line_reference_inputs(
         let dx = scalar(direction_offset)?;
         let dy = scalar(direction_offset + 8)?;
         let dz = scalar(direction_offset + 16)?;
-        let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-        ((norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9).then_some((
-            Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-            Vector3::new(dx / norm, dy / norm, dz / norm),
+        Some((
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                x * NATIVE_TO_IR,
+                y * NATIVE_TO_IR,
+                z * NATIVE_TO_IR,
+            ))?,
+            square_sum_unit_direction([dx, dy, dz])?,
         ))
     };
     let next_class_after_zeros = |record_end: usize, maximum_padding: usize| {
@@ -516,17 +517,15 @@ fn revolution_line_reference_inputs(
                 {
                     continue;
                 }
-                let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                if (norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
-                    candidates.push((
-                        handle_start,
-                        6,
-                        (
-                            source,
-                            Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-                            Vector3::new(dx / norm, dy / norm, dz / norm),
-                        ),
-                    ));
+                if let (Some(origin), Some(direction)) = (
+                    cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        x * NATIVE_TO_IR,
+                        y * NATIVE_TO_IR,
+                        z * NATIVE_TO_IR,
+                    )),
+                    square_sum_unit_direction([dx, dy, dz]),
+                ) {
+                    candidates.push((handle_start, 6, (source, origin, direction)));
                 }
             }
         }
@@ -715,15 +714,17 @@ fn revolution_line_reference_inputs(
                     {
                         continue;
                     }
-                    let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                    if (norm - 1.0).abs() > EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
+                    let Some(direction) = square_sum_unit_direction([dx, dy, dz]) else {
                         continue;
-                    }
-                    let candidate = (
-                        *source,
-                        Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
-                        Vector3::new(dx / norm, dy / norm, dz / norm),
-                    );
+                    };
+                    let Some(origin) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        x * NATIVE_TO_IR,
+                        y * NATIVE_TO_IR,
+                        z * NATIVE_TO_IR,
+                    )) else {
+                        continue;
+                    };
+                    let candidate = (*source, origin, direction);
                     let ranked = (handle_start, scalar_count, candidate);
                     if !candidates.contains(&ranked) {
                         candidates.push(ranked);
@@ -755,9 +756,9 @@ fn revolution_line_reference_inputs(
                 origin.x.to_bits(),
                 origin.y.to_bits(),
                 origin.z.to_bits(),
-                direction.x.to_bits(),
-                direction.y.to_bits(),
-                direction.z.to_bits(),
+                direction.as_raw().x.to_bits(),
+                direction.as_raw().y.to_bits(),
+                direction.as_raw().z.to_bits(),
             ],
         )
     });
@@ -772,7 +773,7 @@ pub(super) fn temporary_axis_reference(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let end = super::DeclaredEnd::of(object_end, payload.len())?.get();
@@ -814,18 +815,12 @@ pub(super) fn temporary_axis_reference(
             }
             *scalar = value;
         }
-        let origin = Point3::new(
+        let origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             frame[0] * NATIVE_TO_IR,
             frame[1] * NATIVE_TO_IR,
             frame[2] * NATIVE_TO_IR,
-        );
-        let direction = Vector3::new(frame[6], frame[7], frame[8]);
-        let norm =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        if (norm - 1.0).abs() > TEMPORARY_AXIS_UNIT_DIRECTION_EPS {
-            return None;
-        }
+        ))?;
+        let direction = square_sum_unit_direction([frame[6], frame[7], frame[8]])?;
         let record_end = declaration + temporary_axis::NEXT_CLASS_MARKER;
         let last_next_class = end.checked_sub(temporary_axis::NEXT_CLASS_MARKER_VALUE.len())?;
         let search_end = record_end.checked_add(24)?.min(last_next_class);
@@ -836,10 +831,7 @@ pub(super) fn temporary_axis_reference(
                         == Some(&temporary_axis::NEXT_CLASS_MARKER_VALUE)
             })
         })?;
-        (next_class < end).then_some((
-            origin,
-            Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-        ))
+        (next_class < end).then_some((origin, direction))
     });
     let first = candidates.next()?;
     candidates
@@ -896,7 +888,8 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
-    let mut inputs = HashMap::<String, Vec<Option<(Point3, Vector3)>>>::new();
+    let mut inputs =
+        HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
     for lane in lanes {
         for history in histories.iter() {
             let mut objects = history
@@ -982,11 +975,21 @@ pub(crate) fn enrich_history_revolution_inputs(
         {
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
+                format!(
+                    "{}mm,{}mm,{}mm",
+                    first.0.get().x,
+                    first.0.get().y,
+                    first.0.get().z
+                ),
             );
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisDirection"),
-                format!("{},{},{}", first.1.x, first.1.y, first.1.z),
+                format!(
+                    "{},{},{}",
+                    first.1.as_raw().x,
+                    first.1.as_raw().y,
+                    first.1.as_raw().z
+                ),
             );
         }
     }
