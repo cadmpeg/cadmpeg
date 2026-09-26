@@ -61,8 +61,14 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
             origin: std::array::from_fn(|index| {
                 frame.frame().origin()[index] + frame.frame().axis()[index]
             }),
-            normal: frame.frame().axis(),
-            u_axis: frame.frame().ref_direction(),
+            normal: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(
+                frame.frame().axis(),
+            ))
+            .expect("unit axis"),
+            u_axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(
+                frame.frame().ref_direction(),
+            ))
+            .expect("unit reference direction"),
             offset: 31,
         });
     scan.features
@@ -160,8 +166,8 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 31,
         origin: [0.0, 0.0, 0.0],
-        normal: [1.0, 0.0, 0.0],
-        u_axis: [0.0, 1.0, 0.0],
+        normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
         offset: 31,
     });
     assert_eq!(super::chamfer_constant_distance(&scan, &ir, 914), Some(0.5));
@@ -336,29 +342,29 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 1,
         },
         crate::surface::OutlinePlane {
             surface_id: 2,
             origin: [0.0, 2.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 2,
         },
         crate::surface::OutlinePlane {
             surface_id: 3,
             origin: [-9.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 3,
         },
         crate::surface::OutlinePlane {
             surface_id: 4,
             origin: [-8.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 4,
         },
     ]);
@@ -458,29 +464,29 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
         crate::surface::OutlinePlane {
             surface_id: 1,
             origin: [0.0, 0.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 1,
         },
         crate::surface::OutlinePlane {
             surface_id: 2,
             origin: [0.0, 2.0, 0.0],
-            normal: [0.0, 1.0, 0.0],
-            u_axis: [1.0, 0.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
             offset: 2,
         },
         crate::surface::OutlinePlane {
             surface_id: 3,
             origin: [-9.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 3,
         },
         crate::surface::OutlinePlane {
             surface_id: 4,
             origin: [-8.0, 0.0, 0.0],
-            normal: [1.0, 0.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
+            normal: cadmpeg_ir::units::UnitVector3::X_AXIS,
+            u_axis: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             offset: 4,
         },
     ]);
@@ -488,8 +494,8 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 
     assert_eq!(super::round_support_radius(&scan, &ir, 913), Some(0.5));
 
-    scan.planes.positional_frames[2].normal = [0.0, 1.0, 0.0];
-    scan.planes.positional_frames[3].normal = [0.0, 1.0, 0.0];
+    scan.planes.positional_frames[2].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
+    scan.planes.positional_frames[3].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     assert_eq!(super::round_support_radius(&scan, &ir, 913), None);
 
     scan.features.affected_ids[0].ids[0] = 3;

@@ -810,14 +810,14 @@ fn fc05_cylinder_branch_witnesses(
         };
         let Some(axis_index) = Axis::ALL
             .into_iter()
-            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+            .find(|axis| cap.normal()[axis.index()].abs() > 1.0 - EPS_FC05_CAP_AXIS)
         else {
             continue;
         };
         let (reference, axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
                 circle.sample_direction_row_frame.get(),
-                Sign::of_component(cap.normal[axis_index.index()]),
+                Sign::of_component(cap.normal()[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense,
@@ -1391,8 +1391,8 @@ fn select_round_edge_origin_branches(
         };
         let (Some(origin), Some(normal), Some(u_axis)) = (
             decoded_frame.origin,
-            decoded_frame.normal,
-            decoded_frame.u_axis,
+            decoded_frame.normal(),
+            decoded_frame.u_axis(),
         ) else {
             continue;
         };
@@ -1458,10 +1458,10 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
         let decoded_frame = frame.frame();
-        let (Some(origin), Some(normal)) = (decoded_frame.origin, decoded_frame.normal) else {
+        let (Some(origin), Some(normal)) = (decoded_frame.origin, decoded_frame.normal()) else {
             continue;
         };
-        let Some(u_axis) = decoded_frame.u_axis else {
+        let Some(u_axis) = decoded_frame.u_axis() else {
             continue;
         };
         let frame_candidate = PlaneCandidate {
@@ -1515,12 +1515,12 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
             .push(PlaneCandidate {
                 equation: PlaneEquation {
                     origin: outline.origin,
-                    normal: outline.normal,
+                    normal: outline.normal(),
                 },
                 chart: (!local_chart_ids.contains(&outline.surface_id)).then_some(PlaneChart {
                     origin: outline.origin,
-                    normal: outline.normal,
-                    u_axis: outline.u_axis,
+                    normal: outline.normal(),
+                    u_axis: outline.u_axis(),
                 }),
                 offset: outline.offset,
             });
@@ -1550,12 +1550,12 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
             vec![PlaneCandidate {
                 equation: PlaneEquation {
                     origin: plane.origin,
-                    normal: plane.normal,
+                    normal: plane.normal(),
                 },
                 chart: Some(PlaneChart {
                     origin: plane.origin,
-                    normal: plane.normal,
-                    u_axis: plane.u_axis,
+                    normal: plane.normal(),
+                    u_axis: plane.u_axis(),
                 }),
                 offset: plane.offset,
             }],
@@ -1583,10 +1583,10 @@ fn frame_bound_outline_plane_candidate(
 ) -> Option<PlaneCandidate> {
     (frame.surface_id == outline.surface_id).then_some(())?;
     let decoded_frame = frame.frame();
-    let frame_normal = normalize(decoded_frame.normal?)?;
-    let frame_u_axis = normalize(decoded_frame.u_axis?)?;
-    let outline_normal = normalize(outline.normal)?;
-    let outline_u_axis = normalize(outline.u_axis)?;
+    let frame_normal = decoded_frame.normal()?;
+    let frame_u_axis = decoded_frame.u_axis()?;
+    let outline_normal = outline.normal();
+    let outline_u_axis = outline.u_axis();
     (dot(frame_normal, outline_normal) >= 1.0 - EPS_AGREE).then_some(())?;
     (dot(frame_u_axis, outline_u_axis) >= 1.0 - EPS_AGREE).then_some(())?;
     let frame_origin = decoded_frame.origin?;
@@ -1596,12 +1596,12 @@ fn frame_bound_outline_plane_candidate(
     Some(PlaneCandidate {
         equation: PlaneEquation {
             origin: outline.origin,
-            normal: outline.normal,
+            normal: outline_normal,
         },
         chart: Some(PlaneChart {
             origin: chart_origin,
-            normal: decoded_frame.normal?,
-            u_axis: decoded_frame.u_axis?,
+            normal: frame_normal,
+            u_axis: frame_u_axis,
         }),
         offset: frame.offset,
     })
