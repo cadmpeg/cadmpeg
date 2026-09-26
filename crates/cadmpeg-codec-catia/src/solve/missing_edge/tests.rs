@@ -130,6 +130,7 @@ fn visualization_points_abstain_for_other_modes_or_incomplete_coverage() {
 
 #[test]
 fn repeated_long_row_selects_one_majority_sharing_face() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11, 12, 13, 14])];
     let faces = vec![
         handles(&[10, 11, 12, 13, 14, 90]),
@@ -137,14 +138,42 @@ fn repeated_long_row_selects_one_majority_sharing_face() {
         handles(&[10, 14, 70]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1]]);
 }
 
 #[test]
+fn repeated_handle_candidates_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let rows = vec![row(&[10, 11])];
+    let faces = vec![handles(&[10, 11]), handles(&[10, 11])];
+    catia_test_context!(service_ctx);
+    assert_eq!(
+        repeated_edge_face_handle_candidates_from_sets(&service_ctx, &rows, &faces, &[[0, 0]],)
+            .expect("service budget"),
+        Some(vec![vec![1]])
+    );
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect_err("candidate collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_repeated_edge_handle_face_candidates"));
+}
+
+#[test]
 fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11, 12, 13])];
     let faces = vec![
         handles(&[10, 11, 12, 13]),
@@ -152,7 +181,8 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
         handles(&[11, 12, 13]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![Vec::<usize>::new()]);
@@ -160,6 +190,7 @@ fn repeated_long_row_abstains_when_majority_sharing_is_not_unique() {
 
 #[test]
 fn repeated_short_row_retains_every_complete_handle_sharing_face() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11])];
     let faces = vec![
         handles(&[10, 11, 90]),
@@ -168,7 +199,8 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
         handles(&[10, 60]),
     ];
 
-    let candidates = repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0]])
+    let candidates = repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0]])
+        .expect("service resource budget")
         .expect("complete owning-face containment");
 
     assert_eq!(candidates, vec![vec![1, 2]]);
@@ -176,11 +208,14 @@ fn repeated_short_row_retains_every_complete_handle_sharing_face() {
 
 #[test]
 fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
+    catia_test_context!(ctx);
     let rows = vec![row(&[10, 11]), row(&[20, 21])];
     let faces = vec![handles(&[10, 11, 20]), handles(&[20, 21])];
 
     assert!(
-        repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0], [0, 1]],).is_none()
+        repeated_edge_face_handle_candidates_from_sets(&ctx, &rows, &faces, &[[0, 0], [0, 1]],)
+            .expect("service resource budget")
+            .is_none()
     );
 }
 
