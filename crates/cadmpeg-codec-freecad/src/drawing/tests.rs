@@ -26,7 +26,7 @@ fn drawing_direction_vector_refuses_nonfinite_components() {
     };
     assert_eq!(
         super::vector_value(&value(attributes.clone())),
-        Some([0.0, 1.0, 0.0])
+        Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0, 0.0]).unwrap())
     );
     attributes.insert("valueY".into(), "inf".into());
     assert_eq!(super::vector_value(&value(attributes)), None);

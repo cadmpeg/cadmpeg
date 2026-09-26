@@ -113,13 +113,19 @@ pub struct NonzeroVector<const N: usize>([f64; N]);
 impl<const N: usize> NonzeroVector<N> {
     /// Construct finite coordinates with a nonzero accepted norm.
     pub fn new(value: [f64; N]) -> Option<Self> {
-        (value.iter().all(|component| component.is_finite())
-            && value
-                .iter()
-                .map(|component| component * component)
-                .sum::<f64>()
-                > f64::EPSILON)
-            .then_some(Self(value))
+        FiniteVector::new(value).and_then(Self::from_finite)
+    }
+
+    /// Admit finite coordinates whose squared norm exceeds machine epsilon.
+    #[must_use]
+    pub fn from_finite(value: FiniteVector<N>) -> Option<Self> {
+        (value
+            .as_raw()
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            > f64::EPSILON)
+            .then_some(Self(value.get()))
     }
 }
 
@@ -1202,6 +1208,11 @@ mod tests {
         assert!(serde_json::from_str::<NonzeroVector<3>>("[0,0,0]").is_err());
         let coordinates = [2.0, -3.0, 4.0];
         let value = NonzeroVector::new(coordinates).expect("nonzero");
+        assert_eq!(
+            NonzeroVector::from_finite(FiniteVector::new(coordinates).expect("finite")),
+            Some(value)
+        );
+        assert!(NonzeroVector::from_finite(FiniteVector::new([0.0; 3]).expect("finite")).is_none());
         assert_eq!(value.0, coordinates);
         let wire = serde_json::to_string(&value).expect("serialize");
         assert_eq!(wire, "[2.0,-3.0,4.0]");
