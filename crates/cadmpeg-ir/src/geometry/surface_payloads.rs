@@ -867,24 +867,42 @@ impl SubsetSurfaceConstruction {
         v_sense: Option<bool>,
         cache: Option<LegacyCache>,
     ) -> Result<Self, ProceduralGeometryError> {
-        Ok(Self {
-            cache,
+        let parameter_ranges = [
+            DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+            DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
+                ProceduralGeometryError::Payload(
+                    "surface subset ranges are not finite and non-zero",
+                )
+            })?,
+        ];
+        Ok(Self::from_parts(
             support,
-            parameter_ranges: [
-                DirectedParameterRange::new(parameter_ranges[0]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-                DirectedParameterRange::new(parameter_ranges[1]).map_err(|_| {
-                    ProceduralGeometryError::Payload(
-                        "surface subset ranges are not finite and non-zero",
-                    )
-                })?,
-            ],
+            parameter_ranges,
             u_sense,
             v_sense,
-        })
+            cache,
+        ))
+    }
+
+    /// Build a subset from admitted directed ranges.
+    pub fn from_parts(
+        support: SurfaceId,
+        parameter_ranges: [DirectedParameterRange; 2],
+        u_sense: Option<bool>,
+        v_sense: Option<bool>,
+        cache: Option<LegacyCache>,
+    ) -> Self {
+        Self {
+            cache,
+            support,
+            parameter_ranges,
+            u_sense,
+            v_sense,
+        }
     }
     /// Return the support.
     pub fn support(&self) -> &SurfaceId {
