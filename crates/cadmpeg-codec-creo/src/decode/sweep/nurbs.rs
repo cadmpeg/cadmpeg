@@ -288,7 +288,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let nurbs = saved_spline_nurbs(spline, refusal)?;
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
-        nurbs.knots().to_vec(),
+        nurbs.knots().clone(),
         nurbs
             .control_points()
             .iter()
@@ -472,19 +472,23 @@ pub(in super::super) fn extruded_nurbs_surface(
             target.extend([source[index], source[index]]);
         }
     }
-    match NurbsSurface::from_checked_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            directrix.degree(),
-            directrix.knots().to_vec(),
-            directrix.periodic(),
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
-    ) {
+    match cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+    )
+    .into_poles()
+    .and_then(|poles| {
+        NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                directrix.degree(),
+                directrix.knots().clone(),
+                directrix.periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            poles,
+            false,
+        )
+    }) {
         Ok(surface) => Some(surface),
         Err(error) => {
             refusal.note(
@@ -555,7 +559,7 @@ pub(super) fn sketch_nurbs_pcurve(
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
         nurbs.degree(),
-        nurbs.knots().to_vec(),
+        nurbs.knots().clone(),
         nurbs
             .control_points()
             .iter()

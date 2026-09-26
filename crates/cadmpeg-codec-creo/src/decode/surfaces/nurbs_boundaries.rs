@@ -63,14 +63,14 @@ fn nurbs_surface_boundaries(
             let (degree, knots, periodic, transverse_periodic) = if along_u {
                 (
                     nurbs.u_degree(),
-                    nurbs.u_knots().to_vec(),
+                    nurbs.u_knots().clone(),
                     nurbs.u_periodic(),
                     nurbs.v_periodic(),
                 )
             } else {
                 (
                     nurbs.v_degree(),
-                    nurbs.v_knots().to_vec(),
+                    nurbs.v_knots().clone(),
                     nurbs.v_periodic(),
                     nurbs.u_periodic(),
                 )

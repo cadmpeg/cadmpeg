@@ -240,23 +240,27 @@ pub(super) fn swept_nurbs(
             }
         }
     }
-    match NurbsSurface::from_checked_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            profile.degree(),
-            profile.knots().to_vec(),
-            profile.periodic(),
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            1,
-            vec![v_start, v_start, v_end, v_end],
+    match cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+        control.chunks(2_usize).map(<[_]>::to_vec).collect(),
+        weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
+    )
+    .into_poles()
+    .and_then(|poles| {
+        NurbsSurface::new(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                profile.degree(),
+                profile.knots().clone(),
+                profile.periodic(),
+            ),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                1,
+                vec![v_start, v_start, v_end, v_end],
+                false,
+            ),
+            poles,
             false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control.chunks(2_usize).map(<[_]>::to_vec).collect(),
-            weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
-        ),
-        false,
-    ) {
+        )
+    }) {
         Ok(surface) => Some(surface),
         Err(error) => {
             refusal.note(

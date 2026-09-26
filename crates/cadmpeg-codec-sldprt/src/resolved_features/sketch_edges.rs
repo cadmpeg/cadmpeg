@@ -259,7 +259,7 @@ pub(super) fn project_edge(
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) => {
             match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
                 nurbs.degree(),
-                nurbs.knots().to_vec(),
+                nurbs.knots().clone(),
                 nurbs
                     .control_points()
                     .iter()
