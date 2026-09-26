@@ -2,8 +2,8 @@
 //! Length scaling of admitted sketch geometry.
 
 use super::{
-    FinitePoint2, FinitePoint3, FiniteReal, Point2, PositiveLength, PositiveReal,
-    SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchGeometry,
+    FinitePoint2, FinitePoint3, FiniteReal, OrderedMajorRadius, Point2, PositiveLength,
+    PositiveReal, SketchConstraintDefinition, SketchConstraintDefinitionInput, SketchGeometry,
     SketchGeometryDefinition, SpatialSketchConstraintDefinition,
     SpatialSketchConstraintDefinitionInput, SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     EPS_POLAR_DISTANCE_ZERO, EPS_SPATIAL_LINE_LENGTH,
@@ -125,7 +125,6 @@ impl SketchGeometry {
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
         use SketchGeometryDefinition as Definition;
         let mut definition = self.definition().clone();
-        let is_ellipse = matches!(&definition, Definition::Ellipse { .. });
         match &mut definition {
             Definition::Point { position } => {
                 *position = planar_point(*position, scale).ok_or(SketchLengthScaleError::Field(
@@ -159,8 +158,22 @@ impl SketchGeometry {
                 major_radius,
                 minor_radius,
                 ..
+            } => {
+                let major_product = length_product(major_radius.major(), scale)?;
+                let minor_product = length_product(*minor_radius, scale)?;
+                let radii_message = "sketch ellipse radii must be positive and finite";
+                *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch ellipse center and major_angle must be finite",
+                ))?;
+                let major = PositiveLength::new(major_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                let minor = PositiveLength::new(minor_product)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                *major_radius = OrderedMajorRadius::new(major, minor)
+                    .ok_or(SketchLengthScaleError::Field(radii_message))?;
+                *minor_radius = minor;
             }
-            | Definition::Hyperbola {
+            Definition::Hyperbola {
                 center,
                 major_radius,
                 minor_radius,
@@ -168,18 +181,10 @@ impl SketchGeometry {
             } => {
                 let major_product = length_product(*major_radius, scale)?;
                 let minor_product = length_product(*minor_radius, scale)?;
-                let center_message = if is_ellipse {
-                    "sketch ellipse center and major_angle must be finite"
-                } else {
-                    "sketch hyperbola center and major_angle must be finite"
-                };
-                let radii_message = if is_ellipse {
-                    "sketch ellipse radii must be positive and finite"
-                } else {
-                    "sketch hyperbola radii must be positive and finite"
-                };
-                *center = planar_point(*center, scale)
-                    .ok_or(SketchLengthScaleError::Field(center_message))?;
+                let radii_message = "sketch hyperbola radii must be positive and finite";
+                *center = planar_point(*center, scale).ok_or(SketchLengthScaleError::Field(
+                    "sketch hyperbola center and major_angle must be finite",
+                ))?;
                 *major_radius = PositiveLength::new(major_product)
                     .ok_or(SketchLengthScaleError::Field(radii_message))?;
                 *minor_radius = PositiveLength::new(minor_product)

@@ -56,6 +56,13 @@ pub trait CompositeStages: Sized {
     /// The stages, in application order.
     fn stages(&self) -> &[PatternStage];
 
+    /// Build the same kind of arm from stages.
+    ///
+    /// # Errors
+    ///
+    /// Returns the admission message when the stages do not compose.
+    fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str>;
+
     /// Scale the length-bearing fields of every stage while carrying the
     /// admitted stage count, order, and operand relationships.
     fn try_map_stage_lengths<E>(
@@ -67,6 +74,10 @@ pub trait CompositeStages: Sized {
 impl CompositeStages for CompositePattern {
     fn stages(&self) -> &[PatternStage] {
         &self.0
+    }
+
+    fn rebuild(stages: Vec<PatternStage>) -> Result<Self, &'static str> {
+        Self::new(stages)
     }
 
     fn try_map_stage_lengths<E>(
@@ -84,6 +95,10 @@ impl CompositeStages for CompositePattern {
 impl CompositeStages for NoNestedComposite {
     fn stages(&self) -> &[PatternStage] {
         match *self {}
+    }
+
+    fn rebuild(_stages: Vec<PatternStage>) -> Result<Self, &'static str> {
+        Err("a composite stage applies no nested sequence of stages")
     }
 
     fn try_map_stage_lengths<E>(
