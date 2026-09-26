@@ -1324,12 +1324,16 @@ fn standard_freeform_tag_resolves_direct_and_face_carriers() {
         &[0x82, 0x18, 100, 0, 0x18, 231, 3, 0x05],
     );
     stream.splice(vertex_start..vertex_start, unresolved_face);
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([100, 501]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([100, 501]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         evidence.surface_geometries.get(&100),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)))
@@ -1345,12 +1349,16 @@ fn standard_freeform_tag_resolves_standalone_a8_carrier() {
     let mut stream = a8_surface_stream();
     stream[7..11].copy_from_slice(&100u32.to_le_bytes());
     append_b5_record(&mut stream, 0x2e, 501, &[0x18, 100, 0]);
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([100, 501]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([100, 501]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     for tag in [100, 501] {
         assert!(matches!(
             evidence.surface_geometries.get(&tag),
@@ -1371,12 +1379,16 @@ fn standard_freeform_tag_rejects_conflicting_standalone_a8_carriers() {
     second[67..75].copy_from_slice(&1.0f64.to_le_bytes());
     first.extend(second);
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [first],
-        &HashSet::from([100]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [first],
+            &HashSet::from([100]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(!evidence.surface_geometries.contains_key(&100));
 }
 
@@ -1386,12 +1398,16 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
     stream[7..11].copy_from_slice(&100u32.to_le_bytes());
     stream.extend(stream.clone());
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([100]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([100]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         evidence.surface_geometries.get(&100),
         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)))
@@ -1400,12 +1416,16 @@ fn standard_freeform_tag_collapses_repeated_standalone_a8_carrier() {
 
 #[test]
 fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [a8_freeform_curve_stream()],
-        &HashSet::from([0x1234_5678]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [a8_freeform_curve_stream()],
+            &HashSet::from([0x1234_5678]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(matches!(
         evidence.procedural_surfaces.get(&0x1234_5678),
         Some(
@@ -1428,12 +1448,16 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         .expect("face record");
     second[face + 4..face + 8].copy_from_slice(&501u32.to_le_bytes());
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [first, second],
-        &HashSet::new(),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [first, second],
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(evidence.edge_owner_faces.is_empty());
 }
 
@@ -1447,12 +1471,16 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
         .start;
     stream[face + 10..face + 12].copy_from_slice(&999u16.to_le_bytes());
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::new(),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
 
     assert_eq!(
         evidence.edge_owner_faces.get(&300),
@@ -1463,12 +1491,16 @@ fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
 #[test]
 fn standard_object_evidence_rejects_repeated_topology_namespaces() {
     let stream = b5_closed_triangle_stream();
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream.clone(), stream],
-        &HashSet::new(),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream.clone(), stream],
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
 
     assert!(evidence.edge_owner_faces.is_empty());
     assert!(evidence.surface_geometries.is_empty());
@@ -1484,12 +1516,16 @@ fn standard_object_evidence_does_not_join_topology_across_runs() {
         .start;
     stream.insert(loop_start, 0xff);
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::new(),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::new(),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(evidence.edge_owner_faces.is_empty());
 }
 
@@ -1512,12 +1548,16 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
     append_b5_record(&mut records, 0x5f, 501, &[0x82, 0xe6, 0x18, 231, 3, 0x05]);
     stream.splice(vertex_start..vertex_start, records);
 
-    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
-        [stream],
-        &HashSet::from([501]),
-        &HashSet::new(),
-        &mut crate::nurbs::LaneRefusals::new(),
-    );
+    let evidence = crate::test_support::with_service_context(|ctx| {
+        crate::families::standard::decode::standard_object_evidence_from_streams(
+            ctx,
+            [stream],
+            &HashSet::from([501]),
+            &HashSet::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service resource budget");
     assert!(!evidence.surface_geometries.contains_key(&501));
     assert!(matches!(
         evidence.procedural_surfaces.get(&501),

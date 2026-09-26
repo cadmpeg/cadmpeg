@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, View, WorkBudget};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
@@ -845,74 +846,113 @@ impl B5Loop {
 
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
-pub(crate) fn parse(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
-    let mut graphs = topology_runs(bytes, refusal)
+pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<B5Graph>, CodecError> {
+    let mut graphs = topology_runs(ctx, bytes, refusal)?
         .into_iter()
         .map(|(_, graph)| graph);
-    let graph = graphs.next()?;
-    graphs.next().is_none().then_some(graph)
+    let Some(graph) = graphs.next() else {
+        return Ok(None);
+    };
+    Ok(graphs.next().is_none().then_some(graph))
 }
 
 /// Resolve each contiguous object-stream run independently.
 fn topology_runs(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<(Range<usize>, B5Graph)> {
+) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
     let root_runs = topology_root_run_ranges(bytes);
     let candidates = if root_runs.is_empty() {
         object_stream_run_ranges(bytes)
     } else {
         root_runs
     };
-    candidates
-        .into_iter()
-        .filter_map(|range| {
-            let population = owned_object_stream_population(bytes, range.clone());
-            parse_flat(&population, refusal).map(|graph| (range, graph))
-        })
-        .collect()
+    let mut graphs = Vec::new();
+    for range in candidates {
+        let population = owned_object_stream_population(bytes, range.clone());
+        if let Some(graph) = parse_flat(ctx, &population, refusal)? {
+            ctx.charge_collection_items(1, "catia B5 topology runs")?;
+            graphs.push((range, graph));
+        }
+    }
+    Ok(graphs)
 }
 
-fn parse_flat(bytes: &[u8], refusal: &mut crate::nurbs::LaneRefusals) -> Option<B5Graph> {
+fn parse_flat(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<B5Graph>, CodecError> {
     let frames = object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames);
-    parse_from_records(bytes, &records, &frames, true, refusal)
+    parse_from_records(ctx, bytes, &records, &frames, true, refusal)
 }
 
 pub(in crate::families) fn parse_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<B5Graph> {
+) -> Result<Option<B5Graph>, CodecError> {
     let records = records_from_frames(bytes, frames);
-    parse_from_records(bytes, &records, frames, true, refusal)
+    parse_from_records(ctx, bytes, &records, frames, true, refusal)
 }
 
 pub(in crate::families) fn parse_from_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
     require_topology: bool,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<B5Graph> {
-    parse_from_records_budgeted(bytes, records, frames, require_topology, None, refusal)
+) -> Result<Option<B5Graph>, CodecError> {
+    parse_from_records_budgeted(ctx, bytes, records, frames, require_topology, None, refusal)
 }
 
 pub(in crate::families) fn parse_from_records_budgeted(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
     require_topology: bool,
     budget: Option<&WorkBudget<'_>>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<B5Graph> {
+) -> Result<Option<B5Graph>, CodecError> {
     let by_id: HashMap<u32, &B5Record> = records
         .iter()
         .map(|record| (record.object_id, record))
         .collect();
     if records.is_empty() || by_id.len() != records.len() {
-        return None;
+        return Ok(None);
     }
+    let class21_candidates = a8_class21_pcurves_from_frames(ctx, bytes, frames)?;
+    Ok(parse_from_records_with_class21(
+        bytes,
+        records,
+        frames,
+        require_topology,
+        budget,
+        refusal,
+        class21_candidates,
+        &by_id,
+    ))
+}
+
+fn parse_from_records_with_class21(
+    bytes: &[u8],
+    records: &[B5Record],
+    frames: &[ObjectFrame],
+    require_topology: bool,
+    budget: Option<&WorkBudget<'_>>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+    class21_candidates: Vec<B5Pcurve>,
+    by_id: &HashMap<u32, &B5Record>,
+) -> Option<B5Graph> {
     let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
     let mut object_stream_pcurve_candidates = BTreeMap::new();
     let mut conflicting_object_stream_pcurves = HashSet::new();
@@ -935,7 +975,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
             candidate,
         );
     }
-    for candidate in a8_class21_pcurves_from_frames(bytes, frames) {
+    for candidate in class21_candidates {
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -1064,7 +1104,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
                 }
                 let Some(extrusion) = parse_extrusion_surface_with_context(
                     record,
-                    &by_id,
+                    by_id,
                     &object_stream_pcurves,
                     &offset_constructions,
                     &extrusion_surfaces,
@@ -1101,10 +1141,10 @@ pub(in crate::families) fn parse_from_records_budgeted(
                 return None;
             }
             let mut changed =
-                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces);
             for record in records {
                 let Some(offset) =
-                    parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
+                    parse_offset_surface(record, &surfaces, &extrusion_surfaces, by_id)
                 else {
                     continue;
                 };
@@ -1156,7 +1196,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
                     record.object_id,
                     carrier,
                 ) && parameters_match_carrier
-                    && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+                    && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
                     && construction
                         .support_surfaces
                         .iter()
@@ -1170,7 +1210,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
                 }
             }
             changed |=
-                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces);
             if !changed {
                 break;
             }
@@ -1265,7 +1305,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
         })
         .collect();
     let implicit_pcurves =
-        implicit_pcurve_bindings(records, &by_id, &pcurves, &opaque_pcurves, &surfaces);
+        implicit_pcurve_bindings(records, by_id, &pcurves, &opaque_pcurves, &surfaces);
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces.get(&pcurve.surface).and_then(|surface| {
             let endpoints = [
@@ -1291,7 +1331,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
         .filter_map(|(object_id, record)| {
             parse_loop(
                 &record,
-                &by_id,
+                by_id,
                 &pcurves,
                 &opaque_pcurves,
                 &implicit_pcurves,
@@ -1334,7 +1374,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
     let native_vertex_coordinates = incidence_vertex_coordinates(
         &native_edge_vertices,
         &vertex_incidence_links,
-        &by_id,
+        by_id,
         &geometry,
     );
     let bound_vertices = bind_native_vertices(
@@ -1521,126 +1561,200 @@ fn object_stream_pcurve_candidate(
 }
 
 #[cfg(test)]
-fn a8_class21_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
+fn a8_class21_pcurves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<B5Pcurve>, CodecError> {
     let frames = object_stream_frames(bytes);
-    a8_class21_pcurves_from_frames(bytes, &frames)
+    a8_class21_pcurves_from_frames(ctx, bytes, &frames)
 }
 
-fn a8_class21_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
+fn a8_class21_pcurves_from_frames(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> Result<Vec<B5Pcurve>, CodecError> {
     let mut pcurves = Vec::new();
     for frame in frames {
         if frame.family != 0xa8 || frame.class != 0x21 {
             continue;
         }
         if let Some(pcurve) =
-            parse_a8_class21_pcurve(frame.object_id, &bytes[frame.start + 11..frame.end])
+            parse_a8_class21_pcurve(ctx, frame.object_id, &bytes[frame.start + 11..frame.end])?
         {
+            ctx.charge_collection_items(1, "catia B5 class-21 pcurves")?;
             pcurves.push(pcurve);
         }
     }
-    pcurves
+    Ok(pcurves)
 }
 
-fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
-    (payload.first() == Some(&0x81)).then_some(())?;
-    let mut position = 1;
-    let surface = wire::tokens::object_ref(payload, &mut position, true)?;
-    (payload.get(position) == Some(&0x01)).then_some(())?;
-    position += 1;
-    let degree = wire::tokens::compact_uint(payload, &mut position)?;
-    (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
-    position += 2;
-    let knot_count = usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
-    (knot_count >= 2).then_some(())?;
-    matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
-    position += 1;
-    let scalar_bytes = knot_count.checked_mul(8)?;
-    let minimum_known_bytes = scalar_bytes
-        .checked_mul(7)?
-        .checked_add(knot_count)?
-        .checked_add(36)?;
-    if position.checked_add(minimum_known_bytes)? > payload.len() {
-        return None;
+fn parse_a8_class21_pcurve(
+    ctx: &DecodeContext<'_>,
+    object_id: u32,
+    payload: &[u8],
+) -> Result<Option<B5Pcurve>, CodecError> {
+    fn admit_items(
+        ctx: &DecodeContext<'_>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let items = u64::try_from(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(items, operation)
     }
-    let read_values = |position: &mut usize| -> Option<Vec<FiniteReal>> {
-        let mut values = Vec::with_capacity(knot_count);
-        for _ in 0..knot_count {
-            values.push(f64_le(payload, *position)?);
-            *position = position.checked_add(8)?;
+
+    (|| -> Option<Result<B5Pcurve, CodecError>> {
+        (payload.first() == Some(&0x81)).then_some(())?;
+        let mut position = 1;
+        let surface = wire::tokens::object_ref(payload, &mut position, true)?;
+        (payload.get(position) == Some(&0x01)).then_some(())?;
+        position += 1;
+        let degree = wire::tokens::compact_uint(payload, &mut position)?;
+        (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
+        position += 2;
+        let knot_count =
+            usize::try_from(wire::tokens::compact_uint(payload, &mut position)?).ok()?;
+        (knot_count >= 2).then_some(())?;
+        matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
+        position += 1;
+        let scalar_bytes = knot_count.checked_mul(8)?;
+        let minimum_known_bytes = scalar_bytes
+            .checked_mul(7)?
+            .checked_add(knot_count)?
+            .checked_add(36)?;
+        if position.checked_add(minimum_known_bytes)? > payload.len() {
+            return None;
         }
-        Some(values)
-    };
-    let distinct_knots = read_values(&mut position)?;
-    let knot_values = distinct_knots
-        .iter()
-        .copied()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    knots_strictly_increasing(&knot_values).then_some(())?;
-    let multiplicities = (0..knot_count)
-        .map(|_| wire::tokens::compact_uint(payload, &mut position))
-        .collect::<Option<Vec<_>>>()?;
-    (multiplicities.first() == Some(&(degree + 1))
-        && multiplicities.last() == Some(&(degree + 1))
-        && multiplicities[1..knot_count - 1]
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve distinct knots") {
+            return Some(Err(error));
+        }
+        let read_values = |position: &mut usize| -> Option<Vec<FiniteReal>> {
+            let mut values = Vec::with_capacity(knot_count);
+            for _ in 0..knot_count {
+                values.push(f64_le(payload, *position)?);
+                *position = position.checked_add(8)?;
+            }
+            Some(values)
+        };
+        let distinct_knots = read_values(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve knot values") {
+            return Some(Err(error));
+        }
+        let knot_values = distinct_knots
             .iter()
-            .all(|multiplicity| *multiplicity == 3))
-    .then_some(())?;
-    let read_lane = |position: &mut usize| {
-        read_values(position)
-            .map(|values| values.into_iter().map(FiniteReal::get).collect::<Vec<_>>())
-    };
-    let u = read_lane(&mut position)?;
-    let v = read_lane(&mut position)?;
-    let du = read_lane(&mut position)?;
-    let dv = read_lane(&mut position)?;
-    let ddu = read_lane(&mut position)?;
-    let ddv = read_lane(&mut position)?;
-    let points = u
-        .into_iter()
-        .zip(v)
-        .map(|(u, v)| [u, v])
-        .collect::<Vec<_>>();
-    let first = du
-        .into_iter()
-        .zip(dv)
-        .map(|(u, v)| [u, v])
-        .collect::<Vec<_>>();
-    let second = ddu
-        .into_iter()
-        .zip(ddv)
-        .map(|(u, v)| [u, v])
-        .collect::<Vec<_>>();
-    let (_, control_points) =
-        crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)?;
-    let tail = payload.get(position..)?;
-    let tail_control = tail.get(..2);
-    let extension_control = tail.get(34..36);
-    (matches!(tail.len(), 36 | 38)
-        && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
-        && f64_le(tail, 2)?.get() == 0.0
-        && f64_le(tail, 18)?.get() == 1.0
-        && f64_le(tail, 26)?.get() == 0.0
-        && (tail.len() == 36
-            || extension_control == Some(&[0x01, 0x11])
-            || extension_control == Some(&[0x01, 0x19]))
-        && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
-    .then_some(())?;
-    let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
-    Some(B5Pcurve {
-        object_id,
-        surface,
-        degree,
-        distinct_knots,
-        multiplicities: alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities")
-            .ok()?,
-        control_points,
-        weights: None,
-        parameter_range: Some(parameter_range),
-        parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
-        lifted_endpoints: None,
-    })
+            .copied()
+            .map(FiniteReal::get)
+            .collect::<Vec<_>>();
+        knots_strictly_increasing(&knot_values).then_some(())?;
+        let mut multiplicities_valid = true;
+        for index in 0..knot_count {
+            let multiplicity = wire::tokens::compact_uint(payload, &mut position)?;
+            multiplicities_valid &= multiplicity
+                == if index == 0 || index + 1 == knot_count {
+                    degree + 1
+                } else {
+                    3
+                };
+        }
+        multiplicities_valid.then_some(())?;
+        let read_lane = |position: &mut usize| -> Option<Vec<f64>> {
+            let mut values = Vec::with_capacity(knot_count);
+            for _ in 0..knot_count {
+                values.push(f64_le(payload, *position)?.get());
+                *position = position.checked_add(8)?;
+            }
+            Some(values)
+        };
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve u jet") {
+            return Some(Err(error));
+        }
+        let u = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve v jet") {
+            return Some(Err(error));
+        }
+        let v = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve du jet") {
+            return Some(Err(error));
+        }
+        let du = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve dv jet") {
+            return Some(Err(error));
+        }
+        let dv = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddu jet") {
+            return Some(Err(error));
+        }
+        let ddu = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddv jet") {
+            return Some(Err(error));
+        }
+        let ddv = read_lane(&mut position)?;
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve point jets") {
+            return Some(Err(error));
+        }
+        let points = u
+            .into_iter()
+            .zip(v)
+            .map(|(u, v)| [u, v])
+            .collect::<Vec<_>>();
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve first jets") {
+            return Some(Err(error));
+        }
+        let first = du
+            .into_iter()
+            .zip(dv)
+            .map(|(u, v)| [u, v])
+            .collect::<Vec<_>>();
+        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve second jets") {
+            return Some(Err(error));
+        }
+        let second = ddu
+            .into_iter()
+            .zip(ddv)
+            .map(|(u, v)| [u, v])
+            .collect::<Vec<_>>();
+        let control_count = knot_count.checked_sub(1)?.checked_mul(6)?;
+        if let Err(error) = admit_items(ctx, control_count, "catia B5 pcurve control net") {
+            return Some(Err(error));
+        }
+        let full_knot_count = knot_count.checked_mul(6)?;
+        if let Err(error) = admit_items(ctx, full_knot_count, "catia B5 pcurve full knots") {
+            return Some(Err(error));
+        }
+        let (_, control_points) =
+            crate::nurbs::quintic_jet_bspline(degree, &knot_values, &points, &first, &second)?;
+        let tail = payload.get(position..)?;
+        let tail_control = tail.get(..2);
+        let extension_control = tail.get(34..36);
+        (matches!(tail.len(), 36 | 38)
+            && (tail_control == Some(&[0x05, 0x05]) || tail_control == Some(&[0x05, 0x11]))
+            && f64_le(tail, 2)?.get() == 0.0
+            && f64_le(tail, 18)?.get() == 1.0
+            && f64_le(tail, 26)?.get() == 0.0
+            && (tail.len() == 36
+                || extension_control == Some(&[0x01, 0x11])
+                || extension_control == Some(&[0x01, 0x19]))
+            && tail.get(tail.len() - 2..) == Some(&[0x00, 0x07]))
+        .then_some(())?;
+        let parameter_range = [*distinct_knots.first()?, *distinct_knots.last()?];
+        let multiplicities =
+            match ctx.alloc_filled(knot_count, degree + 1, "catia B5 pcurve multiplicities") {
+                Ok(multiplicities) => multiplicities,
+                Err(error) => return Some(Err(error)),
+            };
+        Some(Ok(B5Pcurve {
+            object_id,
+            surface,
+            degree,
+            distinct_knots,
+            multiplicities,
+            control_points,
+            weights: None,
+            parameter_range: Some(parameter_range),
+            parameterization: B5PcurveParameterization::Native,
+            class_21_suffix_scalar: Some(PositiveReal::new(f64_le(tail, 10)?.get())?),
+            lifted_endpoints: None,
+        }))
+    })()
+    .transpose()
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -1822,16 +1936,20 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
 /// of the dominant topology run.
 #[must_use]
 #[cfg(test)]
-fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
+fn targeted_geometry_graph(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Option<B5Graph>, CodecError> {
     let frames = object_stream_frames(bytes);
-    targeted_geometry_graph_from_frames(bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
+    targeted_geometry_graph_from_frames(ctx, bytes, &frames, &mut crate::nurbs::LaneRefusals::new())
 }
 
 pub(in crate::families) fn targeted_geometry_graph_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<B5Graph> {
+) -> Result<Option<B5Graph>, CodecError> {
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
     for frame in frames {
         if !is_targeted_geometry_class(frame.family, frame.class) {
@@ -1860,7 +1978,7 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
     }
     let mut records = candidates.into_values().flatten().collect::<Vec<_>>();
     records.sort_by_key(|record| record.offset);
-    parse_from_records(bytes, &records, frames, false, refusal)
+    parse_from_records(ctx, bytes, &records, frames, false, refusal)
 }
 
 fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
