@@ -1133,7 +1133,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Operation(FeatureOperation::Scale {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        }) if bodies.as_slice() == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 
     let mut move_scope = scope;
@@ -1199,7 +1199,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved { ref bodies, ref native },
             ..
-        }) if bodies.as_slice() == &[body.id.clone()] && native == group_id
+        }) if bodies.as_slice() == [body.id.clone()] && native == group_id
     ));
 }
 
@@ -1239,7 +1239,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { ref bodies, ref native }
-        }) if bodies.as_slice() == &[BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
+        }) if bodies.as_slice() == [BodyId::mint("test:model:body#2").expect("identity grammar"), BodyId::mint("test:model:body#1").expect("identity grammar")]
             && native == "native:scope"
     ));
 }

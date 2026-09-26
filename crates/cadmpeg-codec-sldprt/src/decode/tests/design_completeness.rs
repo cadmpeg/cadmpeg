@@ -834,7 +834,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             2,
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(Default::default()),
+                bodies: BodySelection::Bodies(cadmpeg_ir::features::DistinctMembers::default()),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),
@@ -1235,11 +1235,13 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
 }
 
 #[test]
-fn incoherent_feature_outputs_are_reported_as_design_loss() {
+fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
     let body = ir.model.bodies[0].id.clone();
+    let repeated = vec![body.clone(), body.clone()];
+    assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
@@ -1256,15 +1258,13 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            (outputs).try_into().unwrap(),
+            outputs.try_into().expect("distinct output fixture"),
         ),
         native_ref: None,
     };
-    ir.model.features.push(feature(
-        "synthetic:test:id#duplicate",
-        0,
-        vec![body.clone(), body],
-    ));
+    ir.model
+        .features
+        .push(feature("synthetic:test:id#present", 0, vec![body]));
     ir.model.features.push(feature(
         "synthetic:test:id#missing",
         1,
@@ -1275,6 +1275,6 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
     append_design_losses(&ir, &mut report);
 
     assert!(report.losses.iter().any(|loss| {
-        loss.message == "2 feature record(s) contain missing or repeated output body references."
+        loss.message == "1 feature record(s) contain missing or repeated output body references."
     }));
 }

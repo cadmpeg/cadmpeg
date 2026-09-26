@@ -1673,7 +1673,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
 
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             definition,
-            (outputs).try_into().unwrap(),
+            outputs.try_into().expect("distinct output fixture"),
         ),
         native_ref: None,
     };
@@ -1695,7 +1695,7 @@ fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     ir.model.features[0].evaluation.set_outputs(
         (vec![BodyId::mint("creo:model:body#1".to_string()).expect("identity grammar")])
             .try_into()
-            .unwrap(),
+            .expect("distinct output fixture"),
     );
     assert!(preceding_features_establish_body(&ir));
 
