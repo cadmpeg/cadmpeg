@@ -145,7 +145,7 @@ pub(super) fn scan_carriers(
     for carrier in spline::scan_surface_carriers(ctx, body, &mut lane_refusals)?.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    for carrier in subset::scan(body, &out) {
+    for carrier in subset::scan(ctx, body, &out)? {
         out.insert(Carrier::Curve(carrier));
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
