@@ -18,7 +18,7 @@ use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::decode::TransferLedger;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Point, Region, Sense,
@@ -800,7 +800,11 @@ fn legacy_spline(
         .map_err(geometry_error)?;
     let mut control_points = v1_values::<Point3>(ctx, cv_count, "Rhino V1 spline poles")?;
     let mut weights = if rational != 0 {
-        Some(v1_values::<f64>(ctx, cv_count, "Rhino V1 spline weights")?)
+        Some(v1_values::<NonZeroReal>(
+            ctx,
+            cv_count,
+            "Rhino V1 spline weights",
+        )?)
     } else {
         None
     };
@@ -814,12 +818,9 @@ fn legacy_spline(
         };
         if let Some(weights) = &mut weights {
             let weight = reader.f64().map_err(malformed)?;
-            if !weight.is_finite() || weight == 0.0 {
-                return Err(CodecError::Malformed(
-                    "invalid V1 spline weight".to_string(),
-                ));
-            }
-            let divisor = if rational == 2 { weight } else { 1.0 };
+            let weight = NonZeroReal::new(weight)
+                .ok_or_else(|| CodecError::Malformed("invalid V1 spline weight".to_string()))?;
+            let divisor = if rational == 2 { weight.get() } else { 1.0 };
             control_points.push(Point3::new(
                 x * scale.value() / divisor,
                 y * scale.value() / divisor,
@@ -848,7 +849,7 @@ fn legacy_spline(
     } else {
         admit_v1_values::<FinitePoint3>(ctx, cv_count, "Rhino V1 spline admitted poles")?;
     }
-    NurbsCurve::from_lanes(
+    NurbsCurve::from_checked_lanes(
         u32::try_from(order - 1)
             .map_err(|_| CodecError::Malformed("V1 spline degree overflow".to_string()))?,
         knots,
@@ -1584,9 +1585,9 @@ fn legacy_surface(
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
     })?;
-    let mut control_points = v1_values::<Point3>(ctx, pole_count, "Rhino V1 surface poles")?;
+    let mut control_points = v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface poles")?;
     let mut weights = if rational_mode != 0 {
-        Some(v1_values::<f64>(
+        Some(v1_values::<NonZeroReal>(
             ctx,
             pole_count,
             "Rhino V1 surface weights",
@@ -1604,32 +1605,32 @@ fn legacy_surface(
         } else {
             reader.f64().map_err(malformed)?
         };
-        if !weight.is_finite() || weight == 0.0 {
-            return Err(CodecError::Malformed(
-                "invalid V1 surface weight".to_string(),
-            ));
-        }
-        let divisor = if rational_mode == 2 { weight } else { 1.0 };
+        let weight = NonZeroReal::new(weight)
+            .ok_or_else(|| CodecError::Malformed("invalid V1 surface weight".to_string()))?;
+        let divisor = if rational_mode == 2 {
+            weight.get()
+        } else {
+            1.0
+        };
         let coordinate = |index: usize| coordinates[index] / divisor;
         let point = Point3::new(
             coordinate(0) * scale.value(),
             coordinate(1) * scale.value(),
             coordinate(2) * scale.value(),
         );
-        if !point.is_finite() {
-            return Err(CodecError::Malformed("invalid V1 surface pole".to_string()));
-        }
+        let point = FinitePoint3::new(point)
+            .ok_or_else(|| CodecError::Malformed("invalid V1 surface pole".to_string()))?;
         control_points.push(point);
         if let Some(weights) = &mut weights {
             weights.push(weight);
         }
     }
     let row_len = counts[1];
-    admit_v1_values::<Vec<Point3>>(ctx, counts[0], "Rhino V1 surface pole rows")?;
-    admit_v1_values::<Point3>(ctx, pole_count, "Rhino V1 surface pole grid")?;
+    admit_v1_values::<Vec<FinitePoint3>>(ctx, counts[0], "Rhino V1 surface pole rows")?;
+    admit_v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface pole grid")?;
     if weights.is_some() {
-        admit_v1_values::<Vec<f64>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
-        admit_v1_values::<f64>(ctx, pole_count, "Rhino V1 surface weight grid")?;
+        admit_v1_values::<Vec<NonZeroReal>>(ctx, counts[0], "Rhino V1 surface weight rows")?;
+        admit_v1_values::<NonZeroReal>(ctx, pole_count, "Rhino V1 surface weight grid")?;
         admit_v1_values::<Vec<cadmpeg_ir::geometry::nurbs::WeightedPole3<Point3>>>(
             ctx,
             counts[0],
@@ -1654,7 +1655,7 @@ fn legacy_surface(
         admit_v1_values::<Vec<FinitePoint3>>(ctx, counts[0], "Rhino V1 surface admitted rows")?;
         admit_v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface admitted poles")?;
     }
-    NurbsSurface::from_lanes(
+    NurbsSurface::from_checked_lanes(
         NurbsSurfaceAxis::new(
             u32::try_from(orders[0] - 1)
                 .map_err(|_| CodecError::Malformed("V1 surface degree overflow".to_string()))?,
@@ -3664,6 +3665,52 @@ mod tests {
     }
 
     #[test]
+    fn v1_rational_spline_keeps_admitted_weights_and_refuses_zero() {
+        let spline = |first_weight: f64| {
+            let mut body = vec![3, 1, 2];
+            body.extend(2_u16.to_le_bytes());
+            body.extend([0, 0]);
+            body.extend([0_u8; 48]);
+            body.extend(0.0_f64.to_le_bytes());
+            body.extend(1.0_f64.to_le_bytes());
+            for (point, weight) in [([0.0_f64, 0.0, 0.0], first_weight), ([1.0, 0.0, 0.0], 1.0)] {
+                for coordinate in point {
+                    body.extend(coordinate.to_le_bytes());
+                }
+                body.extend(weight.to_le_bytes());
+            }
+            body
+        };
+        for (weight, valid) in [(2.0, true), (0.0, false)] {
+            let data = spline(weight);
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &data,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("V1 spline input admitted");
+            let result =
+                super::legacy_spline(&ctx, &data, 0..data.len(), super::MillimeterScale::IDENTITY);
+            if valid {
+                assert_eq!(
+                    result
+                        .expect("rational spline")
+                        .weights()
+                        .map(|weights| weights[0].get()),
+                    Some(weight)
+                );
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(cadmpeg_core::CodecError::Malformed(message))
+                        if message == "invalid V1 spline weight"
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn v1_surface_admitted_rows_refuse_collection_limit_before_constructor() {
         let data = legacy_surface();
         let surface =
@@ -3706,6 +3753,68 @@ mod tests {
             .u_count(),
             2
         );
+    }
+
+    #[test]
+    fn v1_rational_surface_keeps_admitted_weights_and_poles() {
+        let surface = |first_weight: f64| {
+            let mut stuff = vec![3, 0, 1, 1];
+            stuff.extend(1_u16.to_le_bytes());
+            stuff.extend(1_u16.to_le_bytes());
+            stuff.extend([1, 0, 0, 0, 0, 0]);
+            stuff.extend([0_u8; 48]);
+            for _ in 0..2 {
+                stuff.extend(0.0_f64.to_le_bytes());
+                stuff.extend(1.0_f64.to_le_bytes());
+            }
+            for (index, point) in [
+                [0.0_f64, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                for coordinate in point {
+                    stuff.extend(coordinate.to_le_bytes());
+                }
+                stuff.extend((if index == 0 { first_weight } else { 1.0 }).to_le_bytes());
+            }
+            legacy_chunk(
+                TCODE_LEGACY_SRF,
+                &legacy_chunk(TCODE_LEGACY_SRFSTUFF, &stuff),
+            )
+        };
+        for (weight, valid) in [(2.0, true), (0.0, false)] {
+            let data = surface(weight);
+            let wrapper = chunk_at(&data, 0, data.len(), ArchiveVersion::V1, false)
+                .expect("V1 rational surface wrapper");
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+                &data,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
+            )
+            .expect("V1 surface input admitted");
+            let result = super::legacy_surface(
+                &ctx,
+                &data,
+                wrapper.body(),
+                super::MillimeterScale::IDENTITY,
+            );
+            if valid {
+                let decoded = result.expect("rational surface");
+                assert_eq!(decoded.weights().map(|rows| rows[0][0].get()), Some(weight));
+                assert_eq!(decoded.pole_grid().u_count(), 2);
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(cadmpeg_core::CodecError::Malformed(message))
+                        if message == "invalid V1 surface weight"
+                ));
+            }
+        }
     }
 
     #[test]
