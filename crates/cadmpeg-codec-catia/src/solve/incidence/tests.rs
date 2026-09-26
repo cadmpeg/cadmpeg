@@ -35,6 +35,7 @@ fn sparse_degrees(faces: &[&[u8]]) -> Vec<BTreeMap<usize, u8>> {
 
 #[test]
 fn endpoint_candidate_search_selects_a_face_closing_assignment() {
+    catia_test_context!(ctx);
     let rows: Vec<_> = (0..6)
         .map(|edge| EdgeRow {
             kind: 1,
@@ -59,6 +60,7 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let topology = reconstruct_incidence_candidates(
+        &ctx,
         &rows,
         &points,
         &edge_faces,
@@ -67,12 +69,14 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         4,
         &budget,
     )
+    .expect("service resource budget")
     .expect("unique face-closing endpoint assignment");
     assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
 
     let ports = [[11, 10], [11, 12], [10, 12], [13, 10], [11, 13], [13, 12]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let topology = reconstruct_incidence_candidates(
+        &ctx,
         &rows,
         &points,
         &edge_faces,
@@ -81,12 +85,14 @@ fn endpoint_candidate_search_selects_a_face_closing_assignment() {
         4,
         &budget,
     )
+    .expect("service resource budget")
     .expect("unique face-closing assignment with deferred port orientation");
     assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [1, 0]);
 }
 
 #[test]
 fn endpoint_candidate_fallback_honors_caller_budget() {
+    catia_test_context!(ctx);
     let rows: Vec<_> = (0..6)
         .map(|edge| EdgeRow {
             kind: 1,
@@ -112,6 +118,7 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
     let budget = WorkBudget::new(0);
 
     assert!(reconstruct_incidence_candidates(
+        &ctx,
         &rows,
         &points,
         &edge_faces,
@@ -120,12 +127,14 @@ fn endpoint_candidate_fallback_honors_caller_budget() {
         4,
         &budget,
     )
+    .expect("service resource budget")
     .is_none());
     assert!(budget.exhausted());
 }
 
 #[test]
 fn endpoint_candidate_validation_charges_full_incidence_work() {
+    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_incidence_endpoint_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
@@ -143,6 +152,7 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
     let budget = WorkBudget::new(2);
     let mut visited = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
+        &ctx,
         &rows,
         &points,
         &edge_faces,
@@ -155,9 +165,10 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
         &|_| true,
         &mut |_| {
             visited = true;
-            ControlFlow::Continue(())
+            Ok(ControlFlow::Continue(()))
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(outcome, IncidenceSolve::Exhausted);
     assert!(!visited);
@@ -214,12 +225,14 @@ fn incidence_propagation_does_not_allocate_the_declared_point_product() {
 
 #[test]
 fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 1], [0, 2]], vec![[0, 2]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -252,6 +265,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
 
 #[test]
 fn incidence_component_indexes_and_revalidates_frontier_support() {
+    catia_test_context!(ctx);
     const IRRELEVANT_EDGES: usize = 32;
     let mut choices = vec![vec![[0, 1]], vec![[0, 1]]];
     choices.extend((0..IRRELEVANT_EDGES).map(|edge| vec![[edge + 2, edge + 3]]));
@@ -266,6 +280,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
     let budget = WorkBudget::new(16);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports,
         point_support_edges,
@@ -300,6 +315,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
 
 #[test]
 fn incidence_component_caches_implicit_frontier_support() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 1]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
@@ -307,11 +323,13 @@ fn incidence_component_caches_implicit_frontier_support() {
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[0, 1], [0, 1]])
             .expect("initial quotient");
     let coordinate_domains = quotient
-        .prepare_coordinate_root_domains(2, &choices, None)
+        .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
+        .expect("service resource budget")
         .expect("implicit coordinate domains");
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -347,6 +365,7 @@ fn incidence_component_caches_implicit_frontier_support() {
 
 #[test]
 fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
@@ -354,6 +373,7 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
     let degree_budget = WorkBudget::new(1);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -383,18 +403,20 @@ fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
     assert!(search.candidate_fits(0, [0, 1]));
     assert!(!budget.exhausted());
     assert!(degree_budget.exhausted());
-    search.search();
+    search.search().expect("service resource budget");
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
 }
 
 #[test]
 fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 1]], vec![[1, 2]]];
     let edge_faces = [[0, 0], [0, 1]];
     let face_edges = vec![vec![0, 1], vec![1]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -426,6 +448,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
 
 #[test]
 fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], Vec::new()];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
@@ -433,7 +456,8 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
         crate::solve::mesh_quotient::initial_mesh_quotient(&choices, 2, &[[10, 10], [11, 12]])
             .expect("initial quotient");
     let coordinate_domains = quotient
-        .prepare_coordinate_root_domains(2, &choices, None)
+        .prepare_coordinate_root_domains(&ctx, 2, &choices, None)
+        .expect("service resource budget")
         .expect("implicit coordinate domains");
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -449,6 +473,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -481,12 +506,14 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
 
 #[test]
 fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 2]], vec![[2, 4]]];
     let edge_faces = [[0, 1], [0, 1]];
     let face_edges = vec![vec![0, 1], vec![0, 1]];
     let budget = WorkBudget::new(4);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -519,12 +546,14 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
 
 #[test]
 fn incidence_branch_stops_ranking_at_a_singleton_domain() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 2]], vec![[2, 4]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1], Vec::new()];
     let budget = WorkBudget::new(4);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -557,6 +586,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
 
 #[test]
 fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
+    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 9;
     let choices = (0..EDGE_COUNT)
         .map(|edge| vec![[edge * 2, edge * 2], [edge * 2 + 1, edge * 2 + 1]])
@@ -572,6 +602,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -598,7 +629,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions.len(), 1);
@@ -606,6 +637,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
 
 #[test]
 fn incidence_component_schedules_partial_constraint_variables_first() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 1], [0, 2]], vec![[3, 4], [3, 5], [4, 5]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
@@ -616,6 +648,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -655,6 +688,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
 
 #[test]
 fn incidence_component_assigns_canonical_class_members_in_order() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[0, 1], [0, 2]],
@@ -668,6 +702,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -705,6 +740,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
     );
 
     let independent = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         active: vec![false, false, true],
         edges: &[2],
         ..search
@@ -714,6 +750,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
 
 #[test]
 fn incidence_component_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
@@ -721,6 +758,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
     let budget = WorkBudget::new(0);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -747,7 +785,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert!(matches!(search.state, IncidenceSearchState::Exhausted));
     assert!(search.solutions.is_empty());
@@ -755,6 +793,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
 
 #[test]
 fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
@@ -771,6 +810,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
     let budget = WorkBudget::new(0);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -803,6 +843,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
 
 #[test]
 fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
@@ -819,6 +860,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
     let search_budget = WorkBudget::new(16);
     let propagation_budget = WorkBudget::new(0);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -845,7 +887,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
@@ -854,6 +896,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
 
 #[test]
 fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -877,6 +920,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
     let budget = WorkBudget::new(4);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -912,6 +956,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
 
 #[test]
 fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -936,6 +981,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -970,6 +1016,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
 
 #[test]
 fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -990,6 +1037,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
             .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1033,6 +1081,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
 
 #[test]
 fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -1054,6 +1103,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         prepare_face_configuration_domains(Some(&assignments), &choices, &[None; 2], &[true; 2])
             .expect("compiled face factors");
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1080,7 +1130,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert_eq!(
         search.solutions,
@@ -1289,6 +1339,7 @@ fn ordered_face_support_prunes_edge_pairs_to_complete_configurations() {
 
 #[test]
 fn incidence_forced_face_chain_does_not_consume_branch_budget() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -1309,6 +1360,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
     let budget = WorkBudget::new(1);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1335,7 +1387,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 0]), (1, [1, 1])]]);
@@ -1343,6 +1395,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
 
 #[test]
 fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -1360,6 +1413,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
     let budget = WorkBudget::new(1);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1386,7 +1440,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         state: IncidenceSearchState::Open,
     };
 
-    search.search();
+    search.search().expect("service resource budget");
 
     assert_ne!(search.state, IncidenceSearchState::Exhausted);
     assert_eq!(search.solutions, vec![vec![(0, [0, 1]), (1, [0, 1])]]);
@@ -1394,6 +1448,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
 
 #[test]
 fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]]];
     let edge_faces = [[0, 0]];
     let face_edges = vec![vec![0]];
@@ -1417,6 +1472,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
     let budget = WorkBudget::new(0);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),
@@ -1453,6 +1509,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
 
 #[test]
 fn incidence_selection_validates_only_its_affected_faces() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [1, 1]];
     let face_edges = vec![vec![0], vec![1]];
@@ -1463,6 +1520,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
     let budget = WorkBudget::new(1_000);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
+        ctx: &ctx,
         choices: &choices,
         explicit_point_supports: Vec::new(),
         point_support_edges: Vec::new(),

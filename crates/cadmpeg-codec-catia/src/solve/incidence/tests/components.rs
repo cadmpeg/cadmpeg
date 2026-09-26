@@ -28,10 +28,12 @@ fn incidence_components_join_only_through_shared_face_vertices() {
 
 #[test]
 fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_face() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]]];
     let edge_faces = [[0, 0], [0, 0]];
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         1,
@@ -41,6 +43,7 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("independent same-face cycle solutions");
 
     assert_eq!(solutions.len(), 4);
@@ -48,7 +51,9 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
 
 #[test]
 fn incidence_component_composition_does_not_allocate_the_declared_point_product() {
+    catia_test_context!(ctx);
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &[vec![[usize::MAX - 1, usize::MAX - 1]]],
         &[[0, 0]],
         1,
@@ -58,6 +63,7 @@ fn incidence_component_composition_does_not_allocate_the_declared_point_product(
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("sparse component degree state");
 
     assert_eq!(solutions, vec![vec![[usize::MAX - 1, usize::MAX - 1]]]);
@@ -65,6 +71,7 @@ fn incidence_component_composition_does_not_allocate_the_declared_point_product(
 
 #[test]
 fn incidence_component_preflight_retains_fixed_chain_frontiers() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1], [0, 2]],
         vec![[1, 3]],
@@ -74,6 +81,7 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
     let edge_faces = [[0, 0]; 4];
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         1,
@@ -83,6 +91,7 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("fixed-chain component frontier");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 3], [3, 4], [4, 0]]]);
@@ -240,6 +249,7 @@ fn incidence_components_include_overlapping_quotient_domains() {
 
 #[test]
 fn incidence_components_solve_coupled_face_vertex_closures() {
+    catia_test_context!(ctx);
     let a = vec![[0, 2], [0, 12], [2, 12]];
     let b = vec![[1, 3], [1, 1969], [3, 1969]];
     let c = vec![
@@ -282,6 +292,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
         [3, 3],
     ];
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         4,
@@ -291,6 +302,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("component closure solution");
     assert!(solutions
         .iter()
@@ -299,6 +311,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
 
 #[test]
 fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1]],
         vec![[1, 2], [2, 3]],
@@ -320,6 +333,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
     ])];
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         1,
@@ -329,6 +343,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("ordered component solution");
 
     assert_eq!(solutions.len(), 1);
@@ -337,6 +352,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
 
 #[test]
 fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1]],
         vec![[0, 1], [1, 2]],
@@ -347,6 +363,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
     let domains = vec![MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         1,
@@ -356,6 +373,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("connected cycle solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [1, 2], [2, 3], [0, 3]]]);
@@ -998,6 +1016,7 @@ fn compact_face_quotient_state_cap_is_exhausted() {
 
 #[test]
 fn incidence_components_filter_complete_solutions_during_search() {
+    catia_test_context!(ctx);
     let choices = vec![
         vec![[0, 1]],
         vec![[1, 2], [2, 3]],
@@ -1006,6 +1025,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
     ];
     let edge_faces = [[0, 0]; 4];
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         1,
@@ -1015,6 +1035,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
         None,
         &|pairs| pairs[1] == [2, 3],
     )
+    .expect("service resource budget")
     .expect("filtered component solution");
 
     assert_eq!(solutions, vec![vec![[0, 1], [2, 3], [1, 2], [3, 0]]]);
@@ -1022,6 +1043,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
 
 #[test]
 fn incidence_components_apply_monotone_partial_constraints_before_solution_limits() {
+    catia_test_context!(ctx);
     let choices = vec![
         (0..300).map(|point| [point, point]).collect::<Vec<_>>(),
         (300..600).map(|point| [point, point]).collect::<Vec<_>>(),
@@ -1034,6 +1056,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
     let active_edges = [true, true];
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         2,
@@ -1048,6 +1071,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
         }),
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("partially constrained component solutions");
 
     assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
@@ -1055,6 +1079,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
 
 #[test]
 fn incidence_components_reuse_independent_solution_domains() {
+    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const COMPONENT_COUNT: usize = 15;
@@ -1070,6 +1095,7 @@ fn incidence_components_reuse_independent_solution_domains() {
     let mut visited = 0usize;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         COMPONENT_COUNT,
@@ -1080,9 +1106,10 @@ fn incidence_components_reuse_independent_solution_domains() {
         &|_| true,
         &mut |_| {
             visited += 1;
-            ControlFlow::Continue(())
+            Ok(ControlFlow::Continue(()))
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(
         outcome,
@@ -1102,6 +1129,7 @@ fn incidence_components_include_fixed_incidence_chains() {
 
 #[test]
 fn incidence_components_preflight_independent_unsatisfiable_domains() {
+    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const BROAD_COMPONENT_COUNT: usize = 15;
@@ -1123,6 +1151,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
     let mut visited = false;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         choices.len(),
@@ -1138,9 +1167,10 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
         &|_| true,
         &mut |_| {
             visited = true;
-            ControlFlow::Continue(())
+            Ok(ControlFlow::Continue(()))
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(
         outcome,
@@ -1153,6 +1183,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
 
 #[test]
 fn incidence_components_discard_quotient_impossible_complete_solutions() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0], [1, 1]], vec![[1, 1]]];
     let edge_faces = [[0, 0], [1, 1]];
     let mut quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0, 1]))).collect());
@@ -1160,6 +1191,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
     quotient.merge(2, 3).expect("second closed edge");
 
     let solutions = crate::solve::incidence::component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         2,
@@ -1169,6 +1201,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
         None,
         &|_| true,
     )
+    .expect("service resource budget")
     .expect("globally assignable component solution");
 
     assert_eq!(solutions, vec![vec![[0, 0], [1, 1]]]);
@@ -1176,6 +1209,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
 
 #[test]
 fn incidence_components_preflight_quotient_impossible_domains() {
+    catia_test_context!(ctx);
     use std::ops::ControlFlow;
 
     const BROAD_COMPONENT_COUNT: usize = 15;
@@ -1206,6 +1240,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
     let mut visited = false;
 
     let outcome = crate::solve::incidence::visit_component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         choices.len(),
@@ -1216,9 +1251,10 @@ fn incidence_components_preflight_quotient_impossible_domains() {
         &|_| true,
         &mut |_| {
             visited = true;
-            ControlFlow::Continue(())
+            Ok(ControlFlow::Continue(()))
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(
         outcome,
@@ -1231,12 +1267,14 @@ fn incidence_components_preflight_quotient_impossible_domains() {
 
 #[test]
 fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
+    catia_test_context!(ctx);
     let choices = vec![vec![[0, 0]], vec![[0, 0]]];
     let edge_faces = [[0, 0], [1, 1]];
     let quotient = MeshQuotient::new((0..4).map(|_| Arc::new(HashSet::from([0]))).collect());
 
     assert_eq!(
         crate::solve::incidence::component_incidence_pair_solution_outcome(
+            &ctx,
             &choices,
             &edge_faces,
             2,
@@ -1245,7 +1283,8 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
             Some(&quotient),
             None,
             &|_| true,
-        ),
+        )
+        .expect("service resource budget"),
         crate::solve::incidence::IncidenceSolve::Rejected(
             crate::solve::incidence::IncidenceRejection::FixedAssignment
         )
@@ -1254,11 +1293,13 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
 
 #[test]
 fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
+    catia_test_context!(ctx);
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
     let choices = vec![(0..300).map(|point| [point, point]).collect::<Vec<_>>()];
     assert_eq!(
         component_incidence_pair_solution_outcome(
+            &ctx,
             &choices,
             &[[0, 0]],
             1,
@@ -1267,11 +1308,13 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             None,
             &|_| true,
-        ),
+        )
+        .expect("service resource budget"),
         IncidenceSolve::Exhausted
     );
     assert_eq!(
         component_incidence_pair_solution_outcome(
+            &ctx,
             &[Vec::new()],
             &[[0, 0]],
             1,
@@ -1280,13 +1323,15 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             None,
             &|_| true,
-        ),
+        )
+        .expect("service resource budget"),
         IncidenceSolve::Rejected(crate::solve::incidence::IncidenceRejection::FixedAssignment)
     );
 }
 
 #[test]
 fn incidence_component_products_stream_until_the_consumer_stops() {
+    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
     use std::ops::ControlFlow;
 
@@ -1297,6 +1342,7 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
     let mut visited = 0usize;
 
     let outcome = visit_component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &edge_faces,
         9,
@@ -1308,12 +1354,13 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
         &mut |_| {
             visited += 1;
             if visited == 2 {
-                ControlFlow::Break(())
+                Ok(ControlFlow::Break(()))
             } else {
-                ControlFlow::Continue(())
+                Ok(ControlFlow::Continue(()))
             }
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);
@@ -1321,6 +1368,7 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
 
 #[test]
 fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() {
+    catia_test_context!(ctx);
     use crate::solve::incidence::{visit_component_incidence_pair_solutions, IncidenceSolve};
     use std::cell::Cell;
     use std::ops::ControlFlow;
@@ -1329,6 +1377,7 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
     let mut visited = 0usize;
     let validated = Cell::new(0usize);
     let outcome = visit_component_incidence_pair_solutions(
+        &ctx,
         &choices,
         &[[0, 0]],
         1,
@@ -1343,12 +1392,13 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
         &mut |_| {
             visited += 1;
             if visited == 2 {
-                ControlFlow::Break(())
+                Ok(ControlFlow::Break(()))
             } else {
-                ControlFlow::Continue(())
+                Ok(ControlFlow::Continue(()))
             }
         },
-    );
+    )
+    .expect("service resource budget");
 
     assert_eq!(outcome, IncidenceSolve::Solved(2));
     assert_eq!(visited, 2);

@@ -2,7 +2,8 @@
 //!
 //! Reconstructs face/edge incidence from serialized boundary domains.
 
-use cadmpeg_core::decode::{alloc_filled, work_units, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::CodecError;
 
 use crate::families::standard::topology::{
     incidence_cycles, reconstruct_incidence, solve_boundary_orientation_constraints, EdgeRow,
@@ -28,7 +29,8 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::ops::ControlFlow;
 use std::sync::Arc;
 
-type MeshEndpointSolutionVisitor<'a> = &'a mut dyn FnMut(&[MeshEndpointPair]) -> ControlFlow<()>;
+type MeshEndpointSolutionVisitor<'a> =
+    &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
 fn prune_incidence_choices(
@@ -647,7 +649,19 @@ enum IncidenceSearchState {
     Stopped,
 }
 
+enum IncidenceVisitError {
+    Exhausted,
+    Resource(CodecError),
+}
+
+impl From<CodecError> for IncidenceVisitError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
 struct IncidenceComponentSearch<'a, 'v> {
+    ctx: &'a DecodeContext<'a>,
     pub(crate) choices: &'a [Vec<[usize; 2]>],
     pub(crate) explicit_point_supports: Vec<HashMap<usize, Vec<[usize; 2]>>>,
     pub(crate) point_support_edges: Vec<HashMap<usize, Vec<usize>>>,
@@ -1857,24 +1871,28 @@ impl IncidenceComponentSearch<'_, '_> {
         domains: &Arc<MeshCoordinateRootDomains>,
         edge: usize,
         pair: [usize; 2],
-    ) -> Option<Arc<MeshCoordinateRootDomains>> {
+    ) -> Result<Option<Arc<MeshCoordinateRootDomains>>, CodecError> {
         if self.coordinate_propagation_budget.exhausted() {
-            return Some(Arc::clone(domains));
+            return Ok(Some(Arc::clone(domains)));
         }
         if domains
             .edge_candidates()
             .get(edge)
             .is_some_and(|candidates| candidates.as_slice() == [pair])
         {
-            return Some(Arc::clone(domains));
+            return Ok(Some(Arc::clone(domains)));
         }
-        let refined =
-            domains.refine_edge_candidate_arc(edge, pair, Some(self.coordinate_propagation_budget));
-        refined.map(Arc::new).or_else(|| {
+        let refined = domains.refine_edge_candidate_arc(
+            self.ctx,
+            edge,
+            pair,
+            Some(self.coordinate_propagation_budget),
+        )?;
+        Ok(refined.map(Arc::new).or_else(|| {
             self.coordinate_propagation_budget
                 .exhausted()
                 .then(|| Arc::clone(domains))
-        })
+        }))
     }
 
     fn degree(&self, face: usize, point: usize) -> u8 {
@@ -2690,21 +2708,21 @@ impl IncidenceComponentSearch<'_, '_> {
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
-    ) {
+    ) -> Result<(), CodecError> {
         if options.len() == 1 {
             let Some(option) = options.pop() else {
-                return;
+                return Ok(());
             };
             self.search_forced_face_configurations(
                 option,
                 quotient_states,
                 coordinate_domains,
                 component_faces,
-            );
-            return;
+            )?;
+            return Ok(());
         }
         for option in options {
-            if let Some(applied) = self.apply_face_configuration(option, coordinate_domains) {
+            if let Some(applied) = self.apply_face_configuration(option, coordinate_domains)? {
                 if let Some(next_states) =
                     self.advance_ordered_faces(applied.affected_faces, quotient_states.to_vec())
                 {
@@ -2712,7 +2730,7 @@ impl IncidenceComponentSearch<'_, '_> {
                         &next_states,
                         applied.coordinate_domains.as_ref(),
                         component_faces,
-                    );
+                    )?;
                 }
                 self.rollback_face_configuration(applied.assigned);
                 if let Some(factors) = &mut self.face_configuration_domains {
@@ -2720,16 +2738,17 @@ impl IncidenceComponentSearch<'_, '_> {
                 }
             }
             if self.state != IncidenceSearchState::Open {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 
     fn apply_face_configuration(
         &mut self,
         option: Vec<(usize, [usize; 2])>,
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
-    ) -> Option<AppliedFaceConfiguration> {
+    ) -> Result<Option<AppliedFaceConfiguration>, CodecError> {
         let mut assigned = Vec::new();
         let mut affected_faces = Vec::new();
         let mut next_coordinate_domains = coordinate_domains.cloned();
@@ -2739,12 +2758,12 @@ impl IncidenceComponentSearch<'_, '_> {
             }
             if !self.degree_candidate_fits(edge, pair) {
                 self.rollback_face_configuration(assigned);
-                return None;
+                return Ok(None);
             }
             if let Some(domains) = next_coordinate_domains.take() {
-                let Some(refined) = self.refine_coordinate_domains(&domains, edge, pair) else {
+                let Some(refined) = self.refine_coordinate_domains(&domains, edge, pair)? else {
                     self.rollback_face_configuration(assigned);
-                    return None;
+                    return Ok(None);
                 };
                 next_coordinate_domains = Some(refined);
             }
@@ -2759,7 +2778,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 .is_some_and(|constraint| !(constraint.valid)(&self.assignment))
         {
             self.rollback_face_configuration(assigned);
-            return None;
+            return Ok(None);
         }
         affected_faces.sort_unstable();
         affected_faces.dedup();
@@ -2772,7 +2791,7 @@ impl IncidenceComponentSearch<'_, '_> {
                 self.state = IncidenceSearchState::Exhausted;
             }
             self.rollback_face_configuration(assigned);
-            return None;
+            return Ok(None);
         }
         let assigned_pairs = assigned
             .iter()
@@ -2783,17 +2802,17 @@ impl IncidenceComponentSearch<'_, '_> {
                 Ok(checkpoint) => checkpoint,
                 Err(()) => {
                     self.rollback_face_configuration(assigned);
-                    return None;
+                    return Ok(None);
                 }
             },
             None => None,
         };
-        Some(AppliedFaceConfiguration {
+        Ok(Some(AppliedFaceConfiguration {
             assigned,
             affected_faces,
             coordinate_domains: next_coordinate_domains,
             factor_checkpoint,
-        })
+        }))
     }
 
     fn rollback_face_configuration(
@@ -2812,12 +2831,12 @@ impl IncidenceComponentSearch<'_, '_> {
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
-    ) {
+    ) -> Result<(), CodecError> {
         let mut assigned = Vec::new();
         let mut factor_checkpoint = None;
         let mut states = quotient_states.to_vec();
         let mut domains = coordinate_domains.cloned();
-        while let Some(applied) = self.apply_face_configuration(option, domains.as_ref()) {
+        while let Some(applied) = self.apply_face_configuration(option, domains.as_ref())? {
             let applied_factor_checkpoint = applied.factor_checkpoint;
             let Some(next_states) = self.advance_ordered_faces(applied.affected_faces, states)
             else {
@@ -2852,11 +2871,11 @@ impl IncidenceComponentSearch<'_, '_> {
                         &states,
                         domains.as_ref(),
                         component_faces,
-                    );
+                    )?;
                     break;
                 }
                 None => {
-                    self.search_edge_state(&states, domains.as_ref(), component_faces);
+                    self.search_edge_state(&states, domains.as_ref(), component_faces)?;
                     break;
                 }
             }
@@ -2868,9 +2887,10 @@ impl IncidenceComponentSearch<'_, '_> {
         if let Some(factors) = &mut self.face_configuration_domains {
             factors.restore(factor_checkpoint);
         }
+        Ok(())
     }
 
-    fn search(&mut self) {
+    fn search(&mut self) -> Result<(), CodecError> {
         let quotient_states = Vec::new();
         let component_faces = self.component_faces();
         let coordinate_domains = self
@@ -2880,10 +2900,11 @@ impl IncidenceComponentSearch<'_, '_> {
             &quotient_states,
             coordinate_domains.as_ref(),
             &component_faces,
-        );
+        )?;
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
         }
+        Ok(())
     }
 
     fn search_with_quotient(
@@ -2891,13 +2912,13 @@ impl IncidenceComponentSearch<'_, '_> {
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
-    ) {
+    ) -> Result<(), CodecError> {
         if self.state != IncidenceSearchState::Open {
-            return;
+            return Ok(());
         }
         if !self.budget.charge() {
             self.state = IncidenceSearchState::Exhausted;
-            return;
+            return Ok(());
         }
         let state = self
             .edges
@@ -2905,13 +2926,14 @@ impl IncidenceComponentSearch<'_, '_> {
             .map(|&edge| self.assignment[edge])
             .collect::<Vec<_>>();
         if self.dead_states.contains(&state) {
-            return;
+            return Ok(());
         }
         let solutions_before = self.solutions.len();
-        self.search_state(quotient_states, coordinate_domains, component_faces);
+        self.search_state(quotient_states, coordinate_domains, component_faces)?;
         if self.state == IncidenceSearchState::Open && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
+        Ok(())
     }
 
     fn search_state(
@@ -2919,19 +2941,19 @@ impl IncidenceComponentSearch<'_, '_> {
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
-    ) {
+    ) -> Result<(), CodecError> {
         const MAX_SOLUTIONS: usize = 256;
         if self.state != IncidenceSearchState::Open {
-            return;
+            return Ok(());
         }
         if self.solution_visitor.is_none() && self.solutions.len() >= MAX_SOLUTIONS {
             self.state = IncidenceSearchState::Exhausted;
-            return;
+            return Ok(());
         }
         let face_options = self.face_configuration_options_for(component_faces);
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
-            return;
+            return Ok(());
         }
         if let Some(options) = face_options {
             if !options.is_empty() {
@@ -2940,11 +2962,11 @@ impl IncidenceComponentSearch<'_, '_> {
                     quotient_states,
                     coordinate_domains,
                     component_faces,
-                );
+                )?;
             }
-            return;
+            return Ok(());
         }
-        self.search_edge_state(quotient_states, coordinate_domains, component_faces);
+        self.search_edge_state(quotient_states, coordinate_domains, component_faces)
     }
 
     fn search_edge_state(
@@ -2952,14 +2974,14 @@ impl IncidenceComponentSearch<'_, '_> {
         quotient_states: &[MeshQuotientGaugeState],
         coordinate_domains: Option<&Arc<MeshCoordinateRootDomains>>,
         component_faces: &[usize],
-    ) {
+    ) -> Result<(), CodecError> {
         let branch = self.branch(coordinate_domains.map(Arc::as_ref));
         if self.budget.exhausted() {
             self.state = IncidenceSearchState::Exhausted;
-            return;
+            return Ok(());
         }
         let Some(branch) = branch else {
-            return;
+            return Ok(());
         };
         let mut options = match branch {
             IncidenceBranch::Complete(solution) => {
@@ -2967,26 +2989,26 @@ impl IncidenceComponentSearch<'_, '_> {
                     .solution_filter
                     .is_some_and(|filter| !filter(&solution))
                 {
-                    return;
+                    return Ok(());
                 }
                 if let Some(visitor) = self.solution_visitor.as_deref_mut() {
-                    if (visitor)(&solution).is_break() {
+                    if (visitor)(&solution)?.is_break() {
                         self.state = IncidenceSearchState::Stopped;
                     }
                 } else {
                     self.solutions.push(solution);
                 }
-                return;
+                return Ok(());
             }
             branch => branch,
         };
         let Some(first_option) = options.next() else {
-            return;
+            return Ok(());
         };
         for (edge, pair) in std::iter::once(first_option).chain(options) {
             if !self.budget.charge() {
                 self.state = IncidenceSearchState::Exhausted;
-                return;
+                return Ok(());
             }
             if self.assignment[edge].is_some() {
                 continue;
@@ -2994,12 +3016,12 @@ impl IncidenceComponentSearch<'_, '_> {
             if !self.candidate_fits_in(edge, pair, coordinate_domains.map(Arc::as_ref)) {
                 if self.budget.exhausted() {
                     self.state = IncidenceSearchState::Exhausted;
-                    return;
+                    return Ok(());
                 }
                 continue;
             }
             let next_coordinate_domains = if let Some(domains) = coordinate_domains.as_ref() {
-                let Some(refined) = self.refine_coordinate_domains(domains, edge, pair) else {
+                let Some(refined) = self.refine_coordinate_domains(domains, edge, pair)? else {
                     continue;
                 };
                 Some(refined)
@@ -3033,7 +3055,7 @@ impl IncidenceComponentSearch<'_, '_> {
                         &next_states,
                         next_coordinate_domains.as_ref(),
                         component_faces,
-                    );
+                    )?;
                 }
             }
             self.assignment[edge] = None;
@@ -3042,9 +3064,10 @@ impl IncidenceComponentSearch<'_, '_> {
                 factors.restore(factor_checkpoint);
             }
             if self.state != IncidenceSearchState::Open {
-                return;
+                return Ok(());
             }
         }
+        Ok(())
     }
 }
 
@@ -3511,6 +3534,7 @@ pub(super) fn partial_face_orientability_viable(
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 fn component_incidence_pair_solutions<F>(
+    ctx: &DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3519,11 +3543,12 @@ fn component_incidence_pair_solutions<F>(
     mesh_quotient: Option<&MeshQuotient>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
-) -> Option<Vec<Vec<[usize; 2]>>>
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
 {
     component_incidence_pair_solution_outcome(
+        ctx,
         choices,
         edge_faces,
         face_count,
@@ -3533,12 +3558,13 @@ where
         partial_solution_valid,
         solution_valid,
     )
-    .into_option()
+    .map(IncidenceSolve::into_option)
 }
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(super) fn component_incidence_pair_solution_outcome<F>(
+    ctx: &DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3547,7 +3573,7 @@ pub(super) fn component_incidence_pair_solution_outcome<F>(
     mesh_quotient: Option<&MeshQuotient>,
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
-) -> IncidenceSolve<Vec<Vec<[usize; 2]>>>
+) -> Result<IncidenceSolve<Vec<Vec<[usize; 2]>>>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
 {
@@ -3555,6 +3581,7 @@ where
     let mut solutions = Vec::new();
     let mut result_limit_exhausted = false;
     let outcome = visit_component_incidence_pair_solutions(
+        ctx,
         choices,
         edge_faces,
         face_count,
@@ -3566,25 +3593,26 @@ where
         &mut |pairs| {
             if solutions.len() == MAX_PAIR_SOLUTIONS {
                 result_limit_exhausted = true;
-                ControlFlow::Break(())
+                Ok(ControlFlow::Break(()))
             } else {
                 solutions.push(pairs.to_vec());
-                ControlFlow::Continue(())
+                Ok(ControlFlow::Continue(()))
             }
         },
-    );
-    match outcome {
+    )?;
+    Ok(match outcome {
         IncidenceSolve::Solved(_) if result_limit_exhausted => IncidenceSolve::Exhausted,
         IncidenceSolve::Solved(_) => IncidenceSolve::Solved(solutions),
         IncidenceSolve::Rejected(rejection) => IncidenceSolve::Rejected(rejection),
         IncidenceSolve::Ambiguous => IncidenceSolve::Ambiguous,
         IncidenceSolve::Exhausted => IncidenceSolve::Exhausted,
-    }
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 fn visit_component_incidence_pair_solutions<F, V>(
+    ctx: &DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3594,13 +3622,14 @@ fn visit_component_incidence_pair_solutions<F, V>(
     partial_solution_valid: Option<MeshPartialEndpointConstraint<'_>>,
     solution_valid: &F,
     visitor: &mut V,
-) -> IncidenceSolve<usize>
+) -> Result<IncidenceSolve<usize>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
-    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+    V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     visit_component_incidence_pair_solutions_with_coordinate_root_policy(
+        ctx,
         choices,
         edge_faces,
         face_count,
@@ -3617,6 +3646,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
+    ctx: &DecodeContext<'_>,
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
@@ -3628,13 +3658,14 @@ fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     solution_valid: &F,
     visitor: &mut V,
     session_budget: &WorkBudget<'_>,
-) -> IncidenceSolve<usize>
+) -> Result<IncidenceSolve<usize>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
-    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+    V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     #[allow(clippy::too_many_arguments)]
     fn solve_component_domain(
+        ctx: &DecodeContext<'_>,
         component: &[usize],
         choices: &[Vec<[usize; 2]>],
         edge_faces: &[[usize; 2]],
@@ -3650,19 +3681,14 @@ where
         boundary_propagation_budget: &WorkBudget<'_>,
         orientation_budget: &WorkBudget<'_>,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
-    ) -> bool {
-        let Ok(mut active) = alloc_filled(choices.len(), false, "catia incidence active edges")
-        else {
-            return false;
-        };
+    ) -> Result<bool, CodecError> {
+        let mut active = ctx.alloc_filled(choices.len(), false, "catia incidence active edges")?;
         let mut constraints = HashSet::<(usize, usize)>::new();
-        let Ok(mut point_support_edges) = alloc_filled(
+        let mut point_support_edges = ctx.alloc_filled(
             face_edges.len(),
             HashMap::<usize, Vec<usize>>::new(),
             "catia incidence point support edges",
-        ) else {
-            return false;
-        };
+        )?;
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -3739,6 +3765,7 @@ where
         let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
         let degree_support_budget = budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = IncidenceComponentSearch {
+            ctx,
             choices,
             explicit_point_supports,
             point_support_edges,
@@ -3764,12 +3791,13 @@ where
             boundary_propagation_budget,
             state: IncidenceSearchState::Open,
         };
-        search.search();
-        search.state == IncidenceSearchState::Exhausted
+        search.search()?;
+        Ok(search.state == IncidenceSearchState::Exhausted)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn visit_components<F, V>(
+        ctx: &DecodeContext<'_>,
         component_index: usize,
         choices: &[Vec<[usize; 2]>],
         edge_faces: &[[usize; 2]],
@@ -3793,17 +3821,17 @@ where
         coordinate_propagation_budget: &WorkBudget<'_>,
         boundary_propagation_budget: &WorkBudget<'_>,
         session_budget: &WorkBudget<'_>,
-    ) -> Result<ControlFlow<()>, ()>
+    ) -> Result<ControlFlow<()>, IncidenceVisitError>
     where
         F: Fn(&[[usize; 2]]) -> bool,
-        V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+        V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
     {
         let Some(component) = components.get(component_index) else {
             let pairs = assignment
                 .iter()
                 .copied()
                 .collect::<Option<Vec<_>>>()
-                .ok_or(())?;
+                .ok_or(IncidenceVisitError::Exhausted)?;
             let boundary_closed = boundary_domains_close(mesh_assignments, &pairs);
             let solution_accepted = boundary_closed && solution_valid(&pairs);
             if !solution_accepted {
@@ -3817,14 +3845,21 @@ where
                     .collect::<Vec<_>>();
                 let mut quotient = quotient.clone();
                 let Some(domains) = mesh_assignments else {
-                    if !quotient.point_assignment_exists(point_count, &singleton, Some(budget)) {
+                    if !quotient.point_assignment_exists(
+                        ctx,
+                        point_count,
+                        &singleton,
+                        Some(budget),
+                    )? {
                         if budget.exhausted() {
-                            return Err(());
+                            return Err(IncidenceVisitError::Exhausted);
                         }
                         return Ok(ControlFlow::Continue(()));
                     }
-                    *visited = visited.checked_add(1).ok_or(())?;
-                    return Ok(visitor(&pairs));
+                    *visited = visited
+                        .checked_add(1)
+                        .ok_or(IncidenceVisitError::Exhausted)?;
+                    return Ok(visitor(&pairs)?);
                 };
                 let Some(closure_limit) =
                     quotient.coordinate_domain_preparation_limit(point_count, &singleton)
@@ -3833,13 +3868,14 @@ where
                 };
                 let closure_budget = session_budget.session_child_slice(closure_limit);
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
+                    ctx,
                     point_count,
                     &singleton,
                     edge_faces,
                     domains.len(),
                     domains,
                     Some(&closure_budget),
-                );
+                )?;
                 match outcome {
                     MeshSolve::Solved(_) => {}
                     MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
@@ -3848,103 +3884,115 @@ where
                         *ambiguous = true;
                         return Ok(ControlFlow::Continue(()));
                     }
-                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => return Err(()),
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
+                        return Err(IncidenceVisitError::Exhausted)
+                    }
                     MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
                         return Ok(ControlFlow::Continue(()))
                     }
                 }
             }
-            *visited = visited.checked_add(1).ok_or(())?;
-            return Ok(visitor(&pairs));
+            *visited = visited
+                .checked_add(1)
+                .ok_or(IncidenceVisitError::Exhausted)?;
+            return Ok(visitor(&pairs)?);
         };
 
         let base_assignment = assignment.to_vec();
         let base_degrees = degrees.to_vec();
         let mut downstream_control = Ok(ControlFlow::Continue(()));
-        let mut visit_solution = |solution: &[MeshEndpointPair]| {
-            if !budget.charge() {
-                downstream_control = Err(());
-                return ControlFlow::Break(());
-            }
-            let mut degree_undo = Vec::with_capacity(solution.len());
-            for &(edge, pair) in solution {
-                assignment[edge] = Some(pair);
-                degree_undo.push((
-                    edge,
-                    adjust_incidence_degrees(degrees, edge_faces, edge, pair),
-                ));
-            }
-            let candidates = coordinate_domains.map(|_| {
-                assignment
-                    .iter()
-                    .enumerate()
-                    .map(|(edge, pair)| {
-                        pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                    })
-                    .collect::<Vec<_>>()
-            });
-            let refined_domains =
-                coordinate_domains
-                    .zip(candidates.as_ref())
-                    .and_then(|(domains, candidates)| {
-                        // Refinement only narrows later component searches. A complete
-                        // assignment is checked against the quotient before visitation.
-                        (!coordinate_propagation_budget.exhausted())
-                            .then(|| {
-                                domains.refine_candidates(
-                                    candidates,
-                                    Some(coordinate_propagation_budget),
-                                )
-                            })
-                            .flatten()
-                    });
-            let propagation_skipped = coordinate_propagation_budget.exhausted();
-            let feasible =
-                coordinate_domains.is_none() || refined_domains.is_some() || propagation_skipped;
-            let control = if feasible {
-                visit_components(
-                    component_index + 1,
-                    choices,
-                    edge_faces,
-                    face_edges,
-                    mesh_assignments,
-                    mesh_quotient,
-                    refined_domains.as_ref().or(coordinate_domains),
-                    coordinate_root_policy,
-                    partial_solution_valid,
-                    solution_valid,
-                    assignment,
-                    degrees,
-                    point_count,
-                    budget,
-                    visitor,
-                    visited,
-                    ambiguous,
-                    components,
-                    component_budget,
-                    orientation_budget,
-                    coordinate_propagation_budget,
-                    boundary_propagation_budget,
-                    session_budget,
-                )
-            } else {
-                Ok(ControlFlow::Continue(()))
-            };
-            for (edge, undo) in degree_undo.into_iter().rev() {
-                assignment[edge] = None;
-                restore_incidence_degrees(degrees, undo);
-            }
-            match control {
-                Ok(ControlFlow::Continue(())) => ControlFlow::Continue(()),
-                terminal => {
-                    downstream_control = terminal;
-                    ControlFlow::Break(())
+        let mut visit_solution =
+            |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
+                if !budget.charge() {
+                    downstream_control = Err(IncidenceVisitError::Exhausted);
+                    return Ok(ControlFlow::Break(()));
                 }
-            }
-        };
+                let mut degree_undo = Vec::with_capacity(solution.len());
+                for &(edge, pair) in solution {
+                    assignment[edge] = Some(pair);
+                    degree_undo.push((
+                        edge,
+                        adjust_incidence_degrees(degrees, edge_faces, edge, pair),
+                    ));
+                }
+                let candidates = coordinate_domains.map(|_| {
+                    assignment
+                        .iter()
+                        .enumerate()
+                        .map(|(edge, pair)| {
+                            pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let control = (|| -> Result<ControlFlow<()>, IncidenceVisitError> {
+                    // Refinement only narrows later component searches. A complete
+                    // assignment is checked against the quotient before visitation.
+                    let refined_domains = if let (Some(domains), Some(candidates)) =
+                        (coordinate_domains, candidates.as_ref())
+                    {
+                        if coordinate_propagation_budget.exhausted() {
+                            None
+                        } else {
+                            domains.refine_candidates(
+                                ctx,
+                                candidates,
+                                Some(coordinate_propagation_budget),
+                            )?
+                        }
+                    } else {
+                        None
+                    };
+                    let propagation_skipped = coordinate_propagation_budget.exhausted();
+                    let feasible = coordinate_domains.is_none()
+                        || refined_domains.is_some()
+                        || propagation_skipped;
+                    if feasible {
+                        visit_components(
+                            ctx,
+                            component_index + 1,
+                            choices,
+                            edge_faces,
+                            face_edges,
+                            mesh_assignments,
+                            mesh_quotient,
+                            refined_domains.as_ref().or(coordinate_domains),
+                            coordinate_root_policy,
+                            partial_solution_valid,
+                            solution_valid,
+                            assignment,
+                            degrees,
+                            point_count,
+                            budget,
+                            visitor,
+                            visited,
+                            ambiguous,
+                            components,
+                            component_budget,
+                            orientation_budget,
+                            coordinate_propagation_budget,
+                            boundary_propagation_budget,
+                            session_budget,
+                        )
+                    } else {
+                        Ok(ControlFlow::Continue(()))
+                    }
+                })();
+                for (edge, undo) in degree_undo.into_iter().rev() {
+                    assignment[edge] = None;
+                    restore_incidence_degrees(degrees, undo);
+                }
+                match control {
+                    Ok(ControlFlow::Continue(())) => Ok(ControlFlow::Continue(())),
+                    terminal => {
+                        downstream_control = terminal;
+                        Ok(ControlFlow::Break(()))
+                    }
+                }
+            };
         let narrowed_choices =
             coordinate_domains.map_or(choices, MeshCoordinateRootDomains::edge_candidates);
         let component_exhausted = solve_component_domain(
+            ctx,
             component,
             narrowed_choices,
             edge_faces,
@@ -3960,9 +4008,11 @@ where
             boundary_propagation_budget,
             orientation_budget,
             Some(&mut visit_solution),
-        );
+        )?;
         match downstream_control {
-            Ok(ControlFlow::Continue(())) if component_exhausted => Err(()),
+            Ok(ControlFlow::Continue(())) if component_exhausted => {
+                Err(IncidenceVisitError::Exhausted)
+            }
             control => control,
         }
     }
@@ -3971,7 +4021,7 @@ where
     let mut ambiguous = false;
     let mut visited = 0usize;
     let mut rejection = IncidenceRejection::InputShape;
-    let result = (|| {
+    let result = (|| -> Result<Option<()>, CodecError> {
         if partial_solution_valid.is_some_and(|constraint| {
             constraint.active_edges.len() != choices.len()
                 || constraint.coupled_edges.len() != choices.len()
@@ -3980,22 +4030,27 @@ where
                     .and_then(AssignmentOrder::predecessors)
                     .is_some_and(|predecessors| predecessors.len() != choices.len())
         }) {
-            return None;
+            return Ok(None);
         }
         let mut coordinate_domains = if choices.iter().any(|candidates| candidates.len() != 1) {
             if let Some(quotient) = mesh_quotient {
                 let mut quotient = quotient.clone();
-                let preparation_limit =
-                    quotient.coordinate_domain_preparation_limit(point_count, choices)?;
+                let Some(preparation_limit) =
+                    quotient.coordinate_domain_preparation_limit(point_count, choices)
+                else {
+                    return Ok(None);
+                };
                 let preparation_budget = session_budget.session_child_slice(preparation_limit);
                 let Some(domains) = quotient.prepare_coordinate_root_domains(
+                    ctx,
                     point_count,
                     choices,
                     Some(&preparation_budget),
-                ) else {
+                )?
+                else {
                     exhausted = preparation_budget.exhausted();
                     rejection = IncidenceRejection::ComponentDomain;
-                    return None;
+                    return Ok(None);
                 };
                 Some(domains)
             } else {
@@ -4022,7 +4077,7 @@ where
             });
             if !implicit_support_viable {
                 rejection = IncidenceRejection::ChoicePruning;
-                return None;
+                return Ok(None);
             }
             if implicit_support_budget.exhausted() {
                 narrowed_choices.clone_from(&base_choices);
@@ -4036,14 +4091,14 @@ where
                 &face_support_budget,
             ) {
                 rejection = IncidenceRejection::ChoicePruning;
-                return None;
+                return Ok(None);
             }
             if face_support_budget.exhausted() {
                 narrowed_choices = implicit_choices;
             } else if let Some(domains) = coordinate_domains.take() {
                 let refinement_budget =
                     session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-                match domains.refine_candidates(&narrowed_choices, Some(&refinement_budget)) {
+                match domains.refine_candidates(ctx, &narrowed_choices, Some(&refinement_budget))? {
                     Some(refined) => {
                         narrowed_choices = refined.edge_candidates().to_vec();
                         coordinate_domains = Some(refined);
@@ -4054,7 +4109,7 @@ where
                     }
                     None => {
                         rejection = IncidenceRejection::ChoicePruning;
-                        return None;
+                        return Ok(None);
                     }
                 }
             }
@@ -4066,13 +4121,16 @@ where
             components =
                 join_incidence_components_by_coupling(components, constraint.coupled_edges);
         }
-        order_incidence_components_by_constraints(
+        let ordered = order_incidence_components_by_constraints(
             &mut components,
             choices,
             partial_solution_valid.and_then(|constraint| constraint.assignment_order),
-        )?;
+        );
+        if ordered.is_none() {
+            return Ok(None);
+        }
         let mut face_edges =
-            alloc_filled(face_count, Vec::new(), "catia incidence face edges").ok()?;
+            ctx.alloc_filled(face_count, Vec::new(), "catia incidence face edges")?;
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {
                 if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
@@ -4080,13 +4138,12 @@ where
                 }
             }
         }
-        let mut fixed = alloc_filled(choices.len(), None, "catia incidence fixed edges").ok()?;
-        let mut degrees = alloc_filled(
+        let mut fixed = ctx.alloc_filled(choices.len(), None, "catia incidence fixed edges")?;
+        let mut degrees = ctx.alloc_filled(
             face_count,
             BTreeMap::<usize, u8>::new(),
             "catia incidence face degrees",
-        )
-        .ok()?;
+        )?;
         for (edge, pairs) in choices.iter().enumerate() {
             let [pair] = pairs.as_slice() else {
                 continue;
@@ -4099,17 +4156,22 @@ where
                 }
                 for point in pair {
                     let degree = degrees[face].entry(*point).or_default();
-                    *degree = degree.checked_add(1)?;
+                    let Some(next) = degree.checked_add(1) else {
+                        return Ok(None);
+                    };
+                    *degree = next;
                 }
             }
         }
         if components.is_empty() {
             rejection = IncidenceRejection::FixedAssignment;
-            let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
+            let Some(pairs) = fixed.into_iter().collect::<Option<Vec<_>>>() else {
+                return Ok(None);
+            };
             let boundary_closed = boundary_domains_close(mesh_assignments, &pairs);
             let solution_valid = solution_valid(&pairs);
             if !boundary_closed || !solution_valid {
-                return None;
+                return Ok(None);
             }
             if let Some(quotient) = mesh_quotient {
                 let singleton = pairs
@@ -4118,49 +4180,58 @@ where
                     .map(|pair| vec![pair])
                     .collect::<Vec<_>>();
                 let mut quotient = quotient.clone();
-                let closure_limit =
-                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)?;
+                let Some(closure_limit) =
+                    quotient.coordinate_domain_preparation_limit(point_count, &singleton)
+                else {
+                    return Ok(None);
+                };
                 let budget = session_budget.session_child_slice(closure_limit);
                 let Some(domains) = mesh_assignments else {
-                    if !quotient.point_assignment_exists(point_count, &singleton, Some(&budget)) {
+                    if !quotient.point_assignment_exists(
+                        ctx,
+                        point_count,
+                        &singleton,
+                        Some(&budget),
+                    )? {
                         exhausted = budget.exhausted();
-                        return None;
+                        return Ok(None);
                     }
                     visited = 1;
                     // This fixed assignment is the last solution to visit, so a
                     // request to stop and a request to continue end the
                     // traversal alike.
-                    let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs);
-                    return Some(());
+                    let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs)?;
+                    return Ok(Some(()));
                 };
                 let outcome = quotient.coordinate_root_closure_outcome_for_incidence(
+                    ctx,
                     point_count,
                     &singleton,
                     edge_faces,
                     face_count,
                     domains,
                     Some(&budget),
-                );
+                )?;
                 match outcome {
                     MeshSolve::Solved(_) => {}
                     MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
                         if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
                     MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                         ambiguous = true;
-                        return Some(());
+                        return Ok(Some(()));
                     }
                     MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
                         exhausted = true;
-                        return None;
+                        return Ok(None);
                     }
-                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => return None,
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => return Ok(None),
                 }
             }
             visited = 1;
             // This fixed assignment is the last solution to visit, so a request
             // to stop and a request to continue end the traversal alike.
-            let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs);
-            return Some(());
+            let (ControlFlow::Continue(()) | ControlFlow::Break(())) = visitor(&pairs)?;
+            return Ok(Some(()));
         }
         for component in &components {
             // Preflight is a rejection shortcut only. Give each independent
@@ -4177,31 +4248,39 @@ where
             let boundary_preflight_budget =
                 session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut found = false;
-            let mut accept_first = |solution: &[MeshEndpointPair]| {
-                let mut completed = fixed.clone();
-                for &(edge, pair) in solution {
-                    completed[edge] = Some(pair);
-                }
-                let coordinate_feasible = coordinate_domains.as_ref().is_none_or(|domains| {
-                    let candidates = completed
-                        .iter()
-                        .enumerate()
-                        .map(|(edge, pair)| {
-                            pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
-                        })
-                        .collect::<Vec<_>>();
-                    domains
-                        .refine_candidates(&candidates, Some(&coordinate_preflight_budget))
-                        .is_some()
-                        || coordinate_preflight_budget.exhausted()
-                });
-                if !coordinate_feasible {
-                    return ControlFlow::Continue(());
-                }
-                found = true;
-                ControlFlow::Break(())
-            };
+            let mut accept_first =
+                |solution: &[MeshEndpointPair]| -> Result<ControlFlow<()>, CodecError> {
+                    let mut completed = fixed.clone();
+                    for &(edge, pair) in solution {
+                        completed[edge] = Some(pair);
+                    }
+                    let coordinate_feasible = if let Some(domains) = coordinate_domains.as_ref() {
+                        let candidates = completed
+                            .iter()
+                            .enumerate()
+                            .map(|(edge, pair)| {
+                                pair.map_or_else(|| choices[edge].clone(), |pair| vec![pair])
+                            })
+                            .collect::<Vec<_>>();
+                        domains
+                            .refine_candidates(
+                                ctx,
+                                &candidates,
+                                Some(&coordinate_preflight_budget),
+                            )?
+                            .is_some()
+                            || coordinate_preflight_budget.exhausted()
+                    } else {
+                        true
+                    };
+                    if !coordinate_feasible {
+                        return Ok(ControlFlow::Continue(()));
+                    }
+                    found = true;
+                    Ok(ControlFlow::Break(()))
+                };
             let component_exhausted = solve_component_domain(
+                ctx,
                 component,
                 choices,
                 edge_faces,
@@ -4217,13 +4296,13 @@ where
                 &boundary_preflight_budget,
                 &preflight_orientation_budget,
                 Some(&mut accept_first),
-            );
+            )?;
             if component_exhausted {
                 continue;
             }
             if !found {
                 rejection = IncidenceRejection::ComponentDomain;
-                return None;
+                return Ok(None);
             }
         }
         rejection = IncidenceRejection::ComponentComposition;
@@ -4234,7 +4313,8 @@ where
             session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
         let boundary_propagation_budget =
             session_budget.session_child_slice(MAX_MESH_CONSTRAINT_OPERATIONS);
-        if visit_components(
+        match visit_components(
+            ctx,
             0,
             choices,
             edge_faces,
@@ -4258,24 +4338,27 @@ where
             &coordinate_propagation_budget,
             &boundary_propagation_budget,
             session_budget,
-        )
-        .is_err()
-        {
-            exhausted = true;
-            return None;
+        ) {
+            Err(IncidenceVisitError::Resource(error)) => return Err(error),
+            Err(IncidenceVisitError::Exhausted) => {
+                exhausted = true;
+                return Ok(None);
+            }
+            Ok(_) => {}
         }
-        Some(())
-    })();
-    match result {
+        Ok(Some(()))
+    })()?;
+    Ok(match result {
         Some(()) if visited > 0 => IncidenceSolve::Solved(visited),
         Some(()) if ambiguous => IncidenceSolve::Ambiguous,
         Some(()) => IncidenceSolve::Rejected(rejection),
         None if exhausted => IncidenceSolve::Exhausted,
         None => IncidenceSolve::Rejected(rejection),
-    }
+    })
 }
 
 pub(crate) fn reconstruct_incidence_candidates(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
@@ -4283,24 +4366,27 @@ pub(crate) fn reconstruct_incidence_candidates(
     edge_ports: Option<&[[u32; 2]]>,
     face_count: usize,
     budget: &WorkBudget<'_>,
-) -> Option<StandardTopology> {
+) -> Result<Option<StandardTopology>, CodecError> {
     const MAX_TOPOLOGY_ASSIGNMENTS: usize = 256;
 
     if edge_ports.is_some_and(|ports| ports.len() != edge_candidates.len()) {
-        return None;
+        return Ok(None);
     }
     let quotient = match edge_ports {
-        Some(ports) => Some(initial_mesh_quotient(
-            edge_candidates,
-            vertex_points.len(),
-            ports,
-        )?),
+        Some(ports) => {
+            let Some(quotient) = initial_mesh_quotient(edge_candidates, vertex_points.len(), ports)
+            else {
+                return Ok(None);
+            };
+            Some(quotient)
+        }
         None => None,
     };
     let mut solution_pairs: Option<Vec<[usize; 2]>> = None;
     let mut assignment_count = 0usize;
     let mut invalid = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
@@ -4311,10 +4397,10 @@ pub(crate) fn reconstruct_incidence_candidates(
         None,
         Some(budget),
         &|_| true,
-        &mut |pairs| {
+        &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
             if assignment_count == MAX_TOPOLOGY_ASSIGNMENTS {
                 invalid = true;
-                return ControlFlow::Break(());
+                return Ok(ControlFlow::Break(()));
             }
             assignment_count += 1;
             let oriented;
@@ -4324,11 +4410,11 @@ pub(crate) fn reconstruct_incidence_candidates(
                     &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
                 ) else {
                     invalid = true;
-                    return ControlFlow::Break(());
+                    return Ok(ControlFlow::Break(()));
                 };
                 let Some(pairs) = propagated.into_iter().collect::<Option<Vec<_>>>() else {
                     invalid = true;
-                    return ControlFlow::Break(());
+                    return Ok(ControlFlow::Break(()));
                 };
                 oriented = pairs;
                 oriented.as_slice()
@@ -4338,28 +4424,32 @@ pub(crate) fn reconstruct_incidence_candidates(
             if let Some(stored) = &solution_pairs {
                 if stored.as_slice() != pairs {
                     invalid = true;
-                    return ControlFlow::Break(());
+                    return Ok(ControlFlow::Break(()));
                 }
-                return ControlFlow::Continue(());
+                return Ok(ControlFlow::Continue(()));
             }
             solution_pairs = Some(pairs.to_vec());
-            ControlFlow::Continue(())
+            Ok(ControlFlow::Continue(()))
         },
-    );
+    )?;
     if invalid || !matches!(outcome, IncidenceSolve::Solved(_)) {
-        return None;
+        return Ok(None);
     }
-    reconstruct_incidence(
+    let Some(solution_pairs) = solution_pairs else {
+        return Ok(None);
+    };
+    Ok(reconstruct_incidence(
         edge_rows.to_vec(),
         vertex_points.to_vec(),
         edge_faces,
-        &solution_pairs?,
+        &solution_pairs,
         face_count,
-    )
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn visit_incidence_endpoint_pair_solutions<F, V>(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
@@ -4371,12 +4461,13 @@ fn visit_incidence_endpoint_pair_solutions<F, V>(
     complete_solution_budget: Option<&WorkBudget<'_>>,
     solution_valid: &F,
     visitor: &mut V,
-) -> IncidenceSolve<usize>
+) -> Result<IncidenceSolve<usize>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
-    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+    V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
+        ctx,
         edge_rows,
         vertex_points,
         edge_faces,
@@ -4394,6 +4485,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy<F, V>(
+    ctx: &DecodeContext<'_>,
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
@@ -4406,10 +4498,10 @@ pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_polic
     complete_solution_budget: Option<&WorkBudget<'_>>,
     solution_valid: &F,
     visitor: &mut V,
-) -> IncidenceSolve<usize>
+) -> Result<IncidenceSolve<usize>, CodecError>
 where
     F: Fn(&[[usize; 2]]) -> bool,
-    V: FnMut(&[[usize; 2]]) -> ControlFlow<()>,
+    V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     let Some(choices) = (|| {
         let mut choices = edge_candidates.to_vec();
@@ -4450,7 +4542,7 @@ where
         }
         Some(choices)
     })() else {
-        return IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning);
+        return Ok(IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning));
     };
     let complete_valid = |points: &[[usize; 2]]| {
         if complete_solution_budget.is_some_and(|budget| !budget.charge_by(edge_rows.len())) {
@@ -4469,7 +4561,7 @@ where
     };
     let mut budgeted_visitor = |points: &[[usize; 2]]| {
         if complete_solution_budget.is_some_and(WorkBudget::exhausted) {
-            ControlFlow::Break(())
+            Ok(ControlFlow::Break(()))
         } else {
             visitor(points)
         }
@@ -4477,6 +4569,7 @@ where
     let fallback_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let session_budget = complete_solution_budget.unwrap_or(&fallback_budget);
     let outcome = visit_component_incidence_pair_solutions_with_coordinate_root_policy(
+        ctx,
         &choices,
         edge_faces,
         face_count,
@@ -4488,11 +4581,11 @@ where
         &complete_valid,
         &mut budgeted_visitor,
         session_budget,
-    );
+    )?;
     if complete_solution_budget.is_some_and(WorkBudget::exhausted) {
-        IncidenceSolve::Exhausted
+        Ok(IncidenceSolve::Exhausted)
     } else {
-        outcome
+        Ok(outcome)
     }
 }
 

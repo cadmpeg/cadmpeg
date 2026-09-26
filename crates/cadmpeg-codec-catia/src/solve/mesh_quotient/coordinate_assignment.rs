@@ -10,9 +10,12 @@ use super::{
 };
 
 use cadmpeg_core::decode::work_units;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn close_coordinate_roots_with_incidence(
+    ctx: &DecodeContext<'_>,
     quotient: &mut MeshQuotient,
     point_count: usize,
     edge_candidates: &[Vec<[usize; 2]>],
@@ -21,7 +24,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     component_search_budget: Option<usize>,
     ambiguous: &Cell<bool>,
     exhausted: &Cell<bool>,
-) -> Option<HashMap<usize, usize>> {
+) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
     struct LocalIncidence<'a> {
@@ -335,6 +338,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
 
     #[allow(clippy::too_many_arguments)]
     fn walk(
+        ctx: &DecodeContext<'_>,
         domains: &[Vec<usize>],
         edges: &[[usize; 2]],
         edge_ids: &[usize],
@@ -351,7 +355,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         exhausted: &mut bool,
         base_degrees: &mut HashMap<(usize, usize), usize>,
         budget: Option<&WorkBudget<'_>>,
-    ) {
+    ) -> Result<(), CodecError> {
         enum CoordinateBranch {
             Search { root: usize, values: Vec<usize> },
             Complete(Vec<usize>),
@@ -484,11 +488,12 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
 
         if solutions.len() > 1 || *exhausted {
-            return;
+            return Ok(());
         }
         if budget.is_some_and(|budget| !budget.charge()) {
             *exhausted = true;
-            return;
+            ctx.charge_work(0, "catia coordinate assignment")?;
+            return Err(ctx.refuse_codec_limit("catia coordinate assignment", 0, 1));
         }
         let viable_values = |root: usize,
                              assigned: &[Option<usize>],
@@ -791,21 +796,23 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 .map(|(_, roots)| roots.as_slice())
                 .collect::<Vec<_>>();
             let coverage_matching = distinct_domain_matching_with_budget(
+                ctx,
                 support_domains.iter().copied(),
                 assigned.len(),
                 matching_budget.as_ref(),
                 None,
-            );
+            )?;
             let mut matching_forced = None;
             let mut unsupported_matches = HashSet::new();
             if let Some(matching) = &coverage_matching {
                 for (support, &root) in matching.iter().enumerate() {
                     if distinct_domain_matching_with_budget(
+                        ctx,
                         support_domains.iter().copied(),
                         assigned.len(),
                         matching_budget.as_ref(),
                         Some(MatchingEdgeConstraint::Exclude(support, root)),
-                    )
+                    )?
                     .is_none()
                     {
                         if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
@@ -822,11 +829,12 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 continue;
                             }
                             if distinct_domain_matching_with_budget(
+                                ctx,
                                 support_domains.iter().copied(),
                                 assigned.len(),
                                 matching_budget.as_ref(),
                                 Some(MatchingEdgeConstraint::Require(support, root)),
-                            )
+                            )?
                             .is_none()
                             {
                                 if matching_budget.as_ref().is_some_and(WorkBudget::exhausted) {
@@ -916,7 +924,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         };
         let Some(branch) = branch else {
             rollback(assigned, point_uses, propagated, base_degrees);
-            return;
+            return Ok(());
         };
         let (root, values) = match branch {
             CoordinateBranch::Complete(solution) => {
@@ -985,7 +993,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     solutions.push(solution);
                 }
                 rollback(assigned, point_uses, propagated, base_degrees);
-                return;
+                return Ok(());
             }
             CoordinateBranch::Search { root, values } => (root, values),
         };
@@ -995,7 +1003,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             }
             *exhausted = true;
             rollback(assigned, point_uses, propagated, base_degrees);
-            return;
+            return Ok(());
         }
         *states += 1;
         for point in values {
@@ -1014,6 +1022,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             };
             point_uses[point] += 1;
             walk(
+                ctx,
                 domains,
                 edges,
                 edge_ids,
@@ -1030,7 +1039,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 exhausted,
                 base_degrees,
                 budget,
-            );
+            )?;
             point_uses[point] -= 1;
             unassign(root, assigned, base_degrees, undo);
             if solutions.len() > 1 || *exhausted {
@@ -1038,6 +1047,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             }
         }
         rollback(assigned, point_uses, propagated, base_degrees);
+        Ok(())
     }
 
     let mut roots = Vec::new();
@@ -1047,10 +1057,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
         }
     }
     if roots.len() < point_count {
-        return None;
+        return Ok(None);
     }
     if roots.len() == point_count && incidence.is_none() {
-        return match quotient.point_assignments_with_budget(point_count, edge_candidates, 2, budget)
+        return Ok(match quotient.point_assignments_with_budget(ctx, point_count, edge_candidates, 2, budget)?
         {
             PointAssignmentOutcome::Complete(mut assignments) => match assignments.len() {
                 1 => Some(assignments.remove(0)),
@@ -1061,14 +1071,14 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 _ => None,
             },
             PointAssignmentOutcome::Exhausted => None,
-        };
+        });
     }
     let root_indices = roots
         .iter()
         .enumerate()
         .map(|(index, root)| (*root, index))
         .collect::<HashMap<_, _>>();
-    let edges = edge_candidates
+    let Some(edges) = edge_candidates
         .iter()
         .enumerate()
         .map(|(edge, _)| {
@@ -1077,7 +1087,9 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 *root_indices.get(&quotient.union.find(edge * 2 + 1))?,
             ])
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>() else {
+        return Ok(None);
+    };
     let domains = roots
         .iter()
         .map(|root| {
@@ -1091,7 +1103,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         })
         .collect::<Vec<_>>();
     if domains.iter().any(Vec::is_empty) {
-        return None;
+        return Ok(None);
     }
     if domains
         .iter()
@@ -1101,7 +1113,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
         .len()
         != point_count
     {
-        return None;
+        return Ok(None);
     }
     let mut dependency = UnionFind::new(roots.len());
     for [left, right] in &edges {
@@ -1127,7 +1139,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let incidence = if let Some((edge_faces, boundary_domains)) = incidence {
         if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
             exhausted.set(true);
-            return None;
+            ctx.charge_work(0, "catia coordinate incidence")?;
+            return Err(ctx.refuse_codec_limit("catia coordinate incidence", 0, 1));
         }
         let mut counts = vec![0usize; boundary_domains.len()];
         for faces in edge_faces {
@@ -1141,7 +1154,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
     } else {
         None
     };
-    let mut assignment = vec![None; roots.len()];
+    let mut assignment = ctx.alloc_filled(roots.len(), None, "catia coordinate root assignment")?;
     let shared_budget = budget;
     for component in components {
         let support_count = component
@@ -1192,13 +1205,15 @@ pub(super) fn close_coordinate_roots_with_incidence(
         });
         let component_budget = component_limit.map(WorkBudget::new);
         let budget = component_budget.as_ref().or(shared_budget);
-        let local_edges = edge_ids
+        let Some(local_edges) = edge_ids
             .iter()
             .map(|edge| {
                 let [left, right] = edges[*edge];
                 Some([*local_index.get(&left)?, *local_index.get(&right)?])
             })
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<Vec<_>>>() else {
+            return Ok(None);
+        };
         let local_edge_by_id = edge_ids
             .iter()
             .copied()
@@ -1209,7 +1224,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
             Some((edge_faces, boundary_domains, counts)) => {
                 if budget.is_some_and(|budget| !budget.charge_by(work_units(edge_ids.len()))) {
                     exhausted.set(true);
-                    return None;
+                    ctx.charge_work(0, "catia coordinate local incidence")?;
+                    return Err(ctx.refuse_codec_limit("catia coordinate local incidence", 0, 1));
                 }
                 let local_edge_faces = edge_ids
                     .iter()
@@ -1258,7 +1274,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             if budget.is_some_and(WorkBudget::exhausted) {
                 exhausted.set(true);
             }
-            return None;
+            return Ok(None);
         }
         let mut arc_domains = local_domains.clone();
         let arc_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
@@ -1275,7 +1291,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 let work = budget.remaining() - arc_budget.remaining();
                 if !budget.charge_by(work) {
                     exhausted.set(true);
-                    return None;
+                    ctx.charge_work(0, "catia coordinate arc consistency")?;
+                    return Err(ctx.refuse_codec_limit("catia coordinate arc consistency", 0, 1));
                 }
             }
             local_domains = arc_domains;
@@ -1283,7 +1300,7 @@ pub(super) fn close_coordinate_roots_with_incidence(
             if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                 exhausted.set(true);
             }
-            return None;
+            return Ok(None);
         }
         if local_domains
             .iter()
@@ -1292,21 +1309,20 @@ pub(super) fn close_coordinate_roots_with_incidence(
             .collect::<HashSet<_>>()
             != component_points
         {
-            return None;
+            return Ok(None);
         }
         let mut solutions = Vec::new();
         let mut states = 0;
         let mut exhausted = false;
         let mut base_degrees = HashMap::new();
-        let mut local_assignment = alloc_filled(
+        let mut local_assignment = ctx.alloc_filled(
             component.len(),
             None,
             "catia coordinate component assignment",
-        )
-        .ok()?;
-        let mut point_degrees =
-            alloc_filled(point_count, 0, "catia coordinate point degrees").ok()?;
+        )?;
+        let mut point_degrees = ctx.alloc_filled(point_count, 0, "catia coordinate point degrees")?;
         walk(
+            ctx,
             &local_domains,
             &local_edges,
             &edge_ids,
@@ -1323,38 +1339,42 @@ pub(super) fn close_coordinate_roots_with_incidence(
             &mut exhausted,
             &mut base_degrees,
             budget,
-        );
+        )?;
         if exhausted {
             if component_budget.as_ref().is_some_and(WorkBudget::exhausted) {
                 if let Some(shared_budget) = shared_budget {
                     shared_budget.exhaust();
                 }
             }
-            return None;
+            return Ok(None);
         }
         let [local_assignment] = solutions.as_slice() else {
             if solutions.len() > 1 {
                 ambiguous.set(true);
             }
-            return None;
+            return Ok(None);
         };
         for (&root, &point) in component.iter().zip(local_assignment) {
             assignment[root] = Some(point);
         }
     }
-    let assignment = assignment.into_iter().collect::<Option<Vec<_>>>()?;
+    let Some(assignment) = assignment.into_iter().collect::<Option<Vec<_>>>() else {
+        return Ok(None);
+    };
     for (&root, &point) in roots.iter().zip(&assignment) {
         quotient.domains[root] = Arc::new(HashSet::from([point]));
     }
     let mut root_by_point = HashMap::new();
     for (&root, &point) in roots.iter().zip(&assignment) {
         if let Some(previous) = root_by_point.insert(point, root) {
-            let merged = quotient.merge(previous, root)?;
+            let Some(merged) = quotient.merge(previous, root) else {
+                return Ok(None);
+            };
             root_by_point.insert(point, merged);
         }
     }
     if !quotient.edge_domains_viable(edge_candidates) {
-        return None;
+        return Ok(None);
     }
-    quotient.point_assignment(point_count, edge_candidates, None)
+    quotient.point_assignment(ctx, point_count, edge_candidates, None)
 }

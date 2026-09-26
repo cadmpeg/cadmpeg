@@ -183,6 +183,7 @@ fn port_quotient_completes_only_supported_unknown_edge_pairs() {
 
 #[test]
 fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
+    catia_test_context!(ctx);
     let candidates = [
         vec![[0, 1], [0, 2]],
         vec![[0, 1]],
@@ -196,7 +197,8 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
     )
     .expect("initial quotient");
     let domains = quotient
-        .prepare_coordinate_root_domains(3, &candidates, None)
+        .prepare_coordinate_root_domains(&ctx, 3, &candidates, None)
+        .expect("service resource budget")
         .expect("coordinate root domains");
 
     assert_eq!(
@@ -207,6 +209,7 @@ fn coordinate_root_fixpoint_removes_unsupported_edge_pairs() {
 
 #[test]
 fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
+    catia_test_context!(ctx);
     let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 3]], vec![[2, 3]]];
     let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
         &candidates,
@@ -215,9 +218,11 @@ fn selected_edge_pair_propagates_through_shared_coordinate_roots() {
     )
     .expect("initial quotient");
     let domains = quotient
-        .prepare_coordinate_root_domains(4, &candidates, None)
+        .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
+        .expect("service resource budget")
         .expect("coordinate root domains")
-        .refine_edge_candidate_arc(0, [0, 1], None)
+        .refine_edge_candidate_arc(&ctx, 0, [0, 1], None)
+        .expect("service resource budget")
         .expect("selected edge pair");
 
     assert!(domains.supports_edge_candidate(1, [1, 3]));
@@ -243,12 +248,14 @@ fn port_quotient_declines_unbounded_unknown_edge_pairs() {
 
 #[test]
 fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
+    catia_test_context!(ctx);
     let candidates = [Vec::new()];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[10, 11]])
             .expect("initial quotient");
     let domains = quotient
-        .prepare_coordinate_root_domains(2, &candidates, None)
+        .prepare_coordinate_root_domains(&ctx, 2, &candidates, None)
+        .expect("service resource budget")
         .expect("implicit coordinate domains");
 
     assert!(domains.edge_candidates()[0].is_empty());
@@ -260,18 +267,26 @@ fn coordinate_root_domains_keep_unknown_edge_pairs_implicit() {
             .collect::<Vec<_>>(),
         vec![[0, 1]]
     );
-    assert!(domains.refine_edge_candidate_arc(0, [0, 1], None).is_some());
-    assert!(domains.refine_edge_candidate_arc(0, [0, 0], None).is_none());
+    assert!(domains
+        .refine_edge_candidate_arc(&ctx, 0, [0, 1], None)
+        .expect("service resource budget")
+        .is_some());
+    assert!(domains
+        .refine_edge_candidate_arc(&ctx, 0, [0, 0], None)
+        .expect("service resource budget")
+        .is_none());
 }
 
 #[test]
 fn required_implicit_coordinate_pairs_scale_with_root_domains_not_their_product() {
+    catia_test_context!(ctx);
     let candidates = [Vec::new(), Vec::new()];
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 4, &[[10, 11], [12, 13]])
             .expect("initial quotient");
     let domains = quotient
-        .prepare_coordinate_root_domains(4, &candidates, None)
+        .prepare_coordinate_root_domains(&ctx, 4, &candidates, None)
+        .expect("service resource budget")
         .expect("implicit coordinate domains");
     let implicit = domains
         .implicit_edge_candidates(0, Some(1))
@@ -315,6 +330,7 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
 
 #[test]
 fn incidence_search_consumes_implicit_coordinate_root_pairs() {
+    catia_test_context!(ctx);
     use crate::solve::incidence::{component_incidence_pair_solution_outcome, IncidenceSolve};
 
     let candidates = vec![Vec::new(); 3];
@@ -325,6 +341,7 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
     )
     .expect("cycle quotient");
     let outcome = component_incidence_pair_solution_outcome(
+        &ctx,
         &candidates,
         &[[0, 0]; 3],
         1,
@@ -333,7 +350,8 @@ fn incidence_search_consumes_implicit_coordinate_root_pairs() {
         Some(&quotient),
         None,
         &|_| true,
-    );
+    )
+    .expect("service resource budget");
 
     assert!(matches!(
         outcome,
@@ -567,6 +585,7 @@ fn quotient_options_decline_when_their_work_budget_is_exhausted() {
 
 #[test]
 fn quotient_point_assignment_preserves_endpoint_pair_relations() {
+    catia_test_context!(ctx);
     let quotient = || {
         MeshQuotient::new(
             [vec![0, 1], vec![2], vec![0, 1], vec![3]]
@@ -575,12 +594,16 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
         )
     };
     assert!(quotient()
-        .point_assignment(4, &[vec![], vec![]], None)
+        .point_assignment(&ctx, 4, &[vec![], vec![]], None)
+        .expect("service resource budget")
         .is_none());
-    assert!(quotient().point_assignment_exists(4, &[vec![], vec![]], None));
+    assert!(quotient()
+        .point_assignment_exists(&ctx, 4, &[vec![], vec![]], None)
+        .expect("service resource budget"));
 
     let assignment = quotient()
-        .point_assignment(4, &[vec![[0, 2]], vec![[1, 3]]], None)
+        .point_assignment(&ctx, 4, &[vec![[0, 2]], vec![[1, 3]]], None)
+        .expect("service resource budget")
         .expect("edge-pair relations determine the coordinate bijection");
     assert_eq!(assignment[&0], 0);
     assert_eq!(assignment[&1], 2);
@@ -590,15 +613,19 @@ fn quotient_point_assignment_preserves_endpoint_pair_relations() {
 
 #[test]
 fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 2));
     let budget = WorkBudget::new(0);
 
-    assert!(!quotient.point_assignment_exists(2, &[vec![]], Some(&budget)));
+    assert!(!quotient
+        .point_assignment_exists(&ctx, 2, &[vec![]], Some(&budget))
+        .expect("service resource budget"));
     assert!(budget.exhausted());
 }
 
 #[test]
 fn point_assignment_handles_deep_augmenting_paths_iteratively() {
+    catia_test_context!(ctx);
     const ROOT_COUNT: usize = 10_000;
     let mut domains = (0..ROOT_COUNT - 1)
         .map(|root| Arc::new(HashSet::from([root, root + 1])))
@@ -607,7 +634,8 @@ fn point_assignment_handles_deep_augmenting_paths_iteratively() {
     let mut quotient = MeshQuotient::new(domains);
 
     let assignment = quotient
-        .point_assignment(ROOT_COUNT, &[], None)
+        .point_assignment(&ctx, ROOT_COUNT, &[], None)
+        .expect("service resource budget")
         .expect("forced coordinate bijection");
 
     assert_eq!(assignment.len(), ROOT_COUNT);
@@ -617,16 +645,20 @@ fn point_assignment_handles_deep_augmenting_paths_iteratively() {
 
 #[test]
 fn quotient_point_existence_rejects_an_all_different_conflict() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(vec![
         Arc::new(HashSet::from([0])),
         Arc::new(HashSet::from([0])),
     ]);
 
-    assert!(!quotient.point_assignment_exists(2, &[vec![]], None));
+    assert!(!quotient
+        .point_assignment_exists(&ctx, 2, &[vec![]], None)
+        .expect("service resource budget"));
 }
 
 #[test]
 fn quotient_point_existence_can_become_viable_after_a_root_merge() {
+    catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(vec![
         Arc::new(HashSet::from([0])),
         Arc::new(HashSet::from([0])),
@@ -634,13 +666,18 @@ fn quotient_point_existence_can_become_viable_after_a_root_merge() {
         Arc::new(HashSet::from([2])),
     ]);
 
-    assert!(!quotient.point_assignment_exists(3, &[vec![], vec![]], None));
+    assert!(!quotient
+        .point_assignment_exists(&ctx, 3, &[vec![], vec![]], None)
+        .expect("service resource budget"));
     quotient.merge(0, 1).expect("compatible roots merge");
-    assert!(quotient.point_assignment_exists(3, &[vec![], vec![]], None));
+    assert!(quotient
+        .point_assignment_exists(&ctx, 3, &[vec![], vec![]], None)
+        .expect("service resource budget"));
 }
 
 #[test]
 fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -659,6 +696,7 @@ fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
         }],
     ];
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -729,6 +767,7 @@ fn partial_face_orientability_rejects_an_odd_open_path_cycle() {
 
 #[test]
 fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
+    catia_test_context!(ctx);
     let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -748,6 +787,7 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
     ];
     let edge_candidates = vec![Vec::new(); 3];
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -779,6 +819,7 @@ fn mesh_selection_rejects_a_branch_with_no_orientable_remaining_face() {
 
 #[test]
 fn mesh_selection_checks_all_fixed_remaining_faces_together() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: 0,
@@ -798,6 +839,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
     ];
     let edge_candidates = vec![Vec::new(); 3];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -824,6 +866,7 @@ fn mesh_selection_checks_all_fixed_remaining_faces_together() {
 
 #[test]
 fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
+    catia_test_context!(ctx);
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -851,6 +894,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
     ];
     let vertex_points = vec![[0.0; 3], [1.0, 0.0, 0.0]];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -879,6 +923,7 @@ fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
 
     let mut prepared = search
         .prepare_selected_branch(&quotient, &changed_edges, &propagation_budget)
+        .expect("service resource budget")
         .expect("partial quotient remains viable");
 
     assert_eq!(prepared.root_count(), 3);
@@ -913,6 +958,7 @@ fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
 
 #[test]
 fn remaining_merge_capacity_counts_distinct_quotient_equations() {
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -932,6 +978,7 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     let assignments = vec![vec![assignment.clone()], vec![assignment]];
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -955,18 +1002,23 @@ fn remaining_merge_capacity_counts_distinct_quotient_equations() {
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         Some(2)
     );
     quotient.merge(1, 2).expect("first repeated equation");
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         Some(1)
     );
 }
 
 #[test]
 fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -987,6 +1039,7 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     let equations = possible_face_equations(&assignments);
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_choices: possible_face_choices(&assignments, &equations),
         possible_face_equations: equations,
@@ -1007,13 +1060,16 @@ fn remaining_merge_capacity_respects_mutually_exclusive_orientations() {
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1]), 4));
 
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         Some(2)
     );
 }
 
 #[test]
 fn remaining_equations_must_connect_equal_singleton_domains() {
+    catia_test_context!(ctx);
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1024,6 +1080,7 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     }]];
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1052,16 +1109,20 @@ fn remaining_equations_must_connect_equal_singleton_domains() {
     ]);
 
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         None
     );
 }
 
 #[test]
 fn remaining_equation_components_require_a_coordinate_matching() {
+    catia_test_context!(ctx);
     let assignments = Vec::new();
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
@@ -1087,16 +1148,20 @@ fn remaining_equation_components_require_a_coordinate_matching() {
     ]);
 
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         None
     );
 }
 
 #[test]
 fn coordinate_matching_reserves_unavoidable_roots_per_component() {
+    catia_test_context!(ctx);
     let assignments = vec![Vec::new()];
     let edge_candidates = vec![Vec::new(); 2];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: vec![vec![[0, 1], [1, 2]]],
         possible_face_choices: vec![vec![vec![[0, 1]], vec![[1, 2]]]],
@@ -1122,18 +1187,22 @@ fn coordinate_matching_reserves_unavoidable_roots_per_component() {
     ]);
 
     assert_eq!(
-        search.remaining_equation_merge_capacity(&mut quotient),
+        search
+            .remaining_equation_merge_capacity(&mut quotient)
+            .expect("service resource budget"),
         None
     );
 }
 
 #[test]
 fn completed_mesh_search_continues_to_check_uniqueness() {
+    catia_test_context!(ctx);
     let assignments = Vec::new();
     let edge_candidates = Vec::new();
     let edge_rows = Vec::new();
     let vertex_points = Vec::new();
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
@@ -1165,7 +1234,9 @@ fn completed_mesh_search_continues_to_check_uniqueness() {
 
 #[test]
 fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
+    catia_test_context!(ctx);
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &[],
         possible_face_equations: Vec::new(),
         possible_face_choices: Vec::new(),
@@ -1185,13 +1256,16 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
     };
     let quotient = MeshQuotient::new(Vec::new());
 
-    search.search_with_limit(&quotient, 0);
+    search
+        .search_with_limit(&quotient, 0)
+        .expect("service resource budget");
 
     assert!(matches!(search.outcome, SearchOutcome::Exhausted));
 }
 
 #[test]
 fn mesh_selection_finishes_the_active_face_component_first() {
+    catia_test_context!(ctx);
     const UNRELATED_FACE_COUNT: usize = 1_000;
     let use_edge = |edge| MeshBoundaryEdgeCandidate {
         edge,
@@ -1224,6 +1298,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
         domains.push(domain);
     }
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: vec![Vec::new(); face_count],
         possible_face_choices: vec![Vec::new(); face_count],
@@ -1245,7 +1320,9 @@ fn mesh_selection_finishes_the_active_face_component_first() {
     let budget = WorkBudget::new(5);
     let propagation_budget = WorkBudget::new(0);
 
-    search.search_from_state(&quotient, true, &budget, &propagation_budget);
+    search
+        .search_from_state(&quotient, true, &budget, &propagation_budget)
+        .expect("service resource budget");
 
     assert!(!search.outcome.is_closed());
     assert!(matches!(search.outcome, SearchOutcome::Open));
@@ -1253,6 +1330,7 @@ fn mesh_selection_finishes_the_active_face_component_first() {
 
 #[test]
 fn forced_face_selection_does_not_exhaust_the_work_budget() {
+    catia_test_context!(ctx);
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![MeshBoundaryEdgeCandidate {
             edge: 0,
@@ -1268,6 +1346,7 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
         boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
     }];
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1290,13 +1369,14 @@ fn forced_face_selection_does_not_exhaust_the_work_budget() {
     };
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), 2));
 
-    search.search(&quotient);
+    search.search(&quotient).expect("service resource budget");
 
     assert!(!search.outcome.is_closed());
 }
 
 #[test]
 fn overmerged_face_options_do_not_exhaust_the_work_budget() {
+    catia_test_context!(ctx);
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1323,6 +1403,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
         2
     ];
     let mut search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1345,7 +1426,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
     };
     let quotient = MeshQuotient::new(repeated_domain(HashSet::from([0, 1, 2]), 4));
 
-    search.search(&quotient);
+    search.search(&quotient).expect("service resource budget");
 
     assert!(!search.outcome.is_closed());
     assert!(matches!(search.outcome, SearchOutcome::Open));
@@ -1353,6 +1434,7 @@ fn overmerged_face_options_do_not_exhaust_the_work_budget() {
 
 #[test]
 fn mesh_selection_merges_corner_equations_common_to_every_option() {
+    catia_test_context!(ctx);
     let assignment = MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1378,6 +1460,7 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
     let assignments = vec![vec![assignment]];
     let candidates = vec![vec![], vec![], vec![]];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1410,6 +1493,7 @@ fn mesh_selection_merges_corner_equations_common_to_every_option() {
 
 #[test]
 fn mesh_selection_merges_equations_common_to_every_assignment() {
+    catia_test_context!(ctx);
     let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
         edge,
         start: edge,
@@ -1426,6 +1510,7 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
     ]];
     let candidates = vec![vec![], vec![], vec![]];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1456,6 +1541,7 @@ fn mesh_selection_merges_equations_common_to_every_assignment() {
 
 #[test]
 fn mesh_selection_common_equations_ignore_infeasible_assignments() {
+    catia_test_context!(ctx);
     let use_ = |edge| MeshBoundaryEdgeCandidate {
         edge,
         start: edge,
@@ -1472,6 +1558,7 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
     ]];
     let candidates = vec![vec![]; 3];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1507,6 +1594,7 @@ fn mesh_selection_common_equations_ignore_infeasible_assignments() {
 
 #[test]
 fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
+    catia_test_context!(ctx);
     let boundary = (0..13)
         .map(|edge| MeshBoundaryEdgeCandidate {
             edge,
@@ -1520,6 +1608,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
     }]];
     let candidates = vec![vec![]; 13];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(
@@ -1552,6 +1641,7 @@ fn mesh_selection_propagates_closed_ports_without_enumerating_directions() {
 
 #[test]
 fn face_equation_cache_ignores_unrelated_quotient_components() {
+    catia_test_context!(ctx);
     let assignments = vec![vec![MeshFaceBoundaryAssignment {
         boundaries: vec![vec![
             MeshBoundaryEdgeCandidate {
@@ -1570,6 +1660,7 @@ fn face_equation_cache_ignores_unrelated_quotient_components() {
     }]];
     let candidates = vec![vec![]; 3];
     let search = MeshSelectionSearch {
+        ctx: &ctx,
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
         possible_face_choices: possible_face_choices(

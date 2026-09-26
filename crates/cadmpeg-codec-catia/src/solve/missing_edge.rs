@@ -1111,9 +1111,9 @@ pub(super) fn visit_duplicate_face_assignments<F>(
     face_count: usize,
     max_assignments: usize,
     mut visitor: F,
-) -> Option<DuplicateFaceAssignmentVisit>
+) -> Result<Option<DuplicateFaceAssignmentVisit>, cadmpeg_core::CodecError>
 where
-    F: FnMut(&[[usize; 2]]) -> bool,
+    F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
 {
     fn visit<F>(
         branches: &[(usize, Vec<usize>)],
@@ -1122,20 +1122,20 @@ where
         max_assignments: usize,
         visited: &mut usize,
         visitor: &mut F,
-    ) -> DuplicateFaceAssignmentVisit
+    ) -> Result<DuplicateFaceAssignmentVisit, cadmpeg_core::CodecError>
     where
-        F: FnMut(&[[usize; 2]]) -> bool,
+        F: FnMut(&[[usize; 2]]) -> Result<bool, cadmpeg_core::CodecError>,
     {
         if at == branches.len() {
             if *visited >= max_assignments {
-                return DuplicateFaceAssignmentVisit::Exhausted;
+                return Ok(DuplicateFaceAssignmentVisit::Exhausted);
             }
             *visited += 1;
-            return if visitor(assignment) {
+            return Ok(if visitor(assignment)? {
                 DuplicateFaceAssignmentVisit::Complete
             } else {
                 DuplicateFaceAssignmentVisit::Stopped
-            };
+            });
         }
         let (edge, choices) = &branches[at];
         for &face in choices {
@@ -1147,12 +1147,12 @@ where
                 max_assignments,
                 visited,
                 visitor,
-            ) {
+            )? {
                 DuplicateFaceAssignmentVisit::Complete => {}
-                terminal => return terminal,
+                terminal => return Ok(terminal),
             }
         }
-        DuplicateFaceAssignmentVisit::Complete
+        Ok(DuplicateFaceAssignmentVisit::Complete)
     }
 
     if serialized.len() != allowed_faces.len()
@@ -1162,7 +1162,7 @@ where
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::<(usize, Vec<usize>)>::new();
@@ -1170,7 +1170,7 @@ where
         let allowed = &allowed_faces[edge];
         if faces[0] != faces[1] {
             if !allowed.is_empty() {
-                return None;
+                return Ok(None);
             }
             continue;
         }
@@ -1185,14 +1185,14 @@ where
     branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
 
     let mut visited = 0;
-    Some(visit(
+    Ok(Some(visit(
         &branches,
         0,
         &mut assignment,
         max_assignments,
         &mut visited,
         &mut visitor,
-    ))
+    )?))
 }
 
 /// Complete repeated standard edge-face slots when carrier incidence and a

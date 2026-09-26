@@ -2459,13 +2459,13 @@ fn try_decode_standard_population(
         &mut admission,
     ) {
         Ok(()) => {}
-        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
-        Err(_) => return None,
+        Err(error) => return Some(Err(error)),
     }
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
     let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
     let topology_result = attach_standard_topology(
+        ctx,
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
@@ -2540,7 +2540,8 @@ fn try_decode_standard_population(
     };
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
-    consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
+    consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
+        ctx,
         &mut ir,
         &mut annotations,
         &scan.data,
@@ -2548,8 +2549,11 @@ fn try_decode_standard_population(
         &face_bounds,
         &owner_binding_budget,
         refusal,
-    )
-    .ok()?;
+    ) {
+        Ok(bound) => bound,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
     link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
     let annotations = annotations.build();
 
@@ -4136,6 +4140,7 @@ fn resolve_standard_limit_curve_binding(
 
 #[allow(clippy::too_many_arguments)]
 fn attach_standard_topology(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
@@ -4964,34 +4969,43 @@ fn attach_standard_topology(
         fbb::parse_standard(spine)
             .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
     };
-    let mesh_bound = (!has_open_face_domains)
-        .then_some(mesh_topology)
-        .flatten()
-        .and_then(|topology| {
-            let endpoint_pairs = resolved_endpoint_pairs
-                .clone()
-                .or_else(|| {
-                    endpoint_candidates
-                        .iter()
-                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                        .collect::<Option<Vec<[usize; 2]>>>()
-                })
-                .or_else(|| {
-                    let ports = topology
-                        .edge_vertices()?
-                        .into_iter()
-                        .map(|[left, right]| {
-                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                    missing_edge::bind_edge_port_candidates(
-                        &ports,
-                        constrained_endpoint_options.as_ref()?,
-                    )
-                })?;
-            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-            Some((topology, point_assignment))
-        });
+    let mesh_bound = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let Some(topology) = (!has_open_face_domains).then_some(mesh_topology).flatten() else {
+            return Ok(None);
+        };
+        let Some(endpoint_pairs) = resolved_endpoint_pairs
+            .clone()
+            .or_else(|| {
+                endpoint_candidates
+                    .iter()
+                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                    .collect::<Option<Vec<[usize; 2]>>>()
+            })
+            .or_else(|| {
+                let ports = topology
+                    .edge_vertices()?
+                    .into_iter()
+                    .map(|[left, right]| {
+                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                missing_edge::bind_edge_port_candidates(
+                    &ports,
+                    constrained_endpoint_options.as_ref()?,
+                )
+            })
+        else {
+            return Ok(None);
+        };
+        let Some(point_assignment) = topology.bind_vertex_points(ctx, &endpoint_pairs)? else {
+            return Ok(None);
+        };
+        Ok(Some((topology, point_assignment)))
+    })();
+    let mesh_bound = match mesh_bound {
+        Ok(bound) => bound,
+        Err(error) => return Err(StandardTopologyError::Resource(error)),
+    };
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)
@@ -5037,7 +5051,10 @@ fn attach_standard_topology(
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
+    } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        let Some(options) = constrained_endpoint_options.as_ref() else {
+            return Ok(None);
+        };
         let edge_identity_evidence = supports
             .iter()
             .enumerate()
@@ -5094,14 +5111,15 @@ fn attach_standard_topology(
                 &ports,
                 &mut solver_deferred_edges,
             ) {
-                return None;
+                return Ok(None);
             }
         }
         let solve_mesh_candidate =
             |selected_edge_faces: &[[usize; 2]],
              selected_supports: &[crate::families::standard::records::StandardCurveSupport],
              selected_edge_classes: &[usize],
-             solve_budget: &WorkBudget<'_>| {
+             solve_budget: &WorkBudget<'_>|
+             -> Result<mesh_quotient::MeshCandidateSolve, cadmpeg_core::CodecError> {
                 // FBB-only rows are complete boundary runs. Their global
                 // handle quotient is the incidence source.
                 let mut solver_options = standard_endpoint_options_for_selected_faces(
@@ -5162,6 +5180,7 @@ fn attach_standard_topology(
                 let preferred_budget =
                     solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                 let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    ctx,
                     spine,
                     selected_edge_faces,
                     &solver_options,
@@ -5195,13 +5214,13 @@ fn attach_standard_topology(
                                 pairs,
                             )
                     },
-                );
+                )?;
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
-                    return mesh_quotient::MeshSolve::Failed(
+                    return Ok(mesh_quotient::MeshSolve::Failed(
                         mesh_quotient::MeshCandidateFailure::Exhausted(
                             mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
                         ),
-                    );
+                    ));
                 }
                 let has_circle_preference = selected_circle_constraint_edges
                     .iter()
@@ -5214,6 +5233,7 @@ fn attach_standard_topology(
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                     let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                        ctx,
                         spine,
                         selected_edge_faces,
                         &solver_options,
@@ -5239,17 +5259,17 @@ fn attach_standard_topology(
                                     .edge_pairs(pairs)
                                     .is_some_and(|pairs| line_constraint.is_simple(&pairs))
                         },
-                    );
+                    )?;
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
-                        return mesh_quotient::MeshSolve::Failed(
+                        return Ok(mesh_quotient::MeshSolve::Failed(
                             mesh_quotient::MeshCandidateFailure::Exhausted(
                                 mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
                             ),
-                        );
+                        ));
                     }
-                    retry_rejected_mesh_solution(preferred, || fallback)
+                    Ok(retry_rejected_mesh_solution(preferred, || fallback))
                 } else {
-                    preferred
+                    Ok(preferred)
                 }
             };
         let outcome = if has_open_face_domains {
@@ -5286,7 +5306,7 @@ fn attach_standard_topology(
                         branch_budget,
                     )
                 },
-            ) {
+            )? {
                 mesh_quotient::MeshSolve::Solved((faces, topology, assignment)) => {
                     selected_face_assignment = Some(faces);
                     mesh_quotient::MeshSolve::Solved((topology, assignment))
@@ -5296,9 +5316,9 @@ fn attach_standard_topology(
                 }
             }
         } else {
-            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)
+            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)?
         };
-        match outcome {
+        Ok(match outcome {
             mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
             mesh_quotient::MeshSolve::Failed(failure) => {
                 mesh_search_exhausted |=
@@ -5306,32 +5326,34 @@ fn attach_standard_topology(
                 diagnostics.mesh_failure = Some(failure);
                 None
             }
-        }
-    }) {
-        bound
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then_some(constrained_endpoint_options.as_ref())
-        .flatten()
-        .and_then(|options| {
-            missing_edge::standard_mesh_edge_ports(spine)
-                .and_then(|ports| {
-                    fbb::parse_standard_port_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                        &ports,
-                        work_budget,
-                    )
-                })
-                .or_else(|| {
-                    fbb::parse_standard_endpoint_candidates(
-                        spine,
-                        &edge_faces,
-                        options,
-                        work_budget,
-                    )
-                })
         })
+    })()
+    .map_err(StandardTopologyError::Resource)?
+    {
+        bound
+    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if has_open_face_domains {
+            return Ok(None);
+        }
+        let Some(options) = constrained_endpoint_options.as_ref() else {
+            return Ok(None);
+        };
+        if let Some(ports) = missing_edge::standard_mesh_edge_ports(spine) {
+            let candidate = fbb::parse_standard_port_endpoint_candidates(
+                ctx,
+                spine,
+                &edge_faces,
+                options,
+                &ports,
+                work_budget,
+            )?;
+            if candidate.is_some() {
+                return Ok(candidate);
+            }
+        }
+        fbb::parse_standard_endpoint_candidates(ctx, spine, &edge_faces, options, work_budget)
+    })()
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
@@ -7233,10 +7255,11 @@ fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool>
 }
 
 fn invariant_face_carrier_bindings(
+    ctx: &DecodeContext<'_>,
     face_edges: &[Vec<(usize, Vec<usize>)>],
     owner_count: usize,
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Vec<Option<usize>>> {
+) -> Result<Option<Vec<Option<usize>>>, cadmpeg_core::CodecError> {
     let normalized = face_edges
         .iter()
         .map(|edges| {
@@ -7258,13 +7281,21 @@ fn invariant_face_carrier_bindings(
         .map(|edges| edges.keys().copied().collect::<Vec<_>>())
         .collect::<Vec<_>>();
     let matching = distinct_domain_matching_with_budget(
+        ctx,
         domains.iter().map(Vec::as_slice),
         owner_count,
         budget,
         None,
     )?;
-    retain_distinct_matching_supports(&mut domains, owner_count, &matching, budget)?;
-    Some(
+    let Some(matching) = matching else {
+        return Ok(None);
+    };
+    let Some(_) =
+        retain_distinct_matching_supports(ctx, &mut domains, owner_count, &matching, budget)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
         domains
             .iter()
             .zip(&normalized)
@@ -7281,7 +7312,7 @@ fn invariant_face_carrier_bindings(
                 carriers.into_iter().next()
             })
             .collect(),
-    )
+    ))
 }
 
 fn owner_matches_a5_carrier(
@@ -7415,6 +7446,7 @@ fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
 }
 
 fn bind_standard_a5_owner_surfaces(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
@@ -7518,7 +7550,8 @@ fn bind_standard_a5_owner_surfaces(
                 .collect(),
         );
     }
-    let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
+    let Some(bindings) =
+        invariant_face_carrier_bindings(ctx, &face_edges, owners.len(), Some(budget))?
     else {
         return Ok(0);
     };
