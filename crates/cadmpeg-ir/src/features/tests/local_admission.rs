@@ -56,9 +56,14 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
-    let first = BodySelection::Bodies(vec![body_id("first")]);
-    let second = BodySelection::Bodies(vec![body_id("second")]);
-    let pair = BodySelection::Bodies(vec![body_id("first"), body_id("second")]);
+    let first = BodySelection::Bodies(vec![body_id("first")].try_into().expect("distinct bodies"));
+    let second =
+        BodySelection::Bodies(vec![body_id("second")].try_into().expect("distinct bodies"));
+    let pair = BodySelection::Bodies(
+        vec![body_id("first"), body_id("second")]
+            .try_into()
+            .expect("distinct bodies"),
+    );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Unresolved).is_ok());
@@ -73,6 +78,83 @@ fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
         .try_edit(|first, second| *second = first.clone())
         .is_err());
     assert_eq!(operands, before);
+}
+
+#[test]
+fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
+    let body = body_id("repeated");
+    for wire in [
+        serde_json::json!({"kind": "bodies", "value": [body.as_str(), body.as_str()]}),
+        serde_json::json!({"kind": "resolved", "value": {
+            "bodies": [body.as_str(), body.as_str()], "native": "native-selection"
+        }}),
+    ] {
+        let error = serde_json::from_value::<BodySelection>(wire.clone())
+            .expect_err("repeated resolved bodies")
+            .to_string();
+        assert!(error.contains("members must be distinct"), "{error}");
+        let error = serde_json::from_value::<SewBodySelection>(wire)
+            .expect_err("repeated bodies do not meet sew arity")
+            .to_string();
+        assert!(error.contains("members must be distinct"), "{error}");
+    }
+}
+
+#[test]
+fn feature_evaluation_rejects_duplicate_outputs_at_admission() {
+    let body = body_id("output");
+    let duplicate = vec![body.clone(), body.clone()];
+    assert!(crate::features::DistinctMembers::try_from(duplicate.clone()).is_err());
+
+    let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+        bodies: BodySelection::Unresolved,
+    });
+    let mut evaluation = crate::features::FeatureEvaluation::new(
+        definition.clone(),
+        vec![body.clone()].try_into().unwrap(),
+    );
+    evaluation.edit(|_, outputs| {
+        assert!(!outputs.insert(body.clone()));
+    });
+    assert_eq!(evaluation.outputs(), &vec![body.clone()]);
+    evaluation.set_outputs(vec![body.clone()].try_into().unwrap());
+    let prior = evaluation.clone();
+    assert!(crate::features::DistinctMembers::try_from(duplicate).is_err());
+    assert_eq!(evaluation, prior);
+}
+
+#[test]
+fn feature_wire_rejects_duplicate_outputs_in_standalone_and_model_routes() {
+    let body = body_id("output");
+    let definition = FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+        bodies: BodySelection::Unresolved,
+    });
+    let wire = serde_json::json!({
+        "id": feature_id("wire").as_str(),
+        "ordinal": 0,
+        "suppressed": null,
+        "definition": serde_json::to_value(definition).unwrap(),
+        "outputs": [body.as_str(), body.as_str()]
+    });
+    let error = serde_json::from_value::<Feature>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("distinct"), "{error}");
+
+    let mut model = serde_json::to_value(crate::document::Model::default()).unwrap();
+    model["features"] = serde_json::json!([{
+        "id": feature_id("wire").as_str(),
+        "ordinal": 0,
+        "suppressed": null,
+        "definition": serde_json::to_value(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature { bodies: BodySelection::Unresolved }
+        )).unwrap(),
+        "outputs": [body.as_str(), body.as_str()]
+    }]);
+    let error = serde_json::from_value::<crate::document::Model>(model)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("distinct"), "{error}");
 }
 
 #[test]
@@ -176,7 +258,9 @@ fn an_inserted_body_selection_does_not_restate_the_feature_outputs() {
         native_ref: None,
     };
     assert!(feature.evaluation.outputs().is_empty());
-    feature.evaluation.set_outputs(vec![body.clone()]);
+    feature
+        .evaluation
+        .set_outputs((vec![body.clone()]).try_into().unwrap());
     let wire = serde_json::to_value(&feature).unwrap();
     assert!(wire.get("evaluation").is_none());
     assert_eq!(wire["outputs"], serde_json::json!([body.as_str()]));

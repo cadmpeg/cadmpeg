@@ -554,7 +554,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
                 role: FeatureTreeNodeRole::History,
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }),
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+            (vec![BodyId::mint("test:model:entity#body").expect("identity grammar")])
+                .try_into()
+                .unwrap(),
         ),
         native_ref: None,
     });

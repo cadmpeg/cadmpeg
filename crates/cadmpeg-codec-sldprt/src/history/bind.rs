@@ -360,7 +360,7 @@ pub(crate) fn derive_feature_outputs(
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
@@ -394,12 +394,16 @@ pub(crate) fn derive_feature_outputs(
             if !feature.evaluation.outputs().contains(&body) {
                 let mut outputs = feature.evaluation.outputs().clone();
                 outputs.push(body);
-                feature.evaluation.set_outputs(outputs);
+                feature.evaluation.set_outputs(
+                    outputs
+                        .try_into()
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                );
             }
         }
     }
     if face_producers.is_empty() {
-        return;
+        return Ok(());
     }
     let owners = face_owner_bodies(faces, shells, regions);
     let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
@@ -430,9 +434,15 @@ pub(crate) fn derive_feature_outputs(
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
-            feature.evaluation.set_outputs(bodies.clone());
+            feature.evaluation.set_outputs(
+                bodies
+                    .clone()
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            );
         }
     }
+    Ok(())
 }
 
 pub(super) fn bind_definition_sketch(

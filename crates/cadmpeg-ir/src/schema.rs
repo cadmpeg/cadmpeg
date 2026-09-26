@@ -630,7 +630,20 @@ impl_entity_schema!(
     id;
     id, sketch, definition, native_ref
 );
-impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
+impl EntitySchema for crate::spreadsheets::Spreadsheet {
+    const KIND: EntityKind = EntityKind::Spreadsheet;
+
+    fn identity(&self) -> &str {
+        self.id.as_str()
+    }
+
+    fn visit_references(
+        &self,
+        visitor: &mut dyn FnMut(Reference),
+    ) -> Result<(), ReferenceWalkError> {
+        visit_typed_references(self, visitor)
+    }
+}
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {

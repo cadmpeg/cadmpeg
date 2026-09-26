@@ -1062,7 +1062,7 @@ mod tests {
                     placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                     op: cadmpeg_ir::features::BooleanOp::NewBody,
                 }),
-                vec![body],
+                vec![body].try_into().expect("distinct output fixture"),
             ),
             native_ref: None,
         });
@@ -1095,7 +1095,9 @@ mod tests {
                     placement: None,
                     op: cadmpeg_ir::features::BooleanOp::Unresolved,
                 }),
-                vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
+                vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct output fixture"),
             ),
             native_ref: None,
         });

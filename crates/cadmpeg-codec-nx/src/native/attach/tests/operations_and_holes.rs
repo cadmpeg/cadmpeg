@@ -249,7 +249,9 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
                         .expect("identity grammar"),
                     BodyId::mint("test:model:entity#second-tool".to_string())
                         .expect("identity grammar"),
-                ],
+                ]
+                .try_into()
+                .expect("distinct bodies"),
                 native: "nx:om-object-indices#10,20,30".to_string(),
             })
             .try_into()
@@ -515,12 +517,16 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 BodySelection::Resolved {
                     bodies: vec![BodyId::mint("test:model:entity#target".to_string())
-                        .expect("identity grammar")],
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
                     native: "nx:om-object-index#10".to_string(),
                 },
                 BodySelection::Resolved {
                     bodies: vec![BodyId::mint("test:model:entity#tool".to_string())
-                        .expect("identity grammar")],
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
                     native: "nx:om-object-indices#20".to_string(),
                 }
             )
@@ -893,7 +899,9 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
             source: BodySelection::Resolved {
                 bodies: vec![
                     BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
-                ],
+                ]
+                .try_into()
+                .expect("distinct bodies"),
                 native: "nx:om-object-index#20".to_string(),
             },
         })

@@ -332,6 +332,138 @@ pub enum DimensionTolerance {
     },
 }
 
+/// One admitted dimensional characteristic and its compatible quantities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PmiDimensionWire", into = "PmiDimensionWire")]
+pub struct PmiDimension {
+    kind: DimensionKind,
+    nominal: Option<PmiValue>,
+    tolerance: Option<DimensionTolerance>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+struct PmiDimensionWire {
+    /// Dimensional characteristic.
+    dimension: DimensionKind,
+    /// Nominal value, absent when the source carries none.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_nominal"
+    )]
+    nominal: Option<PmiValue>,
+    /// Optional plus/minus or limits-and-fits tolerance.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tolerance"
+    )]
+    tolerance: Option<DimensionTolerance>,
+}
+
+impl PmiDimension {
+    /// Admit the dimensional kind, nominal value, and tolerance together.
+    pub fn new(
+        kind: DimensionKind,
+        nominal: Option<PmiValue>,
+        tolerance: Option<DimensionTolerance>,
+    ) -> Result<Self, String> {
+        let expected = match &kind {
+            DimensionKind::Angular => Some(PmiQuantity::Angle),
+            DimensionKind::Size
+            | DimensionKind::Location
+            | DimensionKind::Diameter
+            | DimensionKind::Radius => Some(PmiQuantity::Length),
+            DimensionKind::Other(_) => nominal.map(|value| value.quantity),
+        };
+        if nominal.is_some_and(|value| Some(value.quantity) != expected) {
+            return Err("dimension nominal quantity disagrees with its kind".into());
+        }
+        if let Some(
+            DimensionTolerance::PlusMinus { lower, upper }
+            | DimensionTolerance::PlusMinusFit { lower, upper, .. },
+        ) = &tolerance
+        {
+            if lower.quantity != upper.quantity {
+                return Err("dimension tolerance quantities disagree".into());
+            }
+            if expected.is_some_and(|quantity| lower.quantity != quantity) {
+                return Err(
+                    "dimension tolerance quantity disagrees with its kind or nominal".into(),
+                );
+            }
+        }
+        Ok(Self {
+            kind,
+            nominal,
+            tolerance,
+        })
+    }
+
+    /// Dimensional characteristic.
+    #[must_use]
+    pub fn kind(&self) -> &DimensionKind {
+        &self.kind
+    }
+
+    /// Nominal quantity, when supplied.
+    #[must_use]
+    pub fn nominal(&self) -> Option<&PmiValue> {
+        self.nominal.as_ref()
+    }
+
+    /// Compatible tolerance, when supplied.
+    #[must_use]
+    pub fn tolerance(&self) -> Option<&DimensionTolerance> {
+        self.tolerance.as_ref()
+    }
+
+    /// Replace the dimensional kind if its quantities remain compatible.
+    pub fn set_kind(&mut self, kind: DimensionKind) -> Result<(), String> {
+        let candidate = Self::new(kind, self.nominal, self.tolerance.clone())?;
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Replace the tolerance if its quantities remain compatible.
+    pub fn set_tolerance(&mut self, tolerance: Option<DimensionTolerance>) -> Result<(), String> {
+        let candidate = Self::new(self.kind.clone(), self.nominal, tolerance)?;
+        *self = candidate;
+        Ok(())
+    }
+}
+
+impl From<PmiDimension> for PmiDimensionWire {
+    fn from(value: PmiDimension) -> Self {
+        Self {
+            dimension: value.kind,
+            nominal: value.nominal,
+            tolerance: value.tolerance,
+        }
+    }
+}
+
+impl TryFrom<PmiDimensionWire> for PmiDimension {
+    type Error = String;
+
+    fn try_from(value: PmiDimensionWire) -> Result<Self, Self::Error> {
+        Self::new(value.dimension, value.nominal, value.tolerance)
+    }
+}
+
+#[cfg(feature = "schema")]
+impl JsonSchema for PmiDimension {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PmiDimension".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        PmiDimensionWire::json_schema(generator)
+    }
+}
+
 /// Semantic or presentation PMI payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -396,24 +528,7 @@ pub enum PmiDefinition {
         modifiers: Vec<String>,
     },
     /// Size or location dimension with optional plus/minus limits.
-    Dimension {
-        /// Dimensional characteristic.
-        dimension: DimensionKind,
-        /// Nominal value, absent when the source carries none.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_nominal"
-        )]
-        nominal: Option<PmiValue>,
-        /// Optional plus/minus or limits-and-fits tolerance.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_tolerance"
-        )]
-        tolerance: Option<DimensionTolerance>,
-    },
+    Dimension(PmiDimension),
     /// Graphical annotation retained independently of semantic PMI.
     Presentation {
         /// Decoded annotation text.
@@ -477,7 +592,7 @@ mod tests {
 
     use super::{
         DatumReference, DatumReferences, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-        PmiAnnotation, PmiDefinition, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
+        PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
     };
     use crate::document::CadIr;
     use crate::ids::PmiId;
@@ -537,14 +652,17 @@ mod tests {
 
     #[test]
     fn dimension_wire_nests_its_tolerance_and_refuses_the_deleted_flat_keys() {
-        let definition = PmiDefinition::Dimension {
-            dimension: DimensionKind::Size,
-            nominal: Some(PmiValue::new(12.0, PmiQuantity::Length).expect("finite value")),
-            tolerance: Some(DimensionTolerance::PlusMinus {
-                lower: PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value"),
-                upper: PmiValue::new(0.2, PmiQuantity::Length).expect("finite value"),
-            }),
-        };
+        let definition = PmiDefinition::Dimension(
+            PmiDimension::new(
+                DimensionKind::Size,
+                Some(PmiValue::new(12.0, PmiQuantity::Length).expect("finite value")),
+                Some(DimensionTolerance::PlusMinus {
+                    lower: PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value"),
+                    upper: PmiValue::new(0.2, PmiQuantity::Length).expect("finite value"),
+                }),
+            )
+            .expect("compatible dimension"),
+        );
 
         let value = serde_json::to_value(&definition).unwrap();
         assert_eq!(value["kind"], "dimension");
@@ -598,12 +716,10 @@ mod tests {
         let definition =
             serde_json::from_value::<PmiDefinition>(value.clone()).expect("absent nominal");
         assert!(matches!(
-            definition,
-            PmiDefinition::Dimension {
-                dimension: DimensionKind::Diameter,
-                nominal: None,
-                tolerance: Some(DimensionTolerance::PlusMinus { .. }),
-            }
+            &definition,
+            PmiDefinition::Dimension(relation) if matches!(relation.kind(), DimensionKind::Diameter)
+                && relation.nominal().is_none()
+                && matches!(relation.tolerance(), Some(DimensionTolerance::PlusMinus { .. }))
         ));
         assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
 
@@ -626,13 +742,84 @@ mod tests {
         let definition =
             serde_json::from_value::<PmiDefinition>(value.clone()).expect("combined tolerance");
         assert!(matches!(
-            definition,
-            PmiDefinition::Dimension {
-                tolerance: Some(DimensionTolerance::PlusMinusFit { .. }),
-                ..
-            }
+            &definition,
+            PmiDefinition::Dimension(relation) if matches!(relation.tolerance(), Some(DimensionTolerance::PlusMinusFit { .. }))
         ));
         assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
+    }
+
+    #[test]
+    fn dimension_relation_rejects_mixed_nominal_and_tolerance_quantities() {
+        let nominal = PmiValue::new(12.0, PmiQuantity::Length).expect("finite value");
+        let lower = PmiValue::new(-0.1, PmiQuantity::Angle).expect("finite value");
+        let upper = PmiValue::new(0.2, PmiQuantity::Length).expect("finite value");
+        assert!(PmiDimension::new(
+            DimensionKind::Size,
+            Some(nominal),
+            Some(DimensionTolerance::PlusMinus { lower, upper }),
+        )
+        .is_err());
+        let wire = serde_json::json!({
+            "kind": "dimension", "dimension": "size",
+            "nominal": {"value": 12.0, "quantity": "length"},
+            "tolerance": {"form": "plus_minus",
+                "lower": {"value": -0.1, "quantity": "angle"},
+                "upper": {"value": 0.2, "quantity": "length"}}
+        });
+        let error = serde_json::from_value::<PmiDefinition>(wire)
+            .expect_err("mixed dimension quantities")
+            .to_string();
+        assert!(error.contains("quantities disagree"), "{error}");
+    }
+
+    #[test]
+    fn dimension_relation_uses_kind_when_nominal_is_absent() {
+        let lower = PmiValue::new(-0.1, PmiQuantity::Length).expect("finite value");
+        let upper = PmiValue::new(0.2, PmiQuantity::Length).expect("finite value");
+        assert!(PmiDimension::new(
+            DimensionKind::Angular,
+            None,
+            Some(DimensionTolerance::PlusMinus { lower, upper }),
+        )
+        .is_err());
+        let wire = serde_json::json!({
+            "kind": "dimension", "dimension": "angular",
+            "tolerance": {"form": "plus_minus",
+                "lower": {"value": -0.1, "quantity": "length"},
+                "upper": {"value": 0.2, "quantity": "length"}}
+        });
+        let error = serde_json::from_value::<PmiDefinition>(wire)
+            .expect_err("angular dimension needs angle tolerance")
+            .to_string();
+        assert!(error.contains("quantity disagrees"), "{error}");
+    }
+
+    #[test]
+    fn dimension_relation_rejects_nominal_kind_mismatch_and_atomic_edits() {
+        let angle = PmiValue::new(1.0, PmiQuantity::Angle).expect("finite angle");
+        assert!(PmiDimension::new(DimensionKind::Size, Some(angle), None).is_err());
+        let wire = serde_json::json!({
+            "kind": "dimension", "dimension": "size",
+            "nominal": {"value": 1.0, "quantity": "angle"}
+        });
+        let error = serde_json::from_value::<PmiDefinition>(wire)
+            .expect_err("size nominal needs length")
+            .to_string();
+        assert!(error.contains("nominal quantity disagrees"), "{error}");
+
+        let length = PmiValue::new(12.0, PmiQuantity::Length).expect("finite length");
+        let mut relation = PmiDimension::new(DimensionKind::Size, Some(length), None)
+            .expect("compatible dimension");
+        let original = relation.clone();
+        assert!(relation.set_kind(DimensionKind::Angular).is_err());
+        assert_eq!(relation, original);
+        assert!(relation
+            .set_tolerance(Some(DimensionTolerance::PlusMinus {
+                lower: angle,
+                upper: angle,
+            }))
+            .is_err());
+        assert_eq!(relation, original);
     }
 
     #[test]
@@ -644,11 +831,14 @@ mod tests {
             name: Some("curve target".into()),
             visible: None,
             targets: vec![PmiTarget::Curve { curve }],
-            definition: PmiDefinition::Dimension {
-                dimension: DimensionKind::Size,
-                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
-                tolerance: None,
-            },
+            definition: PmiDefinition::Dimension(
+                PmiDimension::new(
+                    DimensionKind::Size,
+                    Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
+                    None,
+                )
+                .expect("compatible dimension"),
+            ),
         });
         ir.finalize();
 
@@ -686,11 +876,14 @@ mod tests {
             name: None,
             visible: None,
             targets: Vec::new(),
-            definition: PmiDefinition::Dimension {
-                dimension: DimensionKind::Size,
-                nominal: Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
-                tolerance: None,
-            },
+            definition: PmiDefinition::Dimension(
+                PmiDimension::new(
+                    DimensionKind::Size,
+                    Some(PmiValue::new(1.0, PmiQuantity::Length).expect("finite value")),
+                    None,
+                )
+                .expect("compatible dimension"),
+            ),
         });
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId::mint("test:model:pmi#system").expect("valid identity"),

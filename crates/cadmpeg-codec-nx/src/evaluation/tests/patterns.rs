@@ -36,9 +36,9 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         "pattern",
         1,
         FeatureDefinition::Operation(FeatureOperation::Pattern {
-            seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![
-                seed.clone()
-            ]))],
+            seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
+                vec![seed.clone()].try_into().expect("distinct bodies"),
+            ))],
             pattern: PatternKind::new(PatternTransform::Linear {
                 direction: Some(
                     cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -51,9 +51,11 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
             .unwrap(),
         }),
     );
-    pattern
-        .evaluation
-        .set_outputs(vec![first_copy.clone(), second_copy.clone()]);
+    pattern.evaluation.set_outputs(
+        (vec![first_copy.clone(), second_copy.clone()])
+            .try_into()
+            .unwrap(),
+    );
     ir.model.features.push(pattern);
 
     assert_eq!(
@@ -103,7 +105,9 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         1,
         seed.clone(),
         FeatureDefinition::Operation(FeatureOperation::Pattern {
-            seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(vec![seed]))],
+            seeds: vec![PatternSeed::Bodies(BodySelection::Bodies(
+                vec![seed].try_into().expect("distinct bodies"),
+            ))],
             pattern: PatternKind::new(PatternTransform::Mirror {
                 plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                     .unwrap(),

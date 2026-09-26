@@ -13,7 +13,7 @@ mod nominals;
 mod parsing;
 
 fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue> {
-    let PmiDefinition::Dimension { nominal, .. } = &annotations
+    let PmiDefinition::Dimension(relation) = &annotations
         .iter()
         .find(|annotation| annotation.id == pmi_id(id).unwrap())
         .expect("dimension annotation")
@@ -21,7 +21,7 @@ fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue
     else {
         panic!("dimension definition");
     };
-    *nominal
+    relation.nominal().copied()
 }
 
 fn reference(id: &str, class: &str) -> Reference {

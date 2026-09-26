@@ -55,7 +55,7 @@ fn complete_block_ir() -> CadIr {
                 placement: Some(cadmpeg_ir::features::FeatureRigidPlacement::identity()),
                 op: BooleanOp::NewBody,
             }),
-            vec![body],
+            (vec![body]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -143,7 +143,7 @@ fn complete_hole(body: BodyId) -> Feature {
                 taper_angle: None,
                 allow_multi_profile_faces: None,
             }),
-            vec![body],
+            (vec![body]).try_into().unwrap(),
         ),
         native_ref: None,
     }
@@ -166,7 +166,10 @@ fn body_preserving_feature(
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            definition,
+            (vec![body]).try_into().unwrap(),
+        ),
         native_ref: None,
     }
 }
@@ -219,6 +222,8 @@ fn complete_extrude_feature(
         }),
     );
     feature.dependencies.insert(profile);
-    feature.evaluation.set_outputs(outputs);
+    feature
+        .evaluation
+        .set_outputs((outputs).try_into().unwrap());
     feature
 }

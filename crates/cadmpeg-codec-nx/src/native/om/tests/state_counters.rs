@@ -45,7 +45,9 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         "/Root/UG_PART/UG_PART",
         segment_om_record_area_with_state_counter_map(),
     )]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
@@ -83,7 +85,9 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
 fn native_catalog_emits_role_gated_audit_trail_rows() {
     let payload = audit_trail_test_payload();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let rows = audit_trail_rows(&container);
     assert_eq!(rows.len(), 2);
@@ -128,7 +132,9 @@ fn audit_trail_test_payload() -> Vec<u8> {
 fn native_catalog_emits_anchored_operation_state_journal_groups() {
     let payload = composed_feature_history_payload_with_state_journal();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let groups = operation_state_journal_groups(&container);
     assert_eq!(groups.len(), 2);
@@ -180,7 +186,9 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
         "/Root/UG_PART/UG_PART",
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let tables = operation_state_groups(&container).unwrap();
     let groups = tables
@@ -235,7 +243,9 @@ fn native_catalog_emits_bounded_operation_state_messages() {
         "/Root/UG_PART/UG_PART",
         segment_om_record_area_with_state_groups_and_counter_map(),
     )]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let messages = operation_state_messages(&container);
     assert_eq!(messages.len(), 1);
@@ -271,7 +281,9 @@ fn native_catalog_emits_bounded_operation_state_messages() {
 fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let payload = composed_feature_history_payload_with_operation_state_statuses();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);
-    let container = container::scan_bytes(file).expect("required invariant");
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("required invariant");
 
     let statuses = operation_state_statuses(&container);
     assert_eq!(statuses.len(), 2);

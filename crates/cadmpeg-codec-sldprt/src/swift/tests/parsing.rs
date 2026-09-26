@@ -164,13 +164,10 @@ fn parses_and_projects_semantic_graph() {
         .iter()
         .find(|annotation| annotation.id.as_str().ends_with("#A40"))
         .expect("angular annotation");
-    let PmiDefinition::Dimension {
-        nominal: Some(nominal),
-        ..
-    } = &angle.definition
-    else {
+    let PmiDefinition::Dimension(relation) = &angle.definition else {
         panic!("angular definition");
     };
+    let nominal = relation.nominal().expect("angular nominal");
     assert_eq!(
         *nominal,
         PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")

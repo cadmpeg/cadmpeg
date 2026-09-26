@@ -898,11 +898,15 @@ fn body_selections_round_trip_through_json() {
 
     let selections = vec![
         BodySelection::Unresolved,
-        BodySelection::Bodies(vec![
-            BodyId::mint("synthetic:test:body#0").expect("valid identity")
-        ]),
+        BodySelection::Bodies(
+            vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")]
+                .try_into()
+                .expect("distinct bodies"),
+        ),
         BodySelection::Resolved {
-            bodies: vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")],
+            bodies: vec![BodyId::mint("synthetic:test:body#0").expect("valid identity")]
+                .try_into()
+                .expect("distinct bodies"),
             native: "body:17".into(),
         },
         BodySelection::ResolvedSet {
