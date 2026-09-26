@@ -2,9 +2,8 @@
 
 use super::assembly::is_supplemental_config_lane;
 use super::axes::{
-    canonical_unit_direction, compact_line_reference_directions,
-    declared_line_reference_directions, linear_pattern_display_directions,
-    temporary_axis_reference, typed_linear_pattern_dimensions,
+    compact_line_reference_directions, declared_line_reference_directions,
+    linear_pattern_display_directions, temporary_axis_reference, typed_linear_pattern_dimensions,
 };
 use super::component_paths::is_dissected_profile_feature;
 use super::endpoints::{
@@ -39,7 +38,7 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{
     features::{
         patterns::{PatternKind, PatternSeed, PatternTransform},
-        FeatureDefinition, FeatureOperation, PathRef,
+        FeatureDefinition, FeatureDirection3, FeatureOperation, PathRef,
     },
     units::UnitVector3,
 };
@@ -84,7 +83,7 @@ pub(crate) fn bind_pattern_inputs(
         Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
     let mut pattern_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut circular_axis_assignments = Vec::<(usize, Point3, Vector3)>::new();
-    let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
+    let mut linear_direction_assignments = Vec::<(usize, FeatureDirection3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
     let mut mirror_seed_assignments = Vec::<(usize, Vec<cadmpeg_ir::features::FeatureId>)>::new();
     let derived_cosmetic_thread_seed = |feature: &crate::records::Feature| {
@@ -424,13 +423,21 @@ pub(crate) fn bind_pattern_inputs(
                     }
                 }
                 let mut unique_directions = Vec::new();
-                for direction in directions.into_iter().map(canonical_unit_direction) {
-                    if !unique_directions.iter().any(|candidate: &Vector3| {
-                        let dot = candidate.x * direction.x
-                            + candidate.y * direction.y
-                            + candidate.z * direction.z;
-                        (dot.abs() - 1.0).abs() <= EPS_BINDINGS_BIND_PATTERN_INPUTS_E12
-                    }) {
+                for direction in directions
+                    .into_iter()
+                    .map(FeatureDirection3::from_unit_without_small_components)
+                {
+                    if !unique_directions
+                        .iter()
+                        .any(|candidate: &FeatureDirection3| {
+                            let candidate = candidate.get();
+                            let direction = direction.get();
+                            let dot = candidate.x * direction.x
+                                + candidate.y * direction.y
+                                + candidate.z * direction.z;
+                            (dot.abs() - 1.0).abs() <= EPS_BINDINGS_BIND_PATTERN_INPUTS_E12
+                        })
+                    {
                         unique_directions.push(direction);
                     }
                 }
@@ -548,7 +555,7 @@ pub(crate) fn bind_pattern_inputs(
         }
         model_features[index].evaluation.set_definition(definition);
     }
-    let mut linear_directions_by_pattern = HashMap::<usize, Vec<Vector3>>::new();
+    let mut linear_directions_by_pattern = HashMap::<usize, Vec<FeatureDirection3>>::new();
     for (index, direction) in linear_direction_assignments {
         let candidates = linear_directions_by_pattern.entry(index).or_default();
         if !candidates.contains(&direction) {
@@ -572,7 +579,7 @@ pub(crate) fn bind_pattern_inputs(
                 continue;
             };
             match candidates.as_slice() {
-                [first] if direction.is_none() => *direction = Some(admitted_direction(*first)?),
+                [first] if direction.is_none() => *direction = Some(*first),
                 [first, second_direction] => {
                     let parameters = native.and_then(|feature| {
                         Some((
@@ -585,9 +592,9 @@ pub(crate) fn bind_pattern_inputs(
                     if let (true, true, Some((spacing, count))) =
                         (direction.is_none(), second.is_none(), parameters)
                     {
-                        *direction = Some(admitted_direction(*first)?);
+                        *direction = Some(*first);
                         *second = Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
-                            direction: admitted_direction(*second_direction)?,
+                            direction: *second_direction,
                             spacing,
                             count,
                         });

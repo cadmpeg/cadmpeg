@@ -287,6 +287,27 @@ impl FeatureDirection3 {
     pub fn reversed(self) -> Self {
         Self(Vector3::new(-self.0.x, -self.0.y, -self.0.z))
     }
+
+    /// Canonicalize a unit input by replacing components of magnitude at most
+    /// `1e-12` with positive zero. A unit vector has a component above one
+    /// half in magnitude, so the result keeps a finite nonzero squared norm.
+    #[must_use]
+    pub fn from_unit_without_small_components(direction: UnitVector3) -> Self {
+        const EPS_CANONICAL_COMPONENT: f64 = 1.0e-12;
+        let component = |value: f64| {
+            if value.abs() <= EPS_CANONICAL_COMPONENT {
+                0.0
+            } else {
+                value
+            }
+        };
+        let value = direction.as_raw();
+        Self(Vector3::new(
+            component(value.x),
+            component(value.y),
+            component(value.z),
+        ))
+    }
 }
 
 checked_feature_geometry!(

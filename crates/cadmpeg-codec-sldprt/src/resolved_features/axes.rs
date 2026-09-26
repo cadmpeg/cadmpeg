@@ -22,6 +22,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::units::{SumSquaresUnitVector3, UnitVector3};
 use cadmpeg_ir::{
     features::{FeatureDefinition, FeatureOperation},
     scalar::PositiveLength,
@@ -29,11 +30,6 @@ use cadmpeg_ir::{
 use std::collections::{HashMap, HashSet};
 
 const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
-const EPS_AXES_LINE_REFERENCE_DIRECTION_E9: f64 = 1e-9;
-const EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_CANONICAL_UNIT_DIRECTION_E12: f64 = 1e-12;
-const EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
 const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
 const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
@@ -41,22 +37,19 @@ const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
 
-pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
+fn square_sum_unit_direction(values: [f64; 3]) -> Option<UnitVector3> {
+    let [x, y, z] = values;
+    SumSquaresUnitVector3::new(Vector3::new(x, y, z)).map(SumSquaresUnitVector3::normalized)
+}
+
+pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<UnitVector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
-    let scalar = |offset: usize| {
-        let value = View::f64_le_at(payload, offset)?;
-        value.is_finite().then_some(value)
-    };
     let direction_at = |offset: usize| {
-        let direction = Vector3::new(scalar(offset)?, scalar(offset + 8)?, scalar(offset + 16)?);
-        let norm =
-            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                .sqrt();
-        ((norm - 1.0).abs() <= EPS_AXES_LINE_REFERENCE_DIRECTION_E9).then_some(Vector3::new(
-            direction.x / norm,
-            direction.y / norm,
-            direction.z / norm,
-        ))
+        square_sum_unit_direction([
+            View::f64_le_at(payload, offset)?,
+            View::f64_le_at(payload, offset + 8)?,
+            View::f64_le_at(payload, offset + 16)?,
+        ])
     };
     let mut directions = Vec::new();
     if payload.get(class_offset + 136..class_offset + 144)
@@ -90,7 +83,7 @@ pub(super) fn declared_line_reference_directions(
     payload: &[u8],
     class_offset: u64,
     object_end: usize,
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
 
     let Ok(class_offset) = usize::try_from(class_offset) else {
@@ -119,17 +112,11 @@ pub(super) fn declared_line_reference_directions(
             value.is_finite().then_some(value)
         };
         let direction_at = |relative: usize| {
-            let direction = Vector3::new(
-                scalar(relative)?,
-                scalar(relative + 8)?,
-                scalar(relative + 16)?,
-            );
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(payload, handle.checked_add(relative)?)?,
+                View::f64_le_at(payload, handle.checked_add(relative + 8)?)?,
+                View::f64_le_at(payload, handle.checked_add(relative + 16)?)?,
+            ])
         };
         let addressed = payload.get(handle + 8..handle + 12) == Some(&[0; 4])
             && View::u32_le_at(payload, handle + 12).is_some_and(|address| address != 0);
@@ -158,28 +145,13 @@ pub(super) fn declared_line_reference_directions(
     directions
 }
 
-pub(super) fn canonical_unit_direction(direction: Vector3) -> Vector3 {
-    let component = |value: f64| {
-        if value.abs() <= EPS_AXES_CANONICAL_UNIT_DIRECTION_E12 {
-            0.0
-        } else {
-            value
-        }
-    };
-    Vector3::new(
-        component(direction.x),
-        component(direction.y),
-        component(direction.z),
-    )
-}
-
 pub(super) fn linear_pattern_display_directions(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
     names: &[FeatureInputName],
     expected_spacing_m: [Option<f64>; 2],
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const VALUE_OFFSET: usize = 32;
     const DIRECTION_OFFSET: usize = 161;
     const LENGTH_TOLERANCE_M: f64 = 1e-8;
@@ -215,18 +187,11 @@ pub(super) fn linear_pattern_display_directions(
             {
                 return None;
             }
-            let scalar = |relative: usize| {
-                let scalar_offset = direction_offset.checked_add(relative)?;
-                let value = View::f64_le_at(payload, scalar_offset)?;
-                value.is_finite().then_some(value)
-            };
-            let direction = Vector3::new(scalar(0)?, scalar(8)?, scalar(16)?);
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(payload, direction_offset)?,
+                View::f64_le_at(payload, direction_offset.checked_add(8)?)?,
+                View::f64_le_at(payload, direction_offset.checked_add(16)?)?,
+            ])
         })
         .collect()
 }
@@ -271,7 +236,7 @@ pub(super) fn compact_line_reference_direction(
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Option<Vector3> {
+) -> Option<UnitVector3> {
     let directions =
         compact_line_reference_directions(payload, object_start, object_end, excluded_handles);
     let [direction] = directions.as_slice() else {
@@ -285,7 +250,7 @@ pub(super) fn compact_line_reference_directions(
     object_start: usize,
     object_end: usize,
     excluded_handles: &[usize],
-) -> Vec<Vector3> {
+) -> Vec<UnitVector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let Some(end) = super::DeclaredEnd::of(object_end, payload.len()).map(super::DeclaredEnd::get)
     else {
@@ -307,19 +272,12 @@ pub(super) fn compact_line_reference_directions(
         if record[..8] != HANDLES || record[8..12] != [0; 4] {
             return Vec::new();
         }
-        let scalar = |offset: usize| {
-            let value = View::f64_le_at(record, offset)?;
-            value.is_finite().then_some(value)
-        };
         let direction_at = |offset: usize| {
-            let direction =
-                Vector3::new(scalar(offset)?, scalar(offset + 8)?, scalar(offset + 16)?);
-            let norm =
-                (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
-                    .sqrt();
-            ((norm - 1.0).abs() <= EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9).then_some(
-                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
-            )
+            square_sum_unit_direction([
+                View::f64_le_at(record, offset)?,
+                View::f64_le_at(record, offset + 8)?,
+                View::f64_le_at(record, offset + 16)?,
+            ])
         };
         let mut directions = Vec::new();
         let tagged_token = |offset: usize| {
