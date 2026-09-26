@@ -53,9 +53,9 @@ pub(in super::super) fn build_container_ir(
     let (meta, coverage) = source_meta(scan, classification)?;
     let mut ir = CadIr::decoded(meta);
     let mut annotations = AnnotationBuilder::new();
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
@@ -666,9 +666,9 @@ pub(in super::super) fn build_ir(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     let mut source_carriers = SourceUnitCarriers::new(length_scale_mm);
-    emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
+    emit_legacy_arenas(ctx, scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(ctx, scan, &mut annotations)?;
-    emit_reference_arenas(scan, &mut ir, &mut annotations)?;
+    emit_reference_arenas(ctx, scan, &mut ir, &mut annotations)?;
     transfer_reference_lines(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_reference_circles(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
     transfer_reference_ellipses(ctx, scan, &mut ir, &mut annotations, &mut source_carriers)?;
@@ -700,8 +700,8 @@ pub(in super::super) fn build_ir(
         &mut coverage,
         &mut source_carriers,
     )?;
-    attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = length_scale_mm {
         super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
     }

@@ -374,7 +374,7 @@ fn decode_with_occurrence_limits(
             product_occurrence_output_limit,
             product_occurrence_depth_limit,
         ),
-        Some(ctx),
+        ctx,
     )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.

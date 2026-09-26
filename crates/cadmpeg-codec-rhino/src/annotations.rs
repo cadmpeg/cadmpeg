@@ -614,7 +614,11 @@ fn annotation_record_dropped(
 }
 
 /// Projects every supported general annotation into stable native records.
-pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, CodecError> {
+pub(crate) fn install(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &Scan<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<LossNote>, CodecError> {
     let binding = UnitBinding::from_units(scan.metadata.settings.units.as_ref());
     let mut losses = Vec::new();
     let mut annotations = Vec::new();
@@ -908,10 +912,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Result<Vec<LossNote>, 
         }
     }
     let namespace = ir.native.namespace_mut("rhino");
-    namespace.set_arena("annotations", &annotations)?;
-    namespace.set_arena("text_dots", &dots)?;
+    namespace.set_arena(ctx, "annotations", &annotations)?;
+    namespace.set_arena(ctx, "text_dots", &dots)?;
     if !arrows.is_empty() {
-        namespace.set_arena("annotation_arrows", &arrows)?;
+        namespace.set_arena(ctx, "annotation_arrows", &arrows)?;
     }
     Ok(losses)
 }
@@ -1292,7 +1296,12 @@ mod tests {
             ),
         ]);
         let mut ir = CadIr::empty();
-        install(&scan, &mut ir).expect("annotation installation");
+        install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("annotation installation");
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["annotations"].len(), 4);
@@ -1327,7 +1336,12 @@ mod tests {
             &payload,
         )]);
         let mut ir = CadIr::empty();
-        let losses = install(&scan, &mut ir).expect("legacy annotation installation");
+        let losses = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("legacy annotation installation");
         assert!(losses.is_empty());
 
         let record = &ir
@@ -1360,7 +1374,12 @@ mod tests {
             .source_id
             .clone();
         let mut ir = CadIr::empty();
-        let losses = install(&scan, &mut ir).expect("annotation installation");
+        let losses = install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("annotation installation");
         let loss = losses
             .iter()
             .find(|loss| loss.code == super::RhinoLossCode::AnnotationRecordDropped.kind())
@@ -1402,7 +1421,12 @@ mod tests {
         set_identity(&mut scan, 1, duplicate_id, "second", None, true);
 
         let mut ir = CadIr::empty();
-        install(&scan, &mut ir).expect("annotation installation");
+        install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("annotation installation");
         let records = &ir
             .native
             .namespace("rhino")
@@ -1567,7 +1591,12 @@ mod tests {
             ),
         ]);
         let mut ir = CadIr::empty();
-        install(&scan, &mut ir).expect("annotation installation");
+        install(
+            &cadmpeg_test_support::service_decode_context(),
+            &scan,
+            &mut ir,
+        )
+        .expect("annotation installation");
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
         assert_eq!(namespace.arenas()["text_dots"].len(), 1);
