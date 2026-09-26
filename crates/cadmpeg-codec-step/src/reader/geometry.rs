@@ -234,20 +234,20 @@ fn edge_parameter_range(
 }
 
 pub(super) struct UnitScales {
-    default_length: f64,
-    default_angle: f64,
-    length: BTreeMap<u64, f64>,
-    angle: BTreeMap<u64, f64>,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
+    length: BTreeMap<u64, PositiveReal>,
+    angle: BTreeMap<u64, PositiveReal>,
 }
 
 impl UnitScales {
-    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn length(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.length.get(&id).copied())
             .unwrap_or(self.default_length)
     }
 
-    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> f64 {
+    pub(super) fn angle(&self, ids: impl IntoIterator<Item = u64>) -> PositiveReal {
         ids.into_iter()
             .find_map(|id| self.angle.get(&id).copied())
             .unwrap_or(self.default_angle)
@@ -257,7 +257,7 @@ impl UnitScales {
 fn resolve_source_curve_parameter_scales(
     exchange: &Exchange,
     unit_scales: &UnitScales,
-) -> BTreeMap<u64, f64> {
+) -> BTreeMap<u64, FiniteReal> {
     exchange
         .records()
         .keys()
@@ -273,7 +273,7 @@ fn source_curve_parameter_scale(
     exchange: &Exchange,
     unit_scales: &UnitScales,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<FiniteReal> {
     if !active.insert(id) {
         return None;
     }
@@ -286,12 +286,12 @@ fn source_curve_parameter_scale(
                 .filter(|vector| vector.partial("VECTOR").is_some())
                 .and_then(|vector| named_parameter(vector, "VECTOR", 2))
                 .and_then(Value::number)
-                .filter(|magnitude| magnitude.is_finite() && *magnitude > 0.0)?;
-            let scale = magnitude * unit_scales.length([id]);
-            return scale.is_finite().then_some(scale);
+                .and_then(PositiveReal::new)?;
+            let scale = magnitude.get() * unit_scales.length([id]).get();
+            return FiniteReal::new(scale);
         }
         if record.partial("CIRCLE").is_some() || record.partial("ELLIPSE").is_some() {
-            return Some(unit_scales.angle([id]));
+            return Some(FiniteReal::from(unit_scales.angle([id])));
         }
         if record.partial("PARABOLA").is_some()
             || record.partial("HYPERBOLA").is_some()
@@ -306,7 +306,7 @@ fn source_curve_parameter_scale(
                 )
             })
         {
-            return Some(1.0);
+            return Some(FiniteReal::ONE);
         }
         let parent = ["CURVE_REPLICA", "TRIMMED_CURVE", "OFFSET_CURVE_3D"]
             .into_iter()
@@ -340,15 +340,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         losses.push(StepLossCode::DocumentLengthUnitUnresolved.note(
             "the document length unit did not resolve; coordinates are unscaled and reported as millimetres",
         ));
-        1.0
+        PositiveReal::ONE
     });
     let angle_scale = plane_angle_scale(exchange).unwrap_or_else(|| {
         losses.push(StepLossCode::DocumentAngleUnitUnresolved.note(
             "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         ));
-        1.0
+        PositiveReal::ONE
     });
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
+    let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
         resolve_source_curve_parameter_scales(exchange, &unit_scales);
     let mut typed = HashSet::new();
@@ -362,10 +363,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
     match linear_uncertainty(exchange) {
-        LinearUncertainty::Value(uncertainty) => match cadmpeg_ir::scalar::PositiveLength::new(uncertainty) {
-            Some(value) => ir.tolerances.linear = value,
-            None => losses.push(StepLossCode::UncertaintyLengthUnresolved.note("linear uncertainty must be positive and finite; the linear tolerance was not transferred")),
-        },
+        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
                 losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
@@ -383,7 +381,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let listed = [first, second]
                 .iter()
                 .chain(&rest)
-                .map(|value| format!("{value:?}"))
+                .map(|value| format!("{:?}", value.get()))
                 .collect::<Vec<_>>()
                 .join(", ");
             losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(format!(
@@ -409,7 +407,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             ],
         ) {
             Some(point_type @ ("APLL_POINT" | "APLL_POINT_WITH_SURFACE")) => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) = apll_point_coordinates(record, point_type, record_scale) {
                     points.insert(id, position);
                     let source_name = representation_item_name(record)
@@ -433,7 +431,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 }
             }
             Some("CARTESIAN_POINT") => {
-                let record_scale = unit_scales.length([id]);
+                let record_scale = unit_scales.length([id]).get();
                 if let Some(position) =
                     named_coordinates(record, "CARTESIAN_POINT", 1, record_scale)
                 {
@@ -557,7 +555,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
     }
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
@@ -691,7 +689,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             continue;
         };
         let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
-            unit_scales.angle([representation])
+            unit_scales.angle([representation]).get()
         });
         let decoded = items
             .iter()
@@ -727,7 +725,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if curve_kind == LeafCurveEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
+        let record_scale = unit_scales.length([id]).get();
         let parameter_offset = if curve_kind == LeafCurveEntity::Ellipse {
             let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
             let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
@@ -996,7 +994,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 continue;
             };
             let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_angle_scale = unit_scales.angle([id]).get();
             let parameter_offset = curve_parameter_offsets
                 .get(&basis_step)
                 .copied()
@@ -1008,7 +1006,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                     points: &points,
                     geometry: &CurveGeometry::Solved(geometry.clone()),
                     angle_scale: record_angle_scale,
-                    linear_parameter_scale,
+                    linear_parameter_scale: linear_parameter_scale.get(),
                     parameter_offset,
                     tolerance: ir.tolerances.linear.get(),
                     master_representation,
@@ -1167,7 +1165,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         let procedural =
             match cadmpeg_ir::geometry::curve_payloads::SpatialOffsetCurveConstruction::try_from_parts(
                 source,
-                distance * unit_scales.length([id]),
+                distance * unit_scales.length([id]).get(),
                 reference_direction,
                 self_intersect,
             )
@@ -1378,8 +1376,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
         if surface_kind == LeafSurfaceEntity::BSplineWithKnots && record.simple_name().is_none() {
             continue;
         }
-        let record_scale = unit_scales.length([id]);
-        let record_angle_scale = unit_scales.angle([id]);
+        let record_scale = unit_scales.length([id]).get();
+        let record_angle_scale = unit_scales.angle([id]).get();
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
@@ -1520,8 +1518,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
-            let record_angle_scale = unit_scales.angle([id]);
+            let record_scale = unit_scales.length([id]).get();
+            let record_angle_scale = unit_scales.angle([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1721,7 +1719,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
-            let record_scale = unit_scales.length([id]);
+            let record_scale = unit_scales.length([id]).get();
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1952,8 +1950,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 ir,
                 &surface.id,
                 &surface.geometry,
-                unit_scales.length([id]),
-                unit_scales.angle([id]),
+                unit_scales.length([id]).get(),
+                unit_scales.angle([id]).get(),
                 &source_curve_parameter_scales,
             )?;
             Some((id, scales))
@@ -2128,7 +2126,7 @@ fn decode_tessellated_curve_sets(
             )));
             continue;
         };
-        let scale = unit_scales.length([coordinates_id]);
+        let scale = unit_scales.length([coordinates_id]).get();
         let Some(vertices) = coordinate_rows(coordinates_record, scale) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "TESSELLATED_CURVE_SET #{id} has invalid COORDINATES_LIST #{coordinates_id}"
@@ -3086,12 +3084,12 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
 
 fn resolve_unit_scales(
     exchange: &Exchange,
-    default_length: f64,
-    default_angle: f64,
+    default_length: PositiveReal,
+    default_angle: PositiveReal,
     losses: &mut Vec<LossNote>,
 ) -> UnitScales {
-    let mut length_candidates = BTreeMap::<u64, Vec<f64>>::new();
-    let mut angle_candidates = BTreeMap::<u64, Vec<f64>>::new();
+    let mut length_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
+    let mut angle_candidates = BTreeMap::<u64, Vec<PositiveReal>>::new();
     for (&representation_id, representation) in exchange.records() {
         if !is_representation_record(representation) {
             continue;
@@ -3138,20 +3136,20 @@ fn resolve_unit_scales(
         default_angle,
         length: length
             .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_length)
+            .filter(|(_, scale)| *scale != default_length)
             .collect(),
         angle: angle
             .into_iter()
-            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_angle)
+            .filter(|(_, scale)| *scale != default_angle)
             .collect(),
     }
 }
 
 fn finalize_unit_candidates(
-    candidates: BTreeMap<u64, Vec<f64>>,
+    candidates: BTreeMap<u64, Vec<PositiveReal>>,
     dimension: &str,
     losses: &mut Vec<LossNote>,
-) -> BTreeMap<u64, f64> {
+) -> BTreeMap<u64, PositiveReal> {
     let mut selected = BTreeMap::new();
     let mut ambiguous = 0;
     for (id, values) in candidates {
@@ -3170,7 +3168,7 @@ fn finalize_unit_candidates(
     selected
 }
 
-fn unique_scale(values: &[f64]) -> Option<f64> {
+fn unique_scale(values: &[PositiveReal]) -> Option<PositiveReal> {
     let first = *values.first()?;
     values
         .iter()
@@ -3178,7 +3176,9 @@ fn unique_scale(values: &[f64]) -> Option<f64> {
         .then_some(first)
 }
 
-fn same_scale(left: f64, right: f64) -> bool {
+fn same_scale(left: PositiveReal, right: PositiveReal) -> bool {
+    let left = left.get();
+    let right = right.get();
     let tolerance = EPS_GEOMETRY_READ_EXACT_GEOMETRY * left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= tolerance
 }
@@ -3199,7 +3199,10 @@ fn representation_context(record: &RawRecord) -> Option<u64> {
         .find_map(Value::reference)
 }
 
-fn context_unit_scales(id: u64, exchange: &Exchange) -> (Option<f64>, Option<f64>) {
+fn context_unit_scales(
+    id: u64,
+    exchange: &Exchange,
+) -> (Option<PositiveReal>, Option<PositiveReal>) {
     let Some(context) = exchange.records().get(&id) else {
         return (None, None);
     };
@@ -3304,19 +3307,19 @@ fn is_representation_context_record(record: &RawRecord) -> bool {
     })
 }
 
-fn length_scale(exchange: &Exchange) -> Option<f64> {
+fn length_scale(exchange: &Exchange) -> Option<PositiveReal> {
     document_unit_scale(exchange, "LENGTH_UNIT", unit_scale_mm)
 }
 
-fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
+fn plane_angle_scale(exchange: &Exchange) -> Option<PositiveReal> {
     document_unit_scale(exchange, "PLANE_ANGLE_UNIT", unit_scale_radians)
 }
 
 fn document_unit_scale(
     exchange: &Exchange,
     dimension_partial: &str,
-    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<f64>,
-) -> Option<f64> {
+    resolve: fn(u64, &Exchange, &mut BTreeSet<u64>) -> Option<PositiveReal>,
+) -> Option<PositiveReal> {
     let mut context_scales = Vec::new();
     let mut has_context_unit = false;
 
@@ -3369,7 +3372,7 @@ pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     unit_scale_radians_inner(id, exchange, active, 0)
 }
 
@@ -3378,7 +3381,7 @@ fn unit_scale_radians_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if depth >= 256 {
         return None;
     }
@@ -3405,20 +3408,20 @@ fn unit_scale_radians_inner(
             let base = record_values(factor)
                 .find_map(Value::reference)
                 .and_then(|base| unit_scale_radians_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            Some(value * base.get())
         } else {
             None
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    result.and_then(PositiveReal::new)
 }
 
 pub(super) fn unit_scale_mm(
     id: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     unit_scale_mm_inner(id, exchange, active, 0)
 }
 
@@ -3427,7 +3430,7 @@ fn unit_scale_mm_inner(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
     depth: usize,
-) -> Option<f64> {
+) -> Option<PositiveReal> {
     if depth >= 256 {
         return None;
     }
@@ -3457,13 +3460,13 @@ fn unit_scale_mm_inner(
                 .flat_map(|partial| &partial.parameters)
                 .find_map(Value::reference)
                 .and_then(|base| unit_scale_mm_inner(base, exchange, active, depth + 1))?;
-            Some(value * base)
+            Some(value * base.get())
         } else {
             None
         }
     })();
     active.remove(&id);
-    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+    result.and_then(PositiveReal::new)
 }
 
 const SI_MICRO: f64 = EPS_GEOMETRY_READ_COARSE_GEOMETRY;
@@ -3501,7 +3504,10 @@ fn si_prefix(prefix: &str) -> Option<f64> {
 /// the only contribution of the context. Every other context contributes each
 /// of its resolvable length measures. `linear_uncertainty` merges the equal
 /// contributions of all contexts and decides what a disagreement means.
-fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Vec<f64>, usize) {
+fn context_length_uncertainties(
+    context: &RawRecord,
+    exchange: &Exchange,
+) -> (Vec<PositiveLength>, usize) {
     let Some(references) = context
         .partial("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
         .and_then(|partial| partial.parameters.first())
@@ -3525,11 +3531,10 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
             continue;
         };
         if let Some(scale) = unit_scale_mm(unit, exchange, &mut BTreeSet::new()) {
-            let result = value * scale;
-            if !result.is_finite() || result <= 0.0 {
+            let Some(result) = PositiveLength::new(value * scale.get()) else {
                 unresolved += 1;
                 continue;
-            }
+            };
             // The CADIR convention applies to the name attribute, not
             // the optional description attribute.
             let named_distance_accuracy = measure
@@ -3560,21 +3565,21 @@ fn context_length_uncertainties(context: &RawRecord, exchange: &Exchange) -> (Ve
 /// The document projection of the per-context linear uncertainty candidates.
 enum LinearUncertainty {
     /// One distinct candidate, in millimetres.
-    Value(f64),
+    Value(PositiveLength),
     /// No candidate, with the number of measures that did not resolve.
     Empty { unresolved: usize },
     /// Several distinct candidates in millimetres, sorted and without
     /// duplicates, with the number of measures that did not resolve.
     Ambiguous {
-        first: f64,
-        second: f64,
-        rest: Vec<f64>,
+        first: PositiveLength,
+        second: PositiveLength,
+        rest: Vec<PositiveLength>,
         unresolved: usize,
     },
 }
 
 fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
-    let mut candidates: Vec<f64> = Vec::new();
+    let mut candidates: Vec<PositiveLength> = Vec::new();
     let mut unresolved = 0;
     for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
         let (context_candidates, context_unresolved) =
@@ -3588,7 +3593,7 @@ fn linear_uncertainty(exchange: &Exchange) -> LinearUncertainty {
             }
         }
     }
-    candidates.sort_by(f64::total_cmp);
+    candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
     let mut candidates = candidates.into_iter();
     match (candidates.next(), candidates.next()) {
@@ -3766,9 +3771,9 @@ fn parameter_scale(
 fn line_parameter_scale(
     exchange: &Exchange,
     curve: u64,
-    length_scale: f64,
+    length_scale: PositiveReal,
     losses: &mut Vec<LossNote>,
-) -> f64 {
+) -> PositiveReal {
     fn inherited_parent(record: &RawRecord) -> Option<u64> {
         if record.partial("CURVE_REPLICA").is_some() {
             return named_parameter(record, "CURVE_REPLICA", 1).and_then(ValueExt::reference);
@@ -3793,10 +3798,10 @@ fn line_parameter_scale(
     fn resolve(
         exchange: &Exchange,
         curve: u64,
-        length_scale: f64,
+        length_scale: PositiveReal,
         losses: &mut Vec<LossNote>,
         visiting: &mut BTreeSet<u64>,
-    ) -> f64 {
+    ) -> PositiveReal {
         if !visiting.insert(curve) {
             return length_scale;
         }
@@ -3811,8 +3816,8 @@ fn line_parameter_scale(
                 .filter(|record| record.partial("VECTOR").is_some())
                 .and_then(|record| named_parameter(record, "VECTOR", 2))
                 .and_then(ValueExt::number)
-                .map(|magnitude| magnitude * length_scale)
-                .filter(|scale| scale.is_finite() && *scale > 0.0)
+                .and_then(PositiveReal::new)
+                .and_then(|magnitude| PositiveReal::new(magnitude.get() * length_scale.get()))
                 .unwrap_or_else(|| {
                     losses.push(StepLossCode::LineParameterScaleUnresolved.note(format!(
                         "LINE #{curve} parameter scale did not resolve; the document length scale was used"
@@ -4528,9 +4533,10 @@ fn decode_pcurve_geometry(
                         1.0
                     };
                     let start =
-                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?
+                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?.get()
                             * scale;
                     let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
+                        .get()
                         * scale;
                     records.extend(basis_records);
                     let (parameter_range, same_sense) =
@@ -4546,11 +4552,12 @@ fn decode_pcurve_geometry(
                 }
                 "OFFSET_CURVE_2D" => {
                     let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
-                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
-                    if !distance.is_finite()
-                        || named_parameter(record, "OFFSET_CURVE_2D", 3)?
-                            .logical()
-                            .is_none()
+                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?
+                        .number()
+                        .and_then(FiniteReal::new)?;
+                    if named_parameter(record, "OFFSET_CURVE_2D", 3)?
+                        .logical()
+                        .is_none()
                     {
                         return None;
                     }
@@ -4568,7 +4575,7 @@ fn decode_pcurve_geometry(
                     )?;
                     records.extend(basis_records);
                     PcurveGeometry::Offset(
-                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
+                        cadmpeg_ir::geometry::pcurve::OffsetPcurve::from_parts(
                             distance,
                             Box::new(basis),
                         )
@@ -4586,7 +4593,7 @@ fn decode_pcurve_geometry(
     result
 }
 
-fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
+fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
             Value::Integer(value) => Some(*value as f64),
@@ -4612,7 +4619,7 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
             }),
         _ => None,
     }
-    .filter(|value| value.is_finite())
+    .and_then(FiniteReal::new)
 }
 
 fn trimmed_pcurve_parameterization(
@@ -4685,7 +4692,7 @@ fn surface_parameter_scales_for_step(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
 ) -> Option<[f64; 2]> {
     procedural_surface_parameter_scales(
         ir,
@@ -4704,7 +4711,7 @@ fn procedural_surface_parameter_scales(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     if !active.insert(surface_id.clone()) {
@@ -4729,7 +4736,7 @@ fn surface_geometry_parameter_scales(
     geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     match geometry {
@@ -4776,7 +4783,7 @@ fn procedural_definition_parameter_scales(
     definition: &ProceduralSurfaceDefinition,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
     active: &mut BTreeSet<SurfaceId>,
 ) -> Option<[f64; 2]> {
     let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
@@ -4879,12 +4886,12 @@ fn directrix_parameter_scale(
     curve_id: &CurveId,
     length_scale: f64,
     angle_scale: f64,
-    source_curve_parameter_scales: &BTreeMap<u64, f64>,
+    source_curve_parameter_scales: &BTreeMap<u64, FiniteReal>,
 ) -> Option<f64> {
     if let Some(source_scale) =
         step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
     {
-        return Some(*source_scale);
+        return Some(source_scale.get());
     }
     directrix_parameter_scale_inner(
         ir,
@@ -5332,9 +5339,7 @@ fn cartesian_transformation_operator(
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
+    let scale = PositiveReal::new(scale)?;
     let axis3 = transformation_direction(
         record,
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
@@ -5348,21 +5353,21 @@ fn cartesian_transformation_operator(
     let axis_z = axis_z.as_raw();
     Transform::affine([
         [
-            axis_x.x * scale,
-            axis_y.x * scale,
-            axis_z.x * scale,
+            axis_x.x * scale.get(),
+            axis_y.x * scale.get(),
+            axis_z.x * scale.get(),
             origin.x,
         ],
         [
-            axis_x.y * scale,
-            axis_y.y * scale,
-            axis_z.y * scale,
+            axis_x.y * scale.get(),
+            axis_y.y * scale.get(),
+            axis_z.y * scale.get(),
             origin.y,
         ],
         [
-            axis_x.z * scale,
-            axis_y.z * scale,
-            axis_z.z * scale,
+            axis_x.z * scale.get(),
+            axis_y.z * scale.get(),
+            axis_z.z * scale.get(),
             origin.z,
         ],
     ])
@@ -5395,14 +5400,12 @@ fn cartesian_transformation_operator_2d(
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
-    if !scale.is_finite() || scale <= 0.0 {
-        return None;
-    }
+    let scale = PositiveReal::new(scale)?;
     let [axis1_u, axis1_v] = axis1.get();
     let [axis2_u, axis2_v] = axis2.get();
     Transform2::affine([
-        [axis1_u * scale, axis2_u * scale, origin.u],
-        [axis1_v * scale, axis2_v * scale, origin.v],
+        [axis1_u * scale.get(), axis2_u * scale.get(), origin.u],
+        [axis1_v * scale.get(), axis2_v * scale.get(), origin.v],
     ])
 }
 

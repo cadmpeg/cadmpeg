@@ -1798,8 +1798,8 @@ fn measure_context<'a>(
     graph_limit: usize,
 ) -> MeasureContext<'a> {
     MeasureContext {
-        length_scale: geometry.units.length([id]),
-        angle_scale: geometry.units.angle([id]),
+        length_scale: geometry.units.length([id]).get(),
+        angle_scale: geometry.units.angle([id]).get(),
         graph_limit,
         losses,
     }
@@ -1883,6 +1883,7 @@ fn measure_inner(
                 .and_then(|unit| {
                     super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
                 })
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
                     .unwrap_or_else(|| {
                         measurements.losses.push(StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
@@ -1893,6 +1894,7 @@ fn measure_inner(
                     .and_then(|unit| {
                     super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
                 })
+                    .map(cadmpeg_ir::scalar::PositiveReal::get)
                     .unwrap_or_else(|| {
                         measurements.losses.push(StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
