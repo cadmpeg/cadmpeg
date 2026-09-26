@@ -717,13 +717,12 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
                 return Err("rendering style extension fields must be present together".into());
             }
         };
-        if extension.is_some() != (wire.segment_version_major >= 17) {
-            return Err("rendering style extension disagrees with segment_version_major".into());
-        }
-        if wire.segment_version_major >= 17 && !wire.comment.is_empty() {
-            return Err(
-                "rendering style comment must be empty for segment_version_major >= 17".into(),
-            );
+        if let Some(detail) = rendering_style_issue(
+            wire.segment_version_major,
+            &wire.comment,
+            extension.is_some(),
+        ) {
+            return Err(detail.into());
         }
         Ok(Self {
             id: wire.id,
@@ -746,6 +745,20 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
             suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
+    }
+}
+
+pub(super) fn rendering_style_issue(
+    segment_version_major: u8,
+    comment: &str,
+    has_extension: bool,
+) -> Option<&'static str> {
+    if has_extension != (segment_version_major >= 17) {
+        Some("rendering style extension disagrees with segment_version_major")
+    } else if segment_version_major >= 17 && !comment.is_empty() {
+        Some("rendering style comment must be empty for segment_version_major >= 17")
+    } else {
+        None
     }
 }
 
