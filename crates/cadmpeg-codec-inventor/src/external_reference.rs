@@ -24,6 +24,13 @@ pub(crate) enum UfrxState<'a> {
     },
 }
 
+impl<'a> UfrxState<'a> {
+    fn parsed(ctx: &DecodeContext<'_>, document: UfrxDocument<'a>) -> Result<Self, CodecError> {
+        ctx.charge_collection_items(1, "admit UFRxDoc parsed document")?;
+        Ok(Self::Parsed(Box::new(document)))
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct UfrxDocument<'a> {
     pub(crate) stream: CompoundStreamId,
@@ -122,7 +129,7 @@ pub(crate) fn parse<'a>(
     let source = snapshot.open(ctx, stream)?;
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
-            Ok(document) => UfrxState::Parsed(Box::new(document)),
+            Ok(document) => UfrxState::parsed(ctx, document)?,
             Err(CodecError::NotImplemented(detail)) => {
                 let (schema, section_versions) = parse_schema_table(ctx, source)?;
                 UfrxState::Unsupported {
@@ -863,7 +870,23 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain UFRxDoc string")?;
+        if self.view.remaining() < len {
+            return Err(CodecError::truncated(self.view.location(), field));
+        }
+        let utf8_len = crate::reader::utf16_utf8_len(self.view, count)
+            .ok_or_else(|| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16")))?;
+        let _units = ctx.reserve_scoped(
+            u64::try_from(len).map_err(|_| {
+                ctx.refuse_codec_limit("UFRxDoc UTF-16 unit byte count", u64::MAX - 1, u64::MAX)
+            })?,
+            "decode UFRxDoc UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            u64::try_from(utf8_len).map_err(|_| {
+                ctx.refuse_codec_limit("UFRxDoc UTF-8 byte count", u64::MAX - 1, u64::MAX)
+            })?,
+            "retain UFRxDoc string",
+        )?;
         // `utf16_le` proves the byte count before it reads a code unit, so a
         // short window is refused with the view still at the read's start.
         self.view.utf16_le(count).ok_or_else(|| {
@@ -906,16 +929,71 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use cadmpeg_container::compound::CompoundStreamId;
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
 
     use super::{
         parse_embedded_references, parse_occurrences, parse_schema_table, parse_stream, Cursor,
+        UfrxState,
     };
     use crate::rse::DocumentKind;
     use crate::test_support::truncation::{displayed_truncation, located_truncation};
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn utf16_string_uses_exact_utf8_budget_before_allocation() {
+        let bytes = [b'A', 0];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (limited, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
+        assert!(matches!(
+            Cursor::new(root).utf16_counted(&limited, "value", 1),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain UFRxDoc string"
+        ));
+        policy.limits.max_retained_bytes = 1;
+        let (admitted, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("exact context");
+        assert_eq!(
+            Cursor::new(root)
+                .utf16_counted(&admitted, "value", 1)
+                .expect("exact UTF-8 bytes admitted"),
+            "A"
+        );
+    }
+
+    #[test]
+    fn parsed_document_box_refuses_collection_limit_before_allocation() {
+        let (bytes, _) = fixture(11);
+        let arena = DecodeArena::new();
+        let (setup, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("fixture context");
+        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
+            .expect("fixture document parses");
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (limited, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+        assert!(matches!(
+            UfrxState::parsed(&limited, document),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit UFRxDoc parsed document"
+        ));
+        let document = parse_stream(&setup, root, stream_id(), &DocumentKind::Assembly)
+            .expect("fixture document parses again");
+        let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service context");
+        assert!(matches!(
+            UfrxState::parsed(&service, document).expect("document admitted"),
+            UfrxState::Parsed(_)
+        ));
+    }
 
     fn stream_id() -> CompoundStreamId {
         let bytes = crate::test_support::test_fixtures::fixture(true);
