@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::scalar::{Magnification, NonNegativeReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
 
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,10 +62,10 @@ pub(crate) const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 /// Finite chart preamble with a nonzero scale and positive chordal error.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct ChartPreamble {
-    base_parameter: f64,
-    base_scale: f64,
+    base_parameter: FiniteReal,
+    base_scale: NonZeroReal,
     chordal_error: PositiveReal,
-    angular_error: f64,
+    angular_error: FiniteReal,
 }
 impl ChartPreamble {
     pub(crate) fn new(
@@ -74,17 +74,14 @@ impl ChartPreamble {
         chordal_error: f64,
         angular_error: f64,
     ) -> Result<Self, &'static str> {
-        if !base_parameter.is_finite() {
-            return Err("base_parameter: must be finite");
-        }
-        if !base_scale.is_finite() || base_scale == 0.0 {
-            return Err("base_scale: must be finite and nonzero");
-        }
+        let base_parameter =
+            FiniteReal::new(base_parameter).ok_or("base_parameter: must be finite")?;
+        let base_scale =
+            NonZeroReal::new(base_scale).ok_or("base_scale: must be finite and nonzero")?;
         let chordal_error =
             PositiveReal::new(chordal_error).ok_or("chordal_error: must be finite and positive")?;
-        if !angular_error.is_finite() {
-            return Err("angular_error: must be finite");
-        }
+        let angular_error =
+            FiniteReal::new(angular_error).ok_or("angular_error: must be finite")?;
         Ok(Self {
             base_parameter,
             base_scale,
@@ -93,10 +90,10 @@ impl ChartPreamble {
         })
     }
     pub(crate) fn base_parameter(self) -> f64 {
-        self.base_parameter
+        self.base_parameter.get()
     }
     pub(crate) fn base_scale(self) -> f64 {
-        self.base_scale
+        self.base_scale.get()
     }
     pub(crate) fn chordal_error(self) -> PositiveReal {
         self.chordal_error
@@ -109,7 +106,7 @@ impl ChartPreamble {
             .scaled(PositiveReal::from(Magnification::MILLIMETERS_PER_METER))
     }
     pub(crate) fn angular_error(self) -> f64 {
-        self.angular_error
+        self.angular_error.get()
     }
 }
 
@@ -247,6 +244,26 @@ impl SourceChartData {
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn chart_preamble_retains_finite_parameter_scale_and_angle() {
+        let preamble = ChartPreamble::new(-0.0, -2.0, 0.25, 0.125).unwrap();
+        assert_eq!(preamble.base_parameter().to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(preamble.base_scale(), -2.0);
+        assert_eq!(preamble.angular_error(), 0.125);
+        assert_eq!(
+            ChartPreamble::new(f64::NAN, 1.0, 0.25, 0.0),
+            Err("base_parameter: must be finite")
+        );
+        assert_eq!(
+            ChartPreamble::new(0.0, 0.0, 0.25, 0.0),
+            Err("base_scale: must be finite and nonzero")
+        );
+        assert_eq!(
+            ChartPreamble::new(0.0, 1.0, 0.25, f64::INFINITY),
+            Err("angular_error: must be finite")
+        );
+    }
 
     /// The chordal error is admitted positive once; its millimetre fit
     /// tolerance is refused only when the conversion overflows.
