@@ -48,7 +48,11 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -57,8 +61,8 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
-                BodySelection::Bodies(vec![tool]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -88,7 +92,11 @@ fn combine_preserves_tools_when_requested() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -97,8 +105,8 @@ fn combine_preserves_tools_when_requested() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
-                BodySelection::Bodies(vec![tool.clone()]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool.clone()].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -125,7 +133,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![target.clone()]),
+                BodySelection::Bodies(vec![target.clone()].try_into().expect("distinct bodies")),
                 BodySelection::local(vec!["local-tool".to_string()], "native-tools".to_string())
                     .unwrap(),
             )
@@ -190,7 +198,11 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let mut trim = body_neutral_feature(
@@ -198,8 +210,12 @@ fn trim_bodies_preserves_all_targets_and_tools() {
         1,
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![first.clone(), second.clone()]),
-                BodySelection::Bodies(vec![tool.clone()]),
+                BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
+                BodySelection::Bodies(vec![tool.clone()].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -231,7 +247,11 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![target.clone(), tool.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -240,8 +260,8 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         tool.clone(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![target]),
-                BodySelection::Bodies(vec![tool]),
+                BodySelection::Bodies(vec![target].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![tool].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -274,10 +294,13 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
         target.clone(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![target]),
-                BodySelection::Bodies(vec![
-                    BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar")
-                ]),
+                BodySelection::Bodies(vec![target].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(
+                    vec![BodyId::mint("test:model:entity#tool".to_string())
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
+                ),
             )
             .unwrap(),
 
@@ -349,7 +372,11 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let mut feature = body_preserving_feature(
@@ -357,9 +384,11 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
         1,
         sewn.clone(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: (BodySelection::Bodies(vec![first, second]))
-                .try_into()
-                .unwrap(),
+            bodies: (BodySelection::Bodies(
+                vec![first, second].try_into().expect("distinct bodies"),
+            ))
+            .try_into()
+            .unwrap(),
             gap_tolerance: None,
         }),
     );
@@ -426,9 +455,13 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
         body.clone(),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Bodies(vec![body]),
-                BodySelection::Bodies(vec![BodyId::mint("test:model:entity#missing".to_string())
-                    .expect("identity grammar")]),
+                BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(
+                    vec![BodyId::mint("test:model:entity#missing".to_string())
+                        .expect("identity grammar")]
+                    .try_into()
+                    .expect("distinct bodies"),
+                ),
             )
             .unwrap(),
 
@@ -469,11 +502,11 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![
-                    first.clone(),
-                    second.clone(),
-                    unrelated.clone(),
-                ]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone(), unrelated.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     ir.model.features.push(body_preserving_feature(
@@ -481,9 +514,11 @@ fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         1,
         unrelated,
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: (BodySelection::Bodies(vec![first, second]))
-                .try_into()
-                .unwrap(),
+            bodies: (BodySelection::Bodies(
+                vec![first, second].try_into().expect("distinct bodies"),
+            ))
+            .try_into()
+            .unwrap(),
             gap_tolerance: None,
         }),
     ));
@@ -686,7 +721,11 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(
             FeatureOperation::BaseFeature {
-                bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
+                bodies: BodySelection::Bodies(
+                    vec![first.clone(), second.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             },
         ));
     let faces = FaceSelection::Faces(vec![

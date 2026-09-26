@@ -6676,11 +6676,12 @@ pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
     /// Resolved topological bodies.
-    Bodies(Vec<BodyId>),
+    Bodies(#[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))] DistinctMembers<BodyId>),
     /// Resolved bodies paired with the format-native selection required for rewrite.
     Resolved {
         /// Resolved topological bodies.
-        bodies: Vec<BodyId>,
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+        bodies: DistinctMembers<BodyId>,
         /// Format-native selection expression.
         native: String,
     },

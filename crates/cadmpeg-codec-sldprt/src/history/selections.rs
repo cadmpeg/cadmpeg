@@ -661,7 +661,7 @@ fn resolve_body_selection(
     ids: &HashMap<String, Option<cadmpeg_ir::ids::BodyId>>,
 ) {
     if let BodySelection::Native(native) = selection {
-        if let Some(bodies) = resolve_ids(native, ids) {
+        if let Some(bodies) = resolve_ids(native, ids).and_then(|bodies| bodies.try_into().ok()) {
             *selection = BodySelection::Resolved {
                 bodies,
                 native: native.clone(),

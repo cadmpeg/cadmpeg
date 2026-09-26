@@ -121,7 +121,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: BodySelection::Bodies(vec![body.clone()]),
+            bodies: BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
         }),
     );
     push(
@@ -144,7 +144,7 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::MirrorShape {
-            source: BodySelection::Bodies(vec![body.clone()]),
+            source: BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
             plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                 .unwrap(),
             plane_normal: cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
@@ -157,9 +157,13 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: (BodySelection::Bodies(vec![body.clone(), other_body.clone()]))
-                .try_into()
-                .unwrap(),
+            bodies: (BodySelection::Bodies(
+                vec![body.clone(), other_body.clone()]
+                    .try_into()
+                    .expect("distinct bodies"),
+            ))
+            .try_into()
+            .unwrap(),
             gap_tolerance: None,
         }),
     );
@@ -170,8 +174,12 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Bodies(vec![body.clone()]),
-                BodySelection::Bodies(vec![other_body.clone()]),
+                BodySelection::Bodies(vec![body.clone()].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(
+                    vec![other_body.clone()]
+                        .try_into()
+                        .expect("distinct bodies"),
+                ),
             )
             .unwrap(),
 
@@ -195,8 +203,8 @@ fn design_completeness_audits_direct_body_and_shape_families() {
         Vec::new(),
         FeatureDefinition::Operation(FeatureOperation::SectionShape {
             operands: cadmpeg_ir::features::SectionOperands::new(
-                BodySelection::Bodies(vec![body]),
-                BodySelection::Bodies(vec![other_body]),
+                BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
+                BodySelection::Bodies(vec![other_body].try_into().expect("distinct bodies")),
             )
             .unwrap(),
 
@@ -297,7 +305,7 @@ fn design_completeness_audits_typed_construction_families() {
             },
         }),
         FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
-            tools: BodySelection::Bodies(vec![body]),
+            tools: BodySelection::Bodies(vec![body].try_into().expect("distinct bodies")),
             cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
         }),
     ];
@@ -826,7 +834,7 @@ fn empty_required_operands_are_incomplete_design_semantics() {
         feature(
             2,
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
-                bodies: BodySelection::Bodies(Vec::new()),
+                bodies: BodySelection::Bodies(Default::default()),
                 mode: BodyRetentionMode::DeleteSelected,
             }),
         ),

@@ -1130,7 +1130,7 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
     let definition = FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(
             BodySelection::Resolved {
-                bodies: vec![body.clone()],
+                bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                 native: "target".into(),
             },
             BodySelection::Unresolved,

@@ -56,9 +56,14 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 
 #[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
-    let first = BodySelection::Bodies(vec![body_id("first")]);
-    let second = BodySelection::Bodies(vec![body_id("second")]);
-    let pair = BodySelection::Bodies(vec![body_id("first"), body_id("second")]);
+    let first = BodySelection::Bodies(vec![body_id("first")].try_into().expect("distinct bodies"));
+    let second =
+        BodySelection::Bodies(vec![body_id("second")].try_into().expect("distinct bodies"));
+    let pair = BodySelection::Bodies(
+        vec![body_id("first"), body_id("second")]
+            .try_into()
+            .expect("distinct bodies"),
+    );
     assert!(SewBodySelection::try_from(first.clone()).is_err());
     assert!(SewBodySelection::try_from(pair.clone()).is_ok());
     assert!(SewBodySelection::try_from(BodySelection::Unresolved).is_ok());
@@ -73,6 +78,26 @@ fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
         .try_edit(|first, second| *second = first.clone())
         .is_err());
     assert_eq!(operands, before);
+}
+
+#[test]
+fn resolved_body_selection_wire_rejects_repeated_bodies_before_sew_arity() {
+    let body = body_id("repeated");
+    for wire in [
+        serde_json::json!({"kind": "bodies", "value": [body.as_str(), body.as_str()]}),
+        serde_json::json!({"kind": "resolved", "value": {
+            "bodies": [body.as_str(), body.as_str()], "native": "native-selection"
+        }}),
+    ] {
+        let error = serde_json::from_value::<BodySelection>(wire.clone())
+            .expect_err("repeated resolved bodies")
+            .to_string();
+        assert!(error.contains("members must be distinct"), "{error}");
+        let error = serde_json::from_value::<SewBodySelection>(wire)
+            .expect_err("repeated bodies do not meet sew arity")
+            .to_string();
+        assert!(error.contains("members must be distinct"), "{error}");
+    }
 }
 
 #[test]
