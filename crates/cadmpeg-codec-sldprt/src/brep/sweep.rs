@@ -240,11 +240,10 @@ pub(super) fn swept_nurbs(
             }
         }
     }
-    match cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+    match cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
         control.chunks(2_usize).map(<[_]>::to_vec).collect(),
         weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
-    .into_poles()
     .and_then(|poles| {
         NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(

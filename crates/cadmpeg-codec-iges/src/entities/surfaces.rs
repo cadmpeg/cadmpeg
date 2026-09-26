@@ -19,8 +19,8 @@ use cadmpeg_ir::geometry::nurbs::bezier::{
 use cadmpeg_ir::geometry::{
     derive_reference_direction,
     nurbs::{
-        knots_nondecreasing, NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
-        SurfaceParameterAxis,
+        knots_nondecreasing, NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
+        NurbsSurfaceLanes, SurfaceParameterAxis,
     },
     Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, RecordBounds,
     SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
@@ -624,7 +624,7 @@ fn same_basis_ruled_surface(
     } else {
         Some(surface_weights)
     };
-    NurbsSurfaceLanes::new(
+    NurbsPoleGrid::from_checked_lanes(
         first
             .control_points()
             .into_iter()
@@ -633,7 +633,6 @@ fn same_basis_ruled_surface(
             .collect(),
         weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
-    .into_poles()
     .and_then(|poles| {
         NurbsSurface::new(
             NurbsSurfaceAxis::new(
@@ -1599,11 +1598,10 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let surface = match NurbsSurfaceLanes::new(
+        let surface = match NurbsPoleGrid::from_checked_lanes(
             control_points.chunks(2).map(<[_]>::to_vec).collect(),
             weights,
         )
-        .into_poles()
         .and_then(|poles| {
             NurbsSurface::new(
                 NurbsSurfaceAxis::new(

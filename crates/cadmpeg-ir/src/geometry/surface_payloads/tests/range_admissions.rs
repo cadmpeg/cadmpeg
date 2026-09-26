@@ -163,7 +163,7 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         admitted_variable
             .slice_range()
             .endpoints()
-            .map(|value| value.map(|value| value.get())),
+            .map(|value| value.map(crate::scalar::FiniteReal::get)),
         [Some(3.0), None]
     );
     let definition = ProceduralSurfaceDefinition::VariableBlend(admitted_variable);
@@ -224,17 +224,17 @@ fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
         )
     };
     let ordered = blend_with_native_ranges([Some(0.0), Some(1.0)], [None, Some(2.0)]).unwrap();
-    let (_, ranges) = ordered.native_with_ranges().unwrap();
+    let ranges = ordered.native_ranges().unwrap();
     assert_eq!(
         ranges[0]
             .endpoints()
-            .map(|value| value.map(|value| value.get())),
+            .map(|value| value.map(crate::scalar::FiniteReal::get)),
         [Some(0.0), Some(1.0)]
     );
     assert_eq!(
         ranges[1]
             .endpoints()
-            .map(|value| value.map(|value| value.get())),
+            .map(|value| value.map(crate::scalar::FiniteReal::get)),
         [None, Some(2.0)]
     );
     assert_eq!(
