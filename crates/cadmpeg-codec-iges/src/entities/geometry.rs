@@ -10,14 +10,17 @@ use cadmpeg_core::decode::{index_from_u32, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{knots_nondecreasing, NurbsCurve},
+    nurbs::{KnotVector, NurbsCurve, NurbsPoles3},
     Curve, CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, FaceId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Edge, IncreasingParameterInterval, Point, Region, Shell, Vertex,
+};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -1869,19 +1872,19 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "parameter-range offset overflows"));
             continue;
         };
-        let collect_numbers = |start: usize, count: usize| -> Option<Vec<f64>> {
+        let collect_numbers = |start: usize, count: usize| -> Option<Vec<FiniteReal>> {
             (start..start.checked_add(count)?)
-                .map(|index| record.number(index).filter(|value| value.is_finite()))
+                .map(|index| record.number(index).and_then(FiniteReal::new))
                 .collect()
         };
-        let Some(knots) = collect_numbers(knot_start, knot_count) else {
+        let Some(finite_knots) = collect_numbers(knot_start, knot_count) else {
             losses.push(entity_loss(entry, "knot vector is truncated or non-finite"));
             continue;
         };
-        if !knots_nondecreasing(&knots) {
+        let Ok(knots) = KnotVector::from_finite_values(finite_knots.clone()) else {
             losses.push(entity_loss(entry, "knot vector is decreasing"));
             continue;
-        }
+        };
         let Some(native_weights) = collect_numbers(weight_start, control_count) else {
             losses.push(entity_loss(
                 entry,
@@ -1889,10 +1892,14 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        if native_weights.iter().any(|weight| *weight <= 0.0) {
+        let Some(native_weights) = native_weights
+            .into_iter()
+            .map(|weight| PositiveReal::try_from(weight).ok())
+            .collect::<Option<Vec<_>>>()
+        else {
             losses.push(entity_loss(entry, "weights are not strictly positive"));
             continue;
-        }
+        };
         let precision = global.real_precision();
         let uncertainty =
             |index: usize, value: f64| record.number_uncertainty(index, value, precision);
@@ -1903,7 +1910,12 @@ pub(crate) fn project_geometry(
             };
         let equal_weights = native_weights.first().is_some_and(|first| {
             native_weights.iter().enumerate().all(|(offset, weight)| {
-                equal_within_significance(weight_start, *first, weight_start + offset, *weight)
+                equal_within_significance(
+                    weight_start,
+                    first.get(),
+                    weight_start + offset,
+                    weight.get(),
+                )
             })
         });
         let polynomial = flags[2] == Some(1);
@@ -1932,38 +1944,42 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        let domain_start = knots[degree_usize];
-        let domain_end = knots[control_count];
-        if parameter_range[0] < domain_start
+        let domain_start = finite_knots[degree_usize];
+        let domain_end = finite_knots[control_count];
+        if parameter_range[0].get() < domain_start.get()
             && equal_within_significance(
                 range_start,
-                parameter_range[0],
+                parameter_range[0].get(),
                 knot_start + degree_usize,
-                domain_start,
+                domain_start.get(),
             )
         {
             parameter_range[0] = domain_start;
         }
-        if parameter_range[1] > domain_end
+        if parameter_range[1].get() > domain_end.get()
             && equal_within_significance(
                 range_start + 1,
-                parameter_range[1],
+                parameter_range[1].get(),
                 knot_start + control_count,
-                domain_end,
+                domain_end.get(),
             )
         {
             parameter_range[1] = domain_end;
         }
-        if parameter_range[0] >= parameter_range[1]
-            || parameter_range[0] < domain_start
-            || parameter_range[1] > domain_end
-        {
+        let parameter_interval =
+            IncreasingParameterInterval::between(parameter_range[0], parameter_range[1]).filter(
+                |_| {
+                    parameter_range[0].get() >= domain_start.get()
+                        && parameter_range[1].get() <= domain_end.get()
+                },
+            );
+        let Some(parameter_interval) = parameter_interval else {
             losses.push(entity_loss(
                 entry,
                 "parameter range lies outside the spline knot domain",
             ));
             continue;
-        }
+        };
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -1982,13 +1998,11 @@ pub(crate) fn project_geometry(
         let Some(control_points) = native_poles
             .chunks_exact(3)
             .map(|point| {
-                transform
-                    .apply_point(Point3::new(
-                        point[0] * factor,
-                        point[1] * factor,
-                        point[2] * factor,
-                    ))
-                    .map(cadmpeg_ir::features::FinitePoint3::get)
+                transform.apply_point(Point3::new(
+                    point[0].get() * factor,
+                    point[1].get() * factor,
+                    point[2].get() * factor,
+                ))
             })
             .collect::<Option<Vec<_>>>()
         else {
@@ -1998,16 +2012,21 @@ pub(crate) fn project_geometry(
             ));
             continue;
         };
-        let point_scale = control_points
+        let raw_control_points = control_points
+            .iter()
+            .copied()
+            .map(FinitePoint3::get)
+            .collect::<Vec<_>>();
+        let point_scale = raw_control_points
             .iter()
             .skip(1)
-            .map(|point| point.distance(control_points[0]))
+            .map(|point| point.distance(raw_control_points[0]))
             .filter(|distance| distance.is_finite())
             .fold(1.0, f64::max);
         let plane_tolerance = global
             .minimum_resolution_mm()
             .max(point_scale * COMPUTATION_TOLERANCE);
-        let plane = classify_control_point_plane(&control_points, plane_tolerance);
+        let plane = classify_control_point_plane(&raw_control_points, plane_tolerance);
         let planar = flags[0] == Some(1);
         if planar {
             let Some(normal_start) = range_start.checked_add(2) else {
@@ -2021,8 +2040,11 @@ pub(crate) fn project_geometry(
                 ));
                 continue;
             };
-            let normal_definition =
-                Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
+            let normal_definition = Vector3::new(
+                normal_values[0].get(),
+                normal_values[1].get(),
+                normal_values[2].get(),
+            );
             if declared_unit_vector(record, normal_start, normal_definition, precision).is_none() {
                 losses.push(entity_loss(
                     entry,
@@ -2030,19 +2052,16 @@ pub(crate) fn project_geometry(
                 ));
                 continue;
             }
-            let Some(normal) = transform
-                .apply_vector(normal_definition)
-                .map(cadmpeg_ir::features::FiniteVector3::get)
-            else {
+            let Some(normal) = transform.apply_vector(normal_definition) else {
                 losses.push(entity_loss(entry, "placement produces a non-finite vector"));
                 continue;
             };
-            let normal_length = normal.norm();
+            let normal_length = normal.get().norm();
             if !normal_length.is_finite()
                 || normal_length <= 0.0
                 || !control_points_fit_plane(
-                    &control_points,
-                    normal.scale(1.0 / normal_length),
+                    &raw_control_points,
+                    normal.get().scale(1.0 / normal_length),
                     plane_tolerance,
                 )
                 || matches!(plane, ControlPointPlane::NonPlanar)
@@ -2060,30 +2079,34 @@ pub(crate) fn project_geometry(
             ));
             continue;
         }
-        let weights = (!polynomial).then_some(native_weights);
-        let nurbs = match NurbsCurve::from_lanes(
-            degree,
-            knots,
-            control_points,
-            weights,
-            // IGES PROP4 is informational; neutral evaluation uses the
-            // serialized active carrier without periodic parameter wrapping.
-            false,
-        ) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                losses.push(entity_loss(
-                    entry,
-                    format!("spline cardinalities are inconsistent: {error}"),
-                ));
-                continue;
-            }
-        };
-        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0]) else {
+        let weights = (!polynomial).then(|| {
+            native_weights
+                .into_iter()
+                .map(NonZeroReal::from)
+                .collect::<Vec<_>>()
+        });
+        let nurbs =
+            match NurbsPoles3::from_checked_lanes(control_points, weights).and_then(|poles| {
+                // IGES PROP4 is informational; neutral evaluation uses the
+                // serialized active carrier without periodic parameter wrapping.
+                NurbsCurve::from_parts(degree, knots, poles, false)
+            }) {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    losses.push(entity_loss(
+                        entry,
+                        format!("spline cardinalities are inconsistent: {error}"),
+                    ));
+                    continue;
+                }
+            };
+        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[0].get())
+        else {
             losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
             continue;
         };
-        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1]) else {
+        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, parameter_range[1].get())
+        else {
             losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
             continue;
         };
@@ -2130,11 +2153,7 @@ pub(crate) fn project_geometry(
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve),
-                Some([parameter_range[0], parameter_range[1]]),
-            )
-            .map_err(CodecError::malformed)?,
+            carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_interval.into()),
             start: start_vertex,
             end: end_vertex,
             tolerance: None,

@@ -6,6 +6,57 @@ use crate::{
 };
 
 #[test]
+fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
+    use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
+    use crate::scalar::FiniteReal;
+
+    let finite_knots = |values: &[f64]| {
+        values
+            .iter()
+            .copied()
+            .map(|value| FiniteReal::new(value).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let curve = curve();
+    let knots = KnotVector::from_finite_values(finite_knots(curve.knots())).unwrap();
+    let from_parts =
+        NurbsCurve::from_parts(1, knots.clone(), curve.pole_rows().clone(), true).unwrap();
+    assert_eq!(from_parts, curve);
+    assert_eq!(
+        serde_json::to_vec(&from_parts).unwrap(),
+        serde_json::to_vec(&curve).unwrap()
+    );
+    assert_eq!(
+        NurbsCurve::from_parts(2, knots, curve.pole_rows().clone(), true),
+        Err(NurbsError::Structure(
+            "control_points must contain more than degree 2 poles, found 2".into()
+        ))
+    );
+    assert_eq!(
+        KnotVector::from_finite_values(finite_knots(&[0.0, 1.0, 0.5])),
+        Err(NurbsError::Structure("knots must be non-decreasing".into()))
+    );
+
+    let surface = surface();
+    let u = NurbsSurfaceAxis::new(
+        1,
+        KnotVector::from_finite_values(finite_knots(surface.u_knots())).unwrap(),
+        true,
+    );
+    let v = NurbsSurfaceAxis::new(
+        1,
+        KnotVector::from_finite_values(finite_knots(surface.v_knots())).unwrap(),
+        false,
+    );
+    let from_parts = NurbsSurface::from_parts(u, v, surface.pole_grid().clone(), true).unwrap();
+    assert_eq!(from_parts, surface);
+    assert_eq!(
+        serde_json::to_vec(&from_parts).unwrap(),
+        serde_json::to_vec(&surface).unwrap()
+    );
+}
+
+#[test]
 fn a_refused_curve_pole_edit_keeps_the_prior_poles() {
     let mut curve = curve();
     let original = curve.clone();
