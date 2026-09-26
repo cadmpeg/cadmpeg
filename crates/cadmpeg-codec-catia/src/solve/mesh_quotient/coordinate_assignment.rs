@@ -191,12 +191,7 @@ fn partial_compact_assignment_viable(
             for (row, component) in compatible.iter_mut().zip(&closed_components) {
                 let incidence = incidence_cycles(component, &edge_points);
                 let Some([incidence]) = incidence.as_deref() else {
-                    *row = ctx.alloc_filled(
-                        domain.cycles.len(),
-                        false,
-                        "catia_deferred_incompatible",
-                    )?;
-                    continue;
+                    return Ok(false);
                 };
                 *row = ctx.alloc_filled(
                     domain.cycles.len(),
@@ -1521,5 +1516,57 @@ mod tests {
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "catia coordinate assignment edge points"));
+    }
+
+    #[test]
+    fn deferred_coordinate_boundary_charges_cycle_matching_arrays() {
+        use std::collections::BTreeSet;
+
+        let domain = MeshFaceBoundaryDomain::DeferredValidation(MeshDeferredFaceBoundary {
+            cycles: vec![MeshDeferredBoundaryCycle {
+                length: 3,
+                exact_uses: Vec::new(),
+            }],
+            missing_edges: vec![0, 1, 2],
+        });
+        let edge_by_id = HashMap::from([(0, 0), (1, 1), (2, 2)]);
+        let edges = [[0, 1], [2, 3], [4, 5]];
+        let assigned = [Some(0), Some(1), Some(1), Some(2), Some(2), Some(0)];
+        let mut operations = BTreeSet::new();
+        let mut completed = false;
+        for limit in 0..=128 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match partial_compact_assignment_viable(
+                &ctx,
+                &domain,
+                &edge_by_id,
+                &edges,
+                3,
+                &assigned,
+                (0, 0),
+                None,
+            ) {
+                Err(CodecError::ResourceLimit(error)) => {
+                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                    operations.insert(error.operation);
+                }
+                Ok(true) => {
+                    completed = true;
+                    break;
+                }
+                Ok(false) => panic!("closed deferred cycle must remain viable"),
+                Err(error) => panic!("unexpected deferred boundary refusal: {error}"),
+            }
+        }
+        assert!(
+            completed,
+            "collection limit 128 must admit the deferred cycle"
+        );
+        assert!(operations.contains("catia_deferred_matched"));
+        assert!(operations.contains("catia_deferred_augment_visit"));
     }
 }

@@ -2238,4 +2238,52 @@ mod tests {
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "catia e5 orientation locations"));
     }
+
+    #[test]
+    fn e5_orientation_charges_adjacency_and_assignment_arrays() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use std::collections::BTreeSet;
+
+        let faces = vec![E5Face {
+            record_id: 1,
+            surface: 2,
+            trailer_sign: Sign::Positive,
+            loops: vec![E5Loop {
+                record_id: 3,
+                surface: 2,
+                members: e5_loop_members(&[4], &[5], &[false]),
+                oriented_members: None,
+                outer: Some(true),
+                orientation_hint: None,
+            }],
+        }];
+        let mut operations = BTreeSet::new();
+        let mut completed = false;
+        for limit in 0..=16 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+                .expect("fixture fits the input limit");
+            match solve_absolute_orientation(&ctx, &mut faces.clone()) {
+                Err(CodecError::ResourceLimit(error)) => {
+                    assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                    operations.insert(error.operation);
+                }
+                Ok(true) => {
+                    completed = true;
+                    break;
+                }
+                Ok(false) => panic!("orientation fixture must solve"),
+                Err(error) => panic!("unexpected orientation refusal: {error}"),
+            }
+        }
+        assert!(
+            completed,
+            "collection limit 16 must admit the orientation fixture"
+        );
+        assert!(operations.contains("catia e5 orientation adjacency"));
+        assert!(operations.contains("catia e5 orientation assignments"));
+    }
 }

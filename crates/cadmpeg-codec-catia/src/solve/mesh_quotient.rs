@@ -10396,6 +10396,8 @@ fn coordinate_root_closure_refuses_selected_edge_collection_limit() {
         }
     }
     assert!(refused.contains("catia coordinate closure selected edges"));
+    assert!(refused.contains("catia coordinate component assignment"));
+    assert!(refused.contains("catia coordinate point degrees"));
 }
 
 #[test]

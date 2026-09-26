@@ -243,6 +243,51 @@ fn incidence_choice_pruning_refuses_face_edge_collection_limit() {
 }
 
 #[test]
+fn incidence_choice_pruning_charges_fixed_degree_and_support_arrays() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::collections::BTreeSet;
+
+    let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 0], [0, 0]];
+    let mut operations = BTreeSet::new();
+    let mut completed = false;
+    for limit in 0..=64 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let mut remaining = choices.clone();
+        match crate::solve::incidence::prune_incidence_choices(
+            &ctx,
+            &mut remaining,
+            &edge_faces,
+            1,
+            2,
+        ) {
+            Err(CodecError::ResourceLimit(error)) => {
+                assert_eq!(error.dimension, ResourceDimension::CollectionItems);
+                operations.insert(error.operation);
+            }
+            Ok(Some(())) => {
+                completed = true;
+                break;
+            }
+            Ok(None) => panic!("valid incidence fixture must remain viable"),
+            Err(error) => panic!("unexpected incidence refusal: {error}"),
+        }
+    }
+    assert!(
+        completed,
+        "collection limit 64 must admit the incidence fixture"
+    );
+    assert!(operations.contains("catia_incidence_fixed_edges"));
+    assert!(operations.contains("catia_incidence_degrees"));
+    assert!(operations.contains("catia_incidence_supports"));
+}
+
+#[test]
 fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
     catia_test_context!(ctx);
     let mut choices = vec![vec![[0, 1], [2, 3]], vec![[0, 1]]];
