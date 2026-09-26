@@ -4621,17 +4621,17 @@ fn attach_standard_topology(
         // A non-empty domain remains open when endpoint degree closure does
         // not select one complete incidence assignment. Face-local endpoint
         // evidence cannot choose among multiple globally closed assignments.
-        let completed = endpoint_completed.or_else(|| {
-            (!has_alternates)
-                .then(|| {
-                    missing_edge::resolve_standard_duplicate_edge_faces(
-                        spine,
-                        &edge_faces,
-                        &allowed_faces,
-                    )
-                })
-                .flatten()
-        });
+        let completed = if endpoint_completed.is_some() || has_alternates {
+            endpoint_completed
+        } else {
+            missing_edge::resolve_standard_duplicate_edge_faces(
+                ctx,
+                spine,
+                &edge_faces,
+                &allowed_faces,
+            )
+            .map_err(StandardTopologyError::Resource)?
+        };
         if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -5083,14 +5083,18 @@ fn attach_standard_topology(
     let mut mesh_search_exhausted = false;
     let native_fbb_topology = if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains
     {
-        native_endpoint_pairs.as_ref().and_then(|pairs| {
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_fbb_endpoints_with_edge_classes(
+                ctx,
                 spine,
                 &edge_faces,
                 pairs,
                 Some(&edge_classes),
             )
-        })
+            .map_err(StandardTopologyError::Resource)?
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -5100,17 +5104,23 @@ fn attach_standard_topology(
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then_some(native_endpoint_pairs.as_ref())
-        .flatten()
-        .and_then(|pairs| {
+    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if has_open_face_domains {
+            return Ok(None);
+        }
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
             fbb::parse_standard_endpoints_with_edge_classes(
+                ctx,
                 spine,
                 &edge_faces,
                 pairs,
                 Some(&edge_classes),
             )
-        })
+        } else {
+            Ok(None)
+        }
+    })()
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
@@ -5420,9 +5430,12 @@ fn attach_standard_topology(
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = (!has_open_face_domains)
-        .then(|| fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors))
-        .flatten()
+    } else if let Some(topology) = (if !has_open_face_domains {
+        fbb::parse_standard_motif(ctx, spine, &edge_faces, &circle_anchors)
+    } else {
+        Ok(None)
+    })
+    .map_err(StandardTopologyError::Resource)?
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)

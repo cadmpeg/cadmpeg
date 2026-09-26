@@ -56,6 +56,10 @@ fn deferred_port_rows_do_not_constrain_open_face_components() {
 
 #[test]
 fn duplicate_face_reference_slot_is_completed_by_face_closure() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = (0..3)
         .map(|handle| EdgeRow {
             kind: 0,
@@ -64,6 +68,7 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
         })
         .collect::<Vec<_>>();
     let faces = complete_duplicate_face_slots(
+        &ctx,
         &rows,
         &[[0, 1], [0, 1], [0, 0]],
         &[[0, 1], [1, 2], [2, 0]],
@@ -71,6 +76,7 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
         None,
         Some(&[]),
     )
+    .expect("service resource budget")
     .expect("unique face-closing slot assignment");
 
     assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
@@ -78,6 +84,10 @@ fn duplicate_face_reference_slot_is_completed_by_face_closure() {
 
 #[test]
 fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = (0..3)
         .map(|handle| EdgeRow {
             kind: 0,
@@ -86,6 +96,7 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
         })
         .collect::<Vec<_>>();
     let faces = complete_duplicate_face_slots(
+        &ctx,
         &rows,
         &[[0, 1], [0, 1], [0, 0]],
         &[
@@ -97,6 +108,7 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
         None,
         Some(&[]),
     )
+    .expect("service resource budget")
     .expect("sparse endpoint identities");
 
     assert_eq!(faces, vec![[0, 1], [0, 1], [0, 1]]);
@@ -104,6 +116,10 @@ fn duplicate_face_completion_keeps_sparse_endpoint_identities() {
 
 #[test]
 fn independent_duplicate_face_slots_have_one_canonical_search_order() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = (0..12)
         .map(|edge| EdgeRow {
             kind: 1,
@@ -116,7 +132,8 @@ fn independent_duplicate_face_slots_have_one_canonical_search_order() {
         .map(|point| [point, point])
         .collect::<Vec<_>>();
 
-    let completed = complete_duplicate_face_slots(&rows, &serialized, &points, 2, None, None)
+    let completed = complete_duplicate_face_slots(&ctx, &rows, &serialized, &points, 2, None, None)
+        .expect("service resource budget")
         .expect("independent closed edges have one face completion");
     assert_eq!(completed, vec![[0, 1]; rows.len()]);
 }
@@ -176,16 +193,28 @@ fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
 
 #[test]
 fn duplicate_face_completion_rejects_out_of_range_faces() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = vec![EdgeRow {
         kind: 0,
         handles: vec![0, 1],
         boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
     }];
-    assert!(complete_duplicate_face_slots(&rows, &[[0, 2]], &[[0, 1]], 2, None, None,).is_none());
+    assert!(
+        complete_duplicate_face_slots(&ctx, &rows, &[[0, 2]], &[[0, 1]], 2, None, None,)
+            .expect("service resource budget")
+            .is_none()
+    );
 }
 
 #[test]
 fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = vec![
         EdgeRow {
             kind: 0,
@@ -209,6 +238,7 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
         },
     ];
     let faces = complete_duplicate_face_slots(
+        &ctx,
         &rows,
         &[[0, 1], [0, 1], [2, 2], [2, 2]],
         &[[0, 1], [1, 2], [2, 0], [0, 2]],
@@ -216,6 +246,7 @@ fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
         Some(&[0, 1, 2, 2]),
         None,
     )
+    .expect("service resource budget")
     .expect("one assignment modulo equivalent edge rows");
 
     let mut assigned = [faces[2][1], faces[3][1]];

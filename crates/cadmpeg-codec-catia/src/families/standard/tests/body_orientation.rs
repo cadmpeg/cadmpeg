@@ -9,6 +9,10 @@ use cadmpeg_ir::topology::BodyKind;
 
 #[test]
 fn radial_orientation_solves_each_face_boundary_independently() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let rows = (0..18)
         .map(|edge| EdgeRow {
             kind: 1,
@@ -57,7 +61,8 @@ fn radial_orientation_solves_each_face_boundary_independently() {
         [8, 10],
         [9, 11],
     ];
-    let topology = reconstruct_incidence(rows, points, &edge_faces, &edge_points, 9)
+    let topology = reconstruct_incidence(&ctx, rows, points, &edge_faces, &edge_points, 9)
+        .expect("service resource budget")
         .expect("orientable multi-boundary shell");
     assert_eq!(topology.body_kinds(&[9]), Some(vec![BodyKind::Solid]));
     assert_eq!(topology.body_kinds(&[4, 5]), None);

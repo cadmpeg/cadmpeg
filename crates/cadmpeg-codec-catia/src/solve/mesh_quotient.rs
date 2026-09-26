@@ -8021,7 +8021,7 @@ pub(super) fn parse_standard_mesh_endpoint_candidates(
         return Ok(None);
     }
     let Some(mut assignments) =
-        standard_mesh_boundary_assignments(bytes, edge_faces, Some(edge_candidates))
+        standard_mesh_boundary_assignments(ctx, bytes, edge_faces, Some(edge_candidates))?
     else {
         return Ok(None);
     };
@@ -8913,29 +8913,52 @@ where
     FC: Fn(&[Option<[usize; 2]>]) -> bool,
 {
     let endpoint_budget = budget.session_child_slice(MAX_MESH_TOPOLOGY_OPERATIONS);
-    let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) = (|| {
-        let face_run = largest_fbb_run(bytes)?;
-        let face_count = face_run.face_count();
-        let after_faces = face_run.after_faces();
-        let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
-        let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-        let boundary_context =
-            StandardMeshBoundaryContext::parse_ports(bytes, edge_faces, global_handle_ports)?;
-        let mesh_domains = standard_mesh_boundary_domains_from_context(
-            &boundary_context,
-            Some(edge_candidates),
-            true,
-        )?;
-        // Standard-row endpoints are oriented by the complete face quotient.
-        let port_identities = crate::solve::missing_edge::solver_ports(bytes, global_handle_ports)?;
-        Some((
-            face_count,
-            edge_rows,
-            vertex_points,
-            mesh_domains,
-            port_identities,
-        ))
-    })() else {
+    let Some((face_count, edge_rows, vertex_points, mut mesh_domains, port_identities)) =
+        (|| -> Result<Option<_>, CodecError> {
+            let Some(face_run) = largest_fbb_run(bytes) else {
+                return Ok(None);
+            };
+            let face_count = face_run.face_count();
+            let after_faces = face_run.after_faces();
+            let Some((edge_rows, vertex_header)) = parse_edge_tables(bytes, after_faces) else {
+                return Ok(None);
+            };
+            let Some(vertex_points) = parse_vertex_table(bytes, vertex_header) else {
+                return Ok(None);
+            };
+            let boundary_context = StandardMeshBoundaryContext::parse_ports(
+                ctx,
+                bytes,
+                edge_faces,
+                global_handle_ports,
+            )?;
+            let Some(boundary_context) = boundary_context else {
+                return Ok(None);
+            };
+            let mesh_domains = standard_mesh_boundary_domains_from_context(
+                ctx,
+                &boundary_context,
+                Some(edge_candidates),
+                true,
+            )?;
+            let Some(mesh_domains) = mesh_domains else {
+                return Ok(None);
+            };
+            // Standard-row endpoints are oriented by the complete face quotient.
+            let Some(port_identities) =
+                crate::solve::missing_edge::solver_ports(bytes, global_handle_ports)
+            else {
+                return Ok(None);
+            };
+            Ok(Some((
+                face_count,
+                edge_rows,
+                vertex_points,
+                mesh_domains,
+                port_identities,
+            )))
+        })()?
+    else {
         return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(
             MeshCandidateRejection::InputStructure,
         )));
@@ -9096,9 +9119,9 @@ where
         }),
         Some(&endpoint_budget),
         &|pairs| {
-            constrained_complete_solution_valid(
+            Ok(constrained_complete_solution_valid(
                 &pairs.iter().copied().map(Some).collect::<Vec<_>>(),
-            )
+            ))
         },
         &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
             let endpoint_key = pairs.to_vec();

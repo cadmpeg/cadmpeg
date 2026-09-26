@@ -7,6 +7,102 @@ use crate::test_support::test_topology::{
     compact_standard_triangle_topology_stream, standard_quad_topology_stream,
 };
 
+fn mesh_coverage_limit_operation(max_collection_items: u64) -> &'static str {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = crate::solve::missing_edge::standard_mesh_face_coverage(
+        &ctx,
+        &standard_quad_topology_stream(),
+        &[[0, 0]; 4],
+    )
+    .expect_err("mesh coverage allocation exceeds the collection limit");
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            limit.operation
+        }
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+#[test]
+fn mesh_cycle_occurrences_propagate_collection_refusal() {
+    assert_eq!(
+        mesh_coverage_limit_operation(0),
+        "catia_mesh_cycle_occurrences"
+    );
+}
+
+#[test]
+fn mesh_face_edges_propagate_collection_refusal() {
+    assert_eq!(mesh_coverage_limit_operation(1), "catia_mesh_face_edges");
+}
+
+#[test]
+fn mesh_edges_by_face_propagate_collection_refusal() {
+    assert_eq!(mesh_coverage_limit_operation(2), "catia_mesh_edges_by_face");
+}
+
+#[test]
+fn mesh_cycle_coverage_propagates_collection_refusal() {
+    assert_eq!(
+        mesh_coverage_limit_operation(3),
+        "catia_mesh_cycle_coverage"
+    );
+}
+
+fn mesh_boundary_domain_limit_operation(max_collection_items: u64) -> &'static str {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = standard_quad_topology_stream();
+    let context = crate::test_support::with_service_context(|ctx| {
+        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
+            .expect("quad boundary context")
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = crate::solve::missing_edge::standard_mesh_boundary_domains_from_context(
+        &ctx, &context, None, false,
+    )
+    .expect_err("mesh boundary domain allocation exceeds the collection limit");
+    match error {
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems =>
+        {
+            limit.operation
+        }
+        other => panic!("expected collection resource limit, got {other:?}"),
+    }
+}
+
+#[test]
+fn mesh_ordered_boundaries_propagate_collection_refusal() {
+    assert_eq!(
+        mesh_boundary_domain_limit_operation(0),
+        "catia_mesh_ordered_boundaries"
+    );
+}
+
+#[test]
+fn mesh_boundary_coverage_propagates_collection_refusal() {
+    assert_eq!(
+        mesh_boundary_domain_limit_operation(1),
+        "catia_mesh_boundary_coverage"
+    );
+}
+
 fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -33,6 +129,10 @@ fn placement_endpoint_limit_operation(max_collection_items: u64) -> &'static str
         other => panic!("expected collection resource limit, got {other:?}"),
     }
 }
+
+// The placement solver first materializes one mesh face, one cycle, and
+// one eight-segment coverage mask for this fixture.
+const PLACEMENT_PREPARATION_ITEMS: u64 = 1 + 1 + 1 + 8;
 
 fn boundary_support_limit_operation(max_collection_items: u64) -> &'static str {
     use cadmpeg_core::decode::{
@@ -95,7 +195,7 @@ fn boundary_support_backward_marks_propagate_collection_refusal() {
 #[test]
 fn placement_endpoint_domains_propagate_collection_refusal() {
     assert_eq!(
-        placement_endpoint_limit_operation(0),
+        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS),
         "catia_placement_endpoint_domains"
     );
 }
@@ -103,7 +203,7 @@ fn placement_endpoint_domains_propagate_collection_refusal() {
 #[test]
 fn placement_endpoint_counts_propagate_collection_refusal() {
     assert_eq!(
-        placement_endpoint_limit_operation(4),
+        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS + 4),
         "catia_placement_counts"
     );
 }
@@ -111,7 +211,7 @@ fn placement_endpoint_counts_propagate_collection_refusal() {
 #[test]
 fn placement_endpoint_bound_counts_propagate_collection_refusal() {
     assert_eq!(
-        placement_endpoint_limit_operation(8),
+        placement_endpoint_limit_operation(PLACEMENT_PREPARATION_ITEMS + 8),
         "catia_placement_bound_counts"
     );
 }
@@ -264,9 +364,11 @@ fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
 fn standard_mesh_coverage_reports_exact_matched_partition() {
     catia_test_context!(ctx);
     let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(
+        &ctx,
         &standard_quad_topology_stream(),
         &[[0, 0]; 4],
     )
+    .expect("service resource budget")
     .expect("mesh coverage");
     assert_eq!(coverage.len(), 1);
     assert_eq!(coverage[0].face, 0);
@@ -281,23 +383,31 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     let first_row = header + 3;
     bytes[first_row + 1] = 2;
     bytes.drain(first_row + 4..first_row + 6);
-    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
-        .expect("one gap");
+    let coverage =
+        crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
+            .expect("one gap");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps.len(), 1);
     assert_eq!(coverage[0].gaps[0].length, 2);
-    let placements =
-        crate::solve::missing_edge::standard_mesh_missing_edge_placements(&bytes, &[[0, 0]; 4])
-            .expect("complete missing-edge placement domain");
+    let placements = crate::solve::missing_edge::standard_mesh_missing_edge_placements(
+        &ctx,
+        &bytes,
+        &[[0, 0]; 4],
+    )
+    .expect("service resource budget")
+    .expect("complete missing-edge placement domain");
     assert_eq!(placements[0].len(), 1);
     assert_eq!(placements[0][0].edge, 0);
     assert_eq!(placements[0][0].segment_count, 2);
     let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         None,
         false,
     )
+    .expect("service resource budget")
     .expect("complete missing-edge assignments");
     assert_eq!(assignments[0], [placements[0].clone()]);
     let mut local_ports = bytes.clone();
@@ -309,38 +419,52 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     local_ports[first_row + 4..first_row + 6].copy_from_slice(&201u16.to_be_bytes());
     assert!(
         crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+            &ctx,
             &local_ports,
             &[[0, 0]; 4],
             None,
             false
         )
+        .expect("service resource budget")
         .is_some()
     );
-    let boundaries =
-        crate::solve::missing_edge::standard_mesh_boundary_assignments(&bytes, &[[0, 0]; 4], None)
-            .expect("complete ordered boundary assignments");
+    let boundaries = crate::solve::missing_edge::standard_mesh_boundary_assignments(
+        &ctx,
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+    )
+    .expect("service resource budget")
+    .expect("complete ordered boundary assignments");
     let boundary_context =
-        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&bytes, &[[0, 0]; 4])
+        crate::solve::missing_edge::StandardMeshBoundaryContext::parse(&ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
             .expect("parsed boundary context");
     assert_eq!(
         crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
+            &ctx,
             &boundary_context,
             None,
         )
+        .expect("service resource budget")
         .expect("assignments from parsed context"),
         boundaries,
     );
     let singleton_endpoints = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[0, 3]]];
     assert_eq!(
         crate::solve::missing_edge::standard_mesh_boundary_assignments_from_context(
+            &ctx,
             &boundary_context,
             Some(&singleton_endpoints),
-        ),
+        )
+        .expect("service resource budget"),
         crate::solve::missing_edge::standard_mesh_boundary_assignments(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             Some(&singleton_endpoints),
-        ),
+        )
+        .expect("service resource budget"),
     );
     assert_eq!(boundaries[0].len(), 1);
     assert_eq!(boundaries[0][0].boundaries.len(), 1);
@@ -357,11 +481,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         ]
     );
     let selected = crate::solve::missing_edge::parse_standard_mesh_selection(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         &[0],
         &[vec![vec![false; 4]]],
     )
+    .expect("service resource budget")
     .expect("selected mesh-corner quotient");
     assert_eq!(selected.logical_vertex_count(), 4);
     assert_eq!(
@@ -430,10 +556,12 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(endpoint_domains[0], [[0, 1]]);
     let endpoint_assignments =
         crate::solve::missing_edge::standard_mesh_missing_edge_endpoint_assignments(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
         )
+        .expect("service resource budget")
         .expect("correlated gap-corner endpoint assignments");
     assert_eq!(endpoint_assignments[0].len(), 1);
     assert_eq!(endpoint_assignments[0][0].len(), 1);
@@ -443,24 +571,29 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     );
     let pruned =
         crate::solve::missing_edge::standard_mesh_pruned_missing_edge_endpoint_assignments(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &[Some([1, 0]), Some([1, 2]), Some([2, 3]), Some([3, 0])],
         )
+        .expect("service resource budget")
         .expect("endpoint-compatible face assignment");
     assert_eq!(pruned[0][0][0].endpoint_pairs, Some(vec![[0, 1]]));
     assert!(
         crate::solve::missing_edge::standard_mesh_pruned_missing_edge_endpoint_assignments(
+            &ctx,
             &bytes,
             &[[0, 0]; 4],
             &[Some([0, 2]), Some([1, 2]), Some([2, 3]), Some([3, 0]),],
         )
+        .expect("service resource budget")
         .is_none()
     );
 }
 
 #[test]
 fn unmatched_standard_row_arity_does_not_fix_trim_span() {
+    catia_test_context!(ctx);
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -470,16 +603,20 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
     bytes[first_row + 1] = 4;
     bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
 
-    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
-        .expect("unmatched row coverage");
+    let coverage =
+        crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
+            .expect("unmatched row coverage");
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps[0].length, 2);
     let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         None,
         false,
     )
+    .expect("service resource budget")
     .expect("unmatched curve samples do not determine trim span");
     assert_eq!(assignments[0].len(), 1);
     assert_eq!(assignments[0][0][0].segment_count, 2);
@@ -487,6 +624,7 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 
 #[test]
 fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
+    catia_test_context!(ctx);
     let mut bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
     let first_row = bytes
         .windows(5)
@@ -499,17 +637,21 @@ fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
     {
         bytes[offset] = handle;
     }
-    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
-        .expect("unmatched FBB row coverage");
+    let coverage =
+        crate::solve::missing_edge::standard_mesh_face_coverage(&ctx, &bytes, &[[0, 0]; 4])
+            .expect("service resource budget")
+            .expect("unmatched FBB row coverage");
     assert_eq!(coverage[0].missing_edges, [0, 1]);
     assert_eq!(coverage[0].gaps[0].length, 4);
 
     let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         None,
         false,
     )
+    .expect("service resource budget")
     .expect("complete FBB row spans");
     assert_eq!(assignments[0].len(), 2);
     assert!(assignments[0].iter().all(|assignment| {
@@ -549,11 +691,13 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
     }
 
     let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &ctx,
         &bytes,
         &[[0, 0]; 4],
         None,
         false,
     )
+    .expect("service resource budget")
     .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].len(), 280);

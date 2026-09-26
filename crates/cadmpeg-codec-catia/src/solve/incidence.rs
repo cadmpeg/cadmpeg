@@ -3917,7 +3917,7 @@ fn component_incidence_pair_solutions<F>(
     solution_valid: &F,
 ) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
 {
     component_incidence_pair_solution_outcome(
         ctx,
@@ -3947,7 +3947,7 @@ pub(super) fn component_incidence_pair_solution_outcome<F>(
     solution_valid: &F,
 ) -> Result<IncidenceSolve<Vec<Vec<[usize; 2]>>>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
 {
     const MAX_PAIR_SOLUTIONS: usize = 256;
     let mut solutions = Vec::new();
@@ -3996,7 +3996,7 @@ fn visit_component_incidence_pair_solutions<F, V>(
     visitor: &mut V,
 ) -> Result<IncidenceSolve<usize>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -4032,7 +4032,7 @@ fn visit_component_incidence_pair_solutions_with_coordinate_root_policy<F, V>(
     session_budget: &WorkBudget<'_>,
 ) -> Result<IncidenceSolve<usize>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     #[allow(clippy::too_many_arguments)]
@@ -4202,7 +4202,7 @@ where
         session_budget: &WorkBudget<'_>,
     ) -> Result<ControlFlow<()>, IncidenceVisitError>
     where
-        F: Fn(&[[usize; 2]]) -> bool,
+        F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
         V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
     {
         let Some(component) = components.get(component_index) else {
@@ -4212,7 +4212,7 @@ where
                 .collect::<Option<Vec<_>>>()
                 .ok_or(IncidenceVisitError::Exhausted)?;
             let boundary_closed = boundary_domains_close(ctx, mesh_assignments, &pairs)?;
-            let solution_accepted = boundary_closed && solution_valid(&pairs);
+            let solution_accepted = boundary_closed && solution_valid(&pairs)?;
             if !solution_accepted {
                 return Ok(ControlFlow::Continue(()));
             }
@@ -4553,7 +4553,7 @@ where
                 return Ok(None);
             };
             let boundary_closed = boundary_domains_close(ctx, mesh_assignments, &pairs)?;
-            let solution_valid = solution_valid(&pairs);
+            let solution_valid = solution_valid(&pairs)?;
             if !boundary_closed || !solution_valid {
                 return Ok(None);
             }
@@ -4780,7 +4780,7 @@ pub(crate) fn reconstruct_incidence_candidates(
         quotient.as_ref(),
         None,
         Some(budget),
-        &|_| true,
+        &|_| Ok(true),
         &mut |pairs| -> Result<ControlFlow<()>, CodecError> {
             if assignment_count == MAX_TOPOLOGY_ASSIGNMENTS {
                 invalid = true;
@@ -4824,13 +4824,14 @@ pub(crate) fn reconstruct_incidence_candidates(
     let Some(solution_pairs) = solution_pairs else {
         return Ok(None);
     };
-    Ok(reconstruct_incidence(
+    reconstruct_incidence(
+        ctx,
         edge_rows.to_vec(),
         vertex_points.to_vec(),
         edge_faces,
         &solution_pairs,
         face_count,
-    ))
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4849,7 +4850,7 @@ fn visit_incidence_endpoint_pair_solutions<F, V>(
     visitor: &mut V,
 ) -> Result<IncidenceSolve<usize>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     visit_incidence_endpoint_pair_solutions_with_coordinate_root_policy(
@@ -4886,7 +4887,7 @@ pub(super) fn visit_incidence_endpoint_pair_solutions_with_coordinate_root_polic
     visitor: &mut V,
 ) -> Result<IncidenceSolve<usize>, CodecError>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[[usize; 2]]) -> Result<bool, CodecError>,
     V: FnMut(&[[usize; 2]]) -> Result<ControlFlow<()>, CodecError>,
 {
     charge_collection_items(ctx, edge_candidates.len(), "catia incidence choice rows")?;
@@ -4932,20 +4933,23 @@ where
     if !valid {
         return Ok(IncidenceSolve::Rejected(IncidenceRejection::ChoicePruning));
     }
-    let complete_valid = |points: &[[usize; 2]]| {
+    let complete_valid = |points: &[[usize; 2]]| -> Result<bool, CodecError> {
         if complete_solution_budget.is_some_and(|budget| !budget.charge_by(edge_rows.len())) {
-            return true;
+            return Ok(true);
         }
-        let preferred = solution_valid(points);
-        preferred
-            && reconstruct_incidence(
-                edge_rows.to_vec(),
-                vertex_points.to_vec(),
-                edge_faces,
-                points,
-                face_count,
-            )
-            .is_some()
+        let preferred = solution_valid(points)?;
+        if !preferred {
+            return Ok(false);
+        }
+        Ok(reconstruct_incidence(
+            ctx,
+            edge_rows.to_vec(),
+            vertex_points.to_vec(),
+            edge_faces,
+            points,
+            face_count,
+        )?
+        .is_some())
     };
     let mut budgeted_visitor = |points: &[[usize; 2]]| {
         if complete_solution_budget.is_some_and(WorkBudget::exhausted) {

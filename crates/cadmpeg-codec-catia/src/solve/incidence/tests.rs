@@ -174,7 +174,7 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
         None,
         None,
         Some(&budget),
-        &|_| true,
+        &|_| Ok(true),
         &mut |_| {
             visited = true;
             Ok(ControlFlow::Continue(()))

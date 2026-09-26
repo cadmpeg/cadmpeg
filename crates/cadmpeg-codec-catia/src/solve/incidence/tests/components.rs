@@ -41,7 +41,7 @@ fn incidence_component_preflight_ignores_disjoint_unassigned_cycles_on_the_same_
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("independent same-face cycle solutions");
@@ -61,7 +61,7 @@ fn incidence_component_composition_does_not_allocate_the_declared_point_product(
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("sparse component degree state");
@@ -89,7 +89,7 @@ fn incidence_component_preflight_retains_fixed_chain_frontiers() {
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("fixed-chain component frontier");
@@ -347,7 +347,7 @@ fn incidence_components_solve_coupled_face_vertex_closures() {
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("component closure solution");
@@ -388,7 +388,7 @@ fn incidence_components_reject_degree_cycles_in_the_wrong_edge_order() {
         Some(&mesh_assignments),
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("ordered component solution");
@@ -418,7 +418,7 @@ fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
         Some(&domains),
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("connected cycle solution");
@@ -1372,7 +1372,7 @@ fn incidence_components_filter_complete_solutions_during_search() {
         None,
         None,
         None,
-        &|pairs| pairs[1] == [2, 3],
+        &|pairs| Ok(pairs[1] == [2, 3]),
     )
     .expect("service resource budget")
     .expect("filtered component solution");
@@ -1408,7 +1408,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
             assignment_order: None,
             valid: &partial,
         }),
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("partially constrained component solutions");
@@ -1442,7 +1442,7 @@ fn incidence_components_reuse_independent_solution_domains() {
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
         &mut |_| {
             visited += 1;
             Ok(ControlFlow::Continue(()))
@@ -1503,7 +1503,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
             assignment_order: None,
             valid: &partial,
         }),
-        &|_| true,
+        &|_| Ok(true),
         &mut |_| {
             visited = true;
             Ok(ControlFlow::Continue(()))
@@ -1538,7 +1538,7 @@ fn incidence_components_discard_quotient_impossible_complete_solutions() {
         None,
         Some(&quotient),
         None,
-        &|_| true,
+        &|_| Ok(true),
     )
     .expect("service resource budget")
     .expect("globally assignable component solution");
@@ -1587,7 +1587,7 @@ fn incidence_components_preflight_quotient_impossible_domains() {
         None,
         Some(&quotient),
         None,
-        &|_| true,
+        &|_| Ok(true),
         &mut |_| {
             visited = true;
             Ok(ControlFlow::Continue(()))
@@ -1621,7 +1621,7 @@ fn fixed_incidence_assignments_must_satisfy_the_mesh_quotient() {
             None,
             Some(&quotient),
             None,
-            &|_| true,
+            &|_| Ok(true),
         )
         .expect("service resource budget"),
         crate::solve::incidence::IncidenceSolve::Rejected(
@@ -1646,7 +1646,7 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             None,
             None,
-            &|_| true,
+            &|_| Ok(true),
         )
         .expect("service resource budget"),
         IncidenceSolve::Exhausted
@@ -1661,7 +1661,7 @@ fn incidence_outcome_distinguishes_exhaustion_from_rejection() {
             None,
             None,
             None,
-            &|_| true,
+            &|_| Ok(true),
         )
         .expect("service resource budget"),
         IncidenceSolve::Rejected(crate::solve::incidence::IncidenceRejection::FixedAssignment)
@@ -1689,7 +1689,7 @@ fn incidence_component_products_stream_until_the_consumer_stops() {
         None,
         None,
         None,
-        &|_| true,
+        &|_| Ok(true),
         &mut |_| {
             visited += 1;
             if visited == 2 {
@@ -1726,7 +1726,7 @@ fn incidence_component_prefix_can_prove_the_consumer_result_before_exhaustion() 
         None,
         &|_| {
             validated.set(validated.get() + 1);
-            true
+            Ok(true)
         },
         &mut |_| {
             visited += 1;

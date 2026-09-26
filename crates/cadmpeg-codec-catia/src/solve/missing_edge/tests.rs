@@ -428,15 +428,19 @@ fn endpoint_degree_closure_retains_symmetric_face_swaps() {
 
 #[test]
 fn candidate_contexts_share_edge_row_storage() {
+    catia_test_context!(ctx);
     const CANDIDATES: usize = 1024;
     let bytes = crate::test_support::test_topology::standard_quad_topology_stream();
     let faces = [[0, 0]; 4];
-    let base = StandardMeshBoundaryContext::parse(&bytes, &faces).expect("quad boundary context");
+    let base = StandardMeshBoundaryContext::parse(&ctx, &bytes, &faces)
+        .expect("service resource budget")
+        .expect("quad boundary context");
     let mut candidates = Vec::with_capacity(CANDIDATES);
     assert_eq!(Arc::strong_count(&base.analysis), 1);
     for _ in 0..CANDIDATES {
         candidates.push(
-            base.with_edge_faces(&faces)
+            base.with_edge_faces(&ctx, &faces)
+                .expect("service resource budget")
                 .expect("quad candidate context"),
         );
         assert_eq!(Arc::strong_count(&base.analysis), candidates.len() + 1);
@@ -502,7 +506,8 @@ fn face_options_order_and_deduplicate_the_admitted_faces_they_are_given() {
 fn a_repeated_slot_with_one_admitted_face_takes_it_without_a_search() {
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize]];
-    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| true);
+    let solved = unique_duplicate_face_assignment(&serialized, &allowed, 1, |_| Ok(true))
+        .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 0]]));
 }
 
@@ -511,8 +516,9 @@ fn a_repeated_slot_with_two_admitted_faces_resolves_to_the_one_valid_assignment(
     let serialized = [[0usize, 0]];
     let allowed = vec![vec![0usize, 1]];
     let solved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |assignment| {
-        assignment[0][1] == 1
-    });
+        Ok(assignment[0][1] == 1)
+    })
+    .expect("service resource budget");
     assert_eq!(solved, Some(vec![[0, 1]]));
 }
 
