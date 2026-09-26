@@ -811,7 +811,7 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
 }
 
 #[test]
-fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
+fn the_blend_admissions_hold_ordered_ranges_and_refuse_non_finite_scalars() {
     use super::{
         BlendSurfacePayload, BlendSurfacePayloadWire, VariableBlendSurfacePayload,
         VariableBlendSurfacePayloadWire,
@@ -1002,6 +1002,42 @@ fn the_blend_admissions_refuse_every_non_finite_rolling_ball_scalar() {
         &serde_json::to_value(&blend).unwrap(),
         "/cache/form/revision",
     );
+
+    let blend_with_native_ranges = |u_range, v_range| {
+        let CacheContract::Revision { mut form } = rolling(admitted) else {
+            panic!("rolling construction is revision-gated")
+        };
+        form.u_range = u_range;
+        form.v_range = v_range;
+        BlendSurfacePayload::try_new(
+            [None, None],
+            None,
+            BlendRadiusLaw::constant(1.0).unwrap(),
+            BlendCrossSection::Circular,
+            CacheContract::Revision { form },
+        )
+    };
+    let ordered = blend_with_native_ranges([Some(0.0), Some(1.0)], [None, Some(2.0)]).unwrap();
+    let (_, ranges) = ordered.native_with_ranges().unwrap();
+    assert_eq!(
+        ranges[0]
+            .endpoints()
+            .map(|value| value.map(|value| value.get())),
+        [Some(0.0), Some(1.0)]
+    );
+    assert_eq!(
+        ranges[1]
+            .endpoints()
+            .map(|value| value.map(|value| value.get())),
+        [None, Some(2.0)]
+    );
+    assert_eq!(
+        serde_json::from_value::<BlendSurfacePayload>(serde_json::to_value(&ordered).unwrap())
+            .unwrap(),
+        ordered
+    );
+    assert!(blend_with_native_ranges([Some(2.0), Some(1.0)], [None, None]).is_err());
+    assert!(blend_with_native_ranges([None, None], [Some(2.0), Some(1.0)]).is_err());
 
     // JSON itself states no infinity or NaN, so the wire cannot spell a
     // refused value; `TryFrom<…Wire>` is the conversion the deserializer

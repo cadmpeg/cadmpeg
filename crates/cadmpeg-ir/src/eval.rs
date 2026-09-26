@@ -6018,8 +6018,8 @@ fn model_surface_point_inner(
                 .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
-            let native = definition_payload
-                .native()
+            let (native, native_ranges) = definition_payload
+                .native_with_ranges()
                 .ok_or(EvaluationFailure::NoValue)?;
             cacheless_constant_rolling_ball_point(
                 &index,
@@ -6027,6 +6027,7 @@ fn model_surface_point_inner(
                 definition_payload.radius(),
                 definition_payload.cross_section(),
                 native,
+                native_ranges,
                 u,
                 v,
             )
@@ -7604,6 +7605,7 @@ fn cacheless_constant_rolling_ball_point(
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
     native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
@@ -7613,6 +7615,7 @@ fn cacheless_constant_rolling_ball_point(
         radius,
         cross_section,
         native,
+        native_ranges,
         u,
         v,
     )?;
@@ -7643,6 +7646,7 @@ fn cacheless_constant_rolling_ball_section(
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
     native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
     u: f64,
     v: f64,
 ) -> Result<ConstantRollingBallSection, EvaluationFailure<()>> {
@@ -7659,8 +7663,8 @@ fn cacheless_constant_rolling_ball_section(
         || *cross_section != crate::geometry::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, finite_v)
-        || !sweep_tail_interval_contains(native.u_range, finite_u)
-        || !sweep_tail_interval_contains(native.v_range, finite_v)
+        || !sweep_tail_interval_contains(native_ranges[0].endpoints(), finite_u)
+        || !sweep_tail_interval_contains(native_ranges[1].endpoints(), finite_v)
         || !native.cache.parameterization().is_some_and(|tail| {
             sweep_tail_interval_contains(tail.u_interval, finite_u)
                 && sweep_tail_interval_contains(tail.v_interval, finite_v)
@@ -7781,6 +7785,7 @@ fn cacheless_constant_rolling_ball_first_order(
     radius: &crate::geometry::BlendRadiusLaw,
     cross_section: &crate::geometry::BlendCrossSection,
     native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
@@ -7790,6 +7795,7 @@ fn cacheless_constant_rolling_ball_first_order(
         radius,
         cross_section,
         native,
+        native_ranges,
         u,
         v,
     )
@@ -8410,7 +8416,7 @@ fn model_surface_point_by_id_inner(
                 }
             }
             Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-                if let Some(native) = definition_payload.native() {
+                if let Some((native, native_ranges)) = definition_payload.native_with_ranges() {
                     let supports = definition_payload.supports();
                     let radius = definition_payload.radius();
                     let cross_section = definition_payload.cross_section();
@@ -8421,6 +8427,7 @@ fn model_surface_point_by_id_inner(
                         radius,
                         cross_section,
                         native,
+                        native_ranges,
                         u,
                         v,
                     ) {
@@ -8433,6 +8440,7 @@ fn model_surface_point_by_id_inner(
                                     radius,
                                     cross_section,
                                     native,
+                                    native_ranges,
                                     u,
                                     v,
                                 )
@@ -8633,8 +8641,9 @@ fn model_surface_first_order_by_id(
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-            definition_payload.native().map(|native| {
+        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => definition_payload
+            .native_with_ranges()
+            .map(|(native, native_ranges)| {
                 (
                     cacheless_constant_rolling_ball_first_order(
                         index,
@@ -8642,13 +8651,13 @@ fn model_surface_first_order_by_id(
                         definition_payload.radius(),
                         definition_payload.cross_section(),
                         native,
+                        native_ranges,
                         u,
                         v,
                     ),
                     revision_surface_tail_has_current_cache(&native.cache),
                 )
-            })
-        }
+            }),
         Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
             let construction = definition_payload.construction();
             Some((
