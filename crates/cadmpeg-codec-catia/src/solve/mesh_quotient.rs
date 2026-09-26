@@ -4947,9 +4947,10 @@ fn complete_endpoint_relation_keys<'a>(
 }
 
 fn build_endpoint_relation_constraints(
+    ctx: &DecodeContext<'_>,
     domains: &[Vec<MeshEndpointRelationChoice>],
     budget: &WorkBudget<'_>,
-) -> Option<MeshEndpointRelationConstraints> {
+) -> Result<Option<MeshEndpointRelationConstraints>, CodecError> {
     let mut shared_edges = BTreeMap::<(usize, usize), Vec<usize>>::new();
     let mut edge_faces = HashMap::<usize, BTreeSet<usize>>::new();
     for (face, choices) in domains.iter().enumerate() {
@@ -4986,7 +4987,7 @@ fn build_endpoint_relation_constraints(
         // at most `isize::MAX` and their sum is inside `usize`.
         let index_work = domains[face].len() + domains[neighbor].len();
         if !budget.charge_by(index_work) {
-            return None;
+            return Ok(None);
         }
         let (left_complete, left_choices) = complete_endpoint_relation_keys(&domains[face], &edges);
         let (right_complete, right_choices) =
@@ -4999,33 +5000,31 @@ fn build_endpoint_relation_constraints(
             left_choices
                 .iter()
                 .map(|(_, key)| {
-                    let mut mask = alloc_filled(
+                    let mut mask = ctx.alloc_filled(
                         bitset_words(domains[neighbor].len()),
                         0u64,
                         "catia_endpoint_relation_support_mask",
-                    )
-                    .ok()?;
+                    )?;
                     for &other in index.get(key).into_iter().flatten() {
                         mask[other / 64] |= 1u64 << (other % 64);
                     }
-                    Some(mask)
+                    Ok(mask)
                 })
-                .collect::<Option<Vec<_>>>()?
+                .collect::<Result<Vec<_>, CodecError>>()?
         } else {
             let comparison_work =
                 work_units(domains[face].len().saturating_mul(domains[neighbor].len()));
             if !budget.charge_by(comparison_work) {
-                return None;
+                return Ok(None);
             }
             left_choices
                 .iter()
                 .map(|(_, left_key)| {
-                    let mut mask = alloc_filled(
+                    let mut mask = ctx.alloc_filled(
                         bitset_words(domains[neighbor].len()),
                         0u64,
                         "catia_endpoint_relation_support_mask",
-                    )
-                    .ok()?;
+                    )?;
                     for (other, right_key) in &right_choices {
                         let compatible = left_key.iter().zip(right_key).all(|(left, right)| {
                             left.as_ref()
@@ -5036,27 +5035,28 @@ fn build_endpoint_relation_constraints(
                             mask[other.id / 64] |= 1u64 << (other.id % 64);
                         }
                     }
-                    Some(mask)
+                    Ok(mask)
                 })
-                .collect::<Option<Vec<_>>>()?
+                .collect::<Result<Vec<_>, CodecError>>()?
         };
         let arc_index = arcs[face].len();
         arcs[face].push(MeshEndpointRelationArc { neighbor, supports });
         incoming[neighbor].push((face, arc_index));
     }
-    Some(MeshEndpointRelationConstraints {
+    Ok(Some(MeshEndpointRelationConstraints {
         arcs,
         incoming,
         choice_counts,
-    })
+    }))
 }
 
 fn propagate_endpoint_relation_domains(
+    ctx: &DecodeContext<'_>,
     domains: &mut [Vec<MeshEndpointRelationChoice>],
     assigned: &mut [Option<[usize; 2]>],
     constraints: &MeshEndpointRelationConstraints,
     budget: &WorkBudget<'_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let mut dirty_faces = domains
         .iter()
         .enumerate()
@@ -5069,7 +5069,7 @@ fn propagate_endpoint_relation_domains(
         let mut changed = false;
         for (face, choices) in domains.iter_mut().enumerate() {
             if !budget.charge_by(work_units(choices.len())) {
-                return false;
+                return Ok(false);
             }
             let before = choices.len();
             choices.retain(|choice| {
@@ -5078,7 +5078,7 @@ fn propagate_endpoint_relation_domains(
                 })
             });
             if choices.is_empty() {
-                return false;
+                return Ok(false);
             }
             if choices.len() != before {
                 dirty_faces.push(face);
@@ -5086,25 +5086,21 @@ fn propagate_endpoint_relation_domains(
             }
         }
 
-        let Some(mut active) = constraints
+        let mut active = constraints
             .choice_counts
             .iter()
             .map(|&choice_count| {
-                alloc_filled(
+                ctx.alloc_filled(
                     bitset_words(choice_count),
                     0u64,
                     "catia_endpoint_relation_active_mask",
                 )
-                .ok()
             })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return false;
-        };
+            .collect::<Result<Vec<_>, CodecError>>()?;
         for (face, choices) in domains.iter().enumerate() {
             for choice in choices {
                 let Some(active_word) = active[face].get_mut(choice.id / 64) else {
-                    return false;
+                    return Ok(false);
                 };
                 *active_word |= 1u64 << (choice.id % 64);
             }
@@ -5140,7 +5136,7 @@ fn propagate_endpoint_relation_domains(
                     .any(|(supported, active)| supported & active != 0)
             });
             if budget.exhausted() || domains[face].is_empty() {
-                return false;
+                return Ok(false);
             }
             if domains[face].len() == before {
                 continue;
@@ -5163,7 +5159,7 @@ fn propagate_endpoint_relation_domains(
         // those independent alternatives.
         for choices in domains.iter() {
             if !budget.charge_by(work_units(choices.len())) {
-                return false;
+                return Ok(false);
             }
             let choice_count = choices.len();
             let mut pairs = HashMap::<usize, HashSet<[usize; 2]>>::new();
@@ -5182,7 +5178,7 @@ fn propagate_endpoint_relation_domains(
                     continue;
                 };
                 match assigned[edge] {
-                    Some(selected) if !same_unordered_pair(selected, pair) => return false,
+                    Some(selected) if !same_unordered_pair(selected, pair) => return Ok(false),
                     Some(_) => {}
                     None => {
                         assigned[edge] = Some(pair);
@@ -5197,7 +5193,7 @@ fn propagate_endpoint_relation_domains(
             }
             for &(edge, pair) in choices[0].selection.edge_pairs() {
                 match assigned[edge] {
-                    Some(selected) if !same_unordered_pair(selected, pair) => return false,
+                    Some(selected) if !same_unordered_pair(selected, pair) => return Ok(false),
                     Some(_) => {}
                     None => {
                         assigned[edge] = Some(pair);
@@ -5207,7 +5203,7 @@ fn propagate_endpoint_relation_domains(
             }
         }
         if !changed {
-            return true;
+            return Ok(true);
         }
     }
 }
@@ -5239,8 +5235,11 @@ where
     }
     let mut domains = domains;
     let mut assigned = assigned;
-    let propagated = domains.iter().all(|choices| choices.len() == 1)
-        || propagate_endpoint_relation_domains(&mut domains, &mut assigned, constraints, budget);
+    let propagated = if domains.iter().all(|choices| choices.len() == 1) {
+        true
+    } else {
+        propagate_endpoint_relation_domains(ctx, &mut domains, &mut assigned, constraints, budget)?
+    };
     if !propagated {
         return Ok(false);
     }
@@ -5583,7 +5582,7 @@ fn resolve_endpoint_configuration_relation_streaming(
     if covered.iter().any(|covered| !covered) {
         return Ok(None);
     }
-    let Some(constraints) = build_endpoint_relation_constraints(&domains, budget) else {
+    let Some(constraints) = build_endpoint_relation_constraints(ctx, &domains, budget)? else {
         return Ok(Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))));
     };
     let mut resolved = None;
@@ -9718,6 +9717,7 @@ fn raw_endpoint_relation_state_signature_ignores_local_order() {
 
 #[test]
 fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
+    catia_test_context!(ctx);
     let mut domains = vec![
         vec![
             MeshEndpointRelationChoice {
@@ -9753,16 +9753,19 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
         ],
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let constraints = build_endpoint_relation_constraints(&domains, &budget)
+    let constraints = build_endpoint_relation_constraints(&ctx, &domains, &budget)
+        .expect("service resource budget")
         .expect("shared-edge relation constraints should build");
     let mut assigned = vec![None; 2];
 
     assert!(propagate_endpoint_relation_domains(
+        &ctx,
         &mut domains,
         &mut assigned,
         &constraints,
         &budget,
-    ));
+    )
+    .expect("service resource budget"));
     assert_eq!(
         domains[0]
             .iter()
@@ -9780,7 +9783,98 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
 }
 
 #[test]
+fn endpoint_relation_support_masks_propagate_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let make_domains = |optional_edge: bool| {
+        let choice = |id, edge_pairs| MeshEndpointRelationChoice {
+            id,
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs,
+            },
+        };
+        let mut right = vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])];
+        if optional_edge {
+            right.push(choice(1, vec![(0, [0, 1])]));
+        }
+        vec![vec![choice(0, vec![(0, [0, 1]), (1, [2, 3])])], right]
+    };
+    for optional_edge in [false, true] {
+        let domains = make_domains(optional_edge);
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        catia_test_context!(service_ctx);
+        assert!(
+            build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+                .expect("service resource budget")
+                .is_some()
+        );
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .expect("fixture fits the input limit");
+        let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let error = build_endpoint_relation_constraints(&ctx, &domains, &budget)
+            .err()
+            .expect("support mask exceeds the collection limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "catia_endpoint_relation_support_mask"));
+    }
+}
+
+#[test]
+fn endpoint_relation_active_masks_propagate_collection_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+
+    let choice = MeshEndpointRelationChoice {
+        id: 0,
+        selection: MeshEndpointRelationSelection::Enumerated {
+            assignments: vec![0],
+            edge_pairs: vec![(0, [0, 1])],
+        },
+    };
+    let domains = vec![vec![choice.clone()], vec![choice]];
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    catia_test_context!(service_ctx);
+    let constraints = build_endpoint_relation_constraints(&service_ctx, &domains, &budget)
+        .expect("service resource budget")
+        .expect("shared edge creates relation constraints");
+    let mut service_domains = domains.clone();
+    assert!(propagate_endpoint_relation_domains(
+        &service_ctx,
+        &mut service_domains,
+        &mut [None],
+        &constraints,
+        &budget,
+    )
+    .expect("service resource budget"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let mut limited_domains = domains;
+    let error = propagate_endpoint_relation_domains(
+        &ctx,
+        &mut limited_domains,
+        &mut [None],
+        &constraints,
+        &budget,
+    )
+    .expect_err("active mask exceeds the collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia_endpoint_relation_active_mask"));
+}
+
+#[test]
 fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
+    catia_test_context!(ctx);
     let mut domains = vec![
         vec![
             MeshEndpointRelationChoice {
@@ -9816,16 +9910,19 @@ fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
         ],
     ];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let constraints = build_endpoint_relation_constraints(&domains, &budget)
+    let constraints = build_endpoint_relation_constraints(&ctx, &domains, &budget)
+        .expect("service resource budget")
         .expect("shared-edge relation constraints should build");
     let mut assigned = vec![None];
 
     assert!(propagate_endpoint_relation_domains(
+        &ctx,
         &mut domains,
         &mut assigned,
         &constraints,
         &budget,
-    ));
+    )
+    .expect("service resource budget"));
     assert_eq!(
         domains[0]
             .iter()
