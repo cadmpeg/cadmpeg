@@ -2013,13 +2013,13 @@ pub(crate) enum TextCurve {
     Nurbs(NurbsCurve),
     /// A parameter sub-range of an inline basis curve.
     Trimmed {
-        parameter_range: [f64; 2],
+        parameter_range: [FiniteReal; 2],
         basis: NestedCurve,
     },
     /// A signed offset from an inline basis curve in a fixed direction.
     Offset {
-        distance: f64,
-        direction: Vector3,
+        distance: FiniteReal,
+        direction: FiniteVector3,
         basis: NestedCurve,
     },
 }
@@ -2131,22 +2131,25 @@ pub(crate) enum TextSurface {
     Nurbs(NurbsSurface),
     /// Translation of an inline directrix curve.
     Extrusion {
-        direction: Vector3,
+        direction: FiniteVector3,
         directrix: NestedCurve,
     },
     /// Revolution of an inline directrix around an axis.
     Revolution {
-        axis_origin: Point3,
-        axis_direction: Vector3,
+        axis_origin: FinitePoint3,
+        axis_direction: FiniteVector3,
         directrix: NestedCurve,
     },
     /// Rectangular parameter sub-range of an inline basis surface.
     Trimmed {
-        parameter_ranges: [[f64; 2]; 2],
+        parameter_ranges: [[FiniteReal; 2]; 2],
         basis: NestedSurface,
     },
     /// Signed normal offset from an inline basis surface.
-    Offset { distance: f64, basis: NestedSurface },
+    Offset {
+        distance: FiniteReal,
+        basis: NestedSurface,
+    },
 }
 
 impl TextSurface {
@@ -2262,9 +2265,9 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
             let v_scale = basis.v_scale.abs();
             SurfaceParameterAffine {
                 u_scale,
-                u_offset: -parameter_ranges[0][0] * u_scale,
+                u_offset: -parameter_ranges[0][0].get() * u_scale,
                 v_scale,
-                v_offset: -parameter_ranges[1][0] * v_scale,
+                v_offset: -parameter_ranges[1][0].get() * v_scale,
             }
         }
         TextSurface::Offset { basis, .. } => surface_parameter_affine(basis.surface()),
@@ -3437,13 +3440,13 @@ fn parse_binary_surface(
             }
         }
         6 => TextSurface::Extrusion {
-            direction: cursor.vector3("binary extrusion direction")?,
+            direction: cursor.finite_vector3("binary extrusion direction")?,
             directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         7 => TextSurface::Revolution {
-            axis_origin: cursor.point3("binary revolution axis origin")?,
-            axis_direction: cursor.vector3("binary revolution axis direction")?,
+            axis_origin: cursor.finite_point3("binary revolution axis origin")?,
+            axis_direction: cursor.finite_vector3("binary revolution axis direction")?,
             directrix: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3533,19 +3536,19 @@ fn parse_binary_surface(
         10 => TextSurface::Trimmed {
             parameter_ranges: [
                 [
-                    cursor.f64("binary surface u trim start")?,
-                    cursor.f64("binary surface u trim end")?,
+                    cursor.finite_f64("binary surface u trim start")?,
+                    cursor.finite_f64("binary surface u trim end")?,
                 ],
                 [
-                    cursor.f64("binary surface v trim start")?,
-                    cursor.f64("binary surface v trim end")?,
+                    cursor.finite_f64("binary surface v trim start")?,
+                    cursor.finite_f64("binary surface v trim end")?,
                 ],
             ],
             basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         11 => TextSurface::Offset {
-            distance: cursor.f64("binary surface offset")?,
+            distance: cursor.finite_f64("binary surface offset")?,
             basis: NestedSurface::try_new(parse_binary_surface(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -3683,15 +3686,15 @@ fn parse_binary_curve(
         }
         8 => TextCurve::Trimmed {
             parameter_range: [
-                cursor.f64("binary trim start")?,
-                cursor.f64("binary trim end")?,
+                cursor.finite_f64("binary trim start")?,
+                cursor.finite_f64("binary trim end")?,
             ],
             basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
         9 => TextCurve::Offset {
-            distance: cursor.f64("binary offset distance")?,
-            direction: cursor.vector3("binary offset direction")?,
+            distance: cursor.finite_f64("binary offset distance")?,
+            direction: cursor.finite_vector3("binary offset direction")?,
             basis: NestedCurve::try_new(parse_binary_curve(cursor, depth + 1)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -4944,8 +4947,8 @@ fn parse_surface(
         4 => parse_analytic_surface(AnalyticSurfaceKind::Sphere, cursor)?,
         5 => parse_analytic_surface(AnalyticSurfaceKind::Torus, cursor)?,
         6 => {
-            let direction = cursor.vector("extrusion direction")?;
-            if direction.norm() == 0.0 {
+            let direction = cursor.finite_vector("extrusion direction")?;
+            if direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed("extrusion direction is zero".into()));
             }
             TextSurface::Extrusion {
@@ -4955,9 +4958,9 @@ fn parse_surface(
             }
         }
         7 => {
-            let axis_origin = cursor.point("revolution axis origin")?;
-            let axis_direction = cursor.vector("revolution axis direction")?;
-            if axis_direction.norm() == 0.0 {
+            let axis_origin = cursor.finite_point("revolution axis origin")?;
+            let axis_direction = cursor.finite_vector("revolution axis direction")?;
+            if axis_direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "revolution axis direction is zero".into(),
                 ));
@@ -4973,12 +4976,12 @@ fn parse_surface(
         9 => TextSurface::Nurbs(parse_nurbs_surface(cursor)?),
         10 => {
             let u_range = [
-                cursor.real("trimmed surface first u parameter")?,
-                cursor.real("trimmed surface last u parameter")?,
+                cursor.finite_real("trimmed surface first u parameter")?,
+                cursor.finite_real("trimmed surface last u parameter")?,
             ];
             let v_range = [
-                cursor.real("trimmed surface first v parameter")?,
-                cursor.real("trimmed surface last v parameter")?,
+                cursor.finite_real("trimmed surface first v parameter")?,
+                cursor.finite_real("trimmed surface last v parameter")?,
             ];
             if u_range[0] > u_range[1] || v_range[0] > v_range[1] {
                 return Err(CodecError::Malformed(
@@ -4992,7 +4995,7 @@ fn parse_surface(
             }
         }
         11 => TextSurface::Offset {
-            distance: cursor.real("offset surface distance")?,
+            distance: cursor.finite_real("offset surface distance")?,
             basis: NestedSurface::try_new(parse_surface(cursor, depth + 1, table_index)?)
                 .map_err(CodecError::malformed)?,
         },
@@ -5404,8 +5407,8 @@ fn parse_curve(
         6 => TextCurve::Nurbs(parse_bezier_curve(cursor)?),
         7 => TextCurve::Nurbs(parse_nurbs_curve(cursor)?),
         8 => {
-            let first = cursor.real("trimmed curve first parameter")?;
-            let last = cursor.real("trimmed curve last parameter")?;
+            let first = cursor.finite_real("trimmed curve first parameter")?;
+            let last = cursor.finite_real("trimmed curve last parameter")?;
             if first > last {
                 return Err(CodecError::Malformed(
                     "trimmed curve parameter range is reversed".into(),
@@ -5418,9 +5421,9 @@ fn parse_curve(
             }
         }
         9 => {
-            let distance = cursor.real("offset curve distance")?;
-            let direction = cursor.vector("offset curve direction")?;
-            if direction.norm() == 0.0 {
+            let distance = cursor.finite_real("offset curve distance")?;
+            let direction = cursor.finite_vector("offset curve direction")?;
+            if direction.get().norm() == 0.0 {
                 return Err(CodecError::Malformed(
                     "offset curve direction is zero".into(),
                 ));
@@ -5796,15 +5799,16 @@ fn append_text_curve(
             );
             let basis_geometry =
                 append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
+            let source_range = parameter_range.map(FiniteReal::get);
             let parameter_range = crate::topology_transfer::normalize_occt_curve_range(
                 basis_geometry.solved().ok_or_else(|| {
                     cadmpeg_core::CodecError::NotImplemented(
                         "carrier has no solved geometry".into(),
                     )
                 })?,
-                Some(*parameter_range),
+                Some(source_range),
             )
-            .unwrap_or(*parameter_range);
+            .unwrap_or(source_range);
             transfer.procedural.push((
                 id.clone(),
                 cadmpeg_ir::geometry::curve_payloads::SubsetCurveConstruction::try_new(
@@ -5838,14 +5842,10 @@ fn append_text_curve(
             append_text_curve(basis.curve(), basis_id.clone(), association, transfer)?;
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::try_new(
+                cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::from_admitted_direction(
                     basis_id,
                     *distance,
-                    cadmpeg_ir::geometry::OffsetSide::Direction {
-                        direction: *direction,
-                        support: None,
-                    },
-                    None,
+                    *direction,
                 )
                 .map(|admitted_payload| {
                     ProceduralCurve::new(
@@ -6065,26 +6065,24 @@ fn append_text_surface(
                 association,
                 curve_transfer,
             )?;
-            transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+            let admitted_payload =
+                cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::legacy(
                     directrix_id,
                     None,
                     *direction,
                     None,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Extrusion(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    None,
+                );
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                    ),
+                    ProceduralSurfaceDefinition::Extrusion(admitted_payload),
+                    None,
+                ),
             ));
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
@@ -6105,7 +6103,7 @@ fn append_text_surface(
             )?;
             transfer.procedural.push((
                 id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_from_parts(
                     *axis_origin,
                     *axis_direction,
                 )
@@ -6141,10 +6139,14 @@ fn append_text_surface(
             let basis_parameters = surface_parameter_affine(basis.surface());
             let parameter_ranges = [
                 parameter_ranges[0].map(|value| {
-                    value.mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
+                    value
+                        .get()
+                        .mul_add(basis_parameters.u_scale, basis_parameters.u_offset)
                 }),
                 parameter_ranges[1].map(|value| {
-                    value.mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
+                    value
+                        .get()
+                        .mul_add(basis_parameters.v_scale, basis_parameters.v_offset)
                 }),
             ];
             let basis_id = SurfaceId::compose(
@@ -6193,30 +6195,26 @@ fn append_text_surface(
                 curve_transfer,
                 transfer,
             )?;
-            transfer.procedural.push((
-                id.clone(),
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+            let admitted_payload =
+                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
                     basis_id,
                     *distance,
                     None,
                     None,
                     false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::compose(
-                            &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
-                            id.key().colon(cadmpeg_ir::identity_key!("construction")),
-                        ),
-                        ProceduralSurfaceDefinition::Offset(admitted_payload),
-                        None,
-                    )
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                    None,
+                );
+            transfer.procedural.push((
+                id.clone(),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::compose(
+                        &cadmpeg_ir::identity_namespace!("fcstd", "model", "surface"),
+                        id.key().colon(cadmpeg_ir::identity_key!("construction")),
+                    ),
+                    ProceduralSurfaceDefinition::Offset(admitted_payload),
+                    None,
+                ),
             ));
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
         }
@@ -6886,8 +6884,35 @@ pub(crate) mod tests {
         else {
             panic!("expected trimmed surface")
         };
-        assert_eq!(*parameter_ranges, [[0.0, 1.0], [2.0, 3.0]]);
+        assert_eq!(
+            parameter_ranges.map(|range| range.map(FiniteReal::get)),
+            [[0.0, 1.0], [2.0, 3.0]]
+        );
         assert!(matches!(basis.surface(), TextSurface::Offset { .. }));
+    }
+
+    #[test]
+    fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
+        for curve_text in ["8 0 1 1 0 0 0 1 0 0", "9 2 0 0 1 1 0 0 0 1 0 0"] {
+            let input = text_brep(curve_text, 1, "", 0);
+            let facts = parse_text(input.as_bytes()).expect("recursive curve").0;
+            let wire = serde_json::to_value(&facts.curves[0]).unwrap();
+            let admitted: TextCurve = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        }
+
+        let input = text_brep(
+            "",
+            0,
+            "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
+            3,
+        );
+        let facts = parse_text(input.as_bytes()).expect("recursive surfaces").0;
+        for surface in facts.surfaces {
+            let wire = serde_json::to_value(&surface).unwrap();
+            let admitted: TextSurface = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        }
     }
 
     #[test]
@@ -7395,8 +7420,9 @@ pub(crate) mod tests {
     #[test]
     fn transfers_occt_revolution_surface_parameter_order() {
         let surface = crate::brep::TextSurface::Revolution {
-            axis_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis_direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            axis_origin: FinitePoint3::ZERO,
+            axis_direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))
+                .unwrap(),
             directrix: super::NestedCurve::try_new(crate::brep::TextCurve::Circle {
                 center: FinitePoint3::new(cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0)).unwrap(),
                 axis: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)).unwrap(),
@@ -7692,7 +7718,7 @@ pub(crate) mod tests {
         };
         for _ in 0..wrappers {
             surface = TextSurface::Offset {
-                distance: 1.0,
+                distance: FiniteReal::ONE,
                 basis: super::NestedSurface::try_new(surface)?,
             };
         }
@@ -7707,7 +7733,7 @@ pub(crate) mod tests {
         };
         for _ in 0..wrappers {
             curve = TextCurve::Trimmed {
-                parameter_range: [0.0, 1.0],
+                parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                 basis: super::NestedCurve::try_new(curve)?,
             };
         }
@@ -7732,7 +7758,7 @@ pub(crate) mod tests {
         let curve = nested_trimmed_curve(super::MAX_GEOMETRY_NESTING_DEPTH - 1)
             .expect("the bound is admitted");
         let surface = TextSurface::Extrusion {
-            direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            direction: FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
             directrix: super::NestedCurve::try_new(curve)
                 .expect("the directrix is the last admitted record"),
         };
