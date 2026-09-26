@@ -154,6 +154,20 @@ fn implicit_unit_weights_match_explicit_unit_weights_in_curve_search() {
 }
 
 #[test]
+fn low_degree_second_derivative_basis_borrows_zeros() {
+    use std::borrow::Cow;
+
+    let constant = super::super::bspline_basis_second_derivative(&[], 0, 0, 0.0)
+        .expect("degree-zero second derivative");
+    let linear = super::super::bspline_basis_second_derivative(&[], 1, 0, 0.0)
+        .expect("degree-one second derivative");
+    assert!(matches!(constant, Cow::Borrowed(_)));
+    assert!(matches!(linear, Cow::Borrowed(_)));
+    assert_eq!(constant.as_ref(), &[0.0]);
+    assert_eq!(linear.as_ref(), &[0.0, 0.0]);
+}
+
+#[test]
 fn numerical_followup_periodic_mapping_stays_finite_and_canonical() {
     let curve = NurbsCurve::from_lanes(
         1,

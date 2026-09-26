@@ -12,6 +12,7 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -1418,23 +1419,22 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
         .into()
 }
 
+/// The owned basis has `degree + 1` values, at most the admitted control count.
 fn bspline_basis_second_derivative(
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
-) -> Option<Vec<f64>> {
-    if degree < 2 {
-        return alloc_filled(
-            degree.checked_add(1)?,
-            0.0,
-            "IR B-spline second-derivative basis",
-        )
-        .ok();
+) -> Option<Cow<'static, [f64]>> {
+    if degree == 0 {
+        return Some(Cow::Borrowed(&[0.0]));
+    }
+    if degree == 1 {
+        return Some(Cow::Borrowed(&[0.0, 0.0]));
     }
     let lower = bspline_basis_derivative(knots, degree - 1, span, t)?;
     let lower_start = span - (degree - 1);
-    (0..=degree)
+    let basis = (0..=degree)
         .map(|local| {
             let index = span - degree + local;
             let lower_at = |global: usize| {
@@ -1478,8 +1478,8 @@ fn bspline_basis_second_derivative(
             };
             left - right
         })
-        .collect::<Vec<_>>()
-        .into()
+        .collect::<Vec<_>>();
+    Some(Cow::Owned(basis))
 }
 
 /// Basis derivatives with respect to a local coordinate whose unit is the
@@ -2368,7 +2368,7 @@ fn nurbs_pcurve_differential_with(
             return Ok(point_only(unreached));
         };
         first_basis = scaled.0;
-        second_basis = Some(scaled.1);
+        second_basis = Some(Cow::Owned(scaled.1));
         scale
     };
     let first_sum = sum(&first_basis);
@@ -3511,11 +3511,11 @@ fn nurbs_curve_derivative(
     let mut second_basis = if second {
         bspline_basis_second_derivative(knots, degree, span, t).ok_or(non_finite)?
     } else {
-        Vec::new()
+        Cow::Borrowed(&[][..])
     };
     let scale = if first_basis
         .iter()
-        .chain(&second_basis)
+        .chain(second_basis.iter())
         .all(|value| value.is_finite())
     {
         PositiveReal::ONE
@@ -3538,7 +3538,7 @@ fn nurbs_curve_derivative(
             bspline_basis_scaled_derivatives(knots, degree, span, t, scale).ok_or(non_finite)?;
         first_basis = scaled.0;
         if second {
-            second_basis = scaled.1;
+            second_basis = Cow::Owned(scaled.1);
         }
         scale
     };
