@@ -186,7 +186,7 @@ fn scan_arrays(
     compact_attrs: Option<&HashSet<u16>>,
 ) -> Result<Arrays, cadmpeg_core::CodecError> {
     let mut arrays = Arrays::default();
-    for off in 0..bytes.len().saturating_sub(9) {
+    for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         if bytes.get(off) == Some(&0) {
             let count = usize::from(bytes[off + compact_arr::COUNT]);
             if count > 0 {
@@ -361,7 +361,7 @@ fn scan_curve_descriptors(
     bytes: &[u8],
 ) -> Result<HashMap<u16, CurveDescriptor>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(29) {
+    for off in 0..bytes.len().checked_sub(29).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x88]) {
             continue;
         }
@@ -411,7 +411,7 @@ fn curve_descriptor<'a>(
     attr_at: usize,
     descriptors: &'a HashMap<u16, CurveDescriptor>,
 ) -> Option<&'a CurveDescriptor> {
-    (attr_at + 2..(attr_at + 24).min(bytes.len().saturating_sub(1)))
+    (attr_at + 2..(attr_at + 24).min(bytes.len().checked_sub(1).map_or(0, |end| end)))
         .filter_map(|at| View::u16_be_at(bytes, at))
         .find_map(|reference| descriptors.get(&reference))
 }
@@ -469,7 +469,7 @@ fn multiplicity_sum(values: &[u16]) -> Option<usize> {
 }
 
 fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
-    for off in 0..bytes.len().saturating_sub(9) {
+    for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
@@ -486,7 +486,7 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
 
 fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySpan> {
     let mut spans = Vec::new();
-    for off in 0..bytes.len().saturating_sub(9) {
+    for off in 0..bytes.len().checked_sub(9).map_or(0, |end| end) {
         let Some(p) = array_body(bytes, off, tag) else {
             continue;
         };
@@ -791,7 +791,7 @@ pub(crate) fn scan_curve_carriers(
     let arrays = scan_arrays(ctx, bytes, None)?;
     let descriptors = scan_curve_descriptors(ctx, bytes)?;
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(6) {
+    for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
             continue;
         }
@@ -904,7 +904,7 @@ fn scan_surface_descriptors(
     bytes: &[u8],
 ) -> Result<HashMap<u16, SurfaceDescriptor>, cadmpeg_core::CodecError> {
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(1) {
+    for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         let Some(descriptor) = parse_surface_descriptor(bytes, off) else {
             continue;
         };
@@ -932,6 +932,12 @@ fn surface_knot_arrays<'a>(
     .then_some((&unique[..declared_count], &multiplicities[..declared_count]))
 }
 
+#[derive(PartialEq)]
+struct SurfaceKnotValues {
+    unique: Vec<f64>,
+    multiplicities: Vec<u16>,
+}
+
 fn surface_knot_values(
     ctx: Option<&DecodeContext<'_>>,
     bytes: &[u8],
@@ -939,8 +945,8 @@ fn surface_knot_values(
     knot_attr: u16,
     multiplicity_attr: u16,
     declared_count: usize,
-) -> Result<Option<(Vec<f64>, Vec<u16>)>, cadmpeg_core::CodecError> {
-    let mut resolved = Vec::<(Vec<f64>, Vec<u16>)>::new();
+) -> Result<Option<SurfaceKnotValues>, cadmpeg_core::CodecError> {
+    let mut resolved = Vec::<SurfaceKnotValues>::new();
     let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
     for multiplicities in compact_u16_arrays(ctx, bytes, arrays, multiplicity_attr)? {
         charge_items(ctx, 1, "group Parasolid knot multiplicities")?;
@@ -965,7 +971,10 @@ fn surface_knot_values(
                 multiplicities.len(),
                 "copy Parasolid knot multiplicities",
             )?;
-            let candidate = (unique.to_vec(), multiplicities.to_vec());
+            let candidate = SurfaceKnotValues {
+                unique: unique.to_vec(),
+                multiplicities: multiplicities.to_vec(),
+            };
             if !resolved.contains(&candidate) {
                 charge_items(ctx, 1, "collect Parasolid knot candidates")?;
                 resolved.push(candidate);
@@ -995,7 +1004,7 @@ pub(crate) fn scan_surface_carriers(
         .collect();
     let arrays = scan_arrays(ctx, bytes, Some(&compact_attrs))?;
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(1) {
+    for off in 0..bytes.len().checked_sub(1).map_or(0, |end| end) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
             continue;
         }
@@ -1028,7 +1037,10 @@ pub(crate) fn scan_surface_carriers(
         else {
             continue;
         };
-        let Some((u_unique, u_mult)) = surface_knot_values(
+        let Some(SurfaceKnotValues {
+            unique: u_unique,
+            multiplicities: u_mult,
+        }) = surface_knot_values(
             ctx,
             bytes,
             &arrays,
@@ -1039,7 +1051,10 @@ pub(crate) fn scan_surface_carriers(
         else {
             continue;
         };
-        let Some((v_unique, v_mult)) = surface_knot_values(
+        let Some(SurfaceKnotValues {
+            unique: v_unique,
+            multiplicities: v_mult,
+        }) = surface_knot_values(
             ctx,
             bytes,
             &arrays,

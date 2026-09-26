@@ -115,7 +115,7 @@ fn scan_entities(
     prefixed: bool,
 ) -> Result<Vec<EntityRecord>, cadmpeg_core::CodecError> {
     let mut out = Vec::new();
-    for off in 0..body.len().saturating_sub(25) {
+    for off in 0..body.len().checked_sub(25).map_or(0, |end| end) {
         if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
             continue;
         }

@@ -826,9 +826,8 @@ mod tests {
                 policy.limits.max_collection_items = $cap;
                 let (ctx, _) =
                     DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-                let error = match $route(Some(&ctx), &bytes) {
-                    Err(error) => error,
-                    Ok(_) => panic!("record collection exceeded its limit"),
+                let Err(error) = $route(Some(&ctx), &bytes) else {
+                    panic!("record collection exceeded its limit");
                 };
                 assert!(matches!(error,
                     cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -923,16 +922,15 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = match super::solved_curve(
+        let Err(error) = super::solved_curve(
             Some(&ctx),
             &chart,
             POINTS[0],
             POINTS[2],
             9,
             &mut crate::lane_refusal::LaneRefusals::new(),
-        ) {
-            Err(error) => error,
-            Ok(_) => panic!("curve construction exceeded its limit"),
+        ) else {
+            panic!("curve construction exceeded its limit");
         };
         assert!(
             matches!(error,
@@ -993,9 +991,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = match super::solved_support_uv(Some(&ctx), &parameters, false, Some(&records)) {
-            Err(error) => error,
-            Ok(_) => panic!("six controls exceed five items"),
+        let Err(error) = super::solved_support_uv(Some(&ctx), &parameters, false, Some(&records))
+        else {
+            panic!("six controls exceed five items");
         };
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1019,9 +1017,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 46;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = match scan_intersection_carriers(Some(&ctx), &bytes, &mut Vec::new()) {
-            Err(error) => error,
-            Ok(_) => panic!("carrier insertion exceeds the collection limit"),
+        let Err(error) = scan_intersection_carriers(Some(&ctx), &bytes, &mut Vec::new()) else {
+            panic!("carrier insertion exceeds the collection limit");
         };
         assert!(
             matches!(error,

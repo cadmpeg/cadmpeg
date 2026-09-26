@@ -852,7 +852,7 @@ pub(super) fn scan(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Fact
             }
         }
     }
-    for offset in 0..bytes.len().saturating_sub(2) {
+    for offset in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
         if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
             if let Some(body) = parse_tagged_body(bytes, offset) {
                 if !body_offsets.contains(&body.offset) {
