@@ -235,36 +235,76 @@ fn handle_face_candidates_do_not_reopen_resolved_incidence() {
 
 #[test]
 fn endpoint_degree_closure_selects_optional_second_face() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [0, 0], [0, 1]];
     let allowed = [Vec::new(), vec![1], Vec::new()];
     let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
 
-    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
-        .expect("bounded endpoint closure");
+    let completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![vec![[0, 1], [0, 1], [0, 1]]]);
 }
 
 #[test]
+fn endpoint_degree_closure_refuses_face_degree_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+    catia_test_context!(service_ctx);
+    assert!(repeated_face_endpoint_closures(
+        &service_ctx,
+        &edge_faces,
+        &allowed,
+        &endpoint_pairs,
+        2,
+    )
+    .expect("service budget")
+    .is_some());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+        .expect_err("face degree collection exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "catia missing-edge face degrees"));
+}
+
+#[test]
 fn endpoint_degree_closure_retains_one_face_incidences() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [0, 0], [1, 1], [0, 1]];
     let allowed = [Vec::new(), vec![1], vec![0], Vec::new()];
     let endpoint_pairs = [[0, 1], [1, 2], [1, 2], [2, 0]];
 
-    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
-        .expect("bounded endpoint closure");
+    let completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 2)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
 
     assert_eq!(completed, vec![edge_faces.to_vec()]);
 }
 
 #[test]
 fn endpoint_degree_closure_retains_symmetric_face_swaps() {
+    catia_test_context!(ctx);
     let edge_faces = [[0, 1], [2, 3], [2, 2], [3, 3]];
     let allowed = [Vec::new(), Vec::new(), vec![0, 1], vec![0, 1]];
     let endpoint_pairs = [[0, 1]; 4];
 
-    let mut completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 4)
-        .expect("bounded endpoint closure");
+    let mut completed =
+        repeated_face_endpoint_closures(&ctx, &edge_faces, &allowed, &endpoint_pairs, 4)
+            .expect("service resource budget")
+            .expect("bounded endpoint closure");
     completed.sort();
 
     assert_eq!(

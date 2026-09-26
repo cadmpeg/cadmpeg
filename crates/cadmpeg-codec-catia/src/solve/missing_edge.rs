@@ -17,6 +17,16 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
+fn charge_collection_items(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)
+}
+
 /// Return the counted physical edge rows in their serialized table order.
 ///
 /// Each row retains its table-kind byte, native handle width semantics, and
@@ -600,27 +610,25 @@ fn repeated_edge_face_handle_candidates_from_sets(
         })?;
         ctx.charge_collection_items(handle_count, "catia repeated edge unique handles")?;
         let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
-        let face_count = u64::try_from(face_handles.len()).map_err(|_| {
-            ctx.refuse_codec_limit("catia repeated edge matching faces", u64::MAX, u64::MAX)
-        })?;
-        ctx.charge_collection_items(face_count, "catia repeated edge matching faces")?;
-        let mut matching = face_handles
-            .iter()
-            .enumerate()
-            .filter(|(face, _)| *face != faces[0])
-            .filter_map(|(face, handles)| {
-                let shared = unique_handles
-                    .iter()
-                    .filter(|handle| handles.contains(handle))
-                    .count();
-                let qualifies = if unique_handles.len() >= 4 {
-                    shared >= 3 && shared >= unique_handles.len().div_ceil(2)
-                } else {
-                    shared == unique_handles.len()
-                };
-                qualifies.then_some(face)
-            })
-            .collect::<Vec<_>>();
+        let mut matching = Vec::new();
+        for (face, handles) in face_handles.iter().enumerate() {
+            if face == faces[0] {
+                continue;
+            }
+            let shared = unique_handles
+                .iter()
+                .filter(|handle| handles.contains(handle))
+                .count();
+            let qualifies = if unique_handles.len() >= 4 {
+                shared >= 3 && shared >= unique_handles.len().div_ceil(2)
+            } else {
+                shared == unique_handles.len()
+            };
+            if qualifies {
+                charge_collection_items(ctx, 1, "catia repeated edge matching faces")?;
+                matching.push(face);
+            }
+        }
         if unique_handles.len() >= 4 && matching.len() != 1 {
             matching.clear();
         }
@@ -724,11 +732,12 @@ pub(crate) fn refine_repeated_edge_face_candidates(
 /// Return every assignment found by the bounded search that gives degree two
 /// at every used face vertex.
 pub(crate) fn repeated_face_endpoint_closures(
+    ctx: &DecodeContext<'_>,
     edge_faces: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
     endpoint_pairs: &[[usize; 2]],
     face_count: usize,
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Result<Option<Vec<Vec<[usize; 2]>>>, CodecError> {
     const MAX_STATES: usize = 65_536;
     const MAX_SOLUTIONS: usize = 4_096;
 
@@ -737,37 +746,51 @@ pub(crate) fn repeated_face_endpoint_closures(
         end: Option<(usize, Option<u8>)>,
     }
 
-    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<PairDegreeUndo> {
+    fn add_pair(
+        ctx: &DecodeContext<'_>,
+        degrees: &mut BTreeMap<usize, u8>,
+        pair: [usize; 2],
+    ) -> Result<Option<PairDegreeUndo>, CodecError> {
         let start_add = 1 + u8::from(pair[0] == pair[1]);
-        if degrees
+        let Some(start_degree) = degrees
             .get(&pair[0])
             .copied()
             .unwrap_or_default()
-            .checked_add(start_add)?
-            > 2
-            || (pair[0] != pair[1]
-                && degrees
-                    .get(&pair[1])
-                    .copied()
-                    .unwrap_or_default()
-                    .checked_add(1)?
-                    > 2)
-        {
-            return None;
+            .checked_add(start_add)
+        else {
+            return Ok(None);
+        };
+        let end_degree = if pair[0] == pair[1] {
+            Some(0)
+        } else {
+            degrees
+                .get(&pair[1])
+                .copied()
+                .unwrap_or_default()
+                .checked_add(1)
+        };
+        if start_degree > 2 || end_degree.is_none_or(|degree| degree > 2) {
+            return Ok(None);
         }
         let start_previous = degrees.get(&pair[0]).copied();
+        if start_previous.is_none() {
+            charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+        }
         *degrees.entry(pair[0]).or_default() += start_add;
         let end_previous = if pair[0] == pair[1] {
             None
         } else {
             let previous = degrees.get(&pair[1]).copied();
+            if previous.is_none() {
+                charge_collection_items(ctx, 1, "catia missing-edge point degrees")?;
+            }
             *degrees.entry(pair[1]).or_default() += 1;
             Some((pair[1], previous))
         };
-        Some(PairDegreeUndo {
+        Ok(Some(PairDegreeUndo {
             start: (pair[0], start_previous),
             end: end_previous,
-        })
+        }))
     }
 
     fn remove_pair(degrees: &mut BTreeMap<usize, u8>, undo: &PairDegreeUndo) {
@@ -792,7 +815,8 @@ pub(crate) fn repeated_face_endpoint_closures(
         }
     }
 
-    struct Search<'a> {
+    struct Search<'a, 'b> {
+        ctx: &'a DecodeContext<'b>,
         branches: &'a [(usize, Vec<usize>)],
         owners: &'a [usize],
         endpoint_pairs: &'a [[usize; 2]],
@@ -801,15 +825,18 @@ pub(crate) fn repeated_face_endpoint_closures(
         solutions: Vec<Vec<usize>>,
     }
 
-    impl Search<'_> {
+    impl Search<'_, '_> {
         fn visit(
             &mut self,
             degrees: &mut [BTreeMap<usize, u8>],
             assignment: &mut [usize],
             used: &mut [bool],
-        ) {
+        ) -> Result<(), CodecError> {
+            let _depth = self
+                .ctx
+                .enter_nested("catia missing-edge endpoint closure")?;
             if self.exhausted {
-                return;
+                return Ok(());
             }
             let Some(unassigned_branch) = used.iter().position(|used| !*used) else {
                 if degrees
@@ -819,10 +846,16 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if self.solutions.len() == MAX_SOLUTIONS {
                         self.exhausted = true;
                     } else {
+                        charge_collection_items(
+                            self.ctx,
+                            assignment.len(),
+                            "catia missing-edge solution assignment",
+                        )?;
+                        charge_collection_items(self.ctx, 1, "catia missing-edge solution list")?;
                         self.solutions.push(assignment.to_vec());
                     }
                 }
-                return;
+                return Ok(());
             };
             let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
                 points
@@ -835,15 +868,17 @@ pub(crate) fn repeated_face_endpoint_closures(
                     if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
                         continue;
                     }
-                    choices.extend(
-                        faces
-                            .iter()
-                            .copied()
-                            .filter(|candidate| *candidate == face)
-                            .map(|candidate| (branch, candidate)),
-                    );
+                    for &candidate in faces.iter().filter(|candidate| **candidate == face) {
+                        charge_collection_items(self.ctx, 1, "catia missing-edge search choices")?;
+                        choices.push((branch, candidate));
+                    }
                 }
             } else {
+                charge_collection_items(
+                    self.ctx,
+                    self.branches[unassigned_branch].1.len(),
+                    "catia missing-edge search choices",
+                )?;
                 choices.extend(
                     self.branches[unassigned_branch]
                         .1
@@ -853,16 +888,19 @@ pub(crate) fn repeated_face_endpoint_closures(
                 );
             }
             for (branch, face) in choices {
+                self.ctx
+                    .charge_work(1, "catia missing-edge endpoint closure")?;
                 if self.states >= MAX_STATES {
                     self.exhausted = true;
-                    return;
+                    return Ok(());
                 }
                 self.states += 1;
                 let (edge, _) = &self.branches[branch];
                 let owner = self.owners[branch];
                 let adds_incidence = face != owner;
                 let undo = if adds_incidence {
-                    let Some(undo) = add_pair(&mut degrees[face], self.endpoint_pairs[*edge])
+                    let Some(undo) =
+                        add_pair(self.ctx, &mut degrees[face], self.endpoint_pairs[*edge])?
                     else {
                         continue;
                     };
@@ -872,15 +910,16 @@ pub(crate) fn repeated_face_endpoint_closures(
                 };
                 assignment[branch] = face;
                 used[branch] = true;
-                self.visit(degrees, assignment, used);
+                self.visit(degrees, assignment, used)?;
                 used[branch] = false;
                 if let Some(undo) = undo {
                     remove_pair(&mut degrees[face], &undo);
                 }
                 if self.exhausted {
-                    return;
+                    return Ok(());
                 }
             }
+            Ok(())
         }
     }
 
@@ -892,18 +931,21 @@ pub(crate) fn repeated_face_endpoint_closures(
             .flatten()
             .any(|face| *face >= face_count)
     {
-        return None;
+        return Ok(None);
     }
-    let mut degrees = alloc_filled(
+    let mut degrees = ctx.alloc_filled(
         face_count,
         BTreeMap::<usize, u8>::new(),
         "catia missing-edge face degrees",
-    )
-    .ok()?;
+    )?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
-        add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?;
+        if add_pair(ctx, &mut degrees[faces[0]], endpoint_pairs[edge])?.is_none() {
+            return Ok(None);
+        }
         if faces[1] != faces[0] {
-            add_pair(&mut degrees[faces[1]], endpoint_pairs[edge])?;
+            if add_pair(ctx, &mut degrees[faces[1]], endpoint_pairs[edge])?.is_none() {
+                return Ok(None);
+            }
         }
     }
     let mut branches = Vec::new();
@@ -911,7 +953,16 @@ pub(crate) fn repeated_face_endpoint_closures(
         if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
             continue;
         }
+        charge_collection_items(ctx, 1, "catia missing-edge branch choices")?;
         let mut choices = vec![faces[0]];
+        charge_collection_items(
+            ctx,
+            allowed_faces[edge]
+                .iter()
+                .filter(|face| **face != faces[0])
+                .count(),
+            "catia missing-edge branch choices",
+        )?;
         choices.extend(
             allowed_faces[edge]
                 .iter()
@@ -920,23 +971,28 @@ pub(crate) fn repeated_face_endpoint_closures(
         );
         choices.sort_unstable();
         choices.dedup();
+        charge_collection_items(ctx, 1, "catia missing-edge branches")?;
         branches.push((edge, choices));
     }
     if branches.is_empty() {
-        return Some(
-            degrees
-                .iter()
-                .all(|face| face.values().all(|degree| *degree == 2))
-                .then(|| edge_faces.to_vec())
-                .into_iter()
-                .collect(),
-        );
+        let closed = degrees
+            .iter()
+            .all(|face| face.values().all(|degree| *degree == 2));
+        if closed {
+            charge_collection_items(ctx, edge_faces.len(), "catia missing-edge closed faces")?;
+            charge_collection_items(ctx, 1, "catia missing-edge closed solutions")?;
+        }
+        return Ok(Some(
+            closed.then(|| edge_faces.to_vec()).into_iter().collect(),
+        ));
     }
+    charge_collection_items(ctx, branches.len(), "catia missing-edge branch owners")?;
     let owners = branches
         .iter()
         .map(|(edge, _)| edge_faces[*edge][0])
         .collect::<Vec<_>>();
     let mut search = Search {
+        ctx,
         branches: &branches,
         owners: &owners,
         endpoint_pairs,
@@ -945,13 +1001,21 @@ pub(crate) fn repeated_face_endpoint_closures(
         solutions: Vec::new(),
     };
     let mut assignment =
-        alloc_filled(branches.len(), 0, "catia missing-edge branch assignment").ok()?;
-    let mut used = alloc_filled(branches.len(), false, "catia missing-edge used branches").ok()?;
-    search.visit(&mut degrees, &mut assignment, &mut used);
+        ctx.alloc_filled(branches.len(), 0, "catia missing-edge branch assignment")?;
+    let mut used = ctx.alloc_filled(branches.len(), false, "catia missing-edge used branches")?;
+    search.visit(&mut degrees, &mut assignment, &mut used)?;
     if search.exhausted {
-        return None;
+        return Ok(None);
     }
-    Some(
+    charge_collection_items(
+        ctx,
+        search.solutions.len(),
+        "catia missing-edge completed solutions",
+    )?;
+    for _ in &search.solutions {
+        charge_collection_items(ctx, edge_faces.len(), "catia missing-edge completed faces")?;
+    }
+    Ok(Some(
         search
             .solutions
             .into_iter()
@@ -963,7 +1027,7 @@ pub(crate) fn repeated_face_endpoint_closures(
                 completed
             })
             .collect(),
-    )
+    ))
 }
 
 /// The admitted second faces for one repeated edge incidence slot.

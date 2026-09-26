@@ -4564,7 +4564,7 @@ fn attach_standard_topology(
             &edge_geometries,
         );
         let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
-        let endpoint_closures = has_alternates
+        let endpoint_pairs = has_alternates
             .then(|| {
                 options
                     .iter()
@@ -4575,15 +4575,18 @@ fn attach_standard_topology(
                     })
                     .collect::<Option<Vec<_>>>()
             })
-            .flatten()
-            .and_then(|pairs| {
-                missing_edge::repeated_face_endpoint_closures(
-                    &edge_faces,
-                    &allowed_faces,
-                    &pairs,
-                    face_count,
-                )
-            });
+            .flatten();
+        let endpoint_closures = match endpoint_pairs {
+            Some(pairs) => missing_edge::repeated_face_endpoint_closures(
+                ctx,
+                &edge_faces,
+                &allowed_faces,
+                &pairs,
+                face_count,
+            )
+            .map_err(StandardTopologyError::Resource)?,
+            None => None,
+        };
         let endpoint_completed = endpoint_closures
             .as_deref()
             .and_then(|closures| match closures {
