@@ -12,7 +12,6 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
@@ -289,11 +288,11 @@ fn rational_surface_patches_with_budget(
             if !values.iter().all(|weight| weight.get() > 0.0) {
                 return None;
             }
-            values.into_iter().map(NonZeroReal::get).collect()
+            Some(values.into_iter().map(NonZeroReal::get).collect::<Vec<_>>())
         }
-        None => alloc_filled(control_count, 1.0, "ir_nurbs_surface_weights").ok()?,
+        None => None,
     };
-    let homogeneous_controls = positive_controls(&surface.poles(), &weights)?;
+    let homogeneous_controls = positive_controls(&surface.poles(), weights.as_deref())?;
     // The Bezier spans of every row and column share the knots, so their
     // domains are the intervals between consecutive distinct active knots.
     let u_domains = surface.u_knots().active_spans(u_degree, u_count)?;
@@ -1707,7 +1706,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
         return None;
     }
     let weights = validated_nurbs_curve_weights(curve)?;
-    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?.get();
+    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.values(), point)?.get();
     let poles = curve.control_points();
     let distance = |parameter: FiniteReal| {
         let position = nurbs_curve_point_evaluation(
@@ -1715,7 +1714,11 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            |index| weights.get(index).copied(),
+            |index| {
+                weights
+                    .values()
+                    .and_then(|weights| weights.get(index).copied())
+            },
             parameter,
         )
         .ok()?;
@@ -1732,7 +1735,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
     }
     if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
         curve,
-        weights.as_ref(),
+        weights.values(),
         point,
         tolerance,
         seed,
@@ -1777,7 +1780,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
 
 fn nurbs_curve_parameter_near_point_newton(
     curve: &NurbsCurve,
-    weights: &[f64],
+    weights: Option<&[f64]>,
     point: Point3,
     tolerance: f64,
     seed: FiniteReal,
@@ -1792,7 +1795,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            |index| weights.get(index).copied(),
+            |index| weights.and_then(|weights| weights.get(index).copied()),
             parameter,
         )
         .ok()?;
@@ -1808,7 +1811,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.degree(),
             curve.knots(),
             &poles,
-            Some(weights),
+            weights,
             parameter,
             CurveDerivative::First,
         )
@@ -1832,27 +1835,40 @@ fn nurbs_curve_parameter_near_point_newton(
 /// curve over its effective knot domain.
 pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<FiniteReal> {
     let weights = validated_nurbs_curve_weights(curve)?;
-    nurbs_curve_speed_bound_about(curve, weights.as_ref(), Point3::new(0.0, 0.0, 0.0))
+    nurbs_curve_speed_bound_about(curve, weights.values(), Point3::new(0.0, 0.0, 0.0))
 }
 
-fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'static, [f64]>> {
+enum ValidatedNurbsWeights {
+    Unit,
+    Rational(Vec<f64>),
+}
+
+impl ValidatedNurbsWeights {
+    fn values(&self) -> Option<&[f64]> {
+        match self {
+            Self::Unit => None,
+            Self::Rational(values) => Some(values),
+        }
+    }
+}
+
+fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<ValidatedNurbsWeights> {
     nurbs_curve_parameter_domain(curve)?;
-    let count = curve.pole_count();
-    let weights: Cow<'static, [f64]> = match curve.weights() {
+    let weights = match curve.weights() {
         Some(weights) => {
             if weights.iter().any(|weight| weight.get() <= 0.0) {
                 return None;
             }
-            Cow::Owned(weights.into_iter().map(NonZeroReal::get).collect())
+            ValidatedNurbsWeights::Rational(weights.into_iter().map(NonZeroReal::get).collect())
         }
-        None => Cow::Owned(alloc_filled(count, 1.0, "ir_nurbs_curve_weights").ok()?),
+        None => ValidatedNurbsWeights::Unit,
     };
     Some(weights)
 }
 
 fn nurbs_curve_speed_bound_about(
     curve: &NurbsCurve,
-    weights: &[f64],
+    weights: Option<&[f64]>,
     origin: Point3,
 ) -> Option<FiniteReal> {
     let points = curve
@@ -2429,20 +2445,15 @@ pub fn nurbs_pcurve_contains_point(
     {
         return None;
     }
-    let owned_weights;
     let weights = match weights {
-        Some(weights) if weights.len() == count => weights,
+        Some(weights) if weights.len() == count => Some(weights),
         Some(_) => return None,
-        None => {
-            owned_weights = alloc_filled(count, 1.0, "ir_nurbs_pcurve_weights").ok()?;
-            &owned_weights
-        }
+        None => None,
     };
-    if control_points
-        .iter()
-        .zip(weights)
-        .any(|(control, weight)| !control.is_finite() || !weight.is_finite() || *weight <= 0.0)
-        || knots.iter().any(|knot| !knot.is_finite())
+    if control_points.iter().enumerate().any(|(index, control)| {
+        !control.is_finite()
+            || weights.is_some_and(|weights| !weights[index].is_finite() || weights[index] <= 0.0)
+    }) || knots.iter().any(|knot| !knot.is_finite())
         || !knots_nondecreasing(knots)
     {
         return None;
@@ -2469,9 +2480,8 @@ pub fn nurbs_pcurve_contains_point(
             return None;
         }
         let middle = start.midpoint(end);
-        let curve_uv = Point2::from(
-            nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle).ok()?,
-        );
+        let curve_uv =
+            Point2::from(nurbs_pcurve_uv(degree, knots, control_points, weights, middle).ok()?);
         let distance = (curve_uv.u - point.u).hypot(curve_uv.v - point.v);
         if distance <= tolerance {
             return Some(true);
