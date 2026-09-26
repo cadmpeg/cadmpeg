@@ -103,6 +103,10 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
 
 #[test]
 fn revolution_isocurve_keeps_its_native_trim_range() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let angular_range = [0.0, std::f64::consts::TAU];
     let graph = B5Graph {
         complete: true,
@@ -211,11 +215,13 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
         )))
     ));
     let plan = build_plan(
+        &ctx,
         &graph,
         &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
             .expect("identity grammar"),
         &mut crate::nurbs::LaneRefusals::new(),
     )
+    .expect("service decode")
     .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
     assert_eq!(curve.parameter_range, Some(angular_range));
@@ -1000,6 +1006,10 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
 
 #[test]
 fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("service decode context");
     let chart_scale = 8.0;
     let parameter_range = [0.0, 4.0 * std::f64::consts::PI];
     let graph = B5Graph {
@@ -1088,12 +1098,24 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
     let payload = UnknownId::mint("catia:test:unknown#catia:test-payload".to_string())
         .expect("identity grammar");
 
-    assert!(ownership_plan(&graph).is_some());
+    assert!(ownership_plan(&ctx, &graph)
+        .expect("service decode")
+        .is_some());
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
     let senses = graph.loops[&3].edge_senses();
-    assert!(orient_loop_members(&graph, BTreeMap::from([(3, senses)])).is_some());
-    let plan = build_plan(&graph, &payload, &mut crate::nurbs::LaneRefusals::new())
-        .expect("complete owned graph");
+    assert!(
+        orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
+            .expect("service decode")
+            .is_some()
+    );
+    let plan = build_plan(
+        &ctx,
+        &graph,
+        &payload,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service decode")
+    .expect("complete owned graph");
 
     assert_eq!(
         plan.pcurve_plan.get(&4),
