@@ -1125,16 +1125,20 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         false,
     )
     .expect("valid revolution profile");
-    assert!(revolve_nurbs(
-        &profile,
-        [0.0; 3],
-        [0.0, 0.0, 1.0],
-        [0.0, 1.0e300],
-        [0.0, 1.0],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| revolve_nurbs(
+            ctx,
+            &profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [0.0, 1.0e300],
+            [0.0, 1.0],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
     let mut wide_knots = vec![0.0; 123];
     wide_knots.extend([1.0, 1.0]);
     let wide_profile = NurbsCurve::from_lanes(
@@ -1145,16 +1149,20 @@ fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         false,
     )
     .expect("valid wide revolution profile");
-    assert!(revolve_nurbs(
-        &wide_profile,
-        [0.0; 3],
-        [0.0, 0.0, 1.0],
-        [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
-        [0.0, 1.0],
-        &"test record",
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
-    .is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| revolve_nurbs(
+            ctx,
+            &wide_profile,
+            [0.0; 3],
+            [0.0, 0.0, 1.0],
+            [0.0, 4096.0 * std::f64::consts::FRAC_PI_2],
+            [0.0, 1.0],
+            &"test record",
+            &mut crate::nurbs::LaneRefusals::new(),
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]

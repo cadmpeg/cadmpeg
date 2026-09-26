@@ -3178,36 +3178,39 @@ pub(super) fn standard_object_evidence_from_streams(
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
             };
-            let evidence = targeted_graph
-                .as_ref()
-                .and_then(|graph| standard_surface_evidence(graph, surface_id, refusal))
-                .or_else(|| {
-                    targeted_graph
-                        .as_ref()
-                        .and_then(|graph| {
-                            crate::families::b5::transfer::resolved_surface_carrier_in_graph(
-                                graph, surface_id, refusal,
-                            )
-                        })
-                        .or_else(|| {
-                            crate::families::b5::transfer::resolved_surface_carrier(surface)
-                        })
-                        .map(|carrier| match carrier {
-                            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
-                                geometry,
-                            ) => StandardSurfaceEvidence::Geometry(geometry),
-                            crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+            let graph_evidence = match targeted_graph.as_ref() {
+                Some(graph) => standard_surface_evidence(ctx, graph, surface_id, refusal)?,
+                None => None,
+            };
+            let evidence = if graph_evidence.is_some() {
+                graph_evidence
+            } else {
+                let graph_carrier = match targeted_graph.as_ref() {
+                    Some(graph) => {
+                        crate::families::b5::transfer::resolved_surface_carrier_in_graph(
+                            ctx, graph, surface_id, refusal,
+                        )?
+                    }
+                    None => None,
+                };
+                graph_carrier
+                    .or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface))
+                    .map(|carrier| match carrier {
+                        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                            geometry,
+                        ) => StandardSurfaceEvidence::Geometry(geometry),
+                        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                            carrier_object_id,
+                            definition,
+                        } => StandardSurfaceEvidence::Procedure(
+                            StandardSurfaceProcedure::RollingBall {
                                 carrier_object_id,
-                                definition,
-                            } => StandardSurfaceEvidence::Procedure(
-                                StandardSurfaceProcedure::RollingBall {
-                                    carrier_object_id,
-                                    definition: *definition,
-                                    source: StandardRollingBallSource::ObjectStreamA8,
-                                },
-                            ),
-                        })
-                });
+                                definition: *definition,
+                                source: StandardRollingBallSource::ObjectStreamA8,
+                            },
+                        ),
+                    })
+            };
             let Some(evidence) = evidence else {
                 continue;
             };
@@ -3219,7 +3222,8 @@ pub(super) fn standard_object_evidence_from_streams(
                 if surface_candidates.contains_key(&object_id) {
                     continue;
                 }
-                let Some(evidence) = standard_surface_evidence(graph, surface_id, refusal) else {
+                let Some(evidence) = standard_surface_evidence(ctx, graph, surface_id, refusal)?
+                else {
                     continue;
                 };
                 merge_standard_procedure_supports(&mut support_candidates, &evidence);
@@ -3264,16 +3268,23 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         );
         for (edge, references) in edge_pcurves {
-            let sides = references.map(|reference| {
-                let pcurve = pcurves.get(&reference)?.as_ref()?;
+            let sides = references.map(|reference| -> Result<_, cadmpeg_core::CodecError> {
+                let Some(pcurve) = pcurves.get(&reference).and_then(Option::as_ref) else {
+                    return Ok(None);
+                };
+                let Some(surface) = targeted_surfaces.get(&pcurve.support_id) else {
+                    return Ok(None);
+                };
                 crate::families::b5::transfer::resolved_object_stream_pcurve(
+                    ctx,
                     pcurve,
-                    targeted_surfaces.get(&pcurve.support_id)?,
+                    surface,
                     targeted_graph.as_ref(),
                     refusal,
                 )
             });
-            let [Some(first), Some(second)] = sides else {
+            let [left, right] = sides;
+            let [Some(first), Some(second)] = [left?, right?] else {
                 continue;
             };
             if first.parameter_range != second.parameter_range {
@@ -3312,7 +3323,8 @@ pub(super) fn standard_object_evidence_from_streams(
             continue;
         };
         for &surface_id in tags {
-            let Some(evidence) = standard_surface_evidence(&graph, surface_id, refusal) else {
+            let Some(evidence) = standard_surface_evidence(ctx, &graph, surface_id, refusal)?
+            else {
                 continue;
             };
             merge_standard_procedure_supports(&mut support_candidates, &evidence);
@@ -3322,7 +3334,7 @@ pub(super) fn standard_object_evidence_from_streams(
             .iter()
             .filter(|(face_id, _)| tags.contains(face_id))
         {
-            let evidence = standard_surface_evidence(&graph, surface_id, refusal);
+            let evidence = standard_surface_evidence(ctx, &graph, surface_id, refusal)?;
             let Some(evidence) = evidence else { continue };
             merge_standard_procedure_supports(&mut support_candidates, &evidence);
             merge_standard_surface_evidence(&mut surface_candidates, face_id, evidence);
@@ -3396,48 +3408,43 @@ pub(super) fn standard_object_evidence_from_streams(
 }
 
 fn standard_surface_evidence(
+    ctx: &DecodeContext<'_>,
     graph: &crate::families::b5::graph::B5Graph,
     surface_id: u32,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<StandardSurfaceEvidence> {
+) -> Result<Option<StandardSurfaceEvidence>, cadmpeg_core::CodecError> {
     let geometry =
-        crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id, refusal);
-    let procedure =
-        crate::families::b5::transfer::resolved_offset_surface(graph, surface_id, refusal)
-            .map(|offset| StandardSurfaceProcedure::Offset {
-                carrier_object_id: offset.carrier_object_id,
-                support_object_id: offset.support_object_id,
-                support: offset.support,
-                distance: offset.distance,
-                parameter_bounds: offset.parameter_bounds,
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_extrusion_surface(
-                    graph, surface_id, refusal,
-                )
-                .map(Box::new)
-                .map(StandardSurfaceProcedure::Extrusion)
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_surface_procedural_definition(
-                    graph, surface_id, refusal,
-                )
-                .map(|(carrier_object_id, definition)| {
-                    StandardSurfaceProcedure::RollingBall {
-                        carrier_object_id,
-                        definition,
-                        source: StandardRollingBallSource::ObjectStreamA8,
-                    }
-                })
-            })
-            .or_else(|| {
-                crate::families::b5::transfer::resolved_revolution_surface(
-                    graph, surface_id, refusal,
-                )
-                .map(Box::new)
-                .map(StandardSurfaceProcedure::Revolution)
-            });
-    StandardSurfaceEvidence::from_parts(geometry, procedure)
+        crate::families::b5::transfer::resolved_surface_geometry(ctx, graph, surface_id, refusal)?;
+    let procedure = if let Some(offset) =
+        crate::families::b5::transfer::resolved_offset_surface(ctx, graph, surface_id, refusal)?
+    {
+        Some(StandardSurfaceProcedure::Offset {
+            carrier_object_id: offset.carrier_object_id,
+            support_object_id: offset.support_object_id,
+            support: offset.support,
+            distance: offset.distance,
+            parameter_bounds: offset.parameter_bounds,
+        })
+    } else if let Some(extrusion) =
+        crate::families::b5::transfer::resolved_extrusion_surface(ctx, graph, surface_id, refusal)?
+    {
+        Some(StandardSurfaceProcedure::Extrusion(Box::new(extrusion)))
+    } else if let Some((carrier_object_id, definition)) =
+        crate::families::b5::transfer::resolved_surface_procedural_definition(
+            ctx, graph, surface_id, refusal,
+        )?
+    {
+        Some(StandardSurfaceProcedure::RollingBall {
+            carrier_object_id,
+            definition,
+            source: StandardRollingBallSource::ObjectStreamA8,
+        })
+    } else {
+        crate::families::b5::transfer::resolved_revolution_surface(ctx, graph, surface_id, refusal)?
+            .map(Box::new)
+            .map(StandardSurfaceProcedure::Revolution)
+    };
+    Ok(StandardSurfaceEvidence::from_parts(geometry, procedure))
 }
 
 fn merge_standard_surface_evidence(
