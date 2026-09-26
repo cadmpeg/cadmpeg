@@ -418,7 +418,7 @@ native_record! {
     /// Solved B-rep coedge carrying the tolerant interval.
     coedge: cadmpeg_ir::ids::CoedgeId,
     /// Native start and end parameters following the base coedge fields.
-    parameter_range: [f64; 2],
+    parameter_range: cadmpeg_ir::units::FiniteVector<2>,
     /// Release-selected fixed fields following the parameter interval.
     extension: crate::brep::records::TolerantCoedgeExtension [serde(default)],
 }
@@ -453,7 +453,7 @@ pub enum TolerantCoedgeExtension {
         payload_token_count: u32,
         /// Optional parameter interval following the embedded subtype.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
-        parameter_range: Option<[f64; 2]>,
+        parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
     },
 }
 
@@ -601,7 +601,7 @@ native_record! {
 
 #[cfg(test)]
 mod tests {
-    use super::{EndpointSlot, TolerantVertexTail, WireMembers};
+    use super::{EndpointSlot, TolerantCoedgeParameters, TolerantVertexTail, WireMembers};
     use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
 
@@ -629,6 +629,32 @@ mod tests {
         );
         let error = TolerantVertexTail::deserialize(wire).unwrap_err();
         assert!(error.to_string().contains("FiniteReal must be finite"));
+    }
+
+    #[test]
+    fn tolerant_coedge_interval_json_refuses_nonfinite_endpoints() {
+        use serde_value::Value;
+
+        let json = serde_json::json!({
+            "id": "f3d:asm:tolerant-coedge-parameters#1",
+            "record_index": 1,
+            "coedge": "f3d:brep:entity#1",
+            "parameter_range": [-1.0, 2.0],
+            "extension": {"layout": "none"},
+        });
+        let parameters: TolerantCoedgeParameters = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parameters).unwrap(), json);
+
+        let mut wire = serde_value::to_value(&parameters).unwrap();
+        let Value::Map(ref mut members) = wire else {
+            panic!("native record wire must be a map");
+        };
+        members.insert(
+            Value::String("parameter_range".into()),
+            Value::Seq(vec![Value::F64(f64::INFINITY), Value::F64(2.0)]),
+        );
+        let error = TolerantCoedgeParameters::deserialize(wire).unwrap_err();
+        assert!(error.to_string().contains("finite"));
     }
 
     fn assert_empty_slot_refuses_extra_keys<T>(arena: &str, field: &str, record: &serde_json::Value)
