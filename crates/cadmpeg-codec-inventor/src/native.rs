@@ -5,12 +5,41 @@ pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use serde::{de::Error as _, Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
+
+fn retained_copy(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let len = u64::try_from(value.len()).map_err(|_| {
+        ctx.refuse_codec_limit("Inventor native string length", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_retained(len, operation)?;
+    Ok(value.to_owned())
+}
+
+fn retained_digest(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(64, operation)?;
+    ctx.charge_work(
+        u64::try_from(bytes.len()).map_err(|_| {
+            ctx.refuse_codec_limit("Inventor native digest work", u64::MAX - 1, u64::MAX)
+        })?,
+        "hash Inventor native record bytes",
+    )?;
+    Ok(cadmpeg_ir::hash::sha256_hex(bytes))
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -1402,6 +1431,50 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
 }
 
 impl ActiveCarrierRecord {
+    pub(crate) fn from_state(
+        ctx: &DecodeContext<'_>,
+        state: &crate::kernel::ActiveCarrierState<'_>,
+    ) -> Result<Self, CodecError> {
+        let id = retained_copy(
+            ctx,
+            "inventor:kernel:active-carrier#root",
+            "retain Inventor active carrier id",
+        )?;
+        Ok(match state {
+            crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
+            crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
+                id,
+                detail: retained_copy(ctx, detail, "retain Inventor active carrier issue")?,
+            },
+            crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
+                id,
+                segment_token: retained_copy(
+                    ctx,
+                    carrier.segment_token.as_str(),
+                    "retain Inventor active carrier segment token",
+                )?,
+                record_ordinal: carrier.record_ordinal,
+                segment_version_major: carrier.segment_version_major,
+                family: carrier.family,
+                header_state: carrier.header_state,
+                header_kind: carrier.header_kind,
+                header_value: carrier.header_value,
+                schema: carrier.schema,
+                carrier_len: carrier.carrier_len,
+                carrier_offset: carrier.carrier_offset,
+                carrier_sha256: retained_digest(
+                    ctx,
+                    carrier.bytes.window(),
+                    "retain Inventor active carrier digest",
+                )?,
+                selected_key: carrier.selected_key,
+                enabled: carrier.enabled,
+                delta_state: carrier.delta_state,
+                history_reference: carrier.history_reference,
+            },
+        })
+    }
+
     pub(crate) fn read(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
         let [record] = <[_; 1]>::try_from(namespace.arena_as::<Self>("active_carrier")?).map_err(
             |records: Vec<_>| {
