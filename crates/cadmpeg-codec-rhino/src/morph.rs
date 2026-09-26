@@ -223,6 +223,7 @@ fn optional_localizer<T>(
 }
 
 fn localizer(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
@@ -243,10 +244,10 @@ fn localizer(
     let offset = value.position();
     let interval = scale_interval(interval(&mut value)?.0.get(), scale, offset)?;
     let curve = optional_localizer(data, &mut value, archive, "curve", |child| {
-        crate::surfaces::read_nurbs_curve(child, scale)
+        crate::surfaces::read_nurbs_curve(ctx, child, scale)
     })?;
     let surface = optional_localizer(data, &mut value, archive, "surface", |child| {
-        crate::surfaces::read_nurbs_surface(child, scale)
+        crate::surfaces::read_nurbs_surface(ctx, child, scale)
     })?;
     value.skip_remaining()?;
     reader.skip(next - reader.position())?;
@@ -348,18 +349,18 @@ pub(crate) fn decode(
     let control = match outer.i32()? {
         1 => Control::Curve {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_curve(reader, scale)
+                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_curve(reader, scale)
+                crate::surfaces::read_nurbs_curve(expand.ctx(), reader, scale)
             })?,
         },
         2 => Control::Surface {
             start: control_child(data, &mut outer, archive, "morph start control", |reader| {
-                crate::surfaces::read_nurbs_surface(reader, scale)
+                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
             })?,
             end: control_child(data, &mut outer, archive, "morph end control", |reader| {
-                crate::surfaces::read_nurbs_surface(reader, scale)
+                crate::surfaces::read_nurbs_surface(expand.ctx(), reader, scale)
             })?,
         },
         3 => Control::Cage {
@@ -399,7 +400,7 @@ pub(crate) fn decode(
     let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
     let mut localizers = Vec::new();
     for _ in 0..localizer_count {
-        localizers.push(localizer(data, &mut list, scale, archive)?);
+        localizers.push(localizer(expand.ctx(), data, &mut list, scale, archive)?);
     }
     list.skip_remaining()?;
     outer.skip(list_next - outer.position())?;
@@ -870,7 +871,13 @@ mod tests {
             payload.extend(anonymous(1, 0, &surface_payload));
             let bytes = anonymous(1, 0, &payload);
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
+            let arena = cadmpeg_core::decode::DecodeArena::new();
+            let policy = cadmpeg_core::decode::DecodePolicy::service();
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                    .expect("localizer fixture fits service profile");
             let value = localizer(
+                &ctx,
                 &bytes,
                 &mut reader,
                 MillimeterScale::IDENTITY,

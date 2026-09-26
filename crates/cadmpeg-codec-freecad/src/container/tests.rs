@@ -46,7 +46,8 @@ fn x62_xml_tree_items_are_admitted_before_allocation() {
         .inspect(&mut Cursor::new(&bytes), &options)
         .expect("service profile admits the XML tree");
 
-    options.limits.max_collection_items = 1;
+    // The ZIP snapshot and FCStd entry table admit six items before the XML tree.
+    options.limits.max_collection_items = 6;
     let error = FcstdCodec
         .inspect(&mut Cursor::new(&bytes), &options)
         .expect_err("XML nodes must be charged before parsing the tree");

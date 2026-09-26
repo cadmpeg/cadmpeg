@@ -97,6 +97,8 @@ pub(crate) enum SubdError {
     /// The bounded payload is malformed by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
+    /// A checksum range allocation was refused.
+    Resource(cadmpeg_core::decode::ResourceLimit),
 }
 
 impl fmt::Display for SubdError {
@@ -107,6 +109,7 @@ impl fmt::Display for SubdError {
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
             Self::Unpositioned { message } => formatter.write_str(message),
+            Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
         }
     }
 }
@@ -117,6 +120,7 @@ impl From<FramingError> for SubdError {
     fn from(value: FramingError) -> Self {
         let message = value.to_string();
         match value {
+            FramingError::Resource(limit) => Self::Resource(limit),
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }

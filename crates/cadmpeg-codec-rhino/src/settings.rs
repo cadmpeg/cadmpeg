@@ -5,7 +5,8 @@ use crate::loss::Diagnostics;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveAngle, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::FiniteVector;
 use serde::Serialize;
@@ -853,6 +854,7 @@ fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
 }
 
 fn parse_layer_extensions(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     descriptor: &ClassUserdata,
     archive: ArchiveVersion,
@@ -889,7 +891,41 @@ fn parse_layer_extensions(
         outer_reader.position(),
     )?;
     let parent_is_nil = parent_id.is_none_or(Uuid::is_nil);
-    let mut values = Vec::with_capacity(count);
+    let count_u64 = u64::try_from(count).map_err(|_| FramingError::Overflow {
+        offset: outer_reader.position(),
+    })?;
+    ctx.charge_collection_items(count_u64, "Rhino layer extension entries")
+        .map_err(|error| match error {
+            CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            other => FramingError::structural(outer_reader.position(), other.to_string()),
+        })?;
+    let retained_bytes = count_u64
+        .checked_mul(
+            u64::try_from(std::mem::size_of::<LayerPerViewportSettings>()).map_err(|_| {
+                FramingError::Overflow {
+                    offset: outer_reader.position(),
+                }
+            })?,
+        )
+        .ok_or(FramingError::Overflow {
+            offset: outer_reader.position(),
+        })?;
+    ctx.charge_retained(retained_bytes, "Rhino layer extension capacity")
+        .map_err(|error| match error {
+            CodecError::ResourceLimit(limit) => FramingError::Resource(limit),
+            other => FramingError::structural(outer_reader.position(), other.to_string()),
+        })?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| {
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
+            limit: ctx.policy().limits.max_retained_bytes,
+            used: 0,
+            additional: retained_bytes,
+            operation: "Rhino layer extension capacity",
+        })
+    })?;
     for _ in 0..count {
         let entry = chunk_at(
             data,
@@ -2035,6 +2071,7 @@ fn checksum_warning_excluding(
 }
 
 fn parse_layer(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -2174,6 +2211,7 @@ fn parse_layer(
             })
     {
         match parse_layer_extensions(
+            ctx,
             data,
             descriptor,
             archive,
@@ -2284,11 +2322,12 @@ fn parse_layer(
 
 /// Decodes all metadata records while preserving scan framing.
 pub(crate) fn parse_metadata(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     archive: ArchiveVersion,
     tables: &[Table],
     warnings: &mut Diagnostics,
-) -> DocumentMetadata {
+) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
     let mut ids = BTreeSet::new();
     let mut property_singletons = BTreeSet::new();
@@ -2357,6 +2396,7 @@ pub(crate) fn parse_metadata(
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(
+                    ctx,
                     data,
                     record,
                     archive,
@@ -2410,6 +2450,9 @@ pub(crate) fn parse_metadata(
                 }
             }
             if let Err(error) = result {
+                if let FramingError::Resource(limit) = error {
+                    return Err(CodecError::ResourceLimit(limit));
+                }
                 if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
                     && (table_type != LAYER || record.typecode == LAYER_RECORD)
                 {
@@ -2441,7 +2484,7 @@ pub(crate) fn parse_metadata(
     }
     metadata.opaque_records = opaque_records;
     report_layer_parent_references(&metadata.layers, warnings);
-    metadata
+    Ok(metadata)
 }
 
 fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnostics) {

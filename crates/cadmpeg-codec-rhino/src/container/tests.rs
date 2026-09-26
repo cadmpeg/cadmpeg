@@ -16,6 +16,22 @@ use crate::test_support::test_dump::{
 };
 use crate::RhinoCodec;
 
+fn checksum_warning(
+    data: &[u8],
+    typecode: u32,
+    offset: usize,
+    parent_end: usize,
+    archive: ArchiveVersion,
+) -> Result<Option<String>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    super::checksum_warning(&ctx, data, typecode, offset, parent_end, archive)
+}
+
 #[test]
 fn document_table_record_budget_rejects_compact_record_amplification() {
     let archive = ArchiveVersion::V5;
@@ -456,8 +472,41 @@ fn counted_view_list_crc_excludes_nested_children() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
             .expect("view-list checksum framing"),
+        None
+    );
+}
+
+#[test]
+fn named_view_checksum_ranges_refuse_materialized_limit_before_copy() {
+    let archive = ArchiveVersion::V5;
+    let child = crc_chunk(archive, 0x2000_813b, &[1, 2, 3]);
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    let child_range = 4..4 + child.len();
+    body.extend(child);
+    let record = crc_chunk_excluding(
+        archive,
+        0x2000_8035,
+        &body,
+        std::slice::from_ref(&child_range),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 15;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &policy)
+        .expect("record fits service input limit");
+    let refusal = super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
+        .expect_err("one range exceeds the materialized limit");
+    assert!(matches!(refusal, CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&record, &arena, &service)
+        .expect("record fits service input limit");
+    assert_eq!(
+        super::checksum_warning(&ctx, &record, 0x2000_8035, 0, record.len(), archive)
+            .expect("service admits checksum ranges"),
         None
     );
 }
@@ -468,7 +517,7 @@ fn negative_view_list_count_is_reported_by_checksum_warning() {
     let body = (-1_i32).to_le_bytes();
     let record = crc_chunk(archive, 0x2000_8035, &body);
 
-    let warning = super::checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
+    let warning = checksum_warning(&record, 0x2000_8035, 0, record.len(), archive)
         .expect("negative view-list checksum framing");
     let warning = warning.expect("negative child count must remain observable");
     assert!(warning.contains("checksum child framing"));
@@ -488,7 +537,7 @@ fn mesh_settings_crc_excludes_nested_subd_display_chunk() {
         let record =
             crc_chunk_excluding(archive, typecode, &body, std::slice::from_ref(&child_range));
         assert_eq!(
-            super::checksum_warning(&record, typecode, 0, record.len(), archive)
+            checksum_warning(&record, typecode, 0, record.len(), archive)
                 .expect("mesh-settings checksum framing"),
             None
         );
@@ -509,7 +558,7 @@ fn modern_render_settings_crc_excludes_anonymous_body() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
             .expect("render-settings checksum framing"),
         None
     );
@@ -544,7 +593,7 @@ fn compressed_preview_crc_excludes_deflate_child() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
             .expect("compressed-preview checksum framing"),
         None
     );
@@ -583,7 +632,7 @@ fn compressed_preview_crc_tracks_noncontiguous_palette_and_image_buffers() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8025, 0, record.len(), archive)
             .expect("non-contiguous preview checksum framing"),
         None
     );
@@ -597,7 +646,7 @@ fn legacy_render_settings_crc_covers_direct_body() {
     let record = crc_chunk(archive, 0x2000_803d, &body);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_803d, 0, record.len(), archive)
             .expect("legacy render-settings checksum framing"),
         None
     );
@@ -639,7 +688,7 @@ fn settings_attributes_crc_excludes_all_nested_children() {
     let record = crc_chunk_excluding(archive, 0x2000_8134, &body, &children);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8134, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8134, 0, record.len(), archive)
             .expect("settings-attributes checksum framing"),
         None
     );
@@ -663,7 +712,7 @@ fn plugin_list_crc_excludes_plugin_reference_chunks() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8135, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8135, 0, record.len(), archive)
             .expect("plugin-list checksum framing"),
         None
     );
@@ -715,7 +764,7 @@ fn render_userdata_crc_excludes_userdata_and_class_end_chunks() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8136, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8136, 0, record.len(), archive)
             .expect("render-settings userdata checksum framing"),
         None
     );
@@ -737,7 +786,7 @@ fn user_table_uuid_crc_excludes_record_header() {
     );
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
             .expect("user-table UUID checksum framing"),
         None
     );
@@ -751,7 +800,7 @@ fn user_table_uuid_crc_covers_uuid_without_record_header() {
     let record = crc_chunk(archive, 0x2000_8080, &body);
 
     assert_eq!(
-        super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+        checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
             .expect("user-table UUID checksum framing"),
         None
     );
@@ -765,14 +814,14 @@ fn user_table_uuid_direct_suffixes_are_checked_without_child_headers() {
             body.extend(std::iter::repeat_n(0xbe, suffix_len));
             let mut record = crc_chunk(archive, 0x2000_8080, &body);
             assert_eq!(
-                super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+                checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
                     .expect("bounded direct suffix"),
                 None,
                 "archive={archive:?} suffix_len={suffix_len}"
             );
             let last = record.len() - 1;
             record[last] ^= 1;
-            let warning = super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+            let warning = checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
                 .expect("bounded checksum mismatch")
                 .expect("direct bytes must remain covered by the checksum");
             assert!(warning.starts_with("CRC mismatch"), "{warning}");
@@ -796,7 +845,7 @@ fn user_table_uuid_known_child_header_cannot_be_discarded_after_framing_failure(
             ]
             .concat();
             let record = crc_chunk(archive, 0x2000_8080, &body);
-            let warning = super::checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
+            let warning = checksum_warning(&record, 0x2000_8080, 0, record.len(), archive)
                 .expect("outer boundary remains recoverable")
                 .expect("recognized child framing failure must remain visible");
             assert!(warning.starts_with("checksum child framing"), "{warning}");

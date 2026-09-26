@@ -424,6 +424,7 @@ dependencies = [
 name = "cadmpeg-protein"
 version = "0.6.0"
 dependencies = [
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "flate2",

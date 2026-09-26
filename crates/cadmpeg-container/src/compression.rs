@@ -120,6 +120,11 @@ fn inflate_deflate_writer<'ctx, 'a>(
         }
         writer.write(&chunk[..read])?;
     }
+    if decoder.total_in() != source.window().len() as u64 {
+        return Err(CodecError::Malformed(
+            "raw-DEFLATE member does not exhaust its declared input".into(),
+        ));
+    }
     Ok(writer)
 }
 
@@ -296,6 +301,23 @@ mod tests {
                 .window(),
             b"Document.xml"
         );
+    }
+
+    #[test]
+    fn raw_deflate_helper_rejects_trailing_declared_bytes() {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(b"one member").expect("write test member");
+        let mut compressed = encoder.finish().expect("finish test member");
+        compressed.extend_from_slice(b"suffix");
+        let arena = DecodeArena::new();
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&compressed, &arena, &DecodePolicy::service())
+                .expect("test input fits service profile");
+        assert!(matches!(
+            inflate_deflate(&ctx, root, ExpandSpec::Exact(10)),
+            Err(CodecError::Malformed(message))
+                if message == "raw-DEFLATE member does not exhaust its declared input"
+        ));
     }
 
     #[test]

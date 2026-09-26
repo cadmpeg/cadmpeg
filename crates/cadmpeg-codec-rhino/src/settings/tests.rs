@@ -11,6 +11,39 @@ use crate::test_support::test_dump::{
 };
 use crate::wire::Uuid;
 
+fn parse_test_metadata(
+    data: &[u8],
+    archive: ArchiveVersion,
+    tables: &[crate::container::Table],
+    warnings: &mut Diagnostics,
+) -> settings::DocumentMetadata {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        data,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test input fits the service profile");
+    settings::parse_metadata(&ctx, data, archive, tables, warnings)
+        .expect("test metadata fits the service profile")
+}
+
+fn parse_test_extensions(
+    payload: &[u8],
+    descriptor: &ClassUserdata,
+    archive: ArchiveVersion,
+    parent_id: Option<Uuid>,
+) -> Result<Vec<settings::LayerPerViewportSettings>, crate::chunks::FramingError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test input fits the service profile");
+    settings::parse_layer_extensions(&ctx, payload, descriptor, archive, parent_id)
+}
+
 /// Header and checksum bytes surrounding a fixture table body.
 const TABLE_FRAMING: usize = 8;
 
@@ -590,7 +623,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
     let (data, record) = metadata_record(0x2000_8027, name);
     let table = metadata_table(0x1000_0014, data.len(), vec![record]);
     let mut warnings = Diagnostics::new();
-    let metadata = settings::parse_metadata(&data, ArchiveVersion::V5, &[table], &mut warnings);
+    let metadata = parse_test_metadata(&data, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
     assert!(warnings.is_empty());
 
@@ -599,7 +632,7 @@ fn decodes_as_file_name_as_utf16_and_skips_fixed_trailing_bytes() {
     let (trailing, record) = metadata_record(0x2000_8027, trailing);
     let table = metadata_table(0x1000_0014, trailing.len(), vec![record]);
     let mut warnings = Diagnostics::new();
-    let metadata = settings::parse_metadata(&trailing, ArchiveVersion::V5, &[table], &mut warnings);
+    let metadata = parse_test_metadata(&trailing, ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.properties.as_file_name.as_deref(), Some("X"));
     assert!(warnings.is_empty());
 }
@@ -726,7 +759,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert_eq!(userdata.len(), 2);
     let table = metadata_table(0x1000_0011, data.len(), vec![record]);
     let mut warnings = Diagnostics::new();
-    let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
+    let metadata = parse_test_metadata(&data, archive, &[table], &mut warnings);
     assert_eq!(metadata.layers.len(), 1, "{warnings:?}");
     assert_eq!(metadata.layers[0].index, 7);
     assert_eq!(metadata.layers[0].iges_level, None);
@@ -778,8 +811,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let (future_data, future_record) = metadata_record(0x2000_8050, future_class);
     let future_table = metadata_table(0x1000_0011, future_data.len(), vec![future_record.clone()]);
     let mut future_warnings = Diagnostics::new();
-    let future =
-        settings::parse_metadata(&future_data, archive, &[future_table], &mut future_warnings);
+    let future = parse_test_metadata(&future_data, archive, &[future_table], &mut future_warnings);
     assert_eq!(future.layers.len(), 1, "{future_warnings:?}");
     assert_eq!(future.layers[0].extension_items, vec![33, 34, 35, 36, 37]);
     assert_eq!(future.opaque_records.len(), 1);
@@ -886,7 +918,7 @@ fn layer_metadata_with_record_count_and_id(
     }
     tables.push(table);
     let mut warnings = Diagnostics::new();
-    let metadata = settings::parse_metadata(&data, archive, &tables, &mut warnings);
+    let metadata = parse_test_metadata(&data, archive, &tables, &mut warnings);
     (metadata, warnings)
 }
 
@@ -1172,7 +1204,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
         save_context: None,
         payload_range: 0..payload.len(),
     };
-    let values = settings::parse_layer_extensions(
+    let values = parse_test_extensions(
         &payload,
         &descriptor,
         archive,
@@ -1200,7 +1232,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
         Some(2)
     );
 
-    let root_values = settings::parse_layer_extensions(&payload, &descriptor, archive, None)
+    let root_values = parse_test_extensions(&payload, &descriptor, archive, None)
         .expect("root layer extensions payload");
     assert_eq!(root_values[1].settings_mask(), 31);
     assert_eq!(root_values[1].persistent_visibility, None);
@@ -1228,9 +1260,47 @@ fn single_viewport_extension(bits: u32, field_bytes: &[u8]) -> (Vec<u8>, ClassUs
     (payload, descriptor)
 }
 
+#[test]
+fn layer_extension_entries_refuse_cumulative_collection_limit() {
+    let (payload, descriptor) = single_viewport_extension(
+        super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_COLOR,
+        &[1, 2, 3, 4],
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+        .expect("test input fits the service profile");
+    assert_eq!(
+        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
+            .expect("first layer entry fits the limit")
+            .len(),
+        1
+    );
+    let refusal =
+        settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
+            .expect_err("second layer entry exceeds the cumulative limit");
+    assert!(
+        matches!(refusal, crate::chunks::FramingError::Resource(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &service)
+        .expect("test input fits the service profile");
+    for _ in 0..2 {
+        assert_eq!(
+            settings::parse_layer_extensions(&ctx, &payload, &descriptor, ArchiveVersion::V8, None)
+                .expect("service profile admits both layer entries")
+                .len(),
+            1
+        );
+    }
+}
+
 fn assert_malformed_viewport_visibility(bits: u32, field_bytes: &[u8]) {
     let (payload, descriptor) = single_viewport_extension(bits, field_bytes);
-    let error = settings::parse_layer_extensions(
+    let error = parse_test_extensions(
         &payload,
         &descriptor,
         ArchiveVersion::V8,
@@ -1261,7 +1331,7 @@ fn assert_malformed_viewport_plot_weight(weight: f64) {
         super::LAYER_PER_VIEWPORT_ID | super::LAYER_PER_VIEWPORT_PLOT_WEIGHT,
         &weight.to_le_bytes(),
     );
-    let error = settings::parse_layer_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
+    let error = parse_test_extensions(&payload, &descriptor, ArchiveVersion::V8, None)
         .expect_err("malformed weight-only entry");
     assert!(error.to_string().contains("plot weight"), "{error}");
 }
@@ -1291,7 +1361,7 @@ fn layer_extensions_reject_negative_count() {
         save_context: None,
         payload_range: 0..payload.len(),
     };
-    assert!(settings::parse_layer_extensions(&payload, &descriptor, archive, None).is_err());
+    assert!(parse_test_extensions(&payload, &descriptor, archive, None).is_err());
 }
 
 #[test]
@@ -1667,7 +1737,7 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         ],
     );
     let mut warnings = Diagnostics::new();
-    let metadata = settings::parse_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
+    let metadata = parse_test_metadata(&[], ArchiveVersion::V5, &[table], &mut warnings);
     assert_eq!(metadata.settings.current_layer, Some(7));
     assert_eq!(
         warnings.messages().collect::<Vec<_>>(),
