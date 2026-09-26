@@ -45,7 +45,13 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::FinitePoint3>,
+        Option<Vec<cadmpeg_ir::scalar::NonZeroReal>>,
+    ),
+    GeometryError,
+> {
     with_test_context(|ctx| super::read_poles(ctx, reader, count, rational, dimension, scale))
 }
 
@@ -1366,10 +1372,13 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
             panic!("expected revolution fields");
         };
         assert_eq!(children.len(), 1);
-        assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
-        assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
-        assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
-        assert_eq!(axis_direction, Vector3::new(0.0, 0.0, 1.0));
+        assert!((axis_origin.get().x - 25.4).abs() < 1.0e-12);
+        assert!((axis_origin.get().y - 50.8).abs() < 1.0e-12);
+        assert!((axis_origin.get().z - 76.2).abs() < 1.0e-12);
+        assert_eq!(
+            axis_direction.map(|direction| *direction.as_raw()),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
         assert_eq!(angular_interval, [0.25, 1.25]);
         assert!(!transposed);
         assert_eq!(
@@ -1514,7 +1523,13 @@ fn audit_regression_homogeneous_poles_apply_units_before_range_loss() {
     )
     .unwrap();
     assert!((poles[0].x / 1e303 - 1.).abs() <= 8. * f64::EPSILON);
-    assert_eq!(weights, Some(vec![1e-10]));
+    assert_eq!(
+        weights.map(|values| values
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>()),
+        Some(vec![1e-10])
+    );
 }
 
 #[test]

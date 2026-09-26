@@ -7,6 +7,7 @@ use crate::resolved_features::selections::coordinate_marker_local_links;
 use crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::resolved_features::SKETCH_MARKER;
 
+use super::super::raw2;
 #[test]
 fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
     let mut vertex = vec![0; 74];
@@ -20,10 +21,10 @@ fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
     vertex[58..66].copy_from_slice(&0.025f64.to_le_bytes());
     vertex[66..74].copy_from_slice(&0.01f64.to_le_bytes());
     assert!(indexed_profile_vertex(&vertex, 0));
-    assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
+    assert_eq!(raw2(marker_coordinates(&vertex, 0)), Some([0.025, 0.01]));
     vertex[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     assert!(indexed_profile_vertex(&vertex, 0));
-    assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
+    assert_eq!(raw2(marker_coordinates(&vertex, 0)), Some([0.025, 0.01]));
     vertex.resize(112 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
     vertex[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     vertex[17..21].copy_from_slice(&4u32.to_le_bytes());
@@ -41,7 +42,7 @@ fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
     }
     vertex[112..112 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    assert_eq!(marker_coordinates(&vertex, 0), None);
+    assert_eq!(raw2(marker_coordinates(&vertex, 0)), None);
 
     let mut curve = vec![0; 84 + 39];
     curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);

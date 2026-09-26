@@ -288,8 +288,10 @@ fn sync_neutral_parameters(
                     scalar.id
                 ))
             })?;
+        let checked = cadmpeg_ir::scalar::FiniteReal::new(value)
+            .ok_or_else(|| CodecError::malformed("SLDPRT scalar update is non-finite"))?;
         bytes.copy_from_slice(&value.to_le_bytes());
-        scalar.value = value;
+        scalar.value = checked;
     }
     Ok(())
 }

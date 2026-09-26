@@ -728,7 +728,8 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             ),
             coedge: tolerant_coedge,
             record_index: 0,
-            parameter_range: [-1.5, 2.25],
+            parameter_range: cadmpeg_ir::units::FiniteVector::new([-1.5, 2.25])
+                .expect("finite interval"),
             extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::None {},
         }];
     let mut encoded = Vec::new();

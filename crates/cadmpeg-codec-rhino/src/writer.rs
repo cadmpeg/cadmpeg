@@ -1602,12 +1602,6 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             mesh.id
         )));
     }
-    if !mesh.vertex_normals().is_empty() && mesh.vertex_normals().len() != vertex_count {
-        return Err(CodecError::malformed(format_args!(
-            "mesh {} normal count mismatch",
-            mesh.id
-        )));
-    }
     if mesh.vertices().iter().any(|p| {
         !(p.x as f32).is_finite() || !(p.y as f32).is_finite() || !(p.z as f32).is_finite()
     }) || mesh.vertex_normals().iter().any(|n| {
@@ -1615,17 +1609,6 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
     }) {
         return Err(CodecError::NotImplemented(format!(
             "mesh {} values exceed Rhino's native finite range",
-            mesh.id
-        )));
-    }
-    if mesh
-        .triangles()
-        .iter()
-        .flatten()
-        .any(|index| *index as usize >= vertex_count)
-    {
-        return Err(CodecError::malformed(format_args!(
-            "mesh {} index is out of range",
             mesh.id
         )));
     }
@@ -1647,7 +1630,6 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || channel.flags() != 0
             || channel.item_size() != expected
             || channel.count() as usize != vertex_count
-            || channel.data().len() != vertex_count * expected as usize
         {
             return Err(CodecError::malformed(format_args!(
                 "mesh {} channel {:#x} has invalid metadata",

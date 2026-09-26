@@ -4,6 +4,18 @@
 use crate::math::Vector3;
 
 #[test]
+fn unit_feature_direction_zeroes_tiny_components_without_readmission() {
+    let unit =
+        crate::units::UnitVector3::new(Vector3::new(-0.0, 1.0, 1.0e-13)).expect("unit direction");
+    let direction = crate::features::FeatureDirection3::from_unit_without_small_components(unit);
+    let raw = direction.get();
+    assert_eq!(
+        [raw.x.to_bits(), raw.y.to_bits(), raw.z.to_bits()],
+        [0.0f64.to_bits(), 1.0f64.to_bits(), 0.0f64.to_bits()]
+    );
+}
+
+#[test]
 fn a_transform_hands_out_its_columns_and_translation_as_finite_vectors() {
     use crate::transform::Transform;
 

@@ -71,7 +71,7 @@ fn type406_implementor_defined_malformed_count_or_span_suppresses_generic_recove
         (
             vec![
                 TokenValue::Integer(406),
-                TokenValue::Real(2.0),
+                TokenValue::real(2.0),
                 TokenValue::Integer(10),
                 TokenValue::Integer(20),
                 TokenValue::Integer(1),

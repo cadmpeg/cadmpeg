@@ -66,12 +66,12 @@ pub fn pmi(data: &[u8]) {
             continue;
         }
         let mut patched = data.to_vec();
-        let edited = f64::from_bits(record.value.to_bits() ^ 1);
+        let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
         let mut again_losses = Vec::new();
         let again = crate::pmi::parse_payload(&patched, &mut again_losses);
         if let Some(parsed) = again.iter().find(|candidate| candidate.guid == record.guid) {
-            assert_eq!(parsed.value.to_bits(), edited.to_bits());
+            assert_eq!(parsed.value.get().to_bits(), edited.to_bits());
             assert_eq!(parsed.value_offset, record.value_offset);
             assert_eq!(parsed.precision_offset, record.precision_offset);
             assert_eq!(parsed.basic_offset, record.basic_offset);

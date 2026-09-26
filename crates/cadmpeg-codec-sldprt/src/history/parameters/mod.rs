@@ -81,9 +81,7 @@ pub(crate) fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignPara
                         .unwrap_or_default();
                     let parse_value = |value: &str| match display {
                         Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
-                            parse_dimension_display_length(value)
-                                .and_then(Length::new)
-                                .map(ParameterValue::Length)
+                            parse_dimension_display_length(value).map(ParameterValue::Length)
                         }
                         None => parse_native_parameter_literal(feature, &name, value),
                     };
@@ -240,7 +238,7 @@ pub(crate) fn parse_native_parameter_literal(
 ) -> Option<ParameterValue> {
     if native_parameter_is_length(feature, name, Some(expression)) {
         return parse_positive_dimension_length_mm(expression)
-            .and_then(Length::new)
+            .map(Length::from)
             .map(ParameterValue::Length);
     }
     parse_parameter_literal(expression)

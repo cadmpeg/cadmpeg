@@ -490,7 +490,7 @@ fn type402_form16_malformed_count_or_span_does_not_enable_generic_recovery() {
         vec![
             402.into(),
             1.into(),
-            TokenValue::Real(1.0),
+            TokenValue::real(1.0),
             3.into(),
             7.into(),
             1.into(),
@@ -1014,14 +1014,14 @@ fn type402_form21_entity_table_boundary_follows_geometry_blocks() {
         values[2] = i64::try_from(geometry_count).unwrap().into();
         values[3] = 5.into();
         values[4] = 4.into();
-        values[5] = TokenValue::Real(0.25);
+        values[5] = TokenValue::real(0.25);
         for (offset, sequence) in [7_i64, 9].into_iter().take(geometry_count).enumerate() {
             let start = 6 + offset * 5;
             values[start] = sequence.into();
             values[start + 1] = 0.into();
-            values[start + 2] = TokenValue::Real(offset as f64);
-            values[start + 3] = TokenValue::Real(1.0);
-            values[start + 4] = TokenValue::Real(2.0);
+            values[start + 2] = TokenValue::real(offset as f64);
+            values[start + 3] = TokenValue::real(1.0);
+            values[start + 4] = TokenValue::real(2.0);
         }
         values[expected_start] = 1.into();
         values[expected_start + 1] = 1.into();
@@ -1064,11 +1064,11 @@ fn type402_form21_table_boundary_precedes_valid_generic_alternative() {
         1.into(),
         3.into(),
         4.into(),
-        TokenValue::Real(0.25),
+        TokenValue::real(0.25),
         7.into(),
         0.into(),
-        TokenValue::Real(0.0),
-        TokenValue::Real(1.0),
+        TokenValue::real(0.0),
+        TokenValue::real(1.0),
         2.into(),
         1.into(),
         1.into(),
@@ -1110,12 +1110,12 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             1.into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(0.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             1.into(),
             1.into(),
             0.into(),
@@ -1126,12 +1126,12 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             0.into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(0.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             1.into(),
             1.into(),
             0.into(),
@@ -1142,12 +1142,12 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             (-1_i64).into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(0.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             1.into(),
             1.into(),
             0.into(),
@@ -1158,12 +1158,12 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             TokenValue::String(b"1".to_vec()),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(0.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             1.into(),
             1.into(),
             0.into(),
@@ -1175,7 +1175,7 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             1.into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
         ],
         vec![
             402.into(),
@@ -1183,10 +1183,10 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             1.into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
+            TokenValue::real(0.0),
         ],
         vec![
             402.into(),
@@ -1194,12 +1194,12 @@ fn type402_form21_malformed_count_or_span_does_not_enable_generic_recovery() {
             1.into(),
             3.into(),
             4.into(),
-            TokenValue::Real(0.25),
+            TokenValue::real(0.25),
             7.into(),
             0.into(),
-            TokenValue::Real(0.0),
-            TokenValue::Real(1.0),
-            TokenValue::Real(2.0),
+            TokenValue::real(0.0),
+            TokenValue::real(1.0),
+            TokenValue::real(2.0),
             1.into(),
         ],
     ];
@@ -1233,7 +1233,7 @@ fn type408_fixed_primary_boundary_follows_translation_and_scale() {
             1.into(),
             2.into(),
             3.into(),
-            TokenValue::Real(0.5),
+            TokenValue::real(0.5),
             1.into(),
             3.into(),
             0.into(),
@@ -1297,7 +1297,7 @@ fn type408_complete_wrong_fields_keep_boundary_and_malformed_spans_do_not_recove
         vec![
             408.into(),
             TokenValue::String(b"bad".to_vec()),
-            TokenValue::Real(2.0),
+            TokenValue::real(2.0),
             TokenValue::String(b"bad".to_vec()),
             1.into(),
             TokenValue::Omitted,
@@ -1413,7 +1413,7 @@ fn type402_form19_malformed_count_or_span_does_not_enable_generic_recovery() {
             402.into(),
             1.into(),
             TokenValue::String(b"bad".to_vec()),
-            TokenValue::Real(0.5),
+            TokenValue::real(0.5),
             0.into(),
             TokenValue::Omitted,
             TokenValue::Omitted,
@@ -1487,7 +1487,7 @@ fn type402_form19_malformed_count_or_span_does_not_enable_generic_recovery() {
             11,
             vec![
                 402.into(),
-                TokenValue::Real(1.0),
+                TokenValue::real(1.0),
                 9.into(),
                 0.into(),
                 0.into(),

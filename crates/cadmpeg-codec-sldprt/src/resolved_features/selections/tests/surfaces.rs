@@ -538,7 +538,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         offset: 150,
         object_id: 52,
         name: "diameter-name".into(),
-        value: 0.008,
+        value: cadmpeg_ir::scalar::FiniteReal::new(0.008).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
 
         operands: Vec::new(),
@@ -598,7 +598,7 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         offset: 200,
         object_id: 54,
         name: "next-feature".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Native,
 
         operands: Vec::new(),

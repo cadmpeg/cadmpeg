@@ -373,6 +373,9 @@ fn patch_configuration_parameter_scalars(
             let offset = usize::try_from(scalar.offset).map_err(|_| {
                 CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())
             })?;
+            let checked = cadmpeg_ir::scalar::FiniteReal::new(encoded).ok_or_else(|| {
+                CodecError::malformed("SLDPRT configuration scalar update is non-finite")
+            })?;
             lane.native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
@@ -382,7 +385,7 @@ fn patch_configuration_parameter_scalars(
                     ))
                 })?
                 .copy_from_slice(&encoded.to_le_bytes());
-            scalar.value = encoded;
+            scalar.value = checked;
         }
     }
     Ok(())

@@ -7,6 +7,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
 mod native_admission;
+mod presentation_admission;
+mod property_admission;
 
 use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
 use crate::loss::InventorLossCode;
@@ -95,6 +97,57 @@ fn metadata_projection_refuses_retained_limits_before_normalized_name_and_value(
                     && limit.operation == operation
         ));
     }
+}
+
+#[test]
+fn metadata_bom_property_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut projection = MetadataProjection::default();
+    assert!(matches!(
+        projection.consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor BOM property"
+    ));
+    assert!(projection.bom_properties.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .consider(&ctx, &[0; 16], 99, Some("Custom"), Some("value"), "custom")
+        .expect("admitted property");
+    assert_eq!(
+        projection.bom_properties.get("Custom").map(String::as_str),
+        Some("value")
+    );
+}
+
+#[test]
+fn metadata_attribute_refuses_collection_limit_before_insert() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let projection = MetadataProjection {
+        title: Some("Drawing".into()),
+        ..MetadataProjection::default()
+    };
+    let mut attributes = std::collections::BTreeMap::new();
+    assert!(matches!(
+        projection.apply_attributes(&ctx, &mut attributes),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor metadata attribute"
+    ));
+    assert!(attributes.is_empty());
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    projection
+        .apply_attributes(&ctx, &mut attributes)
+        .expect("admitted attribute");
+    assert_eq!(attributes.get("title").map(String::as_str), Some("Drawing"));
 }
 
 #[test]

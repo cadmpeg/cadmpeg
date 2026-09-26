@@ -1,16 +1,42 @@
 use super::dimension_nominal;
+use super::length;
 use super::semantic_root;
-use crate::swift::length;
 use crate::swift::parse_unique_root;
 use crate::swift::pmi_id;
 use crate::swift::project;
+use crate::swift::project_lower_profile_tier;
 use crate::swift::Entity;
 use crate::swift::ObjectSection;
+use crate::swift::Reference;
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiQuantity;
 use cadmpeg_ir::pmi::PmiTarget;
 use cadmpeg_ir::pmi::PmiValue;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+
+#[test]
+fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
+    let reference = Reference {
+        id: "A42".into(),
+        class: "GdtSurfaceProfile".into(),
+    };
+    let mut entity = Entity::default();
+    entity.doubles.insert("ToleranceLowerTier".into(), 0.0);
+    let projected = project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None)
+        .expect("zero is a valid lower tier");
+    let PmiDefinition::GeometricTolerance { magnitude, .. } = projected.definition else {
+        panic!("lower profile tier definition");
+    };
+    assert_eq!(magnitude.get(), length(0.0).expect("finite zero length"));
+
+    entity.doubles.insert("ToleranceLowerTier".into(), -1.0);
+    assert!(project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None).is_none());
+    entity
+        .doubles
+        .insert("ToleranceLowerTier".into(), f64::INFINITY);
+    assert!(project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None).is_none());
+}
 
 fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
     bytes.push(u8::try_from(value.len()).expect("fixture Pascal string"));
