@@ -4826,14 +4826,6 @@ fn parasolid_topology_attribute_contexts<'a>(
         .collect()
 }
 
-/// The refusal of a Parasolid attribute value record that holds a NaN or
-/// infinite number.
-fn non_finite_attribute_value(record: &str) -> cadmpeg_core::CodecError {
-    cadmpeg_core::CodecError::malformed(format_args!(
-        "Parasolid attribute value record {record} holds a non-finite number"
-    ))
-}
-
 fn topology_attribute_id(
     reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
     family: &cadmpeg_ir::ids::IdentityComponent,
@@ -4918,9 +4910,8 @@ fn attach_parasolid_topology_numeric_attributes(
                             .values
                             .as_slice()
                             .iter()
-                            .map(|value| AttributeValue::float(*value))
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .map(|value| AttributeValue::Float(*value))
+                            .collect(),
                         record.inflated_offset,
                         "ENTITY_53_DOUBLE_ATTRIBUTE",
                         "double",
@@ -5041,9 +5032,8 @@ fn attach_parasolid_topology_structured_attributes(
                             .values
                             .as_slice()
                             .iter()
-                            .map(|value| AttributeValue::vector(*value))
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .map(|value| AttributeValue::Vector(value.finite_components().into()))
+                            .collect(),
                         record.inflated_offset,
                         "PARASOLID_VECTOR_ATTRIBUTE",
                         family,
@@ -5059,12 +5049,13 @@ fn attach_parasolid_topology_structured_attributes(
                             .as_slice()
                             .iter()
                             .map(|axis| {
-                                AttributeValue::vector(
-                                    axis.iter().flat_map(|vector| vector.iter().copied()),
+                                AttributeValue::Vector(
+                                    axis.iter()
+                                        .flat_map(|vector| vector.finite_components())
+                                        .collect(),
                                 )
                             })
-                            .collect::<Option<Vec<_>>>()
-                            .ok_or_else(|| non_finite_attribute_value(&record.id))?,
+                            .collect(),
                         record.inflated_offset,
                         "ENTITY_57_AXIS_ATTRIBUTE",
                         "87_axis",
