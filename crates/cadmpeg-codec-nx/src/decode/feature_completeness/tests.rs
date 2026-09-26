@@ -605,7 +605,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
                 ],
                 Some(PathRef::Native("nx:centerline#0".into())),
             ),
-            vec![output],
+            (vec![output]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -781,7 +781,10 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         source_text: None,
         source_content: Default::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(complete.clone(), vec![output]),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            complete.clone(),
+            (vec![output]).try_into().unwrap(),
+        ),
         native_ref: None,
     });
 
@@ -993,7 +996,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
                 construction: complete,
                 op: BooleanOp::NewBody,
             }),
-            vec![output],
+            (vec![output]).try_into().unwrap(),
         ),
         native_ref: None,
     });
@@ -1246,7 +1249,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Bodies(vec![output.clone()]),
             }),
-            vec![output.clone()],
+            (vec![output.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     };
@@ -1384,15 +1387,16 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     let output = cadmpeg_ir::ids::BodyId::mint("test:model:body#output").expect("identity grammar");
     ir.model.features[0]
         .evaluation
-        .set_outputs(vec![output.clone()]);
+        .set_outputs((vec![output.clone()]).try_into().unwrap());
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
-    ir.model.features[0]
-        .evaluation
-        .set_outputs(vec![output.clone(), output.clone()]);
+    assert!(
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![output.clone(), output.clone()])
+            .is_err()
+    );
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
@@ -1776,7 +1780,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
                     .unwrap(),
                 gap_tolerance: None,
             }),
-            vec![first.clone()],
+            (vec![first.clone()]).try_into().unwrap(),
         ),
         native_ref: None,
     });

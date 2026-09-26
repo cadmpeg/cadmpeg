@@ -421,7 +421,10 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
 
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, vec![body]),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+            definition,
+            (vec![body]).try_into().unwrap(),
+        ),
         native_ref: None,
     };
     assert!(!combine_definition_is_incomplete(&feature));

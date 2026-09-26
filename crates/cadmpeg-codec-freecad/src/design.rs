@@ -441,7 +441,7 @@ pub(crate) fn transfer(
         };
         let definition = post_processed_definition(definition, &object.type_name, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned)?;
-        let outputs = payloads
+        let outputs: Vec<cadmpeg_ir::ids::BodyId> = payloads
             .iter()
             .filter(|payload| owned.iter().any(|property| property.id == payload.property))
             .flat_map(|payload| {
@@ -513,7 +513,12 @@ pub(crate) fn transfer(
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(definition, outputs),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                outputs
+                    .try_into()
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             native_ref: Some(object.id.clone()),
         });
     }

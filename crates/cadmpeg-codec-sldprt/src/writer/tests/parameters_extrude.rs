@@ -956,7 +956,7 @@ fn semantic_writer_round_trips_feature_output_scope() {
     let output = decoded.ir().model.bodies[1].id.clone();
     decoded.ir_mut().model.features[0]
         .evaluation
-        .set_outputs(vec![output]);
+        .set_outputs((vec![output]).try_into().unwrap());
 
     let mut encoded = Vec::new();
     crate::test_support::serialize_history_after_refusal(

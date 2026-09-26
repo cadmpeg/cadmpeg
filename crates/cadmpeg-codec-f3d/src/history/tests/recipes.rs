@@ -1223,10 +1223,12 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Native("native:scope".into()),
             }),
-            vec![
+            (vec![
                 BodyId::mint("test:model:body#2").expect("identity grammar"),
                 BodyId::mint("test:model:body#1").expect("identity grammar"),
-            ],
+            ])
+            .try_into()
+            .unwrap(),
         ),
         native_ref: Some("native:scope".into()),
     };

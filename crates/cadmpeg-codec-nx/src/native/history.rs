@@ -311,7 +311,7 @@ mod tests {
                     role: FeatureTreeNodeRole::History,
                     children: cadmpeg_ir::features::TreeChildren::default(),
                 }),
-                outputs,
+                outputs.try_into().unwrap(),
             ),
             native_ref: native.then(|| format!("native:{id}")),
         }
@@ -580,7 +580,7 @@ mod tests {
                             native: "test".into(),
                         },
                     }),
-                    vec![body.clone()],
+                    vec![body.clone()].try_into().unwrap(),
                 ),
                 native_ref: None,
             },
@@ -667,7 +667,7 @@ mod tests {
                         native: "test".into(),
                     },
                 }),
-                vec![body.clone()],
+                vec![body.clone()].try_into().unwrap(),
             ),
             native_ref: None,
         }]);
