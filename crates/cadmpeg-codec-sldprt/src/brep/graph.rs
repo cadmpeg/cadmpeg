@@ -3159,7 +3159,7 @@ fn derive_cylindrical_pcurves(
                     .collect::<Vec<_>>();
                 let polar = match PolarPcurveNurbs::from_checked_lanes(
                     nurbs.degree(),
-                    nurbs.knots().to_vec(),
+                    nurbs.knots().clone(),
                     poles,
                     nurbs.weights(),
                     nurbs.periodic(),

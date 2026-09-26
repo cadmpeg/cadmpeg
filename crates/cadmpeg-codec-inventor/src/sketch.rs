@@ -24,8 +24,8 @@ use crate::pmdc::{
     content_header, inventor_id, reference_list, type_id_string, Cursor, PmDcContentHeader,
     PmDcReference, PmDcReferenceList,
 };
-use crate::record_identity::{Located, RecordPayload};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_identity::{push_record, Located, RecordPayload};
+use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
@@ -376,57 +376,82 @@ pub(crate) fn inventory(
             };
             let result = match tag {
                 SketchRecordTag::Sketch => {
-                    parse_sketch(ctx, record.payload, version).map(|value| {
-                        inventory.sketches.push(Located::new(
+                    parse_sketch(ctx, record.payload, version).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.sketches,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                        ));
+                            "admit Inventor PmDc sketch record",
+                        )
                     })
                 }
                 SketchRecordTag::Entity(entity) => {
-                    parse_entity(ctx, entity, record.payload, version).map(|value| {
-                        inventory.entities.push(Located::new(
+                    parse_entity(ctx, entity, record.payload, version).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.entities,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                        ));
+                            "admit Inventor PmDc sketch entity record",
+                        )
                     })
                 }
                 SketchRecordTag::Transform => {
-                    parse_transform(record.payload, version).map(|value| {
-                        inventory.transforms.push(Located::new(
+                    parse_transform(record.payload, version).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.transforms,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                        ));
+                            "admit Inventor PmDc transform record",
+                        )
                     })
                 }
                 SketchRecordTag::Direction => {
-                    parse_direction(record.payload, version).map(|value| {
-                        inventory.directions.push(Located::new(
+                    parse_direction(record.payload, version).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.directions,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                        ));
+                            "admit Inventor PmDc direction record",
+                        )
                     })
                 }
                 SketchRecordTag::Constraint(constraint) => {
-                    parse_constraint(ctx, constraint, record.payload, version).map(|value| {
-                        inventory.constraints.push(Located::new(
+                    parse_constraint(ctx, constraint, record.payload, version).and_then(|value| {
+                        push_record(
+                            ctx,
+                            &mut inventory.constraints,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             segment.pair.token.key(),
                             record.ordinal,
-                        ));
+                            "admit Inventor PmDc sketch constraint record",
+                        )
                     })
                 }
             };
             if let Err(error) = result {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_collection_items(1, "admit Inventor PmDc sketch issue")?;
+                admit_issue_detail(ctx, &error, "retain Inventor PmDc sketch issue detail")?;
+                ctx.charge_retained(32, "retain Inventor PmDc sketch issue type id")?;
+                ctx.charge_retained(
+                    segment.pair.token.as_str().len() as u64,
+                    "retain Inventor PmDc sketch issue segment token",
+                )?;
                 inventory.issues.push(RecordIssue {
                     family: RecordIssueFamily::Sketch {
                         type_id: type_id_string(record.type_id),
@@ -438,17 +463,6 @@ pub(crate) fn inventory(
             }
         }
     }
-    ctx.charge_collection_items(
-        inventory
-            .sketches
-            .len()
-            .saturating_add(inventory.entities.len())
-            .saturating_add(inventory.transforms.len())
-            .saturating_add(inventory.directions.len())
-            .saturating_add(inventory.constraints.len())
-            .saturating_add(inventory.issues.len()) as u64,
-        "admit Inventor planar-sketch records",
-    )?;
     Ok(inventory)
 }
 
@@ -1931,15 +1945,197 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform, project,
-        PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload, SketchConstraintTag,
-        SketchEntityTag, SketchInventory, COINCIDENT_TYPE, DIRECTION_TYPE, LINE_TYPE, POINT_TYPE,
-        SKETCH_TYPE, TRANSFORM_TYPE,
+        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
+        project, PmDcSketchConstraintKind, PmDcSketchEntityKind, PmDcTransformPayload,
+        SketchConstraintTag, SketchEntityTag, SketchInventory, COINCIDENT_TYPE, DIRECTION_TYPE,
+        HORIZONTAL_TYPE, LINE_TYPE, POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
+    use crate::container::InventorContainer;
     use crate::pmdc::{type_id_string, PmDcReference, PmDcReferenceList};
     use crate::record_identity::Located;
-    use crate::test_support::test_fixtures::{content, parse};
+    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+    use crate::test_support::test_fixtures::{content, parse, primary_envelope_fixture};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::sketches::SketchPlacement;
+
+    fn inventory_with_record(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<SketchInventory, CodecError> {
+        let bytes = primary_envelope_fixture();
+        let payload = payload.to_vec();
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = SegmentKind::PmDc;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = type_id;
+        table.records[0].payload = View::over_retained(&payload);
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        inventory(&ctx, &container.rse)
+    }
+
+    #[test]
+    fn sketch_transform_record_refuses_collection_limit_before_push() {
+        let mut payload = content(0);
+        payload.extend_from_slice(&0x8421u16.to_le_bytes());
+        payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
+        assert_eq!(
+            inventory_with_record(TRANSFORM_TYPE, &payload, DecodePolicy::service())
+                .expect("transform is admitted")
+                .transforms
+                .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor PmDc transform record"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn sketch_transform_record_refuses_retained_limit_before_identity_copy() {
+        let mut payload = content(0);
+        payload.extend_from_slice(&0x8421u16.to_le_bytes());
+        payload.extend_from_slice(&0x7bdeu16.to_le_bytes());
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 31;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc record type id"
+                    && limit.used == 0
+        ));
+        policy.limits.max_retained_bytes = 32;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &payload, policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain Inventor PmDc record segment token"
+                    && limit.used == 32
+        ));
+    }
+
+    #[test]
+    fn sketch_parse_issue_refuses_collection_limit_before_push() {
+        let admitted = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
+            .expect("truncated transform becomes an issue");
+        assert_eq!(admitted.issues.len(), 1);
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(TRANSFORM_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor PmDc sketch issue"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn sketch_parse_issue_copies_refuse_retained_limits_before_creation() {
+        let detail_len = inventory_with_record(TRANSFORM_TYPE, &[], DecodePolicy::service())
+            .expect("truncated transform becomes an issue")
+            .issues[0]
+            .detail
+            .len();
+        for (limit_bytes, operation, used) in [
+            (
+                detail_len - 1,
+                "retain Inventor PmDc sketch issue detail",
+                0,
+            ),
+            (
+                detail_len,
+                "retain Inventor PmDc sketch issue type id",
+                detail_len,
+            ),
+            (
+                detail_len + 32,
+                "retain Inventor PmDc sketch issue segment token",
+                detail_len + 32,
+            ),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit_bytes as u64;
+            assert!(matches!(
+                inventory_with_record(TRANSFORM_TYPE, &[], policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == used as u64
+            ));
+        }
+    }
+
+    #[test]
+    fn sketch_record_forms_refuse_collection_limit_before_push() {
+        let mut sketch = content(0);
+        sketch.extend_from_slice(&0u32.to_le_bytes());
+        sketch.extend_from_slice(&0u32.to_le_bytes());
+        sketch.extend(list(8, &[]));
+        sketch.extend_from_slice(&[0; 16]);
+        let mut direction = content(0);
+        direction.extend_from_slice(&[0; 36]);
+        let mut constraint = constraint_header(0, 0);
+        constraint.extend_from_slice(&0u32.to_le_bytes());
+        constraint.push(1);
+        for (type_id, payload, operation) in [
+            (SKETCH_TYPE, sketch, "admit Inventor PmDc sketch record"),
+            (
+                POINT_TYPE,
+                point_bytes(0, 0, [0.0, 0.0]),
+                "admit Inventor PmDc sketch entity record",
+            ),
+            (
+                DIRECTION_TYPE,
+                direction,
+                "admit Inventor PmDc direction record",
+            ),
+            (
+                HORIZONTAL_TYPE,
+                constraint,
+                "admit Inventor PmDc sketch constraint record",
+            ),
+        ] {
+            let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
+                .expect("sketch record is admitted");
+            assert_eq!(
+                admitted.sketches.len()
+                    + admitted.entities.len()
+                    + admitted.transforms.len()
+                    + admitted.directions.len()
+                    + admitted.constraints.len(),
+                1
+            );
+            assert!(admitted.issues.is_empty());
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = 0;
+            assert!(matches!(
+                inventory_with_record(type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == operation
+                        && limit.used == 0
+            ));
+        }
+    }
 
     fn list(marker: u16, references: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::new();

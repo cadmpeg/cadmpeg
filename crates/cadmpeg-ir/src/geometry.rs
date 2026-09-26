@@ -7089,59 +7089,6 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
     },
 }
 
-/// The support sides a context-first spring layout states.
-fn spring_context_sides<R>(
-    supports: &[SpringSupport<R>; 2],
-    first_pcurve: &SpringPcurve<R>,
-    second_pcurve: Option<&PcurveGeometry>,
-) -> [IntcurveSupportSide; 2] {
-    [
-        IntcurveSupportSide {
-            surface: match &supports[0] {
-                SpringSupport::Surface(surface) => Some(surface.clone()),
-                SpringSupport::Ranges(_) => None,
-            },
-            pcurve: match first_pcurve {
-                SpringPcurve::Pcurve(pcurve) => Some(SupportPcurve::new(pcurve.clone(), None)),
-                SpringPcurve::Range(_) => None,
-            },
-        },
-        IntcurveSupportSide {
-            surface: match &supports[1] {
-                SpringSupport::Surface(surface) => Some(surface.clone()),
-                SpringSupport::Ranges(_) => None,
-            },
-            pcurve: second_pcurve
-                .cloned()
-                .map(|pcurve| SupportPcurve::new(pcurve, None)),
-        },
-    ]
-}
-
-impl SpringLayout<FiniteReal, crate::topology::ParameterInterval> {
-    /// Return the support context, deriving it for the context-first layout
-    /// from the admitted interval and discontinuities.
-    pub fn support_context(
-        &self,
-    ) -> Result<std::borrow::Cow<'_, IntcurveSupportContext>, &'static str> {
-        match self {
-            Self::CacheFirst { context, .. } => Ok(std::borrow::Cow::Borrowed(context)),
-            Self::ContextFirst {
-                supports,
-                first_pcurve,
-                second_pcurve,
-                parameter_range,
-                discontinuities,
-                ..
-            } => Ok(std::borrow::Cow::Owned(IntcurveSupportContext::from_parts(
-                spring_context_sides(supports, first_pcurve, second_pcurve.as_ref()),
-                *parameter_range,
-                discontinuities.clone(),
-            )?)),
-        }
-    }
-}
-
 impl<R, I> SpringLayout<R, I> {
     fn cache_first(&self) -> Option<&CacheFirstCurveForm<R>> {
         match self {

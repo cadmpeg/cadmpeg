@@ -7,14 +7,14 @@ use std::num::NonZeroUsize;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
-use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
+use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId, IdentityKey};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 
 use crate::assembly::count_unresolved;
 use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -444,58 +444,83 @@ pub(crate) fn inventory<'a>(
             let ordinal = record.ordinal;
             let parsed = match record.type_id {
                 DEFAULT_STYLE_TYPE => {
-                    parse_default_style(ctx, record.payload, version).map(|value| {
-                        default_styles.push(Located::new(
+                    parse_default_style(ctx, record.payload, version).and_then(|value| {
+                        push_presentation_record(
+                            ctx,
+                            &mut default_styles,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             token,
                             ordinal,
-                        ));
+                            "admit Inventor default style record",
+                        )
                     })
                 }
-                RENDERING_STYLE_TYPE => {
-                    parse_rendering_style(ctx, record.payload, version).map(|value| {
-                        rendering_styles.push(Located::new(
+                RENDERING_STYLE_TYPE => parse_rendering_style(ctx, record.payload, version)
+                    .and_then(|value| {
+                        push_presentation_record(
+                            ctx,
+                            &mut rendering_styles,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             token,
                             ordinal,
-                        ));
-                    })
-                }
+                            "admit Inventor rendering style record",
+                        )
+                    }),
                 GRAPHICS_FACE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_face(ctx, record.payload, version).map(|value| {
-                        graphics_faces.push(Located::new(
+                    parse_graphics_face(ctx, record.payload, version).and_then(|value| {
+                        push_presentation_record(
+                            ctx,
+                            &mut graphics_faces,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             token,
                             ordinal,
-                        ));
+                            "admit Inventor graphics face record",
+                        )
                     })
                 }
                 GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_style_collection(ctx, record.payload, version).map(|value| {
-                        graphics_style_collections.push(Located::new(
-                            value,
-                            type_id_string(record.type_id),
-                            token,
-                            ordinal,
-                        ));
-                    })
+                    parse_graphics_style_collection(ctx, record.payload, version).and_then(
+                        |value| {
+                            push_presentation_record(
+                                ctx,
+                                &mut graphics_style_collections,
+                                value,
+                                record.type_id,
+                                token,
+                                ordinal,
+                                "admit Inventor graphics style collection record",
+                            )
+                        },
+                    )
                 }
                 GRAPHICS_PRIMARY_COLOR_STYLE_TYPE if segment.kind == SegmentKind::PmGraphics => {
-                    parse_graphics_primary_color_style(record.payload, version).map(|value| {
-                        graphics_primary_color_styles.push(Located::new(
+                    parse_graphics_primary_color_style(record.payload, version).and_then(|value| {
+                        push_presentation_record(
+                            ctx,
+                            &mut graphics_primary_color_styles,
                             value,
-                            type_id_string(record.type_id),
+                            record.type_id,
                             token,
                             ordinal,
-                        ));
+                            "admit Inventor graphics primary color style record",
+                        )
                     })
                 }
                 _ => continue,
             };
             if let Err(error) = parsed {
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+                ctx.charge_collection_items(1, "admit Inventor presentation issue")?;
+                admit_issue_detail(ctx, &error, "retain Inventor presentation issue detail")?;
+                ctx.charge_retained(
+                    segment.pair.token.as_str().len() as u64,
+                    "retain Inventor presentation issue token",
+                )?;
                 issues.push(RecordIssue {
                     family: RecordIssueFamily::Presentation,
                     segment_token: segment.pair.token.as_str().into(),
@@ -505,15 +530,6 @@ pub(crate) fn inventory<'a>(
             }
         }
     }
-    ctx.charge_collection_items(
-        default_styles.len() as u64
-            + rendering_styles.len() as u64
-            + graphics_faces.len() as u64
-            + graphics_style_collections.len() as u64
-            + graphics_primary_color_styles.len() as u64
-            + issues.len() as u64,
-        "admit Inventor presentation records",
-    )?;
     Ok(PresentationInventory {
         default_styles,
         rendering_styles,
@@ -522,6 +538,25 @@ pub(crate) fn inventory<'a>(
         graphics_primary_color_styles,
         issues,
     })
+}
+
+fn push_presentation_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<Located<T>>,
+    value: T,
+    type_id: [u8; 16],
+    token: &IdentityKey,
+    ordinal: u32,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(32, "retain Inventor presentation record type id")?;
+    ctx.charge_retained(
+        token.as_str().len() as u64,
+        "retain Inventor presentation record segment token",
+    )?;
+    records.push(Located::new(value, type_id_string(type_id), token, ordinal));
+    Ok(())
 }
 
 fn parse_graphics_primary_color_style(
@@ -1021,25 +1056,218 @@ pub(crate) fn suffix_fields(source: View<'_>) -> (u64, crate::native::digest::Sh
 mod tests {
     use std::collections::BTreeMap;
 
-    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::appearance::AppearanceTarget;
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::scalar::FiniteReal;
 
     use super::{
-        parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
+        inventory, parse_default_style, parse_graphics_face, parse_graphics_primary_color_style,
         parse_graphics_style_collection, parse_rendering_style, project_bindings,
         project_default_bindings, Cursor, PmGraphicsFace, PmGraphicsPrimaryColorStyle,
         PmGraphicsStyleCollection, PresentationInventory, DEFAULT_STYLE_TYPE, GRAPHICS_FACE_TYPE,
         GRAPHICS_PRIMARY_COLOR_STYLE_TYPE, GRAPHICS_STYLE_COLLECTION_TYPE, RENDERING_STYLE_TYPE,
     };
+    use crate::container::InventorContainer;
     use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
     use crate::record_identity::Located;
+    use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind};
+    use crate::test_support::test_fixtures::primary_envelope_fixture;
     use crate::test_support::truncation::displayed_truncation;
     use cadmpeg_core::decode::{DecodeContext, View};
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::{BodyId, FaceId};
     use cadmpeg_ir::topology::Color;
+
+    fn inventory_with_record(
+        kind: SegmentKind,
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<(usize, Vec<crate::record_issue::RecordIssue>), CodecError> {
+        let bytes = primary_envelope_fixture();
+        let payload = payload.to_vec();
+        let arena = DecodeArena::new();
+        let (setup_ctx, source) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("envelope view");
+        let mut container = InventorContainer::open(&setup_ctx, source).expect("framed envelope");
+        let segment = &mut container.rse.segments[0];
+        segment.kind = kind;
+        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
+            panic!("framed bulk fixture");
+        };
+        let RecordFrameState::Framed(table) = &mut bulk.records else {
+            panic!("framed record fixture");
+        };
+        table.records[0].type_id = type_id;
+        table.records[0].payload = View::over_retained(&payload);
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
+        let result = inventory(&ctx, &container.rse)?;
+        Ok((
+            result.default_styles.len()
+                + result.rendering_styles.len()
+                + result.graphics_faces.len()
+                + result.graphics_style_collections.len()
+                + result.graphics_primary_color_styles.len(),
+            result.issues,
+        ))
+    }
+
+    #[test]
+    fn presentation_record_forms_refuse_collection_limit_before_push() {
+        let mut default = default_style_fixture();
+        default.truncate(default.len() - 8);
+        let mut rendering = Vec::new();
+        rendering.extend_from_slice(&0u32.to_le_bytes());
+        rendering.extend_from_slice(&0u16.to_le_bytes());
+        rendering.push(0);
+        rendering.extend_from_slice(&[0; 2 + 4 + 4 + 4 + 4]);
+        utf16(&mut rendering, "a");
+        utf16(&mut rendering, "b");
+        rendering.extend_from_slice(&0u16.to_le_bytes());
+        for _ in 0..4 {
+            utf16(&mut rendering, "");
+        }
+        rendering.extend_from_slice(&[0; 4 + 16]);
+        let mut collection = Vec::new();
+        collection.extend_from_slice(&2u16.to_le_bytes());
+        collection.extend_from_slice(&0x3000u16.to_le_bytes());
+        collection.extend_from_slice(&0u32.to_le_bytes());
+        for (kind, type_id, payload, parser_items, operation) in [
+            (
+                SegmentKind::PmApp,
+                DEFAULT_STYLE_TYPE,
+                default,
+                0,
+                "admit Inventor default style record",
+            ),
+            (
+                SegmentKind::PmApp,
+                RENDERING_STYLE_TYPE,
+                rendering,
+                0,
+                "admit Inventor rendering style record",
+            ),
+            (
+                SegmentKind::PmGraphics,
+                GRAPHICS_FACE_TYPE,
+                graphics_face_fixture([1.0; 6]),
+                2,
+                "admit Inventor graphics face record",
+            ),
+            (
+                SegmentKind::PmGraphics,
+                GRAPHICS_STYLE_COLLECTION_TYPE,
+                collection,
+                0,
+                "admit Inventor graphics style collection record",
+            ),
+            (
+                SegmentKind::PmGraphics,
+                GRAPHICS_PRIMARY_COLOR_STYLE_TYPE,
+                primary_color_fixture([0.4; 4]),
+                0,
+                "admit Inventor graphics primary color style record",
+            ),
+        ] {
+            let admitted =
+                inventory_with_record(kind.clone(), type_id, &payload, DecodePolicy::service())
+                    .expect("presentation record is admitted");
+            assert_eq!(admitted.0, 1, "{operation}");
+            assert!(admitted.1.is_empty());
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = parser_items;
+            assert!(matches!(
+                inventory_with_record(kind, type_id, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == operation
+                        && limit.used == parser_items
+            ));
+        }
+    }
+
+    #[test]
+    fn presentation_parse_issue_refuses_collection_limit_before_push() {
+        assert_eq!(
+            inventory_with_record(
+                SegmentKind::PmApp,
+                DEFAULT_STYLE_TYPE,
+                &[],
+                DecodePolicy::service()
+            )
+            .expect("truncated style becomes an issue")
+            .1
+            .len(),
+            1
+        );
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "admit Inventor presentation issue"
+                    && limit.used == 0
+        ));
+    }
+
+    #[test]
+    fn presentation_record_identity_refuses_retained_limits_before_copy() {
+        let mut payload = default_style_fixture();
+        payload.truncate(payload.len() - 8);
+        for (limit_bytes, operation, used) in [
+            (31, "retain Inventor presentation record type id", 0),
+            (32, "retain Inventor presentation record segment token", 32),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit_bytes;
+            assert!(matches!(
+                inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &payload, policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == used
+            ));
+        }
+    }
+
+    #[test]
+    fn presentation_issue_copies_refuse_retained_limits_before_creation() {
+        let admitted = inventory_with_record(
+            SegmentKind::PmApp,
+            DEFAULT_STYLE_TYPE,
+            &[],
+            DecodePolicy::service(),
+        )
+        .expect("truncated style becomes an issue");
+        let detail_len = admitted.1[0].detail.len();
+        let token_len = admitted.1[0].segment_token.len();
+        for (limit_bytes, operation, used) in [
+            (
+                detail_len - 1,
+                "retain Inventor presentation issue detail",
+                0,
+            ),
+            (
+                detail_len + token_len - 1,
+                "retain Inventor presentation issue token",
+                detail_len,
+            ),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit_bytes as u64;
+            assert!(matches!(
+                inventory_with_record(SegmentKind::PmApp, DEFAULT_STYLE_TYPE, &[], policy),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::RetainedBytes
+                        && limit.operation == operation
+                        && limit.used == used as u64
+            ));
+        }
+    }
 
     #[test]
     fn parses_current_default_style_and_one_based_rendering_reference() {

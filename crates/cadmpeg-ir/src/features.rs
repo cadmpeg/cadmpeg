@@ -1438,13 +1438,13 @@ impl<'de> Deserialize<'de> for PolygonSideCount {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureEvaluation {
     definition: FeatureDefinition,
-    outputs: Vec<BodyId>,
+    outputs: DistinctMembers<BodyId>,
 }
 
 impl FeatureEvaluation {
     /// Construct an evaluation from its semantics and produced bodies.
     #[must_use]
-    pub const fn new(definition: FeatureDefinition, outputs: Vec<BodyId>) -> Self {
+    pub const fn new(definition: FeatureDefinition, outputs: DistinctMembers<BodyId>) -> Self {
         Self {
             definition,
             outputs,
@@ -1456,7 +1456,7 @@ impl FeatureEvaluation {
     pub const fn from_definition(definition: FeatureDefinition) -> Self {
         Self {
             definition,
-            outputs: Vec::new(),
+            outputs: DistinctMembers(Vec::new()),
         }
     }
 
@@ -1467,11 +1467,14 @@ impl FeatureEvaluation {
 
     /// Return the produced or modified body identities.
     pub const fn outputs(&self) -> &Vec<BodyId> {
-        &self.outputs
+        &self.outputs.0
     }
 
     /// Edit the semantics and the produced bodies together.
-    pub fn edit(&mut self, edit: impl FnOnce(&mut FeatureDefinition, &mut Vec<BodyId>)) {
+    pub fn edit(
+        &mut self,
+        edit: impl FnOnce(&mut FeatureDefinition, &mut DistinctMembers<BodyId>),
+    ) {
         edit(&mut self.definition, &mut self.outputs);
     }
 
@@ -1481,7 +1484,7 @@ impl FeatureEvaluation {
     }
 
     /// Replace the produced body identities.
-    pub fn set_outputs(&mut self, outputs: Vec<BodyId>) {
+    pub fn set_outputs(&mut self, outputs: DistinctMembers<BodyId>) {
         self.outputs = outputs;
     }
 }
@@ -1598,7 +1601,8 @@ pub(crate) struct FeatureRowWire {
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
-    outputs: Vec<BodyId>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+    outputs: DistinctMembers<BodyId>,
     definition: FeatureDefinition,
     #[serde(default, deserialize_with = "deserialize_native_ref")]
     native_ref: Option<String>,
@@ -1653,7 +1657,8 @@ struct FeatureReadWire {
     #[serde(default)]
     source_content: FeatureContent,
     #[serde(default)]
-    outputs: Vec<BodyId>,
+    #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+    outputs: DistinctMembers<BodyId>,
     definition: FeatureDefinition,
     #[serde(default, deserialize_with = "deserialize_native_ref")]
     native_ref: Option<String>,
@@ -6680,11 +6685,12 @@ pub enum BodySelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
     /// Resolved topological bodies.
-    Bodies(Vec<BodyId>),
+    Bodies(#[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))] DistinctMembers<BodyId>),
     /// Resolved bodies paired with the format-native selection required for rewrite.
     Resolved {
         /// Resolved topological bodies.
-        bodies: Vec<BodyId>,
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<BodyId>"))]
+        bodies: DistinctMembers<BodyId>,
         /// Format-native selection expression.
         native: String,
     },

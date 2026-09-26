@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral projection of Protein texture assets and material property names.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{BumpMap, TextureMap2d, TextureRef};
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
@@ -19,66 +20,119 @@ pub struct TextureAsset {
 
 impl TextureAsset {
     /// Bind this texture to an appearance property.
-    pub fn into_ref(self, slot: String) -> TextureRef {
-        TextureRef {
-            asset_guid: self.asset_guid,
-            slot,
-            schema: self.schema,
-            paths: self.paths,
-            urn: self.urn,
-            mapping: self.mapping,
-            bump: self.bump,
+    pub fn to_ref(&self, ctx: &DecodeContext<'_>, slot: &str) -> Result<TextureRef, CodecError> {
+        ctx.charge_collection_items(1, "Protein appearance texture")?;
+        ctx.charge_collection_items(self.paths.len() as u64, "Protein appearance texture paths")?;
+        for value in [self.asset_guid.as_str(), slot, &self.schema] {
+            ctx.charge_retained(value.len() as u64, "Protein appearance texture field")?;
         }
+        for path in &self.paths {
+            ctx.charge_retained(path.len() as u64, "Protein appearance texture path")?;
+        }
+        if let Some(urn) = &self.urn {
+            ctx.charge_retained(urn.len() as u64, "Protein appearance texture URN")?;
+        }
+        Ok(TextureRef {
+            asset_guid: self.asset_guid.clone(),
+            slot: slot.to_owned(),
+            schema: self.schema.clone(),
+            paths: self.paths.clone(),
+            urn: self.urn.clone(),
+            mapping: self.mapping.clone(),
+            bump: self.bump.clone(),
+        })
     }
 }
 
-/// Project a bitmap or bump asset and count distances with unknown units.
-/// Unknown distances use zero; the caller decides whether to retain the asset.
+/// Result of projecting one record as a texture asset.
+pub enum TextureAssetResult {
+    /// The record describes another asset type.
+    NotTexture,
+    /// Every stated distance has a length unit.
+    Usable(TextureAsset),
+    /// The source states distance units with no length conversion.
+    UnknownDistanceUnit {
+        /// Number of stated distance properties with unknown units.
+        count: usize,
+    },
+}
+
+/// Project a bitmap or bump asset without constructing a scale from an unknown unit.
 /// A stated float or distance that is not finite refuses the asset.
 pub fn texture_asset(
+    ctx: &DecodeContext<'_>,
     record: &crate::DecodedRecord,
-) -> Result<(Option<TextureAsset>, usize), CodecError> {
+) -> Result<TextureAssetResult, CodecError> {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
     ) {
-        return Ok((None, 0));
+        return Ok(TextureAssetResult::NotTexture);
     }
-    let paths = record
-        .properties
-        .iter()
-        .find_map(|(id, property)| {
-            (id.ends_with("_Bitmap"))
-                .then(|| property.value())
-                .flatten()
-                .and_then(|value| match value {
-                    crate::property::PropertyValue::TextureUri(paths) => Some(paths.clone()),
-                    _ => None,
-                })
-        })
-        .unwrap_or_default();
-    let urn = record.properties.iter().find_map(|(id, property)| {
+    let mut distances = [Length::ZERO; 5];
+    let mut unknown_count = 0_usize;
+    for (index, suffix) in [
+        "RealWorldOffsetX",
+        "RealWorldOffsetY",
+        "RealWorldScaleX",
+        "RealWorldScaleY",
+        "bumpmap_Depth",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index == 4 && record.schema != "BumpMapSchema" {
+            break;
+        }
+        match distance_property(record, suffix) {
+            Ok(Some(value)) => distances[index] = value,
+            Ok(None) => {}
+            Err(DistanceError::UnknownUnit(_)) => unknown_count += 1,
+            Err(DistanceError::NonFinite) => {
+                return Err(CodecError::malformed(format_args!(
+                    "Protein asset {} distance {suffix} is non-finite after millimetre conversion",
+                    record.guid
+                )));
+            }
+        }
+    }
+    if unknown_count != 0 {
+        return Ok(TextureAssetResult::UnknownDistanceUnit {
+            count: unknown_count,
+        });
+    }
+    let source_paths = record.properties.iter().find_map(|(id, property)| {
+        (id.ends_with("_Bitmap"))
+            .then(|| property.value())
+            .flatten()
+            .and_then(|value| match value {
+                crate::property::PropertyValue::TextureUri(paths) => Some(paths),
+                _ => None,
+            })
+    });
+    let paths = if let Some(source_paths) = source_paths {
+        ctx.charge_collection_items(source_paths.len() as u64, "Protein texture paths")?;
+        for path in source_paths {
+            ctx.charge_retained(path.len() as u64, "Protein texture path")?;
+        }
+        source_paths.clone()
+    } else {
+        Vec::new()
+    };
+    let source_urn = record.properties.iter().find_map(|(id, property)| {
         (id.ends_with("_Bitmap_urn"))
             .then(|| property.value())
             .flatten()
             .and_then(|value| match value {
-                crate::property::PropertyValue::String(value) if !value.is_empty() => {
-                    Some(value.clone())
-                }
+                crate::property::PropertyValue::String(value) if !value.is_empty() => Some(value),
                 _ => None,
             })
     });
-    let mut untyped_distance_properties = 0usize;
-    let mut distance = |suffix: &str| match distance_property(record, suffix) {
-        Ok(value) => Ok(value.unwrap_or(Length::ZERO)),
-        Err(DistanceError::UnknownUnit(_)) => {
-            untyped_distance_properties += 1;
-            Ok(Length::ZERO)
-        }
-        Err(DistanceError::NonFinite) => Err(CodecError::malformed(format_args!(
-            "Protein asset {} distance {suffix} is non-finite after millimetre conversion",
-            record.guid
-        ))),
+    let urn = if let Some(source_urn) = source_urn {
+        ctx.charge_retained(source_urn.len() as u64, "Protein texture URN")?;
+        Some(source_urn.clone())
+    } else {
+        None
     };
     let real = |suffix: &str, default| finite_float_property(record, suffix, default);
     let mapping = TextureMap2d {
@@ -99,20 +153,22 @@ pub fn texture_asset(
         )?,
         repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
         repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
-        real_world_offset_x: distance("RealWorldOffsetX")?,
-        real_world_offset_y: distance("RealWorldOffsetY")?,
-        real_world_scale_x: distance("RealWorldScaleX")?,
-        real_world_scale_y: distance("RealWorldScaleY")?,
+        real_world_offset_x: distances[0],
+        real_world_offset_y: distances[1],
+        real_world_scale_x: distances[2],
+        real_world_scale_y: distances[3],
     };
     let bump = if record.schema == "BumpMapSchema" {
         Some(BumpMap {
             normal_map: integer_property(record, "bumpmap_Type") == Some(1),
-            depth: distance("bumpmap_Depth")?,
+            depth: distances[4],
             normal_scale: real("bumpmap_NormalScale", FiniteReal::ONE)?,
         })
     } else {
         None
     };
+    ctx.charge_retained(record.guid.len() as u64, "Protein texture GUID")?;
+    ctx.charge_retained(record.schema.len() as u64, "Protein texture schema")?;
     let texture = TextureAsset {
         asset_guid: record.guid.clone(),
         schema: record.schema.clone(),
@@ -121,7 +177,7 @@ pub fn texture_asset(
         mapping,
         bump,
     };
-    Ok((Some(texture), untyped_distance_properties))
+    Ok(TextureAssetResult::Usable(texture))
 }
 
 fn property_with_suffix<'a>(

@@ -1467,7 +1467,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
                     .unwrap(),
                     construction: None,
                 }),
-                vec![body],
+                (vec![body]).try_into().unwrap(),
             ),
             native_ref: None,
         },
@@ -1578,11 +1578,11 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                     bodies: BodySelection::Resolved {
-                        bodies: vec![body.clone()],
+                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
                         native: "nx:segment-body-bindings".into(),
                     },
                 }),
-                vec![body.clone()],
+                (vec![body.clone()]).try_into().unwrap(),
             ),
             native_ref: None,
         },

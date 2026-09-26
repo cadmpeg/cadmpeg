@@ -22,7 +22,6 @@ use crate::geometry::nurbs::bounds::speed_bound;
 use crate::geometry::{
     nurbs::{knots_nondecreasing, NurbsCurve, NurbsSurface, SurfaceParameterAxis},
     pcurve::{PcurveGeometry, PcurveNurbs},
-    sampled::PolylineCurve,
     CurveGeometry, LawExpression, LawFormula, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     SweepSurfaceLayout,
@@ -42,8 +41,10 @@ use crate::CadIr;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 
 mod depth;
+mod polyline;
 mod rational;
 use depth::ModelEvaluationDepthGuard;
+use polyline::{polyline_point, polyline_samples, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};
 
 const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
@@ -1564,13 +1565,13 @@ pub fn nurbs_curve_point_at(
     curve: &NurbsCurve,
     t: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    let poles = curve.control_points();
+    let poles = curve.pole_rows();
     nurbs_curve_point_evaluation(
         curve.degree(),
         curve.knots(),
-        poles.len(),
-        |index| poles.get(index).copied(),
-        curve.pole_rows().weights().as_deref(),
+        poles.count(),
+        |index| poles.point_at(index),
+        |index| poles.weight_at(index),
         FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?,
     )
 }
@@ -1587,7 +1588,7 @@ fn nurbs_curve_point_evaluation(
     knots: &[f64],
     count: usize,
     pole: impl Fn(usize) -> Option<FinitePoint3>,
-    weights: Option<&[f64]>,
+    weight: impl Fn(usize) -> Option<f64>,
     t: FiniteReal,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let t = t.get();
@@ -1602,7 +1603,7 @@ fn nurbs_curve_point_evaluation(
         return Err(unreached);
     }
     let poles = local_poles(span, degree, pole).ok_or(no_value)?;
-    let base = homogeneous_curve_sum(&basis, &poles, weights, span - degree).ok_or(no_value)?;
+    let base = homogeneous_curve_sum(&basis, &poles, weight, span - degree).ok_or(no_value)?;
     let [x, y, z] = finite_lanes(base.project(base, &[]).ok_or(no_value)?)
         .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
     Ok(FinitePoint3::from_coordinates(x, y, z))
@@ -1622,15 +1623,13 @@ fn local_poles(
 fn homogeneous_curve_sum(
     values: &[f64],
     poles: &[FinitePoint3],
-    weights: Option<&[f64]>,
+    weight: impl Fn(usize) -> Option<f64>,
     first: usize,
 ) -> Option<Homogeneous> {
     Homogeneous::sum(values.iter().copied().enumerate().map(|(local, basis)| {
         Some((
             [basis, 1.0],
-            weights
-                .and_then(|weights| weights.get(first + local).copied())
-                .unwrap_or(1.0),
+            weight(first + local).unwrap_or(1.0),
             *poles.get(local)?,
         ))
     }))
@@ -1716,7 +1715,7 @@ fn nurbs_curve_parameter_near_point_with_nonnegative_tolerance(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            Some(weights.as_ref()),
+            |index| weights.get(index).copied(),
             parameter,
         )
         .ok()?;
@@ -1793,7 +1792,7 @@ fn nurbs_curve_parameter_near_point_newton(
             curve.knots(),
             poles.len(),
             |index| poles.get(index).copied(),
-            Some(weights),
+            |index| weights.get(index).copied(),
             parameter,
         )
         .ok()?;
@@ -2280,7 +2279,14 @@ fn nurbs_pcurve_differential_with(
         return Err(unreached);
     }
     let poles = local_poles(span, degree, pole).ok_or(EvaluationFailure::NoValue)?;
-    let sum = |values: &[f64]| homogeneous_curve_sum(values, &poles, weights, span - degree);
+    let sum = |values: &[f64]| {
+        homogeneous_curve_sum(
+            values,
+            &poles,
+            |index| weights.and_then(|weights| weights.get(index).copied()),
+            span - degree,
+        )
+    };
     let base = sum(&basis).ok_or(EvaluationFailure::NoValue)?;
     let point = finite_lanes(base.project(base, &[]).ok_or(EvaluationFailure::NoValue)?)
         .map_err(|[u, v, _]| EvaluationFailure::NonFinite(Point2::new(u, v)))?;
@@ -3532,7 +3538,13 @@ fn nurbs_curve_derivative(
     // A sum is absent only where one of its derivative basis terms is not
     // finite.
     let sum = |values: &[f64]| {
-        homogeneous_curve_sum(values, &poles, weights, span - degree).ok_or(non_finite)
+        homogeneous_curve_sum(
+            values,
+            &poles,
+            |index| weights.and_then(|weights| weights.get(index).copied()),
+            span - degree,
+        )
+        .ok_or(non_finite)
     };
     let base = sum(&basis)?;
     let first_sum = sum(&first_basis)?;
@@ -5241,20 +5253,22 @@ pub fn curve_point_solved(
         SolvedCurveGeometry::Nurbs(nurbs) => {
             let parameter =
                 map_nurbs_curve_parameter(nurbs, parameter()?).ok_or(EvaluationFailure::NoValue)?;
-            let poles = nurbs.control_points();
+            let poles = nurbs.pole_rows();
             nurbs_curve_point_evaluation(
                 nurbs.degree(),
                 nurbs.knots(),
-                poles.len(),
-                |index| poles.get(index).copied(),
-                nurbs.pole_rows().weights().as_deref(),
+                poles.count(),
+                |index| poles.point_at(index),
+                |index| poles.weight_at(index),
                 parameter,
             )
         }
-        SolvedCurveGeometry::Polyline(polyline) => {
-            let (points, parameters) = polyline_samples(polyline);
-            polyline_point(&points, &parameters, t)
-        }
+        SolvedCurveGeometry::Polyline(polyline) => polyline_point(
+            polyline.point_count(),
+            |index| polyline.point_at(index),
+            |index| polyline.parameter_at(index),
+            t,
+        ),
         SolvedCurveGeometry::Transformed(placed) => {
             placed_point(*placed.transform(), curve_point_solved(placed.basis(), t))
         }
@@ -6000,24 +6014,12 @@ fn model_surface_point_inner(
             .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::VariableBlend(definition_payload) => {
-            cacheless_variable_blend_point(&index, definition_payload.construction(), u, v)
-                .and_then(admit_point)
+            cacheless_variable_blend_point(&index, definition_payload, u, v).and_then(admit_point)
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
-            let native = definition_payload
-                .native()
-                .ok_or(EvaluationFailure::NoValue)?;
-            cacheless_constant_rolling_ball_point(
-                &index,
-                definition_payload.supports(),
-                definition_payload.radius(),
-                definition_payload.cross_section(),
-                native,
-                u,
-                v,
-            )
-            .map_err(|failure| failure.map(|()| UNREACHED_POINT))
-            .and_then(admit_point)
+            cacheless_constant_rolling_ball_point(&index, definition_payload, u, v)
+                .map_err(|failure| failure.map(|()| UNREACHED_POINT))
+                .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
             rolling_ball_jet_point(procedural.definition(), u, v)
@@ -7146,14 +7148,11 @@ fn variable_blend_contact_track(
 }
 
 fn cacheless_variable_blend_domain_contains(
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: FiniteReal,
     v: FiniteReal,
 ) -> bool {
+    let construction = payload.construction();
     let exact_construction = matches!(
         construction.cache,
         crate::geometry::VariableBlendCache::Parameterization { .. }
@@ -7161,7 +7160,7 @@ fn cacheless_variable_blend_domain_contains(
     );
     exact_construction
         && (0.0..=1.0).contains(&u.get())
-        && sweep_tail_interval_contains(construction.slice_range, v)
+        && sweep_tail_interval_contains(payload.slice_range().endpoints(), v)
         && construction.cache.parameterization().is_none_or(|tail| {
             sweep_tail_interval_contains(tail.u_interval, u)
                 && sweep_tail_interval_contains(tail.v_interval, v)
@@ -7238,14 +7237,11 @@ fn variable_blend_is_zero_radius(
 /// value.
 fn cacheless_ruled_variable_blend_tracks(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
+    let construction = payload.construction();
     let no_value = EvaluationFailure::NoValue;
     let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
         construction.cross_section.as_ref()
@@ -7253,7 +7249,7 @@ fn cacheless_ruled_variable_blend_tracks(
         return Err(no_value);
     };
     let (finite_u, finite_v) = blend_parameters(u, v)?;
-    if !cacheless_variable_blend_domain_contains(construction, finite_u, finite_v)
+    if !cacheless_variable_blend_domain_contains(payload, finite_u, finite_v)
         || radius
             .as_deref()
             .is_some_and(|radius| !variable_blend_is_zero_radius(radius))
@@ -7270,15 +7266,11 @@ fn cacheless_ruled_variable_blend_tracks(
 /// contact points at fraction `u`. It reads the contact points only.
 fn cacheless_ruled_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)?;
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, payload, u, v)?;
     Ok(offset(
         first.point(),
         &[(u, point_displacement(second.point(), first.point()))],
@@ -7289,15 +7281,11 @@ fn cacheless_ruled_variable_blend_point(
 /// partials reading the track tangents, or why its point has none.
 fn cacheless_ruled_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let [first, second] = cacheless_ruled_variable_blend_tracks(index, construction, u, v)
+    let [first, second] = cacheless_ruled_variable_blend_tracks(index, payload, u, v)
         .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     let chord = point_displacement(second.point(), first.point());
     let point = admit_point(offset(first.point(), &[(u, chord)]))?;
@@ -7423,15 +7411,12 @@ fn minor_circular_arc_point(
 /// Whether a variable blend takes the circular cross section with a single
 /// radius over its domain at `(u, v)`.
 fn circular_variable_blend_applies(
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: FiniteReal,
     v: FiniteReal,
 ) -> bool {
-    cacheless_variable_blend_domain_contains(construction, u, v)
+    let construction = payload.construction();
+    cacheless_variable_blend_domain_contains(payload, u, v)
         && construction.radii.is_single()
         && matches!(
             construction.cross_section,
@@ -7443,16 +7428,13 @@ fn circular_variable_blend_applies(
 /// there are none: a blend outside that form or its domain has no value.
 fn circular_variable_blend_tracks(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<[ContactTrack; 2], EvaluationFailure<()>> {
+    let construction = payload.construction();
     let (finite_u, finite_v) = blend_parameters(u, v)?;
-    if !circular_variable_blend_applies(construction, finite_u, finite_v) {
+    if !circular_variable_blend_applies(payload, finite_u, finite_v) {
         return Err(EvaluationFailure::NoValue);
     }
     Ok([
@@ -7463,22 +7445,19 @@ fn circular_variable_blend_tracks(
 
 fn cacheless_circular_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let tracks = circular_variable_blend_tracks(index, construction, u, v)?;
+    let tracks = circular_variable_blend_tracks(index, payload, u, v)?;
     if u == 0.0 {
         return Ok(tracks[0].point());
     }
     if u == 1.0 {
         return Ok(tracks[1].point());
     }
-    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)?;
+    let section =
+        cacheless_circular_variable_blend_section(index, payload.construction(), v, tracks)?;
     minor_circular_arc_point(
         section.center,
         section.first.point(),
@@ -7586,22 +7565,11 @@ fn cacheless_circular_variable_blend_section(
 
 fn cacheless_constant_rolling_ball_point(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let section = cacheless_constant_rolling_ball_section(
-        index,
-        supports,
-        radius,
-        cross_section,
-        native,
-        u,
-        v,
-    )?;
+    let section = cacheless_constant_rolling_ball_section(index, payload, u, v)?;
     minor_circular_arc_point(
         section.center,
         section.first.point(),
@@ -7625,15 +7593,14 @@ struct ConstantRollingBallSection {
 /// its own outcome.
 fn cacheless_constant_rolling_ball_section(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<ConstantRollingBallSection, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
-    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+    let native = payload.native().ok_or(no_value)?;
+    let native_ranges = payload.native_ranges().ok_or(no_value)?;
+    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
         return Err(no_value);
     };
     let signed_radius = signed_radius.get();
@@ -7642,11 +7609,11 @@ fn cacheless_constant_rolling_ball_section(
         native.cache,
         crate::geometry::RevisionCacheForm::Parameterization(_)
     ) || native.third.is_some()
-        || *cross_section != crate::geometry::BlendCrossSection::Circular
+        || *payload.cross_section() != crate::geometry::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, finite_v)
-        || !sweep_tail_interval_contains(native.u_range, finite_u)
-        || !sweep_tail_interval_contains(native.v_range, finite_v)
+        || !sweep_tail_interval_contains(native_ranges[0].endpoints(), finite_u)
+        || !sweep_tail_interval_contains(native_ranges[1].endpoints(), finite_v)
         || !native.cache.parameterization().is_some_and(|tail| {
             sweep_tail_interval_contains(tail.u_interval, finite_u)
                 && sweep_tail_interval_contains(tail.v_interval, finite_v)
@@ -7658,7 +7625,7 @@ fn cacheless_constant_rolling_ball_section(
     if radius <= f64::EPSILON {
         return Err(no_value);
     }
-    for (support, side) in supports.iter().zip(native.sides.iter()) {
+    for (support, side) in payload.supports().iter().zip(native.sides.iter()) {
         if support.as_ref().is_some_and(|support| {
             side.surface
                 .as_ref()
@@ -7715,18 +7682,15 @@ fn cacheless_constant_rolling_ball_section(
 /// tangents of both tracks, or why its point has none.
 fn cacheless_circular_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
     let unreached = |failure: EvaluationFailure<()>| failure.map(|()| UNREACHED_POINT);
-    let tracks = circular_variable_blend_tracks(index, construction, u, v).map_err(unreached)?;
-    let section = cacheless_circular_variable_blend_section(index, construction, v, tracks)
-        .map_err(unreached)?;
+    let tracks = circular_variable_blend_tracks(index, payload, u, v).map_err(unreached)?;
+    let section =
+        cacheless_circular_variable_blend_section(index, payload.construction(), v, tracks)
+            .map_err(unreached)?;
     let center_tangent = (|| {
         let radius_derivative = section.radius_derivative?;
         let center_tangent = |track: &ContactTrack, sign: f64, normal: Vector3| {
@@ -7763,23 +7727,12 @@ fn cacheless_circular_variable_blend_first_order(
 
 fn cacheless_constant_rolling_ball_first_order(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let section = cacheless_constant_rolling_ball_section(
-        index,
-        supports,
-        radius,
-        cross_section,
-        native,
-        u,
-        v,
-    )
-    .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
+    let section = cacheless_constant_rolling_ball_section(index, payload, u, v)
+        .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     constant_rolling_ball_first_order(&section, u)
 }
 
@@ -7882,20 +7835,16 @@ fn circular_arc_first_order(
 /// circular section's.
 fn cacheless_variable_blend_point(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<Point3>> {
-    match cacheless_ruled_variable_blend_point(index, construction, u, v) {
+    match cacheless_ruled_variable_blend_point(index, payload, u, v) {
         Ok(point) => Ok(point),
         // The routes need different cross sections, so at most one reaches
         // past its structure: its failure outside the finite range is the
         // evaluation's.
-        Err(ruled) => cacheless_circular_variable_blend_point(index, construction, u, v)
+        Err(ruled) => cacheless_circular_variable_blend_point(index, payload, u, v)
             .map_err(|circular| match ruled {
                 EvaluationFailure::NonFinite(()) => ruled,
                 EvaluationFailure::NoValue => circular,
@@ -7908,24 +7857,21 @@ fn cacheless_variable_blend_point(
 /// chamfer's, or the circular section's.
 fn cacheless_variable_blend_first_order(
     index: &crate::index::ModelIndex<'_>,
-    construction: &crate::geometry::VariableBlendConstruction<
-        FiniteReal,
-        FiniteVector3,
-        FinitePoint3,
-    >,
+    payload: &crate::geometry::surface_payloads::VariableBlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    match cacheless_ruled_variable_blend_first_order(index, construction, u, v) {
+    match cacheless_ruled_variable_blend_first_order(index, payload, u, v) {
         Ok(order) => Ok(order),
         // The routes need different cross sections, so at most one reaches
         // past its structure: its failure outside the finite range is the
         // evaluation's.
-        Err(ruled) => cacheless_circular_variable_blend_first_order(index, construction, u, v)
-            .map_err(|circular| match ruled {
+        Err(ruled) => cacheless_circular_variable_blend_first_order(index, payload, u, v).map_err(
+            |circular| match ruled {
                 EvaluationFailure::NonFinite(_) => ruled,
                 EvaluationFailure::NoValue => circular,
-            }),
+            },
+        ),
     }
 }
 
@@ -8382,7 +8328,7 @@ fn model_surface_point_by_id_inner(
             Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
                 let construction = definition_payload.construction();
 
-                match cacheless_variable_blend_point(index, construction, u, v) {
+                match cacheless_variable_blend_point(index, definition_payload, u, v) {
                     Ok(point) => Some(SurfaceEvaluation {
                         point: evaluated(point),
                         oriented_normal: Err(EvaluationFailure::NoValue),
@@ -8397,28 +8343,13 @@ fn model_surface_point_by_id_inner(
             }
             Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
                 if let Some(native) = definition_payload.native() {
-                    let supports = definition_payload.supports();
-                    let radius = definition_payload.radius();
-                    let cross_section = definition_payload.cross_section();
-
-                    match cacheless_constant_rolling_ball_point(
-                        index,
-                        supports,
-                        radius,
-                        cross_section,
-                        native,
-                        u,
-                        v,
-                    ) {
+                    match cacheless_constant_rolling_ball_point(index, definition_payload, u, v) {
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
                             oriented_normal: if normal {
                                 cacheless_constant_rolling_ball_first_order(
                                     index,
-                                    supports,
-                                    radius,
-                                    cross_section,
-                                    native,
+                                    definition_payload,
                                     u,
                                     v,
                                 )
@@ -8622,15 +8553,7 @@ fn model_surface_first_order_by_id(
         Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
             definition_payload.native().map(|native| {
                 (
-                    cacheless_constant_rolling_ball_first_order(
-                        index,
-                        definition_payload.supports(),
-                        definition_payload.radius(),
-                        definition_payload.cross_section(),
-                        native,
-                        u,
-                        v,
-                    ),
+                    cacheless_constant_rolling_ball_first_order(index, definition_payload, u, v),
                     revision_surface_tail_has_current_cache(&native.cache),
                 )
             })
@@ -8638,7 +8561,7 @@ fn model_surface_first_order_by_id(
         Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
             let construction = definition_payload.construction();
             Some((
-                cacheless_variable_blend_first_order(index, construction, u, v),
+                cacheless_variable_blend_first_order(index, definition_payload, u, v),
                 variable_blend_has_current_cache(construction),
             ))
         }
@@ -8990,19 +8913,6 @@ fn offset_surface_jet(
     })
 }
 
-/// The polyline's samples with the parameterization it evaluates on.
-///
-/// A sample row carries its own parameter, so the two lists this returns agree
-/// by construction. An unparameterized polyline evaluates on its sample index.
-fn polyline_samples(polyline: &PolylineCurve) -> (Vec<FinitePoint3>, Vec<FiniteReal>) {
-    let points: Vec<FinitePoint3> = polyline.points().collect();
-    let parameters = polyline.parameters().map_or_else(
-        || (0..points.len()).map(FiniteReal::from_index).collect(),
-        Iterator::collect,
-    );
-    (points, parameters)
-}
-
 /// `(end - start) / (domain_end - domain_start)` over exact differences. An
 /// empty domain has no quotient; a quotient that overflows is non-finite and
 /// carries its signed infinity.
@@ -9024,81 +8934,6 @@ fn difference_quotient(
             .quotient(denominator)
             .map_err(EvaluationFailure::NonFinite)
     })
-}
-
-/// The point of a sampled polyline at `t`, interpolated on the first
-/// segment whose parameters enclose it, at its fraction of that segment. A
-/// parameter outside every segment, and a segment of zero parameter width,
-/// have no value; a coordinate whose interpolation overflows carries its
-/// plain sum.
-fn polyline_point(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    t: f64,
-) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    if points.len() < 2 || points.len() != parameters.len() {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let (segment, fraction) = parameters
-        .windows(2)
-        .enumerate()
-        .find_map(
-            |(segment, window)| match t.segment_position(window[0], window[1]) {
-                SegmentPosition::Outside => None,
-                SegmentPosition::Degenerate => Some(Err(EvaluationFailure::NoValue)),
-                SegmentPosition::Within(fraction) => Some(Ok((segment, fraction.get()))),
-            },
-        )
-        .ok_or(EvaluationFailure::NoValue)??;
-    let start = points[segment].get();
-    let end = points[segment + 1].get();
-    let lerp = |start, end| crate::math::sum::finite_dot([1.0 - fraction, fraction], [start, end]);
-    let [x, y, z] = finite_lanes([
-        lerp(start.x, end.x),
-        lerp(start.y, end.y),
-        lerp(start.z, end.z),
-    ])
-    .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
-    Ok(FinitePoint3::from_coordinates(x, y, z))
-}
-
-/// The tangent of a sampled polyline at `t`: the chord slope of every
-/// segment whose parameters enclose it, which must agree. A parameter outside
-/// every segment, a segment of zero parameter width, and a vertex whose
-/// segments disagree have no tangent; a slope that overflows leaves the
-/// tangent outside the finite range.
-fn polyline_tangent(
-    points: &[FinitePoint3],
-    parameters: &[FiniteReal],
-    t: f64,
-) -> Result<FiniteVector3, EvaluationFailure<()>> {
-    if points.len() < 2 || points.len() != parameters.len() {
-        return Err(EvaluationFailure::NoValue);
-    }
-    let t = FiniteReal::new(t).ok_or(EvaluationFailure::NoValue)?;
-    let mut tangent = None;
-    for (segment, window) in parameters.windows(2).enumerate() {
-        if !((t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1])) {
-            continue;
-        }
-        let [start_x, start_y, start_z] = points[segment].coordinates();
-        let [end_x, end_y, end_z] = points[segment + 1].coordinates();
-        let slope = |end, start| {
-            difference_quotient(end, start, window[1], window[0])
-                .map_err(|failure| failure.map(|_| ()))
-        };
-        let candidate = FiniteVector3::from_components(
-            slope(end_x, start_x)?,
-            slope(end_y, start_y)?,
-            slope(end_z, start_z)?,
-        );
-        if tangent.is_some_and(|tangent| tangent != candidate) {
-            return Err(EvaluationFailure::NoValue);
-        }
-        tangent = Some(candidate);
-    }
-    tangent.ok_or(EvaluationFailure::NoValue)
 }
 
 fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {

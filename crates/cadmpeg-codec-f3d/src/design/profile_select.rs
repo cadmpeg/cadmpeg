@@ -2190,13 +2190,8 @@ fn coincident_spatial_profile_geometry(
         first_center.y - second_center.y,
         first_center.z - second_center.z,
     );
-    let Some((first_normal, second_normal)) = first_normal
-        .as_raw()
-        .unit()
-        .zip(second_normal.as_raw().unit())
-    else {
-        return false;
-    };
+    let first_normal = *first_normal.to_unit_length_charted().as_raw();
+    let second_normal = *second_normal.to_unit_length_charted().as_raw();
     let normal_angle = first_normal
         .cross(second_normal)
         .norm()

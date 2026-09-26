@@ -7,7 +7,7 @@ use crate::loss::Diagnostics;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::units::FiniteVector;
 
@@ -845,6 +845,7 @@ pub(crate) enum BrepParse {
 
 /// Parses and validates one `ON_Brep` class-data payload.
 pub(crate) fn parse(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -855,7 +856,7 @@ pub(crate) fn parse(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 == 2 {
-        return parse_legacy_major2(bytes, range, archive, version, reader);
+        return parse_legacy_major2(ctx, bytes, range, archive, version, reader);
     }
     if version >> 4 != 3 {
         return Err(GeometryError::unsupported(
@@ -1071,6 +1072,7 @@ fn scaled_mean(sum: f64, count: usize) -> Option<f64> {
 }
 
 fn parse_legacy_major2(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -1094,8 +1096,10 @@ fn parse_legacy_major2(
     let c2_start = reader.position();
     let mut c2_meta = Vec::with_capacity(trim_count);
     for _ in 0..trim_count {
-        let curve_range = crate::curves::consume_legacy_polycurve_2d(bytes, &mut reader, archive)?;
+        let curve_range =
+            crate::curves::consume_legacy_polycurve_2d(ctx, bytes, &mut reader, archive)?;
         let decoded = crate::curves::decode_2d(
+            ctx,
             bytes,
             crate::curves::POLYCURVE,
             curve_range.clone(),
@@ -1114,12 +1118,14 @@ fn parse_legacy_major2(
     let mut c3_meta = Vec::with_capacity(edge_count);
     for _ in 0..edge_count {
         let curve_range = crate::curves::consume_legacy_polycurve(
+            ctx,
             bytes,
             &mut reader,
             crate::settings::MillimeterScale::IDENTITY,
             archive,
         )?;
         let decoded = crate::curves::decode(
+            ctx,
             bytes,
             crate::curves::POLYCURVE,
             curve_range.clone(),
@@ -1140,6 +1146,7 @@ fn parse_legacy_major2(
     for _ in 0..face_count {
         let start = reader.position();
         let _surface = crate::surfaces::read_nurbs_surface_prefix(
+            ctx,
             &mut reader,
             crate::settings::MillimeterScale::IDENTITY,
         )?;
@@ -2921,7 +2928,7 @@ mod tests {
 
     use super::{
         body_kind_rests_on_missing_stamp, finite_tolerance, legacy_curve_shape,
-        legacy_decoded_curve_endpoints, ordered_interval, parse, read_children, read_faces,
+        legacy_decoded_curve_endpoints, ordered_interval, read_children, read_faces,
         read_legacy_mesh_sides, read_mesh_sides, read_region_records,
         read_region_topology_userdata, read_regions, read_trims, read_vertices,
         serialized_body_kind, supported_class, validate_rings, BrepBodyKind, RawBrep,
@@ -2932,6 +2939,20 @@ mod tests {
         ON_BREP_FACE_SIDE, ON_BREP_REGION, ON_UNSET_POSITIVE_VALUE, ON_UNSET_VALUE, OPENNURBS4,
         TL_BREP, V5_BREP_REGION_TOPOLOGY_USERDATA,
     };
+
+    fn parse(
+        bytes: &[u8],
+        range: std::ops::Range<usize>,
+        archive: ArchiveVersion,
+        writer_version: Option<i64>,
+        userdata: &[crate::objects::UserdataDescriptor],
+    ) -> Result<super::BrepParse, GeometryError> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("test input fits service profile");
+        super::parse(&ctx, bytes, range, archive, writer_version, userdata)
+    }
     use crate::chunks::{ArchiveVersion, BoundedReader};
     use crate::curves::GeometryError;
     use crate::loss::Diagnostics;

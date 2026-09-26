@@ -1160,8 +1160,15 @@ fn solved_tangent(first: &SketchGeometry, second: &SketchGeometry) -> Option<boo
     }
 }
 
-fn circular_center_radius(
-    geometry: &SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal>,
+fn circular_center_radius<D, M>(
+    geometry: &SketchGeometryDefinition<
+        FinitePoint2,
+        PositiveLength,
+        FiniteReal,
+        PositiveReal,
+        D,
+        M,
+    >,
 ) -> Option<(Point2, f64)> {
     match geometry {
         SketchGeometryDefinition::Circle { center, radius }

@@ -392,7 +392,7 @@ pub(crate) fn scan<'a>(
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
-    let archive = ArchiveSnapshot::new(root)?;
+    let archive = ArchiveSnapshot::new(ctx, root)?;
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
