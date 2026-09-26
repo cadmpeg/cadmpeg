@@ -143,8 +143,7 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
 
     let doubled = law
         .try_map_radii(scaled(2.0))
-        .expect("finite radii")
-        .expect("one positive radius");
+        .expect("finite radii with one positive radius");
     assert_eq!(
         doubled
             .as_slice()
@@ -156,12 +155,12 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
 
     let tiny =
         VariableRadii::new(vec![point(0.0, 0.0), point(1.0, 1.0e-320)]).expect("an admitted law");
-    assert!(tiny
-        .try_map_radii(scaled(1.0e-10))
-        .expect("finite radii")
-        .is_err());
+    assert!(matches!(
+        tiny.try_map_radii(scaled(1.0e-10)),
+        Err(super::VariableRadiiMapError::Admission(_))
+    ));
     assert_eq!(
-        law.try_map_radii(scaled(f64::MAX)).map(|law| law.is_ok()),
-        Err("overflow")
+        law.try_map_radii(scaled(f64::MAX)),
+        Err(super::VariableRadiiMapError::Radius("overflow"))
     );
 }

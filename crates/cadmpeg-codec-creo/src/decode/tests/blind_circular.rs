@@ -1124,7 +1124,8 @@ fn opposite_reference_caps_select_one_round_envelope_axis() {
         center: [0.0; 3],
         center_stored: true,
         radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
+        axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            .expect("unit axis"),
         start,
         end,
         offset: 0,
@@ -1167,7 +1168,8 @@ fn coaxial_reference_circles_define_a_cylinder_frame() {
         center,
         center_stored: true,
         radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
+        axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            .expect("unit axis"),
         start,
         end: [0.0, 0.0, 0.0],
         offset: 0,

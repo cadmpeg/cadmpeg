@@ -1027,7 +1027,8 @@ fn round_envelope_rejects_an_extra_reference_circle() {
         center: [0.0; 3],
         center_stored: true,
         radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive radius"),
-        axis,
+        axis: cadmpeg_ir::units::UnitVector3::new(cadmpeg_ir::math::Vector3::from(axis))
+            .expect("unit axis"),
         start,
         end,
         offset: 0,

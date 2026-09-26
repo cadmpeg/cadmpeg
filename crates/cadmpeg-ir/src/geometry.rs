@@ -2475,25 +2475,39 @@ impl HelixCurveConstruction {
     pub fn try_scale_lengths(&mut self, scale: f64) -> Result<(), &'static str> {
         let vector =
             |value: Vector3| Vector3::new(value.x * scale, value.y * scale, value.z * scale);
-        let candidate = Self::try_new(
-            self.angle_range.get(),
-            HelixFrame {
-                center: Point3::new(
-                    self.center.x * scale,
-                    self.center.y * scale,
-                    self.center.z * scale,
-                ),
-                major: vector(self.major.get()),
-                minor: vector(self.minor.get()),
-                pitch: vector(self.pitch.get()),
-                axis: self.axis.get(),
-            },
-            self.apex_factor.get(),
-            // The rebuilt construction is minted fresh; the solved-cache
-            // contract this construction states travels with it.
-            self.cache,
-        )?;
-        *self = candidate;
+        let center = Point3::new(
+            self.center.x * scale,
+            self.center.y * scale,
+            self.center.z * scale,
+        );
+        let major = vector(self.major.get());
+        let minor = vector(self.minor.get());
+        let pitch = vector(self.pitch.get());
+        let major_radius = major.norm();
+        let minor_radius = minor.norm();
+        if major_radius <= f64::EPSILON || minor_radius <= f64::EPSILON {
+            return Err("helix curve major, minor, and axis must be non-degenerate");
+        }
+        if major.is_finite()
+            && minor.is_finite()
+            && (!major_radius.is_finite()
+                || !minor_radius.is_finite()
+                || (major_radius - minor_radius).abs() > EPS_HELIX_CURVE_RADIUS)
+        {
+            return Err("helix curve major and minor radii must agree");
+        }
+        let center =
+            FinitePoint3::new(center).ok_or("HelixCurveConstruction.center must be finite")?;
+        let major =
+            FiniteVector3::new(major).ok_or("HelixCurveConstruction.major must be finite")?;
+        let minor =
+            FiniteVector3::new(minor).ok_or("HelixCurveConstruction.minor must be finite")?;
+        let pitch =
+            FiniteVector3::new(pitch).ok_or("HelixCurveConstruction.pitch must be finite")?;
+        self.center = center;
+        self.major = major;
+        self.minor = minor;
+        self.pitch = pitch;
         Ok(())
     }
 }

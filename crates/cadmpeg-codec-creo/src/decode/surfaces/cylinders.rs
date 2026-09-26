@@ -1260,8 +1260,8 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .chain(&second.center)
         .map(|value| value.abs())
         .fold(radius_scale, f64::max);
-    let first_axis = normalize(first.axis)?;
-    let second_axis = normalize(second.axis)?;
+    let first_axis = crate::vecmath::unit_length(first.axis);
+    let second_axis = crate::vecmath::unit_length(second.axis);
     ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);
@@ -1332,16 +1332,20 @@ pub(in super::super) fn reference_cap_bound_round_frame(
                 second_corner[radial_indices[1]] = first[radial_indices[1]];
             }
             circles.iter().any(|circle| {
-                circle.axis.iter().enumerate().all(|(index, component)| {
-                    if index == axis_index {
-                        (component.abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY
-                    } else {
-                        component.abs() <= EPS_CYLINDER_GEOMETRY
-                    }
-                }) && ((point_matches(circle.start, first_corner)
-                    && point_matches(circle.end, second_corner))
-                    || (point_matches(circle.end, first_corner)
-                        && point_matches(circle.start, second_corner)))
+                <[f64; 3]>::from(*circle.axis.as_raw())
+                    .iter()
+                    .enumerate()
+                    .all(|(index, component)| {
+                        if index == axis_index {
+                            (component.abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY
+                        } else {
+                            component.abs() <= EPS_CYLINDER_GEOMETRY
+                        }
+                    })
+                    && ((point_matches(circle.start, first_corner)
+                        && point_matches(circle.end, second_corner))
+                        || (point_matches(circle.end, first_corner)
+                            && point_matches(circle.start, second_corner)))
             })
         };
         if ![false, true].into_iter().any(|crossed| {

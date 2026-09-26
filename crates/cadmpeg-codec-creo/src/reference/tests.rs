@@ -34,8 +34,8 @@ fn decodes_complete_positional_line_rows() {
     let [line] = decoded.as_slice() else {
         panic!("one line");
     };
-    assert_eq!(line.start[0], 0.0);
-    assert_eq!(line.end[0], 0.0);
+    assert_eq!(line.start.get().x, 0.0);
+    assert_eq!(line.end.get().x, 0.0);
     assert_ne!(line.start, line.end);
 }
 
@@ -67,7 +67,7 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
     assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
     assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
     assert_eq!(
-        conic.local_system,
+        conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     );
 }
@@ -150,7 +150,8 @@ fn conic_frame_accepts_positive_seven_byte_origin_and_terminal_zero() {
     ];
 
     assert_eq!(
-        conic_local_system(&body, &ScalarCache::from_section(&body)),
+        conic_local_system(&body, &ScalarCache::from_section(&body))
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0])
     );
 }
@@ -185,7 +186,8 @@ fn positional_conic_local_system_requires_its_compound_boundary() {
     body.extend([0x2c, 0xf7, 0x10, 0xe3]);
 
     assert_eq!(
-        positional_conic_local_system(&body, 0, &ScalarCache::default()),
+        positional_conic_local_system(&body, 0, &ScalarCache::default())
+            .map(|(end, slots)| (end, slots.get())),
         Some((12, [0.0; 12]))
     );
 
@@ -226,7 +228,9 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         parameter_end: None,
         coefficient_1: -5.0,
         coefficient_2: 2.0,
-        local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0]),
+        local_system: cadmpeg_ir::units::FiniteVector::new([
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0,
+        ]),
         body: Vec::new(),
         offset: 10,
     };
@@ -235,9 +239,12 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         ellipse_carriers(std::slice::from_ref(&conic)),
         [ReferenceEllipse {
             source_entity_id: 7,
-            center: [2.0, 2.0, 4.0],
-            axis: [0.0, 0.0, 1.0],
-            major_direction: [-1.0, 0.0, 0.0],
+            center: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                2.0, 2.0, 4.0,
+            ))
+            .expect("finite center"),
+            axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+            major_direction: cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(),
             major_radius: PositiveLength::new(5.0).expect("positive radius"),
             minor_radius: PositiveLength::new(2.0).expect("positive radius"),
             offset: 10,
@@ -245,15 +252,16 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
     );
 
     let mut invalid = conic.clone();
-    invalid
-        .local_system
-        .as_mut()
-        .expect("complete local system")[3] = 1.0;
+    let mut invalid_frame = invalid.local_system.expect("complete local system").get();
+    invalid_frame[3] = 1.0;
+    invalid.local_system = cadmpeg_ir::units::FiniteVector::new(invalid_frame);
     assert!(ellipse_carriers(&[invalid]).is_empty());
 
     let diagonal = (100.0_f64 / 29.0).sqrt();
     let ambiguous = ReferenceConic {
-        local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+        local_system: cadmpeg_ir::units::FiniteVector::new([
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+        ]),
         start: [diagonal, diagonal, 0.0],
         end: [-diagonal, -diagonal, 0.0],
         ..conic
@@ -306,8 +314,8 @@ fn decodes_line3d_with_matching_original_length() {
             original_length: PositiveLength::new(1.0).expect("positive length")
         }
     );
-    assert_eq!(line.start, [0.0; 3]);
-    assert_eq!(line.end, [1.0, 0.0, 0.0]);
+    assert_eq!(<[f64; 3]>::from(line.start.get()), [0.0; 3]);
+    assert_eq!(<[f64; 3]>::from(line.end.get()), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -328,8 +336,8 @@ fn decodes_line3d_with_positive_full_width_coordinates() {
     let [line] = decoded.as_slice() else {
         panic!("one line3d");
     };
-    assert_eq!(line.start[2], line.end[2]);
-    assert_eq!(line.end[0] - line.start[0], 1.0);
+    assert_eq!(line.start.get().z, line.end.get().z);
+    assert_eq!(line.end.get().x - line.start.get().x, 1.0);
 }
 
 #[test]
@@ -402,7 +410,7 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
     assert_eq!(circle.center[0], -30.0);
     assert_eq!(circle.start[0], -30.0);
     assert_eq!(circle.end[0], -30.0);
-    assert!((circle.axis[0].abs() - 1.0).abs() < 1.0e-12);
+    assert!((circle.axis.as_raw().x.abs() - 1.0).abs() < 1.0e-12);
 }
 
 #[test]
@@ -428,7 +436,10 @@ fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
     assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
     assert_eq!(circle.start, [-3.0, 0.0, 0.0]);
     assert_eq!(circle.end, [-2.0, 1.0, 0.0]);
-    assert_eq!(circle.axis, [0.0, 0.0, -1.0]);
+    assert_eq!(
+        *circle.axis.as_raw(),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+    );
 
     let negative_collision = [0x2d, 0, 0, 0, 0, 0, 0, 0];
     assert_eq!(

@@ -816,7 +816,7 @@ fn fc05_cylinder_branch_witnesses(
         };
         let (reference, axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
-                circle.sample_direction_row_frame,
+                circle.sample_direction_row_frame.get(),
                 Sign::of_component(cap.normal[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {
@@ -951,7 +951,7 @@ fn fc05_reference_circle_frame(
         return None;
     }
     let radius = circle.radius.get();
-    let axis = normalize(circle.axis)?;
+    let axis = crate::vecmath::unit_length(circle.axis);
     let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
     let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
     let radial_length = dot(radial, radial).sqrt();
