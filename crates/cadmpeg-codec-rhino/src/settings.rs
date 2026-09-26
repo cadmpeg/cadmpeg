@@ -94,6 +94,15 @@ impl<const N: usize> PlaneLane<N> {
     }
 }
 
+impl<const N: usize> Serialize for PlaneLane<N>
+where
+    [f64; N]: Serialize,
+{
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.get().serialize(serializer)
+    }
+}
+
 impl PlaneLane<4> {
     pub(crate) fn with_fourth(self, value: FiniteReal) -> Self {
         match self {
