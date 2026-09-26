@@ -281,7 +281,8 @@ fn transfer_reference_circles(
             });
     for circle in &scan.references.circles {
         let start: [f64; 3] = circle.start.get().into();
-        let radial = std::array::from_fn(|axis| start[axis] - circle.center[axis]);
+        let center: [f64; 3] = circle.center.get().into();
+        let radial = std::array::from_fn(|axis| start[axis] - center[axis]);
         let Some((reference, _)) = crate::vecmath::normalize_with_length(radial) else {
             continue;
         };
@@ -316,12 +317,14 @@ fn transfer_reference_circles(
                     "CircleCurve.axis/ref_direction must form an orthonormal frame",
                 )
             })?;
-        let center = cadmpeg_ir::features::FinitePoint3::new(Point3::from(circle.center))
-            .ok_or_else(|| CodecError::malformed("CircleCurve.center must be finite"))?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, circle.radius),
+                cadmpeg_ir::geometry::analytic::CircleCurve::new(
+                    circle.center,
+                    frame,
+                    circle.radius,
+                ),
             )),
             source_object: Some(SourceObjectAssociation {
                 format: cadmpeg_ir::CodecFormat::Creo,
