@@ -1326,9 +1326,13 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
 
 #[test]
 fn audit_regression_distinct_tiny_pattern_steps_stay_explicit() {
-    assert_eq!(crate::design::uniform_step(&[0., 1e-16, 3e-16]), None);
+    let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
     assert_eq!(
-        crate::design::uniform_step(&[0., 1e-16, 2e-16]),
-        Some(1e-16)
+        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(3e-16)]),
+        None
+    );
+    assert_eq!(
+        crate::design::uniform_step(&[finite(0.), finite(1e-16), finite(2e-16)]),
+        Some(finite(1e-16))
     );
 }
