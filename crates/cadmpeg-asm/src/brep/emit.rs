@@ -3509,7 +3509,7 @@ fn emit_silhouette_curve(
         source_object: None,
     });
     Ok(cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette(
-        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::try_new(
+        cadmpeg_ir::geometry::curve_payloads::SilhouetteCurveConstruction::from_unit_direction(
             cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
                 std::array::from_fn(|side| cadmpeg_ir::geometry::IntcurveSupportSide {
                     surface: support_ids[side].clone(),
@@ -3521,8 +3521,7 @@ fn emit_silhouette_curve(
             embedded.silhouette,
             cast_surface,
             embedded.light_direction,
-        )
-        .map_err(|_| "silhouette fields are not finite or the light direction is degenerate")?,
+        ),
     ))
 }
 
