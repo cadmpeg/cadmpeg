@@ -485,6 +485,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         NativeCurveEvidence {
             typed_nonlinear_curve_ids: &BTreeSet::new(),
             model_curves: &[],
+            source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
     )
     .expect("one parameter-space outer loop");
@@ -605,6 +606,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         NativeCurveEvidence {
             typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
             model_curves: &model_curves,
+            source_carriers: &crate::decode::source_carriers::SourceUnitCarriers::default(),
         },
     )
     .expect("concentric two-edge circles have a proven outer loop");
@@ -784,7 +786,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 nurbs_endpoints: &BTreeSet::new(),
             },
             &mut Vec::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
@@ -877,7 +879,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 nurbs_endpoints: &BTreeSet::new(),
             },
             &mut Vec::new(),
-            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
         )
     })
     .expect("valid source object identity");
