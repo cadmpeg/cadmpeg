@@ -7,7 +7,7 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
-use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::cage::Cage;
@@ -507,21 +507,21 @@ fn cage_properties(
     for (axis, knots) in ["u", "v", "w"].into_iter().zip(&cage.knots) {
         properties.insert(
             format!("{prefix}_{axis}_knots"),
-            comma_list(knots.iter().copied()),
+            comma_list(knots.iter().copied().map(FiniteReal::get)),
         );
     }
     properties.insert(
         format!("{prefix}_control_points"),
         cage.control_points
             .iter()
-            .map(|point| comma_list(point.iter().copied()))
+            .map(|point| comma_list(point.iter().copied().map(FiniteReal::get)))
             .collect::<Vec<_>>()
             .join(";"),
     );
     if let Some(weights) = &cage.weights {
         properties.insert(
             format!("{prefix}_weights"),
-            comma_list(weights.iter().copied()),
+            comma_list(weights.iter().copied().map(NonZeroReal::get)),
         );
     }
 }
@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(start_transform[3], 20.0);
         assert_eq!(start_transform[7], 30.0);
         assert_eq!(start_transform[11], 40.0);
-        assert_eq!(end.control_points[7][0], 70.0);
+        assert_eq!(end.control_points[7][0].get(), 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
         let feature = project(&morph, "test", None, "native".to_string(), |_| None)
