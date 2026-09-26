@@ -21,7 +21,7 @@ use super::{
     ReferenceLineKind,
 };
 use crate::scalar::ScalarCache;
-use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::PositiveReal;
 
 #[test]
 fn decodes_complete_positional_line_rows() {
@@ -246,8 +246,8 @@ fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
             .expect("finite center"),
             axis: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             major_direction: cadmpeg_ir::units::UnitVector3::X_AXIS.reversed(),
-            major_radius: PositiveLength::new(5.0).expect("positive radius"),
-            minor_radius: PositiveLength::new(2.0).expect("positive radius"),
+            major_radius: PositiveReal::new(5.0).expect("positive radius"),
+            minor_radius: PositiveReal::new(2.0).expect("positive radius"),
             offset: 10,
         }]
     );

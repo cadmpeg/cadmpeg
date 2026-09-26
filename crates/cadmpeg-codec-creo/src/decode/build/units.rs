@@ -2,12 +2,11 @@
 //! Conversion of neutral Creo values into the canonical IR length unit.
 //!
 //! The PSB scanner keeps source values in their stored unit so native records
-//! remain faithful to the file.  This module is the single boundary at which
-//! the already-built neutral model is converted to millimeters.  Unit
-//! directions, angles, ratios, and source-native arenas are intentionally not
-//! scaled.
+//! remain faithful to the file. This module converts model fields that still
+//! use source units after transfer. Reference curves are converted at transfer.
+//! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -25,10 +24,18 @@ use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 use cadmpeg_ir::topology::EdgeCarrier;
 use cadmpeg_ir::transform::Transform;
 
-/// Scale all neutral model lengths from the source unit into millimeters.
+/// Model geometry converted before entering the neutral model.
+#[derive(Default)]
+pub(super) struct ConvertedGeometry {
+    pub(super) curves: BTreeSet<usize>,
+    pub(super) surfaces: BTreeSet<usize>,
+}
+
+/// Scale model lengths that were not converted at transfer.
 pub(super) fn normalize_model_lengths(
     ir: &mut CadIr,
     scale: PositiveReal,
+    converted: &ConvertedGeometry,
 ) -> Result<(), CodecError> {
     if scale.get() == 1.0 {
         return Ok(());
@@ -45,14 +52,18 @@ pub(super) fn normalize_model_lengths(
         }
     }
 
-    for surface in &mut ir.model.surfaces {
-        if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
-            scale_surface_geometry(geometry, scale)?;
+    for (index, surface) in ir.model.surfaces.iter_mut().enumerate() {
+        if !converted.surfaces.contains(&index) {
+            if let SurfaceGeometry::Solved(geometry) = &mut surface.geometry {
+                scale_surface_geometry(geometry, scale)?;
+            }
         }
     }
-    for curve in &mut ir.model.curves {
-        if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
-            scale_curve_geometry(geometry, scale)?;
+    for (index, curve) in ir.model.curves.iter_mut().enumerate() {
+        if !converted.curves.contains(&index) {
+            if let CurveGeometry::Solved(geometry) = &mut curve.geometry {
+                scale_curve_geometry(geometry, scale)?;
+            }
         }
     }
     for procedural in &mut ir.model.procedural_surfaces {
@@ -1489,7 +1500,7 @@ mod tests {
 
     use super::{
         normalize_model_lengths, scale_curve_geometry, scale_face_motion, scale_feature_definition,
-        scale_pattern_kind, scale_surface_geometry,
+        scale_pattern_kind, scale_surface_geometry, ConvertedGeometry,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -1544,9 +1555,10 @@ mod tests {
             link: None,
             native_ref: None,
         });
-        let error = normalize_model_lengths(&mut ir, positive(1000.0))
-            .expect_err("a non-finite translation has no transform")
-            .to_string();
+        let error =
+            normalize_model_lengths(&mut ir, positive(1000.0), &ConvertedGeometry::default())
+                .expect_err("a non-finite translation has no transform")
+                .to_string();
         assert!(error.contains("transform translation"), "{error}");
     }
 
@@ -1615,7 +1627,8 @@ mod tests {
                 pmi: None,
                 native_ref: None,
             });
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
+            .expect("valid unit scaling");
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -1660,14 +1673,45 @@ mod tests {
     #[test]
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
         let mut ir = model_point_ir(Point3::new(1.0, -2.0, 0.5));
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
+            .expect("valid unit scaling");
         assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
+    }
+
+    #[test]
+    fn converted_curve_slot_does_not_skip_an_unconverted_duplicate_identity() {
+        let mut ir = CadIr::empty();
+        let id = cadmpeg_ir::ids::CurveId::mint("creo:test:curve#duplicate")
+            .expect("valid curve identity");
+        for x in [25.4, 1.0] {
+            ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                    cadmpeg_ir::geometry::analytic::LineCurve::new(
+                        cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                            .expect("finite line origin"),
+                        cadmpeg_ir::units::UnitVector3::X_AXIS,
+                    ),
+                )),
+                source_object: None,
+            });
+        }
+        let mut converted = ConvertedGeometry::default();
+        converted.curves.insert(0);
+        normalize_model_lengths(&mut ir, positive(25.4), &converted)
+            .expect("one curve needs normalization");
+        for curve in &ir.model.curves {
+            let Some(SolvedCurveGeometry::Line(line)) = curve.geometry.solved() else {
+                panic!("fixture curve changed family");
+            };
+            assert_eq!(line.origin().get(), Point3::new(25.4, 0.0, 0.0));
+        }
     }
 
     #[test]
     fn a_model_point_that_overflows_in_millimetres_is_refused() {
         let mut ir = model_point_ir(Point3::new(0.0, f64::MAX, 0.0));
-        let error = normalize_model_lengths(&mut ir, positive(25.4))
+        let error = normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
             .expect_err("an overflowing point has no position")
             .to_string();
         assert!(
@@ -1695,8 +1739,8 @@ mod tests {
             source_object: None,
         });
 
-        let error =
-            normalize_model_lengths(&mut ir, positive(25.4)).expect_err("overflow must refuse");
+        let error = normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
+            .expect_err("overflow must refuse");
         assert!(matches!(error, CodecError::Malformed(_)));
         let Some(SolvedCurveGeometry::Nurbs(curve)) = ir.model.curves[0].geometry.solved() else {
             panic!("test curve changed family");
@@ -1881,7 +1925,8 @@ mod tests {
         );
         ir.model.add_procedural_curve(curve_id, curve).unwrap();
 
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
+        normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
+            .expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =
@@ -2017,9 +2062,10 @@ mod tests {
             ir.model
                 .add_procedural_surface(surface_id, surface)
                 .unwrap();
-            let error = normalize_model_lengths(&mut ir, positive(25.4))
-                .expect_err("an overflowing scaled vector has no payload")
-                .to_string();
+            let error =
+                normalize_model_lengths(&mut ir, positive(25.4), &ConvertedGeometry::default())
+                    .expect_err("an overflowing scaled vector has no payload")
+                    .to_string();
             assert!(error.contains(refusal), "{error}");
         }
     }
