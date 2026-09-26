@@ -1,6 +1,7 @@
 //! Indexed and linked profile-point marker tests.
 
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
+use super::{raw2, raw_pairs};
 use crate::layout::legacy_140_single_incidence_profile_point as point_140;
 use crate::layout::legacy_144_single_incidence_profile_point as point_144;
 use crate::records::{SketchInputEntity, SketchInputKind};
@@ -116,7 +117,10 @@ fn extended_indexed_profile_point_decodes_compact_coordinates() {
         payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
         payload[offset + size..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
-        assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+        assert_eq!(
+            raw2(marker_coordinates(&payload, offset)),
+            Some([1.25, -2.5])
+        );
     }
 }
 
@@ -142,7 +146,7 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
     payload[offset + record_len..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        marker_coordinates(&payload, offset),
+        raw2(marker_coordinates(&payload, offset)),
         Some([0.022_224_980_75, 0.0])
     );
     let entities = sketch_input_entities(&payload, "lane");
@@ -160,7 +164,7 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
     assert_eq!(entity.local_id(), Some(7));
 
     payload[offset + 92] = 0;
-    assert_eq!(marker_coordinates(&payload, offset), None);
+    assert_eq!(raw2(marker_coordinates(&payload, offset)), None);
 }
 
 #[test]
@@ -213,7 +217,10 @@ fn shifted_geometry_handle_children_are_points() {
         );
 
         payload[offset + sentinel] = 0;
-        assert_eq!(shifted_geometry_handle_coordinates(&payload, offset), None);
+        assert_eq!(
+            raw2(shifted_geometry_handle_coordinates(&payload, offset)),
+            None
+        );
     }
 }
 
@@ -246,7 +253,10 @@ fn extended_linked_profile_vertex_decodes_as_a_point() {
     payload[offset + 154..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert!(super::linked_profile_vertex(&payload, offset));
-    assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+    assert_eq!(
+        raw2(marker_coordinates(&payload, offset)),
+        Some([1.25, -2.5])
+    );
     assert_eq!(
         sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
@@ -287,7 +297,10 @@ fn compact_linked_profile_vertex_decodes_legacy_and_extended_markers() {
     payload[offset + 146..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert!(super::compact_linked_profile_vertex(&payload, offset));
-    assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+    assert_eq!(
+        raw2(marker_coordinates(&payload, offset)),
+        Some([1.25, -2.5])
+    );
     assert_eq!(
         sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
@@ -333,7 +346,10 @@ fn current_indexed_profile_point_decodes_compact_coordinates() {
     payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
     payload[offset + 134..].copy_from_slice(SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+    assert_eq!(
+        raw2(marker_coordinates(&payload, offset)),
+        Some([1.25, -2.5])
+    );
 }
 
 #[test]
@@ -358,11 +374,14 @@ fn compact_legacy_linked_coordinate_uses_the_1a_pair() {
     payload[150..154].copy_from_slice(&29u32.to_le_bytes());
     payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(legacy_linked_coordinates(&payload, 0), Some([0.0025, 0.01]));
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.0025, 0.01]));
+    assert_eq!(
+        raw2(legacy_linked_coordinates(&payload, 0)),
+        Some([0.0025, 0.01])
+    );
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.0025, 0.01]));
     payload[90] ^= 1;
-    assert_eq!(legacy_linked_coordinates(&payload, 0), None);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_linked_coordinates(&payload, 0)), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
 
     let mut compact = vec![0; 146 + LEGACY_SKETCH_MARKER.len()];
     compact[..78].copy_from_slice(&payload[..78]);
@@ -375,8 +394,11 @@ fn compact_legacy_linked_coordinate_uses_the_1a_pair() {
     compact[138..142].copy_from_slice(&17u32.to_le_bytes());
     compact[142..146].copy_from_slice(&29u32.to_le_bytes());
     compact[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    assert_eq!(legacy_linked_coordinates(&compact, 0), Some([0.0025, 0.01]));
-    assert_eq!(marker_coordinates(&compact, 0), Some([0.0025, 0.01]));
+    assert_eq!(
+        raw2(legacy_linked_coordinates(&compact, 0)),
+        Some([0.0025, 0.01])
+    );
+    assert_eq!(raw2(marker_coordinates(&compact, 0)), Some([0.0025, 0.01]));
 
     let mut shifted = vec![0; 162 + LEGACY_SKETCH_MARKER.len()];
     shifted[..56].copy_from_slice(&payload[..56]);
@@ -392,10 +414,13 @@ fn compact_legacy_linked_coordinate_uses_the_1a_pair() {
     shifted[110..116].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     shifted[158..162].copy_from_slice(&29u32.to_le_bytes());
     shifted[162..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    assert_eq!(legacy_linked_coordinates(&shifted, 0), Some([0.0025, 0.01]));
-    assert_eq!(marker_coordinates(&shifted, 0), Some([0.0025, 0.01]));
+    assert_eq!(
+        raw2(legacy_linked_coordinates(&shifted, 0)),
+        Some([0.0025, 0.01])
+    );
+    assert_eq!(raw2(marker_coordinates(&shifted, 0)), Some([0.0025, 0.01]));
     shifted[158..162].fill(0xff);
-    assert_eq!(legacy_linked_coordinates(&shifted, 0), None);
+    assert_eq!(raw2(legacy_linked_coordinates(&shifted, 0)), None);
 }
 
 #[test]
@@ -421,17 +446,17 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     payload[146..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        inline_arc_coordinates(&payload, 0),
+        raw_pairs(inline_arc_coordinates(&payload, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
-    assert_eq!(marker_coordinates(&payload, 0), Some([2.0, 3.0]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([2.0, 3.0]));
     assert_eq!(
         sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Arc
     );
 
     payload[120..128].copy_from_slice(&5.0f64.to_le_bytes());
-    assert_eq!(inline_arc_coordinates(&payload, 0), None);
+    assert_eq!(raw_pairs(inline_arc_coordinates(&payload, 0)), None);
 
     let mut corner = vec![0; 138 + LEGACY_SKETCH_MARKER.len()];
     corner[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -456,10 +481,10 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     corner[138..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        inline_arc_coordinates(&corner, 0),
+        raw_pairs(inline_arc_coordinates(&corner, 0)),
         Some([[17.0, 17.0], [20.0, 17.0], [17.0, 20.0]])
     );
-    assert_eq!(marker_coordinates(&corner, 0), Some([17.0, 17.0]));
+    assert_eq!(raw2(marker_coordinates(&corner, 0)), Some([17.0, 17.0]));
     assert_eq!(
         sketch_input_entities(&corner, "lane")[0].kind(),
         SketchInputKind::Arc
@@ -484,7 +509,7 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     packed[122..126].copy_from_slice(&9u32.to_le_bytes());
     packed[126..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        inline_arc_coordinates(&packed, 0),
+        raw_pairs(inline_arc_coordinates(&packed, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
@@ -493,11 +518,11 @@ fn legacy_inline_arc_decodes_center_and_endpoints() {
     );
     packed[48] = 0x12;
     assert_eq!(
-        inline_arc_coordinates(&packed, 0),
+        raw_pairs(inline_arc_coordinates(&packed, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     packed[104..112].copy_from_slice(&5.0f64.to_le_bytes());
-    assert_eq!(inline_arc_coordinates(&packed, 0), None);
+    assert_eq!(raw_pairs(inline_arc_coordinates(&packed, 0)), None);
 }
 
 #[test]
@@ -543,20 +568,20 @@ fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
         payload[138..].copy_from_slice(prefix);
 
         assert_eq!(
-            inline_arc_coordinates(&payload, 0),
+            raw_pairs(inline_arc_coordinates(&payload, 0)),
             Some([center, [1.0, 3.0], [2.0, 4.0]])
         );
-        assert_eq!(marker_coordinates(&payload, 0), Some(center));
+        assert_eq!(raw2(marker_coordinates(&payload, 0)), Some(center));
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind(),
             SketchInputKind::Arc
         );
 
         payload[112..120].copy_from_slice(&5.0f64.to_le_bytes());
-        assert_eq!(inline_arc_coordinates(&payload, 0), None);
+        assert_eq!(raw_pairs(inline_arc_coordinates(&payload, 0)), None);
         payload[112..120].copy_from_slice(&4.0f64.to_le_bytes());
         payload[128] ^= 1;
-        assert_eq!(inline_arc_coordinates(&payload, 0), None);
+        assert_eq!(raw_pairs(inline_arc_coordinates(&payload, 0)), None);
     }
 
     let mut compact = vec![0; 134 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
@@ -579,7 +604,7 @@ fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
     compact[134..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        inline_arc_coordinates(&compact, 0),
+        raw_pairs(inline_arc_coordinates(&compact, 0)),
         Some([[2.0, 3.0], [1.0, 3.0], [2.0, 4.0]])
     );
     assert_eq!(
@@ -587,7 +612,7 @@ fn geometry_locus_inline_arcs_decode_direct_and_opposite_corner_centers() {
         SketchInputKind::Arc
     );
     compact[130..134].fill(0);
-    assert_eq!(inline_arc_coordinates(&compact, 0), None);
+    assert_eq!(raw_pairs(inline_arc_coordinates(&compact, 0)), None);
 }
 
 #[test]
@@ -612,10 +637,13 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     payload[170..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.045, -0.0225]));
+    assert_eq!(
+        raw2(marker_coordinates(&payload, 0)),
+        Some([0.045, -0.0225])
+    );
     assert_eq!(
         sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
@@ -631,16 +659,16 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     linked[118..124].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     linked[166..170].copy_from_slice(&4u32.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&linked, 0),
+        raw2(legacy_declared_handle_coordinates(&linked, 0)),
         Some([0.045, -0.0225])
     );
     linked[90] = 0;
-    assert_eq!(legacy_declared_handle_coordinates(&linked, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&linked, 0)), None);
 
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[170..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     assert_eq!(
@@ -652,7 +680,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     payload[96..98].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     assert_eq!(
@@ -661,7 +689,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     );
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].fill(0);
@@ -674,7 +702,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     assert_eq!(
@@ -684,51 +712,51 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
 
     payload[96..98].fill(0);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].fill(0);
     payload[96..98].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[96..98].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     payload[96..98].fill(0);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     payload[96..98].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[96..98].fill(0);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     payload[162..166].copy_from_slice(&3u32.to_le_bytes());
     payload[166..170].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[166..170].copy_from_slice(&4u32.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[162..170].fill(0);
@@ -745,7 +773,7 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     payload[173..177].copy_from_slice(&2u32.to_le_bytes());
     payload[177..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     assert_eq!(
@@ -764,20 +792,23 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     padded_handle[181..185].copy_from_slice(&5u32.to_le_bytes());
     padded_handle[185..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        legacy_declared_handle_coordinates(&padded_handle, 0),
+        raw2(legacy_declared_handle_coordinates(&padded_handle, 0)),
         Some([0.045, -0.0225])
     );
     padded_handle[181..185].fill(0);
-    assert_eq!(legacy_declared_handle_coordinates(&padded_handle, 0), None);
+    assert_eq!(
+        raw2(legacy_declared_handle_coordinates(&padded_handle, 0)),
+        None
+    );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
@@ -785,17 +816,17 @@ fn legacy_declared_handle_markers_decode_their_planar_coordinates() {
     payload[96..98].copy_from_slice(&3u16.to_le_bytes());
     payload[119..121].fill(0);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.045, -0.0225])
     );
     payload[96..98].fill(0);
-    assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&payload, 0)), None);
     payload[119..121].fill(0xff);
-    assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&payload, 0)), None);
     payload[96..98].copy_from_slice(&3u16.to_le_bytes());
     payload[119..121].fill(0);
     payload[84] = b'x';
-    assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -822,7 +853,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
     payload[169..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.352, 0.005])
     );
     assert_eq!(
@@ -831,7 +862,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.352, 0.005])
     );
     assert_eq!(
@@ -845,7 +876,7 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     payload[169..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        legacy_declared_handle_coordinates(&payload, 0),
+        raw2(legacy_declared_handle_coordinates(&payload, 0)),
         Some([0.352, 0.005])
     );
     assert_eq!(
@@ -858,10 +889,10 @@ fn legacy_arc_handle_marker_decodes_its_planar_coordinate() {
     payload[169..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     payload[80..82].fill(0);
-    assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&payload, 0)), None);
     payload[80..82].copy_from_slice(&3u16.to_le_bytes());
     payload[165..169].fill(0xff);
-    assert_eq!(legacy_declared_handle_coordinates(&payload, 0), None);
+    assert_eq!(raw2(legacy_declared_handle_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -887,7 +918,9 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     assert_eq!(
@@ -897,7 +930,9 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[86..88].copy_from_slice(&0x8121u16.to_le_bytes());
     payload[88..90].copy_from_slice(&6u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[86..88].copy_from_slice(&0x8116u16.to_le_bytes());
@@ -906,7 +941,9 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     payload[142..146].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[136..140].fill(0);
@@ -914,7 +951,9 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[56..58].copy_from_slice(&[0x1a, 0x00]);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     assert_eq!(
@@ -924,20 +963,26 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[56..58].copy_from_slice(&[0x1e, 0x00]);
     payload[142..146].fill(0xff);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     payload[56..58].copy_from_slice(&[0x1a, 0x00]);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[56..58].copy_from_slice(&[0x1e, 0x00]);
     payload[142..146].copy_from_slice(&6u32.to_le_bytes());
     payload[134..136].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[134..136].fill(0);
@@ -949,7 +994,10 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     continuation[146..150].copy_from_slice(&1u32.to_le_bytes());
     continuation[150..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&continuation, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &continuation,
+            0
+        )),
         Some([0.8, 0.0125])
     );
     assert_eq!(
@@ -958,58 +1006,81 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     );
     continuation[142..146].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&continuation, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &continuation,
+            0
+        )),
         None
     );
     continuation[142..146].copy_from_slice(&1u32.to_le_bytes());
     continuation[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&continuation, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &continuation,
+            0
+        )),
         None
     );
     continuation[76..78].copy_from_slice(&2u16.to_le_bytes());
     continuation[136..140].fill(0);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&continuation, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &continuation,
+            0
+        )),
         None
     );
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     payload[80..82].fill(0);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[142..146].fill(0xff);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[88..90].fill(0);
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[88..90].copy_from_slice(&7u16.to_le_bytes());
     payload[74..76].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[74..76].fill(0);
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     payload[141] = 1;
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[141] = 0;
@@ -1017,40 +1088,54 @@ fn linked_profile_point_146_decodes_prefix_specific_coordinate_tags() {
     payload[142..146].copy_from_slice(&6u32.to_le_bytes());
     payload[74..76].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[74..76].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
     payload[74..76].copy_from_slice(&1u16.to_le_bytes());
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[138..142].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
 
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
 
     payload[88..90].copy_from_slice(&8u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.8, 0.0125])
     );
     payload[80..82].copy_from_slice(&8u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
 }
@@ -1086,7 +1171,7 @@ fn extended_four_link_profile_point_decodes_coordinates() {
     for trailer_offset in [146, 150, 162, 174] {
         let payload = make_payload(trailer_offset);
         assert_eq!(
-            extended_four_link_profile_point_coordinates(&payload, 0),
+            raw2(extended_four_link_profile_point_coordinates(&payload, 0)),
             Some([0.125, -0.25])
         );
     }
@@ -1094,10 +1179,10 @@ fn extended_four_link_profile_point_decodes_coordinates() {
     let mut payload = make_payload(150);
 
     assert_eq!(
-        extended_four_link_profile_point_coordinates(&payload, 0),
+        raw2(extended_four_link_profile_point_coordinates(&payload, 0)),
         Some([0.125, -0.25])
     );
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.125, -0.25]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.125, -0.25]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(
@@ -1109,13 +1194,13 @@ fn extended_four_link_profile_point_decodes_coordinates() {
 
     payload[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_four_link_profile_point_coordinates(&payload, 0),
+        raw2(extended_four_link_profile_point_coordinates(&payload, 0)),
         None
     );
     payload[76..78].copy_from_slice(&4u16.to_le_bytes());
     payload[134..136].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        extended_four_link_profile_point_coordinates(&payload, 0),
+        raw2(extended_four_link_profile_point_coordinates(&payload, 0)),
         None
     );
 }
@@ -1141,7 +1226,7 @@ fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
     payload[132..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        compact_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(compact_legacy_linked_profile_point_coordinates(&payload, 0)),
         Some([0.004, 0.006])
     );
     assert_eq!(
@@ -1151,18 +1236,18 @@ fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
     payload[42] = 0x1a;
     payload[62..64].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        compact_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(compact_legacy_linked_profile_point_coordinates(&payload, 0)),
         Some([0.004, 0.006])
     );
     payload[74..76].fill(0);
     assert_eq!(
-        compact_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(compact_legacy_linked_profile_point_coordinates(&payload, 0)),
         None
     );
     payload[74..76].copy_from_slice(&3u16.to_le_bytes());
     payload[128..132].fill(0xff);
     assert_eq!(
-        compact_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(compact_legacy_linked_profile_point_coordinates(&payload, 0)),
         None
     );
 }
@@ -1190,7 +1275,7 @@ fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_lay
     point[132..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        compact_legacy_code_two_profile_point_coordinates(&point, 0),
+        raw2(compact_legacy_code_two_profile_point_coordinates(&point, 0)),
         Some([0.03, 0.005])
     );
     let entity = &sketch_input_entities(&point, "lane")[0];
@@ -1217,12 +1302,12 @@ fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_lay
     embedded[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        raw2(compact_legacy_embedded_geometry_coordinates(&embedded, 0)),
         Some([0.03, 0.005])
     );
     embedded[60..64].copy_from_slice(&8u32.to_le_bytes());
     assert_eq!(
-        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        raw2(compact_legacy_embedded_geometry_coordinates(&embedded, 0)),
         Some([0.03, 0.005])
     );
     assert!(sketch_input_entities(&embedded, "lane").is_empty());
@@ -1249,7 +1334,9 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
     payload[140..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        raw2(legacy_single_incidence_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.052, -0.01])
     );
     assert_eq!(
@@ -1262,12 +1349,16 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
     payload[128..132].copy_from_slice(&1u32.to_le_bytes());
     payload[136..140].copy_from_slice(&10u32.to_le_bytes());
     assert_eq!(
-        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        raw2(legacy_single_incidence_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.052, -0.01])
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        raw2(legacy_single_incidence_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.052, -0.01])
     );
     assert_eq!(
@@ -1276,7 +1367,9 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
     );
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        raw2(legacy_single_incidence_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
 }
@@ -1302,7 +1395,7 @@ fn legacy_140_profile_point_variant_decodes_link_state_and_shifted_trailers() {
 
     payload[76..78].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        raw2(legacy_140_profile_point_variant_coordinates(&payload, 0)),
         Some([0.125, -0.25])
     );
     assert_eq!(
@@ -1317,13 +1410,13 @@ fn legacy_140_profile_point_variant_decodes_link_state_and_shifted_trailers() {
     payload[136..140].copy_from_slice(&28u32.to_le_bytes());
     payload[140..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        raw2(legacy_140_profile_point_variant_coordinates(&payload, 0)),
         Some([0.125, -0.25])
     );
 
     payload[136..140].copy_from_slice(&25u32.to_le_bytes());
     assert_eq!(
-        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        raw2(legacy_140_profile_point_variant_coordinates(&payload, 0)),
         None
     );
 }
@@ -1358,11 +1451,12 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
     payload[point_144::IDENTITY..record_end].copy_from_slice(&25u32.to_le_bytes());
     payload[record_end..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    let coordinates = legacy_144_profile_point_variant_coordinates(&payload, 0)
+    let coordinates = raw2(legacy_144_profile_point_variant_coordinates(&payload, 0))
         .expect("the shifted point trailer should decode");
     assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
     assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
-    let coordinates = marker_coordinates(&payload, 0).expect("marker coordinates should decode");
+    let coordinates =
+        raw2(marker_coordinates(&payload, 0)).expect("marker coordinates should decode");
     assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
     assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
     let entity = &sketch_input_entities(&payload, "lane")[0];
@@ -1374,7 +1468,7 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
     assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
 
     assert_eq!(
-        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        raw2(legacy_140_profile_point_variant_coordinates(&payload, 0)),
         None
     );
     let mut old_boundary = payload.clone();
@@ -1385,9 +1479,16 @@ fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
         .copy_from_slice(&24u32.to_le_bytes());
     let old_marker_end = point_144::IDENTITY + LEGACY_SKETCH_MARKER.len();
     old_boundary[point_144::IDENTITY..old_marker_end].copy_from_slice(LEGACY_SKETCH_MARKER);
-    assert!(legacy_140_profile_point_variant_coordinates(&old_boundary, 0).is_some());
+    assert!(raw2(legacy_140_profile_point_variant_coordinates(
+        &old_boundary,
+        0
+    ))
+    .is_some());
     assert_eq!(
-        legacy_144_profile_point_variant_coordinates(&old_boundary, 0),
+        raw2(legacy_144_profile_point_variant_coordinates(
+            &old_boundary,
+            0
+        )),
         None
     );
 }
@@ -1415,7 +1516,9 @@ fn extended_scaled_incidence_profile_point_decodes_coordinates() {
     payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.052, -0.01])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
@@ -1430,13 +1533,17 @@ fn extended_scaled_incidence_profile_point_decodes_coordinates() {
     payload[76..78].copy_from_slice(&8u16.to_le_bytes());
     payload[134..136].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         Some([0.052, -0.01])
     );
 
     payload[134..136].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        raw2(legacy_extended_linked_profile_point_coordinates(
+            &payload, 0
+        )),
         None
     );
 }
@@ -1463,7 +1570,7 @@ fn packed_legacy_linked_profile_point_decodes_inline_coordinates() {
     payload[138..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        packed_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(packed_legacy_linked_profile_point_coordinates(&payload, 0)),
         Some([0.0021, 0.0])
     );
     assert_eq!(
@@ -1472,13 +1579,13 @@ fn packed_legacy_linked_profile_point_decodes_inline_coordinates() {
     );
     payload[80..82].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        packed_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(packed_legacy_linked_profile_point_coordinates(&payload, 0)),
         None
     );
     payload[80..82].copy_from_slice(&5u16.to_le_bytes());
     payload[72..74].fill(0);
     assert_eq!(
-        packed_legacy_linked_profile_point_coordinates(&payload, 0),
+        raw2(packed_legacy_linked_profile_point_coordinates(&payload, 0)),
         None
     );
 }
@@ -1510,7 +1617,7 @@ fn extended_profile_point_forms_decode_as_points() {
     declaration[110..114].fill(0xff);
     declaration[118..124].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     assert_eq!(
-        extended_profile_point_coordinates(&declaration, 0),
+        raw2(extended_profile_point_coordinates(&declaration, 0)),
         Some([0.435, 0.0075])
     );
     assert_eq!(
@@ -1520,7 +1627,7 @@ fn extended_profile_point_forms_decode_as_points() {
     declaration[76..78].copy_from_slice(&3u16.to_le_bytes());
     declaration[96..98].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&declaration, 0),
+        raw2(extended_profile_point_coordinates(&declaration, 0)),
         Some([0.435, 0.0075])
     );
     assert_eq!(
@@ -1529,11 +1636,14 @@ fn extended_profile_point_forms_decode_as_points() {
     );
     declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&declaration, 0),
+        raw2(extended_profile_point_coordinates(&declaration, 0)),
         Some([0.435, 0.0075])
     );
     declaration[96..98].copy_from_slice(&2u16.to_le_bytes());
-    assert_eq!(extended_profile_point_coordinates(&declaration, 0), None);
+    assert_eq!(
+        raw2(extended_profile_point_coordinates(&declaration, 0)),
+        None
+    );
 
     let mut compact_declaration = common(162);
     compact_declaration[78..84].copy_from_slice(&[0xff, 0xff, 0x01, 0x00, 0x0c, 0x00]);
@@ -1546,7 +1656,7 @@ fn extended_profile_point_forms_decode_as_points() {
     compact_declaration[110..116].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     compact_declaration[158..162].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     assert_eq!(
@@ -1555,41 +1665,41 @@ fn extended_profile_point_forms_decode_as_points() {
     );
     compact_declaration[96..98].fill(0);
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     compact_declaration[96..98].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         None
     );
     compact_declaration[96..98].copy_from_slice(&1u16.to_le_bytes());
     compact_declaration[154..158].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     compact_declaration[154..158].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         None
     );
     compact_declaration[154..158].fill(0);
     compact_declaration[74..78].copy_from_slice(&[0x00, 0x00, 0x03, 0x00]);
     compact_declaration[96..98].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     compact_declaration[102..104].fill(0);
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         None
     );
     compact_declaration[102..104].copy_from_slice(&0x8156u16.to_le_bytes());
     compact_declaration[104..106].fill(0);
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         None
     );
     compact_declaration[104..106].copy_from_slice(&2u16.to_le_bytes());
@@ -1598,7 +1708,7 @@ fn extended_profile_point_forms_decode_as_points() {
     compact_declaration[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     compact_declaration[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     compact_declaration[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -1606,7 +1716,7 @@ fn extended_profile_point_forms_decode_as_points() {
     compact_declaration[17..21].copy_from_slice(&1u32.to_le_bytes());
     compact_declaration[96..98].copy_from_slice(&12u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         Some([0.435, 0.0075])
     );
     assert_eq!(
@@ -1615,7 +1725,7 @@ fn extended_profile_point_forms_decode_as_points() {
     );
     compact_declaration[96..98].copy_from_slice(&11u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&compact_declaration, 0),
+        raw2(extended_profile_point_coordinates(&compact_declaration, 0)),
         None
     );
 
@@ -1628,13 +1738,13 @@ fn extended_profile_point_forms_decode_as_points() {
     linked[102..108].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
     linked[150..154].copy_from_slice(&10u32.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&linked, 0),
+        raw2(extended_profile_point_coordinates(&linked, 0)),
         Some([0.435, 0.0075])
     );
     linked[17..21].copy_from_slice(&0u32.to_le_bytes());
     linked[76..78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&linked, 0),
+        raw2(extended_profile_point_coordinates(&linked, 0)),
         Some([0.435, 0.0075])
     );
     assert_eq!(
@@ -1643,14 +1753,14 @@ fn extended_profile_point_forms_decode_as_points() {
     );
     linked[92..94].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
-        extended_profile_point_coordinates(&linked, 0),
+        raw2(extended_profile_point_coordinates(&linked, 0)),
         Some([0.435, 0.0075])
     );
     linked[92..94].copy_from_slice(&1u16.to_le_bytes());
-    assert_eq!(extended_profile_point_coordinates(&linked, 0), None);
+    assert_eq!(raw2(extended_profile_point_coordinates(&linked, 0)), None);
     linked[92..94].fill(0);
     assert_eq!(
-        extended_profile_point_coordinates(&linked, 0),
+        raw2(extended_profile_point_coordinates(&linked, 0)),
         Some([0.435, 0.0075])
     );
 }
@@ -1674,7 +1784,7 @@ fn terminal_extended_profile_point_decodes_inline_coordinates() {
     payload[176..178].copy_from_slice(&0x81a3u16.to_le_bytes());
 
     assert_eq!(
-        terminal_extended_profile_point_coordinates(&payload, 0),
+        raw2(terminal_extended_profile_point_coordinates(&payload, 0)),
         Some([-0.19, 0.0])
     );
     assert_eq!(
@@ -1684,13 +1794,13 @@ fn terminal_extended_profile_point_decodes_inline_coordinates() {
 
     payload[174..176].fill(0);
     assert_eq!(
-        terminal_extended_profile_point_coordinates(&payload, 0),
+        raw2(terminal_extended_profile_point_coordinates(&payload, 0)),
         None
     );
     payload[174..176].copy_from_slice(&6u16.to_le_bytes());
     payload[176..178].fill(0);
     assert_eq!(
-        terminal_extended_profile_point_coordinates(&payload, 0),
+        raw2(terminal_extended_profile_point_coordinates(&payload, 0)),
         None
     );
 }
@@ -1784,7 +1894,7 @@ fn current_compact_geometry_locus_profile_point_decodes_inline_coordinates() {
     payload[134..].copy_from_slice(SKETCH_MARKER);
 
     assert_eq!(
-        compact_geometry_locus_point_coordinates(&payload, 0),
+        raw2(compact_geometry_locus_point_coordinates(&payload, 0)),
         Some([-1.125, 0.542])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
@@ -1796,7 +1906,10 @@ fn current_compact_geometry_locus_profile_point_decodes_inline_coordinates() {
         Some([-1.125, 0.542])
     );
     payload[82..84].fill(0);
-    assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
+    assert_eq!(
+        raw2(compact_geometry_locus_point_coordinates(&payload, 0)),
+        None
+    );
 }
 
 #[test]
@@ -1819,7 +1932,7 @@ fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
     payload[134..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        compact_geometry_locus_point_coordinates(&payload, 0),
+        raw2(compact_geometry_locus_point_coordinates(&payload, 0)),
         Some([-1.125, 0.542])
     );
     let entity = &sketch_input_entities(&payload, "lane")[0];
@@ -1831,7 +1944,10 @@ fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
         Some([-1.125, 0.542])
     );
     payload[130..134].fill(0);
-    assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
+    assert_eq!(
+        raw2(compact_geometry_locus_point_coordinates(&payload, 0)),
+        None
+    );
 }
 
 #[test]
@@ -1854,7 +1970,7 @@ fn legacy_geometry_locus_value_two_point_decodes_inline_coordinates() {
     payload[134..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert!(geometry_locus_profile_vertex(&payload, 0));
-    assert_eq!(marker_coordinates(&payload, 0), Some([-1.125, 0.542]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([-1.125, 0.542]));
     let entity = &sketch_input_entities(&payload, "lane")[0];
     assert_eq!(entity.kind(), SketchInputKind::Point);
     assert_eq!(

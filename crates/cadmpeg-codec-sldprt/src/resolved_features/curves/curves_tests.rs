@@ -677,14 +677,16 @@ fn legacy_rectangle_diagonal_carries_one_endpoint_and_two_distinct_corner_links(
     };
 
     assert_eq!(
-        legacy_extended_rectangle_diagonal_endpoint(&payload, &marker),
+        legacy_extended_rectangle_diagonal_endpoint(&payload, &marker)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-0.025, -0.011])
     );
     let mut terminal = payload.clone();
     terminal[136..142].fill(0);
     terminal[142..146].fill(0xff);
     assert_eq!(
-        legacy_extended_rectangle_diagonal_endpoint(&terminal, &marker),
+        legacy_extended_rectangle_diagonal_endpoint(&terminal, &marker)
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-0.025, -0.011])
     );
     payload[88..90].copy_from_slice(&1u16.to_le_bytes());

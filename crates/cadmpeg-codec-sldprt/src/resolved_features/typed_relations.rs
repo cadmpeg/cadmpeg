@@ -2321,7 +2321,7 @@ fn inline_arc_endpoint_markers<'a>(
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(arc.offset()).ok()?;
     let [_, start, end] = inline_arc_coordinates(payload, offset)?;
-    let endpoint = |coordinates: [f64; 2]| {
+    let endpoint = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == arc.feature_ref
                 && matches!(
@@ -2350,7 +2350,7 @@ fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
     }
     let offset = usize::try_from(curve.offset()).ok()?;
     let [start, end] = compact_legacy_142_profile_curve_endpoints(payload, offset)?;
-    let resolve = |coordinates: [f64; 2]| {
+    let resolve = |coordinates: cadmpeg_ir::units::FiniteVector<2>| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
                 && matches!(
@@ -2458,7 +2458,7 @@ fn coordinate_centered_line_endpoints<'a>(
     markers: &[&'a SketchInputEntity],
 ) -> Option<[&'a SketchInputEntity; 2]> {
     let offset = usize::try_from(line.offset()).ok()?;
-    let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?;
+    let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?.get();
     let mut coordinates = markers
         .iter()
         .copied()
@@ -2479,7 +2479,10 @@ fn coordinate_centered_line_endpoints<'a>(
     (centered && (first_u != second_u || first_v != second_v)).then_some([first, second])
 }
 
-fn coordinate_centered_line_center(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn coordinate_centered_line_center(
+    payload: &[u8],
+    offset: usize,
+) -> Option<cadmpeg_ir::units::FiniteVector<2>> {
     if payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || marker_native_code(payload, offset) != Some(2)
