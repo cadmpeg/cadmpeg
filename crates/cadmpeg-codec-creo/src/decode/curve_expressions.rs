@@ -249,6 +249,7 @@ pub(super) fn transfer_curve_expression_features(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     dimension_parameters: &BTreeMap<String, ParameterId>,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let ordinal_base = ir
         .model
@@ -539,15 +540,19 @@ pub(super) fn transfer_curve_expression_features(
                 Exactness::Derived,
             );
             ctx.charge_entities(1, "admit Creo model curves")?;
-            ir.model.curves.push(Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-                source_object: None,
-            });
-            let _attached = ir.model.add_procedural_curve(
+            source_carriers.admit_curve(
+                ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+                    source_object: None,
+                },
+            )?;
+            source_carriers.admit_procedural_curve(
+                ir,
                 curve_id,
                 ProceduralCurve::new(procedural_id, procedural_definition),
-            );
+            )?;
         }
         let definition = neutral_helix
             .or_else(|| {

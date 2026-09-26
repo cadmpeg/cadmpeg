@@ -74,6 +74,9 @@ pub(in crate::decode) fn normalize_model_lengths(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     for procedural in &mut ir.model.procedural_curves {
+        if source_carriers.contains_procedural_curve(&procedural.id) {
+            continue;
+        }
         procedural
             .edit_definition(|definition| definition.scale_lengths(scale))
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1292,6 +1295,19 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralCurveDefinition 
 
 pub(in crate::decode) fn scale_procedural_surface(
     procedural: &mut cadmpeg_ir::geometry::ProceduralSurface,
+    scale: PositiveReal,
+) -> Result<(), CodecError> {
+    procedural
+        .edit_definition(|definition| definition.scale_lengths(scale))
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    procedural
+        .scale_cache_fit_tolerance(scale)
+        .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
+    Ok(())
+}
+
+pub(in crate::decode) fn scale_procedural_curve(
+    procedural: &mut cadmpeg_ir::geometry::ProceduralCurve,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
     procedural

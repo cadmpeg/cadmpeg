@@ -514,6 +514,7 @@ pub(super) fn finish_feature_transfers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     coverage: &mut cadmpeg_ir::report::decode::Coverage,
+    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(usize, usize), cadmpeg_core::CodecError> {
     let prototype_feature_dependencies = surface_prototype_feature_dependencies(scan)?;
     link_feature_sketch_history(scan, ir);
@@ -527,8 +528,14 @@ pub(super) fn finish_feature_transfers(
         .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(ctx, scan, ir, annotations)?;
-    let transferred_curve_expression_parameter_count =
-        transfer_curve_expression_features(ctx, scan, ir, annotations, &dimension_parameters)?;
+    let transferred_curve_expression_parameter_count = transfer_curve_expression_features(
+        ctx,
+        scan,
+        ir,
+        annotations,
+        &dimension_parameters,
+        source_carriers,
+    )?;
     {
         let active_expressions = scan
             .curves
