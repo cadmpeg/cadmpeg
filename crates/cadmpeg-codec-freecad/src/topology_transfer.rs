@@ -20,7 +20,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
     RegionId, ShellId, SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -42,7 +42,7 @@ const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 struct IndexedPolygon {
-    samples: PolylineSamples,
+    samples: PolylineSamples<cadmpeg_ir::scalar::FiniteReal, cadmpeg_ir::features::FinitePoint3>,
     deflection: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
@@ -53,8 +53,8 @@ impl IndexedPolygon {
     /// pairs them here and refuses a polygon whose lanes disagree. The IR
     /// carries the rows only.
     fn try_new(
-        nodes: Vec<Point3>,
-        parameters: Option<Vec<f64>>,
+        nodes: Vec<cadmpeg_ir::features::FinitePoint3>,
+        parameters: Option<Vec<cadmpeg_ir::scalar::FiniteReal>>,
         deflection: cadmpeg_ir::scalar::NonNegativeReal,
     ) -> Result<Self, CodecError> {
         let samples = match parameters {
@@ -373,9 +373,9 @@ impl<'a> Builder<'a> {
                 continue;
             }
             ir.model.tessellations.push(
-                Tessellation::new(
+                Tessellation::from_parts(
                     crate::native::model_id("tessellation", &self.payload.id, index.to_string()),
-                    cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                    cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         triangulation.nodes().to_vec(),
                         triangulation.triangles().to_vec(),
                         triangulation.normals().map(<[_]>::to_vec),
@@ -861,7 +861,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .map(|point| {
                         face_transform
-                            .apply_point(*point)
+                            .apply_point(point.get())
                             .map(cadmpeg_ir::features::FinitePoint3::get)
                             .ok_or_else(|| {
                             CodecError::malformed(format_args!(
@@ -920,7 +920,7 @@ impl<'a> Builder<'a> {
                     normals
                         .iter()
                         .map(|normal| {
-                            transform_normalized_vector(face_transform, *normal).ok_or_else(|| {
+                            transform_normalized_vector(face_transform, normal.get()).ok_or_else(|| {
                                 CodecError::malformed(format_args!(
                                     "placed triangulation normal for face {face_key} contains a non-finite component"
                                 ))
@@ -1153,7 +1153,9 @@ impl<'a> Builder<'a> {
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
-                        .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
+                        .and_then(|parameters| {
+                            Some([parameters.first()?.get(), parameters.last()?.get()])
+                        })
                 })
             });
         let param_range = curve
@@ -1289,7 +1291,10 @@ impl<'a> Builder<'a> {
         IndexedPolygon::try_new(points, polygon.parameters.clone(), polygon.deflection)
     }
 
-    fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[f64]> {
+    fn polygon_parameters(
+        &self,
+        representation: &TextEdgeRepresentation,
+    ) -> Option<&[cadmpeg_ir::scalar::FiniteReal]> {
         match representation {
             TextEdgeRepresentation::Polygon3d { polygon, .. } => {
                 self.tables.polygons3d[polygon - 1].parameters.as_deref()
@@ -1892,22 +1897,37 @@ fn transform_surface(
 /// Places every polyline sample, refusing a sample the transform sends out of
 /// the finite range.
 fn place_polyline_samples(
-    samples: &mut PolylineSamples,
+    samples: &mut PolylineSamples<
+        cadmpeg_ir::scalar::FiniteReal,
+        cadmpeg_ir::features::FinitePoint3,
+    >,
     transform: Transform,
 ) -> Result<(), CodecError> {
-    samples
-        .edit_points(|point| {
-            *point = transform
-                .apply_point(*point)
-                .ok_or_else(|| {
-                    GeometryLayoutError::EditRefused(
-                        "placed polyline sample contains a non-finite coordinate".to_string(),
-                    )
-                })?
-                .get();
-            Ok(())
+    let place = |point: cadmpeg_ir::features::FinitePoint3| {
+        transform.apply_point(point.get()).ok_or_else(|| {
+            CodecError::malformed(
+                GeometryLayoutError::EditRefused(
+                    "placed polyline sample contains a non-finite coordinate".to_string(),
+                )
+                .to_string(),
+            )
         })
-        .map_err(|error| CodecError::malformed(error.to_string()))
+    };
+    let mut placed = samples.clone();
+    match &mut placed {
+        PolylineSamples::Unparameterized { points } => {
+            for point in points.iter_mut() {
+                *point = place(*point)?;
+            }
+        }
+        PolylineSamples::Parameterized { vertices } => {
+            for vertex in vertices.iter_mut() {
+                vertex.point = place(vertex.point)?;
+            }
+        }
+    }
+    *samples = placed;
+    Ok(())
 }
 
 fn transform_normalized_vector(transform: Transform, vector: Vector3) -> Option<Vector3> {
