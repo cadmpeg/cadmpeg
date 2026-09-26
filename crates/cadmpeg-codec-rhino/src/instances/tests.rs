@@ -1257,7 +1257,7 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
 
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
-        context.decode_geometry();
+        context.decode_geometry().expect("geometry decode");
         assert!(context.mesh_budget_used() > 0);
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
@@ -1391,7 +1391,7 @@ fn branching_instance_budget_retains_current_reference_and_later_reference_recov
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         context.set_expansion_limits([16, 1, 128]);
-        context.decode_geometry();
+        context.decode_geometry().expect("geometry decode");
         let result =
             crate::decode::seal_for_test(context.commit().expect("test decode commit"), false);
         assert_eq!(result.ir().model.points.len(), 1);
