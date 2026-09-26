@@ -6017,21 +6017,9 @@ fn model_surface_point_inner(
             cacheless_variable_blend_point(&index, definition_payload, u, v).and_then(admit_point)
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
-            let (native, native_ranges) = definition_payload
-                .native_with_ranges()
-                .ok_or(EvaluationFailure::NoValue)?;
-            cacheless_constant_rolling_ball_point(
-                &index,
-                definition_payload.supports(),
-                definition_payload.radius(),
-                definition_payload.cross_section(),
-                native,
-                native_ranges,
-                u,
-                v,
-            )
-            .map_err(|failure| failure.map(|()| UNREACHED_POINT))
-            .and_then(admit_point)
+            cacheless_constant_rolling_ball_point(&index, definition_payload, u, v)
+                .map_err(|failure| failure.map(|()| UNREACHED_POINT))
+                .and_then(admit_point)
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
             rolling_ball_jet_point(procedural.definition(), u, v)
@@ -7577,24 +7565,11 @@ fn cacheless_circular_variable_blend_section(
 
 fn cacheless_constant_rolling_ball_point(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
-    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<Point3, EvaluationFailure<()>> {
-    let section = cacheless_constant_rolling_ball_section(
-        index,
-        supports,
-        radius,
-        cross_section,
-        native,
-        native_ranges,
-        u,
-        v,
-    )?;
+    let section = cacheless_constant_rolling_ball_section(index, payload, u, v)?;
     minor_circular_arc_point(
         section.center,
         section.first.point(),
@@ -7618,16 +7593,14 @@ struct ConstantRollingBallSection {
 /// its own outcome.
 fn cacheless_constant_rolling_ball_section(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
-    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<ConstantRollingBallSection, EvaluationFailure<()>> {
     let no_value = EvaluationFailure::NoValue;
-    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = radius else {
+    let native = payload.native().ok_or(no_value)?;
+    let native_ranges = payload.native_ranges().ok_or(no_value)?;
+    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
         return Err(no_value);
     };
     let signed_radius = signed_radius.get();
@@ -7636,7 +7609,7 @@ fn cacheless_constant_rolling_ball_section(
         native.cache,
         crate::geometry::RevisionCacheForm::Parameterization(_)
     ) || native.third.is_some()
-        || *cross_section != crate::geometry::BlendCrossSection::Circular
+        || *payload.cross_section() != crate::geometry::BlendCrossSection::Circular
         || !(0.0..=1.0).contains(&u)
         || !sweep_tail_interval_contains(native.slice_range, finite_v)
         || !sweep_tail_interval_contains(native_ranges[0].endpoints(), finite_u)
@@ -7652,7 +7625,7 @@ fn cacheless_constant_rolling_ball_section(
     if radius <= f64::EPSILON {
         return Err(no_value);
     }
-    for (support, side) in supports.iter().zip(native.sides.iter()) {
+    for (support, side) in payload.supports().iter().zip(native.sides.iter()) {
         if support.as_ref().is_some_and(|support| {
             side.surface
                 .as_ref()
@@ -7754,25 +7727,12 @@ fn cacheless_circular_variable_blend_first_order(
 
 fn cacheless_constant_rolling_ball_first_order(
     index: &crate::index::ModelIndex<'_>,
-    supports: &[Option<crate::geometry::BlendSupport>; 2],
-    radius: &crate::geometry::BlendRadiusLaw,
-    cross_section: &crate::geometry::BlendCrossSection,
-    native: &crate::geometry::RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
-    native_ranges: [crate::geometry::surface_payloads::OrderedOptionalRange; 2],
+    payload: &crate::geometry::surface_payloads::BlendSurfacePayload,
     u: f64,
     v: f64,
 ) -> Result<SurfaceFirstOrder, EvaluationFailure<Point3>> {
-    let section = cacheless_constant_rolling_ball_section(
-        index,
-        supports,
-        radius,
-        cross_section,
-        native,
-        native_ranges,
-        u,
-        v,
-    )
-    .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
+    let section = cacheless_constant_rolling_ball_section(index, payload, u, v)
+        .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
     constant_rolling_ball_first_order(&section, u)
 }
 
@@ -8382,31 +8342,14 @@ fn model_surface_point_by_id_inner(
                 }
             }
             Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
-                if let Some((native, native_ranges)) = definition_payload.native_with_ranges() {
-                    let supports = definition_payload.supports();
-                    let radius = definition_payload.radius();
-                    let cross_section = definition_payload.cross_section();
-
-                    match cacheless_constant_rolling_ball_point(
-                        index,
-                        supports,
-                        radius,
-                        cross_section,
-                        native,
-                        native_ranges,
-                        u,
-                        v,
-                    ) {
+                if let Some(native) = definition_payload.native() {
+                    match cacheless_constant_rolling_ball_point(index, definition_payload, u, v) {
                         Ok(point) => Some(SurfaceEvaluation {
                             point: evaluated(point),
                             oriented_normal: if normal {
                                 cacheless_constant_rolling_ball_first_order(
                                     index,
-                                    supports,
-                                    radius,
-                                    cross_section,
-                                    native,
-                                    native_ranges,
+                                    definition_payload,
                                     u,
                                     v,
                                 )
@@ -8607,23 +8550,14 @@ fn model_surface_first_order_by_id(
         .procedural_surface_for_surface(surface.as_str())
         .map(crate::geometry::ProceduralSurface::definition)
     {
-        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => definition_payload
-            .native_with_ranges()
-            .map(|(native, native_ranges)| {
+        Some(ProceduralSurfaceDefinition::Blend(definition_payload)) => {
+            definition_payload.native().map(|native| {
                 (
-                    cacheless_constant_rolling_ball_first_order(
-                        index,
-                        definition_payload.supports(),
-                        definition_payload.radius(),
-                        definition_payload.cross_section(),
-                        native,
-                        native_ranges,
-                        u,
-                        v,
-                    ),
+                    cacheless_constant_rolling_ball_first_order(index, definition_payload, u, v),
                     revision_surface_tail_has_current_cache(&native.cache),
                 )
-            }),
+            })
+        }
         Some(ProceduralSurfaceDefinition::VariableBlend(definition_payload)) => {
             let construction = definition_payload.construction();
             Some((

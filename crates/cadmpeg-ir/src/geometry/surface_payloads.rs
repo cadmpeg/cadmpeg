@@ -2124,14 +2124,9 @@ impl BlendSurfacePayload {
         self.cache.form().map(Box::as_ref)
     }
 
-    /// Return the native construction with its admitted U and V ranges.
-    pub(crate) fn native_with_ranges(
-        &self,
-    ) -> Option<(
-        &RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
-        [OrderedOptionalRange; 2],
-    )> {
-        self.native().zip(self.native_ranges)
+    /// Return the admitted U and V ranges of the native construction.
+    pub(crate) fn native_ranges(&self) -> Option<[OrderedOptionalRange; 2]> {
+        self.native_ranges
     }
 }
 impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {

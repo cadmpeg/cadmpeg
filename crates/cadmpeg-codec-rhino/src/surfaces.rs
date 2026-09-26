@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -748,11 +748,10 @@ pub(crate) fn extrusion_nurbs(
             target.push(source[index]);
         }
     }
-    let mut surface = NurbsSurfaceLanes::new(
+    let mut surface = NurbsPoleGrid::from_checked_lanes(
         control_points.chunks(2_usize).map(<[_]>::to_vec).collect(),
         weights.map(|values| values.chunks(2_usize).map(<[_]>::to_vec).collect()),
     )
-    .into_poles()
     .and_then(|poles| {
         NurbsSurface::new(
             NurbsSurfaceAxis::new(start.degree(), start.knots().clone(), start.periodic()),

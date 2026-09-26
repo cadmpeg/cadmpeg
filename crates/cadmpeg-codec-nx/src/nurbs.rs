@@ -21,7 +21,7 @@ use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+    nurbs::{NurbsCurve, NurbsError, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis},
     pcurve::PcurveGeometry,
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -143,7 +143,7 @@ fn decode_surfaces(
                 }
             }
             let normal_reversed = node.byte_at(18)? == b'-';
-            let surface = NurbsSurfaceLanes::new(
+            let surface = NurbsPoleGrid::from_checked_lanes(
                 control_points
                     .chunks(descriptor.v_count as u32 as usize)
                     .map(<[_]>::to_vec)
@@ -155,7 +155,6 @@ fn decode_surfaces(
                         .collect()
                 }),
             )
-            .into_poles()
             .and_then(|poles| {
                 NurbsSurface::new(
                     NurbsSurfaceAxis::new(
