@@ -321,6 +321,13 @@ fn b5_face_loops(
     crate::boundary_roles::classify_planar_boundaries(&surface.geometry, &rows)
 }
 
+/// References to the records emitted by the preceding B5 passes.
+pub(super) struct EmittedFaceInputs<'a> {
+    pub(super) surface_ids: &'a HashMap<u32, SurfaceId>,
+    pub(super) pcurve_uses: &'a PcurveUses,
+    pub(super) edge_ids: &'a HashMap<u32, EdgeId>,
+}
+
 /// Emit the single body, its ownership-derived regions and shells, and every
 /// face with its loops and coedges, closing radial-next rings by shared edge.
 pub(super) fn emit_faces(
@@ -328,11 +335,12 @@ pub(super) fn emit_faces(
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     plan: &TransferPlan,
-    surface_ids: &HashMap<u32, SurfaceId>,
-    pcurve_uses: &PcurveUses,
-    edge_id_map: &HashMap<u32, EdgeId>,
+    emitted: &EmittedFaceInputs<'_>,
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let surface_ids = emitted.surface_ids;
+    let pcurve_uses = emitted.pcurve_uses;
+    let edge_id_map = emitted.edge_ids;
     let ownership = &plan.ownership;
     let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;

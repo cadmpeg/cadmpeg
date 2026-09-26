@@ -276,9 +276,11 @@ fn transfer_complete(
         annotations,
         graph,
         &plan,
-        &surface_ids,
-        &pcurve_uses,
-        &edge_id_map,
+        &faces::EmittedFaceInputs {
+            surface_ids: &surface_ids,
+            pcurve_uses: &pcurve_uses,
+            edge_ids: &edge_id_map,
+        },
         admission,
     )? {
         return Ok(false);

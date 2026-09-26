@@ -991,8 +991,136 @@ fn formula_parameter_entity_limit_refuses_before_model_extend() {
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
-            && limit.operation == "admit CATIA formula parameters")
+            && limit.operation == "admit CATIA formula candidate")
     );
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn formula_candidate_entity_limit_refuses_before_first_candidate() {
+    let bytes = standard_catpart_with_typed_formula_inputs(
+        4,
+        false,
+        &[("#1_", "LENGTH", "Thickness", "#1_", 35.0)],
+        "LENGTH",
+        Some(33.0),
+        "#1_-2mm",
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("formula input fits service input limit");
+    let mut ir = CadIr::empty();
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::formula::transfer_parameters(
+        &ctx,
+        &mut ir,
+        &native,
+        &mut cadmpeg_ir::Annotations::default(),
+        &crate::decode::ModelingGraphScope::Unscoped,
+    ) else {
+        panic!("first candidate must exceed the zero entity limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.operation, "admit CATIA formula candidate");
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn formula_definition_chain_limit_refuses_before_candidate_creation() {
+    let bytes = crate::test_support::test_formula::standard_catpart_with_definition_chain_type(
+        "Boolean",
+        &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(native
+        .entity_records
+        .iter()
+        .any(|entity| entity.definition_chain_value().is_some()));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("definition-chain input fits service input limit");
+    let mut ir = CadIr::empty();
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::formula::transfer_parameters(
+        &ctx,
+        &mut ir,
+        &native,
+        &mut cadmpeg_ir::Annotations::default(),
+        &crate::decode::ModelingGraphScope::Unscoped,
+    ) else {
+        panic!("definition-chain candidate must exceed the zero entity limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.operation, "admit CATIA formula candidate");
+    assert!(ir.model.parameters.is_empty());
+}
+
+#[test]
+fn formula_relation_program_output_limit_refuses_before_candidate_creation() {
+    let bytes = standard_catpart_with_formula_relation(0x63, false);
+    let mut native = crate::native::CatiaNative::decode(&bytes);
+    let expression = native.entity_records[1].clone();
+    let input = native.entity_records[2].clone();
+    let output = native.entity_records[3].clone();
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        output.entity_id,
+                        Some(output.id.clone()),
+                        Some("paramout".to_string()),
+                    ),
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: Some(expression.id.clone()),
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "LENGTH".to_string(),
+                    entity: crate::native::CatiaEntityReference::resolved_or_unresolved(
+                        input.entity_id,
+                        Some(input.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
+            },
+        ),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("relation-program input fits service input limit");
+    let mut ir = CadIr::empty();
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = crate::formula::transfer_parameters(
+        &ctx,
+        &mut ir,
+        &native,
+        &mut cadmpeg_ir::Annotations::default(),
+        &crate::decode::ModelingGraphScope::Unscoped,
+    ) else {
+        panic!("relation-program output must exceed the two-candidate limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(limit.used, 2);
+    assert_eq!(limit.operation, "admit CATIA formula candidate");
     assert!(ir.model.parameters.is_empty());
 }
 

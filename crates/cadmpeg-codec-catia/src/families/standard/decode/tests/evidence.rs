@@ -926,18 +926,22 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
         pcurves: [pcurve.clone(), pcurve],
         parameter_range: [2.0, 5.0],
     };
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[],
-        &HashMap::new(),
-        &[],
-        &support,
-        [0, 1],
-        Some(&native),
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     let curve = curve.expect("native support identifies the curve");
     assert_eq!(range, Some([2.0, 5.0]));
@@ -1164,18 +1168,22 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
     assert_eq!((binding.curve, binding.points), (0, [0, 1]));
     assert!((binding.parameter_range[0] - 0.25).abs() <= 1.0e-6);
     assert!((binding.parameter_range[1] - 0.75).abs() <= 1.0e-6);
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &bindings,
-        &surface_indices,
-        &[],
-        &support,
-        [0, 1],
-        None,
-        Some((&limit_curve, binding.parameter_range)),
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &surface_indices,
+            &[],
+            &support,
+            [0, 1],
+            None,
+            Some((&limit_curve, binding.parameter_range)),
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert_eq!(range, Some(binding.parameter_range));
     assert!(matches!(
@@ -1225,18 +1233,22 @@ fn standard_line_edge_uses_distance_parameterization() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Line,
     };
-    let (_, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[],
-        &HashMap::new(),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (_, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 5.0]));
 }
@@ -1261,18 +1273,22 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
         faces: [0, 1],
         geometry: StandardCurveGeometry::Line,
     };
-    let (curve, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[],
-        &HashMap::new(),
-        &[],
-        &support,
-        [0, 1],
-        None,
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (curve, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert!(curve.is_some());
     assert_eq!(range, Some([0.0, 1e-200]));
@@ -1418,18 +1434,22 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
             radius: 1.0,
         },
     };
-    let (_, range) = build_standard_edge_curve(
-        &mut ir,
-        &mut AnnotationBuilder::new(),
-        &[],
-        &HashMap::new(),
-        &[],
-        &support,
-        [0, 1],
-        Some(&native),
-        None,
-        &mut crate::nurbs::LaneRefusals::new(),
-    )
+    let (_, range) = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[],
+            &HashMap::new(),
+            &[],
+            &support,
+            [0, 1],
+            Some(&native),
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
+        )
+    })
     .expect("valid source object identity");
     assert_eq!(range, Some([0.0, 1.5 * std::f64::consts::PI]));
 }
@@ -1439,9 +1459,92 @@ fn standard_empty_vertex_population_creates_no_owner_or_annotations() {
     let mut ir = CadIr::empty();
     let before = ir.clone();
     let mut annotations = AnnotationBuilder::new();
-    attach_free_vertices(&mut ir, &mut annotations);
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+    })
+    .expect("service profile admits free vertex owner");
     assert_eq!(ir, before);
     assert_eq!(annotations.build(), AnnotationBuilder::new().build());
+}
+
+#[test]
+fn standard_surface_entity_limit_refuses_before_first_surface_append() {
+    let bytes = crate::test_support::test_container::standard_catpart();
+    let scan = crate::container::scan_bytes(bytes.clone());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("standard fixture fits the input-byte limit");
+    let result = crate::families::standard::decode::try_decode_standard(
+        &ctx,
+        &scan,
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("first standard surface must exceed the entity limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(limit.used, 1);
+    assert_eq!(limit.operation, "admit CATIA family model entity");
+}
+
+#[test]
+fn standard_topology_entity_limit_propagates_before_fallback() {
+    let bytes = crate::test_support::test_container::tetrahedron_topology_catpart();
+    let scan = crate::container::scan_bytes(bytes.clone());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    // One retained carrier, four surfaces, four points, four vertices,
+    // four faces, and one body, region, and shell precede the first edge.
+    policy.limits.max_entities = 20;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("topology fixture fits the input-byte limit");
+    let result = crate::families::standard::decode::try_decode_standard(
+        &ctx,
+        &scan,
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
+    let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = result else {
+        panic!("first topology entity must exceed the entity limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(limit.used, 20);
+    assert_eq!(limit.operation, "admit CATIA family model entity");
+}
+
+#[test]
+fn standard_free_vertex_owner_limit_refuses_before_shell_creation() {
+    let mut ir = CadIr::empty();
+    ir.model.vertices.push(Vertex {
+        id: VertexId::mint("catia:test:vertex#v").expect("identity grammar"),
+        point: PointId::mint("catia:test:point#p").expect("identity grammar"),
+        tolerance: None,
+    });
+    let mut annotations = AnnotationBuilder::new();
+    crate::test_support::with_entity_limit(0, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+        else {
+            panic!("free-vertex owner must exceed the entity limit");
+        };
+        assert_eq!(
+            limit.dimension,
+            cadmpeg_core::decode::ResourceDimension::Entities
+        );
+        assert_eq!(limit.operation, "admit CATIA family model entity");
+    });
+    assert!(ir.model.bodies.is_empty());
+    assert!(ir.model.regions.is_empty());
+    assert!(ir.model.shells.is_empty());
 }
 
 #[test]
@@ -1453,7 +1556,11 @@ fn standard_unbound_vertices_receive_one_free_vertex_owner() {
         tolerance: None,
     });
     let mut annotations = AnnotationBuilder::new();
-    attach_free_vertices(&mut ir, &mut annotations);
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        attach_free_vertices(&mut ir, &mut annotations, &mut admission)
+    })
+    .expect("service profile admits free vertex owner");
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.regions.len(), 1);
     assert_eq!(ir.model.shells.len(), 1);
