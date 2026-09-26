@@ -384,7 +384,7 @@ fn emit_carrier_surface(
                     source_object: None,
                 });
                 ProceduralSurfaceDefinition::Revolution(
-                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis(
+                    cadmpeg_ir::geometry::surface_payloads::admit_revolution_axis_parts(
                         axis_origin,
                         axis_direction,
                     )
@@ -4056,7 +4056,22 @@ pub(super) fn emit_vertices(
                                     ),
                                 vertex: <VertexId>::from(id(format, i)),
                                 record_index: r.index as u32,
-                                leading_tolerances: [*first, *second],
+                                leading_tolerances: [
+                                    cadmpeg_ir::scalar::FiniteReal::new(*first).ok_or_else(
+                                        || {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "tolerant vertex leading tolerances must be finite",
+                                            )
+                                        },
+                                    )?,
+                                    cadmpeg_ir::scalar::FiniteReal::new(*second).ok_or_else(
+                                        || {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "tolerant vertex leading tolerances must be finite",
+                                            )
+                                        },
+                                    )?,
+                                ],
                                 evaluated_slot: {
                                     let trailing = match r.chunk(9) {
                                         Some(Token::Long(value)) => Some(*value),
@@ -4307,7 +4322,29 @@ pub(super) fn emit_coedges(
                             Some(_) => Some(TolerantCoedgeExtension::None {}),
                             None => None,
                         };
-                        extension.map(|extension| ([*start, *end], extension))
+                        extension
+                            .map(|extension| {
+                                Ok::<_, cadmpeg_core::CodecError>((
+                                    [
+                                        cadmpeg_ir::scalar::FiniteReal::new(*start).ok_or_else(
+                                            || {
+                                                cadmpeg_core::CodecError::malformed(
+                                                    "tolerant coedge parameters must be finite",
+                                                )
+                                            },
+                                        )?,
+                                        cadmpeg_ir::scalar::FiniteReal::new(*end).ok_or_else(
+                                            || {
+                                                cadmpeg_core::CodecError::malformed(
+                                                    "tolerant coedge parameters must be finite",
+                                                )
+                                            },
+                                        )?,
+                                    ],
+                                    extension,
+                                ))
+                            })
+                            .transpose()?
                     }
                     _ => None,
                 }
@@ -4333,7 +4370,11 @@ pub(super) fn emit_coedges(
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                             source_object: None,
                         });
-                        Some((curve_id, parameter_range.unwrap_or(*range)))
+                        Some((
+                            curve_id,
+                            parameter_range
+                                .unwrap_or(range.map(cadmpeg_ir::scalar::FiniteReal::get)),
+                        ))
                     }
                     None => None,
                 },

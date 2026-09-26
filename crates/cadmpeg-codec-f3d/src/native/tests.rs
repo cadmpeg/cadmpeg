@@ -200,7 +200,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         f3d_native(decoded.ir())
             .tolerant_coedge_parameters
             .iter()
-            .map(|parameters| parameters.parameter_range)
+            .map(|parameters| parameters
+                .parameter_range
+                .map(cadmpeg_ir::scalar::FiniteReal::get))
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
@@ -214,7 +216,8 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 
     decoded.ir_mut().model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir_mut(), |native| {
-        native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
+        native.tolerant_coedge_parameters[0].parameter_range =
+            [-1.5, 2.25].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite"));
     });
     let mut edited = Vec::new();
     crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut edited)
@@ -227,7 +230,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
         [-1.5, 2.25]
     );
 }
@@ -486,7 +491,8 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             ),
             coedge: tolerant_coedge,
             record_index: 0,
-            parameter_range: [0.0, 1.0],
+            parameter_range: [0.0, 1.0]
+                .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite")),
             extension: cadmpeg_asm::brep::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
                 curve_reversed: false,

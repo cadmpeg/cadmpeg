@@ -504,15 +504,6 @@ pub(super) fn validate_tolerant_vertex_edits(
                 )))
             }
         };
-        if after
-            .leading_tolerances
-            .iter()
-            .any(|value| !value.is_finite())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant vertex {id} has non-finite fields"
-            )));
-        }
         let baseline_vertex = baseline_vertices
             .get(after.vertex.as_str())
             .ok_or_else(|| {
@@ -541,7 +532,12 @@ pub(super) fn validate_tolerant_vertex_edits(
             };
             edits.insert(
                 after.record_index as usize,
-                (stored, after.leading_tolerances),
+                (
+                    stored,
+                    after
+                        .leading_tolerances
+                        .map(cadmpeg_ir::scalar::FiniteReal::get),
+                ),
             );
         }
     }
@@ -676,13 +672,13 @@ pub(super) fn validate_tolerant_coedge_edits(
                 "F3D tolerant-coedge edit changes structural fields: {id}"
             )));
         }
-        if after.parameter_range.iter().any(|value| !value.is_finite()) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D tolerant coedge {id} has non-finite parameters"
-            )));
-        }
         if after.parameter_range != before.parameter_range {
-            edits.insert(after.record_index as usize, after.parameter_range);
+            edits.insert(
+                after.record_index as usize,
+                after
+                    .parameter_range
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
+            );
         }
     }
     Ok(edits)
