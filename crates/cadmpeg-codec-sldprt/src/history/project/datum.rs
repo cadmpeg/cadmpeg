@@ -205,7 +205,7 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         .trim()
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite() && *value > 0.0)?;
+        .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
     let clockwise = feature
         .properties
         .get("Clockwise")
@@ -222,7 +222,7 @@ pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         shape: cadmpeg_ir::features::HelixShape::Cylindrical {
             pitch: cadmpeg_ir::scalar::NonZeroLength::try_from(pitch).ok()?,
         },
-        revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+        revolutions,
         start_angle,
         clockwise,
         segment_turns: None,
@@ -239,7 +239,7 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .trim()
         .parse::<f64>()
         .ok()
-        .filter(|value| value.is_finite() && *value > 0.0)?;
+        .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
     let start_angle = parse_angle_rad(feature.parameters.get("D7")?)?;
     let clockwise = feature
         .properties
@@ -251,11 +251,67 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
             axis_native_ref: cadmpeg_core::text::NonBlankString::new(feature.id.clone())?,
             axial_rise,
             pitch,
-            revolutions: cadmpeg_ir::scalar::PositiveReal::new(revolutions)?,
+            revolutions,
             start_angle,
             clockwise,
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{project_helix, project_native_axis_helix};
+    use cadmpeg_core::text::NonBlankString;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    fn parameter(feature: &mut crate::records::Feature, name: &str, value: &str) {
+        feature.parameters.insert(
+            NonBlankString::new(name.to_owned()).expect("nonblank test parameter name"),
+            value.to_owned(),
+        );
+    }
+
+    fn property(feature: &mut crate::records::Feature, name: &str, value: &str) {
+        feature.properties.insert(
+            NonBlankString::new(name.to_owned()).expect("nonblank test property name"),
+            value.to_owned(),
+        );
+    }
+
+    #[test]
+    fn helix_revolutions_are_admitted_once_into_the_operation() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        property(&mut feature, "AxisOrigin", "0mm,0mm,0mm");
+        property(&mut feature, "AxisDirection", "0,0,1");
+        parameter(&mut feature, "Radius", "2mm");
+        parameter(&mut feature, "Pitch", "1mm");
+        parameter(&mut feature, "Revolutions", "2.5");
+
+        assert!(matches!(
+            project_helix(&feature),
+            Some(FeatureDefinition::Operation(FeatureOperation::Helix { revolutions, .. }))
+                if revolutions.get() == 2.5
+        ));
+        parameter(&mut feature, "Revolutions", "0");
+        assert!(project_helix(&feature).is_none());
+    }
+
+    #[test]
+    fn native_axis_helix_revolutions_are_admitted_once_into_the_operation() {
+        let mut feature = crate::history::tests::feature("helix", None, 1);
+        parameter(&mut feature, "D3", "2mm");
+        parameter(&mut feature, "D4", "1mm");
+        parameter(&mut feature, "D5", "2.5");
+        parameter(&mut feature, "D7", "0rad");
+
+        assert!(matches!(
+            project_native_axis_helix(&feature),
+            Some(FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis { revolutions, .. }))
+                if revolutions.get() == 2.5
+        ));
+        parameter(&mut feature, "D5", "0");
+        assert!(project_native_axis_helix(&feature).is_none());
+    }
 }
 
 pub(super) fn project_wrap(
