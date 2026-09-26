@@ -2,92 +2,18 @@
 //! Conversion of neutral Creo values into the canonical IR length unit.
 //!
 //! The PSB scanner keeps source values in their stored unit so native records
-//! remain faithful to the file. Display tessellation vertices are converted at
-//! transfer; this module converts remaining model fields from source units.
+//! remain faithful to the file. Admission routes use these operations to
+//! convert model lengths before insertion into the IR.
 //! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    FeatureDefinition, FeatureOperation, FiniteVector3, ParameterValue, WrapMode,
-};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FiniteVector3, WrapMode};
 use cadmpeg_ir::geometry::scaling::ScaleRefusal;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Length, PositiveReal};
-use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
+use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::transform::Transform;
-
-/// Scale neutral model lengths not converted at transfer.
-pub(in crate::decode) fn normalize_model_lengths(
-    ir: &mut CadIr,
-    scale: PositiveReal,
-) -> Result<(), CodecError> {
-    if scale.get() == 1.0 {
-        return Ok(());
-    }
-
-    for configuration in &mut ir.model.configurations {
-        for value in configuration.parameter_values.values_mut() {
-            if let ParameterValue::Length(length) = value {
-                scale_length(length, scale)?;
-            }
-        }
-        for state in configuration.feature_states.values_mut() {
-            scale_feature_definition(&mut state.definition, scale)?;
-        }
-    }
-    for sketch in &mut ir.model.sketches {
-        if let Some((origin, _, _)) = sketch.resolved_placement() {
-            let origin = origin
-                .scaled(scale)
-                .ok_or_else(|| CodecError::malformed("sketch origin must be finite"))?;
-            sketch.placement = sketch.placement.with_origin(origin);
-        }
-    }
-    for entity in &mut ir.model.sketch_entities {
-        scale_sketch_geometry(&mut entity.geometry, scale)?;
-    }
-    for sketch in &mut ir.model.spatial_sketches {
-        for profile in &mut sketch.profiles {
-            let mut origin = profile.origin().get();
-            scale_point3(&mut origin, scale);
-            profile.set_origin(origin).map_err(CodecError::malformed)?;
-        }
-    }
-    for entity in &mut ir.model.spatial_sketch_entities {
-        scale_spatial_sketch_geometry(&mut entity.geometry, scale)?;
-    }
-    for constraint in &mut ir.model.sketch_constraints {
-        constraint
-            .definition
-            .scale_lengths(scale)
-            .map_err(|error| match error {
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                    CodecError::Malformed("Creo scaled length must be finite".into())
-                }
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                    CodecError::malformed("invalid sketch constraint local arity or scalar value")
-                }
-            })?;
-    }
-    for constraint in &mut ir.model.spatial_sketch_constraints {
-        constraint
-            .definition
-            .scale_lengths(scale)
-            .map_err(|error| match error {
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::LengthOverflow => {
-                    CodecError::Malformed("Creo scaled length must be finite".into())
-                }
-                cadmpeg_ir::sketches::scaling::SketchConstraintScaleError::InvalidLocalValue => {
-                    CodecError::malformed(
-                        "invalid spatial sketch constraint local arity or scalar value",
-                    )
-                }
-            })?;
-    }
-    Ok(())
-}
 
 fn scale_point2(point: &mut Point2, scale: PositiveReal) {
     point.u *= scale.get();
@@ -1227,7 +1153,7 @@ pub(in crate::decode) fn surface_parameter_scales(
     }
 }
 
-fn scale_sketch_geometry(
+pub(in crate::decode) fn scale_sketch_geometry(
     geometry: &mut SketchGeometry,
     scale: PositiveReal,
 ) -> Result<(), CodecError> {
@@ -1254,27 +1180,6 @@ fn scale_sketch_geometry(
     Ok(())
 }
 
-fn scale_spatial_sketch_geometry(
-    geometry: &mut SpatialSketchGeometry,
-    scale: PositiveReal,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::sketches::scaling::SketchLengthScaleError;
-
-    *geometry = geometry.scaled_lengths(scale).map_err(|error| match error {
-        SketchLengthScaleError::LengthOverflow => {
-            CodecError::Malformed("Creo scaled length must be finite".into())
-        }
-        SketchLengthScaleError::Field(message) => CodecError::Malformed(message.into()),
-        SketchLengthScaleError::CurveControlPoints(error) => CodecError::malformed(format_args!(
-            "Creo spatial sketch unit normalization produced invalid NURBS control points: {error}"
-        )),
-        SketchLengthScaleError::SurfaceControlPoints(error) => CodecError::malformed(format_args!(
-            "Creo spatial sketch unit normalization produced invalid B-spline control points: {error}"
-        )),
-    })?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -1297,8 +1202,8 @@ mod tests {
     }
 
     use super::{
-        normalize_model_lengths, scale_curve_geometry, scale_face_motion, scale_feature_definition,
-        scale_pattern_kind, scale_surface_geometry,
+        scale_curve_geometry, scale_face_motion, scale_feature_definition, scale_pattern_kind,
+        scale_surface_geometry,
     };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
@@ -1417,7 +1322,6 @@ mod tests {
             panic!("admitted parameter changed family");
         };
         assert_close(length.get(), 127.0);
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) =
             ir.model.features[0].evaluation.definition()
@@ -1465,9 +1369,8 @@ mod tests {
 
     #[test]
     fn model_points_of_an_inch_model_are_converted_to_millimetres() {
-        let mut ir =
+        let ir =
             model_point_ir(Point3::new(1.0, -2.0, 0.5)).expect("valid millimeter point admission");
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
         assert_point3(ir.model.points[0].position().get(), [25.4, -50.8, 12.7]);
     }
 
@@ -1699,8 +1602,6 @@ mod tests {
         source_carriers
             .admit_procedural_curve(&mut ir, curve_id, curve)
             .expect("curve construction admission");
-
-        normalize_model_lengths(&mut ir, positive(25.4)).expect("valid unit scaling");
 
         let surface = &ir.model.procedural_surfaces[0];
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(definition_payload) =

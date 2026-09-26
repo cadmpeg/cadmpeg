@@ -1678,7 +1678,13 @@ fn circle_remains_a_closed_extrusion_profile() {
         circle.clone(),
     ));
 
-    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
+    let profiles = resolved_sketch_profiles(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id,
+        1,
+    )
+    .expect("one circle profile");
     assert_eq!(
         profiles,
         vec![vec![

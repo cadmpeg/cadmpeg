@@ -56,6 +56,7 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
 
 pub(in super::super) fn connected_sketch_profile_vertices(
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
 ) -> Vec<(usize, Vec<[f64; 2]>)> {
     let Some(sketch) = exactly_one(
@@ -78,7 +79,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                     let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.sketch == *sketch_id && entity.id() == &entity_use.entity
                     }))
-                    .map(|entity| &entity.geometry)?;
+                    .map(|entity| source_carriers.sketch_geometry(entity))?;
                     let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
                     if entity_use.reversed {
                         std::mem::swap(&mut start, &mut end);
@@ -499,6 +500,7 @@ pub(in super::super) type ExtrusionProfile = Vec<ProfileEntity>;
 
 pub(in super::super) fn resolved_sketch_profiles(
     ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
     minimum_entity_count: usize,
 ) -> Option<Vec<ExtrusionProfile>> {
@@ -517,7 +519,7 @@ pub(in super::super) fn resolved_sketch_profiles(
                 entity.sketch == *sketch_id && entity.id() == &entity_use.entity
             }))?;
             geometries.push(ProfileEntity::new(
-                entity.geometry.clone(),
+                source_carriers.sketch_geometry(entity).clone(),
                 entity_use.reversed,
             )?);
         }

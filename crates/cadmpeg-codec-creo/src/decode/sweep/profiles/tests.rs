@@ -39,6 +39,50 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 }
 
 #[test]
+fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
+    let sketch_id = SketchId::mint("creo:model:sketch#8").expect("identity grammar");
+    let entity_id =
+        SketchEntityId::mint("creo:featdefs:sketch_entity#8:1").expect("identity grammar");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(sketch(&sketch_id, &entity_id));
+    let mut carriers = crate::decode::source_carriers::SourceUnitCarriers::new(
+        cadmpeg_ir::scalar::PositiveReal::new(25.4),
+    );
+    carriers
+        .admit_sketch_entities(
+            &mut ir,
+            vec![SketchEntity::new(
+                entity_id,
+                sketch_id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: Point2::new(1.0, 0.0),
+                    radius: cadmpeg_ir::scalar::Length::new(2.0).expect("finite source radius"),
+                })
+                .expect("source circle"),
+            )],
+        )
+        .expect("entity admission");
+    let SketchGeometryDefinition::Circle { center, radius } =
+        ir.model.sketch_entities[0].geometry.definition()
+    else {
+        panic!("admitted entity changed family");
+    };
+    assert_eq!(center.u, 25.4);
+    assert_eq!(radius.get(), 50.8);
+    assert_eq!(
+        super::connected_sketch_profile_vertices(&ir, &carriers, &sketch_id),
+        vec![(0, vec![[3.0, 0.0]])]
+    );
+    let profiles =
+        super::resolved_sketch_profiles(&ir, &carriers, &sketch_id, 1).expect("source profile");
+    let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
+        panic!("source profile changed family");
+    };
+    assert_eq!(center.u, 1.0);
+    assert_eq!(radius.get(), 2.0);
+}
+
+#[test]
 fn forward_arc_sweep_reduces_a_wide_finite_angle_interval() {
     let sweep = super::forward_arc_sweep(-f64::MAX, f64::MAX);
     assert!(sweep.is_finite());
@@ -77,8 +121,19 @@ fn profile_joins_reject_duplicate_sketch_ids() {
         .sketch_entities
         .push(line_entity(&entity_id, &sketch_id, [1.0, 0.0]));
 
-    assert!(super::connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
-    assert!(super::resolved_sketch_profiles(&ir, &sketch_id, 1).is_none());
+    assert!(super::connected_sketch_profile_vertices(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id
+    )
+    .is_empty());
+    assert!(super::resolved_sketch_profiles(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id,
+        1
+    )
+    .is_none());
 }
 
 #[test]
@@ -93,8 +148,19 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
         line_entity(&entity_id, &sketch_id, [0.0, 1.0]),
     ]);
 
-    assert!(super::connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
-    assert!(super::resolved_sketch_profiles(&ir, &sketch_id, 1).is_none());
+    assert!(super::connected_sketch_profile_vertices(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id
+    )
+    .is_empty());
+    assert!(super::resolved_sketch_profiles(
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &sketch_id,
+        1
+    )
+    .is_none());
 }
 
 #[test]
