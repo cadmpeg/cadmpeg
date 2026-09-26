@@ -948,7 +948,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyleRecord {
     pub(crate) header_value: u32,
     pub(crate) controls: [u16; 7],
     pub(crate) color_header: [u8; 2],
-    pub(crate) colors: [[f32; 4]; 4],
+    pub(crate) colors: [[cadmpeg_ir::scalar::FiniteBinary32; 4]; 4],
     pub(crate) color_tail: [u16; 2],
     pub(crate) state: u8,
     pub(crate) values: [u16; 2],

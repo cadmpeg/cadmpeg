@@ -1088,16 +1088,6 @@ impl SldprtNative {
                     record.id()
                 )));
             }
-            if let Some(record) = lane.sketch_entities.iter().find(|record| {
-                record
-                    .coordinates_m
-                    .is_some_and(|values| !values.iter().all(|value| value.is_finite()))
-            }) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "sketch input entity {} has non-finite coordinates",
-                    record.id()
-                )));
-            }
             for record in &lane.sketch_entities {
                 for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {

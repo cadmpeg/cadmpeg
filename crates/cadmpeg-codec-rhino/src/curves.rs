@@ -784,7 +784,7 @@ pub(crate) fn exact_nurbs(
                 let end = children
                     .get(index + 1)
                     .map_or(*end_parameter, |(next, _)| *next);
-                let target = [start.get(), end.get()];
+                let target = [*start, end];
                 if target[0] >= target[1] {
                     return Err(error(offset, "polycurve segment domain is invalid"));
                 }
@@ -801,7 +801,7 @@ pub(crate) fn exact_nurbs(
 
 pub(crate) fn remap_nurbs_domain(
     mut curve: NurbsCurve,
-    target: [f64; 2],
+    target: [FiniteReal; 2],
     offset: usize,
 ) -> Result<NurbsCurve, GeometryError> {
     let degree =
@@ -821,9 +821,10 @@ pub(crate) fn remap_nurbs_domain(
     if !source[0].is_finite() || !source[1].is_finite() || source[0] >= source[1] {
         return Err(error(offset, "curve domain is invalid"));
     }
-    if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
+    if target[0] >= target[1] {
         return Err(error(offset, "curve target domain is invalid"));
     }
+    let target = target.map(FiniteReal::get);
     let remapped = curve
         .knots()
         .iter()
@@ -1977,7 +1978,12 @@ mod tests {
             false,
         )
         .unwrap();
-        let remapped = super::remap_nurbs_domain(curve, [0.0, 1.0e200], 0).unwrap();
+        let remapped = super::remap_nurbs_domain(
+            curve,
+            [FiniteReal::ZERO, FiniteReal::new(1.0e200).unwrap()],
+            0,
+        )
+        .unwrap();
         assert_eq!(remapped.knots().as_slice(), &[0.0, 0.0, 1.0e200, 1.0e200]);
         let joined = super::join_nurbs_segments(vec![remapped.clone(), remapped], 0).unwrap();
         assert!(joined
@@ -2472,7 +2478,7 @@ mod tests {
                 false,
             )
             .unwrap();
-            let r = super::remap_nurbs_domain(n, [0., 1.], 0);
+            let r = super::remap_nurbs_domain(n, [FiniteReal::ZERO, FiniteReal::ONE], 0);
             println!("Rhino remap{domain:?}: {r:?}");
             assert_eq!(r.unwrap().knots().as_slice(), &[0., 0., 1., 1.]);
         }

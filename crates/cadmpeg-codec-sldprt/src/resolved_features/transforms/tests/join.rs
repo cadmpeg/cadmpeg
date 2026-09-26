@@ -242,7 +242,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
         None
     );
-    operandless_vertical.coordinates_m = Some([0.01, 0.02]);
+    operandless_vertical.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.02]);
     assert_eq!(
         typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
         None

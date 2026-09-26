@@ -410,18 +410,6 @@ impl<P, N> TessellationMesh<P, N> {
     }
 }
 
-impl TessellationMesh<FinitePoint3, FiniteVector3> {
-    /// Pair admitted position and normal lanes into triangle-list rows.
-    /// Only the lane lengths are checked.
-    pub fn from_admitted_list_lanes(
-        positions: Vec<FinitePoint3>,
-        triangles: Vec<[u32; 3]>,
-        normals: Option<Vec<FiniteVector3>>,
-    ) -> Result<Self, TessellationLaneError> {
-        Self::pair_list_lanes(positions, triangles, normals)
-    }
-}
-
 impl<P: Copy, N: Copy> TessellationMesh<P, N> {
     /// Vertex positions in mesh order.
     #[must_use]

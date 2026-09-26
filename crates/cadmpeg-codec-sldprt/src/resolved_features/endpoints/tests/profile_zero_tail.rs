@@ -33,14 +33,15 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
     payload[zero_tail_92::SIGNED_SELECTOR..zero_tail_92::ZERO_TAIL]
         .copy_from_slice(&zero_tail_92::SIGNED_SELECTOR_VALUE.to_le_bytes());
 
-    let entity = |id: &str, offset, coordinates_m| {
+    let entity = |id: &str, offset, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
         let mut constructed_marker =
             SketchInputEntity::new(marker_id, marker_parent, 0, offset, SketchInputKind::Point);
         constructed_marker.feature_ref = Some("feature".into());
         constructed_marker.state_value = cadmpeg_ir::scalar::FiniteReal::new(1.0);
-        constructed_marker.coordinates_m = coordinates_m;
+        constructed_marker.coordinates_m =
+            coordinates_m.and_then(cadmpeg_ir::units::FiniteVector::new);
         constructed_marker.links = None;
         constructed_marker
     };

@@ -2,21 +2,20 @@
 //! Fillet, chamfer, and body/face-edit projection.
 
 use crate::records::{Feature, FeatureContent};
-use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferSpec, RadiusSpec, VariableRadius},
         AxisAngle, BodyRetentionMode, BodySelection, EdgeSelection, FaceMotion, FaceSelection,
         FeatureDefinition, FeatureOperation, FlexForm, FlexMode, ScaleCenter, ScaleFactors,
     },
-    scalar::{Angle, Fraction, Length, NonNegativeLength},
+    scalar::{Fraction, NonNegativeLength},
 };
 
 use crate::history::classify::{indexed_name, is_fillet};
 use crate::history::literals::{
     dimension_display, parse_angle_rad, parse_bool, parse_boolean_op, parse_bounded_angle_rad,
     parse_length_mm, parse_point3_mm, parse_positive_dimension_length_mm, parse_positive_length_mm,
-    parse_valid_direction, parse_vector3,
+    parse_valid_direction, parse_vector3, parse_vector3_mm,
 };
 
 pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
@@ -33,9 +32,7 @@ pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     .get("D1")
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             }
-        })
-        .and_then(cadmpeg_ir::scalar::PositiveLength::new)
-    {
+        }) {
         RadiusSpec::Constant { radius }
     } else {
         let points = feature
@@ -61,7 +58,7 @@ pub(super) fn project_fillet(feature: &Feature) -> FeatureDefinition {
                     index,
                     VariableRadius {
                         parameter: Fraction::new(parameter)?,
-                        radius: NonNegativeLength::new(radius)?,
+                        radius: NonNegativeLength::from(radius),
                     },
                 ))
             })
@@ -169,7 +166,7 @@ pub(super) fn project_shell(feature: &Feature) -> FeatureDefinition {
             .get("RemovedFaces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.and_then(cadmpeg_ir::scalar::PositiveLength::new),
+        thickness,
         outward,
         mode: None,
         join: None,
@@ -212,7 +209,7 @@ pub(super) fn project_thicken(feature: &Feature) -> FeatureDefinition {
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: thickness.and_then(cadmpeg_ir::scalar::PositiveLength::new),
+        thickness,
         side,
     })
 }
@@ -248,7 +245,7 @@ pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
             .get("Angle")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_angle_rad(value))
-            .and_then(cadmpeg_ir::scalar::SlopeAngle::new),
+            .and_then(|angle| cadmpeg_ir::scalar::SlopeAngle::try_from(angle).ok()),
         outward: feature
             .properties
             .get("Outward")
@@ -360,7 +357,6 @@ pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_length_mm(value))
-            .and_then(Length::new)
     };
     let motion = match feature
         .properties
@@ -372,24 +368,16 @@ pub(super) fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> 
             distance: distance()?,
         },
         "translate" => FaceMotion::Translate {
-            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("Direction")?,
-            )?)?,
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
             distance: distance()?,
         },
         "rotate" => FaceMotion::Rotate {
-            axis_origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
-                feature.properties.get("AxisOrigin")?,
-            )?)?,
-            axis_dir: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("AxisDirection")?,
-            )?)?,
-            angle: Angle::new(
-                feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_angle_rad(value))?,
-            )?,
+            axis_origin: parse_point3_mm(feature.properties.get("AxisOrigin")?)?,
+            axis_dir: parse_valid_direction(feature.properties.get("AxisDirection")?)?,
+            angle: feature
+                .parameters
+                .get("Angle")
+                .and_then(|value| parse_angle_rad(value))?,
         },
         _ => return None,
     };
@@ -409,17 +397,12 @@ pub(super) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
         .get("Bodies")
         .cloned()
         .map_or(BodySelection::Unresolved, BodySelection::Native);
-    let translation = parse_point3_mm(feature.properties.get("Translation")?)?;
-    let translation = Vector3::new(translation.x, translation.y, translation.z);
+    let translation = parse_vector3_mm(feature.properties.get("Translation")?)?;
     let rotation = match feature.parameters.get("Rotation") {
         Some(angle) => Some(AxisAngle {
-            origin: cadmpeg_ir::features::FinitePoint3::new(parse_point3_mm(
-                feature.properties.get("RotationOrigin")?,
-            )?)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(parse_valid_direction(
-                feature.properties.get("RotationAxis")?,
-            )?)?,
-            angle: Angle::new(parse_angle_rad(angle)?)?,
+            origin: parse_point3_mm(feature.properties.get("RotationOrigin")?)?,
+            direction: parse_valid_direction(feature.properties.get("RotationAxis")?)?,
+            angle: parse_angle_rad(angle)?,
         }),
         None => None,
     };
@@ -429,7 +412,7 @@ pub(super) fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> 
         .map_or(Some(0), |value| value.trim().parse::<u32>().ok())?;
     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
         bodies,
-        translation: cadmpeg_ir::features::FiniteVector3::new(translation)?,
+        translation,
         rotation,
         copies,
     }))
@@ -446,8 +429,7 @@ pub(super) fn project_dome(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get("Height")
             .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value))
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new),
+            .and_then(|value| parse_positive_length_mm(value)),
         elliptical: feature
             .properties
             .get("Elliptical")
@@ -464,14 +446,11 @@ pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
         .properties
         .get("Axis")
         .or_else(|| feature.properties.get("AxisDirection"))
-        .and_then(|value| parse_valid_direction(value))
-        .and_then(cadmpeg_ir::features::FeatureDirection3::new);
+        .and_then(|value| parse_valid_direction(value));
     let angle = feature
         .parameters
         .get("Angle")
-        .and_then(|value| parse_angle_rad(value))
-        .filter(|value| value.is_finite())
-        .and_then(Angle::new);
+        .and_then(|value| parse_angle_rad(value));
     let factor = feature
         .parameters
         .get("Factor")
@@ -480,9 +459,7 @@ pub(super) fn project_flex(feature: &Feature) -> FeatureDefinition {
     let distance = feature
         .parameters
         .get("Distance")
-        .and_then(|value| parse_length_mm(value))
-        .filter(|value| value.is_finite())
-        .and_then(Length::new);
+        .and_then(|value| parse_length_mm(value));
     let form = feature.properties.get("Mode").and_then(|value| {
         match value.to_ascii_lowercase().as_str() {
             "bending" | "bend" => Some(FlexForm::Bending),
@@ -508,7 +485,6 @@ pub(super) fn project_scale(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Center")
             .and_then(|value| parse_point3_mm(value))
-            .and_then(cadmpeg_ir::features::FinitePoint3::new)
             .map(ScaleCenter::Point),
         Some("Centroid") => Some(ScaleCenter::Centroid),
         Some("Origin" | "ModelOrigin") => Some(ScaleCenter::ModelOrigin),
@@ -560,7 +536,6 @@ pub(super) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
                     .get(positional)
                     .and_then(|value| parse_positive_dimension_length_mm(value))
             })
-            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
     };
     let positional_angle = feature
         .parameters
@@ -576,19 +551,13 @@ pub(super) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         .collect::<Vec<_>>();
     let ordered_spec = || match ordered_dimensions.as_slice() {
         [distance] => Some(ChamferSpec::Distance {
-            distance: cadmpeg_ir::scalar::PositiveLength::new(parse_positive_dimension_length_mm(
-                distance,
-            )?)?,
+            distance: parse_positive_dimension_length_mm(distance)?,
         }),
         [first, second] => {
-            let first_length = parse_positive_dimension_length_mm(first)
-                .and_then(cadmpeg_ir::scalar::PositiveLength::new);
-            let second_length = parse_positive_dimension_length_mm(second)
-                .and_then(cadmpeg_ir::scalar::PositiveLength::new);
-            let first_angle =
-                parse_bounded_angle_rad(first).and_then(cadmpeg_ir::scalar::InteriorAngle::new);
-            let second_angle =
-                parse_bounded_angle_rad(second).and_then(cadmpeg_ir::scalar::InteriorAngle::new);
+            let first_length = parse_positive_dimension_length_mm(first);
+            let second_length = parse_positive_dimension_length_mm(second);
+            let first_angle = parse_bounded_angle_rad(first);
+            let second_angle = parse_bounded_angle_rad(second);
             match (first_length, second_length, first_angle, second_angle) {
                 (Some(distance), None, None, Some(angle))
                 | (None, Some(distance), Some(angle), None) => {
@@ -607,7 +576,7 @@ pub(super) fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             if let Some(value) = feature.parameters.get("Angle").or(positional_angle) {
                 ChamferSpec::DistanceAngle {
                     distance: length("Distance", "D1")?,
-                    angle: cadmpeg_ir::scalar::InteriorAngle::new(parse_bounded_angle_rad(value)?)?,
+                    angle: parse_bounded_angle_rad(value)?,
                 }
             } else if let (Some(first), Some(second)) =
                 (length("Distance1", "D1"), length("Distance2", "D2"))

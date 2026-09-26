@@ -243,7 +243,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert_eq!(
-        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0].parameter_range,
+        f3d_native(round_trip.ir()).tolerant_coedge_parameters[0]
+            .parameter_range
+            .get(),
         [-1.5, 2.25]
     );
 }

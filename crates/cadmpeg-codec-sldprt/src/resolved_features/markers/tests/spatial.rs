@@ -4,6 +4,7 @@ use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
+use super::{raw2, raw_link};
 use crate::layout::{
     compact_current_spatial_marker_point as compact_spatial,
     wide_spatial_marker_coordinate_prefix as wide_spatial,
@@ -73,7 +74,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 100,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![reference(143), reference(287)],
@@ -655,7 +656,7 @@ fn relation_binding_requires_family_operand_signature() {
         offset: 20,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(kind, 0), operand(kind, 1)],
@@ -704,7 +705,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         offset: 30,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],
@@ -742,7 +743,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         offset: 120,
         object_id: 1,
         name: "name".into(),
-        value: 1.0,
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
         role: FeatureInputScalarRole::Driving,
 
         operands: vec![operand(0), operand(1)],
@@ -820,7 +821,12 @@ fn legacy_sketch_prefix_uses_the_shared_entity_body() {
     let entities = sketch_input_entities(&payload, "lane");
 
     assert_eq!(entities.len(), 1);
-    assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
     assert_eq!(entities[0].local_id(), Some(41));
 }
 
@@ -851,7 +857,12 @@ fn terminal_wide_geometry_locus_coordinate_record_is_a_point() {
             panic!("expected one marker entity");
         };
         assert_eq!(entity.kind(), SketchInputKind::Point);
-        assert_eq!(entity.coordinates_m, Some([0.025, -0.004]));
+        assert_eq!(
+            entity
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([0.025, -0.004])
+        );
 
         payload[134..138].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
@@ -879,13 +890,13 @@ fn compact_legacy_profile_coordinate_pairings_carry_points() {
     payload[52..60].copy_from_slice(&(-0.004f64).to_le_bytes());
     payload[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].kind(), SketchInputKind::Point);
 
     payload[19..23].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     assert_eq!(
         sketch_input_entities(&payload, "lane")[0].kind(),
         SketchInputKind::Point
@@ -893,7 +904,7 @@ fn compact_legacy_profile_coordinate_pairings_carry_points() {
 
     payload[13..17].copy_from_slice(&1u32.to_le_bytes());
     payload[19..23].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -911,11 +922,16 @@ fn packed_legacy_geometry_locus_carries_profile_coordinates() {
     payload[58..66].copy_from_slice(&(-0.004f64).to_le_bytes());
     payload[126..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([0.025, -0.004]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([0.025, -0.004]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].kind(), SketchInputKind::Point);
-    assert_eq!(entities[0].coordinates_m, Some([0.025, -0.004]));
+    assert_eq!(
+        entities[0]
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.025, -0.004])
+    );
     assert_eq!(
         entities[0]
             .state_value
@@ -968,12 +984,12 @@ fn geometry_marker_coordinates_are_selected_by_layout() {
     payload[64..66].copy_from_slice(&[0x1e, 0x00]);
     payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
     payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     payload[64..66].copy_from_slice(&[0x14, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
     payload[64..66].copy_from_slice(&[0x1e, 0x00]);
     payload[5] = 0;
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
 }
 
 #[test]
@@ -988,18 +1004,18 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
     payload[58..66].copy_from_slice(&1.25f64.to_le_bytes());
     payload[66..74].copy_from_slice(&(-2.5f64).to_le_bytes());
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(entities[0].kind(), SketchInputKind::LineOrCircle);
 
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[17..21].copy_from_slice(&0u32.to_le_bytes());
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
 
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
-    assert_eq!(marker_coordinates(&payload, 0), None);
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), None);
     let entities = sketch_input_entities(&payload, "lane");
     assert_eq!(
         entities[0].kind(),
@@ -1016,12 +1032,12 @@ fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
 
     payload.resize(154 + LEGACY_SKETCH_MARKER.len(), 0);
     payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
 
     for size in [161, 162] {
         payload.resize(size + LEGACY_SKETCH_MARKER.len(), 0);
         payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
-        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     }
 }
 
@@ -1038,7 +1054,7 @@ fn compact_legacy_coordinate_value_one_is_a_profile_vertex() {
     payload[44..52].copy_from_slice(&1.25f64.to_le_bytes());
     payload[52..60].copy_from_slice(&(-2.5f64).to_le_bytes());
 
-    assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+    assert_eq!(raw2(marker_coordinates(&payload, 0)), Some([1.25, -2.5]));
     assert!(compact_legacy_profile_vertex(&payload, 0));
     let entities = sketch_input_entities(&payload, "lane");
     let [entity] = entities.as_slice() else {
@@ -1068,7 +1084,10 @@ fn extended_geometry_values_share_the_coordinate_record_layout() {
 
         for native_code in 0u32..=2 {
             payload[offset + 17..offset + 21].copy_from_slice(&native_code.to_le_bytes());
-            assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+            assert_eq!(
+                raw2(marker_coordinates(&payload, offset)),
+                Some([1.25, -2.5])
+            );
         }
     }
 }
@@ -1099,24 +1118,32 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         payload[offset + 154..offset + 154 + prefix.len()].copy_from_slice(prefix);
 
         assert_eq!(
-            linked_profile_point(&payload, offset),
+            raw_link(linked_profile_point(&payload, offset)),
             Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
         );
-        assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+        assert_eq!(
+            raw2(marker_coordinates(&payload, offset)),
+            Some([1.25, -2.5])
+        );
         let entities = super::sketch_input_entities(&payload, "lane");
         let point = entities
             .iter()
             .find(|entity| entity.offset() == offset as u64)
             .expect("linked profile point");
         assert_eq!(point.kind(), SketchInputKind::Point);
-        assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+        assert_eq!(
+            point
+                .coordinates_m
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            Some([1.25, -2.5])
+        );
     }
     payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
     payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[offset + 154..offset + 154 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&payload, offset),
+        raw_link(linked_profile_point(&payload, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
@@ -1131,7 +1158,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
     payload[offset + 92..offset + 94].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
-        linked_profile_point(&payload, offset),
+        raw_link(linked_profile_point(&payload, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 4)]))
     );
     assert_eq!(
@@ -1145,18 +1172,22 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     payload[offset + 74..offset + 78].copy_from_slice(&[0x01, 0x00, 0x03, 0x00]);
     assert_eq!(
-        additional_linked_profile_point_coordinates(&payload, offset),
+        raw2(additional_linked_profile_point_coordinates(
+            &payload, offset
+        )),
         Some([1.25, -2.5])
     );
-    assert_eq!(linked_profile_point(&payload, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&payload, offset)), None);
     payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[offset + 74..offset + 78].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
     assert_eq!(
-        additional_linked_profile_point_coordinates(&payload, offset),
+        raw2(additional_linked_profile_point_coordinates(
+            &payload, offset
+        )),
         Some([1.25, -2.5])
     );
-    assert_eq!(linked_profile_point(&payload, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&payload, offset)), None);
     payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
 
     let mut extended = vec![0; offset + 158 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
@@ -1169,22 +1200,30 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     extended[offset + 158..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
-    assert_eq!(marker_coordinates(&extended, offset), Some([1.25, -2.5]));
+    assert_eq!(
+        raw2(marker_coordinates(&extended, offset)),
+        Some([1.25, -2.5])
+    );
     let entities = super::sketch_input_entities(&extended, "lane");
     let point = entities
         .iter()
         .find(|entity| entity.offset() == offset as u64)
         .expect("extended-tail linked profile point");
     assert_eq!(point.kind(), SketchInputKind::Point);
-    assert_eq!(point.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        point
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 
     extended[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     extended[offset + 158..].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
@@ -1197,7 +1236,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     extended[offset + 154..offset + 158].fill(0xff);
     extended[offset + 158..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     assert_eq!(
@@ -1206,20 +1245,20 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     extended[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     extended[offset + 17..offset + 21].fill(0);
-    assert_eq!(linked_profile_point(&extended, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&extended, offset)), None);
     extended[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
     extended[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     extended[offset + 76..offset + 78].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        linked_profile_point(&extended, offset),
+        raw_link(linked_profile_point(&extended, offset)),
         Some(([1.25, -2.5], [(0x8178, 2), (0x8178, 3)]))
     );
     extended[offset + 144..offset + 148].fill(0);
-    assert_eq!(linked_profile_point(&extended, offset), None);
+    assert_eq!(raw_link(linked_profile_point(&extended, offset)), None);
 
     let mut legacy_geometry = vec![0; offset + 154 + LEGACY_SKETCH_MARKER.len()];
     legacy_geometry[..offset].copy_from_slice(&7u32.to_le_bytes());
@@ -1250,7 +1289,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     legacy_geometry[offset + 154..].copy_from_slice(LEGACY_SKETCH_MARKER);
 
     assert_eq!(
-        linked_profile_point(&legacy_geometry, offset),
+        raw_link(linked_profile_point(&legacy_geometry, offset)),
         Some(([1.25, -2.5], [(0x8139, 1), (0x8139, 0)]))
     );
     assert_eq!(
@@ -1258,7 +1297,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some((vec![1, 0], 0x8139))
     );
     assert_eq!(
-        marker_coordinates(&legacy_geometry, offset),
+        raw2(marker_coordinates(&legacy_geometry, offset)),
         Some([1.25, -2.5])
     );
     let entity = super::sketch_input_entities(&legacy_geometry, "lane")
@@ -1266,7 +1305,12 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         .find(|entity| entity.offset() == offset as u64)
         .expect("legacy geometry linked profile point");
     assert_eq!(entity.kind(), SketchInputKind::Point);
-    assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+    assert_eq!(
+        entity
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([1.25, -2.5])
+    );
 }
 
 #[test]
@@ -1283,7 +1327,12 @@ fn spatial_vertex_record_decodes_model_coordinates() {
     }
     assert_eq!(
         crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
-        vec![cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)]
+        vec![
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.25, -2.5, 3.75
+            ))
+            .expect("finite spatial vertex")
+        ]
     );
     payload[7 + 43] = 0x1e;
     assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());

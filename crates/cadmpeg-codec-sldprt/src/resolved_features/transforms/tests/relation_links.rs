@@ -739,7 +739,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             offset: 0,
             object_id: 0,
             name: "name".into(),
-            value,
+            value: cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands,
@@ -818,7 +818,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
             offset: 0,
             object_id: 0,
             name: "name".into(),
-            value: 1.0,
+            value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
             role: FeatureInputScalarRole::Driving,
 
             operands: vec![operand(12), operand(13)],

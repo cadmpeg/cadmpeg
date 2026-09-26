@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::holes::HoleForm;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::container::ContainerScan;
 
@@ -331,7 +332,7 @@ pub(in crate::decode) fn simple_drilled_hole_recipe<'a>(
 pub(in crate::decode) fn simple_drilled_hole_envelope_spans(
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
-) -> Option<[[Option<f64>; 2]; 3]> {
+) -> Option<[[Option<PositiveLength>; 2]; 3]> {
     let [first, second] = simple_drilled_hole_corner_envelopes(scan, table)?;
     paired_corner_envelope_axis_spans(first, second)
 }
@@ -743,7 +744,7 @@ pub(in crate::decode) fn clipped_drilled_hole_placement_from_cone_points(
 pub(in crate::decode) fn paired_corner_envelope_axis_spans(
     first: [[f64; 3]; 2],
     second: [[f64; 3]; 2],
-) -> Option<[[Option<f64>; 2]; 3]> {
+) -> Option<[[Option<PositiveLength>; 2]; 3]> {
     first
         .iter()
         .chain(&second)
@@ -768,7 +769,7 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
                 second[axis][1] - second[axis][0],
             )
         });
-        let shared_span = shared_span.filter(|span| *span > 0.0);
+        let shared_span = shared_span.and_then(PositiveLength::new);
         let adjacent = approximately_equal(first[axis][1], second[axis][0])
             || approximately_equal(second[axis][1], first[axis][0]);
         let adjacent_span = adjacent
@@ -780,7 +781,9 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
                 (first[axis][0] - second[axis][0]).abs()
             }
         });
-        let paired_span = adjacent_span.or(one_sided_span).filter(|span| *span > 0.0);
+        let paired_span = adjacent_span
+            .or(one_sided_span)
+            .and_then(PositiveLength::new);
         [shared_span, paired_span]
     });
     Some(spans)
@@ -788,7 +791,7 @@ pub(in crate::decode) fn paired_corner_envelope_axis_spans(
 
 pub(in crate::decode) fn simple_drilled_hole_dimensions(
     scan: &ContainerScan,
-    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
     simple_drilled_hole_dimension_values(
@@ -804,7 +807,7 @@ pub(in crate::decode) fn simple_drilled_hole_dimensions(
 
 pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
     tables: impl Iterator<Item = &'a crate::feature::definitions::FeatureDimensionTable>,
-    observed_envelope_spans: Option<[[Option<f64>; 2]; 3]>,
+    observed_envelope_spans: Option<[[Option<PositiveLength>; 2]; 3]>,
     family: SimpleDrilledDimensionFamily,
 ) -> Option<(f64, f64, f64)> {
     let tables = tables
@@ -878,7 +881,7 @@ pub(in crate::decode) fn simple_drilled_hole_dimension_values<'a>(
 pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
     bore_diameter: f64,
     blind_depth: f64,
-    spans: [[Option<f64>; 2]; 3],
+    spans: [[Option<PositiveLength>; 2]; 3],
 ) -> bool {
     for diameter_axis in 0..3 {
         for depth_axis in 0..3 {
@@ -886,11 +889,11 @@ pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
                 && spans[diameter_axis]
                     .into_iter()
                     .flatten()
-                    .any(|span| approximately_equal(span, bore_diameter))
+                    .any(|span| approximately_equal(span.get(), bore_diameter))
                 && spans[depth_axis]
                     .into_iter()
                     .flatten()
-                    .any(|span| approximately_equal(span, blind_depth))
+                    .any(|span| approximately_equal(span.get(), blind_depth))
             {
                 return true;
             }

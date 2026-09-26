@@ -11,8 +11,9 @@ use crate::native::SldprtNative;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
@@ -1386,11 +1387,6 @@ fn resolved_feature_payload(
             state.copy_from_slice(&value.get().to_le_bytes());
         }
         if let Some(coordinates) = entity.coordinates_m {
-            if !coordinates.iter().all(|value| value.is_finite()) {
-                return Err(CodecError::Malformed(
-                    "feature-input marker coordinates must be finite".into(),
-                ));
-            }
             if crate::resolved_features::markers::marker_coordinates(&lane.native_payload, offset)
                 .is_none()
             {
@@ -2153,9 +2149,7 @@ fn sequential_tessellation(
         .flat_map(|triangle| triangle.iter().copied())
         .map(|index| {
             usize::try_from(index)
-                .ok()
-                .filter(|index| *index < source_vertices.len())
-                .ok_or_else(|| CodecError::Malformed("tessellation index is out of bounds".into()))
+                .map_err(|_| CodecError::Malformed("tessellation index is out of bounds".into()))
         })
         .collect::<Result<Vec<_>, _>>()?;
     let positions = indices
@@ -2166,41 +2160,22 @@ fn sequential_tessellation(
         if source_normals.is_empty() {
             Vec::new()
         } else {
-            if source_normals.len() != source_vertices.len() {
-                return Err(CodecError::Malformed(
-                    "tessellation normals are not parallel to vertices".into(),
-                ));
-            }
             indices
                 .iter()
                 .map(|index| source_normals[*index])
                 .collect::<Vec<_>>()
         }
     } else {
-        if corner_normals.len() != indices.len() {
-            return Err(CodecError::Malformed(
-                "tessellation corner normals are not parallel to triangle corners".into(),
-            ));
-        }
         corner_normals
     };
     let mut channels = Vec::new();
     for channel in mesh.channels() {
-        if channel.count() as usize != source_vertices.len() {
+        if usize::try_from(channel.count()).ok() != Some(source_vertices.len()) {
             channels.push(channel.clone());
             continue;
         }
         let item_size = usize::try_from(channel.item_size())
             .map_err(|_| CodecError::Malformed("tessellation channel item size overflow".into()))?;
-        let expected_len = source_vertices
-            .len()
-            .checked_mul(item_size)
-            .ok_or_else(|| CodecError::Malformed("tessellation channel size overflow".into()))?;
-        if channel.data().len() != expected_len {
-            return Err(CodecError::Malformed(
-                "tessellation channel payload length is inconsistent".into(),
-            ));
-        }
         let data = indices
             .iter()
             .flat_map(|index| {
@@ -3292,9 +3267,7 @@ fn write_nurbs_curve(
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
-    let control_points = nurbs.pole_rows().raw_points();
-    let curve_weights = nurbs.pole_rows().weights();
-    let poles = homogeneous_poles(&control_points, curve_weights.as_deref(), length_scale)?;
+    let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
     let unique = unique_knots(nurbs.knots(), entity)?;
     u16_array(
@@ -3353,9 +3326,7 @@ fn write_nurbs_surface(
     })?;
     let u_unique = unique_knots(nurbs.u_knots(), entity)?;
     let v_unique = unique_knots(nurbs.v_knots(), entity)?;
-    let points = nurbs.pole_grid().raw_points().concat();
-    let weights = nurbs.pole_grid().weights().map(|rows| rows.concat());
-    let poles = homogeneous_poles(&points, weights.as_deref(), length_scale)?;
+    let poles = homogeneous_grid_poles(nurbs.pole_grid(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
     let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
         CodecError::NotImplemented(format!(
@@ -3435,26 +3406,82 @@ fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     Ok(attr)
 }
 
+fn append_homogeneous_pole(
+    out: &mut Vec<f64>,
+    point: FinitePoint3,
+    weight: Option<f64>,
+    length_scale: f64,
+    index: usize,
+) -> Result<(), CodecError> {
+    let point = point.get();
+    let homogeneous =
+        [point.x, point.y, point.z].map(|value| value * length_scale * weight.unwrap_or(1.0));
+    if !homogeneous.iter().all(|value| value.is_finite()) {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
+        )));
+    }
+    out.extend(homogeneous);
+    if let Some(weight) = weight {
+        out.push(weight);
+    }
+    Ok(())
+}
+
 fn homogeneous_poles(
-    points: &[cadmpeg_ir::math::Point3],
-    weights: Option<&[f64]>,
+    poles: &NurbsPoles3<FinitePoint3>,
     length_scale: f64,
 ) -> Result<Vec<f64>, CodecError> {
-    if weights.is_some_and(|values| values.len() != points.len()) {
-        return Err(CodecError::Malformed("invalid NURBS weight count".into()));
-    }
-    let mut out = Vec::with_capacity(points.len() * if weights.is_some() { 4 } else { 3 });
-    for (index, point) in points.iter().enumerate() {
-        let weight = weights.map_or(1.0, |values| values[index]);
-        let homogeneous = [point.x, point.y, point.z].map(|value| value * length_scale * weight);
-        if !homogeneous.iter().all(|value| value.is_finite()) {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT NURBS pole {index} scaled by its weight has no finite coordinate"
-            )));
+    let mut out = Vec::with_capacity(
+        poles.count()
+            * if matches!(poles, NurbsPoles3::Rational { .. }) {
+                4
+            } else {
+                3
+            },
+    );
+    match poles {
+        NurbsPoles3::Polynomial { points } => {
+            for (index, point) in points.iter().enumerate() {
+                append_homogeneous_pole(&mut out, *point, None, length_scale, index)?;
+            }
         }
-        out.extend(homogeneous);
-        if weights.is_some() {
-            out.push(weight);
+        NurbsPoles3::Rational { points } => {
+            for (index, pole) in points.iter().enumerate() {
+                append_homogeneous_pole(
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    length_scale,
+                    index,
+                )?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn homogeneous_grid_poles(
+    poles: &NurbsPoleGrid<FinitePoint3>,
+    length_scale: f64,
+) -> Result<Vec<f64>, CodecError> {
+    let mut out = Vec::new();
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => {
+            for (index, point) in rows.iter().flatten().enumerate() {
+                append_homogeneous_pole(&mut out, *point, None, length_scale, index)?;
+            }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            for (index, pole) in rows.iter().flatten().enumerate() {
+                append_homogeneous_pole(
+                    &mut out,
+                    pole.point,
+                    Some(pole.weight.get()),
+                    length_scale,
+                    index,
+                )?;
+            }
         }
     }
     Ok(out)

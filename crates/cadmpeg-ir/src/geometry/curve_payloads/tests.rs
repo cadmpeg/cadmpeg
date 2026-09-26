@@ -389,3 +389,34 @@ fn a_direction_offset_from_admitted_parts_matches_its_raw_admission() {
         );
     }
 }
+
+#[test]
+fn a_plane_normal_offset_from_a_unit_matches_raw_admission() {
+    use super::OffsetCurveConstruction;
+    use crate::geometry::{CurveOffsetRange, OffsetSide};
+    use crate::ids::CurveId;
+    use crate::math::Vector3;
+    use crate::units::UnitVector3;
+
+    let source = CurveId::mint("synthetic:test:curve#source").unwrap();
+    let normal = UnitVector3::normalized_by_reciprocal(Vector3::new(0.0, 3.0, 4.0)).unwrap();
+    let range = CurveOffsetRange::uniform([2.0, 5.0]).unwrap();
+    for distance in [-1.25, f64::INFINITY] {
+        assert_eq!(
+            OffsetCurveConstruction::with_unit_plane_normal(
+                source.clone(),
+                distance,
+                normal,
+                Some(range.clone()),
+            ),
+            OffsetCurveConstruction::try_new(
+                source.clone(),
+                distance,
+                OffsetSide::PlaneNormal {
+                    normal: *normal.as_raw(),
+                },
+                Some(range.clone()),
+            )
+        );
+    }
+}

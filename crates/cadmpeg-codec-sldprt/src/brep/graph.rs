@@ -666,6 +666,8 @@ fn resolve_sweep_surface(
             profile_derived.then_some(Exactness::Derived),
         )),
         SweepKind::Swept { direction } => {
+            let unit_direction = *direction;
+            let direction = direction.as_raw();
             // Ruling extent: face vertex travel bracketed by the profile poles'
             // own travel along the sweep direction, in millimetres.
             let project = |p: &cadmpeg_ir::math::Point3| {
@@ -717,7 +719,7 @@ fn resolve_sweep_surface(
             Some((
                 SolvedSurfaceGeometry::Nurbs(sweep::swept_nurbs(
                     &curve,
-                    *direction,
+                    unit_direction,
                     v_start - pad,
                     v_end + pad,
                     &record,
@@ -762,37 +764,25 @@ fn emit_offset_surface(
     annotations
         .note(&surface, source_stream, offset.offset as u64)
         .tag("00_3c");
-    let geometry = match cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+    let payload = cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::legacy(
         support,
         offset.distance,
         None,
         None,
         false,
-        cadmpeg_ir::geometry::OffsetExtension::Legacy {
-            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-            cache: None,
-        },
-    )
-    .map(|admitted_payload| {
-        ProceduralSurface::new(
-            construction.clone(),
-            ProceduralSurfaceDefinition::Offset(admitted_payload),
-            None,
-        )
-    }) {
-        Ok(procedural) => {
-            admit_brep_entity(sink.ctx)?;
-            sink.out.procedural_surfaces.push(procedural);
-            SurfaceGeometry::Procedural {
-                construction,
-                cache: None,
-            }
-        }
-        Err(_) => {
-            sink.out.stats.unknown_surface_faces += 1;
-            annotations.exactness(&surface, Exactness::Unknown);
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
-        }
+        cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+        None,
+    );
+    let procedural = ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Offset(payload),
+        None,
+    );
+    admit_brep_entity(sink.ctx)?;
+    sink.out.procedural_surfaces.push(procedural);
+    let geometry = SurfaceGeometry::Procedural {
+        construction,
+        cache: None,
     };
     admit_brep_entity(sink.ctx)?;
     sink.out.surfaces.push(Surface {
@@ -985,7 +975,7 @@ fn edge_parameter_range(
 ) -> Option<([f64; 2], bool)> {
     const TOLERANCE_MM: f64 = 1.0e-7;
 
-    let range = carrier.parameter_range?;
+    let range = carrier.parameter_range?.get();
     let range = match &carrier.geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             range.map(|parameter| parameter * LEN_TO_MM)
@@ -6151,7 +6141,10 @@ mod tests {
                 )
                 .unwrap(),
             )),
-            parameter_range: Some([-0.014, 0.0165]),
+            parameter_range: Some(
+                cadmpeg_ir::units::FiniteVector::new([-0.014, 0.0165])
+                    .expect("finite fixture range"),
+            ),
         };
 
         let endpoints = [
