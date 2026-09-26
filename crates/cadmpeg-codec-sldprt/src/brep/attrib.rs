@@ -186,38 +186,22 @@ pub(super) fn definition_table(
         .collect())
 }
 
-/// Map definition-record node ids to their stored family names.
-fn named_definitions(
-    ctx: Option<&DecodeContext<'_>>,
-    buf: &[u8],
-) -> Result<HashMap<u16, String>, cadmpeg_core::CodecError> {
-    let definitions = definition_table(ctx, buf)?;
-    charge_items(
-        ctx,
-        definitions.len(),
-        "collect Parasolid named definitions",
-    )?;
-    Ok(definitions
-        .into_iter()
-        .filter_map(|(node, name)| name.map(|name| (node, name)))
-        .collect())
-}
-
 /// Map definition-record node ids to the two supported native attribute
 /// families whose payload consumers are implemented here.
 fn definitions(
     ctx: Option<&DecodeContext<'_>>,
     buf: &[u8],
 ) -> Result<HashMap<u16, &'static str>, cadmpeg_core::CodecError> {
-    let definitions = named_definitions(ctx, buf)?;
+    let definitions = definition_table(ctx, buf)?;
     charge_items(
         ctx,
-        definitions.len(),
+        definitions.values().filter(|name| name.is_some()).count(),
         "collect Parasolid supported definitions",
     )?;
     Ok(definitions
         .into_iter()
         .filter_map(|(node, family)| {
+            let family = family?;
             let family = match family.as_str() {
                 ATOM_ID => ATOM_ID,
                 LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
@@ -478,8 +462,8 @@ pub(super) fn scan_body_modifiers(
 #[cfg(test)]
 mod tests {
     use super::{
-        definition_table, definitions, integer_lists, named_definitions, scan, scan_body_modifiers,
-        ATOM_ID, LAST_BODY_MODIFIER,
+        definition_table, definitions, integer_lists, scan, scan_body_modifiers, ATOM_ID,
+        LAST_BODY_MODIFIER,
     };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -633,17 +617,26 @@ mod tests {
         "resolve Parasolid attribute definitions"
     );
     definition_boundary!(
-        parasolid_named_definitions_refuse_before_collection,
-        named_definitions,
-        2,
-        "collect Parasolid named definitions"
-    );
-    definition_boundary!(
         parasolid_supported_definitions_refuse_before_collection,
         definitions,
-        3,
+        2,
         "collect Parasolid supported definitions"
     );
+    #[test]
+    fn parasolid_supported_definitions_fit_without_named_map_budget() {
+        let mut bytes = Vec::new();
+        append_definition(&mut bytes, ATOM_ID, 15, 16);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 3;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
+        assert_eq!(
+            definitions(Some(&ctx), &bytes)
+                .expect("definition fits three charged items")
+                .get(&16),
+            Some(&ATOM_ID)
+        );
+    }
     attribute_collection_boundary!(
         parasolid_attribute_value_lists_refuse_before_insertion,
         stream(&[74, 75, 1_390_698_820, 0, 3], 333),
@@ -662,35 +655,35 @@ mod tests {
         parasolid_face_identity_fields_refuse_before_copy,
         stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
         scan,
-        13,
+        12,
         "copy Parasolid face identity fields"
     );
     attribute_collection_boundary!(
         parasolid_face_atoms_refuse_before_insertion,
         stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
         scan,
-        15,
+        14,
         "collect Parasolid face atoms"
     );
     attribute_collection_boundary!(
         parasolid_face_atoms_refuse_before_retention,
         stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333),
         scan,
-        16,
+        15,
         "retain Parasolid face atoms"
     );
     attribute_collection_boundary!(
         parasolid_body_modifiers_refuse_before_insertion,
         body_modifier_stream(&[&[2]], 333),
         scan_body_modifiers,
-        7,
+        6,
         "collect Parasolid body modifiers"
     );
     attribute_collection_boundary!(
         parasolid_body_modifiers_refuse_before_retention,
         body_modifier_stream(&[&[2]], 333),
         scan_body_modifiers,
-        8,
+        7,
         "retain Parasolid body modifiers"
     );
 
@@ -762,15 +755,15 @@ mod tests {
     }
 
     #[test]
-    fn named_definitions_resolve_families_without_numeric_classification() {
+    fn definition_table_retains_unsupported_families() {
         let mut body = Vec::new();
         append_definition(&mut body, "SDL/TYSA_COLOUR", 15, 16);
 
         assert_eq!(
-            named_definitions(None, &body)
-                .expect("named definitions")
+            definition_table(None, &body)
+                .expect("definition table")
                 .get(&16)
-                .map(String::as_str),
+                .and_then(Option::as_deref),
             Some("SDL/TYSA_COLOUR")
         );
         assert!(!definitions(None, &body)
