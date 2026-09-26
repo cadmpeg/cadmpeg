@@ -28,12 +28,10 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
-use crate::brep::triangulation::TextTriangulation;
 use crate::brep::{
     location_transform_error, surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine,
-    TextCurve, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
-    TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
-    TextTShapeGeometry,
+    Tables, TextCurve2d, TextEdgeRepresentation, TextOrientation, TextShapeKind, TextShapeUse,
+    TextSurface, TextTShape, TextTShapeGeometry,
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
@@ -45,7 +43,7 @@ const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 struct IndexedPolygon {
     samples: PolylineSamples,
-    deflection: f64,
+    deflection: cadmpeg_ir::scalar::NonNegativeReal,
 }
 
 impl IndexedPolygon {
@@ -57,7 +55,7 @@ impl IndexedPolygon {
     fn try_new(
         nodes: Vec<Point3>,
         parameters: Option<Vec<f64>>,
-        deflection: f64,
+        deflection: cadmpeg_ir::scalar::NonNegativeReal,
     ) -> Result<Self, CodecError> {
         let samples = match parameters {
             None => PolylineSamples::Unparameterized {
@@ -142,35 +140,7 @@ pub(crate) fn transfer(
     Ok(occurrences)
 }
 
-#[derive(Clone, Copy)]
-struct Tables<'a> {
-    locations: &'a [TextLocation],
-    curve2ds: &'a [TextCurve2d],
-    curves: &'a [TextCurve],
-    surfaces: &'a [TextSurface],
-    polygons3d: &'a [TextPolygon3d],
-    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
-    tshapes: &'a crate::brep::TextTShapes,
-    triangulations: &'a [TextTriangulation],
-    roots: &'a [TextShapeUse],
-}
-
-impl<'a> Tables<'a> {
-    fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
-        let set = payload.payload.shape_set()?;
-        Some(Self {
-            locations: &set.locations,
-            curve2ds: &set.curve2ds,
-            curves: &set.curves,
-            surfaces: &set.surfaces,
-            polygons3d: &set.polygons3d,
-            polygons_on_triangulations: &set.polygons_on_triangulations,
-            tshapes: &set.tshapes,
-            triangulations: &set.triangulations,
-            roots: &set.roots,
-        })
-    }
-
+impl Tables<'_> {
     fn location(
         &self,
         index: impl Into<crate::brep::LocationRef>,
@@ -415,10 +385,7 @@ impl<'a> Builder<'a> {
                 .map_err(|error| {
                     CodecError::malformed(format_args!("invalid triangulation: {error}"))
                 })?
-                .with_chordal_deflection(Some(triangulation.deflection))
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid triangulation deflection: {error}"))
-                })?
+                .with_admitted_chordal_deflection(Some(triangulation.deflection))
                 .with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Fcstd,
                     object_id: self.source_object.clone(),
@@ -927,10 +894,11 @@ impl<'a> Builder<'a> {
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
-                        PolygonalSurface::new(
+                        PolygonalSurface::from_scaled_deflection(
                             vertices.clone(),
                             triangles.clone(),
-                            triangulation.deflection * deflection_scale,
+                            triangulation.deflection,
+                            *deflection_scale,
                         )
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
@@ -978,10 +946,16 @@ impl<'a> Builder<'a> {
                 })?
                 .with_body(self.current_body.clone())
                 .with_faces(vec![face_id.clone()])
-                .with_chordal_deflection(Some(triangulation.deflection * deflection_scale))
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("invalid triangulation deflection: {error}"))
-                })?
+                .with_admitted_chordal_deflection(Some(
+                    triangulation
+                        .deflection
+                        .scaled(deflection_scale)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "invalid triangulation deflection: chordal_deflection must be finite and non-negative"
+                            ))
+                        })?,
+                ))
                 .with_source_object(Some(self.source_association())),
             );
         }
@@ -1256,7 +1230,7 @@ impl<'a> Builder<'a> {
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                 place_polyline_samples(&mut samples, carrier_transform)?;
-                PolylineCurve::new(samples, deflection * scale)
+                PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()),
@@ -1281,7 +1255,7 @@ impl<'a> Builder<'a> {
                 ),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
                     place_polyline_samples(&mut samples, carrier_transform)?;
-                    PolylineCurve::new(samples, deflection * scale)
+                    PolylineCurve::from_scaled_deflection(samples, deflection, scale)
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()),
@@ -1401,7 +1375,7 @@ impl<'a> Builder<'a> {
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: positive_tolerance(tolerance * uniform_scale(transform)?),
+            tolerance: positive_tolerance(tolerance * uniform_scale(transform)?.get()),
         });
         self.bind_topology(
             TextShapeKind::Vertex,
@@ -1839,17 +1813,17 @@ fn ensure_similarity(transform: Transform) -> Result<(), CodecError> {
     uniform_scale(transform).map(|_| ())
 }
 
-fn uniform_scale(transform: Transform) -> Result<f64, CodecError> {
+fn uniform_scale(transform: Transform) -> Result<cadmpeg_ir::scalar::PositiveReal, CodecError> {
     let columns = transform.linear_columns();
-    let scale = columns[0].norm();
+    let scale = cadmpeg_ir::scalar::PositiveReal::new(columns[0].norm()).ok_or_else(|| {
+        CodecError::Malformed("B-rep location is not a finite similarity transform".into())
+    })?;
     let lengths = columns.map(|column| column.norm());
     let units = columns.map(cadmpeg_ir::features::FiniteVector3::unit_nonzero);
-    if !scale.is_finite()
-        || scale <= 0.0
-        || lengths.iter().any(|length| {
-            !length.is_finite() || (*length / scale - 1.0).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE
-        })
-        || units.iter().any(Option::is_none)
+    if lengths.iter().any(|length| {
+        !length.is_finite()
+            || (*length / scale.get() - 1.0).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE
+    }) || units.iter().any(Option::is_none)
         || units[0]
             .zip(units[1])
             .is_some_and(|(a, b)| a.dot(b).abs() > EPS_TOPOLOGY_TRANSFER_DEGENERATE)

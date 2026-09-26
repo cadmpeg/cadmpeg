@@ -2,10 +2,9 @@
 //! Conversion of neutral Creo values into the canonical IR length unit.
 //!
 //! The PSB scanner keeps source values in their stored unit so native records
-//! remain faithful to the file.  This module is the single boundary at which
-//! the already-built neutral model is converted to millimeters.  Unit
-//! directions, angles, ratios, and source-native arenas are intentionally not
-//! scaled.
+//! remain faithful to the file. Display tessellation vertices are converted at
+//! transfer; this module converts remaining model fields from source units.
+//! Unit directions, angles, ratios, and source-native arenas are not scaled.
 
 use std::collections::BTreeMap;
 
@@ -25,7 +24,7 @@ use cadmpeg_ir::sketches::{SketchGeometry, SpatialSketchGeometry};
 use cadmpeg_ir::topology::EdgeCarrier;
 use cadmpeg_ir::transform::Transform;
 
-/// Scale all neutral model lengths from the source unit into millimeters.
+/// Scale neutral model lengths not converted at transfer.
 pub(super) fn normalize_model_lengths(
     ir: &mut CadIr,
     scale: PositiveReal,
@@ -125,21 +124,6 @@ pub(super) fn normalize_model_lengths(
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
             scale_transform_translation(transform, scale)?;
         }
-    }
-    for tessellation in &mut ir.model.tessellations {
-        tessellation
-            .edit_vertices(|vertex| {
-                scale_point3(vertex, scale);
-                Ok(())
-            })
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
-            })?;
-        tessellation
-            .scale_chordal_deflection(scale)
-            .map_err(|error| {
-                CodecError::malformed(format_args!("invalid scaled tessellation: {error}"))
-            })?;
     }
     for feature in &mut ir.model.features {
         let mut definition = feature.evaluation.definition().clone();

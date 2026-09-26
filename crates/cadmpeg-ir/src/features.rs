@@ -190,6 +190,16 @@ impl FiniteVector3 {
         })
     }
 
+    /// Use admitted vector coordinates as a finite point.
+    #[must_use]
+    pub const fn as_point(self) -> FinitePoint3 {
+        FinitePoint3(Point3 {
+            x: self.0.x,
+            y: self.0.y,
+            z: self.0.z,
+        })
+    }
+
     /// Reverse all components.
     #[must_use]
     pub fn negated(self) -> Self {
@@ -612,6 +622,11 @@ impl FeatureLineSegment {
     pub fn new(start: Point3, end: Point3) -> Option<Self> {
         let start = FinitePoint3::new(start)?;
         let end = FinitePoint3::new(end)?;
+        Self::from_parts(start, end)
+    }
+
+    /// Build a segment from finite endpoints if they are distinct.
+    pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }
 
@@ -655,16 +670,24 @@ struct FeaturePolylineWire {
 impl FeaturePolyline {
     /// Admit a finite chain with at least two points, or three when closed.
     pub fn new(points: Vec<Point3>, closed: bool) -> Option<Self> {
-        if points.len() < 2
-            || (closed && points.len() < 3)
-            || points.windows(2).any(|pair| pair[0] == pair[1])
-        {
+        if points.len() < 2 || (closed && points.len() < 3) {
             return None;
         }
         let points = points
             .into_iter()
             .map(FinitePoint3::new)
             .collect::<Option<Vec<_>>>()?;
+        Self::from_parts(points, closed)
+    }
+
+    /// Build a polyline from finite points if its chain is admissible.
+    pub fn from_parts(points: Vec<FinitePoint3>, closed: bool) -> Option<Self> {
+        if points.len() < 2
+            || (closed && points.len() < 3)
+            || points.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return None;
+        }
         Some(Self { points, closed })
     }
 

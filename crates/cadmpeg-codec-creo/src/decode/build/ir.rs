@@ -428,6 +428,10 @@ fn transfer_display_tessellations(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    let length_scale = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
         annotate(
@@ -439,18 +443,43 @@ fn transfer_display_tessellations(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model tessellations")?;
+        let positions = strip
+            .positions
+            .iter()
+            .copied()
+            .map(|position| {
+                let position = Point3::from(position.get());
+                let Some(scale) = length_scale else {
+                    return Ok(position);
+                };
+                let position = Point3::new(
+                    position.x * scale.get(),
+                    position.y * scale.get(),
+                    position.z * scale.get(),
+                );
+                if !position.is_finite() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SolidPrimdata display triangle strip at byte {} has a vertex that cannot be represented in millimeters",
+                        strip.offset
+                    )));
+                }
+                Ok(position)
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
         ir.model.tessellations.push(
             Tessellation::new(
                 id,
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
-                    strip.positions.iter().copied().map(Point3::from).collect(),
+                    positions,
                     // A primitive that carries only `mv_p_xyz` states an
                     // unshaded strip set: the normal lane is absent, never
                     // empty.
-                    strip
-                        .normals
-                        .as_ref()
-                        .map(|normals| normals.iter().copied().map(Vector3::from).collect()),
+                    strip.normals.as_ref().map(|normals| {
+                        normals
+                            .iter()
+                            .map(|normal| Vector3::from(normal.get()))
+                            .collect()
+                    }),
                     &strip.strip_lengths,
                 )
                 .map_err(|error| {
@@ -530,6 +559,14 @@ fn transfer_placed_plane_surfaces_into_ir(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    for frame in &scan.planes.local_systems {
+        if frame.frame().cross_overflow {
+            return Err(CodecError::NotImplemented(format!(
+                "Creo plane local system at byte {} has a cross product outside the representable range",
+                frame.offset
+            )));
+        }
+    }
     for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -649,3 +686,6 @@ pub(in super::super) fn build_ir(
         transfer_losses,
     })
 }
+
+#[cfg(test)]
+mod tests;

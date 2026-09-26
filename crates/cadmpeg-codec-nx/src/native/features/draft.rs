@@ -415,7 +415,7 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
             values: record
                 .lane
                 .iter()
-                .map(|(_, scalar, _)| scalar.value())
+                .map(|(_, scalar, _)| scalar.value().get())
                 .collect(),
             raw_values: record
                 .lane
@@ -452,7 +452,7 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
             .into_iter()
             .zip(wire.raw_values)
             .zip(wire.value_source_offsets)
-            .map(|((value, raw), source)| Ok((ShiftedBinary32::from_wire(value, &raw)?, source)))
+            .map(|((value, raw), source)| Ok((ShiftedBinary32::from_wire(value, raw)?, source)))
             .collect::<Result<Vec<_>, String>>()?;
         let lane = FramedScalarRun::new(
             branch,

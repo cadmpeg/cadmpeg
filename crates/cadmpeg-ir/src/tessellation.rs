@@ -377,6 +377,16 @@ impl TessellationMesh {
         triangles: Vec<[u32; 3]>,
         normals: Option<Vec<Vector3>>,
     ) -> Result<Self, TessellationLaneError> {
+        Self::pair_list_lanes(positions, triangles, normals)
+    }
+}
+
+impl<P, N> TessellationMesh<P, N> {
+    fn pair_list_lanes(
+        positions: Vec<P>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<N>>,
+    ) -> Result<Self, TessellationLaneError> {
         let Some(normals) = normals else {
             return Ok(Self::List {
                 vertices: positions,
@@ -397,6 +407,18 @@ impl TessellationMesh {
                 .collect(),
             triangles,
         })
+    }
+}
+
+impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// Pair admitted position and normal lanes into triangle-list rows.
+    /// Only the lane lengths are checked.
+    pub fn from_admitted_list_lanes(
+        positions: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        Self::pair_list_lanes(positions, triangles, normals)
     }
 }
 
@@ -754,6 +776,15 @@ impl<P, N> TessellationMesh<P, N> {
 }
 
 impl TessellationMesh<FinitePoint3, FiniteVector3> {
+    /// Pair admitted triangle-list positions and normals without checking
+    /// their scalar values again.
+    pub fn from_checked_list_lanes(
+        positions: Vec<FinitePoint3>,
+        triangles: Vec<[u32; 3]>,
+        normals: Option<Vec<FiniteVector3>>,
+    ) -> Result<Self, TessellationLaneError> {
+        Self::pair_list_lanes(positions, triangles, normals)
+    }
     /// The mesh with raw positions and normals, for a reader that edits or
     /// writes them.
     #[must_use]
@@ -1313,6 +1344,16 @@ impl Tessellation {
     ) -> Result<Self, TessellationError> {
         self.set_chordal_deflection(chordal_deflection)?;
         Ok(self)
+    }
+
+    /// Set a source chordal deflection that was admitted before this call.
+    #[must_use]
+    pub fn with_admitted_chordal_deflection(
+        mut self,
+        chordal_deflection: Option<NonNegativeReal>,
+    ) -> Self {
+        self.chordal_deflection = chordal_deflection;
+        self
     }
 
     /// Set the native source-object identity.

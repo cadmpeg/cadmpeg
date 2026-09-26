@@ -3,6 +3,7 @@
 
 use crate::intersection::TermUseForm;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NullTailForm {
@@ -60,17 +61,19 @@ impl TerminalNullReferences {
 
 #[derive(Debug, Clone, PartialEq)]
 enum NumericValues {
-    One([f64; 8]),
-    Two([f64; 19]),
+    One([FiniteReal; 8]),
+    Two([FiniteReal; 19]),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NumericTailValues(NumericValues);
 impl NumericTailValues {
     pub(crate) fn new(term_use_count: u32, values: Vec<f64>) -> Result<Self, &'static str> {
-        if !values.iter().all(|value| value.is_finite()) {
-            return Err("values: numeric tail scalars must be finite");
-        }
+        let values = values
+            .into_iter()
+            .map(FiniteReal::new)
+            .collect::<Option<Vec<_>>>()
+            .ok_or("values: numeric tail scalars must be finite")?;
         Ok(Self(match term_use_count {
             1 => NumericValues::One(
                 values
@@ -91,7 +94,7 @@ impl NumericTailValues {
             NumericValues::Two(_) => 2,
         }
     }
-    pub(crate) fn values(&self) -> &[f64] {
+    pub(crate) fn values(&self) -> &[FiniteReal] {
         match &self.0 {
             NumericValues::One(values) => values,
             NumericValues::Two(values) => values,
@@ -103,13 +106,13 @@ impl NumericTailValues {
     pub(crate) fn bytes(&self) -> Vec<u8> {
         self.values()
             .iter()
-            .flat_map(|value| value.to_be_bytes())
+            .flat_map(|value| value.get().to_be_bytes())
             .collect()
     }
     pub(crate) fn into_values(self) -> Vec<f64> {
         match self.0 {
-            NumericValues::One(values) => values.to_vec(),
-            NumericValues::Two(values) => values.to_vec(),
+            NumericValues::One(values) => values.map(FiniteReal::get).to_vec(),
+            NumericValues::Two(values) => values.map(FiniteReal::get).to_vec(),
         }
     }
 }

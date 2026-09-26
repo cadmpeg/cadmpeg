@@ -25,11 +25,18 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{
+    ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
+};
 use cadmpeg_ir::geometry::{
     nurbs::NurbsCurve, pcurve::PcurveNurbs, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveI64;
+use cadmpeg_ir::scalar::{
+    Angle, NonNegativeLength, NonZeroLength, PositiveI64, PositiveLength, PositiveReal,
+};
+use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
@@ -334,7 +341,7 @@ pub struct EmbeddedSilhouette {
     /// The embedded surface the silhouette is cast on.
     pub cast_surface: SurfaceGeometry,
     /// The projection direction of the silhouette light.
-    pub light_direction: Vector3,
+    pub light_direction: cadmpeg_ir::units::UnitVector3,
 }
 
 /// Shared context and tail fields of an `off_surf_int_cur`.
@@ -2816,6 +2823,16 @@ pub(super) fn embedded_surface_with_ranges(
     embedded_surface_fields(cur, true)
 }
 
+fn admitted_placement(
+    point: Point3,
+    axis: UnitVector3,
+    reference: UnitVector3,
+) -> Option<(FinitePoint3, OrthonormalFrame3)> {
+    let frame = OrthonormalFrame3::from_units(axis, reference)?;
+    let point = FinitePoint3::new(point)?;
+    Some((point, frame))
+}
+
 fn embedded_surface_fields(
     cur: &mut Cur<'_>,
     preserve_ranges: bool,
@@ -2851,11 +2868,11 @@ fn embedded_surface_fields(
             } else {
                 no_ranges
             };
+            let (origin, frame) = admitted_placement(point, normal, u_axis)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(point, normal, u_axis)
-                        .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+                    origin, frame,
+                ))),
                 ranges,
             ))
         }
@@ -2880,32 +2897,26 @@ fn embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        point,
-                        native_axis,
-                        ref_direction,
-                        radius,
-                    )
-                    .ok()?,
-                ))
+                let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
+                    origin,
+                    frame,
+                    PositiveLength::new(radius)?,
+                )))
             } else {
                 let axis = if sine * cosine < 0.0 {
-                    Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
+                    native_axis.negated()
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        radius,
-                        ratio,
-                        sine.abs().atan2(cosine.abs()),
-                    )
-                    .ok()?,
-                ))
+                let (origin, frame) = admitted_placement(point, axis, ref_direction)?;
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(ConeSurface::new(
+                    origin,
+                    frame,
+                    NonNegativeLength::new(radius)?,
+                    PositiveReal::new(ratio)?,
+                    Angle::new(sine.abs().atan2(cosine.abs()))?,
+                )))
             };
             Some((surface, ranges))
         }
@@ -2922,16 +2933,13 @@ fn embedded_surface_fields(
                 }
                 no_ranges
             };
+            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        radius,
-                    )
-                    .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
+                    center,
+                    frame,
+                    NonZeroLength::new(radius)?,
+                ))),
                 ranges,
             ))
         }
@@ -2949,17 +2957,14 @@ fn embedded_surface_fields(
                 }
                 no_ranges
             };
+            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        major_radius,
-                        minor_radius,
-                    )
-                    .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
+                    center,
+                    frame,
+                    PositiveLength::new(major_radius)?,
+                    NonZeroLength::new(minor_radius)?,
+                ))),
                 ranges,
             ))
         }
@@ -3012,11 +3017,11 @@ fn decode_embedded_surface_fields(
             } else {
                 no_ranges
             };
+            let (origin, frame) = admitted_placement(point, normal, u_axis)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(point, normal, u_axis)
-                        .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+                    origin, frame,
+                ))),
                 ranges,
             ))
         }
@@ -3041,32 +3046,26 @@ fn decode_embedded_surface_fields(
                 no_ranges
             };
             let surface = if sine.abs() <= f64::EPSILON && ratio == 1.0 {
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                        point,
-                        native_axis,
-                        ref_direction,
-                        radius,
-                    )
-                    .ok()?,
-                ))
+                let (origin, frame) = admitted_placement(point, native_axis, ref_direction)?;
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(CylinderSurface::new(
+                    origin,
+                    frame,
+                    PositiveLength::new(radius)?,
+                )))
             } else {
                 let axis = if sine * cosine < 0.0 {
-                    Vector3::new(-native_axis.x, -native_axis.y, -native_axis.z)
+                    native_axis.negated()
                 } else {
                     native_axis
                 };
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        radius,
-                        ratio,
-                        sine.abs().atan2(cosine.abs()),
-                    )
-                    .ok()?,
-                ))
+                let (origin, frame) = admitted_placement(point, axis, ref_direction)?;
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(ConeSurface::new(
+                    origin,
+                    frame,
+                    NonNegativeLength::new(radius)?,
+                    PositiveReal::new(ratio)?,
+                    Angle::new(sine.abs().atan2(cosine.abs()))?,
+                )))
             };
             Some((surface, ranges))
         }
@@ -3083,16 +3082,13 @@ fn decode_embedded_surface_fields(
                 }
                 no_ranges
             };
+            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                    cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        radius,
-                    )
-                    .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(SphereSurface::new(
+                    center,
+                    frame,
+                    NonZeroLength::new(radius)?,
+                ))),
                 ranges,
             ))
         }
@@ -3110,17 +3106,14 @@ fn decode_embedded_surface_fields(
                 }
                 no_ranges
             };
+            let (center, frame) = admitted_placement(point, axis, ref_direction)?;
             Some((
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                    cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                        point,
-                        axis,
-                        ref_direction,
-                        major_radius,
-                        minor_radius,
-                    )
-                    .ok()?,
-                )),
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(TorusSurface::new(
+                    center,
+                    frame,
+                    PositiveLength::new(major_radius)?,
+                    NonZeroLength::new(minor_radius)?,
+                ))),
                 ranges,
             ))
         }

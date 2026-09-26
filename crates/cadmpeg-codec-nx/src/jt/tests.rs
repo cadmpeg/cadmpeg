@@ -3,6 +3,15 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_ir::scalar::FiniteBinary32;
+
+const EPS_JT_NORMAL_RECONSTRUCTION: f32 = 1.0e-6;
+const EPS_JT_HSV_RECONSTRUCTION: f32 = 1.0e-6;
+
+fn range(minimum: f32, maximum: f32) -> super::QuantizedRange {
+    super::QuantizedRange::new(minimum, maximum).expect("test quantization range is ordered")
+}
+
 #[test]
 fn jt_int32_cdp2_decodes_empty_and_bitlength_packets() {
     assert_eq!(
@@ -240,16 +249,16 @@ fn jt_predictors_use_wrapping_i32_arithmetic() {
 #[test]
 fn jt_uniform_dequantization_uses_the_full_unsigned_code_range() {
     assert_eq!(
-        super::dequantize_uniform(0, [10.0, 20.0], 2),
+        super::dequantize_uniform(0, range(10.0, 20.0), 2).map(FiniteBinary32::get),
         Some(8.333_333)
     );
     assert_eq!(
-        super::dequantize_uniform(3, [10.0, 20.0], 2),
+        super::dequantize_uniform(3, range(10.0, 20.0), 2).map(FiniteBinary32::get),
         Some(18.333_334)
     );
-    assert_eq!(super::dequantize_uniform(4, [10.0, 20.0], 2), None);
+    assert_eq!(super::dequantize_uniform(4, range(10.0, 20.0), 2), None);
     assert_eq!(
-        super::dequantize_uniform(u32::MAX, [4.0, 4.0], 32),
+        super::dequantize_uniform(u32::MAX, range(4.0, 4.0), 32).map(FiniteBinary32::get),
         Some(4.0)
     );
 }
@@ -283,16 +292,22 @@ fn jt_quantized_coordinates_reject_negative_codes_at_thirty_two_bits() {
     }
     array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
 
-    assert!(super::decode_vertex_coordinates(&array, 4, [[4.0, 4.0]; 3], [32; 3]).is_none());
+    assert!(super::decode_vertex_coordinates(&array, 4, [range(4.0, 4.0); 3], [32; 3]).is_none());
 }
 
 #[test]
 fn jt_hsv_colors_with_a_wrapped_hue_stay_in_the_sextant_table() {
-    let color = super::hsv_to_rgb(-1.0e-45, 1.0, 1.0).expect("finite hsv color");
+    let color = super::hsv_to_rgb(
+        FiniteBinary32::new(-1.0e-45).unwrap(),
+        FiniteBinary32::ONE,
+        FiniteBinary32::ONE,
+    )
+    .expect("finite hsv color")
+    .map(FiniteBinary32::get);
     assert!(color.iter().all(|value| value.is_finite()));
-    assert!((color[0] - 1.0).abs() < 1.0e-6);
-    assert!(color[1].abs() < 1.0e-6);
-    assert!(color[2].abs() < 1.0e-6);
+    assert!((color[0] - 1.0).abs() < EPS_JT_HSV_RECONSTRUCTION);
+    assert!(color[1].abs() < EPS_JT_HSV_RECONSTRUCTION);
+    assert!(color[2].abs() < EPS_JT_HSV_RECONSTRUCTION);
 }
 
 #[test]
@@ -324,12 +339,12 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
     array.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
 
     let (points, hash, consumed) =
-        super::decode_vertex_coordinates(&array, 4, [[10.0, 20.0]; 3], [2; 3])
+        super::decode_vertex_coordinates(&array, 4, [range(10.0, 20.0); 3], [2; 3])
             .expect("complete quantized coordinate array");
     assert_eq!(hash, 0x1234_5678);
     assert_eq!(consumed, array.len());
-    assert_eq!(points[0], [8.333_333; 3]);
-    assert_eq!(points[3], [18.333_334; 3]);
+    assert_eq!(points[0].map(FiniteBinary32::get), [8.333_333; 3]);
+    assert_eq!(points[3].map(FiniteBinary32::get), [18.333_334; 3]);
 }
 
 #[test]
@@ -342,9 +357,9 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
         super::NormalCode::new(0, bits).expect("psi code"),
     )
     .unwrap();
-    assert!(normal[0].abs() < 1e-3);
-    assert!(normal[1].abs() < 1.0e-6);
-    assert!((normal[2] - 1.0).abs() < 1.0e-6);
+    assert!(normal[0].get().abs() < 1e-3);
+    assert!(normal[1].get().abs() < EPS_JT_NORMAL_RECONSTRUCTION);
+    assert!((normal[2].get() - 1.0).abs() < EPS_JT_NORMAL_RECONSTRUCTION);
     let coarse = super::NormalBits::new(6).expect("six-bit codes");
     let odd_sextant = super::deering_normal(
         super::Sextant::from_index(1).expect("sextant one"),
@@ -353,7 +368,10 @@ fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
         super::NormalCode::new(0, coarse).expect("psi code"),
     )
     .expect("finite normal");
-    assert_eq!(odd_sextant, [0.650_906_5, 0.0, 0.759_157_9]);
+    assert_eq!(
+        odd_sextant.map(FiniteBinary32::get),
+        [0.650_906_5, 0.0, 0.759_157_9]
+    );
     assert!(super::Sextant::from_index(6).is_none());
     assert!(super::Sextant::from_index(-1).is_none());
     assert!(super::Octant::new(8).is_none());
@@ -401,8 +419,20 @@ fn jt_quantized_texture_coordinates_decode_component_major_lag1_codes() {
     let (values, hash, consumed) = super::decode_vertex_texture_coordinates(&array, 4, 2).unwrap();
     assert_eq!(hash, 0x8765_4321);
     assert_eq!(consumed, array.len());
-    assert_eq!(values[0], vec![-0.5, -0.5]);
-    assert_eq!(values[3], vec![2.5, 2.5]);
+    assert_eq!(
+        values[0]
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        vec![-0.5, -0.5]
+    );
+    assert_eq!(
+        values[3]
+            .iter()
+            .map(|value| value.get())
+            .collect::<Vec<_>>(),
+        vec![2.5, 2.5]
+    );
 }
 
 #[test]
@@ -442,8 +472,8 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     let (colors, hash, consumed) = super::decode_vertex_colors(&rgb, 4, 2).unwrap();
     assert_eq!(hash, 0x1234_5678);
     assert_eq!(consumed, rgb.len());
-    assert_eq!(colors[0], [-0.5; 4]);
-    assert_eq!(colors[3], [2.5; 4]);
+    assert_eq!(colors[0].map(FiniteBinary32::get), [-0.5; 4]);
+    assert_eq!(colors[3].map(FiniteBinary32::get), [2.5; 4]);
 
     let mut hsv = 4_u32.to_le_bytes().to_vec();
     hsv.extend_from_slice(&[4, 2, 1, 2, 2, 2, 2]);
@@ -457,11 +487,11 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
     assert!(colors
         .iter()
         .flatten()
-        .all(|component| component.is_finite()));
-    assert!((colors[1][0] - 1.0 / 6.0).abs() < 1.0e-6);
-    assert!((colors[1][1] - 1.0 / 6.0).abs() < 1.0e-6);
-    assert!((colors[1][2] - 5.0 / 36.0).abs() < 1.0e-6);
-    assert!((colors[1][3] - 1.0 / 6.0).abs() < 1.0e-6);
+        .all(|component| component.get().is_finite()));
+    assert!((colors[1][0].get() - 1.0 / 6.0).abs() < EPS_JT_HSV_RECONSTRUCTION);
+    assert!((colors[1][1].get() - 1.0 / 6.0).abs() < EPS_JT_HSV_RECONSTRUCTION);
+    assert!((colors[1][2].get() - 5.0 / 36.0).abs() < EPS_JT_HSV_RECONSTRUCTION);
+    assert!((colors[1][3].get() - 1.0 / 6.0).abs() < EPS_JT_HSV_RECONSTRUCTION);
 }
 
 #[test]

@@ -228,6 +228,53 @@ fn tolerant_coedge_extension_retains_the_release_band() {
 }
 
 #[test]
+fn tolerant_coedge_source_refuses_nonfinite_interval() {
+    let records = [Record {
+        index: 0,
+        name: "tcoedge".into(),
+        tokens: vec![
+            Token::Ref(-1),
+            Token::Long(-1),
+            Token::Ref(-1),
+            Token::Ref(0),
+            Token::Ref(0),
+            Token::Ref(-1),
+            Token::Ref(1),
+            Token::False,
+            Token::Ref(2),
+            Token::Long(0),
+            Token::Ref(-1),
+            Token::Double(f64::INFINITY),
+            Token::Double(1.0),
+        ]
+        .into(),
+        offset: 0,
+        len: 0,
+    }];
+    let table = nurbs::toks::SubtypeTable::from_records(&records);
+    let reach = Reachable {
+        coedges: HashSet::from([0]),
+        edges: HashSet::from([1]),
+        loops: HashSet::from([2]),
+        ..Reachable::default()
+    };
+    let mut out = AsmBrep::default();
+    let error = emit_coedges(
+        &mut out,
+        &records,
+        &table,
+        Some(214),
+        &Carriers::default(),
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("tolerant coedge parameter interval must be finite"));
+}
+
+#[test]
 fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
     for width in [
         crate::kernel_header::RefWidth::Four,
@@ -292,12 +339,57 @@ fn tolerant_vertex_uses_the_third_double_for_evaluation_and_unset_state() {
             );
             assert_eq!(out.tolerant_vertex_tails.len(), 1);
             assert_eq!(
-                out.tolerant_vertex_tails[0].leading_tolerances,
+                out.tolerant_vertex_tails[0]
+                    .leading_tolerances
+                    .map(cadmpeg_ir::scalar::FiniteReal::get),
                 [0.03, 0.07]
             );
             assert_eq!(out.tolerant_vertex_tails[0].evaluated_slot, slot);
         }
     }
+}
+
+#[test]
+fn tolerant_vertex_refuses_nonfinite_leading_tolerance_at_read() {
+    let width = crate::kernel_header::RefWidth::Four;
+    let mut bytes = b"\x0d\x07tvertex".to_vec();
+    for (tag, value) in [
+        (0x0c, -1i64),
+        (0x04, -1),
+        (0x0c, -1),
+        (0x0c, -1),
+        (0x04, 0),
+        (0x0c, 1),
+    ] {
+        bytes.push(tag);
+        bytes.extend_from_slice(&value.to_le_bytes()[..width.bytes()]);
+    }
+    for value in [f64::INFINITY, 0.07, -1.0] {
+        bytes.push(0x06);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0x11);
+    let records = crate::test_support::sab::frame(&bytes, 0, bytes.len(), width).unwrap();
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect();
+    let reach = Reachable {
+        vertices: HashSet::from([0]),
+        points: HashSet::from([1]),
+        ..Reachable::default()
+    };
+    let error = emit_vertices(
+        &mut AsmBrep::default(),
+        &records,
+        &by_index,
+        &reach,
+        crate::asm_format!("f3d"),
+    )
+    .expect_err("a native record with an infinite tolerance must be refused");
+    assert!(error
+        .to_string()
+        .contains("vertex leading tolerance must be finite"));
 }
 
 #[test]
