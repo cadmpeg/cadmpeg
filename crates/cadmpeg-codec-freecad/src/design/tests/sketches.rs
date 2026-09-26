@@ -1073,6 +1073,6 @@ fn native_constraint_negative_operands_resolve_to_distinct_builtin_axes() {
             .expect("resolved builtin axis");
         assert!(matches!(resolved.geometry.definition(),
             cadmpeg_ir::sketches::SketchGeometryDefinition::ReferenceLine { origin, direction: actual }
-            if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && *actual == direction));
+            if *origin == cadmpeg_ir::math::Point2::new(0.0, 0.0) && actual.get() == direction));
     }
 }

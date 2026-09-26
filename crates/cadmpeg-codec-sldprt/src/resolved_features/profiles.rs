@@ -2352,7 +2352,7 @@ fn transform_sketch_block_geometry(
         } => SketchGeometry::from_parts(SketchGeometryDefinition::Ellipse {
             center: finite_point(center.get())?,
             major_angle: angle(*major_angle)?,
-            major_radius: *major_radius,
+            major_radius: major_radius.major(),
             minor_radius: *minor_radius,
             bounds: match bounds {
                 Some([start, end]) => Some([angle(*start)?, angle(*end)?]),
