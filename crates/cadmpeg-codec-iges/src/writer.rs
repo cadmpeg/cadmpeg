@@ -32,7 +32,7 @@ use cadmpeg_ir::topology::{
     BodyKind, Color, Edge, IncreasingParameterInterval, Loop, LoopBoundaryRole, PcurveUse, Region,
     Sense,
 };
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::units::{FiniteVector, OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
@@ -3589,7 +3589,7 @@ fn oriented_curve_entity(
                 *axis,
                 *ref_direction,
                 radius,
-                span.range,
+                span.range.get(),
             )
             .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
             .ok_or_else(|| {
@@ -3620,7 +3620,7 @@ fn oriented_curve_entity(
                 *major_direction,
                 major_radius,
                 minor_radius,
-                span.range,
+                span.range.get(),
             )
             .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
             .ok_or_else(|| {
@@ -3649,7 +3649,7 @@ fn oriented_curve_entity(
                 *axis,
                 *major_direction,
                 focal_distance,
-                span.range,
+                span.range.get(),
             )
             .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
             .ok_or_else(|| {
@@ -3701,7 +3701,10 @@ fn oriented_curve_entity(
                     hyperbola_curve.minor_radius(),
                 ),
             ));
-            let reversed_range = [-span.range[1], -span.range[0]];
+            let reversed_range =
+                FiniteVector::new([-span.range[1], -span.range[0]]).ok_or_else(|| {
+                    CodecError::Malformed("IGES curve parameter range is invalid".into())
+                })?;
             let reversed_span = CurveSpan {
                 range: reversed_range,
                 start: span.end,
@@ -3906,37 +3909,33 @@ fn oriented_pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecEr
     let nurbs = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    let (reversed, range) = reverse_nurbs(&nurbs, range.get())?;
+    let (reversed, range) = reverse_nurbs(&nurbs, range)?;
     encode_nurbs(&reversed, range, "PCURVE")
 }
 
 fn reverse_nurbs(
     nurbs: &NurbsCurve,
-    range: [f64; 2],
-) -> Result<(NurbsCurve, [f64; 2]), CodecError> {
+    range: FiniteVector<2>,
+) -> Result<(NurbsCurve, FiniteVector<2>), CodecError> {
     let [start, end] = nurbs_domain(nurbs)?;
     let invalid =
         || CodecError::Malformed("IGES reversed NURBS domain or parameter range is invalid".into());
-    let [Some(range_start), Some(range_end)] = range.map(FiniteReal::new) else {
-        return Err(invalid());
-    };
+    let [range_start, range_end] = range.finite_components();
     if range_start > range_end || range_start < start || range_end > end {
         return Err(invalid());
     }
     let reflect = |parameter| {
-        cadmpeg_ir::math::reflect_parameter(parameter, start, end)
-            .map(FiniteReal::get)
-            .ok_or_else(|| {
-                CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
-            })
+        cadmpeg_ir::math::reflect_parameter(parameter, start, end).ok_or_else(|| {
+            CodecError::malformed("IGES reversed NURBS knot or parameter is non-finite")
+        })
     };
     let knots = nurbs
         .knots()
         .finite_knots()
         .rev()
-        .map(reflect)
+        .map(|parameter| reflect(parameter).map(FiniteReal::get))
         .collect::<Result<Vec<_>, _>>()?;
-    let reversed_range = [reflect(range_end)?, reflect(range_start)?];
+    let reversed_range = FiniteVector::from([reflect(range_end)?, reflect(range_start)?]);
     let mut poles = nurbs.pole_rows().clone();
     poles.reverse();
     let reversed = NurbsCurve::new(nurbs.degree(), knots, poles, nurbs.periodic())
@@ -3961,7 +3960,7 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let curve = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
-    encode_nurbs(&curve, range.get(), "PCURVE")
+    encode_nurbs(&curve, range, "PCURVE")
 }
 
 fn reference_marker(index: usize) -> String {
@@ -4841,7 +4840,7 @@ struct Placement {
 
 #[derive(Debug)]
 struct CurveSpan {
-    range: [f64; 2],
+    range: FiniteVector<2>,
     start: Point3,
     end: Point3,
 }
@@ -4867,7 +4866,7 @@ fn construction_carrier_interval(
                 .iter()
                 .any(|edge| edge.curve() == Some(directrix))
             {
-                curve_reference_span(ir, directrix, geometry).map(|span| span.range)
+                curve_reference_span(ir, directrix, geometry).map(|span| span.range.get())
             } else {
                 Ok(fallback)
             }
@@ -5047,9 +5046,7 @@ fn extrusion_surface_entities(
         ));
     };
     let directrix = definition_payload.directrix();
-    let parameter_interval = definition_payload
-        .parameter_interval()
-        .map(cadmpeg_ir::units::FiniteVector::get);
+    let parameter_interval = definition_payload.parameter_interval();
     let direction = definition_payload.direction();
     let native_position = definition_payload.native_position();
     let revision_form = definition_payload.revision_form();
@@ -5058,11 +5055,12 @@ fn extrusion_surface_entities(
             "IGES Type 122 output does not encode revision-gated extrusion fields".into(),
         ));
     }
-    let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
+    let parameter_interval = parameter_interval.ok_or_else(|| {
         CodecError::NotImplemented(
             "IGES Type 122 output requires a bounded directrix parameter interval".into(),
         )
     })?;
+    let [start_parameter, terminate_parameter] = parameter_interval.get();
     if start_parameter >= terminate_parameter {
         return Err(CodecError::Malformed(
             "IGES Type 122 directrix parameter interval is invalid".into(),
@@ -5098,7 +5096,7 @@ fn extrusion_surface_entities(
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
     ) {
         let span = curve_reference_span(ir, directrix, &geometry)?;
-        if !same_range(span.range, [start_parameter, terminate_parameter]) {
+        if !same_range(span.range.get(), [start_parameter, terminate_parameter]) {
             return Err(CodecError::NotImplemented(
                 "IGES Type 122 composite directrix range is not its canonical Type 102 range"
                     .into(),
@@ -5143,7 +5141,7 @@ fn extrusion_surface_entities(
     }
 
     let directrix_span = CurveSpan {
-        range: [start_parameter, terminate_parameter],
+        range: parameter_interval,
         start: start.get(),
         end: end.get(),
     };
@@ -5255,9 +5253,7 @@ fn revolution_surface_entities(
     let axis_direction = definition_payload.axis_direction();
     let angular_interval = definition_payload.angular_interval();
     let angular_parameter_interval = definition_payload.angular_parameter_interval();
-    let parameter_interval = definition_payload
-        .parameter_interval()
-        .map(IncreasingParameterInterval::endpoints);
+    let parameter_interval = definition_payload.parameter_interval();
     let transposed = definition_payload.transposed();
     let revision_form = definition_payload.revision_form();
     if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
@@ -5267,11 +5263,12 @@ fn revolution_surface_entities(
     }
     let start_angle = angular_interval.lower();
     let terminate_angle = RevolutionSweep::classify(angular_interval)?.terminate_angle(start_angle);
-    let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
+    let parameter_interval = parameter_interval.ok_or_else(|| {
         CodecError::NotImplemented(
             "IGES Type 120 output requires a bounded generatrix parameter interval".into(),
         )
     })?;
+    let [start_parameter, terminate_parameter] = parameter_interval.endpoints();
     let source_curve = ir
         .model
         .curves
@@ -5312,12 +5309,14 @@ fn revolution_surface_entities(
         cadmpeg_ir::geometry::analytic::LineCurve::new(axis_origin, axis_direction),
     ));
     let axis_span = CurveSpan {
-        range: [0.0, 1.0],
+        range: FiniteVector::from([FiniteReal::ZERO, FiniteReal::ONE]),
         start: *axis_origin,
         end: axis_end,
     };
     let generatrix_span = CurveSpan {
-        range: [start_parameter, terminate_parameter],
+        range: FiniteVector::from(cadmpeg_ir::topology::ParameterInterval::from(
+            parameter_interval,
+        )),
         start: start.get(),
         end: end.get(),
     };
@@ -5561,15 +5560,27 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         }
         None => alloc_filled(pole_count, FiniteReal::ONE, "iges NURBS surface weights")?,
     };
-    let u_range = [nurbs.u_knots()[u_degree], nurbs.u_knots()[u_count]];
-    let v_range = [nurbs.v_knots()[v_degree], nurbs.v_knots()[v_count]];
+    let u_knots = nurbs.u_knots().finite_knots().collect::<Vec<_>>();
+    let v_knots = nurbs.v_knots().finite_knots().collect::<Vec<_>>();
+    let u_range = [u_knots[u_degree], u_knots[u_count]];
+    let v_range = [v_knots[v_degree], v_knots[v_count]];
     if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
         return Err(CodecError::NotImplemented(
             "IGES NURBS surface has an empty parameter domain".into(),
         ));
     }
-    let closed_u = nurbs.u_periodic() || nurbs_surface_closed_u(nurbs, u_range, v_range);
-    let closed_v = nurbs.v_periodic() || nurbs_surface_closed_v(nurbs, u_range, v_range);
+    let closed_u = nurbs.u_periodic()
+        || nurbs_surface_closed_u(
+            nurbs,
+            u_range.map(FiniteReal::get),
+            v_range.map(FiniteReal::get),
+        );
+    let closed_v = nurbs.v_periodic()
+        || nurbs_surface_closed_v(
+            nurbs,
+            u_range.map(FiniteReal::get),
+            v_range.map(FiniteReal::get),
+        );
     let mut parameters = format!(
         "{},{},{},{},{},{},{},{},{}",
         u_count - 1,
@@ -5582,9 +5593,9 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         i32::from(nurbs.u_periodic()),
         i32::from(nurbs.v_periodic())
     );
-    for value in nurbs.u_knots().iter().chain(nurbs.v_knots().iter()) {
+    for value in u_knots.into_iter().chain(v_knots) {
         parameters.push(',');
-        parameters.push_str(&number(finite(*value, "NURBS surface knot")?));
+        parameters.push_str(&number(value));
     }
     for v in 0..v_count {
         for u in 0..u_count {
@@ -5600,9 +5611,9 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
             }
         }
     }
-    for value in [u_range[0], u_range[1], v_range[0], v_range[1]] {
+    for value in u_range.into_iter().chain(v_range) {
         parameters.push(',');
-        parameters.push_str(&number(finite(value, "NURBS surface parameter bound")?));
+        parameters.push_str(&number(value));
     }
     parameters.push(';');
     Ok(Entity {
@@ -5913,7 +5924,11 @@ fn curve_reference_span_inner(
             } else {
                 last.start
             };
-            let derived_range = [0.0, total];
+            let derived_range = FiniteVector::new([0.0, total]).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES composite curve {curve_id} parameter span overflows"
+                ))
+            })?;
             let matching_edges = ir
                 .model
                 .edges
@@ -5929,7 +5944,7 @@ fn curve_reference_span_inner(
                 Some((first_edge, rest_edges)) => {
                     let endpoints = |edge: &Edge| -> Result<(Point3, Point3, f64), CodecError> {
                         if let Some(range) = edge.param_range() {
-                            if !same_range(range.get(), derived_range) {
+                            if !same_range(range.get(), derived_range.get()) {
                                 return Err(CodecError::NotImplemented(format!(
                                     "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
                                 )));
@@ -6016,7 +6031,7 @@ fn curve_reference_span_inner(
                         .into_iter()
                         .fold(0.0, f64::max);
                     if rest_spans.iter().any(|span| {
-                        !same_range(span.range, first.range)
+                        !same_range(span.range.get(), first.range.get())
                             || !close_point_with_tolerance(span.start, first.start, tolerance)
                             || !close_point_with_tolerance(span.end, first.end, tolerance)
                     }) {
@@ -6090,7 +6105,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             edge.id
         ))
     })?;
-    if range.iter().any(|value| !value.is_finite()) || range[0] >= range[1] {
+    if range[0] >= range[1] {
         return Err(CodecError::malformed(format_args!(
             "IGES edge {} requires a finite non-zero parameter span",
             edge.id
@@ -6131,11 +6146,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             )));
         }
     }
-    Ok(CurveSpan {
-        range: range.get(),
-        start,
-        end,
-    })
+    Ok(CurveSpan { range, start, end })
 }
 
 fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
@@ -6163,14 +6174,18 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
     Ok(tolerance)
 }
 
-fn default_range(geometry: &SolvedCurveGeometry) -> Result<[f64; 2], CodecError> {
+fn default_range(geometry: &SolvedCurveGeometry) -> Result<FiniteVector<2>, CodecError> {
+    let checked = |range| {
+        FiniteVector::new(range)
+            .ok_or_else(|| CodecError::Malformed("IGES curve parameter range is invalid".into()))
+    };
     match geometry {
-        SolvedCurveGeometry::Circle(_) => Ok([0.0, TAU]),
-        SolvedCurveGeometry::Ellipse(_) => Ok([0.0, TAU]),
-        SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs).map(FiniteReal::raw_array),
+        SolvedCurveGeometry::Circle(_) => checked([0.0, TAU]),
+        SolvedCurveGeometry::Ellipse(_) => checked([0.0, TAU]),
+        SolvedCurveGeometry::Nurbs(nurbs) => nurbs_domain(nurbs).map(FiniteVector::from),
         SolvedCurveGeometry::Polyline(polyline) => {
             let values = polyline_parameters(polyline.point_count(), polyline.parameters())?;
-            Ok([values.first, values.last])
+            checked([values.first, values.last])
         }
         SolvedCurveGeometry::Line(_) => Err(CodecError::NotImplemented(
             "IGES semantic writer requires a finite curve parameter range".into(),
@@ -6253,7 +6268,7 @@ fn curve_entity(
     version: crate::IgesVersion,
 ) -> Result<Entity, CodecError> {
     let range = span.map_or_else(|| default_range(geometry), |span| Ok(span.range))?;
-    if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
+    if range[0] > range[1] {
         return Err(CodecError::Malformed(
             "IGES curve parameter range is invalid".into(),
         ));
@@ -6291,7 +6306,7 @@ fn curve_entity(
             let radius = circle_curve.radius().get();
             let (axis, reference) = orthonormal_pair(circle_curve.frame());
             let y_axis = axis.cross(reference);
-            validate_arc_sweep(range)?;
+            validate_arc_sweep(range.get())?;
             let start_xy = [
                 finite(radius * range[0].cos(), "arc start x")?,
                 finite(radius * range[0].sin(), "arc start y")?,
@@ -6326,7 +6341,7 @@ fn curve_entity(
             let minor_radius = ellipse_curve.minor_radius().get();
             let (axis, major) = orthonormal_pair(ellipse_curve.frame());
             let y_axis = axis.cross(major);
-            validate_arc_sweep(range)?;
+            validate_arc_sweep(range.get())?;
             let start_xy = [
                 finite(major_radius * range[0].cos(), "ellipse start x")?,
                 finite(minor_radius * range[0].sin(), "ellipse start y")?,
@@ -6467,13 +6482,13 @@ fn curve_entity(
 
 fn encode_nurbs(
     nurbs: &NurbsCurve,
-    range: [f64; 2],
+    range: FiniteVector<2>,
     label: &'static str,
 ) -> Result<Entity, CodecError> {
     let control_count = nurbs.control_points().len();
     let degree = usize::try_from(nurbs.degree())
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
-    if range[0] > range[1] || range.iter().any(|value| !value.is_finite()) {
+    if range[0] > range[1] {
         return Err(CodecError::Malformed(
             "IGES NURBS parameter range is invalid".into(),
         ));
@@ -6511,9 +6526,9 @@ fn encode_nurbs(
         i32::from(polynomial),
         i32::from(nurbs.periodic())
     );
-    for value in nurbs.knots() {
+    for value in nurbs.knots().finite_knots() {
         parameters.push(',');
-        parameters.push_str(&number(finite(*value, "NURBS knot")?));
+        parameters.push_str(&number(value));
     }
     for weight in weights {
         parameters.push(',');
@@ -6525,9 +6540,9 @@ fn encode_nurbs(
             parameters.push_str(&number(value));
         }
     }
-    for value in range {
+    for value in range.finite_components() {
         parameters.push(',');
-        parameters.push_str(&number(finite(value, "NURBS parameter bound")?));
+        parameters.push_str(&number(value));
     }
     let normal = plane_normal.unwrap_or(Vector3::new(0.0, 0.0, 0.0));
     for value in [normal.x, normal.y, normal.z] {
