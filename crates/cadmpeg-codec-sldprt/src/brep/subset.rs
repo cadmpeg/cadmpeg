@@ -279,7 +279,9 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
         ));
         assert_eq!(
-            decoded[0].parameter_range.map(cadmpeg_ir::units::FiniteVector::get),
+            decoded[0]
+                .parameter_range
+                .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 0.005])
         );
     }
