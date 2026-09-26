@@ -1996,6 +1996,20 @@ impl TryFrom<VertexBlendSurfacePayloadWire> for VertexBlendSurfacePayload {
     }
 }
 
+/// Optional finite interval endpoints, ordered when both are present.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct OrderedOptionalRange([Option<FiniteReal>; 2]);
+
+impl OrderedOptionalRange {
+    fn new(endpoints: [Option<FiniteReal>; 2]) -> Option<Self> {
+        optional_ordered(&endpoints).then_some(Self(endpoints))
+    }
+
+    pub(crate) fn endpoints(self) -> [Option<FiniteReal>; 2] {
+        self.0
+    }
+}
+
 /// Admitted blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2019,6 +2033,9 @@ pub struct BlendSurfacePayload {
     /// own cache form, or the legacy solved-cache tolerance stated instead.
     #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<Box<RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>>>,
+
+    #[serde(skip)]
+    native_ranges: Option<[OrderedOptionalRange; 2]>,
 }
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2055,15 +2072,15 @@ impl BlendSurfacePayload {
         cross_section: BlendCrossSection,
         cache: CacheContract<Box<RollingBallConstruction>>,
     ) -> Result<Self, ProceduralGeometryError> {
+        let mut native_ranges = None;
         let cache = cache
             .admit_form(|construction| {
-                (*construction)
-                    .admit()
-                    .filter(|construction| {
-                        optional_ordered(&construction.u_range)
-                            && optional_ordered(&construction.v_range)
-                    })
-                    .map(Box::new)
+                let construction = (*construction).admit()?;
+                native_ranges = Some([
+                    OrderedOptionalRange::new(construction.u_range)?,
+                    OrderedOptionalRange::new(construction.v_range)?,
+                ]);
+                Some(Box::new(construction))
             })
             .ok_or(ProceduralGeometryError::Payload(
                 "rolling-ball blend construction payload is invalid",
@@ -2074,6 +2091,7 @@ impl BlendSurfacePayload {
             radius,
             cross_section,
             cache,
+            native_ranges,
         })
     }
     /// Return the supports.
@@ -2097,6 +2115,16 @@ impl BlendSurfacePayload {
         &self,
     ) -> Option<&RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>> {
         self.cache.form().map(Box::as_ref)
+    }
+
+    /// Return the native construction with its admitted U and V ranges.
+    pub(crate) fn native_with_ranges(
+        &self,
+    ) -> Option<(
+        &RollingBallConstruction<FiniteReal, FiniteVector3, FinitePoint3>,
+        [OrderedOptionalRange; 2],
+    )> {
+        self.native().zip(self.native_ranges)
     }
 }
 impl TryFrom<BlendSurfacePayloadWire> for BlendSurfacePayload {
