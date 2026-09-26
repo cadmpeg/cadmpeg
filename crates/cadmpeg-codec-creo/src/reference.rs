@@ -7,7 +7,7 @@ use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
 use cadmpeg_ir::units::UnitVector3;
 
 /// Bounds the stored lengths and the normalized dot product of a conic local system's two
@@ -36,8 +36,8 @@ pub(crate) enum ReferenceLineKind {
     Line3d {
         /// Canonical entity identifier repeated across the row boundary.
         entity_id: u32,
-        /// Stored `orig_len`, equal to the endpoint distance.
-        original_length: PositiveLength,
+        /// Stored `orig_len` in source units, equal to the endpoint distance.
+        original_length: PositiveReal,
     },
 }
 
@@ -892,7 +892,7 @@ pub(crate) fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
 fn line3d_fields(
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<(FinitePoint3, FinitePoint3, PositiveLength)> {
+) -> Option<(FinitePoint3, FinitePoint3, PositiveReal)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
         let mut values = [0.0; 7];
@@ -905,7 +905,7 @@ fn line3d_fields(
         let second = [values[3], values[4], values[5]];
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let distance = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
-        let stored_length = PositiveLength::new(values[6].abs())?;
+        let stored_length = PositiveReal::new(values[6].abs())?;
         let scale = distance.max(stored_length.get()).max(1.0);
         let first_checked = FinitePoint3::new(first.into())?;
         let second_checked = FinitePoint3::new(second.into())?;
