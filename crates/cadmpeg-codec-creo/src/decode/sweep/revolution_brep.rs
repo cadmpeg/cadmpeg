@@ -450,15 +450,18 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             shells: vec![shell_id],
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        source_carriers.admit_body(
+            ir,
+            Body {
+                id: body_id,
+                kind: BodyKind::Solid,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)

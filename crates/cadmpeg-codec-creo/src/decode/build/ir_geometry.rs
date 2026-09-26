@@ -257,7 +257,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
         source_carriers,
     )?;
     retain_unresolved_surface_carriers(ctx, scan, ir, annotations, source_carriers)?;
-    let transferred_part_product = transfer_part_product(ctx, scan, ir, annotations)?;
+    let transferred_part_product =
+        transfer_part_product(ctx, scan, ir, annotations, source_carriers)?;
     let decoded_feature_skamp_count = scan
         .features
         .definitions

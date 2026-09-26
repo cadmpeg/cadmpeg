@@ -10,8 +10,10 @@ use cadmpeg_ir::geometry::{
     SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, EdgeId, SurfaceId};
+use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
+use cadmpeg_ir::transform::Transform;
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
@@ -29,6 +31,39 @@ impl SourceUnitCarriers {
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
         }
+    }
+
+    fn scale_product_translation(&self, transform: &mut Transform) -> Result<(), CodecError> {
+        if let Some(scale) = self.length_scale_mm {
+            *transform = transform.scaled_translation(scale).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "Creo product transform translation cannot be represented in millimeters"
+                        .into(),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn admit_body(&self, ir: &mut CadIr, mut body: Body) -> Result<(), CodecError> {
+        if let Some(transform) = body.transform.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
+        ir.model.bodies.push(body);
+        Ok(())
+    }
+
+    pub(super) fn admit_occurrence(
+        &self,
+        ir: &mut CadIr,
+        mut occurrence: Occurrence,
+    ) -> Result<(), CodecError> {
+        self.scale_product_translation(&mut occurrence.transform)?;
+        if let Some(transform) = occurrence.linked_prototype.as_mut() {
+            self.scale_product_translation(transform)?;
+        }
+        ir.model.occurrences.push(occurrence);
+        Ok(())
     }
 
     pub(super) fn admit_surface(
@@ -333,13 +368,107 @@ mod tests {
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
     use cadmpeg_ir::scalar::PositiveReal;
     use cadmpeg_ir::topology::{
-        Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops, ParameterInterval, Point,
-        Sense, Vertex,
+        Body, BodyKind, Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops,
+        ParameterInterval, Point, Sense, Vertex,
     };
+    use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    fn translated_product_transform(x: f64) -> Transform {
+        Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("finite source translation")
+    }
+
+    fn source_occurrence(transform: Transform, linked_prototype: Option<Transform>) -> Occurrence {
+        Occurrence {
+            id: cadmpeg_ir::ids::OccurrenceId::mint("creo:test:occurrence#0")
+                .expect("identity grammar"),
+            prototype: PrototypeReference::Local {
+                definition: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
+                    .expect("identity grammar"),
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal: 0,
+            transform,
+            linked_prototype,
+            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn product_transform_translations_are_in_millimeters_at_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        carriers
+            .admit_body(
+                &mut ir,
+                Body {
+                    id: cadmpeg_ir::ids::BodyId::mint("creo:test:body#0")
+                        .expect("identity grammar"),
+                    kind: BodyKind::Solid,
+                    regions: Vec::new(),
+                    transform: Some(translated_product_transform(1.0)),
+                    name: None,
+                    color: None,
+                    visible: None,
+                },
+            )
+            .expect("body admission");
+        carriers
+            .admit_occurrence(
+                &mut ir,
+                source_occurrence(
+                    translated_product_transform(2.0),
+                    Some(translated_product_transform(3.0)),
+                ),
+            )
+            .expect("occurrence admission");
+        assert_eq!(
+            ir.model.bodies[0]
+                .transform
+                .expect("body transform")
+                .affine_rows()[0][3],
+            25.4
+        );
+        assert_eq!(ir.model.occurrences[0].transform.affine_rows()[0][3], 50.8);
+        assert_eq!(
+            ir.model.occurrences[0]
+                .linked_prototype
+                .expect("linked prototype")
+                .affine_rows()[0][3],
+            3.0 * 25.4
+        );
+    }
+
+    #[test]
+    fn product_transform_translation_overflow_refuses_before_admission() {
+        let mut ir = CadIr::empty();
+        let carriers = SourceUnitCarriers::new(PositiveReal::new(1000.0));
+        let error = carriers
+            .admit_occurrence(
+                &mut ir,
+                source_occurrence(translated_product_transform(f64::MAX), None),
+            )
+            .expect_err("a non-finite translation has no transform");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(
+            error.to_string().contains("transform translation"),
+            "{error}"
+        );
+        assert!(ir.model.occurrences.is_empty());
+    }
 
     #[test]
     fn scaled_cylinder_radius_overflow_refuses_unrepresentable_ir() {
