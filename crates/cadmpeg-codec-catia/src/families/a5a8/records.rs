@@ -1346,33 +1346,38 @@ fn a8_surface_from_external_grid(
         return None;
     };
     let row_len = header.v_count()? as usize;
+    let u_knots = header.u_knots.expanded()?;
+    let v_knots = header.v_knots.expanded()?;
     Some(FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_checked_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    header.u_degree,
-                    header.u_knots.expanded()?,
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
+                control_points
+                    .clone()
+                    .chunks(row_len)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights
+                    .clone()
+                    .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
+            )
+            .and_then(|poles| {
+                NurbsSurface::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        header.u_degree,
+                        u_knots,
+                        false,
+                    ),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                        header.v_degree,
+                        v_knots,
+                        false,
+                    ),
+                    poles,
                     false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    header.v_degree,
-                    header.v_knots.expanded()?,
-                    false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                    control_points
-                        .clone()
-                        .chunks(row_len)
-                        .map(<[_]>::to_vec)
-                        .collect(),
-                    weights
-                        .clone()
-                        .map(|values| values.chunks(row_len).map(<[_]>::to_vec).collect()),
-                ),
-                false,
-            ),
+                )
+            }),
             refusal,
             format_args!(
                 "a8 NURBS surface record #{} at byte {}",
@@ -1575,19 +1580,21 @@ fn a5_surface(
         pos,
         identity: None,
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_checked_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                    control_points
-                        .chunks(v_count as usize)
-                        .map(<[_]>::to_vec)
-                        .collect(),
-                    weights
-                        .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-                ),
-                false,
-            ),
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+            )
+            .and_then(|poles| {
+                NurbsSurface::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    poles,
+                    false,
+                )
+            }),
             refusal,
             format_args!("a5 NURBS surface record at byte {pos}"),
         )?,
@@ -1732,32 +1739,29 @@ fn a8_surface_from_parsed(
         Vec::new()
     };
     a8_surface_suffix_start(data, pole_start, end)?;
+    let u_knots = u_knots.expanded()?;
+    let v_knots = v_knots.expanded()?;
     Some(FreeformSurface {
         pos,
         identity: Some(object_id),
         geometry: crate::nurbs::note_refusal(
-            NurbsSurface::from_checked_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    u_degree,
-                    u_knots.expanded()?,
+            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
+                control_points
+                    .chunks(v_count as usize)
+                    .map(<[_]>::to_vec)
+                    .collect(),
+                rational
+                    .then_some(weights)
+                    .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
+            )
+            .and_then(|poles| {
+                NurbsSurface::new(
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                    poles,
                     false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    v_degree,
-                    v_knots.expanded()?,
-                    false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                    control_points
-                        .chunks(v_count as usize)
-                        .map(<[_]>::to_vec)
-                        .collect(),
-                    rational
-                        .then_some(weights)
-                        .map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-                ),
-                false,
-            ),
+                )
+            }),
             refusal,
             format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
         )?,

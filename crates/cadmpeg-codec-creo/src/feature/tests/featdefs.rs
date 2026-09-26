@@ -32,7 +32,9 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         crate::feature::definitions::FeatureParameterFrameKind::LocalSystem
     );
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
     );
     assert_eq!(
@@ -40,7 +42,9 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
         crate::feature::definitions::FeatureParameterFrameKind::Transform
     );
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[1].decoded_values,
+        scan.features.definitions[0].parameter_frames[1]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([1.0; 12])
     );
 
@@ -73,7 +77,9 @@ fn scan_decodes_rank_two_featdefs_local_system() {
     let scan = container::scan_bytes_ok(data);
 
     assert_eq!(
-        scan.features.definitions[0].parameter_frames[0].decoded_values,
+        scan.features.definitions[0].parameter_frames[0]
+            .decoded_values
+            .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0])
     );
 }

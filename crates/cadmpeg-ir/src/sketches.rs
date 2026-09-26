@@ -14,6 +14,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+pub mod scaling;
+
 crate::ids::id_type!(
     /// Identifies a neutral planar sketch.
     SketchId, compose, into_string
@@ -460,13 +462,74 @@ impl SketchEntity {
     }
 }
 
+/// A finite reference-line direction longer than machine epsilon.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct ReferenceLineDirection(FinitePoint2);
+
+impl ReferenceLineDirection {
+    /// Admit the direction used by a reference line.
+    pub fn new(direction: FinitePoint2) -> Option<Self> {
+        (direction.u.hypot(direction.v) > f64::EPSILON).then_some(Self(direction))
+    }
+
+    /// Return the direction coordinates.
+    pub fn get(self) -> Point2 {
+        self.0.get()
+    }
+}
+
+impl std::ops::Deref for ReferenceLineDirection {
+    type Target = Point2;
+
+    fn deref(&self) -> &Point2 {
+        self.0.as_raw()
+    }
+}
+
+/// A positive ellipse major radius that is at least its minor radius.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OrderedMajorRadius {
+    major: PositiveLength,
+    minor: PositiveLength,
+}
+
+impl OrderedMajorRadius {
+    /// Admit the relation between two positive radii.
+    pub fn new(major: PositiveLength, minor: PositiveLength) -> Option<Self> {
+        (major.get() >= minor.get()).then_some(Self { major, minor })
+    }
+
+    /// Return the major radius.
+    pub fn major(self) -> PositiveLength {
+        self.major
+    }
+
+    /// Return the major radius in document length units.
+    pub fn get(self) -> f64 {
+        self.major.get()
+    }
+}
+
+impl Serialize for OrderedMajorRadius {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.major.serialize(serializer)
+    }
+}
+
 /// Solved two-dimensional sketch geometry with finite numeric coordinates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(into = "SketchGeometryDefinition"))]
 #[serde(try_from = "SketchGeometryDefinition")]
 pub struct SketchGeometry(
-    SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal>,
+    SketchGeometryDefinition<
+        FinitePoint2,
+        PositiveLength,
+        FiniteReal,
+        PositiveReal,
+        ReferenceLineDirection,
+        OrderedMajorRadius,
+    >,
 );
 
 impl SketchGeometry {
@@ -494,28 +557,111 @@ impl SketchGeometry {
             PositiveReal,
         >,
     ) -> Result<Self, &'static str> {
-        match &definition {
-            SketchGeometryDefinition::ReferenceLine { direction, .. }
-                if direction.u.hypot(direction.v) <= f64::EPSILON =>
-            {
-                Err("sketch reference line requires finite origin and nonzero finite direction")
-            }
-            SketchGeometryDefinition::Ellipse {
+        use SketchGeometryDefinition as Definition;
+        Ok(Self(match definition {
+            Definition::Point { position } => Definition::Point { position },
+            Definition::Line { start, end } => Definition::Line { start, end },
+            Definition::ReferenceLine { origin, direction } => Definition::ReferenceLine {
+                origin,
+                direction: ReferenceLineDirection::new(direction).ok_or(
+                    "sketch reference line requires finite origin and nonzero finite direction",
+                )?,
+            },
+            Definition::Circle { center, radius } => Definition::Circle { center, radius },
+            Definition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => Definition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            Definition::Ellipse {
+                center,
+                major_angle,
                 major_radius,
                 minor_radius,
-                ..
-            } if major_radius.get() < minor_radius.get() => {
-                Err("sketch ellipse major_radius must be at least minor_radius")
-            }
-            _ => Ok(Self(definition)),
-        }
+                bounds,
+            } => Definition::Ellipse {
+                center,
+                major_angle,
+                major_radius: OrderedMajorRadius::new(major_radius, minor_radius)
+                    .ok_or("sketch ellipse major_radius must be at least minor_radius")?,
+                minor_radius,
+                bounds,
+            },
+            Definition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => Definition::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            },
+            Definition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            } => Definition::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                bounds,
+            },
+            Definition::Nurbs { curve } => Definition::Nurbs { curve },
+            Definition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => Definition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            },
+            Definition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => Definition::ExternalReference {
+                document,
+                object,
+                subelements,
+            },
+            Definition::Native { native_kind } => Definition::Native { native_kind },
+        }))
     }
 
     /// Borrow the admitted geometry definition.
     #[must_use]
     pub fn definition(
         &self,
-    ) -> &SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
+    ) -> &SketchGeometryDefinition<
+        FinitePoint2,
+        PositiveLength,
+        FiniteReal,
+        PositiveReal,
+        ReferenceLineDirection,
+        OrderedMajorRadius,
+    > {
         &self.0
     }
 
@@ -523,12 +669,28 @@ impl SketchGeometry {
     #[must_use]
     pub fn into_definition(
         self,
-    ) -> SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
+    ) -> SketchGeometryDefinition<
+        FinitePoint2,
+        PositiveLength,
+        FiniteReal,
+        PositiveReal,
+        ReferenceLineDirection,
+        OrderedMajorRadius,
+    > {
         self.0
     }
 }
 
-impl SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, PositiveReal> {
+impl
+    SketchGeometryDefinition<
+        FinitePoint2,
+        PositiveLength,
+        FiniteReal,
+        PositiveReal,
+        ReferenceLineDirection,
+        OrderedMajorRadius,
+    >
+{
     /// The definition with raw points, lengths, bounds and width factor.
     #[must_use]
     pub fn to_raw(&self) -> SketchGeometryDefinition {
@@ -569,7 +731,7 @@ impl SketchGeometryDefinition<FinitePoint2, PositiveLength, FiniteReal, Positive
             } => Definition::Ellipse {
                 center: center.get(),
                 major_angle: *major_angle,
-                major_radius: Length::from(*major_radius),
+                major_radius: Length::from(major_radius.major()),
                 minor_radius: Length::from(*minor_radius),
                 bounds: *bounds,
             },
@@ -815,9 +977,9 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 #[serde(bound(
-    deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>"
+    deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>, D: Deserialize<'de>, M: Deserialize<'de>"
 ))]
-pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64> {
+pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64, D = P, M = L> {
     /// Isolated point.
     Point {
         /// Solved point position.
@@ -835,7 +997,7 @@ pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64> {
         /// Point on the line.
         origin: P,
         /// Non-zero direction in sketch coordinates.
-        direction: P,
+        direction: D,
     },
     /// Full circle.
     Circle {
@@ -862,7 +1024,7 @@ pub enum SketchGeometryDefinition<P = Point2, L = Length, R = f64, W = f64> {
         /// Major-axis angle in sketch coordinates.
         major_angle: Angle,
         /// Semi-major radius.
-        major_radius: L,
+        major_radius: M,
         /// Semi-minor radius.
         minor_radius: L,
         /// Parameter bounds for an arc; absent for a full ellipse.
@@ -3574,7 +3736,10 @@ impl SketchEntityKindRestriction {
     /// Whether `geometry` has an admitted kind. External and native geometry
     /// has no neutral kind, so it is admitted.
     #[must_use]
-    pub fn admits<P, L, R, W>(self, geometry: &SketchGeometryDefinition<P, L, R, W>) -> bool {
+    pub fn admits<P, L, R, W, D, M>(
+        self,
+        geometry: &SketchGeometryDefinition<P, L, R, W, D, M>,
+    ) -> bool {
         if matches!(
             geometry,
             SketchGeometryDefinition::ExternalReference { .. }

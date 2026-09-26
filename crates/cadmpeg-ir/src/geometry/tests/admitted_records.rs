@@ -249,7 +249,7 @@ fn procedural_curve_stores_hold_their_admitted_construction_records() {
     assert_eq!(parameter_range.endpoints(), [0.0, 1.0]);
     assert_eq!(discontinuities[0], [FiniteReal::new(0.5).unwrap()]);
     assert_eq!(
-        payload.layout().support_context().unwrap().into_owned(),
+        payload.support_context().clone(),
         IntcurveSupportContext::try_new(
             [
                 IntcurveSupportSide {

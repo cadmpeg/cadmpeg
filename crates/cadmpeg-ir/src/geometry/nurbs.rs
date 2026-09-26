@@ -38,6 +38,18 @@ impl KnotVector {
         &self.0
     }
 
+    /// Copy an admitted knot vector with a fallible allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when the copy cannot reserve its storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let mut knots = Vec::new();
+        knots.try_reserve_exact(self.0.len())?;
+        knots.extend_from_slice(&self.0);
+        Ok(Self(knots))
+    }
+
     /// Reverse the order and negate every value, the knots of the reversed
     /// parameterization. Negation turns a non-decreasing sequence into a
     /// non-increasing one, and the reversal restores the order, so the
@@ -62,6 +74,43 @@ impl<'a> IntoIterator for &'a KnotVector {
     type IntoIter = std::slice::Iter<'a, f64>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.iter()
+    }
+}
+
+mod knot_value_sealed {
+    pub trait Sealed {}
+
+    impl Sealed for Vec<f64> {}
+    impl Sealed for super::KnotVector {}
+}
+
+/// A raw or admitted knot lane passed into a NURBS constructor.
+///
+/// Only a raw vector or an admitted [`KnotVector`] can supply this lane.
+pub trait KnotValue: knot_value_sealed::Sealed {
+    /// Number of knots before cardinality validation.
+    fn knot_count(&self) -> usize;
+    /// Admit raw knots or keep an admitted knot vector.
+    fn admit(self) -> Result<KnotVector, NurbsError>;
+}
+
+impl KnotValue for Vec<f64> {
+    fn knot_count(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn admit(self) -> Result<KnotVector, NurbsError> {
+        KnotVector::new(self)
+    }
+}
+
+impl KnotValue for KnotVector {
+    fn knot_count(&self) -> usize {
+        self.0.len()
+    }
+
+    fn admit(self) -> Result<KnotVector, NurbsError> {
+        Ok(self)
     }
 }
 
@@ -842,16 +891,16 @@ pub(super) fn require_curve_cardinality(
 /// axis: the knot count a source may state depends on the degree, and the
 /// periodicity describes that same knot vector. They travel together.
 #[derive(Debug, Clone, PartialEq)]
-pub struct NurbsSurfaceAxis {
+pub struct NurbsSurfaceAxis<K = Vec<f64>> {
     degree: u32,
-    knots: Vec<f64>,
+    knots: K,
     periodic: bool,
 }
 
-impl NurbsSurfaceAxis {
+impl<K> NurbsSurfaceAxis<K> {
     /// One axis of a surface: its degree, its knot vector and its periodicity.
     #[must_use]
-    pub const fn new(degree: u32, knots: Vec<f64>, periodic: bool) -> Self {
+    pub const fn new(degree: u32, knots: K, periodic: bool) -> Self {
         Self {
             degree,
             knots,
@@ -896,9 +945,9 @@ impl NurbsSurface {
     /// does not follow from the degree and the pole count, a ragged grid, a
     /// non-finite raw pole coordinate and then a non-finite or decreasing
     /// knot.
-    pub fn new<P: PoleValue<FinitePoint3>>(
-        u: NurbsSurfaceAxis,
-        v: NurbsSurfaceAxis,
+    pub fn new<P: PoleValue<FinitePoint3>, U: KnotValue, V: KnotValue>(
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
         poles: NurbsPoleGrid<P>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
@@ -926,12 +975,12 @@ impl NurbsSurface {
         }
         require_length(
             "u_knots",
-            u_knots.len(),
+            u_knots.knot_count(),
             checked_knot_count("u", u_count, u_degree)?,
         )?;
         require_length(
             "v_knots",
-            v_knots.len(),
+            v_knots.knot_count(),
             checked_knot_count("v", v_count, v_degree)?,
         )?;
         match &poles {
@@ -939,9 +988,11 @@ impl NurbsSurface {
             NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
         let poles = poles.admit()?;
-        let u_knots = KnotVector::new(u_knots)
+        let u_knots = u_knots
+            .admit()
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
-        let v_knots = KnotVector::new(v_knots)
+        let v_knots = v_knots
+            .admit()
             .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
         Ok(Self {
             u_degree,
@@ -1009,15 +1060,15 @@ impl NurbsSurface {
         Self::new(u, v, poles, normal_reversed)
     }
 
-    /// Build a NURBS surface from a pole grid and an admitted weight grid.
+    /// Build a NURBS surface from admitted knot axes, a pole grid and an admitted weight grid.
     ///
     /// # Errors
     ///
-    /// Refuses a weight grid that does not cover its pole grid and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight grid that does not cover its pole grid, invalid
+    /// cardinalities, or a non-finite raw pole coordinate.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
-        u: NurbsSurfaceAxis,
-        v: NurbsSurfaceAxis,
+        u: NurbsSurfaceAxis<KnotVector>,
+        v: NurbsSurfaceAxis<KnotVector>,
         lanes: NurbsSurfaceLanes<P, NonZeroReal>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
@@ -1211,15 +1262,15 @@ impl NurbsCurve {
     /// Refuses a pole or knot count that does not follow from the degree, a
     /// non-finite raw pole coordinate and then a non-finite or decreasing
     /// knot.
-    pub fn new<P: PoleValue<FinitePoint3>>(
+    pub fn new<P: PoleValue<FinitePoint3>, K: KnotValue>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: K,
         poles: NurbsPoles3<P>,
         periodic: bool,
     ) -> Result<Self, NurbsError> {
-        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        require_curve_cardinality(degree, knots.knot_count(), poles.count(), "control_points")?;
         let poles = poles.admit()?;
-        let knots = KnotVector::new(knots)?;
+        let knots = knots.admit()?;
         Ok(Self {
             degree,
             knots,
@@ -1261,15 +1312,15 @@ impl NurbsCurve {
         Self::new(degree, knots, poles, periodic)
     }
 
-    /// Build a NURBS curve from a pole lane and an admitted weight lane.
+    /// Build a NURBS curve from admitted knots, a pole lane and an admitted weight lane.
     ///
     /// # Errors
     ///
-    /// Refuses a weight lane that does not cover the poles and what
-    /// [`Self::new`] refuses.
+    /// Refuses a weight lane that does not cover the poles or a pole count
+    /// inconsistent with the degree.
     pub fn from_checked_lanes<P: PoleValue<FinitePoint3>>(
         degree: u32,
-        knots: Vec<f64>,
+        knots: KnotVector,
         control_points: Vec<P>,
         weights: Option<Vec<NonZeroReal>>,
         periodic: bool,

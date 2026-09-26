@@ -12,8 +12,8 @@ use crate::CreoCodec;
 
 use super::{
     definition_local_plane_equation, generated_cylinder_section_transform,
-    generated_planar_section_transform, plane_equation, resolve, unique_complete_local_system,
-    FeatureSectionTransform, PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
+    generated_planar_section_transform, plane_equation, resolve, FeatureSectionTransform,
+    PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
 };
 use crate::datum::DatumPlaneRecord;
 use crate::feature::definitions::ReferencePlanes;
@@ -78,13 +78,19 @@ fn blank_definition() -> FeatureDefinition {
     }
 }
 
+fn finite_frame(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12> {
+    cadmpeg_ir::units::FiniteVector::new(values).expect("finite frame fixture")
+}
+
 #[test]
 fn unique_complete_local_system_supplies_section_plane_equation() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0]),
+        decoded_values: Some(finite_frame([
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0,
+        ])),
         offset: 1,
     }];
 
@@ -113,36 +119,29 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
     definition.parameter_frames.push(FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0; 12]),
+        decoded_values: Some(finite_frame([0.0; 12])),
         offset: 3,
     });
     assert_eq!(definition_local_plane_equation(&definition), None);
 }
 
 #[test]
-fn unique_complete_local_system_rejects_nonfinite_values() {
-    let mut definition = blank_definition();
-    definition.parameter_frames = vec![FeatureParameterFrame {
-        kind: FeatureParameterFrameKind::LocalSystem,
-        body: Vec::new(),
-        decoded_values: Some([
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            f64::NAN,
-            0.0,
-            0.0,
-        ]),
-        offset: 1,
-    }];
-
-    assert_eq!(unique_complete_local_system(&definition), None);
+fn checked_local_system_rejects_nonfinite_values() {
+    assert!(cadmpeg_ir::units::FiniteVector::new([
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        f64::NAN,
+        0.0,
+        0.0,
+    ])
+    .is_none());
 }
 
 #[test]
@@ -375,7 +374,9 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0]),
+        decoded_values: Some(finite_frame([
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0,
+        ])),
         offset: 1,
     }];
     definition.section_3d = Some(FeatureSection3d {

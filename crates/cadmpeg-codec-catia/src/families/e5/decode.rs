@@ -2457,7 +2457,7 @@ fn e5_boundary_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
                 NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
-                    nurbs.knots().to_vec(),
+                    nurbs.knots().clone(),
                     control_points,
                     nurbs.weights(),
                     nurbs.periodic(),
@@ -2499,7 +2499,7 @@ fn e5_boundary_curve(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
                 NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
-                    nurbs.knots().to_vec(),
+                    nurbs.knots().clone(),
                     control_points,
                     nurbs.weights(),
                     nurbs.periodic(),

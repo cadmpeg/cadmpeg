@@ -31,7 +31,7 @@ fn a_sketch_geometry_holds_its_admitted_definition_and_takes_admitted_parts() {
         panic!("ellipse")
     };
     assert_eq!(*center, FinitePoint2::new(Point2::new(1.0, 2.0)).unwrap());
-    assert_eq!(*major_radius, PositiveLength::new(3.0).unwrap());
+    assert_eq!(major_radius.major(), PositiveLength::new(3.0).unwrap());
     assert_eq!(geometry.definition().to_raw(), ellipse);
 
     // The typed route tests only the conditions between fields.
