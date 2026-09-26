@@ -1158,8 +1158,8 @@ fn cap_extrusion(caps: [bool; 2]) -> crate::extrusion::DecodedExtrusion {
         boundaries: vec![outer, inner],
         direction: Vector3::new(0.0, 0.0, 5.0),
         cap_origins: [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 0.0, 5.0)],
-        cap_normals: [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 0.0, 1.0)],
-        cap_u_axes: [Vector3::new(1.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)],
+        cap_normals: [cadmpeg_ir::units::UnitVector3::Z_AXIS; 2],
+        cap_u_axes: [cadmpeg_ir::units::UnitVector3::X_AXIS; 2],
         caps,
         meshes: Vec::new(),
         warnings: Diagnostics::new(),
@@ -1186,7 +1186,11 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
     with_expand(&scan, |expand| {
         let mut context = DecodeContext::new(&scan, expand);
         let mut extrusion = cap_extrusion([true, false]);
-        extrusion.cap_normals[0] = Vector3::new(0.0, 0.0, 0.0);
+        assert_eq!(
+            cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
+        extrusion.cap_normals[0] = cadmpeg_ir::units::UnitVector3::X_AXIS;
         assert!(!context
             .commit_extrusion(0, extrusion)
             .expect("candidate validation completes"));
