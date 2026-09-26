@@ -109,7 +109,7 @@ impl<T: CountedValue> CountedValues<T> {
     }
 
     /// Admit one complete nonempty big-endian value lane.
-    pub(super) fn from_be_bytes(bytes: &[u8]) -> Option<Self> {
+    pub(super) fn read_be_lane(bytes: &[u8]) -> Option<Self> {
         if bytes.is_empty() || !bytes.len().is_multiple_of(T::WIDTH) {
             return None;
         }
@@ -139,10 +139,10 @@ mod tests {
 
     #[test]
     fn counted_integer_values_preserve_unsigned_values_and_reject_empty_lanes() {
-        let values = CountedValues::<u32>::from_be_bytes(&[255; 4]).unwrap();
+        let values = CountedValues::<u32>::read_be_lane(&[255; 4]).unwrap();
         assert_eq!(values.as_slice(), &[u32::MAX]);
         assert_eq!(serde_json::to_string(&values).unwrap(), "[4294967295]");
-        assert!(CountedValues::<u32>::from_be_bytes(&[]).is_none());
+        assert!(CountedValues::<u32>::read_be_lane(&[]).is_none());
         assert!(CountedValues::new(Vec::<u32>::new()).is_err());
         assert!(serde_json::from_str::<CountedValues<u32>>("[]").is_err());
     }
@@ -171,14 +171,14 @@ mod tests {
     #[test]
     fn finite_lanes_require_whole_values_and_materialize_exactly() {
         let bytes = 1.0_f64.to_be_bytes();
-        let lane = CountedValues::<f64>::from_be_bytes(&bytes).unwrap();
+        let lane = CountedValues::<f64>::read_be_lane(&bytes).unwrap();
         assert_eq!(lane.raw_values().as_slice(), &[1.0]);
-        assert!(CountedValues::<f64>::from_be_bytes(&[]).is_none());
-        assert!(CountedValues::<f64>::from_be_bytes(&bytes[..7]).is_none());
-        assert!(CountedValues::<f64>::from_be_bytes(&f64::NAN.to_be_bytes()).is_none());
-        assert!(CountedValues::<[[f64; 3]; 2]>::from_be_bytes(&[0; 24]).is_none());
+        assert!(CountedValues::<f64>::read_be_lane(&[]).is_none());
+        assert!(CountedValues::<f64>::read_be_lane(&bytes[..7]).is_none());
+        assert!(CountedValues::<f64>::read_be_lane(&f64::NAN.to_be_bytes()).is_none());
+        assert!(CountedValues::<[[f64; 3]; 2]>::read_be_lane(&[0; 24]).is_none());
         assert_eq!(
-            CountedValues::<[[f64; 3]; 2]>::from_be_bytes(&[0; 48])
+            CountedValues::<[[f64; 3]; 2]>::read_be_lane(&[0; 48])
                 .unwrap()
                 .raw_values()
                 .as_slice(),

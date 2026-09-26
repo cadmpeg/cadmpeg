@@ -181,10 +181,10 @@ fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame
     let tag = *bytes.get(offset.checked_add(1)?)?;
     match tag {
         0x52 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Integers)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Integers)
         }),
         0x53 => frame_at(bytes, offset, tag, 8, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Doubles)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Doubles)
         }),
         0x54 => frame_at(bytes, offset, tag, 1, |raw| {
             PrintableString::new(std::str::from_utf8(raw).ok()?)
@@ -192,19 +192,19 @@ fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame
                 .map(ValuePayload::String)
         }),
         0x55 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Points)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Points)
         }),
         0x56 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Vectors)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Vectors)
         }),
         0x57 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Axes)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Axes)
         }),
         0x58 => frame_at(bytes, offset, tag, 4, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Tags)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Tags)
         }),
         0x59 => frame_at(bytes, offset, tag, 24, |raw| {
-            CountedValues::from_be_bytes(raw).map(ValuePayload::Directions)
+            CountedValues::read_be_lane(raw).map(ValuePayload::Directions)
         }),
         0x62 => frame_at(bytes, offset, tag, 2, |raw| {
             UnicodeLane::new(raw).map(ValuePayload::Unicode)
@@ -256,42 +256,42 @@ fn append_value_record<'a>(
         ValuePayload::Integers(value) => {
             records
                 .integers
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Doubles(value) => {
             records
                 .doubles
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::String(value) => {
             records
                 .strings
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Points(value) => {
             records
                 .points
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Vectors(value) => {
             records
                 .vectors
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Axes(value) => {
             records
                 .axes
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Tags(value) => {
             records
                 .tags
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Directions(value) => {
             records
                 .directions
-                .push(retained(frame.offset, frame.end, frame.xmt, value))
+                .push(retained(frame.offset, frame.end, frame.xmt, value));
         }
         ValuePayload::Unicode(value) => records.unicode.push(retained(
             frame.offset,
