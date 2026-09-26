@@ -1147,11 +1147,12 @@ fn read_nurbs_curve_inner(
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
     reader.skip_remaining()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsCurve::from_lanes(
+    let poles = NurbsPoles3::from_checked_lanes(control_points, weights)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsCurve::new(
         u32::try_from(order - 1).map_err(|_| error(reader.position(), "NURBS order overflow"))?,
         full_knots,
-        control_points,
-        weights,
+        poles,
         periodic,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1250,7 +1251,9 @@ pub(crate) fn read_nurbs_surface_prefix(
         .map(|values| copy_rows(ctx, values, row_len, "Rhino NURBS surface weight grid"))
         .transpose()?;
     admit_nurbs_pole_conversion(ctx, stored_cv_count, rational != 0)?;
-    NurbsSurface::from_lanes(
+    let poles = NurbsPoleGrid::from_checked_lanes(point_rows, weight_rows)
+        .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))?;
+    NurbsSurface::new(
         NurbsSurfaceAxis::new(
             u32::try_from(u_order - 1)
                 .map_err(|_| error(reader.position(), "surface U order overflow"))?,
@@ -1263,7 +1266,7 @@ pub(crate) fn read_nurbs_surface_prefix(
             v_knots,
             v_periodic,
         ),
-        NurbsSurfaceLanes::new(point_rows, weight_rows),
+        poles,
         false,
     )
     .map_err(|error| GeometryError::malformed(reader.position(), error.to_string()))
@@ -1400,7 +1403,7 @@ fn read_poles(
     rational: bool,
     dimension: i32,
     scale: MillimeterScale,
-) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
+) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
     let count_u64 = u64::try_from(count)
         .map_err(|_| GeometryError::not_implemented("NURBS pole count exceeds address space"))?;
     let point_bytes = count_u64
@@ -1446,7 +1449,7 @@ fn read_poles(
             let Some(weight) = NonZeroReal::new(weight) else {
                 return Err(error(reader.position(), "NURBS weight is invalid"));
             };
-            target.push(weight.get());
+            target.push(weight);
             FiniteReal::from(weight)
         } else {
             FiniteReal::ONE
@@ -1455,10 +1458,10 @@ fn read_poles(
             cadmpeg_ir::math::multiply_divide(value, scale.real(), weight)
                 .ok_or_else(|| error(pole_offset, "scaled NURBS pole is invalid"))
         };
-        points.push(Point3::new(
-            coordinate(x)?.get(),
-            coordinate(y)?.get(),
-            coordinate(z)?.get(),
+        points.push(FinitePoint3::from_coordinates(
+            coordinate(x)?,
+            coordinate(y)?,
+            coordinate(z)?,
         ));
     }
     Ok((points, weights))
