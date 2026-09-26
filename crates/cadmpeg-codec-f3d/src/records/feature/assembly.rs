@@ -10,6 +10,7 @@ use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::scalar::FiniteReal;
+use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
 
 /// Domain of the two scalar limits carried by a legacy As-built scope.
@@ -25,10 +26,7 @@ pub(crate) enum DesignAssemblyLimitKind {
 
 /// Ordered lower and upper limits carried by a legacy As-built assembly scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignAssemblyLimitsWire",
-    into = "DesignAssemblyLimitsWire"
-)]
+#[serde(try_from = "DesignAssemblyLimitsWire")]
 pub(crate) struct DesignAssemblyLimits {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
@@ -83,18 +81,6 @@ impl TryFrom<DesignAssemblyLimitsWire> for DesignAssemblyLimits {
         })
     }
 }
-impl From<DesignAssemblyLimits> for DesignAssemblyLimitsWire {
-    fn from(value: DesignAssemblyLimits) -> Self {
-        Self {
-            kind: value.kind,
-            minimum: value.minimum,
-            maximum: value.maximum,
-            owner_record_indices: value.owner_record_indices,
-            value_offsets: value.value_offsets,
-        }
-    }
-}
-
 /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignAssemblySolvedFrame {
@@ -233,31 +219,6 @@ impl DesignAssemblyLegacyOperands {
             );
         }
         Ok(carriers)
-    }
-
-    fn into_wire(
-        self,
-        solved: &DesignAssemblySolvedFrame,
-    ) -> Result<[DesignAssemblyLegacyOperandWire; 2], String> {
-        let [point_frame, hole_frame] = self.frames(solved)?;
-        Ok([
-            DesignAssemblyLegacyOperandWire {
-                construction_record_index: self.point.construction.point_record_index,
-                construction_byte_offset: self.point.construction.point_record_byte_offset,
-                construction_class_tag: self.point.construction_class_tag.into(),
-                construction: DesignAssemblyLegacyConstruction::Point(self.point.construction),
-                selection: self.point.selection,
-                frame: point_frame,
-            },
-            DesignAssemblyLegacyOperandWire {
-                construction_record_index: self.hole.construction.point_record_index,
-                construction_byte_offset: self.hole.construction.point_record_byte_offset,
-                construction_class_tag: self.hole.construction_class_tag.into(),
-                construction: DesignAssemblyLegacyConstruction::Hole(self.hole.construction),
-                selection: self.hole.selection,
-                frame: hole_frame,
-            },
-        ])
     }
 }
 
@@ -584,98 +545,129 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
 
 impl Serialize for DesignAssemblyAlignment {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        DesignAssemblyAlignmentSerde::try_from(self.clone())
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
-    }
-}
-
-impl TryFrom<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
-    type Error = String;
-    fn try_from(alignment: DesignAssemblyAlignment) -> Result<Self, Self::Error> {
-        let (
-            operand_frames,
-            legacy_operand_carriers,
-            solved_frame,
-            operand_qualifiers,
-            limits,
-            joint_origin_scope_record_index,
-        ) = match alignment.form {
-            None => (None, None, None, None, None, None),
+        let mut record = serializer.serialize_struct("DesignAssemblyAlignmentSerde", 10)?;
+        record.serialize_field("angle", &self.angle.get())?;
+        record.serialize_field("offset", &self.offset.map(FiniteReal::get))?;
+        record.serialize_field("owner_record_indices", &OwnerRecordIndices(&self.owners))?;
+        record.serialize_field("value_offsets", &OwnerValueOffsets(&self.owners))?;
+        match self.form.as_ref() {
+            None => {}
             Some(DesignAssemblyAlignmentForm::DatumEnvelope {
                 joint_origin_scope_record_index,
-            }) => (
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(joint_origin_scope_record_index),
-            ),
+            }) => {
+                record.serialize_field(
+                    "joint_origin_scope_record_index",
+                    joint_origin_scope_record_index,
+                )?;
+            }
             Some(DesignAssemblyAlignmentForm::LimitsOnly { limits }) => {
-                (None, None, None, None, Some(limits), None)
+                record.serialize_field("limits", limits)?;
             }
             Some(DesignAssemblyAlignmentForm::SolvedOnly {
                 solved_frame,
                 limits,
-            }) => (None, None, Some(solved_frame), None, limits, None),
+            }) => {
+                record.serialize_field("solved_frame", solved_frame)?;
+                if let Some(limits) = limits {
+                    record.serialize_field("limits", limits)?;
+                }
+            }
             Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                 carriers,
                 solved_frame,
                 limits,
                 frames_field_present,
             }) => {
-                let frames = frames_field_present
-                    .then(|| carriers.frames(&solved_frame))
-                    .transpose()?;
-                let carriers = carriers.into_wire(&solved_frame)?;
-                (
-                    frames,
-                    Some(carriers),
-                    Some(solved_frame),
-                    None,
-                    limits,
-                    None,
-                )
+                let frames = carriers
+                    .frames(solved_frame)
+                    .map_err(serde::ser::Error::custom)?;
+                if *frames_field_present {
+                    record.serialize_field("operand_frames", &frames)?;
+                }
+                let [point_frame, hole_frame] = frames;
+                let legacy = [
+                    LegacyOperandOut {
+                        construction_record_index: carriers.point.construction.point_record_index,
+                        construction_byte_offset: carriers
+                            .point
+                            .construction
+                            .point_record_byte_offset,
+                        construction_class_tag: carriers.point.construction_class_tag.as_str(),
+                        construction: LegacyConstructionOut::Point(&carriers.point.construction),
+                        selection: &carriers.point.selection,
+                        frame: &point_frame,
+                    },
+                    LegacyOperandOut {
+                        construction_record_index: carriers.hole.construction.point_record_index,
+                        construction_byte_offset: carriers
+                            .hole
+                            .construction
+                            .point_record_byte_offset,
+                        construction_class_tag: carriers.hole.construction_class_tag.as_str(),
+                        construction: LegacyConstructionOut::Hole(&carriers.hole.construction),
+                        selection: &carriers.hole.selection,
+                        frame: &hole_frame,
+                    },
+                ];
+                record.serialize_field("legacy_operand_carriers", &legacy)?;
+                record.serialize_field("solved_frame", solved_frame)?;
+                if let Some(limits) = limits {
+                    record.serialize_field("limits", limits)?;
+                }
             }
             Some(DesignAssemblyAlignmentForm::Frames { frames }) => {
-                (Some(frames), None, None, None, None, None)
+                record.serialize_field("operand_frames", frames)?;
             }
-            Some(DesignAssemblyAlignmentForm::Qualified(
-                [DesignQualifiedAssemblyOperand {
-                    frame: first_frame,
-                    qualifier: first_qualifier,
-                }, DesignQualifiedAssemblyOperand {
-                    frame: second_frame,
-                    qualifier: second_qualifier,
-                }],
-            )) => (
-                Some([first_frame, second_frame]),
-                None,
-                None,
-                Some([first_qualifier, second_qualifier]),
-                None,
-                None,
-            ),
-        };
-        let (owner_record_indices, value_offsets) = alignment
-            .owners
-            .into_iter()
-            .map(|owner| (owner.value, owner.offset))
-            .unzip();
-        Ok(Self {
-            angle: alignment.angle.get(),
-            offset: alignment.offset.map(FiniteReal::get),
-            owner_record_indices,
-            value_offsets,
-            operand_frames,
-            legacy_operand_carriers,
-            solved_frame,
-            operand_qualifiers,
-            limits,
-            joint_origin_scope_record_index,
-        })
+            Some(DesignAssemblyAlignmentForm::Qualified(operands)) => {
+                let frames = operands.each_ref().map(|operand| &operand.frame);
+                let qualifiers = operands.each_ref().map(|operand| &operand.qualifier);
+                record.serialize_field("operand_frames", &frames)?;
+                record.serialize_field("operand_qualifiers", &qualifiers)?;
+            }
+        }
+        record.end()
     }
+}
+
+struct OwnerRecordIndices<'a>(&'a [Located<u32>]);
+
+impl Serialize for OwnerRecordIndices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for owner in self.0 {
+            seq.serialize_element(&owner.value)?;
+        }
+        seq.end()
+    }
+}
+
+struct OwnerValueOffsets<'a>(&'a [Located<u32>]);
+
+impl Serialize for OwnerValueOffsets<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+        for owner in self.0 {
+            seq.serialize_element(&owner.offset)?;
+        }
+        seq.end()
+    }
+}
+
+#[derive(Serialize)]
+struct LegacyOperandOut<'a> {
+    construction_record_index: u32,
+    construction_byte_offset: u64,
+    construction_class_tag: &'a str,
+    construction: LegacyConstructionOut<'a>,
+    selection: &'a DesignAssemblyLegacySelection,
+    frame: &'a DesignAssemblyOperandFrame,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+enum LegacyConstructionOut<'a> {
+    Point(&'a DesignWorkPointConstruction),
+    Hole(&'a DesignHoleConstruction),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
