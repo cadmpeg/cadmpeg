@@ -303,6 +303,15 @@ impl UnitVector3 {
     pub fn normalized(value: Vector3) -> Option<Self> {
         value.unit().map(Self)
     }
+    /// Normalize a finite nonzero vector with the arithmetic of
+    /// [`FiniteVector3::unit_nonzero`].
+    ///
+    /// The charted length is finite and nonzero. Division gives a unit
+    /// vector to rounding, so the result keeps the unit tolerance.
+    #[must_use]
+    pub fn normalized_finite_nonzero(value: FiniteVector3) -> Option<Self> {
+        value.unit_nonzero().map(Self)
+    }
     /// Divide each component by the Euclidean length computed with
     /// [`Vector3::norm`]. A positive finite length can still produce a
     /// non-unit rounded quotient for subnormal components; admit the
@@ -996,6 +1005,26 @@ mod tests {
             UnitVector3::Z_AXIS.reversed().as_raw().z.to_bits(),
             (-1.0f64).to_bits()
         );
+    }
+
+    #[test]
+    fn normalized_finite_nonzero_keeps_asm_reader_bits() {
+        let source = crate::features::FiniteVector3::new(Vector3::new(
+            f64::MIN_POSITIVE,
+            f64::MIN_POSITIVE / 2.0,
+            0.0,
+        ))
+        .expect("finite source direction");
+        let expected = source.unit_nonzero().expect("nonzero source direction");
+        let actual = *UnitVector3::normalized_finite_nonzero(source)
+            .expect("nonzero source direction")
+            .as_raw();
+        assert_eq!(actual.x.to_bits(), expected.x.to_bits());
+        assert_eq!(actual.y.to_bits(), expected.y.to_bits());
+        assert_eq!(actual.z.to_bits(), expected.z.to_bits());
+        let zero = crate::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))
+            .expect("finite zero vector");
+        assert!(UnitVector3::normalized_finite_nonzero(zero).is_none());
     }
 
     #[test]
