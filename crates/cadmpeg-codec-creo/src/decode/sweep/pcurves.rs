@@ -39,13 +39,23 @@ fn nurbs_sense_sample(lower: f64, upper: f64) -> (f64, f64) {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum PcurveAdmission<'a> {
+    Existing(
+        &'a crate::decode::source_carriers::SourceUnitCarriers,
+        &'a SurfaceId,
+    ),
+    Pending(
+        &'a crate::decode::source_carriers::SourceUnitCarriers,
+        &'a SurfaceGeometry,
+    ),
+}
+
 pub(super) fn add_extrusion_pcurve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
-    surface_id: &SurfaceId,
-    source_surface_before_admission: Option<&SurfaceGeometry>,
+    admission: PcurveAdmission<'_>,
     id: PcurveId,
     source_offset: usize,
     geometry: PcurveGeometry,
@@ -85,11 +95,13 @@ pub(super) fn add_extrusion_pcurve(
             None,
         ),
     };
-    match source_surface_before_admission {
-        Some(source_surface) => {
-            source_carriers.admit_pcurve_with_source_surface(ir, pcurve, source_surface)?
+    match admission {
+        PcurveAdmission::Pending(source_carriers, source_surface) => {
+            source_carriers.admit_pcurve_with_source_surface(ir, pcurve, source_surface)?;
         }
-        None => source_carriers.admit_pcurve(ir, pcurve, surface_id)?,
+        PcurveAdmission::Existing(source_carriers, surface_id) => {
+            source_carriers.admit_pcurve(ir, pcurve, surface_id)?;
+        }
     }
     Ok(id)
 }

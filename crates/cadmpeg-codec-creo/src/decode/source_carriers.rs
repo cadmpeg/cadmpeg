@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-unit geometry retained for analyses during IR construction.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -9,23 +9,16 @@ use cadmpeg_ir::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{
-    CurveId, EdgeId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
-};
+use cadmpeg_ir::ids::{CurveId, EdgeId, SurfaceId};
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point};
+use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
 
 #[derive(Default)]
 pub(super) struct SourceUnitCarriers {
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
     curves: BTreeMap<CurveId, CurveGeometry>,
-    procedural_surfaces: BTreeSet<ProceduralSurfaceId>,
-    procedural_curves: BTreeSet<ProceduralCurveId>,
-    points: BTreeSet<PointId>,
-    edges: BTreeSet<EdgeId>,
     edge_parameter_ranges: BTreeMap<EdgeId, [f64; 2]>,
-    pcurves: BTreeSet<PcurveId>,
 }
 
 impl SourceUnitCarriers {
@@ -34,12 +27,7 @@ impl SourceUnitCarriers {
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
             curves: BTreeMap::new(),
-            procedural_surfaces: BTreeSet::new(),
-            procedural_curves: BTreeSet::new(),
-            points: BTreeSet::new(),
-            edges: BTreeSet::new(),
             edge_parameter_ranges: BTreeMap::new(),
-            pcurves: BTreeSet::new(),
         }
     }
 
@@ -141,16 +129,39 @@ impl SourceUnitCarriers {
             })?;
             point.set_position(position);
         }
-        self.points.insert(point.id.clone());
         ir.model.points.push(point);
         Ok(())
     }
 
-    pub(super) fn contains_point(&self, id: &PointId) -> bool {
-        self.points.contains(id)
+    fn scale_tolerance(&self, tolerance: &mut Option<PositiveReal>) -> Result<(), CodecError> {
+        if let (Some(scale), Some(current)) = (self.length_scale_mm, tolerance) {
+            *current = PositiveReal::new(current.get() * scale.get()).ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "scaled topology tolerance must be positive and finite".into(),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn admit_vertex(
+        &self,
+        ir: &mut CadIr,
+        mut vertex: Vertex,
+    ) -> Result<(), CodecError> {
+        self.scale_tolerance(&mut vertex.tolerance)?;
+        ir.model.vertices.push(vertex);
+        Ok(())
+    }
+
+    pub(super) fn admit_face(&self, ir: &mut CadIr, mut face: Face) -> Result<(), CodecError> {
+        self.scale_tolerance(&mut face.tolerance)?;
+        ir.model.faces.push(face);
+        Ok(())
     }
 
     pub(super) fn admit_edge(&mut self, ir: &mut CadIr, mut edge: Edge) -> Result<(), CodecError> {
+        self.scale_tolerance(&mut edge.tolerance)?;
         let source_range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
         if let (Some(scale), EdgeCarrier::Bounded(curve_id, interval)) =
             (self.length_scale_mm, &mut edge.carrier)
@@ -167,7 +178,6 @@ impl SourceUnitCarriers {
                 })?;
             }
         }
-        self.edges.insert(edge.id.clone());
         if let Some(source_range) = source_range {
             self.edge_parameter_ranges
                 .insert(edge.id.clone(), source_range);
@@ -183,12 +193,39 @@ impl SourceUnitCarriers {
             .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get))
     }
 
-    pub(super) fn contains_edge(&self, id: &EdgeId) -> bool {
-        self.edges.contains(id)
+    pub(super) fn admit_coedge(
+        &self,
+        ir: &mut CadIr,
+        mut coedge: Coedge,
+    ) -> Result<(), CodecError> {
+        if let (Some(scale), Some(use_curve)) = (self.length_scale_mm, &mut coedge.use_curve) {
+            let curve = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == use_curve.curve);
+            let parameter_scale = curve
+                .and_then(|curve| self.curve_geometry(curve).solved())
+                .and_then(|geometry| {
+                    crate::decode::build::units::curve_parameter_scale(geometry, scale)
+                });
+            if let Some(parameter_scale) = parameter_scale {
+                use_curve.parameter_range = use_curve
+                    .parameter_range
+                    .scaled(parameter_scale)
+                    .ok_or_else(|| {
+                        CodecError::NotImplemented(
+                            "parameter_range must be finite and ordered".into(),
+                        )
+                    })?;
+            }
+        }
+        ir.model.coedges.push(coedge);
+        Ok(())
     }
 
     pub(super) fn admit_pcurve(
-        &mut self,
+        &self,
         ir: &mut CadIr,
         pcurve: Pcurve,
         surface_id: &SurfaceId,
@@ -199,36 +236,42 @@ impl SourceUnitCarriers {
             .iter()
             .find(|surface| &surface.id == surface_id)
             .ok_or_else(|| CodecError::malformed("Creo pcurve has no owning surface"))?;
-        let source_geometry = self.surface_geometry(surface).clone();
-        self.admit_pcurve_with_source_surface(ir, pcurve, &source_geometry)
+        let scales = self.length_scale_mm.and_then(|scale| {
+            self.surface_geometry(surface).solved().map(|geometry| {
+                crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
+            })
+        });
+        Self::push_pcurve(ir, pcurve, scales)
     }
 
     pub(super) fn admit_pcurve_with_source_surface(
-        &mut self,
+        &self,
         ir: &mut CadIr,
-        mut pcurve: Pcurve,
+        pcurve: Pcurve,
         source_surface: &SurfaceGeometry,
     ) -> Result<(), CodecError> {
-        if let (Some(scale), Some(geometry)) = (self.length_scale_mm, source_surface.solved()) {
-            let scales =
-                crate::decode::build::units::surface_parameter_scales(geometry, scale.get());
+        let scales = self.length_scale_mm.and_then(|scale| {
+            source_surface.solved().map(|geometry| {
+                crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
+            })
+        });
+        Self::push_pcurve(ir, pcurve, scales)
+    }
+
+    fn push_pcurve(
+        ir: &mut CadIr,
+        mut pcurve: Pcurve,
+        scales: Option<[f64; 2]>,
+    ) -> Result<(), CodecError> {
+        if let Some(scales) = scales {
             pcurve.geometry.try_scale_coordinates(scales).map_err(|_| {
                 CodecError::NotImplemented(format!(
                     "Creo pcurve cannot be represented after unit normalization with scales {scales:?}"
                 ))
             })?;
         }
-        self.pcurves.insert(pcurve.id.clone());
         ir.model.pcurves.push(pcurve);
         Ok(())
-    }
-
-    pub(super) fn contains_pcurve(&self, id: &PcurveId) -> bool {
-        self.pcurves.contains(id)
-    }
-
-    pub(super) fn contains_curve(&self, id: &CurveId) -> bool {
-        self.curves.contains_key(id)
     }
 
     pub(super) fn admit_procedural_surface(
@@ -237,19 +280,13 @@ impl SourceUnitCarriers {
         owner: SurfaceId,
         mut procedural: ProceduralSurface,
     ) -> Result<(), CodecError> {
-        let procedural_id = procedural.id.clone();
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_surface(&mut procedural, scale)?;
         }
-        let attached = ir.model.add_procedural_surface(owner, procedural);
-        if attached.is_ok() {
-            self.procedural_surfaces.insert(procedural_id);
-        }
+        ir.model
+            .add_procedural_surface(owner, procedural)
+            .map_err(CodecError::malformed)?;
         Ok(())
-    }
-
-    pub(super) fn contains_procedural_surface(&self, id: &ProceduralSurfaceId) -> bool {
-        self.procedural_surfaces.contains(id)
     }
 
     pub(super) fn admit_procedural_curve(
@@ -258,19 +295,13 @@ impl SourceUnitCarriers {
         owner: CurveId,
         mut procedural: ProceduralCurve,
     ) -> Result<(), CodecError> {
-        let procedural_id = procedural.id.clone();
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_curve(&mut procedural, scale)?;
         }
-        let attached = ir.model.add_procedural_curve(owner, procedural);
-        if attached.is_ok() {
-            self.procedural_curves.insert(procedural_id);
-        }
+        ir.model
+            .add_procedural_curve(owner, procedural)
+            .map_err(CodecError::malformed)?;
         Ok(())
-    }
-
-    pub(super) fn contains_procedural_curve(&self, id: &ProceduralCurveId) -> bool {
-        self.procedural_curves.contains(id)
     }
 
     #[cfg(test)]
@@ -284,10 +315,6 @@ impl SourceUnitCarriers {
             Some(geometry) => geometry,
             None => &surface.geometry,
         }
-    }
-
-    pub(super) fn contains_surface(&self, id: &SurfaceId) -> bool {
-        self.surfaces.contains_key(id)
     }
 
     pub(super) fn remove_surface(&mut self, id: &SurfaceId) {
@@ -307,7 +334,10 @@ mod tests {
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::scalar::PositiveReal;
-    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point};
+    use cadmpeg_ir::topology::{
+        Coedge, CoedgeUseCurve, Edge, EdgeCarrier, Face, FaceLoops, ParameterInterval, Point,
+        Sense, Vertex,
+    };
 
     use super::SourceUnitCarriers;
 
@@ -399,7 +429,7 @@ mod tests {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
-        crate::decode::build::units::normalize_model_lengths(&mut ir, scale, &source_carriers)
+        crate::decode::build::units::normalize_model_lengths(&mut ir, scale)
             .expect("remaining unit normalization");
         let ProceduralSurfaceDefinition::Extrusion(construction) =
             ir.model.procedural_surfaces[0].definition()
@@ -407,6 +437,35 @@ mod tests {
             panic!("procedural construction changed family");
         };
         assert_eq!(construction.direction().get(), Vector3::new(0.0, 0.0, 25.4));
+    }
+
+    #[test]
+    fn procedural_surface_without_owner_is_malformed_at_attachment() {
+        let mut ir = CadIr::empty();
+        let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = source_carriers
+            .admit_procedural_surface(
+                &mut ir,
+                SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint("creo:visibgeom:extrusion#1")
+                        .expect("identity grammar"),
+                    ProceduralSurfaceDefinition::Extrusion(
+                        cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
+                            CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar"),
+                            None,
+                            Vector3::new(0.0, 0.0, 1.0),
+                            None,
+                            cadmpeg_ir::geometry::CacheContract::from_form(None),
+                        )
+                        .expect("valid extrusion fixture"),
+                    ),
+                    None,
+                ),
+            )
+            .expect_err("missing owner must refuse attachment");
+        assert!(matches!(error, CodecError::Malformed(_)), "{error}");
+        assert!(ir.model.procedural_surfaces.is_empty());
     }
 
     #[test]
@@ -503,7 +562,7 @@ mod tests {
             carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0])).expect("bounded line"),
             start: vertex.clone(),
             end: vertex,
-            tolerance: None,
+            tolerance: PositiveReal::new(0.1),
         };
         source_carriers
             .admit_edge(&mut ir, edge)
@@ -518,6 +577,194 @@ mod tests {
             source_carriers.source_edge_parameter_range(&ir.model.edges[0]),
             Some([0.0, 2.0])
         );
+        assert_eq!(
+            ir.model.edges[0].tolerance.map(PositiveReal::get),
+            Some(2.54)
+        );
+    }
+
+    fn source_line_for_range_tests() -> (CadIr, SourceUnitCarriers, CurveId) {
+        let mut ir = CadIr::empty();
+        let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
+        source_carriers
+            .admit_curve(
+                &mut ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("source line"),
+                    )),
+                    source_object: None,
+                },
+            )
+            .expect("curve admission");
+        (ir, source_carriers, curve_id)
+    }
+
+    #[test]
+    fn bounded_line_edge_range_overflow_refuses_at_admission() {
+        let (mut ir, mut source_carriers, curve_id) = source_line_for_range_tests();
+        let vertex =
+            cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1").expect("identity grammar");
+        let error = source_carriers
+            .admit_edge(
+                &mut ir,
+                Edge {
+                    id: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
+                        .expect("identity grammar"),
+                    carrier: EdgeCarrier::new(Some(curve_id), Some([0.0, f64::MAX]))
+                        .expect("finite source range"),
+                    start: vertex.clone(),
+                    end: vertex,
+                    tolerance: None,
+                },
+            )
+            .expect_err("millimeter range overflows");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.edges.is_empty());
+    }
+
+    #[test]
+    fn coedge_line_use_range_overflow_refuses_at_admission() {
+        let (mut ir, source_carriers, curve_id) = source_line_for_range_tests();
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
+        let error = source_carriers
+            .admit_coedge(
+                &mut ir,
+                Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
+                        .expect("identity grammar"),
+                    edge: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
+                        .expect("identity grammar"),
+                    radial_next: coedge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: Some(CoedgeUseCurve {
+                        curve: curve_id,
+                        parameter_range: ParameterInterval::try_from([0.0, f64::MAX])
+                            .expect("finite source interval"),
+                    }),
+                },
+            )
+            .expect_err("millimeter use range overflows");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.coedges.is_empty());
+    }
+
+    #[test]
+    fn vertex_face_tolerances_and_coedge_line_range_are_in_millimeters_at_admission() {
+        let mut ir = CadIr::empty();
+        let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let curve_id = CurveId::mint("creo:visibgeom:curve#1").expect("identity grammar");
+        source_carriers
+            .admit_curve(
+                &mut ir,
+                Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("source line"),
+                    )),
+                    source_object: None,
+                },
+            )
+            .expect("curve admission");
+        source_carriers
+            .admit_vertex(
+                &mut ir,
+                Vertex {
+                    id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
+                        .expect("identity grammar"),
+                    point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
+                        .expect("identity grammar"),
+                    tolerance: PositiveReal::new(0.5),
+                },
+            )
+            .expect("vertex admission");
+        source_carriers
+            .admit_face(
+                &mut ir,
+                Face {
+                    id: cadmpeg_ir::ids::FaceId::mint("creo:visibgeom:face#1")
+                        .expect("identity grammar"),
+                    shell: cadmpeg_ir::ids::ShellId::mint("creo:visibgeom:shell#1")
+                        .expect("identity grammar"),
+                    surface: SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+                    sense: Sense::Forward,
+                    loops: FaceLoops::unspecified(Vec::new()),
+                    name: None,
+                    color: None,
+                    tolerance: PositiveReal::new(0.25),
+                },
+            )
+            .expect("face admission");
+        let coedge_id =
+            cadmpeg_ir::ids::CoedgeId::mint("creo:visibgeom:coedge#1").expect("identity grammar");
+        source_carriers
+            .admit_coedge(
+                &mut ir,
+                Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: cadmpeg_ir::ids::LoopId::mint("creo:visibgeom:loop#1")
+                        .expect("identity grammar"),
+                    edge: cadmpeg_ir::ids::EdgeId::mint("creo:visibgeom:edge#1")
+                        .expect("identity grammar"),
+                    radial_next: coedge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: Some(CoedgeUseCurve {
+                        curve: curve_id,
+                        parameter_range: ParameterInterval::try_from([1.0, 2.0])
+                            .expect("bounded source interval"),
+                    }),
+                },
+            )
+            .expect("coedge admission");
+        assert_eq!(
+            ir.model.vertices[0].tolerance.map(PositiveReal::get),
+            Some(12.7)
+        );
+        assert_eq!(
+            ir.model.faces[0].tolerance.map(PositiveReal::get),
+            Some(6.35)
+        );
+        assert_eq!(
+            ir.model.coedges[0]
+                .use_curve
+                .as_ref()
+                .map(|use_curve| use_curve.parameter_range.endpoints()),
+            Some([25.4, 50.8])
+        );
+    }
+
+    #[test]
+    fn topology_tolerance_overflow_refuses_at_admission() {
+        let mut ir = CadIr::empty();
+        let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = source_carriers
+            .admit_vertex(
+                &mut ir,
+                Vertex {
+                    id: cadmpeg_ir::ids::VertexId::mint("creo:visibgeom:vertex#1")
+                        .expect("identity grammar"),
+                    point: cadmpeg_ir::ids::PointId::mint("creo:visibgeom:point#1")
+                        .expect("identity grammar"),
+                    tolerance: PositiveReal::new(f64::MAX),
+                },
+            )
+            .expect_err("millimeter tolerance cannot be represented");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.vertices.is_empty());
     }
 
     #[test]
@@ -571,5 +818,79 @@ mod tests {
             line.origin().get(),
             cadmpeg_ir::math::Point2::new(25.4, 50.8)
         );
+    }
+
+    #[test]
+    fn pcurve_without_owning_surface_is_malformed_at_admission() {
+        let mut ir = CadIr::empty();
+        let source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let error = source_carriers
+            .admit_pcurve(
+                &mut ir,
+                cadmpeg_ir::geometry::pcurve::Pcurve {
+                    id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
+                        .expect("identity grammar"),
+                    geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                            cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                        )
+                        .expect("source pcurve"),
+                    ),
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                        None, None, None,
+                    ),
+                },
+                &SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar"),
+            )
+            .expect_err("pcurve has no owning surface");
+        assert!(matches!(error, CodecError::Malformed(_)), "{error}");
+        assert!(ir.model.pcurves.is_empty());
+    }
+
+    #[test]
+    fn plane_pcurve_coordinate_overflow_refuses_at_admission() {
+        let mut ir = CadIr::empty();
+        let mut source_carriers = SourceUnitCarriers::new(PositiveReal::new(25.4));
+        let surface_id = SurfaceId::mint("creo:visibgeom:surface#1").expect("identity grammar");
+        source_carriers
+            .admit_surface(
+                &mut ir,
+                Surface {
+                    id: surface_id.clone(),
+                    geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 0.0, 1.0),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .expect("source plane"),
+                    )),
+                    source_object: None,
+                },
+            )
+            .expect("surface admission");
+        let error = source_carriers
+            .admit_pcurve(
+                &mut ir,
+                cadmpeg_ir::geometry::pcurve::Pcurve {
+                    id: cadmpeg_ir::ids::PcurveId::mint("creo:visibgeom:pcurve#1")
+                        .expect("identity grammar"),
+                    geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                        cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                            cadmpeg_ir::math::Point2::new(f64::MAX, 0.0),
+                            cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                        )
+                        .expect("finite source pcurve"),
+                    ),
+                    metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                        None, None, None,
+                    ),
+                },
+                &surface_id,
+            )
+            .expect_err("scaled pcurve coordinate overflows");
+        assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
+        assert!(ir.model.pcurves.is_empty());
     }
 }

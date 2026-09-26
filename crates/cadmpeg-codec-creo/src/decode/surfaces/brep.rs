@@ -1534,11 +1534,14 @@ pub(in super::super) fn transfer_native_brep(
             Exactness::Derived,
         );
         ctx.charge_entities(1, "admit Creo model vertices")?;
-        ir.model.vertices.push(Vertex {
-            id: vertex,
-            point: point_id,
-            tolerance: None,
-        });
+        source_carriers.admit_vertex(
+            ir,
+            Vertex {
+                id: vertex,
+                point: point_id,
+                tolerance: None,
+            },
+        )?;
     }
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
@@ -1896,22 +1899,26 @@ pub(in super::super) fn transfer_native_brep(
                 );
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
-            ir.model.faces.push(Face {
-                id: face.clone(),
-                shell: shell_id.clone(),
-                surface,
-                sense: face_sense,
-                loops: match loop_ids.split_first() {
-                    // The source states the outer boundary first.
-                    Some((outer, inner)) => {
-                        cadmpeg_ir::topology::FaceLoops::classified(outer.clone(), inner.to_vec())
-                    }
-                    None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            source_carriers.admit_face(
+                ir,
+                Face {
+                    id: face.clone(),
+                    shell: shell_id.clone(),
+                    surface,
+                    sense: face_sense,
+                    loops: match loop_ids.split_first() {
+                        // The source states the outer boundary first.
+                        Some((outer, inner)) => cadmpeg_ir::topology::FaceLoops::classified(
+                            outer.clone(),
+                            inner.to_vec(),
+                        ),
+                        None => cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                    },
+                    name: None,
+                    color: None,
+                    tolerance: None,
                 },
-                name: None,
-                color: None,
-                tolerance: None,
-            });
+            )?;
             for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
                 let coedge_ids = native_loop
                     .half_edges
@@ -2125,18 +2132,24 @@ pub(in super::super) fn transfer_native_brep(
                         .into_iter()
                         .collect();
                     ctx.charge_entities(1, "admit Creo model coedges")?;
-                    ir.model.coedges.push(Coedge {
-                        id,
-                        owner_loop: loop_id.clone(),
-                        edge: EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, half_edge.curve_id),
-                        radial_next,
-                        sense: match half_edge.side {
-                            crate::topology::Side::Zero => Sense::Forward,
-                            crate::topology::Side::One => Sense::Reversed,
+                    source_carriers.admit_coedge(
+                        ir,
+                        Coedge {
+                            id,
+                            owner_loop: loop_id.clone(),
+                            edge: EdgeId::compose(
+                                &crate::identity::VISIBGEOM_EDGE,
+                                half_edge.curve_id,
+                            ),
+                            radial_next,
+                            sense: match half_edge.side {
+                                crate::topology::Side::Zero => Sense::Forward,
+                                crate::topology::Side::One => Sense::Reversed,
+                            },
+                            pcurves,
+                            use_curve: None,
                         },
-                        pcurves,
-                        use_curve: None,
-                    });
+                    )?;
                 }
             }
         }

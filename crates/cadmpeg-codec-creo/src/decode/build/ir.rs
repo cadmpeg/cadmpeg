@@ -700,7 +700,7 @@ pub(in super::super) fn build_ir(
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
     if let Some(length_scale_mm) = length_scale_mm {
-        super::units::normalize_model_lengths(&mut ir, length_scale_mm, &source_carriers)?;
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm)?;
     }
     collect_feature_coverage(
         scan,
