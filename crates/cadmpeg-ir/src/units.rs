@@ -260,6 +260,29 @@ impl Tolerances {
 }
 
 const EPS_UNIT_FRAME: f64 = 1.0e-9;
+const EPS_SUM_SQUARES_UNIT: f64 = 1.0e-9;
+
+/// A direction admitted by the square-sum length calculation used by a source.
+/// Its length differs from one by at most `EPS_SUM_SQUARES_UNIT` under that
+/// calculation. A hypot length can round across this admission boundary.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SumSquaresUnitVector3(Vector3);
+
+impl SumSquaresUnitVector3 {
+    /// Admit the source's finite components and square-sum unit measure.
+    pub fn new(value: Vector3) -> Option<Self> {
+        if !value.is_finite() {
+            return None;
+        }
+        let norm = (value.x * value.x + value.y * value.y + value.z * value.z).sqrt();
+        ((norm - 1.0).abs() <= EPS_SUM_SQUARES_UNIT).then_some(Self(value))
+    }
+
+    /// Borrow the direction without changing its components.
+    pub const fn as_raw(&self) -> &Vector3 {
+        &self.0
+    }
+}
 
 /// A direction with unit length within the analytic frame tolerance.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
