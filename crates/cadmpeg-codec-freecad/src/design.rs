@@ -987,14 +987,14 @@ fn append_spreadsheet(
             native_ref: Some(property.id.clone()),
         });
     }
-    Ok(Spreadsheet {
-        id: SpreadsheetId::compose(
+    Spreadsheet::new(
+        SpreadsheetId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "design", "spreadsheet"),
             object_key(object)?,
         ),
-        feature: feature_id(object)?,
-        cells: cell_ids,
-        column_widths: spreadsheet_dimensions(
+        feature_id(object)?,
+        cell_ids,
+        spreadsheet_dimensions(
             properties,
             "Spreadsheet::PropertyColumnWidths",
             "columnWidths",
@@ -1002,7 +1002,7 @@ fn append_spreadsheet(
             "Column",
             "width",
         )?,
-        row_heights: spreadsheet_dimensions(
+        spreadsheet_dimensions(
             properties,
             "Spreadsheet::PropertyRowHeights",
             "rowHeights",
@@ -1011,8 +1011,9 @@ fn append_spreadsheet(
             "height",
         )?,
         merged_ranges,
-        native_ref: Some(object.id.clone()),
-    })
+        Some(object.id.clone()),
+    )
+    .map_err(CodecError::malformed)
 }
 
 fn spreadsheet_dimensions(
