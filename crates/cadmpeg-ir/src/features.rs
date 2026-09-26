@@ -657,7 +657,7 @@ impl FeatureLineSegment {
         Self::from_parts(start, end)
     }
 
-    /// Build a segment from finite endpoints if they are distinct.
+    /// Build a line from admitted endpoints, checking only that they differ.
     pub fn from_parts(start: FinitePoint3, end: FinitePoint3) -> Option<Self> {
         (start != end).then_some(Self { start, end })
     }

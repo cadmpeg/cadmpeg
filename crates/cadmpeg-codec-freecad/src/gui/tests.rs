@@ -12,7 +12,7 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
-fn assert_negative_primitive_size_reports_loss(style: super::PrimitiveStyle) {
+fn assert_untransferred_primitive_size_reports_loss(style: super::PrimitiveStyle) {
     use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
     use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
 
@@ -66,12 +66,96 @@ fn assert_negative_primitive_size_reports_loss(style: super::PrimitiveStyle) {
 
 #[test]
 fn a_negative_line_width_records_an_appearance_loss() {
-    assert_negative_primitive_size_reports_loss(super::PrimitiveStyle::Line(Some(-1.0)));
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite width"),
+        ),
+    ));
 }
 
 #[test]
 fn a_negative_point_size_records_an_appearance_loss() {
-    assert_negative_primitive_size_reports_loss(super::PrimitiveStyle::Point(Some(-1.0)));
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Point(
+        super::PrimitiveSize::Admitted(
+            cadmpeg_ir::scalar::FiniteReal::new(-1.0).expect("finite size"),
+        ),
+    ));
+}
+
+#[test]
+fn a_nonfinite_line_width_records_an_appearance_loss() {
+    assert!(matches!(
+        super::PrimitiveSize::from_source(Some("not a number")),
+        super::PrimitiveSize::Absent
+    ));
+    assert_untransferred_primitive_size_reports_loss(super::PrimitiveStyle::Line(
+        super::PrimitiveSize::from_source(Some("NaN")),
+    ));
+}
+
+#[test]
+fn negative_primitive_sizes_keep_native_values_and_report_neutral_losses() {
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Vertex};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let vertex_id = VertexId::compose(
+        &cadmpeg_ir::identity_namespace!("fcstd", "model", "vertex"),
+        cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("v1")),
+    );
+    ir.model.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: cadmpeg_ir::ids::PointId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "point"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("p1")),
+        ),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        id: EdgeId::compose(
+            &cadmpeg_ir::identity_namespace!("fcstd", "model", "edge"),
+            cadmpeg_ir::identity_key!("shape").colon(cadmpeg_ir::identity_key!("e1")),
+        ),
+        carrier: EdgeCarrier::unbounded(None),
+        start: vertex_id.clone(),
+        end: vertex_id,
+        tolerance: None,
+    });
+    let mut plan = super::AppearancePlan::default();
+    let mut losses = Vec::new();
+    let prefixes = [String::from("shape:")];
+    for style in [
+        super::PrimitiveStyle::Line(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
+        super::PrimitiveStyle::Point(super::PrimitiveSize::Admitted(FiniteReal::ONE.negated())),
+    ] {
+        super::transfer_primitive_appearance(
+            &ir,
+            &mut plan,
+            &mut losses,
+            super::PrimitiveAppearanceSource {
+                provider_name: "Model",
+                object_id: "shape",
+                packed_color: 0x1122_3344,
+                style,
+                payload_prefixes: &prefixes,
+                provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                    "fcstd",
+                    cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                    17,
+                ),
+            },
+        );
+    }
+    assert_eq!(plan.appearances.len(), 2);
+    assert!(plan
+        .appearances
+        .iter()
+        .all(|appearance| appearance.properties.is_empty()));
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| { loss.code.local_code() == "appearance.primitive-size-not-transferred" }));
 }
 
 #[test]

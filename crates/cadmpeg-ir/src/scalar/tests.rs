@@ -288,6 +288,19 @@ fn an_assigned_real_keeps_its_bits_in_the_length_and_angle_families() {
 }
 
 #[test]
+fn a_positive_real_assigns_to_positive_length_with_identical_bits() {
+    use crate::scalar::{PositiveLength, PositiveReal};
+
+    for value in [f64::from_bits(1), 2.5, f64::MAX] {
+        let real = PositiveReal::new(value).expect("positive real");
+        assert_eq!(
+            PositiveLength::from_assigned_real(real).get().to_bits(),
+            value.to_bits()
+        );
+    }
+}
+
+#[test]
 fn a_nonzero_length_magnitude_is_the_positive_length_it_admits() {
     use crate::scalar::{NonZeroLength, PositiveLength};
 

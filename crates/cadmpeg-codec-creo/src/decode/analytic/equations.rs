@@ -5,6 +5,7 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::planar::line_circle_intersections;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::scalar::PositiveLength;
 
 use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
 use crate::vecmath::{cross, dot, normalize};
@@ -1381,7 +1382,7 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     plane: PlaneEquation,
     center: [f64; 3],
     circle_axis: [f64; 3],
-    radius: f64,
+    radius: PositiveLength,
 ) -> Vec<[f64; 3]> {
     let (Some(plane_normal), Some(circle_normal)) =
         (normalize(plane.normal), normalize(circle_axis))
@@ -1390,9 +1391,10 @@ pub(in crate::decode) fn intersect_plane_with_circle(
     };
     let direction = cross(plane_normal, circle_normal);
     let sine = direction[0].hypot(direction[1]).hypot(direction[2]);
-    if sine <= EPS_PLANE_CIRCLE_PARALLEL || !radius.is_finite() || radius <= 0.0 {
+    if sine <= EPS_PLANE_CIRCLE_PARALLEL {
         return Vec::new();
     }
+    let radius = radius.get();
     let direction = direction.map(|value| value / sine);
     let radial_direction = cross(circle_normal, direction);
     let relative = std::array::from_fn(|index| plane.origin[index] - center[index]);
@@ -1428,13 +1430,13 @@ pub(in crate::decode) fn intersect_plane_with_circle(
 
 pub(in crate::decode) fn circle_parameters(
     geometry: &CurveGeometry,
-) -> Option<([f64; 3], [f64; 3], f64)> {
+) -> Option<([f64; 3], [f64; 3], PositiveLength)> {
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = geometry else {
         return None;
     };
     let center = circle_curve.center().get();
     let axis = circle_curve.frame().axis().as_raw();
-    let radius = circle_curve.radius().get();
+    let radius = circle_curve.radius();
     Some((
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],
@@ -1639,6 +1641,7 @@ mod tests {
         BoundedCoefficient, ConeEquation, PlaneConicEquation, PlaneEquation, TorusEquation,
     };
     use crate::decode::quadratic::Coefficient;
+    use cadmpeg_ir::scalar::PositiveLength;
     use std::f64::consts::FRAC_PI_2;
 
     const ORIGIN: [f64; 3] = [1.0, 2.0, 3.0];
@@ -1919,7 +1922,7 @@ mod tests {
                     },
                     [0.0; 3],
                     [0.0, 0.0, 1.0],
-                    radius,
+                    PositiveLength::new(radius).expect("positive circle radius"),
                 )
             };
             let points = cut(0.0);
@@ -1944,7 +1947,7 @@ mod tests {
                 },
                 [0.0; 3],
                 [0.0, 0.0, 1.0],
-                TANGENT_CIRCLE_RADIUS,
+                PositiveLength::new(TANGENT_CIRCLE_RADIUS).expect("positive circle radius"),
             )
         };
         let last_bit = f64::EPSILON * TANGENT_CIRCLE_RADIUS;

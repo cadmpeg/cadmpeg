@@ -247,19 +247,17 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     else {
         return None;
     };
-    let values = [*r, *g, *b, *a];
-    values
-        .iter()
-        .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        .then(|| {
-            Color::new(
-                values[0] as f32,
-                values[1] as f32,
-                values[2] as f32,
-                values[3] as f32,
-            )
-        })
-        .flatten()
+    let components = [*r, *g, *b, *a].map(|value| {
+        if (0.0..=1.0).contains(&value) {
+            cadmpeg_ir::scalar::UnitBinary32::new(value as f32)
+        } else {
+            None
+        }
+    });
+    let [Some(r), Some(g), Some(b), Some(a)] = components else {
+        return None;
+    };
+    Some(Color::from_unit_binary32([r, g, b, a]))
 }
 
 #[cfg(test)]
@@ -371,6 +369,28 @@ mod tests {
             ],
             rejected: Vec::new(),
         }]
+    }
+
+    #[test]
+    fn protein_color_admits_source_range_before_binary32_narrowing() {
+        let mut record = one_connected_texture()[0].records[0].clone();
+        assert_eq!(
+            super::color_property(&record, "generic_diffuse"),
+            cadmpeg_ir::topology::Color::new(0.0, 0.25, 1.0, 1.0)
+        );
+        for invalid in [1.0 + f64::EPSILON, -f64::EPSILON, f64::NAN, f64::INFINITY] {
+            let property = record
+                .properties
+                .get_mut("generic_diffuse")
+                .expect("color property");
+            let cadmpeg_protein::property::PropertyContent::Value { value, .. } =
+                &mut property.content
+            else {
+                panic!("color value property");
+            };
+            *value = PropertyValue::Color([invalid, 0.25, 1.0, 1.0]);
+            assert!(super::color_property(&record, "generic_diffuse").is_none());
+        }
     }
 
     #[test]
