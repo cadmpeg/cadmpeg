@@ -40,7 +40,7 @@ use cadmpeg_ir::{
         SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
         TreeChildren,
     },
-    scalar::{FiniteReal, Length, NonZeroReal, PositiveReal},
+    scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal},
 };
 
 use crate::brep::ShapePayloadRecord;
@@ -2856,6 +2856,28 @@ fn sketch_geometry(
     let native = || SketchGeometryDefinition::Native {
         native_kind: native_kind.clone(),
     };
+    if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
+        let frame_angle = number("AngleXU").unwrap_or(0.0);
+        let admitted = (|| {
+            let center = FinitePoint2::from_coordinates(
+                FiniteReal::new(number("CenterX")?)?,
+                FiniteReal::new(number("CenterY")?)?,
+            );
+            let radius = PositiveLength::new(number("Radius")?)?;
+            let start =
+                FiniteReal::new(number("StartAngle").or_else(|| number("FirstParameter"))?)?;
+            let end = FiniteReal::new(number("EndAngle").or_else(|| number("LastParameter"))?)?;
+            let frame_angle = FiniteReal::new(frame_angle)?;
+            SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle: cadmpeg_ir::scalar::Angle::new(start.get() + frame_angle.get())?,
+                end_angle: cadmpeg_ir::scalar::Angle::new(end.get() + frame_angle.get())?,
+            })
+            .ok()
+        })();
+        return Ok(admitted.unwrap_or_else(|| SketchGeometry::native(native_kind)));
+    }
     let project = || {
         Some(
             if matches!(
@@ -2976,30 +2998,6 @@ fn sketch_geometry(
                             axis_angle: cadmpeg_ir::scalar::Angle::new(angle)?,
                             focal_length: Length::new(focal)?,
                             bounds,
-                        }
-                    }
-                    _ => native(),
-                }
-            } else if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
-                let frame_angle = number("AngleXU").unwrap_or(0.0);
-                match (
-                    number("CenterX"),
-                    number("CenterY"),
-                    number("Radius"),
-                    number("StartAngle").or_else(|| number("FirstParameter")),
-                    number("EndAngle").or_else(|| number("LastParameter")),
-                ) {
-                    (Some(x), Some(y), Some(radius), Some(start), Some(end))
-                        if radius > 0.0
-                            && [x, y, radius, start, end, frame_angle]
-                                .into_iter()
-                                .all(f64::is_finite) =>
-                    {
-                        SketchGeometryDefinition::Arc {
-                            center: Point2::new(x, y),
-                            radius: Length::new(radius)?,
-                            start_angle: cadmpeg_ir::scalar::Angle::new(start + frame_angle)?,
-                            end_angle: cadmpeg_ir::scalar::Angle::new(end + frame_angle)?,
                         }
                     }
                     _ => native(),
