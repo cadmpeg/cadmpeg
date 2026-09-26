@@ -9,8 +9,9 @@ use cadmpeg_ir::topology::Color;
 
 use crate::container::InventorContainer;
 use crate::decode::{
-    admit_assembly_placement, admit_native_record_items, collect_body_ids, decode_container,
-    index_face_colors, index_projected_colors, project_preview_asset, project_property_set_issue,
+    admit_assembly_placement, admit_native_record_items, clone_product_body_ids, collect_body_ids,
+    decode_container, index_face_colors, index_projected_colors, project_preview_asset,
+    project_property_set_issue,
 };
 use crate::external_reference::{
     InventorEmbeddedReference, InventorExternalReference, UfrxDocument, UfrxModelState,
@@ -114,6 +115,41 @@ fn projected_body_ids_refuse_collection_and_retained_limits_before_copy() {
         collect_body_ids(&ctx, [&id]).expect("admitted body id"),
         vec![id]
     );
+}
+
+#[test]
+fn product_body_id_copy_refuses_limits_before_target_changes() {
+    let id = BodyId::mint("inventor:test:body#one").expect("valid body id");
+    let old = BodyId::mint("inventor:test:body#old").expect("valid old body id");
+    let body_ids = vec![id.clone()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut target = vec![old.clone()];
+    assert!(matches!(
+        clone_product_body_ids(&ctx, &body_ids, &mut target),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "collect Inventor product body ids"
+    ));
+    assert_eq!(target, vec![old.clone()]);
+
+    policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(id.as_str().len() - 1).expect("id length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    assert!(matches!(
+        clone_product_body_ids(&ctx, &body_ids, &mut target),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor product body id"
+    ));
+    assert_eq!(target, vec![old]);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service context");
+    clone_product_body_ids(&ctx, &body_ids, &mut target).expect("admitted copy");
+    assert_eq!(target, body_ids);
 }
 
 #[test]

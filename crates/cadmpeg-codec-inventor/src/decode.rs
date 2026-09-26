@@ -1247,15 +1247,7 @@ fn decode_container<'a>(
     let body_ids = collect_body_ids(ctx, ir.model.bodies.iter().map(|body| &body.id))?;
     if geometry_transferred {
         for product in &mut ir.model.product_definitions {
-            charge_items(ctx, body_ids.len(), "collect Inventor product body ids")?;
-            for body_id in &body_ids {
-                charge_retained_len(
-                    ctx,
-                    body_id.as_str().len(),
-                    "retain Inventor product body id",
-                )?;
-            }
-            product.bodies.clone_from(&body_ids);
+            clone_product_body_ids(ctx, &body_ids, &mut product.bodies)?;
         }
     } else if matches!(
         &container.rse.active_carrier,
@@ -2032,6 +2024,24 @@ fn collect_body_ids<'b>(
         output.push(id.clone());
     }
     Ok(output)
+}
+
+fn clone_product_body_ids(
+    ctx: &DecodeContext<'_>,
+    body_ids: &[BodyId],
+    target: &mut Vec<BodyId>,
+) -> Result<(), CodecError> {
+    charge_items(ctx, body_ids.len(), "collect Inventor product body ids")?;
+    for body_id in body_ids {
+        charge_retained_len(
+            ctx,
+            body_id.as_str().len(),
+            "retain Inventor product body id",
+        )?;
+    }
+    target.clear();
+    target.extend(body_ids.iter().cloned());
+    Ok(())
 }
 
 fn index_projected_colors<'b>(
