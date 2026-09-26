@@ -14,7 +14,7 @@ use crate::ids::{CurveId, SurfaceId};
 use crate::math::Vector3;
 use crate::scalar::FiniteReal;
 use crate::topology::ParameterInterval;
-use crate::units::FiniteVector;
+use crate::units::{FiniteVector, UnitVector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,6 @@ fn admit_base_endpoint(value: Option<f64>) -> Result<Option<FiniteReal>, Procedu
         .transpose()
 }
 
-const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
 const EPS_OFFSET_PLANE_NORMAL: f64 = 1.0e-10;
 
 /// Admitted surface offset curve parameters.
@@ -470,7 +469,7 @@ pub struct SpatialOffsetCurveConstruction {
     /// Signed offset distance.
     distance: FiniteReal,
     /// Reference direction controlling the offset frame.
-    reference_direction: FiniteVector3,
+    reference_direction: UnitVector3,
     /// Whether the source classifies the result as self-intersecting.
     self_intersect: Option<bool>,
 }
@@ -498,14 +497,9 @@ impl SpatialOffsetCurveConstruction {
         reference_direction: Vector3,
         self_intersect: Option<bool>,
     ) -> Result<Self, ProceduralGeometryError> {
-        let reference_direction = FiniteVector3::new(reference_direction).ok_or(
+        let reference_direction = UnitVector3::new(reference_direction).ok_or(
             ProceduralGeometryError::Payload("invalid spatial curve offset"),
         )?;
-        if (reference_direction.as_raw().norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION {
-            return Err(ProceduralGeometryError::Payload(
-                "invalid spatial curve offset",
-            ));
-        }
 
         Ok(Self {
             source,
@@ -525,7 +519,7 @@ impl SpatialOffsetCurveConstruction {
         self.distance
     }
     /// Return the reference direction.
-    pub fn reference_direction(&self) -> &FiniteVector3 {
+    pub fn reference_direction(&self) -> &UnitVector3 {
         &self.reference_direction
     }
     /// Return the self intersect.

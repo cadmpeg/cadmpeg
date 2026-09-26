@@ -2945,7 +2945,7 @@ impl<'a> Builder<'a> {
                 {
                     let source = self.emit_curve(source.as_str())?;
                     let direction =
-                        geometry::direction(&mut self.emitter, reference_direction.get());
+                        geometry::direction(&mut self.emitter, *reference_direction.as_raw());
                     let self_intersect = match self_intersect {
                         Some(true) => ".T.",
                         Some(false) => ".F.",
