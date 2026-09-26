@@ -801,22 +801,20 @@ fn rotated_sketch_geometry_matches(
             SketchGeometryDefinition::Ellipse {
                 center: a,
                 major_angle: aa,
-                major_radius: ar,
-                minor_radius: ai,
+                radii: ar,
                 bounds: ab,
             },
             SketchGeometryDefinition::Ellipse {
                 center: b,
                 major_angle: ba,
-                major_radius: br,
-                minor_radius: bi,
+                radii: br,
                 bounds: bb,
             },
         ) => {
             point_matches(a.get(), b.get())
                 && angle_matches(aa.get(), ba.get())
-                && scalar_close(ar.get(), br.get())
-                && scalar_close(ai.get(), bi.get())
+                && scalar_close(ar.major().get(), br.major().get())
+                && scalar_close(ar.minor().get(), br.minor().get())
                 && optional_angle_bounds_match(ab.as_ref(), bb.as_ref())
         }
         (
@@ -917,22 +915,20 @@ fn translated_sketch_geometry_matches(
             SketchGeometryDefinition::Ellipse {
                 center: first_center,
                 major_angle: first_major_angle,
-                major_radius: first_major_radius,
-                minor_radius: first_minor_radius,
+                radii: first_radii,
                 bounds: first_bounds,
             },
             SketchGeometryDefinition::Ellipse {
                 center: second_center,
                 major_angle: second_major_angle,
-                major_radius: second_major_radius,
-                minor_radius: second_minor_radius,
+                radii: second_radii,
                 bounds: second_bounds,
             },
         ) => {
             point_matches(first_center.get(), second_center.get())
                 && scalar_close(first_major_angle.get(), second_major_angle.get())
-                && scalar_close(first_major_radius.get(), second_major_radius.get())
-                && scalar_close(first_minor_radius.get(), second_minor_radius.get())
+                && scalar_close(first_radii.major().get(), second_radii.major().get())
+                && scalar_close(first_radii.minor().get(), second_radii.minor().get())
                 && optional_angle_bounds_match(first_bounds.as_ref(), second_bounds.as_ref())
         }
         (

@@ -16,11 +16,20 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Coedge, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
+
+fn admitted_range(values: [f64; 2]) -> [FiniteReal; 2] {
+    values.map(|value| FiniteReal::new(value).expect("finite test endpoint"))
+}
+
+fn raw_range(values: [FiniteReal; 2]) -> [f64; 2] {
+    values.map(FiniteReal::get)
+}
 
 fn translation(x: f64, y: f64, z: f64) -> Transform {
     Transform::affine([[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]])
@@ -30,12 +39,12 @@ fn translation(x: f64, y: f64, z: f64) -> Transform {
 fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
     match kind {
         TextShapeKind::Vertex => TextTShapeGeometry::Vertex {
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             point: cadmpeg_ir::features::FinitePoint3::ZERO,
             representations: Vec::new(),
         },
         TextShapeKind::Edge => TextTShapeGeometry::Edge {
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             same_parameter: false,
             same_range: false,
             degenerated: false,
@@ -43,7 +52,7 @@ fn geometry_for_kind(kind: TextShapeKind) -> TextTShapeGeometry {
         },
         TextShapeKind::Face => TextTShapeGeometry::Face {
             natural_restriction: false,
-            tolerance: 0.0,
+            tolerance: cadmpeg_ir::scalar::FiniteReal::ZERO,
             surface: None,
             location: crate::brep::LocationRef::Identity,
             triangulation: None,
@@ -415,13 +424,13 @@ fn edge_representation_selection_follows_family_rules() {
         1 => TextEdgeRepresentation::Curve3d {
             curve: primary,
             location: 0,
-            parameter_range: [0.0, 0.0],
+            parameter_range: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2],
         },
         2 => TextEdgeRepresentation::Pcurve {
             curve: primary,
             surface: 0,
             location: 0,
-            parameter_range: [0.0, 0.0],
+            parameter_range: [cadmpeg_ir::scalar::FiniteReal::ZERO; 2],
             uv_endpoints: None,
         },
         5 => TextEdgeRepresentation::Polygon3d {
@@ -435,18 +444,20 @@ fn edge_representation_selection_follows_family_rules() {
         },
         _ => panic!("test helper kind {kind}"),
     };
+    let point = |x, y, z| cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).unwrap();
+    let vector = |x, y, z| cadmpeg_ir::features::FiniteVector3::new(Vector3::new(x, y, z)).unwrap();
     let curves = [
         TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 0.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
         TextCurve::Line {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 0.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
         TextCurve::Line {
-            origin: Point3::new(0.0, 1.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
+            origin: point(0.0, 1.0, 0.0),
+            direction: vector(1.0, 0.0, 0.0),
         },
     ];
     let tables = Tables {
@@ -717,7 +728,7 @@ fn occt_parabola_ranges_convert_to_step_parameters() {
         .unwrap(),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some([-2.0, 4.0])),
+        normalize_occt_curve_range(&geometry, Some(admitted_range([-2.0, 4.0]))).map(raw_range),
         Some([-0.25, 0.5])
     );
     assert_eq!(normalize_occt_curve_range(&geometry, None), None);
@@ -734,11 +745,13 @@ fn periodic_ranges_wrap_the_start_and_preserve_the_sweep() {
         )
         .unwrap(),
     );
-    let [start, end] =
-        normalize_occt_curve_range(&geometry, Some([-1.0e-15, std::f64::consts::FRAC_PI_2]))
-            .expect("periodic range");
-    assert_eq!(start, 0.0);
-    assert!((end - start - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
+    let [start, end] = normalize_occt_curve_range(
+        &geometry,
+        Some(admitted_range([-1.0e-15, std::f64::consts::FRAC_PI_2])),
+    )
+    .expect("periodic range");
+    assert_eq!(start.get(), 0.0);
+    assert!((end.get() - start.get() - (std::f64::consts::FRAC_PI_2 + 1.0e-15)).abs() < 1.0e-15);
 }
 
 #[test]
@@ -753,17 +766,24 @@ fn periodic_range_keeps_finite_endpoints_when_its_width_overflows() {
         .expect("finite circle"),
     );
     assert_eq!(
-        normalize_occt_curve_range(&geometry, Some([-f64::MAX, f64::MAX])),
+        normalize_occt_curve_range(&geometry, Some(admitted_range([-f64::MAX, f64::MAX])))
+            .map(raw_range),
         Some([-f64::MAX, f64::MAX])
     );
 }
 
 #[test]
 fn collapsed_pcurve_ranges_are_unbounded() {
-    assert_eq!(bounded_pcurve_range(false, Some([2.0, 2.0])), None);
-    assert_eq!(bounded_pcurve_range(true, Some([1.0, 3.0])), None);
     assert_eq!(
-        bounded_pcurve_range(false, Some([1.0, 3.0])),
+        bounded_pcurve_range(false, Some(admitted_range([2.0, 2.0]))),
+        None
+    );
+    assert_eq!(
+        bounded_pcurve_range(true, Some(admitted_range([1.0, 3.0]))),
+        None
+    );
+    assert_eq!(
+        bounded_pcurve_range(false, Some(admitted_range([1.0, 3.0]))).map(raw_range),
         Some([1.0, 3.0])
     );
 }
@@ -785,11 +805,16 @@ fn adjacent_pcurve_domain_rounding_is_canonicalized() {
     };
 
     assert_eq!(
-        normalize_pcurve_parameter_range(&geometry, Some([2.0 - 1.0e-11, 4.0 + 1.0e-11])),
+        normalize_pcurve_parameter_range(
+            &geometry,
+            Some(admitted_range([2.0 - 1.0e-11, 4.0 + 1.0e-11]))
+        )
+        .map(raw_range),
         Some([2.0, 4.0])
     );
     assert_eq!(
-        normalize_pcurve_parameter_range(&geometry, Some([1.0, 5.0])),
+        normalize_pcurve_parameter_range(&geometry, Some(admitted_range([1.0, 5.0])))
+            .map(raw_range),
         Some([1.0, 5.0])
     );
 }
@@ -815,11 +840,14 @@ fn face_connectivity_partitions_transitively_without_reordering() {
 
 #[test]
 fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
+    let origin = cadmpeg_ir::features::FinitePoint3::ZERO;
+    let axis = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let reference = cadmpeg_ir::features::FiniteVector3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap();
     let surface = TextSurface::Sphere {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
+        center: origin,
+        axis,
+        ref_direction: reference,
+        radius: cadmpeg_ir::scalar::FiniteReal::ONE,
         u_reversed: true,
     };
     let affine = surface_parameter_affine(&surface);
@@ -827,11 +855,11 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
     assert_eq!(affine.v_scale, 1.0);
 
     let cone = TextSurface::Cone {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_3,
+        origin,
+        axis,
+        ref_direction: reference,
+        radius: cadmpeg_ir::scalar::FiniteReal::ONE,
+        half_angle: cadmpeg_ir::scalar::FiniteReal::new(std::f64::consts::FRAC_PI_3).unwrap(),
         u_reversed: true,
     };
     let affine = surface_parameter_affine(&cone);
@@ -839,7 +867,8 @@ fn indirect_analytic_frames_reverse_the_pcurve_u_parameter() {
     assert!((affine.v_scale - 0.5).abs() < 1.0e-15);
 
     let trimmed = TextSurface::Trimmed {
-        parameter_ranges: [[2.0, 3.0], [4.0, 8.0]],
+        parameter_ranges: [[2.0, 3.0], [4.0, 8.0]]
+            .map(|range| range.map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())),
         basis: crate::brep::NestedSurface::try_new(cone).expect("one inline basis is admitted"),
     };
     let affine = surface_parameter_affine(&trimmed);
@@ -1468,12 +1497,14 @@ Co 1001000 +2 1 +2 3 *
 fn refuses_a_pcurve_weight_lane_shorter_than_its_pole_lane() {
     let record = TextCurve2d::Nurbs(crate::brep::NurbsCurve2d {
         degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 1.0],
+        knots: [0.0, 0.0, 1.0, 1.0]
+            .map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap())
+            .to_vec(),
         control_points: vec![
-            cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0)).unwrap(),
+            cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(1.0, 0.0)).unwrap(),
         ],
-        weights: Some(vec![1.0]),
+        weights: Some(vec![cadmpeg_ir::scalar::FiniteReal::ONE]),
         periodic: false,
     });
     let error = pcurve_geometry(&record).expect_err("a short weight lane is refused");
@@ -1538,7 +1569,8 @@ fn numerical_followup_similarity_and_normalization_are_scale_independent() {
             Transform::affine([[a, 0., 0., 0.], [0., a, 0., 0.], [0., 0., a, 0.]]).unwrap();
         assert_eq!(super::uniform_scale(similarity).unwrap().get(), a);
         assert_eq!(
-            super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.)),
+            super::transform_normalized_vector(similarity, Vector3::new(1., 0., 0.))
+                .map(cadmpeg_ir::features::FiniteVector3::get),
             Some(Vector3::new(1., 0., 0.))
         );
         assert_eq!(
@@ -1561,7 +1593,8 @@ fn numerical_ranges_parabola_range_avoids_doubled_focal_overflow() {
             .unwrap(),
         );
         assert_eq!(
-            normalize_occt_curve_range(&geometry, Some([-focal, focal])),
+            normalize_occt_curve_range(&geometry, Some(admitted_range([-focal, focal])))
+                .map(raw_range),
             Some([-0.5, 0.5])
         );
     }
@@ -1583,12 +1616,14 @@ fn numerical_seventh_pcurve_snapping_preserves_distinct_endpoints() {
         .unwrap();
         let geometry = PcurveGeometry::Nurbs { nurbs };
         assert_eq!(
-            normalize_pcurve_parameter_range(&geometry, Some(domain)),
+            normalize_pcurve_parameter_range(&geometry, Some(admitted_range(domain)))
+                .map(raw_range),
             Some(domain)
         );
         let reversed = [domain[1], domain[0]];
         assert_eq!(
-            normalize_pcurve_parameter_range(&geometry, Some(reversed)),
+            normalize_pcurve_parameter_range(&geometry, Some(admitted_range(reversed)))
+                .map(raw_range),
             Some(reversed)
         );
     }

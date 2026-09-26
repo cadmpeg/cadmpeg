@@ -7,8 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchGeometryDefinition, SketchId};
+use cadmpeg_ir::units::FinitePoint2;
 
 use super::super::sketch_ids::sketch_entity_id;
 use super::radii::trim_segment_id;
@@ -356,17 +357,37 @@ pub(super) fn saved_section_arc_record<'a>(
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(in crate::decode) struct SectionArcCarrier {
+    pub(in crate::decode) center: FinitePoint2,
+    pub(in crate::decode) radius: PositiveLength,
+}
+
+impl SectionArcCarrier {
+    pub(in crate::decode) fn new(center: [f64; 2], radius: f64) -> Option<Self> {
+        Some(Self {
+            center: FinitePoint2::new(Point2::new(center[0], center[1]))?,
+            radius: PositiveLength::new(radius)?,
+        })
+    }
+
+    pub(in crate::decode) fn raw(self) -> ([f64; 2], f64) {
+        let center = self.center.get();
+        ([center.u, center.v], self.radius.get())
+    }
+}
+
 pub(in crate::decode) fn saved_section_arc_carrier(
     definition: &crate::feature::definitions::FeatureDefinition,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<([f64; 2], f64)> {
+) -> Option<SectionArcCarrier> {
     let arc = saved_section_arc_record(definition, segment)?;
     let [center_u, center_v, _] = arc.center;
     if let ([Some(center_u), Some(center_v)], Some(radius)) = (
         [center_u, center_v],
         arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
     ) {
-        return Some(([center_u, center_v], radius));
+        return SectionArcCarrier::new([center_u, center_v], radius);
     }
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
@@ -416,7 +437,7 @@ pub(in crate::decode) fn saved_section_arc_carrier(
         return None;
     }
     let radius = arc.radius.unwrap_or(first_radius);
-    Some(([center_u, center_v], radius))
+    SectionArcCarrier::new([center_u, center_v], radius)
 }
 
 /// The arc facts recovered from a saved-section row.
@@ -445,7 +466,8 @@ pub(in crate::decode) fn saved_section_arc(
     segment: &crate::feature::definitions::FeatureSegment,
 ) -> Option<SavedSectionArc> {
     let arc = saved_section_arc_record(definition, segment)?;
-    let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
+    let carrier = saved_section_arc_carrier(definition, segment)?;
+    let ([center_u, center_v], radius) = carrier.raw();
     let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
     else {
         return None;
@@ -455,7 +477,9 @@ pub(in crate::decode) fn saved_section_arc(
     let first_radius = first[0].hypot(first[1]);
     let second_radius = second[0].hypot(second[1]);
     let scale = radius.max(first_radius).max(second_radius);
-    if (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
         || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
         return None;
@@ -466,10 +490,8 @@ pub(in crate::decode) fn saved_section_arc(
         end += std::f64::consts::TAU;
     }
     Some(SavedSectionArc {
-        center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(
-            center_u, center_v,
-        ))?,
-        radius: cadmpeg_ir::scalar::PositiveLength::new(radius)?,
+        center: carrier.center,
+        radius: carrier.radius,
         start_angle: Angle::new(start)?,
         end_angle: Angle::new(end)?,
     })
@@ -675,8 +697,10 @@ pub(in crate::decode) fn saved_section_entity_geometry(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center: Point2::new(frame[9], frame[10]),
                     major_angle: Angle::new(major_axis[1].atan2(major_axis[0]))?,
-                    major_radius: Length::new(major_radius)?,
-                    minor_radius: Length::new(minor_radius)?,
+                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                        major_radius: Length::new(major_radius)?,
+                        minor_radius: Length::new(minor_radius)?,
+                    },
                     bounds,
                 })
                 .ok()?,

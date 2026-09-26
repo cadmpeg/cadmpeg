@@ -323,8 +323,8 @@ macro_rules! design_feature_kinds {
      required { $($required:ident => $required_lit:literal : $required_payload:ty),+ $(,)? }
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[serde(try_from = "String", into = "String")]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+        #[serde(try_from = "String")]
         pub(crate) enum DesignFeatureKind {
             $($variant,)+
             $($fixed,)+
@@ -435,6 +435,11 @@ macro_rules! design_feature_kinds {
             }
         }
     };
+}
+impl Serialize for DesignFeatureKind {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
 }
 
 design_feature_kinds! {

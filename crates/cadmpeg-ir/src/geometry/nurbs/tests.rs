@@ -326,6 +326,98 @@ fn finite_knot_lanes_keep_the_raw_wire_and_order_refusal() {
 }
 
 #[test]
+fn finite_nurbs_lanes_match_raw_curve_surface_and_pcurve_routes() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{NurbsCurve, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use crate::geometry::pcurve::PcurveNurbs;
+    use crate::math::Point2;
+    use crate::scalar::FiniteReal;
+    use crate::units::FinitePoint2;
+
+    let knots = vec![0.0, 0.0, 1.0, 1.0];
+    let finite_knots = || {
+        knots
+            .iter()
+            .copied()
+            .map(|value| FiniteReal::new(value).unwrap())
+            .collect()
+    };
+    let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+    let finite_points = || {
+        points
+            .iter()
+            .copied()
+            .map(|point| FinitePoint3::new(point).unwrap())
+            .collect()
+    };
+    let weights = vec![1.0, 2.0];
+    let finite_weights = || {
+        weights
+            .iter()
+            .copied()
+            .map(|value| FiniteReal::new(value).unwrap())
+            .collect()
+    };
+    assert_eq!(
+        NurbsCurve::from_finite_lanes(
+            1,
+            finite_knots(),
+            finite_points(),
+            Some(finite_weights()),
+            false
+        ),
+        NurbsCurve::from_lanes(
+            1,
+            knots.clone(),
+            points.clone(),
+            Some(weights.clone()),
+            false
+        ),
+    );
+    assert_eq!(
+        NurbsCurve::from_finite_lanes(
+            1,
+            finite_knots(),
+            finite_points(),
+            Some(vec![FiniteReal::ZERO]),
+            false
+        ),
+        NurbsCurve::from_lanes(1, knots.clone(), points.clone(), Some(vec![0.0]), false),
+    );
+    let grid = vec![points.clone(), points.clone()];
+    let finite_grid = || vec![finite_points(), finite_points()];
+    let finite_weight_grid = || vec![finite_weights(), finite_weights()];
+    assert_eq!(
+        NurbsSurface::from_finite_lanes(
+            NurbsSurfaceAxis::new(1, finite_knots(), false),
+            NurbsSurfaceAxis::new(1, finite_knots(), false),
+            NurbsSurfaceLanes::new(finite_grid(), Some(finite_weight_grid())),
+            false,
+        ),
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, knots.clone(), false),
+            NurbsSurfaceAxis::new(1, knots.clone(), false),
+            NurbsSurfaceLanes::new(grid, Some(vec![weights.clone(), weights.clone()])),
+            false,
+        ),
+    );
+    let uv = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+    assert_eq!(
+        PcurveNurbs::from_finite_lanes(
+            1,
+            finite_knots(),
+            uv.iter()
+                .copied()
+                .map(|point| FinitePoint2::new(point).unwrap())
+                .collect(),
+            Some(finite_weights()),
+            false,
+        ),
+        PcurveNurbs::from_lanes(1, knots, uv, Some(weights), false),
+    );
+}
+
+#[test]
 fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::{BsplineSurface, KnotVector};
@@ -459,14 +551,18 @@ fn nurbs_stores_hold_admitted_poles_and_take_admitted_lanes() {
         Ok(surface.clone())
     );
     assert_eq!(
-        positive_controls(&surface.poles(), &[1.0, 1.0, 2.0, 2.0]),
+        positive_controls(&surface.poles(), Some(&[1.0, 1.0, 2.0, 2.0])),
         positive_controls(
             &surface.pole_grid().raw_points().concat(),
-            &[1.0, 1.0, 2.0, 2.0]
+            Some(&[1.0, 1.0, 2.0, 2.0])
         )
     );
     assert_eq!(
-        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], &[1.0]),
+        positive_controls(&surface.poles(), None),
+        positive_controls(&surface.poles(), Some(&[1.0; 4]))
+    );
+    assert_eq!(
+        positive_controls(&[Point3::new(f64::INFINITY, 0.0, 0.0)], Some(&[1.0])),
         None
     );
     let mut mapped = surface.clone();

@@ -1661,7 +1661,12 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
     let decoded: crate::native::F3dNative = serde_json::from_str(&encoded).unwrap();
     assert_eq!(decoded, native);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).unwrap();
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
     let arena: Vec<crate::records::dimension_null_locus_wire::Wire> = namespace
         .arena_as("design_dimension_null_locus_pairs")
         .unwrap();

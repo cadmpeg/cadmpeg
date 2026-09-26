@@ -4,6 +4,8 @@
 use super::axis::SectionAxis;
 
 use crate::feature::definitions::VariableType;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::dimensions::{
@@ -154,8 +156,12 @@ fn section_equation_function_ten_axis_alignment(
     ]
     .into_iter()
     .all(f64::is_finite)
-        || approximately_equal(first_varying, second_varying)
-        || !approximately_equal(first_constant, second_constant)
+        || (FiniteReal::new(first_varying))
+            .zip(FiniteReal::new(second_varying))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
+        || !(FiniteReal::new(first_constant))
+            .zip(FiniteReal::new(second_constant))
+            .is_some_and(|(first, second)| approximately_equal(first, second))
         || target_point[axis.index()].is_none()
         || target_point[constant_axis.index()].is_some()
     {
@@ -409,7 +415,13 @@ pub(super) fn reconcile_equation_value(
         return Err(());
     }
     match (stored, solved) {
-        (Some(stored), Some(solved)) if !approximately_equal(stored, solved) => Err(()),
+        (Some(stored), Some(solved))
+            if !(FiniteReal::new(stored))
+                .zip(FiniteReal::new(solved))
+                .is_some_and(|(first, second)| approximately_equal(first, second)) =>
+        {
+            Err(())
+        }
         (Some(stored), _) => Ok(Some(stored)),
         (_, Some(solved)) => Ok(Some(solved)),
         (None, None) => Ok(None),
@@ -608,7 +620,10 @@ pub(super) fn merge_scalar_value_candidate(
             let Some(stored) = *entry.get() else {
                 return;
             };
-            if !approximately_equal(stored, value) {
+            if !(FiniteReal::new(stored))
+                .zip(FiniteReal::new(value))
+                .is_some_and(|(first, second)| approximately_equal(first, second))
+            {
                 *entry.get_mut() = None;
             }
         }
@@ -659,9 +674,7 @@ pub(super) fn section_relation_radius_scalar_values(
             } else {
                 value
             };
-            value
-                .is_finite()
-                .then_some(((VariableType::Radius, radius), value))
+            PositiveLength::new(value).map(|value| ((VariableType::Radius, radius), value.get()))
         })
         .collect()
 }
@@ -705,8 +718,12 @@ pub(super) fn section_equation_scalar_seed_values(
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(
+            &mut values,
+            constraint.radius_variable,
+            constraint.value.get(),
+        );
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
     }
     for (variable, value) in section_relation_radius_scalar_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
@@ -745,7 +762,11 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
             };
             match values.get(variable) {
                 Some(Some(value)) if value.is_finite() => {
-                    if variable_value.is_some_and(|stored| !approximately_equal(stored, *value)) {
+                    if variable_value.is_some_and(|stored| {
+                        !(FiniteReal::new(stored))
+                            .zip(FiniteReal::new(*value))
+                            .is_some_and(|(first, second)| approximately_equal(first, second))
+                    }) {
                         conflicting = true;
                         break;
                     }
@@ -758,7 +779,11 @@ pub(super) fn propagate_section_equation_scalar_equality_values(
                 None => {}
             }
             if let Some(value) = variable_value {
-                if component_value.is_some_and(|stored| !approximately_equal(stored, value)) {
+                if component_value.is_some_and(|stored| {
+                    !(FiniteReal::new(stored))
+                        .zip(FiniteReal::new(value))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
+                }) {
                     conflicting = true;
                     break;
                 }
@@ -798,7 +823,9 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             .get(&constraint.first)
             .zip(stored_coordinates.get(&constraint.second))
             .is_some_and(|(first, second)| {
-                !approximately_equal(f64::midpoint(*first, *second), *value)
+                !(FiniteReal::new(f64::midpoint(*first, *second)))
+                    .zip(FiniteReal::new(*value))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
             })
         {
             continue;
@@ -806,7 +833,10 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
         let mut equation = SectionCoordinateEquation::default();
         equation.add_point(constraint.first.0, constraint.first.1, 1.0);
         equation.add_point(constraint.second.0, constraint.second.1, 1.0);
-        equation.rhs = 2.0 * value;
+        let Some(rhs) = FiniteReal::new(2.0 * value) else {
+            continue;
+        };
+        equation.rhs = rhs.get();
         equations.push(equation);
     }
     for constraint in &constraints.point_bindings {
@@ -818,7 +848,11 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
                 Some(Some(value)) => {
                     if stored_coordinates
                         .get(&(constraint.point, coordinate))
-                        .is_some_and(|stored| !approximately_equal(*stored, *value))
+                        .is_some_and(|stored| {
+                            !(FiniteReal::new(*stored))
+                                .zip(FiniteReal::new(*value))
+                                .is_some_and(|(first, second)| approximately_equal(first, second))
+                        })
                     {
                         invalid = true;
                         break;
@@ -865,7 +899,11 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
     let mut derived = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
     let compatible = |variable: SectionScalarVariable, value: f64| {
         !seed_values.contains_key(&variable)
-            || seed_values[&variable].is_some_and(|stored| approximately_equal(stored, value))
+            || seed_values[&variable].is_some_and(|stored| {
+                (FiniteReal::new(stored))
+                    .zip(FiniteReal::new(value))
+                    .is_some_and(|(first, second)| approximately_equal(first, second))
+            })
     };
     for constraint in constraints.midpoints {
         let (Some(Some(first)), Some(Some(second))) = (
@@ -923,8 +961,11 @@ pub(super) fn section_equation_scalar_values_from_coordinates(
         section_equation_radial_constraints(definition, coordinates, &ambiguous_point_ids)
     {
         for (variable, value) in [
-            (constraint.radius, constraint.radius_value),
-            (constraint.angle, constraint.angle_value),
+            (
+                constraint.radius,
+                constraint.radius_value.map(NonNegativeLength::get),
+            ),
+            (constraint.angle, constraint.angle_value.map(Angle::get)),
         ] {
             let Some(value) = value else {
                 continue;
@@ -1170,8 +1211,8 @@ pub(in crate::decode) struct SectionRadialConstraint {
     pub(in crate::decode) second: u32,
     pub(in crate::decode) radius: SectionScalarVariable,
     angle: SectionScalarVariable,
-    pub(in crate::decode) radius_value: Option<f64>,
-    pub(in crate::decode) angle_value: Option<f64>,
+    pub(in crate::decode) radius_value: Option<NonNegativeLength>,
+    pub(in crate::decode) angle_value: Option<Angle>,
     pub(in crate::decode) equation_id: u32,
     pub(in crate::decode) offset: usize,
     pub(in crate::decode) active: bool,
@@ -1179,11 +1220,11 @@ pub(in crate::decode) struct SectionRadialConstraint {
 
 impl SectionRadialConstraint {
     pub(super) fn offset(self) -> Option<[f64; 2]> {
-        let radius = self.radius_value?;
-        if radius.abs() <= EPS_RADIAL_ZERO {
+        let radius = self.radius_value?.get();
+        if radius <= EPS_RADIAL_ZERO {
             return Some([0.0; 2]);
         }
-        let angle = self.angle_value?;
+        let angle = self.angle_value?.get();
         Some([radius * angle.cos(), radius * angle.sin()])
     }
 }
@@ -1306,13 +1347,11 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                 reconcile_equation_value(resolved, Some(*value)).ok()
             };
             let mut radius_value = match scalar_value(radius)? {
-                Some(value) if value.is_finite() && value >= 0.0 => Some(value),
-                Some(_) => return None,
+                Some(value) => Some(NonNegativeLength::new(value)?),
                 None => None,
             };
             let mut angle_value = match scalar_value(angle)? {
-                Some(value) if value.is_finite() => Some(value),
-                Some(_) => return None,
+                Some(value) => Some(Angle::new(value)?),
                 None => None,
             };
             let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
@@ -1328,28 +1367,28 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
                         return None;
                     }
                     let delta = [second[0] - first[0], second[1] - first[1]];
-                    let distance = delta[0].hypot(delta[1]);
+                    let distance = NonNegativeLength::new(delta[0].hypot(delta[1]))?;
                     let scale = distance
-                        .abs()
-                        .max(radius_value.unwrap_or(0.0).abs())
+                        .get()
+                        .max(radius_value.map_or(0.0, NonNegativeLength::get))
                         .max(1.0);
                     if radius_value
-                        .is_some_and(|value| (value - distance).abs() > EPS_RADIAL_VALUE * scale)
+                        .is_some_and(|value| (value.get() - distance.get()).abs() > EPS_RADIAL_VALUE * scale)
                     {
                         return None;
                     }
                     radius_value.get_or_insert(distance);
-                    if distance > EPS_RADIAL_ZERO {
+                    if distance.get() > EPS_RADIAL_ZERO {
                         let derived_angle = delta[1].atan2(delta[0]);
                         if angle_value.is_some_and(|value| {
                             let difference =
-                                (value - derived_angle).rem_euclid(std::f64::consts::TAU);
+                                (value.get() - derived_angle).rem_euclid(std::f64::consts::TAU);
                             difference.min(std::f64::consts::TAU - difference)
                                 > EPS_RADIAL_ANGLE
                         }) {
                             return None;
                         }
-                        angle_value.get_or_insert(derived_angle);
+                        angle_value.get_or_insert(Angle::new(derived_angle)?);
                     }
                 }
             }
@@ -1411,8 +1450,12 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         .into_iter()
         .filter(|constraint| constraint.active)
     {
-        merge_scalar_value_candidate(&mut values, constraint.radius_variable, constraint.value);
-        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+        merge_scalar_value_candidate(
+            &mut values,
+            constraint.radius_variable,
+            constraint.value.get(),
+        );
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value.get());
     }
     for (variable, value) in section_relation_radius_scalar_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
@@ -1421,8 +1464,11 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         section_equation_radial_constraints(definition, &coordinates, &ambiguous_point_ids)
     {
         for (variable, value) in [
-            (constraint.radius, constraint.radius_value),
-            (constraint.angle, constraint.angle_value),
+            (
+                constraint.radius,
+                constraint.radius_value.map(NonNegativeLength::get),
+            ),
+            (constraint.angle, constraint.angle_value.map(Angle::get)),
         ] {
             let Some(value) = value else {
                 continue;
@@ -1634,7 +1680,11 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
                 return None;
             }
             if difference_value.is_some_and(|stored| {
-                !stored.is_finite() || stored < 0.0 || !approximately_equal(stored, value)
+                !stored.is_finite()
+                    || stored < 0.0
+                    || !(FiniteReal::new(stored))
+                        .zip(FiniteReal::new(value))
+                        .is_some_and(|(first, second)| approximately_equal(first, second))
             }) {
                 return None;
             }

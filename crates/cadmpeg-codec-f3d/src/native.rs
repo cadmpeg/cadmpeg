@@ -297,22 +297,26 @@ fn slice_is_empty<T>(slice: &&[T]) -> bool {
 }
 
 fn emit_asm_histories(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     namespace.set_arena_from(
+        ctx,
         row.arena,
         model.asm_histories.iter().map(FlatAsmHistory::from),
     )
 }
 
 fn emit_asm_delta_states(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     namespace.set_arena_from(
+        ctx,
         row.arena,
         model
             .asm_histories
@@ -323,11 +327,13 @@ fn emit_asm_delta_states(
 }
 
 fn emit_asm_bulletin_boards(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     namespace.set_arena_from(
+        ctx,
         row.arena,
         model
             .asm_histories
@@ -339,6 +345,7 @@ fn emit_asm_bulletin_boards(
 }
 
 fn emit_asm_entity_changes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
@@ -349,10 +356,11 @@ fn emit_asm_entity_changes(
         .flat_map(|history| &history.states)
         .flat_map(|state| &state.bulletin_boards)
         .flat_map(|board| &board.changes);
-    namespace.set_arena_from(row.arena, records)
+    namespace.set_arena_from(ctx, row.arena, records)
 }
 
 fn emit_asm_history_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     model: &F3dNative,
     row: &F3dFamilyRow,
     namespace: &mut cadmpeg_ir::NativeNamespace,
@@ -362,7 +370,7 @@ fn emit_asm_history_records(
         .iter()
         .flat_map(|history| &history.states)
         .flat_map(|state| &state.records);
-    namespace.set_arena_from(row.arena, records)
+    namespace.set_arena_from(ctx, row.arena, records)
 }
 
 const F3D_FAMILIES: &[F3dFamilyRow] = &[
@@ -370,7 +378,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "act_entities",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_entities),
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.act_entities),
         len: |model| model.act_entities.len(),
         counts_toward_emptiness: true,
     },
@@ -378,7 +386,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "act_guids",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_guids),
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.act_guids),
         len: |model| model.act_guids.len(),
         counts_toward_emptiness: true,
     },
@@ -386,7 +394,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "act_registry_channels",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_registry_channels),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.act_registry_channels)
+        },
         len: |model| model.act_registry_channels.len(),
         counts_toward_emptiness: true,
     },
@@ -394,7 +404,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "act_root_components",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_root_components),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.act_root_components)
+        },
         len: |model| model.act_root_components.len(),
         counts_toward_emptiness: true,
     },
@@ -402,7 +414,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "act_table_references",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_table_references),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.act_table_references)
+        },
         len: |model| model.act_table_references.len(),
         counts_toward_emptiness: true,
     },
@@ -410,7 +424,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "body_native_keys",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.body_native_keys),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.body_native_keys)
+        },
         len: |model| model.body_native_keys.len(),
         counts_toward_emptiness: true,
     },
@@ -418,7 +434,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "body_visibilities",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.body_visibilities),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.body_visibilities)
+        },
         len: |model| model.body_visibilities.len(),
         counts_toward_emptiness: true,
     },
@@ -426,7 +444,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_types",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_types),
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.design_types),
         len: |model| model.design_types.len(),
         counts_toward_emptiness: true,
     },
@@ -434,7 +452,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_canvas_images",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_canvas_images),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_canvas_images)
+        },
         len: |model| model.design_canvas_images.len(),
         counts_toward_emptiness: true,
     },
@@ -442,7 +462,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_decal_images",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_decal_images),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_decal_images)
+        },
         len: |model| model.design_decal_images.len(),
         counts_toward_emptiness: true,
     },
@@ -450,7 +472,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_mesh_features",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_mesh_features),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_mesh_features)
+        },
         len: |model| model.design_mesh_features.len(),
         counts_toward_emptiness: true,
     },
@@ -458,8 +482,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_component_occurrences",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_component_occurrences)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_component_occurrences)
         },
         len: |model| model.design_component_occurrences.len(),
         counts_toward_emptiness: true,
@@ -468,8 +492,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_component_naming_spaces",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_component_naming_spaces)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_component_naming_spaces)
         },
         len: |model| model.design_component_naming_spaces.len(),
         counts_toward_emptiness: true,
@@ -478,8 +502,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_body_recipe_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_body_recipe_operands)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_recipe_operands)
         },
         len: |model| model.design_body_recipe_operands.len(),
         counts_toward_emptiness: true,
@@ -488,8 +512,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_loft_legacy_body_carriers",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_loft_legacy_body_carriers)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_loft_legacy_body_carriers)
         },
         len: |model| model.design_loft_legacy_body_carriers.len(),
         counts_toward_emptiness: true,
@@ -498,8 +522,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_annotation_frames",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_annotation_frames)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_dimension_annotation_frames)
         },
         len: |model| model.design_dimension_annotation_frames.len(),
         counts_toward_emptiness: true,
@@ -508,8 +532,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_locus_groups",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_locus_groups)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_dimension_locus_groups)
         },
         len: |model| model.design_dimension_locus_groups.len(),
         counts_toward_emptiness: true,
@@ -518,8 +542,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_locus_pairs",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_locus_pairs)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_dimension_locus_pairs)
         },
         len: |model| model.design_dimension_locus_pairs.len(),
         counts_toward_emptiness: true,
@@ -528,8 +552,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_null_locus_pairs",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
+        emit: |ctx, model, row, namespace| {
             namespace.set_arena_from(
+                ctx,
                 row.arena,
                 model
                     .design_dimension_null_locus_pairs
@@ -544,8 +569,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_presentation_frames",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_presentation_frames)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_dimension_presentation_frames)
         },
         len: |model| model.design_dimension_presentation_frames.len(),
         counts_toward_emptiness: true,
@@ -554,8 +579,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_dimension_recipe_records",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_dimension_recipe_records)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_dimension_recipe_records)
         },
         len: |model| model.design_dimension_recipe_records.len(),
         counts_toward_emptiness: true,
@@ -564,7 +589,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_edge_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_edge_operands),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_edge_operands)
+        },
         len: |model| model.design_edge_operands.len(),
         counts_toward_emptiness: true,
     },
@@ -572,8 +599,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_edge_treatment_vertex_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_edge_treatment_vertex_operands)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_edge_treatment_vertex_operands)
         },
         len: |model| model.design_edge_treatment_vertex_operands.len(),
         counts_toward_emptiness: true,
@@ -582,8 +609,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_edge_identity_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_edge_identity_operands)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_edge_identity_operands)
         },
         len: |model| model.design_edge_identity_operands.len(),
         counts_toward_emptiness: true,
@@ -592,8 +619,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_entity_selection_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_entity_selection_operands)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_entity_selection_operands)
         },
         len: |model| model.design_entity_selection_operands.len(),
         counts_toward_emptiness: true,
@@ -602,7 +629,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_face_operands",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_face_operands),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_face_operands)
+        },
         len: |model| model.design_face_operands.len(),
         counts_toward_emptiness: true,
     },
@@ -610,8 +639,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_face_source_groups",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_face_source_groups)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_face_source_groups)
         },
         len: |model| model.design_face_source_groups.len(),
         counts_toward_emptiness: true,
@@ -620,8 +649,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_construction_operand_groups",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_construction_operand_groups)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_construction_operand_groups)
         },
         len: |model| model.design_construction_operand_groups.len(),
         counts_toward_emptiness: true,
@@ -630,8 +659,12 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_construction_operand_identities",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_construction_operand_identities)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(
+                ctx,
+                row.arena,
+                &model.design_construction_operand_identities,
+            )
         },
         len: |model| model.design_construction_operand_identities.len(),
         counts_toward_emptiness: true,
@@ -640,8 +673,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_extrude_selection_groups",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_extrude_selection_groups)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_extrude_selection_groups)
         },
         len: |model| model.design_extrude_selection_groups.len(),
         counts_toward_emptiness: true,
@@ -650,8 +683,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_extrude_selection_members",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_extrude_selection_members)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_extrude_selection_members)
         },
         len: |model| model.design_extrude_selection_members.len(),
         counts_toward_emptiness: true,
@@ -660,8 +693,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_feature_timelines",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_feature_timelines)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_feature_timelines)
         },
         len: |model| model.design_feature_timelines.len(),
         counts_toward_emptiness: true,
@@ -670,8 +703,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_fillet_radius_groups",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_fillet_radius_groups)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_fillet_radius_groups)
         },
         len: |model| model.design_fillet_radius_groups.len(),
         counts_toward_emptiness: true,
@@ -680,8 +713,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_parameter_companions",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_parameter_companions)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_companions)
         },
         len: |model| model.design_parameter_companions.len(),
         counts_toward_emptiness: true,
@@ -690,8 +723,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_parameter_owners",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_parameter_owners)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_owners)
         },
         len: |model| model.design_parameter_owners.len(),
         counts_toward_emptiness: true,
@@ -700,8 +733,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_parameter_scopes",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_parameter_scopes)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameter_scopes)
         },
         len: |model| model.design_parameter_scopes.len(),
         counts_toward_emptiness: true,
@@ -710,8 +743,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_surface_trim_operations",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_surface_trim_operations)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_surface_trim_operations)
         },
         len: |model| model.design_surface_trim_operations.len(),
         counts_toward_emptiness: true,
@@ -720,7 +753,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_parameters",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_parameters),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_parameters)
+        },
         len: |model| model.design_parameters.len(),
         counts_toward_emptiness: true,
     },
@@ -728,7 +763,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_entity_headers",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_entity_headers),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_entity_headers)
+        },
         len: |model| model.design_entity_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -736,7 +773,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_record_headers",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_record_headers),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_record_headers)
+        },
         len: |model| model.design_record_headers.len(),
         counts_toward_emptiness: true,
     },
@@ -744,8 +783,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_sketch_placements",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_sketch_placements)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_sketch_placements)
         },
         len: |model| model.design_sketch_placements.len(),
         counts_toward_emptiness: true,
@@ -754,7 +793,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_body_bindings",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_bindings),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_bindings)
+        },
         len: |model| model.design_body_bindings.len(),
         counts_toward_emptiness: true,
     },
@@ -762,7 +803,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_body_bounds",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_bounds),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_bounds)
+        },
         len: |model| model.design_body_bounds.len(),
         counts_toward_emptiness: true,
     },
@@ -770,7 +813,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_body_members",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_body_members),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_body_members)
+        },
         len: |model| model.design_body_members.len(),
         counts_toward_emptiness: true,
     },
@@ -778,7 +823,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_configurations",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_configurations),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_configurations)
+        },
         len: |model| model.design_configurations.len(),
         counts_toward_emptiness: true,
     },
@@ -786,8 +833,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "design_material_assignments",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.design_material_assignments)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.design_material_assignments)
         },
         len: |model| model.design_material_assignments.len(),
         counts_toward_emptiness: true,
@@ -796,7 +843,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "edge_continuities",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.edge_continuities),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.edge_continuities)
+        },
         len: |model| model.edge_continuities.len(),
         counts_toward_emptiness: true,
     },
@@ -804,7 +853,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "edge_ownerships",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.edge_ownerships),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.edge_ownerships)
+        },
         len: |model| model.edge_ownerships.len(),
         counts_toward_emptiness: true,
     },
@@ -812,7 +863,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "face_sidedness",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.face_sidedness),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.face_sidedness)
+        },
         len: |model| model.face_sidedness.len(),
         counts_toward_emptiness: true,
     },
@@ -820,7 +873,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "face_native_keys",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.face_native_keys),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.face_native_keys)
+        },
         len: |model| model.face_native_keys.len(),
         counts_toward_emptiness: true,
     },
@@ -828,7 +883,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "construction_recipes",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.construction_recipes),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.construction_recipes)
+        },
         len: |model| model.construction_recipes.len(),
         counts_toward_emptiness: true,
     },
@@ -836,7 +893,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "creation_timestamps",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.creation_timestamps),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.creation_timestamps)
+        },
         len: |model| model.creation_timestamps.len(),
         counts_toward_emptiness: true,
     },
@@ -844,8 +903,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "persistent_design_links",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.persistent_design_links)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.persistent_design_links)
         },
         len: |model| model.persistent_design_links.len(),
         counts_toward_emptiness: true,
@@ -854,7 +913,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "persistent_references",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.persistent_references),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.persistent_references)
+        },
         len: |model| model.persistent_references.len(),
         counts_toward_emptiness: true,
     },
@@ -862,8 +923,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "persistent_subentity_tags",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.persistent_subentity_tags)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.persistent_subentity_tags)
         },
         len: |model| model.persistent_subentity_tags.len(),
         counts_toward_emptiness: true,
@@ -872,7 +933,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_curve_links",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_curve_links),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_curve_links)
+        },
         len: |model| model.sketch_curve_links.len(),
         counts_toward_emptiness: true,
     },
@@ -880,7 +943,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_relations",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_relations),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_relations)
+        },
         len: |model| model.sketch_relations.len(),
         counts_toward_emptiness: true,
     },
@@ -888,7 +953,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_points",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_points),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_points)
+        },
         len: |model| model.sketch_points.len(),
         counts_toward_emptiness: true,
     },
@@ -896,8 +963,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_curve_identities",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.sketch_curve_identities)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_curve_identities)
         },
         len: |model| model.sketch_curve_identities.len(),
         counts_toward_emptiness: true,
@@ -906,7 +973,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_surfaces",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_surfaces),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_surfaces)
+        },
         len: |model| model.sketch_surfaces.len(),
         counts_toward_emptiness: true,
     },
@@ -914,7 +983,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "sketch_texts",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.sketch_texts),
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.sketch_texts),
         len: |model| model.sketch_texts.len(),
         counts_toward_emptiness: true,
     },
@@ -922,7 +991,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "lost_edge_references",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.lost_edge_references),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.lost_edge_references)
+        },
         len: |model| model.lost_edge_references.len(),
         counts_toward_emptiness: true,
     },
@@ -930,7 +1001,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "mesh_surface_sentinels",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.mesh_surface_sentinels),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.mesh_surface_sentinels)
+        },
         len: |model| model.mesh_surface_sentinels.len(),
         counts_toward_emptiness: true,
     },
@@ -938,7 +1011,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "vertex_ownerships",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.vertex_ownerships),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.vertex_ownerships)
+        },
         len: |model| model.vertex_ownerships.len(),
         counts_toward_emptiness: true,
     },
@@ -946,8 +1021,8 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "tolerant_coedge_parameters",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| {
-            namespace.set_arena(row.arena, &model.tolerant_coedge_parameters)
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.tolerant_coedge_parameters)
         },
         len: |model| model.tolerant_coedge_parameters.len(),
         counts_toward_emptiness: true,
@@ -956,7 +1031,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "tolerant_edge_tails",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.tolerant_edge_tails),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.tolerant_edge_tails)
+        },
         len: |model| model.tolerant_edge_tails.len(),
         counts_toward_emptiness: true,
     },
@@ -964,7 +1041,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "tolerant_vertex_tails",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.tolerant_vertex_tails),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.tolerant_vertex_tails)
+        },
         len: |model| model.tolerant_vertex_tails.len(),
         counts_toward_emptiness: true,
     },
@@ -972,7 +1051,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "transform_hints",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.transform_hints),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.transform_hints)
+        },
         len: |model| model.transform_hints.len(),
         counts_toward_emptiness: true,
     },
@@ -980,7 +1061,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "wire_topologies",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.wire_topologies),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.wire_topologies)
+        },
         len: |model| model.wire_topologies.len(),
         counts_toward_emptiness: true,
     },
@@ -988,7 +1071,7 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "xref_designs",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.xref_designs),
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.xref_designs),
         len: |model| model.xref_designs.len(),
         counts_toward_emptiness: true,
     },
@@ -996,7 +1079,9 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         arena: "xref_references",
         exactness: (),
         phase: Phase::ArenaOnly,
-        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.xref_references),
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.xref_references)
+        },
         len: |model| model.xref_references.len(),
         counts_toward_emptiness: true,
     },
@@ -1466,9 +1551,10 @@ impl F3dNative {
 
     pub(crate) fn store(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        F3D_CATALOGUE.emit_all(self, namespace)?;
+        F3D_CATALOGUE.emit_all(ctx, self, namespace)?;
         Ok(())
     }
 }

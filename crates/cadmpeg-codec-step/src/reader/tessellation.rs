@@ -37,7 +37,7 @@ pub(super) fn decode(
         if !has_entity(record, "COORDINATES_LIST") {
             continue;
         }
-        let scale = geometry.units.length([id]);
+        let scale = geometry.units.length([id]).get();
         if let Some(vertices) = coordinate_rows(record, scale, ctx)? {
             ctx.charge_collection_items(1, "step_tessellation_coordinate_lists")?;
             coordinate_map_bytes.grow(bytes_for::<(u64, Vec<FinitePoint3>)>(
@@ -1761,7 +1761,7 @@ fn normal_rows<'a>(
                 values[1].number()?,
                 values[2].number()?,
             );
-            super::geometry::normalize(normal).and_then(FiniteVector3::new)
+            super::geometry::normalize(normal).map(FiniteVector3::from)
         })
         .collect::<Option<Vec<_>>>()
         .map(|normals| (normals, bytes)))

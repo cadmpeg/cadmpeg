@@ -238,8 +238,14 @@ pub(super) fn project_edge(
                 SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
                     center,
                     major_angle: cadmpeg_ir::scalar::Angle::new(major_angle)?,
-                    major_radius: cadmpeg_ir::scalar::Length::from(ellipse_curve.major_radius()),
-                    minor_radius: cadmpeg_ir::scalar::Length::from(ellipse_curve.minor_radius()),
+                    radii: cadmpeg_ir::sketches::EllipseRadii {
+                        major_radius: cadmpeg_ir::scalar::Length::from(
+                            ellipse_curve.major_radius(),
+                        ),
+                        minor_radius: cadmpeg_ir::scalar::Length::from(
+                            ellipse_curve.minor_radius(),
+                        ),
+                    },
                     bounds: if full {
                         None
                     } else {

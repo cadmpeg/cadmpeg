@@ -151,7 +151,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         if !sketch_profiles_cover_generated_extrusion_sides(scan, definition, feature_id, sketch) {
             continue;
         }
-        let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 1) else {
+        let Some(profiles) = resolved_sketch_profiles(ir, source_carriers, &sketch_id, 1) else {
             continue;
         };
         let Some(profiles) = ordered_extrusion_profiles(profiles) else {
@@ -1000,15 +1000,18 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             shells: vec![shell_id],
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Solid,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+        source_carriers.admit_body(
+            ir,
+            Body {
+                id: body_id,
+                kind: BodyKind::Solid,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )?;
         transferred += 1;
     }
     Ok(transferred)

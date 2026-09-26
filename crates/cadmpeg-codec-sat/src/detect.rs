@@ -26,17 +26,20 @@ pub(crate) enum StreamKind {
     Text,
 }
 
-pub(crate) fn classify(prefix: &[u8]) -> Option<StreamKind> {
-    if let Some(header) = asm_header::parse(prefix) {
-        return Some(StreamKind::AsmBinary(header));
+pub(crate) fn classify(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<Option<StreamKind>, CodecError> {
+    if let Some(header) = asm_header::parse(ctx, prefix)? {
+        return Ok(Some(StreamKind::AsmBinary(header)));
     }
-    if let Some(header) = acis_header::parse(prefix) {
-        return Some(StreamKind::AcisBinary(header));
+    if let Some(header) = acis_header::parse(ctx, prefix)? {
+        return Ok(Some(StreamKind::AcisBinary(header)));
     }
     if looks_like_text_stream(prefix) {
-        return Some(StreamKind::Text);
+        return Ok(Some(StreamKind::Text));
     }
-    None
+    Ok(None)
 }
 
 /// Whether the prefix opens like a text stream: a first line of four ASCII
@@ -102,7 +105,7 @@ pub(crate) fn inspect(
     let bytes = root.window();
     let mut attributes = BTreeMap::new();
     let mut notes = Vec::new();
-    let Some(kind) = classify(bytes) else {
+    let Some(kind) = classify(ctx, bytes)? else {
         return Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         ));
@@ -157,7 +160,10 @@ pub(crate) fn inspect(
             let text = match &parsed {
                 Ok((kernel, stream)) => {
                     header_attributes(kernel, stream.terminator.into(), &mut attributes);
-                    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
+                    attributes.insert(
+                        "scale".to_string(),
+                        format!("{}", stream.header.scale().get()),
+                    );
                     attributes.insert("records".to_string(), stream.records.len().to_string());
                     attributes.insert(
                         "terminator".to_string(),

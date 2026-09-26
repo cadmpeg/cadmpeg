@@ -2254,26 +2254,27 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
+        let ctx = self.expand.ctx();
         self.report
             .phase_losses
             .extend(self.scan.metadata.losses.iter().cloned());
         self.report
             .typed_losses
-            .extend(crate::annotations::install(self.scan, &mut self.ir)?);
-        let document_data = crate::document_data::install(self.scan, &mut self.ir)?;
+            .extend(crate::annotations::install(ctx, self.scan, &mut self.ir)?);
+        let document_data = crate::document_data::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(document_data.losses);
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source);
         }
-        let presentation = crate::presentation::install(self.scan, &mut self.ir)?;
+        let presentation = crate::presentation::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(presentation.losses);
         for source in presentation.opaque_records {
             self.retain_opaque_record(&source);
         }
         self.report
             .typed_losses
-            .extend(crate::product::install(self.scan, &mut self.ir)?);
-        let views = crate::views::install(self.scan, &mut self.ir)?;
+            .extend(crate::product::install(ctx, self.scan, &mut self.ir)?);
+        let views = crate::views::install(ctx, self.scan, &mut self.ir)?;
         self.report.typed_losses.extend(views.losses);
         for source in views.opaque_records {
             self.retain_opaque_record(&source);
@@ -5718,6 +5719,7 @@ pub(crate) fn decode(
     let mut history_warnings = Diagnostics::new();
     let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
         crate::history::project(
+            expand.ctx(),
             &scan.history,
             geometry_context,
             candidate,

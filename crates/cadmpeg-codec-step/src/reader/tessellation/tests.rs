@@ -48,7 +48,13 @@ fn decode_tessellation_under_policy(
     let mut ir = CadIr::empty();
     let geometry = super::super::geometry::decode(&exchange, &mut ir).value;
     let index = super::super::index::CarrierIndex::from_ir(&ir);
-    let topology = super::super::topology::decode(&exchange, &mut ir, &index, None)
+    let topology_arena = DecodeArena::new();
+    let (topology_ctx, _) = DecodeContext::from_root_bytes(
+        source.as_bytes(),
+        &topology_arena,
+        &DecodePolicy::service(),
+    )?;
+    let topology = super::super::topology::decode(&exchange, &mut ir, &index, &topology_ctx)
         .expect("test topology decodes")
         .value;
     let arena = DecodeArena::new();
