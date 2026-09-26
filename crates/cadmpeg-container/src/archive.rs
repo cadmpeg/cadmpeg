@@ -119,10 +119,12 @@ pub struct ArchiveSnapshot<'a> {
 
 impl<'a> ArchiveSnapshot<'a> {
     /// Parses the central directory once and retains replayable physical facts.
-    pub fn new(root: View<'a>) -> Result<Self, CodecError> {
+    pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
+        preflight_central_directory(ctx, root.window())?;
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
         let archive_central_start = archive.central_directory_start();
+        ctx.charge_collection_items(archive.len() as u64, "ZIP duplicate name set")?;
         let central_entry_count =
             reject_duplicate_central_names(root.window(), archive_central_start)?;
         if central_entry_count != archive.len() {
@@ -131,11 +133,16 @@ impl<'a> ArchiveSnapshot<'a> {
             ));
         }
         let mut names = BTreeSet::new();
+        ctx.charge_collection_items(archive.len() as u64, "ZIP entry records")?;
+        ctx.charge_collection_items(archive.len() as u64, "ZIP decoded name set")?;
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
+            let name_len = file.name().len() as u64;
+            ctx.charge_retained(name_len, "ZIP entry record name")?;
+            ctx.charge_retained(name_len, "ZIP duplicate name")?;
             let name = file.name().to_owned();
             if !names.insert(name.clone()) {
                 return Err(CodecError::malformed(format_args!(
@@ -178,6 +185,10 @@ impl<'a> ArchiveSnapshot<'a> {
             entries.push(record);
         }
         drop(archive);
+        ctx.charge_collection_items(entries.len() as u64, "ZIP name index")?;
+        for entry in &entries {
+            ctx.charge_retained(entry.name.len() as u64, "ZIP indexed entry name")?;
+        }
         let by_name = entries
             .iter()
             .enumerate()
@@ -223,11 +234,14 @@ impl<'a> ArchiveSnapshot<'a> {
             ZipCompression::Stored => self.open_stored(ctx, entry, range),
             ZipCompression::Deflate => {
                 let source = self.compressed_source(entry, range)?;
-                Self::open_expanded(
-                    ctx,
-                    entry,
-                    flate2::read::DeflateDecoder::new(source.window()),
-                )
+                let mut decoder = flate2::read::DeflateDecoder::new(source.window());
+                let view = Self::open_expanded(ctx, entry, &mut decoder)?;
+                if decoder.total_in() != source.window().len() as u64 {
+                    return Err(CodecError::Malformed(
+                        "raw-DEFLATE member does not exhaust its declared ZIP payload".into(),
+                    ));
+                }
+                Ok(view)
             }
             ZipCompression::Zstd => {
                 let source = self.compressed_source(entry, range)?;
@@ -346,6 +360,162 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
+fn preflight_central_directory(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(), CodecError> {
+    let mut first_error = None;
+    let mut max_count = None::<u64>;
+    let mut max_name_bytes = 0_u64;
+    for (end, signature) in bytes.windows(4).enumerate().rev() {
+        if signature != b"PK\x05\x06" {
+            continue;
+        }
+        ctx.charge_work(1, "ZIP end record candidate")?;
+        match central_directory_inventory(ctx, bytes, end) {
+            Ok((count, name_bytes)) => {
+                max_count = Some(max_count.map_or(count, |current| current.max(count)));
+                max_name_bytes = max_name_bytes.max(name_bytes);
+            }
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+    let count = max_count.ok_or_else(|| {
+        first_error.unwrap_or_else(|| CodecError::Malformed("ZIP end record is absent".into()))
+    })?;
+    ctx.charge_collection_items(count, "ZIP central directory entries")?;
+    ctx.charge_retained(max_name_bytes, "ZIP library indexed names")?;
+    Ok(())
+}
+
+fn central_directory_inventory(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    end: usize,
+) -> Result<(u64, u64), CodecError> {
+    let comment_len = View::u16_le_at(bytes, end + 20)
+        .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
+    if end
+        .checked_add(22 + usize::from(comment_len))
+        .is_none_or(|record_end| record_end > bytes.len())
+    {
+        return Err(CodecError::Malformed("ZIP end comment is truncated".into()));
+    }
+    let count = View::u16_le_at(bytes, end + 10)
+        .ok_or_else(|| CodecError::Malformed("ZIP end record is truncated".into()))?;
+    let (count, directory_size, directory_start_hint, directory_end) = if count == u16::MAX {
+        if let Some(locator_start) = end
+            .checked_sub(20)
+            .filter(|&start| bytes.get(start..start + 4) == Some(b"PK\x06\x07".as_slice()))
+        {
+            let record_start = bytes[..locator_start]
+                .windows(4)
+                .rposition(|signature| signature == b"PK\x06\x06")
+                .ok_or_else(|| CodecError::Malformed("ZIP64 end record is absent".into()))?;
+            let record_size = View::u64_le_at(bytes, record_start + 4)
+                .ok_or_else(|| CodecError::Malformed("ZIP64 end record is truncated".into()))?;
+            let record_len = usize::try_from(record_size)
+                .ok()
+                .and_then(|size| record_start.checked_add(12)?.checked_add(size));
+            if record_len != Some(locator_start) {
+                return Err(CodecError::Malformed(
+                    "ZIP64 end record size is invalid".into(),
+                ));
+            }
+            let count = View::u64_le_at(bytes, record_start + 32)
+                .ok_or_else(|| CodecError::Malformed("ZIP64 entry count is truncated".into()))?;
+            let size = View::u64_le_at(bytes, record_start + 40)
+                .ok_or_else(|| CodecError::Malformed("ZIP64 directory size is truncated".into()))?;
+            let start = View::u64_le_at(bytes, record_start + 48).ok_or_else(|| {
+                CodecError::Malformed("ZIP64 directory offset is truncated".into())
+            })?;
+            (count, size, start, record_start)
+        } else {
+            let size = View::u32_le_at(bytes, end + 12)
+                .ok_or_else(|| CodecError::Malformed("ZIP directory size is truncated".into()))?;
+            let start = View::u32_le_at(bytes, end + 16)
+                .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
+            (u64::from(count), u64::from(size), u64::from(start), end)
+        }
+    } else {
+        let size = View::u32_le_at(bytes, end + 12)
+            .ok_or_else(|| CodecError::Malformed("ZIP directory size is truncated".into()))?;
+        let start = View::u32_le_at(bytes, end + 16)
+            .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
+        (u64::from(count), u64::from(size), u64::from(start), end)
+    };
+    let directory_end = u64::try_from(directory_end)
+        .map_err(|_| CodecError::Malformed("ZIP directory end exceeds u64".into()))?;
+    let canonical_start = directory_end
+        .checked_sub(directory_size)
+        .ok_or_else(|| CodecError::Malformed("ZIP directory size exceeds archive".into()))?;
+    let mut offset = if count == 0 || signature_at(bytes, canonical_start) == Some(*b"PK\x01\x02") {
+        canonical_start
+    } else {
+        let search_start = usize::try_from(directory_start_hint).map_err(|_| {
+            CodecError::Malformed("ZIP directory offset does not fit memory".into())
+        })?;
+        let search_end = usize::try_from(directory_end)
+            .map_err(|_| CodecError::Malformed("ZIP directory end does not fit memory".into()))?;
+        let search_len = search_end
+            .checked_sub(search_start)
+            .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
+        let search_work = u64::try_from(search_len)
+            .map_err(|_| CodecError::Malformed("ZIP directory search exceeds u64".into()))?;
+        ctx.charge_work(search_work, "ZIP central header search")?;
+        let start = bytes
+            .get(search_start..search_end)
+            .and_then(|range| range.windows(4).position(|window| window == b"PK\x01\x02"))
+            .and_then(|relative| search_start.checked_add(relative))
+            .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
+        u64::try_from(start)
+            .map_err(|_| CodecError::Malformed("ZIP directory offset exceeds u64".into()))?
+    };
+    let mut indexed_name_bytes = 0_u64;
+    for _ in 0..count {
+        ctx.charge_work(1, "ZIP central header preflight")?;
+        if signature_at(bytes, offset) != Some(*b"PK\x01\x02") {
+            return Err(CodecError::Malformed("ZIP central header is absent".into()));
+        }
+        let name_len = u64::from(u16_at(bytes, offset + 28)?);
+        let extra_len = u64::from(u16_at(bytes, offset + 30)?);
+        let comment_len = u64::from(u16_at(bytes, offset + 32)?);
+        let name_start = offset
+            .checked_add(46)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-header offset overflow".into()))?;
+        let name_end = name_start
+            .checked_add(name_len)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-name offset overflow".into()))?;
+        offset = name_end
+            .checked_add(extra_len)
+            .and_then(|value| value.checked_add(comment_len))
+            .ok_or_else(|| CodecError::Malformed("ZIP central-record offset overflow".into()))?;
+        if offset > directory_end {
+            return Err(CodecError::Malformed(
+                "ZIP central record exceeds directory".into(),
+            ));
+        }
+        let name = usize::try_from(name_start)
+            .ok()
+            .zip(usize::try_from(name_end).ok())
+            .and_then(|(start, end)| bytes.get(start..end))
+            .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
+        let decoded_upper_bound = if name.is_ascii() {
+            name_len
+        } else {
+            name_len
+                .checked_mul(3)
+                .ok_or_else(|| CodecError::Malformed("ZIP indexed name length overflow".into()))?
+        };
+        indexed_name_bytes = indexed_name_bytes
+            .checked_add(decoded_upper_bound)
+            .ok_or_else(|| CodecError::Malformed("ZIP indexed names length overflow".into()))?;
+    }
+    Ok((count, indexed_name_bytes))
+}
+
 fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {
     let mut offset = central_start;
     let mut names = BTreeSet::new();
@@ -374,7 +544,7 @@ fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<us
         let name = bytes
             .get(name_start..name_end)
             .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
-        if !names.insert(name.to_vec()) {
+        if !names.insert(name) {
             return Err(CodecError::Malformed(
                 "duplicate ZIP central entry name".into(),
             ));
@@ -821,7 +991,8 @@ fn declared_storage(
 mod tests {
     use std::io::{Cursor, Write as _};
 
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::CodecError;
     use zip::write::SimpleFileOptions;
     use zip::CompressionMethod;
 
@@ -834,9 +1005,9 @@ mod tests {
             .expect("empty ZIP finishes")
             .into_inner();
         let arena = DecodeArena::new();
-        let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("empty ZIP fits root policy");
-        let snapshot = ArchiveSnapshot::new(root).expect("empty ZIP is valid");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("empty ZIP is valid");
         assert!(snapshot.entries().is_empty());
         assert_eq!(
             snapshot
@@ -911,6 +1082,241 @@ mod tests {
         archive.finish().expect("archive finishes").into_inner()
     }
 
+    #[test]
+    fn central_directory_count_refuses_before_zip_indexing() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive fits root policy");
+        assert!(matches!(
+            ArchiveSnapshot::new(&ctx, root),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "ZIP central directory entries"
+        ));
+
+        let (service_ctx, service_root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&service_ctx, service_root)
+                .expect("directory fits service profile")
+                .entries()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn central_header_preflight_refuses_at_lowered_work_limit() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 3;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive fits input limit");
+        assert!(matches!(
+            ArchiveSnapshot::new(&ctx, root),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "ZIP central header preflight"
+        ));
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("directory fits service work limit")
+                .entries()
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn central_name_bytes_refuse_before_zip_indexing() {
+        let bytes = archive_bytes();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive fits root policy");
+        assert!(matches!(
+            ArchiveSnapshot::new(&ctx, root),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "ZIP library indexed names"
+        ));
+    }
+
+    #[test]
+    fn zip_end_signature_inside_comment_does_not_replace_directory_count() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("entry", SimpleFileOptions::default())
+            .expect("entry starts");
+        writer.write_all(b"data").expect("entry writes");
+        writer
+            .set_raw_comment(b"comment PK\x05\x06 suffix".to_vec().into_boxed_slice())
+            .expect("comment is valid");
+        let bytes = writer.finish().expect("ZIP finishes").into_inner();
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("directory remains readable")
+                .entries()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn malformed_end_record_inside_comment_does_not_mask_the_archive() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("entry", SimpleFileOptions::default())
+            .expect("entry starts");
+        writer.write_all(b"data").expect("entry writes");
+        let mut comment = vec![0_u8; 40];
+        comment[..4].copy_from_slice(b"PK\x05\x06");
+        comment[8..10].copy_from_slice(&999_u16.to_le_bytes());
+        comment[10..12].copy_from_slice(&999_u16.to_le_bytes());
+        writer
+            .set_raw_comment(comment.into_boxed_slice())
+            .expect("comment is valid");
+        let bytes = writer.finish().expect("ZIP finishes").into_inner();
+        assert_eq!(
+            zip::ZipArchive::new(Cursor::new(bytes.as_slice()))
+                .expect("ZIP library finds the preceding end record")
+                .len(),
+            1
+        );
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("directory remains readable")
+                .entries()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn false_end_record_cannot_undercharge_the_selected_directory() {
+        let mut bytes = archive_bytes();
+        let end = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .expect("ZIP end record exists");
+        let directory_size = View::u32_le_at(&bytes, end + 12).expect("directory size exists");
+        let directory_offset = View::u32_le_at(&bytes, end + 16).expect("directory offset exists");
+        bytes[end + 20..end + 22].copy_from_slice(&40_u16.to_le_bytes());
+        bytes.resize(bytes.len() + 40, 0);
+        let fake = end + 22;
+        bytes[fake..fake + 4].copy_from_slice(b"PK\x05\x06");
+        bytes[fake + 4..fake + 6].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[fake + 8..fake + 10].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[fake + 10..fake + 12].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[fake + 12..fake + 16].copy_from_slice(&(directory_size + 22).to_le_bytes());
+        bytes[fake + 16..fake + 20].copy_from_slice(&directory_offset.to_le_bytes());
+        assert_eq!(
+            zip::ZipArchive::new(Cursor::new(bytes.as_slice()))
+                .expect("ZIP library selects the valid end record")
+                .len(),
+            3
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 2;
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive fits input limit");
+        assert!(matches!(
+            ArchiveSnapshot::new(&ctx, root),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "ZIP central directory entries"
+        ));
+    }
+
+    #[test]
+    fn central_directory_signature_after_entries_keeps_archive_readable() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("entry", SimpleFileOptions::default())
+            .expect("entry starts");
+        writer.write_all(b"data").expect("entry writes");
+        let mut bytes = writer.finish().expect("ZIP finishes").into_inner();
+        let end = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .expect("ZIP end record exists");
+        bytes.splice(end..end, *b"PK\x05\x05\x03\x00abc");
+        assert_eq!(
+            zip::ZipArchive::new(Cursor::new(bytes.as_slice()))
+                .expect("ZIP library accepts the signature")
+                .len(),
+            1
+        );
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("directory remains readable")
+                .entries()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn signed_directory_search_refuses_before_unbounded_scan() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file("entry", SimpleFileOptions::default())
+            .expect("entry starts");
+        writer.write_all(b"data").expect("entry writes");
+        let mut bytes = writer.finish().expect("ZIP finishes").into_inner();
+        let end = bytes
+            .windows(4)
+            .rposition(|window| window == b"PK\x05\x06")
+            .expect("ZIP end record exists");
+        let directory_offset =
+            usize::try_from(View::u32_le_at(&bytes, end + 16).expect("directory offset exists"))
+                .expect("directory offset fits memory");
+        bytes.splice(end..end, *b"PK\x05\x05\x03\x00abc");
+        let search_len = (end + 8)
+            .checked_sub(directory_offset)
+            .expect("directory begins before end record");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(search_len).expect("search fits work limit");
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("archive fits input limit");
+        assert!(matches!(
+            ArchiveSnapshot::new(&ctx, root),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "ZIP central header search"
+        ));
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("archive fits service profile");
+        assert_eq!(
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("signed directory fits service work limit")
+                .entries()
+                .len(),
+            1
+        );
+    }
+
     /// Rewrites the central-directory `uncompressed_size` of `name` to `size`.
     fn patch_central_uncompressed_size(bytes: &mut [u8], name: &str, size: u32) {
         let mut at = 0;
@@ -938,9 +1344,9 @@ mod tests {
         // "stored" is six bytes; the declaration now claims it expands to nine.
         patch_central_uncompressed_size(&mut bytes, "stored.bin", 9);
         let arena = DecodeArena::new();
-        let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
-        let snapshot = ArchiveSnapshot::new(root).expect("archive snapshots");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
         let entries = snapshot.container_entries(|_| ContainerRole::Stream);
         let stored = entries
             .iter()
@@ -974,7 +1380,7 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
-        let snapshot = ArchiveSnapshot::new(root).expect("archive snapshots");
+        let snapshot = ArchiveSnapshot::new(&ctx, root).expect("archive snapshots");
         assert_eq!(snapshot.entries().len(), 3);
         let stored = snapshot.entry("stored.bin").expect("stored record");
         let deflated = snapshot.entry("deflated.bin").expect("deflated record");
@@ -1003,13 +1409,64 @@ mod tests {
     }
 
     #[test]
+    fn zip_deflate_open_rejects_trailing_declared_payload_bytes() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "deflated.bin",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .expect("deflate entry starts");
+        writer.write_all(b"one member").expect("entry writes");
+        let mut bytes = writer.finish().expect("ZIP finishes").into_inner();
+        let entry = {
+            let arena = DecodeArena::new();
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+                    .expect("archive fits service profile");
+            ArchiveSnapshot::new(&ctx, root)
+                .expect("original directory is valid")
+                .entry("deflated.bin")
+                .expect("deflate entry exists")
+                .clone()
+        };
+        let suffix = b"suffix";
+        let payload_end = usize::try_from(entry.data_end().expect("payload end"))
+            .expect("payload end fits memory");
+        bytes.splice(payload_end..payload_end, suffix.iter().copied());
+        let header = usize::try_from(entry.header_start).expect("header fits memory");
+        let central = usize::try_from(entry.central_start).expect("central header fits memory")
+            + suffix.len();
+        let compressed_size = u32::try_from(entry.compressed_size + suffix.len() as u64)
+            .expect("fixture compressed size fits u32");
+        bytes[header + 18..header + 22].copy_from_slice(&compressed_size.to_le_bytes());
+        bytes[central + 20..central + 24].copy_from_slice(&compressed_size.to_le_bytes());
+        let end = bytes
+            .windows(4)
+            .rposition(|signature| signature == b"PK\x05\x06")
+            .expect("ZIP end record exists");
+        let central_start = u32::try_from(central).expect("fixture directory start fits u32");
+        bytes[end + 16..end + 20].copy_from_slice(&central_start.to_le_bytes());
+
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("patched archive fits service profile");
+        let archive = ArchiveSnapshot::new(&ctx, root).expect("patched directory is valid");
+        assert!(matches!(
+            archive.open(&ctx, "deflated.bin"),
+            Err(CodecError::Malformed(message))
+                if message == "raw-DEFLATE member does not exhaust its declared ZIP payload"
+        ));
+    }
+
+    #[test]
     fn snapshot_opens_names_using_its_own_metadata() {
         let bytes = archive_bytes();
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("archive fits root policy");
-        let first = ArchiveSnapshot::new(root).expect("first archive snapshot");
-        let second = ArchiveSnapshot::new(root).expect("second archive snapshot");
+        let first = ArchiveSnapshot::new(&ctx, root).expect("first archive snapshot");
+        let second = ArchiveSnapshot::new(&ctx, root).expect("second archive snapshot");
         let mut detached = second.entry("stored.bin").expect("entry exists").clone();
         detached.data_start = u64::MAX;
         detached.crc32 = 0;
@@ -1035,7 +1492,7 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("outer bytes fit root policy");
         let nested = root.child(start, end).expect("archive child range");
-        let snapshot = ArchiveSnapshot::new(nested).expect("nested archive snapshots");
+        let snapshot = ArchiveSnapshot::new(&ctx, nested).expect("nested archive snapshots");
 
         for (name, expected) in [
             ("stored.bin", b"stored".as_slice()),
@@ -1074,11 +1531,11 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("nested archive fixture");
-        let archive = ArchiveSnapshot::new(root).expect("nested archive fixture");
+        let archive = ArchiveSnapshot::new(&ctx, root).expect("nested archive fixture");
         let inner_view = archive
             .open(&ctx, "Assets/inner archive.zip")
             .expect("nested archive fixture");
-        let nested = ArchiveSnapshot::new(inner_view).expect("nested archive fixture");
+        let nested = ArchiveSnapshot::new(&ctx, inner_view).expect("nested archive fixture");
         let payload = nested
             .open(&ctx, "Data/payload bytes.bin")
             .expect("nested archive fixture");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
@@ -37,7 +37,22 @@ impl RecordFrame {
 /// [`TERMINAL_MARKER`] closes it and carries the used byte count as a `u16` at
 /// offset 4. Every record is returned with the opening marker restored so
 /// record offsets match the on-page layout.
-pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
+pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
+    frame_records(bytes, None)
+}
+
+/// Split an instance stream while charging every copied range and logical frame.
+pub fn record_frames_admitted(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<RecordFrame>, CodecError> {
+    frame_records(bytes, Some(ctx))
+}
+
+fn frame_records(
+    bytes: &[u8],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
             "Protein page stream is shorter than its header and one page".into(),
@@ -69,6 +84,13 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
                         })?;
                 records.push(record);
             }
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "Protein logical record frame")?;
+                ctx.charge_retained(
+                    (RECORD_MARKER.len() + page[record_start_page::BODY..].len()) as u64,
+                    "Protein copied record range",
+                )?;
+            }
             let mut frame = RecordFrame {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
@@ -80,27 +102,41 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
         } else if page.get(continuation_page::MARKER..continuation_page::BODY)
             == Some(CONTINUATION_MARKER)
         {
-            current
-                .as_mut()
-                .ok_or_else(|| {
-                    CodecError::Malformed("Protein continuation page has no open record".into())
-                })?
+            let frame = current.as_mut().ok_or_else(|| {
+                CodecError::Malformed("Protein continuation page has no open record".into())
+            })?;
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(
+                    page[continuation_page::BODY..].len() as u64,
+                    "Protein copied record range",
+                )?;
+            }
+            frame
                 .bytes
                 .extend_from_slice(&page[continuation_page::BODY..]);
         } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
             let used = View::u16_le_at(page, terminal_page::USED).ok_or_else(|| {
                 CodecError::Malformed("Protein terminal used-byte count is truncated".into())
             })? as usize;
+            let payload = page
+                .get(terminal_page::BODY..terminal_page::BODY + used)
+                .ok_or_else(|| {
+                    CodecError::Malformed("Protein terminal payload is truncated".into())
+                })?;
+            if current.is_none() {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "Protein logical record frame")?;
+                    ctx.charge_retained(RECORD_MARKER.len() as u64, "Protein copied record range")?;
+                }
+            }
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(payload.len() as u64, "Protein copied record range")?;
+            }
             let mut frame = current.take().unwrap_or_else(|| RecordFrame {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
             });
-            frame.bytes.extend_from_slice(
-                page.get(terminal_page::BODY..terminal_page::BODY + used)
-                    .ok_or_else(|| {
-                        CodecError::Malformed("Protein terminal payload is truncated".into())
-                    })?,
-            );
+            frame.bytes.extend_from_slice(payload);
             logical_offset = logical_offset
                 .checked_add(frame.bytes.len())
                 .ok_or_else(|| {
