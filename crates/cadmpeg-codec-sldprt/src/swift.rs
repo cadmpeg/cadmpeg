@@ -12,7 +12,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
-use cadmpeg_ir::scalar::NonNegativeReal;
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
 use crate::container::ContainerScan;
@@ -840,20 +840,36 @@ fn project_dimension(
 ) -> Option<PmiAnnotation> {
     let dimension = dimension_kind(short_class(&entity.class))?;
     let quantity = dimension_quantity(&dimension);
-    let nominal = finite(entity.doubles.get("Nominal").copied()?)
-        .filter(|value| {
-            *value != 0.0
+    let explicit_nominal =
+        FiniteReal::new(entity.doubles.get("Nominal").copied()?).filter(|value| {
+            value.get() != 0.0
                 || entity
                     .integers
                     .get("Dimension")
                     .is_some_and(|dimension| *dimension != 0)
-        })
-        .or_else(|| {
-            implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
         });
+    let implicit_nominal = if explicit_nominal.is_none() {
+        implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
+    } else {
+        None
+    };
+    let nominal = explicit_nominal.or_else(|| implicit_nominal.and_then(FiniteReal::new));
+    if implicit_nominal.is_some() && nominal.is_none() {
+        return None;
+    }
     let tolerance = match (
-        deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
-        deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
+        deviation(
+            entity,
+            nominal.map(FiniteReal::get),
+            "LowerLimit",
+            "MinusTolerance",
+        ),
+        deviation(
+            entity,
+            nominal.map(FiniteReal::get),
+            "UpperLimit",
+            "PlusTolerance",
+        ),
     ) {
         (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
             lower: pmi_value(lower, quantity)?,
@@ -870,7 +886,7 @@ fn project_dimension(
             cadmpeg_ir::pmi::PmiDimension::new(
                 dimension,
                 match nominal {
-                    Some(value) => Some(pmi_value(value, quantity)?),
+                    Some(value) => Some(PmiValue::from_parts(value, quantity)),
                     None => None,
                 },
                 tolerance,
@@ -2165,7 +2181,7 @@ fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
             .get("ProjectedZoneValue")
             .and_then(|v| finite_nonnegative(*v))
         {
-            values.push(format!("projected_zone:{value}_mm"));
+            values.push(format!("projected_zone:{}_mm", value.get()));
         } else {
             values.push("projected_zone".into());
         }
@@ -2180,7 +2196,7 @@ fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
             .get("MaxTolerance")
             .and_then(|v| finite_nonnegative(*v))
         {
-            values.push(format!("maximum_tolerance:{value}_mm"));
+            values.push(format!("maximum_tolerance:{}_mm", value.get()));
         } else {
             values.push("maximum_tolerance".into());
         }
@@ -2299,8 +2315,8 @@ fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-fn finite_nonnegative(value: f64) -> Option<f64> {
-    (value.is_finite() && value >= 0.0).then_some(value)
+fn finite_nonnegative(value: f64) -> Option<NonNegativeReal> {
+    NonNegativeReal::new(value)
 }
 
 fn finite_positive(value: f64) -> Option<f64> {

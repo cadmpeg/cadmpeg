@@ -82,12 +82,18 @@ pub struct PmiValue {
 crate::units::named_field!(deserialize_pmi_value, crate::scalar::FiniteReal, "value");
 
 impl PmiValue {
+    /// Build a semantic quantity from an admitted finite value.
+    #[must_use]
+    pub const fn from_parts(value: crate::scalar::FiniteReal, quantity: PmiQuantity) -> Self {
+        Self { value, quantity }
+    }
+
     /// Construct a finite semantic quantity.
     pub fn new(value: f64, quantity: PmiQuantity) -> Option<Self> {
-        Some(Self {
-            value: crate::scalar::FiniteReal::new(value)?,
+        Some(Self::from_parts(
+            crate::scalar::FiniteReal::new(value)?,
             quantity,
-        })
+        ))
     }
 }
 
@@ -101,10 +107,7 @@ impl PmiMagnitude {
     /// Build a tolerance from an admitted nonnegative value and its quantity.
     #[must_use]
     pub fn from_parts(value: crate::scalar::NonNegativeReal, quantity: PmiQuantity) -> Self {
-        Self(PmiValue {
-            value: crate::scalar::FiniteReal::from(value),
-            quantity,
-        })
+        Self(PmiValue::from_parts(value.into(), quantity))
     }
 
     /// Construct a nonnegative tolerance magnitude.
@@ -941,6 +944,13 @@ mod tests {
     #[test]
     fn pmi_magnitude_admission_keeps_signed_dimensions_and_zero_angles() {
         let negative = PmiValue::new(-1.0, PmiQuantity::Length).expect("signed dimension");
+        assert_eq!(
+            PmiValue::from_parts(
+                crate::scalar::FiniteReal::new(-1.0).expect("finite negative"),
+                PmiQuantity::Length,
+            ),
+            negative
+        );
         assert!(PmiMagnitude::new(negative).is_none());
         assert!(PmiValue::new(f64::INFINITY, PmiQuantity::Length).is_none());
         let zero = PmiMagnitude::new(PmiValue::new(0.0, PmiQuantity::Angle).expect("zero angle"))
