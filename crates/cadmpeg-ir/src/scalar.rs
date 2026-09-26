@@ -1324,10 +1324,10 @@ impl NonZeroReal {
     /// Admit a finite scalar as nonzero. Only zero remains to check.
     #[must_use]
     pub const fn from_finite(value: FiniteReal) -> Option<Self> {
-        if value.get() != 0.0 {
-            Some(Self(value.get()))
-        } else {
+        if value.get() == 0.0 {
             None
+        } else {
+            Some(Self(value.get()))
         }
     }
 
