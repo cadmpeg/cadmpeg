@@ -131,7 +131,12 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
     ]);
 
     assert_eq!(
-        generated_cap_plane_extent(&scan, &CadIr::empty(), 7,),
+        generated_cap_plane_extent(
+            &scan,
+            &CadIr::empty(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            7,
+        ),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -160,14 +165,26 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
 
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
     );
 
     ir.model.surfaces[1] = plane_surface(32, 9.0);
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    assert!(feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 
     ir.model.surfaces[1] = Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#32".to_string()).expect("identity grammar"),
@@ -175,7 +192,13 @@ fn feature_plane_extent_reconciles_native_and_transferred_carriers() {
         source_object: None,
     };
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
@@ -192,7 +215,13 @@ fn feature_plane_extent_accepts_complete_transferred_carriers_without_local_fram
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
 
     assert_eq!(
-        feature_plane_equations(&scan, &ir, 917).and_then(|planes| {
+        feature_plane_equations(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            917
+        )
+        .and_then(|planes| {
             extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
         }),
         Some(expected_linear_plane_extent())
@@ -212,7 +241,13 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
     ir.model
         .surfaces
         .extend([plane_surface(31, 2.0), plane_surface(32, 8.0)]);
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    assert!(feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 
     scan.planes.outlines.remove(1);
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -224,7 +259,13 @@ fn feature_plane_extent_rejects_ambiguous_or_non_plane_carriers() {
         )
         .expect("valid CylinderSurface fixture"),
     ));
-    assert!(feature_plane_equations(&scan, &ir, 917).is_none());
+    assert!(feature_plane_equations(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        917
+    )
+    .is_none());
 }
 
 #[test]
@@ -349,13 +390,25 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         [0.0, 1.0, 0.0],
     ));
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
 
     ir.model.surfaces.clear();
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
     ir.model.surfaces.push(cylinder_surface(
@@ -364,16 +417,36 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         Vector3::new(0.0, 1.0, 0.0),
     ));
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(1.0, 4.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(0.0, 4.0, 0.0), Vector3::new(0.0, -1.0, 0.0));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -384,7 +457,14 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         )
         .expect("valid CylinderSurface fixture"),
     ));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -395,7 +475,14 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         )
         .expect("valid CylinderSurface fixture"),
     ));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -405,18 +492,38 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         )
         .expect("valid PlaneSurface fixture"),
     ));
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
 
     ir.model.surfaces[0] =
         cylinder_surface(33, Point3::new(0.0, 4.0, 0.0), Vector3::new(0.0, 1.0, 0.0));
     ir.model.surfaces.push(ir.model.surfaces[0].clone());
-    assert!(generated_arc_cylinder_extent(&scan, &ir, &definition, &transform).is_none());
+    assert!(generated_arc_cylinder_extent(
+        &scan,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        &definition,
+        &transform
+    )
+    .is_none());
     ir.model.surfaces.pop();
 
     ir.model.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert_eq!(
-        generated_arc_cylinder_extent(&scan, &ir, &definition, &transform),
+        generated_arc_cylinder_extent(
+            &scan,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &definition,
+            &transform
+        ),
         expected
     );
 }

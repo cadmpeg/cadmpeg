@@ -801,7 +801,12 @@ fn scan_solves_featdefs_trim_vertex_line_intersection() {
         .as_ref()
         .expect("vert_tab")
         .rows[0];
-    assert_eq!(vertex.section_coordinates, Some([1.0, 1.0]));
+    assert_eq!(
+        vertex
+            .section_coordinates
+            .map(cadmpeg_ir::units::FinitePoint2::get),
+        Some(cadmpeg_ir::math::Point2::new(1.0, 1.0))
+    );
 }
 
 #[test]
