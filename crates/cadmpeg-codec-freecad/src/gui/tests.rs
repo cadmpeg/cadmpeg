@@ -36,16 +36,18 @@ fn assert_negative_primitive_size_reports_loss(style: super::PrimitiveStyle) {
         &ir,
         &mut plan,
         &mut losses,
-        "Model",
-        "fcstd:object#Model",
-        0xff00_00ff,
-        style,
-        &[String::new()],
-        cadmpeg_ir::SourceProvenance::in_stream(
-            "fcstd",
-            cadmpeg_ir::stream_name!("GuiDocument.xml"),
-            17,
-        ),
+        super::PrimitiveAppearanceSource {
+            provider_name: "Model",
+            object_id: "fcstd:object#Model",
+            packed_color: 0xff00_00ff,
+            style,
+            payload_prefixes: &[String::new()],
+            provenance: cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                17,
+            ),
+        },
     );
     assert_eq!(plan.appearances.len(), 1);
     assert!(plan.appearances[0].properties.is_empty());
