@@ -665,7 +665,7 @@ pub(crate) struct FeatureTrimVertex {
     /// Distinct `ent_tab` external entity identifiers meeting at the vertex.
     pub(crate) entities: Vec<u32>,
     /// Solved section-frame coordinates for a uniquely resolved carrier junction.
-    pub(crate) section_coordinates: Option<[f64; 2]>,
+    pub(crate) section_coordinates: Option<cadmpeg_ir::units::FinitePoint2>,
     /// Byte offset of the positional triple in the original stream.
     pub(crate) offset: usize,
 }
@@ -3289,23 +3289,30 @@ const TRIM_INTERSECTION_EPS: f64 = 1.0e-12;
 
 #[derive(Clone, Copy)]
 enum TrimCarrier {
-    Line { start: [f64; 2], end: [f64; 2] },
-    Circle { center: [f64; 2], radius: f64 },
+    Line {
+        start: [f64; 2],
+        end: [f64; 2],
+    },
+    Circle {
+        center: [f64; 2],
+        radius: cadmpeg_ir::scalar::PositiveReal,
+    },
 }
 
 fn trim_vertex_intersection(
     entities: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
-) -> Option<[f64; 2]> {
-    entity_intersection(entities, segments, variables)
+) -> Option<cadmpeg_ir::units::FinitePoint2> {
+    let [u, v] = entity_intersection(entities, segments, variables)?;
+    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(u, v))
 }
 
 fn resolved_trim_scalar(
     variables: &FeatureVariableTable,
     variable_type: VariableType,
     key: u32,
-) -> Result<Option<f64>, ()> {
+) -> Result<Option<cadmpeg_ir::scalar::FiniteReal>, ()> {
     let values = variables
         .rows
         .iter()
@@ -3316,19 +3323,14 @@ fn resolved_trim_scalar(
         return Ok(None);
     }
     let values = values.into_iter().collect::<Option<Vec<_>>>().ok_or(())?;
-    let first = *values.first().ok_or(())?;
-    if !first.is_finite() {
-        return Err(());
-    }
+    let first = cadmpeg_ir::scalar::FiniteReal::new(*values.first().ok_or(())?).ok_or(())?;
     values
         .iter()
         .copied()
         .try_fold(first, |first, value| {
-            if !value.is_finite() {
-                return Err(());
-            }
-            let scale = first.abs().max(value.abs()).max(1.0);
-            ((value - first).abs() <= TRIM_COORDINATE_EPS * scale)
+            let value = cadmpeg_ir::scalar::FiniteReal::new(value).ok_or(())?;
+            let scale = first.get().abs().max(value.get().abs()).max(1.0);
+            ((value.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
                 .then_some(first)
                 .ok_or(())
         })
@@ -3339,14 +3341,15 @@ fn trim_endpoint_radius(
     segment: &FeatureSegment,
     center: [f64; 2],
     points: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Result<Option<f64>, ()> {
+) -> Result<Option<cadmpeg_ir::scalar::PositiveReal>, ()> {
     let mut radii = Vec::new();
     for point_id in segment.point_ids() {
         let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
             continue;
         };
         let radius = (u - center[0]).hypot(v - center[1]);
-        if !radius.is_finite() || radius <= TRIM_INTERSECTION_EPS {
+        let radius = cadmpeg_ir::scalar::PositiveReal::new(radius).ok_or(())?;
+        if radius.get() <= TRIM_INTERSECTION_EPS {
             return Err(());
         }
         radii.push(radius);
@@ -3358,8 +3361,8 @@ fn trim_endpoint_radius(
         .iter()
         .copied()
         .try_fold(first, |first, radius| {
-            let scale = first.abs().max(radius.abs()).max(1.0);
-            ((radius - first).abs() <= TRIM_COORDINATE_EPS * scale)
+            let scale = first.get().max(radius.get()).max(1.0);
+            ((radius.get() - first.get()).abs() <= TRIM_COORDINATE_EPS * scale)
                 .then_some(first)
                 .ok_or(())
         })
@@ -3371,21 +3374,20 @@ fn trim_radius(
     center: [f64; 2],
     points: &BTreeMap<u32, [Option<f64>; 2]>,
     variables: &FeatureVariableTable,
-) -> Option<f64> {
+) -> Option<cadmpeg_ir::scalar::PositiveReal> {
     let stored = resolved_trim_scalar(variables, VariableType::Radius, segment.radius_ref?).ok()?;
     let endpoint = trim_endpoint_radius(segment, center, points).ok()?;
     let radius = match (stored, endpoint) {
         (Some(stored), Some(endpoint)) => {
-            let scale = stored.abs().max(endpoint.abs()).max(1.0);
-            ((stored - endpoint).abs() <= TRIM_COORDINATE_EPS * scale).then_some(stored)?
+            let scale = stored.get().abs().max(endpoint.get()).max(1.0);
+            ((stored.get() - endpoint.get()).abs() <= TRIM_COORDINATE_EPS * scale)
+                .then_some(stored.get())?
         }
-        (Some(stored), None) | (None, Some(stored)) => stored,
+        (Some(stored), None) => stored.get(),
+        (None, Some(endpoint)) => endpoint.get(),
         (None, None) => return None,
     };
-    radius
-        .is_finite()
-        .then_some(radius)
-        .filter(|radius| *radius > 0.0)
+    cadmpeg_ir::scalar::PositiveReal::new(radius)
 }
 
 fn trim_carrier(
@@ -3599,7 +3601,7 @@ fn entity_intersection(
                 ) => trim_line_line_intersection(start, end, second_start, second_end),
                 (TrimCarrier::Line { start, end }, TrimCarrier::Circle { center, radius })
                 | (TrimCarrier::Circle { center, radius }, TrimCarrier::Line { start, end }) => {
-                    trim_line_circle_intersection(start, end, center, radius)
+                    trim_line_circle_intersection(start, end, center, radius.get())
                 }
                 (
                     TrimCarrier::Circle { center, radius },
@@ -3607,7 +3609,12 @@ fn entity_intersection(
                         center: second_center,
                         radius: second_radius,
                     },
-                ) => trim_circle_circle_intersection(center, radius, second_center, second_radius),
+                ) => trim_circle_circle_intersection(
+                    center,
+                    radius.get(),
+                    second_center,
+                    second_radius.get(),
+                ),
             }?;
             intersections.push(coordinate);
         }

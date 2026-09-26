@@ -7,7 +7,7 @@ use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Vector3;
-use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::UnitVector3;
 
 /// Bounds the stored lengths and the normalized dot product of a conic local system's two
@@ -60,7 +60,7 @@ pub(crate) struct ReferenceCircle {
     /// Canonical entity identifier repeated across the row boundary.
     pub(crate) entity_id: u32,
     /// Circle center in model coordinates.
-    pub(crate) center: [f64; 3],
+    pub(crate) center: FinitePoint3,
     /// Whether the center is stored explicitly rather than derived as a midpoint.
     pub(crate) center_stored: bool,
     /// Circle radius.
@@ -118,13 +118,13 @@ pub(crate) struct ReferenceConic {
     /// Second stored endpoint in model coordinates.
     pub(crate) end: FinitePoint3,
     /// First stored conic parameter, when its scalar form is defined.
-    pub(crate) parameter_start: Option<f64>,
+    pub(crate) parameter_start: Option<FiniteReal>,
     /// Second stored conic parameter, when its scalar form is defined.
-    pub(crate) parameter_end: Option<f64>,
+    pub(crate) parameter_end: Option<FiniteReal>,
     /// First stored conic coefficient.
-    pub(crate) coefficient_1: f64,
+    pub(crate) coefficient_1: FiniteReal,
     /// Second stored conic coefficient.
-    pub(crate) coefficient_2: f64,
+    pub(crate) coefficient_2: FiniteReal,
     /// Twelve decoded local-system slots, when the body is complete.
     pub(crate) local_system: Option<cadmpeg_ir::units::FiniteVector<12>>,
     /// Exact bytes from the `id` value through the local-system body.
@@ -196,8 +196,8 @@ pub(crate) fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllips
         };
         let axis: [f64; 3] = (*axis_unit.as_raw()).into();
         let (Some(first_coefficient), Some(second_coefficient)) = (
-            PositiveLength::new(conic.coefficient_1.abs()),
-            PositiveLength::new(conic.coefficient_2.abs()),
+            PositiveLength::new(conic.coefficient_1.get().abs()),
+            PositiveLength::new(conic.coefficient_2.get().abs()),
         ) else {
             continue;
         };
@@ -581,7 +581,11 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                 search = block_end.max(fields_start);
                 continue;
             };
-            if !value.is_finite() || next > block_end {
+            let Some(value) = FiniteReal::new(value) else {
+                search = block_end.max(fields_start);
+                continue;
+            };
+            if next > block_end {
                 search = block_end.max(fields_start);
                 continue;
             }
@@ -595,10 +599,18 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
                     search = block_end.max(fields_start);
                     continue;
                 };
-                parameter_end = Some(value + std::f64::consts::PI);
+                let Some(opposite) = FiniteReal::new(value.get() + std::f64::consts::PI) else {
+                    search = block_end.max(fields_start);
+                    continue;
+                };
+                parameter_end = Some(opposite);
                 cursor = value_offset + 1;
             } else if let Some((value, next)) = coordinate(payload, value_offset, &cache) {
-                if !value.is_finite() || next > block_end {
+                let Some(value) = FiniteReal::new(value) else {
+                    search = block_end.max(fields_start);
+                    continue;
+                };
+                if next > block_end {
                     search = block_end.max(fields_start);
                     continue;
                 }
@@ -645,10 +657,14 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
             search = block_end.max(fields_start);
             continue;
         };
-        if !coefficient_1.is_finite()
-            || !coefficient_2.is_finite()
-            || next_conic_field(payload, local_end, block_end).is_some()
-        {
+        let (Some(coefficient_1), Some(coefficient_2)) = (
+            FiniteReal::new(coefficient_1),
+            FiniteReal::new(coefficient_2),
+        ) else {
+            search = block_end.max(fields_start);
+            continue;
+        };
+        if next_conic_field(payload, local_end, block_end).is_some() {
             search = block_end.max(fields_start);
             continue;
         }
@@ -675,16 +691,18 @@ pub(crate) fn named_conics(payload: &[u8]) -> Vec<ReferenceConic> {
 fn conic_parameter(
     body: &[u8],
     offset: usize,
-    opposite_of: Option<f64>,
+    opposite_of: Option<FiniteReal>,
     cache: &ScalarCache,
-) -> Option<(Option<f64>, usize)> {
+) -> Option<(Option<FiniteReal>, usize)> {
     if body.get(offset) == Some(&0x11) {
-        return Some((
-            opposite_of.map(|value| value + std::f64::consts::PI),
-            offset + 1,
-        ));
+        let opposite = match opposite_of {
+            Some(value) => Some(FiniteReal::new(value.get() + std::f64::consts::PI)?),
+            None => None,
+        };
+        return Some((opposite, offset + 1));
     }
-    coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
+    let (value, next) = coordinate(body, offset, cache)?;
+    Some((Some(FiniteReal::new(value)?), next))
 }
 
 fn positional_conic_local_system(
@@ -737,12 +755,8 @@ fn positional_conic_body(
     let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
     let start = FinitePoint3::new(endpoints[0].into())?;
     let end = FinitePoint3::new(endpoints[1].into())?;
-    parameter_start
-        .iter()
-        .chain(parameter_end.iter())
-        .chain([&coefficient_1, &coefficient_2])
-        .all(|value| value.is_finite())
-        .then_some(())?;
+    let coefficient_1 = FiniteReal::new(coefficient_1)?;
+    let coefficient_2 = FiniteReal::new(coefficient_2)?;
     Some(ReferenceConic {
         entity_id,
         type_id: ConicType::from(type_id),
@@ -1015,8 +1029,9 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         Some(values)
     }
     let explicit_axis =
-        |center: [f64; 3], radius: PositiveLength, first: [f64; 3], second: [f64; 3]| {
+        |center: FinitePoint3, radius: PositiveLength, first: [f64; 3], second: [f64; 3]| {
             let radius = radius.get();
+            let center: [f64; 3] = center.get().into();
             let first_delta = std::array::from_fn::<_, 3, _>(|axis| first[axis] - center[axis]);
             let second_delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - center[axis]);
             let first_distance = first_delta
@@ -1034,8 +1049,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
             let normal_length = normal
                 .iter()
                 .fold(0.0_f64, |norm, value| norm.hypot(*value));
-            (center.iter().all(|value| value.is_finite())
-                && first_distance.is_finite()
+            (first_distance.is_finite()
                 && second_distance.is_finite()
                 && (first_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
                 && (second_distance - radius).abs() <= EPS_RADIUS_AGREEMENT * scale
@@ -1056,6 +1070,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         let radius = PositiveLength::new(values[3].abs())?;
         let first = [values[4], values[5], values[6]];
         let second = [values[7], values[8], values[9]];
+        let center = FinitePoint3::new(center.into())?;
         let (axis, first, second) = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
             entity_id,
@@ -1073,13 +1088,21 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         let radius = PositiveLength::new(values[0].abs())?;
         let first = [values[1], values[2], values[3]];
         let second = [values[4], values[5], values[6]];
-        let center = std::array::from_fn(|axis| (first[axis] + second[axis]) * 0.5);
+        let center = std::array::from_fn(|axis| {
+            let sum = first[axis] + second[axis];
+            if sum.is_finite() {
+                sum * 0.5
+            } else {
+                f64::midpoint(first[axis], second[axis])
+            }
+        });
         let delta = std::array::from_fn::<_, 3, _>(|axis| second[axis] - first[axis]);
         let diameter = delta.iter().fold(0.0_f64, |norm, value| norm.hypot(*value));
         let scale = radius.get().max(diameter).max(1.0);
         diameter.is_finite().then_some(())?;
         let first = FinitePoint3::new(first.into())?;
         let second = FinitePoint3::new(second.into())?;
+        let center = FinitePoint3::new(center.into())?;
         (delta[2].abs() <= EPS_DIAMETER_PLANAR * scale
             && (diameter - 2.0 * radius.get()).abs() <= EPS_RADIUS_AGREEMENT * scale)
             .then_some(())?;
